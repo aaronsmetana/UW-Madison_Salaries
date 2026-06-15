@@ -1,18 +1,20 @@
-import * as duckdb from '@duckdb/duckdb-wasm';
+import type { AsyncDuckDB, DuckDBBundles } from '@duckdb/duckdb-wasm';
 // Self-hosted bundles (no CDN): Vite emits these as hashed assets.
 import mvpWasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url';
 import ehWasm from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url';
 import mvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
 import ehWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
 
-let dbPromise: Promise<duckdb.AsyncDuckDB> | null = null;
+let dbPromise: Promise<AsyncDuckDB> | null = null;
 
-async function initDB(): Promise<duckdb.AsyncDuckDB> {
+async function initDB(): Promise<AsyncDuckDB> {
   if (typeof WebAssembly === 'undefined') {
     throw new Error('This browser does not support WebAssembly, which this dashboard requires.');
   }
+  // Dynamic import keeps the ~hundreds-of-KB DuckDB-WASM JS out of the initial bundle.
+  const duckdb = await import('@duckdb/duckdb-wasm');
   // Non-threaded bundles (mvp/eh) — no COOP/COEP headers needed (GitHub Pages can't set them).
-  const bundles: duckdb.DuckDBBundles = {
+  const bundles: DuckDBBundles = {
     mvp: { mainModule: mvpWasm, mainWorker: mvpWorker },
     eh: { mainModule: ehWasm, mainWorker: ehWorker },
   };
@@ -52,7 +54,7 @@ async function initDB(): Promise<duckdb.AsyncDuckDB> {
 }
 
 /** Lazily instantiate DuckDB-WASM + load the Parquet (once). */
-export function getDB(): Promise<duckdb.AsyncDuckDB> {
+export function getDB(): Promise<AsyncDuckDB> {
   if (!dbPromise) dbPromise = initDB();
   return dbPromise;
 }

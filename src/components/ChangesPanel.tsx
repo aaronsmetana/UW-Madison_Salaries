@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor } from '@mantine/core';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -71,6 +72,29 @@ export function ChangesPanel() {
     enabled
   );
 
+  const { data: decompData } = useSql<{ total_change: number; raises: number; hires: number; departures: number }>(
+    ['chg-decomp', fromId, toId, scopeKey, metric],
+    `${cte}
+     SELECT
+       coalesce(sum(b.pay) FILTER (WHERE b.person_key IS NOT NULL), 0) - coalesce(sum(a.pay) FILTER (WHERE a.person_key IS NOT NULL), 0) total_change,
+       coalesce(sum(b.pay - a.pay) FILTER (WHERE a.person_key IS NOT NULL AND b.person_key IS NOT NULL), 0) raises,
+       coalesce(sum(b.pay) FILTER (WHERE a.person_key IS NULL), 0) hires,
+       -coalesce(sum(a.pay) FILTER (WHERE b.person_key IS NULL), 0) departures
+     FROM a FULL OUTER JOIN b ON a.person_key = b.person_key`,
+    enabled
+  );
+  const d = decompData?.[0];
+
+  const { data: raiseDist } = useSql<{ pct_bucket: number; n: number }>(
+    ['chg-dist', fromId, toId, scopeKey, metric],
+    `${cte}
+     SELECT bucket * 5 AS pct_bucket, count(*) n FROM (
+       SELECT floor(least(greatest((b.pay - a.pay) / a.pay, -0.25), 0.5) * 100 / 5) AS bucket
+       FROM a JOIN b ON a.person_key = b.person_key WHERE a.pay > 0 AND b.pay > 0
+     ) GROUP BY bucket ORDER BY bucket`,
+    enabled
+  );
+
   const isTTC = !!fromId && !!toId && fromId.includes('pre') && toId.includes('post');
   const opts = [...snaps].reverse().map((x) => ({ value: x.id, label: x.label }));
 
@@ -108,6 +132,31 @@ export function ChangesPanel() {
         <Stat label="Title changes" value={num(s?.title_changes)} />
         <Stat label="Median raise" value={s?.median_raise == null ? '—' : pct(s.median_raise)} />
       </SimpleGrid>
+
+      <Card withBorder padding="lg">
+        <Text size="sm" fw={600} mb="sm">Payroll change decomposition</Text>
+        <SimpleGrid cols={{ base: 2, sm: 4 }}>
+          <Stat label="Total change" value={usd(d?.total_change)} />
+          <Stat label="From raises (continuing)" value={usd(d?.raises)} />
+          <Stat label="From new hires" value={usd(d?.hires)} />
+          <Stat label="From departures" value={usd(d?.departures)} />
+        </SimpleGrid>
+        <Text size="xs" c="dimmed" mt="xs">Raises + new hires + departures reconcile to the total change.</Text>
+      </Card>
+
+      <Card withBorder padding="lg">
+        <Text size="sm" fw={600} mb="sm">Raise distribution (% change, continuing staff)</Text>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+            <YAxis width={48} tick={{ fontSize: 12 }} />
+            <Tooltip />
+            <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
+          </BarChart>
+        </ResponsiveContainer>
+        <Text size="xs" c="dimmed">5% bins; values clamped to [−25%, +50%].</Text>
+      </Card>
 
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder padding="lg">

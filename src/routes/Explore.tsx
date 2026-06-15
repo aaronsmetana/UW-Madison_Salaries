@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { SearchBox } from '../components/SearchBox';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
+import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -110,6 +111,7 @@ export default function Explore() {
           <Tabs.Tab value="earners">Top earners</Tabs.Tab>
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
+          <Tabs.Tab value="cohorts">Cohorts</Tabs.Tab>
           <Tabs.Tab value="coverage">Coverage</Tabs.Tab>
         </Tabs.List>
 
@@ -177,6 +179,10 @@ export default function Explore() {
 
         <Tabs.Panel value="changes" pt="md">
           <ChangesPanel />
+        </Tabs.Panel>
+
+        <Tabs.Panel value="cohorts" pt="md">
+          <CohortPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="coverage" pt="md">

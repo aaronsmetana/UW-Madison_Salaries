@@ -1,4 +1,5 @@
-import { AppShell, Group, Title, NavLink, Box } from '@mantine/core';
+import { Suspense } from 'react';
+import { AppShell, Group, Title, NavLink, Box, Loader } from '@mantine/core';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
@@ -37,7 +38,9 @@ export function AppShellLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Outlet />
+        <Suspense fallback={<Loader />}>
+          <Outlet />
+        </Suspense>
       </AppShell.Main>
 
       <AppShell.Footer>
