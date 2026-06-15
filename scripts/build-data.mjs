@@ -1,0 +1,489 @@
+#!/usr/bin/env node
+/**
+ * build-data.mjs — UW-Madison Salary Dashboard ETL.
+ *
+ * Reads every spreadsheet in data/raw/ (XLSX via SheetJS, CSV too), classifies each
+ * workbook's data sheets, resolves a snapshot date (sheet name first, then filename),
+ * maps the varying headers to a canonical schema via data/column-map.json, normalizes
+ * messy values (Excel serial dates, $/comma/float salaries, bare-vs-verbose grades),
+ * and writes:
+ *   public/data/salaries.parquet   — one row per appointment, all snapshots unioned
+ *   public/data/manifest.json      — per-snapshot health, mapping, stats
+ *   public/data/summary.json       — headline KPIs (engine-fallback)
+ *
+ * Deterministic + resilient: a bad file/sheet is skipped + flagged, never blocks the rest.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import XLSX from 'xlsx';
+import duckdb from 'duckdb';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const RAW_DIR = path.join(ROOT, 'data', 'raw');
+const OUT_DIR = path.join(ROOT, 'public', 'data');
+const COLUMN_MAP = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'column-map.json'), 'utf8'));
+const VALUE_MAP = readJsonIfExists(path.join(ROOT, 'data', 'value-map.json')) || {};
+
+// ---------- helpers ----------
+function readJsonIfExists(p) {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
+}
+const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+// canonical field -> Set of normalized aliases
+const ALIASES = {};
+for (const [field, names] of Object.entries(COLUMN_MAP.fields)) {
+  ALIASES[field] = new Set(names.map(norm));
+}
+const REQUIRED = COLUMN_MAP.required || ['first_name', 'last_name', 'salary'];
+
+const MONTHS = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+  may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9,
+  september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+};
+
+function excelSerialToISO(n) {
+  // Excel epoch (1899-12-30); 25569 = 1970-01-01 in serial days.
+  const ms = Math.round((n - 25569) * 86400 * 1000);
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function parseDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') {
+    if (v > 20000 && v < 60000) return excelSerialToISO(v); // plausible modern serial
+    return null;
+  }
+  const s = String(v).trim();
+  // 01Jun2022
+  let m = s.match(/^(\d{1,2})([A-Za-z]{3,})(\d{4})$/);
+  if (m) {
+    const mo = MONTHS[m[2].toLowerCase()];
+    if (mo) return `${m[3]}-${String(mo).padStart(2, '0')}-${String(+m[1]).padStart(2, '0')}`;
+  }
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return new Date(t).toISOString().slice(0, 10);
+  return null;
+}
+
+function parseMoney(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const n = Number(String(v).replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(typeof v === 'number' ? v : String(v).replace(/[,\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseGrade(rawGrade, compBasis, payRateType) {
+  const raw = rawGrade == null ? null : String(rawGrade).trim() || null;
+  let number = null;
+  let isNumeric = false;
+  if (raw) {
+    let m = raw.match(/grade\s*0*(\d+)/i) || raw.match(/^0*(\d+)$/);
+    if (m) { number = parseInt(m[1], 10); isNumeric = true; }
+  }
+  // basis
+  let basis = null;
+  if (raw && /hourly/i.test(raw)) basis = 'hourly';
+  else if (raw && /9\s*month/i.test(raw)) basis = 'annual_9mo';
+  else if (raw && /12\s*month/i.test(raw)) basis = 'annual_12mo';
+  if (!basis) {
+    const cb = norm(compBasis);
+    const pr = norm(payRateType);
+    if (pr === 'hourly' || cb === 'hourly') basis = 'hourly';
+    else if (cb.includes('9month') || cb === 'academic') basis = 'annual_9mo';
+    else if (cb.includes('12month') || cb === 'annual') basis = 'annual_12mo';
+  }
+  return { raw, number, isNumeric, basis };
+}
+
+const personNorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+function makePersonKey(first, last, hireISO) {
+  return `${personNorm(first)}${personNorm(last)}|${hireISO || ''}`;
+}
+
+function valueMapApply(field, raw) {
+  if (raw == null) return raw;
+  const map = VALUE_MAP[field];
+  if (!map) return raw;
+  const key = String(raw).trim();
+  if (map[key] != null) return map[key];
+  // case-insensitive
+  const hit = Object.keys(map).find((k) => k.toLowerCase() === key.toLowerCase());
+  return hit ? map[hit] : raw;
+}
+
+function snapshotFromSheetName(name) {
+  if (!name) return null;
+  const yearM = name.match(/(19|20)\d{2}/);
+  if (!yearM) return null;
+  const year = parseInt(yearM[0], 10);
+  let month = null;
+  const monthName = name.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/i);
+  if (monthName) month = MONTHS[monthName[1].toLowerCase()] || MONTHS[monthName[0].toLowerCase()];
+  if (!month) {
+    const numeric = name.match(/\b(\d{1,2})[-/](19|20)\d{2}\b/);
+    if (numeric) month = parseInt(numeric[1], 10);
+  }
+  let variant = null;
+  if (/pre/i.test(name) && /ttc/i.test(name)) variant = 'pre';
+  else if (/post/i.test(name) && /ttc/i.test(name)) variant = 'post';
+  if (!month) return null;
+  return { year, month, variant };
+}
+
+function snapshotFromFilename(file) {
+  // year then month: 2022-03, 2021-11, 2023-10-09
+  let m = file.match(/(20\d{2})[-_ ]?(\d{1,2})\b/);
+  if (m && +m[2] >= 1 && +m[2] <= 12) return { year: +m[1], month: +m[2], variant: null };
+  // month then year: 05-2026, 05_2026
+  m = file.match(/\b(\d{1,2})[-_ ](20\d{2})\b/);
+  if (m && +m[1] >= 1 && +m[1] <= 12) return { year: +m[2], month: +m[1], variant: null };
+  // year only
+  m = file.match(/\b(20\d{2})\b/);
+  if (m) return { year: +m[1], month: null, variant: null };
+  return null;
+}
+
+const MONTH_LABEL = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function snapshotMeta(snap) {
+  const mm = snap.month ? String(snap.month).padStart(2, '0') : '00';
+  const id = `${snap.year}-${mm}${snap.variant ? `-${snap.variant}` : ''}`;
+  const date = `${snap.year}-${snap.month ? mm : '01'}-01`;
+  const label = `${snap.month ? MONTH_LABEL[snap.month] + ' ' : ''}${snap.year}` +
+    (snap.variant ? ` (${snap.variant.toUpperCase()}-TTC)` : '');
+  return { id, date, label, year: snap.year, month: snap.month, variant: snap.variant || null };
+}
+
+function median(nums) {
+  const a = nums.filter((n) => n != null && Number.isFinite(n)).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+}
+
+// ---------- main ----------
+function detectMapping(headers, file) {
+  const mapping = {}; // canonical -> column index
+  const detectedHeaders = {}; // canonical -> raw header
+  const overrides = COLUMN_MAP.overrides || {};
+  let forced = {};
+  for (const [sub, map] of Object.entries(overrides)) {
+    if (file.includes(sub)) forced = { ...forced, ...map };
+  }
+  headers.forEach((h, i) => {
+    if (h == null || String(h).trim() === '') return;
+    const nh = norm(h);
+    for (const [field, set] of Object.entries(ALIASES)) {
+      if (mapping[field] !== undefined) continue;
+      if (set.has(nh)) { mapping[field] = i; detectedHeaders[field] = h; }
+    }
+  });
+  // forced overrides (by exact raw header text)
+  for (const [field, headerText] of Object.entries(forced)) {
+    const idx = headers.findIndex((h) => h != null && norm(h) === norm(headerText));
+    if (idx >= 0) { mapping[field] = idx; detectedHeaders[field] = headers[idx]; }
+  }
+  const unmapped = headers.filter(
+    (h, i) => h != null && String(h).trim() !== '' && !Object.values(mapping).includes(i)
+  );
+  return { mapping, detectedHeaders, unmapped };
+}
+
+function processSheet(file, sheetName, aoa) {
+  const result = { rows: [], status: 'ok', messages: [], detectedHeaders: {}, unmapped: [], isData: false, dataDictUrl: null };
+  if (!aoa.length) { result.messages.push('empty sheet'); return result; }
+  const headers = aoa[0];
+  // capture a Data Dictionary URL if present
+  const firstCell = headers && headers[0] != null ? String(headers[0]) : '';
+  const { mapping, detectedHeaders, unmapped } = detectMapping(headers, file);
+  result.detectedHeaders = detectedHeaders;
+  result.unmapped = unmapped;
+
+  const missingRequired = REQUIRED.filter((f) => mapping[f] === undefined);
+  if (missingRequired.length) {
+    if (/^https?:\/\//i.test(firstCell.trim())) result.dataDictUrl = firstCell.trim();
+    result.messages.push(`not a data sheet (missing ${missingRequired.join(', ')})`);
+    return result; // skipped, not data
+  }
+  result.isData = true;
+
+  const get = (row, field) => (mapping[field] !== undefined ? row[mapping[field]] : null);
+  for (let r = 1; r < aoa.length; r++) {
+    const row = aoa[r];
+    if (!row || row.length === 0) continue;
+    const first = get(row, 'first_name');
+    const last = get(row, 'last_name');
+    const salaryRaw = get(row, 'salary');
+    if ((first == null || String(first).trim() === '') && (last == null || String(last).trim() === '') && salaryRaw == null) continue;
+
+    const hireISO = parseDate(get(row, 'date_of_hire'));
+    const salary = parseMoney(salaryRaw);
+    const compBasis = get(row, 'comp_basis');
+    const payRateType = get(row, 'pay_rate_type');
+    const grade = parseGrade(get(row, 'salary_grade'), compBasis, payRateType);
+    const empType = get(row, 'employee_type');
+    const contractType = get(row, 'contract_type');
+    let apptType = get(row, 'appointment_type');
+    if ((apptType == null || apptType === '') && (empType || contractType)) {
+      apptType = [empType, contractType].filter(Boolean).join(' / ') || null;
+    }
+    const flags = [];
+    if (salary == null || salary === 0) flags.push('zero_or_null_salary');
+    if (hireISO == null && get(row, 'date_of_hire') != null) flags.push('unparsed_hire_date');
+
+    result.rows.push({
+      first_name: clean(first),
+      last_name: clean(last),
+      school: clean(get(row, 'school')),
+      department: clean(get(row, 'department')),
+      employee_category_raw: clean(get(row, 'employee_category')),
+      employee_category: clean(valueMapApply('employee_category', get(row, 'employee_category'))),
+      job_code: clean(get(row, 'job_code')),
+      title: clean(get(row, 'title')),
+      fte: parseNum(get(row, 'fte')),
+      salary,
+      salary_fte_adjusted: parseMoney(get(row, 'salary_fte_adjusted')),
+      base_pay: parseMoney(get(row, 'base_pay')),
+      comp_basis: clean(compBasis),
+      pay_rate_type: clean(payRateType),
+      flsa_status: clean(get(row, 'flsa_status')),
+      salary_grade_raw: grade.raw,
+      grade_number: grade.number,
+      grade_basis: grade.basis,
+      grade_is_numeric: grade.isNumeric,
+      date_of_hire: hireISO,
+      hire_year: hireISO ? parseInt(hireISO.slice(0, 4), 10) : null,
+      appointment_type: clean(apptType),
+      employee_type: clean(empType),
+      contract_type: clean(contractType),
+      _first: first,
+      _last: last,
+      _flags: flags,
+    });
+  }
+  if (!result.rows.length) { result.status = 'error'; result.messages.push('no data rows'); }
+  return result;
+}
+
+function clean(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
+/** Read the optional pay-band reference table (data/reference/salary-grades.{csv,xlsx}). */
+function readGrades() {
+  const dir = path.join(ROOT, 'data', 'reference');
+  let file = null;
+  for (const f of ['salary-grades.csv', 'salary-grades.xlsx']) {
+    if (fs.existsSync(path.join(dir, f))) { file = path.join(dir, f); break; }
+  }
+  if (!file) return [];
+  const wb = XLSX.readFile(file, { raw: true });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
+  const pick = (r, k) => {
+    const key = Object.keys(r).find((x) => norm(x) === norm(k));
+    return key ? r[key] : null;
+  };
+  return rows
+    .map((r) => {
+      const g = parseInt(String(pick(r, 'grade') ?? '').replace(/\D/g, ''), 10);
+      return {
+        grade: Number.isFinite(g) ? g : null,
+        basis: clean(pick(r, 'basis')),
+        min: parseMoney(pick(r, 'min')),
+        max: parseMoney(pick(r, 'max')),
+        effective_year: parseNum(pick(r, 'effective_year')),
+      };
+    })
+    .filter((x) => x.grade != null && x.min != null && x.max != null);
+}
+
+function readWorkbook(filePath) {
+  const wb = XLSX.readFile(filePath, { raw: true, cellDates: false });
+  return wb.SheetNames.map((name) => ({
+    name,
+    aoa: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null, blankrows: false }),
+  }));
+}
+
+async function main() {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  if (!fs.existsSync(RAW_DIR)) { console.error(`No raw dir: ${RAW_DIR}`); process.exit(1); }
+  const files = fs.readdirSync(RAW_DIR).filter((f) => /\.(xlsx|xls|csv)$/i.test(f) && !f.startsWith('~$')).sort();
+
+  const manifest = [];
+  const allRows = [];
+  const seenSnapshotIds = new Map();
+
+  for (const file of files) {
+    const full = path.join(RAW_DIR, file);
+    let sheets;
+    try { sheets = readWorkbook(full); }
+    catch (e) { manifest.push({ snapshot_id: null, source_file: file, status: 'error', messages: [`read failed: ${e.message}`] }); continue; }
+
+    for (const { name, aoa } of sheets) {
+      const res = processSheet(file, name, aoa);
+      if (!res.isData) {
+        if (res.dataDictUrl) {
+          manifest.push({ snapshot_id: null, source_file: file, source_sheet: name, status: 'info', messages: ['data dictionary'], data_dictionary_url: res.dataDictUrl });
+        }
+        continue;
+      }
+      // resolve snapshot date: sheet name first, then filename
+      let snap = snapshotFromSheetName(name) || snapshotFromFilename(file);
+      const messages = [...res.messages];
+      let status = res.status;
+      if (!snap || !snap.month) {
+        status = 'error';
+        messages.push('could not resolve snapshot month/year');
+        snap = snap || { year: 0, month: 0, variant: null };
+      }
+      // if filename gave month but sheet says pre/post, attach variant from sheet name
+      const sheetVar = snapshotFromSheetName(name);
+      if (sheetVar && sheetVar.variant && !snap.variant) snap.variant = sheetVar.variant;
+
+      const meta = snapshotMeta(snap);
+      let id = meta.id;
+      if (seenSnapshotIds.has(id)) {
+        status = status === 'ok' ? 'warning' : status;
+        messages.push(`duplicate snapshot id ${id} (also from ${seenSnapshotIds.get(id)})`);
+        id = `${id}-dup${seenSnapshotIds.size}`;
+      }
+      seenSnapshotIds.set(id, `${file} :: ${name}`);
+
+      // person dedupe within snapshot (exact duplicate rows)
+      const seen = new Set();
+      const salaries = [];
+      const people = new Set();
+      let zeroNull = 0;
+      for (const row of res.rows) {
+        const hireISO = row.date_of_hire;
+        const pkey = makePersonKey(row._first, row._last, hireISO);
+        const dedupeKey = `${pkey}|${row.job_code || ''}|${row.title || ''}|${row.salary ?? ''}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        delete row._first; delete row._last;
+        const flags = row._flags; delete row._flags;
+        if (row.salary == null || row.salary === 0) zeroNull++; else salaries.push(row.salary);
+        people.add(pkey);
+        allRows.push({
+          snapshot_id: id,
+          snapshot_label: meta.label,
+          snapshot_date: meta.date,
+          snapshot_year: meta.year,
+          snapshot_month: meta.month,
+          ttc_variant: meta.variant,
+          source_file: file,
+          source_sheet: name,
+          person_key: pkey,
+          ...row,
+          row_flags: flags.length ? flags.join(',') : null,
+        });
+      }
+
+      const med = median(salaries);
+      const min = salaries.length ? Math.min(...salaries) : null;
+      const max = salaries.length ? Math.max(...salaries) : null;
+      if (max != null && max > 5_000_000) messages.push(`max salary ${max} looks implausible`);
+      manifest.push({
+        snapshot_id: id,
+        snapshot_label: meta.label,
+        snapshot_date: meta.date,
+        snapshot_year: meta.year,
+        snapshot_month: meta.month,
+        ttc_variant: meta.variant,
+        source_file: file,
+        source_sheet: name,
+        row_count: seen.size,
+        distinct_people: people.size,
+        zero_or_null_salary: zeroNull,
+        salary_min: min,
+        salary_median: med,
+        salary_max: max,
+        detected_mapping: res.detectedHeaders,
+        unmapped_headers: res.unmapped,
+        status,
+        messages,
+      });
+      console.log(`  ${file} :: ${name} -> ${id} (${meta.label}) rows=${seen.size} people=${people.size} median=${med}`);
+    }
+  }
+
+  // cross-snapshot anomaly: headcount cliffs vs neighbors
+  const dataSnaps = manifest.filter((m) => m.row_count).sort((a, b) => (a.snapshot_date > b.snapshot_date ? 1 : -1));
+  for (let i = 1; i < dataSnaps.length; i++) {
+    const prev = dataSnaps[i - 1], cur = dataSnaps[i];
+    if (prev.row_count && cur.row_count) {
+      const change = (cur.row_count - prev.row_count) / prev.row_count;
+      if (Math.abs(change) > 0.15) {
+        cur.messages.push(`headcount ${change > 0 ? 'up' : 'down'} ${(change * 100).toFixed(0)}% vs ${prev.snapshot_id} (possible scope change)`);
+        if (cur.status === 'ok') cur.status = 'warning';
+      }
+    }
+  }
+
+  // write NDJSON -> Parquet via DuckDB
+  const ndjson = path.join(OUT_DIR, '_rows.ndjson');
+  fs.writeFileSync(ndjson, allRows.map((r) => JSON.stringify(r)).join('\n'));
+  await writeParquet(ndjson, path.join(OUT_DIR, 'salaries.parquet'));
+  fs.unlinkSync(ndjson);
+
+  // manifest + summary
+  fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify({
+    generated_at: new Date().toISOString(),
+    schema_version: 1,
+    total_rows: allRows.length,
+    snapshots: manifest,
+  }, null, 2));
+
+  const latest = dataSnaps[dataSnaps.length - 1];
+  fs.writeFileSync(path.join(OUT_DIR, 'summary.json'), JSON.stringify({
+    generated_at: new Date().toISOString(),
+    total_rows: allRows.length,
+    snapshot_count: dataSnaps.length,
+    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, median: s.salary_median })),
+    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people, median: latest.salary_median } : null,
+  }, null, 2));
+
+  // pay-band reference (grade → range)
+  const grades = readGrades();
+  fs.writeFileSync(path.join(OUT_DIR, 'grades.json'), JSON.stringify(grades, null, 2));
+
+  console.log(`\nDone. ${allRows.length} rows across ${dataSnaps.length} snapshots, ${grades.length} grade ranges -> public/data/`);
+  const warnings = manifest.filter((m) => m.status === 'warning' || m.status === 'error');
+  if (warnings.length) {
+    console.log('\nHealth flags:');
+    for (const w of warnings) console.log(`  [${w.status}] ${w.snapshot_id || w.source_file}: ${w.messages.join('; ')}`);
+  }
+}
+
+function writeParquet(ndjsonPath, parquetPath) {
+  return new Promise((resolve, reject) => {
+    const db = new duckdb.Database(':memory:');
+    const con = db.connect();
+    const esc = (p) => p.replace(/'/g, "''");
+    con.run(
+      `CREATE TABLE salaries AS SELECT * FROM read_json_auto('${esc(ndjsonPath)}', format='newline_delimited', sample_size=-1);`,
+      (err) => {
+        if (err) return reject(err);
+        con.run(`COPY salaries TO '${esc(parquetPath)}' (FORMAT PARQUET, COMPRESSION ZSTD);`, (err2) => {
+          if (err2) return reject(err2);
+          db.close(() => resolve());
+        });
+      }
+    );
+  });
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });

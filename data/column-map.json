@@ -1,0 +1,33 @@
+{
+  "_comment": "Maps raw spreadsheet headers to canonical fields. Matching is case/space/underscore-insensitive (headers are normalized to lowercase alphanumerics before comparison). Add aliases here when a new dump uses a header we don't recognize. 'overrides' force a mapping for files whose name contains the given substring.",
+  "fields": {
+    "first_name": ["First Name", "First_Name", "FName", "First"],
+    "last_name": ["Last Name", "Last_Name", "LName", "Last"],
+    "school": ["Division", "School", "College"],
+    "department": ["Department", "Dept"],
+    "employee_category": ["Employee Category", "Employee_Category", "Emp Category"],
+    "job_code": ["Job Code", "Jobcode", "Job_Code"],
+    "title": ["Title", "Working Title"],
+    "fte": ["FTE", "Full-time Equivalent", "Full_Time_Equivalent", "Full Time Equivalent"],
+    "salary": [
+      "Annual_Full_Salary",
+      "Annual Full Salary",
+      "Current Annual Contracted Salary",
+      "Current_Annual_Contracted_Salary",
+      "Annualized_Rate_Amount",
+      "Annualized Rate Amount"
+    ],
+    "salary_fte_adjusted": ["Annual_FTE_Adjusted_Salary", "Annual FTE Adjusted Salary"],
+    "base_pay": ["Base_Pay", "Base Pay"],
+    "comp_basis": ["Compensation_Basis", "Compensation Basis", "Pay_Basis", "Pay Basis"],
+    "pay_rate_type": ["Pay_Rate_Type", "Pay Rate Type"],
+    "flsa_status": ["FLSA Status", "FLSA_Status", "FLSA_STATUS"],
+    "salary_grade": ["Salary Grade", "Salary_Grade"],
+    "date_of_hire": ["Date of Hire", "DATE_OF_HIRE", "Date_of_Hire"],
+    "appointment_type": ["Appointment Type and Length", "APPT_TYPE_LENGTH", "Appointment_Type_and_Length"],
+    "employee_type": ["Employee_Type", "Employee Type"],
+    "contract_type": ["Employee_Contract_Type", "Employee Contract Type"]
+  },
+  "required": ["first_name", "last_name", "salary"],
+  "overrides": {}
+}

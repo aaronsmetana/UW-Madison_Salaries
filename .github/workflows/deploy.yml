@@ -1,0 +1,50 @@
+name: Deploy
+
+# Builds the Parquet from data/raw/ via the ETL, builds the Vite site, and
+# deploys to GitHub Pages. Triggered on push to main (e.g. when you upload or
+# delete a file in data/raw/ through github.com) and manually.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build data (ETL → public/data)
+        run: npm run data
+      - name: Build site
+        run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+# Hardening note: pin these actions to commit SHAs (e.g. actions/checkout@<sha>)
+# once you're set up, per the plan's supply-chain hardening.

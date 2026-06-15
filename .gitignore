@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# generated data artifacts (built by the ETL in CI from data/raw/)
+public/data/
+
+# local tooling / runtime
+.node/
+*.log
+.DS_Store
+
+# editor
+.vscode/
+.idea/

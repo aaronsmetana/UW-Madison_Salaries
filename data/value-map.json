@@ -1,0 +1,12 @@
+{
+  "_comment": "Harmonizes coded categorical values that differ across dumps (e.g. early files use codes like 'AS', later ones spell out 'Academic Staff'). Keys are canonical fields; values map a raw value (matched case-insensitively, trimmed) to a normalized label. Unmapped values are kept as-is. Edit freely as you spot new codes in the Data Health page.",
+  "employee_category": {
+    "FA": "Faculty",
+    "AS": "Academic Staff",
+    "US": "University Staff",
+    "LI": "Limited",
+    "ET1": "Employees in Training",
+    "ET": "Employees in Training",
+    "SH": "Student Hourly"
+  }
+}
