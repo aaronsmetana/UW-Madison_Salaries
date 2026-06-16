@@ -97,7 +97,12 @@ export default function Person() {
         <div>
           <Title order={2}>{name}</Title>
           <Text c="dimmed">
-            {latest?.title} ·{' '}
+            {latest?.job_code ? (
+              <Anchor component={Link} to={`/title/${encodeURIComponent(latest.job_code)}`}>{latest?.title}</Anchor>
+            ) : (
+              latest?.title
+            )}
+            {' '}·{' '}
             {latest?.school ? (
               <Anchor component={Link} to={`/school/${encodeURIComponent(latest.school)}`}>
                 {latest.school}

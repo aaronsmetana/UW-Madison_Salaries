@@ -72,6 +72,13 @@ export default function Explore() {
     enabled
   );
 
+  const { data: titles } = useSql<{ job_code: string; title: string; n: number; med: number | null }>(
+    ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
+    `SELECT job_code, arg_max(title, salary) title, count(DISTINCT person_key) n, median(${expr}) FILTER (WHERE ${expr} > 0) med
+     FROM salaries WHERE ${where} AND job_code IS NOT NULL GROUP BY job_code ORDER BY n DESC LIMIT 150`,
+    enabled
+  );
+
   const flagged = manifest?.snapshots.filter((s) => s.status === 'warning' || s.status === 'error') ?? [];
 
   return (
@@ -111,6 +118,7 @@ export default function Explore() {
         <Tabs.List>
           <Tabs.Tab value="schools">Schools</Tabs.Tab>
           <Tabs.Tab value="earners">Top earners</Tabs.Tab>
+          <Tabs.Tab value="titles">Titles</Tabs.Tab>
           <Tabs.Tab value="stand">Where do I stand?</Tabs.Tab>
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
@@ -170,6 +178,31 @@ export default function Explore() {
                   <Table.Td>{e.title ?? '—'}</Table.Td>
                   <Table.Td>{e.school ?? '—'}</Table.Td>
                   <Table.Td ta="right">{usd(e.pay)}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="titles" pt="md">
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Title</Table.Th>
+                <Table.Th>Job code</Table.Th>
+                <Table.Th ta="right">People</Table.Th>
+                <Table.Th ta="right">Median</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {(titles ?? []).map((t) => (
+                <Table.Tr key={t.job_code}>
+                  <Table.Td>
+                    <Anchor component={Link} to={`/title/${encodeURIComponent(t.job_code)}`}>{t.title}</Anchor>
+                  </Table.Td>
+                  <Table.Td>{t.job_code}</Table.Td>
+                  <Table.Td ta="right">{num(t.n)}</Table.Td>
+                  <Table.Td ta="right">{usd(t.med)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

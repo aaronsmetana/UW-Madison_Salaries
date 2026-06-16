@@ -14,6 +14,7 @@ const Reports = lazy(() => import('./routes/Reports'));
 const DataHealth = lazy(() => import('./routes/DataHealth'));
 const Person = lazy(() => import('./routes/Person'));
 const School = lazy(() => import('./routes/School'));
+const TitlePage = lazy(() => import('./routes/Title'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: Infinity, refetchOnWindowFocus: false } },
@@ -31,6 +32,7 @@ const router = createBrowserRouter(
         { path: 'data', element: <DataHealth /> },
         { path: 'person/:id', element: <Person /> },
         { path: 'school/:id', element: <School /> },
+        { path: 'title/:code', element: <TitlePage /> },
       ],
     },
   ],

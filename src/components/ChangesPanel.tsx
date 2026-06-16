@@ -41,9 +41,9 @@ export function ChangesPanel() {
   const A = sqlStr(fromId ?? '');
   const B = sqlStr(toId ?? '');
   const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}`;
-  const cte = `WITH a AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title
+  const cte = `WITH a AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school
                           FROM salaries WHERE snapshot_id = ${A} AND ${where} GROUP BY person_key),
-                    b AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title,
+                    b AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
                                  any_value(first_name) fn, any_value(last_name) ln
                           FROM salaries WHERE snapshot_id = ${B} AND ${where} GROUP BY person_key)`;
 
@@ -95,6 +95,25 @@ export function ChangesPanel() {
     enabled
   );
 
+  const { data: mobility } = useSql<{ person_key: string; fn: string; ln: string; a_school: string | null; b_school: string | null; delta: number }>(
+    ['chg-mobility', fromId, toId, scopeKey, metric],
+    `${cte}
+     SELECT b.person_key, b.fn, b.ln, a.school a_school, b.school b_school, (b.pay - a.pay) delta
+     FROM a JOIN b ON a.person_key = b.person_key
+     WHERE a.school IS DISTINCT FROM b.school ORDER BY abs(b.pay - a.pay) DESC LIMIT 12`,
+    enabled
+  );
+
+  const { data: equityRows } = useSql<{ top10_share: number | null; n_raised: number }>(
+    ['chg-equity', fromId, toId, scopeKey, metric],
+    `${cte}, r AS (SELECT (b.pay - a.pay) raise FROM a JOIN b ON a.person_key = b.person_key WHERE a.pay > 0 AND b.pay > 0 AND b.pay > a.pay)
+     SELECT count(*) n_raised,
+       CASE WHEN sum(raise) > 0 THEN round(100.0 * sum(raise) FILTER (WHERE raise >= (SELECT quantile_cont(raise, 0.9) FROM r)) / sum(raise), 1) ELSE NULL END top10_share
+     FROM r`,
+    enabled
+  );
+  const equity = equityRows?.[0];
+
   const isTTC = !!fromId && !!toId && fromId.includes('pre') && toId.includes('post');
   const opts = [...snaps].reverse().map((x) => ({ value: x.id, label: x.label }));
 
@@ -142,6 +161,12 @@ export function ChangesPanel() {
           <Stat label="From departures" value={usd(d?.departures)} />
         </SimpleGrid>
         <Text size="xs" c="dimmed" mt="xs">Raises + new hires + departures reconcile to the total change.</Text>
+        {equity && equity.top10_share != null && (
+          <Text size="sm" mt="sm">
+            Raise concentration: the top 10% of raised staff captured <b>{equity.top10_share}%</b> of all raise
+            dollars ({num(equity.n_raised)} people got a raise).
+          </Text>
+        )}
       </Card>
 
       <Card withBorder padding="lg">
@@ -196,6 +221,34 @@ export function ChangesPanel() {
           </Table.Tbody>
         </Table>
       </Card>
+
+      {(mobility ?? []).length > 0 && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="sm">Internal moves (changed school)</Text>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Person</Table.Th>
+                <Table.Th>From → To school</Table.Th>
+                <Table.Th ta="right">Pay change</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {(mobility ?? []).map((m) => (
+                <Table.Tr key={m.person_key}>
+                  <Table.Td>
+                    <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{m.fn} {m.ln}</Anchor>
+                  </Table.Td>
+                  <Table.Td><Text size="sm">{m.a_school ?? '—'} → {m.b_school ?? '—'}</Text></Table.Td>
+                  <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'teal' : 'red'}>
+                    {m.delta == null ? '—' : `${m.delta >= 0 ? '+' : ''}${usd(m.delta)}`}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
     </Stack>
   );
 }
