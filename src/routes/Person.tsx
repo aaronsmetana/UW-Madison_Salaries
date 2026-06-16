@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -87,6 +87,9 @@ export default function Person() {
   );
   const standing = standingRows?.[0];
 
+  const [pctRaise, setPctRaise] = useState<number>(3);
+  const [years, setYears] = useState<number>(5);
+
   if (isLoading) return <Loader />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
   if (!rows.length) return <Alert color="gray">No records found for this person.</Alert>;
@@ -159,6 +162,25 @@ export default function Person() {
             Pay band — grade {latest?.grade_number} (latest snapshot)
           </Text>
           <PayBandBar min={band.min} max={band.max} value={lastSalary} />
+        </Card>
+      )}
+
+      {lastSalary != null && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="sm">Raise / what-if simulator</Text>
+          <Group align="flex-end" wrap="wrap">
+            <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={140} step={0.5} min={0} suffix="%" />
+            <NumberInput label="Years" value={years} onChange={(v) => setYears(typeof v === 'number' ? v : 0)} w={120} min={0} max={40} />
+            <div>
+              <Text size="xs" c="dimmed">Projected salary</Text>
+              <Text fw={700} size="lg">{usd(lastSalary * Math.pow(1 + pctRaise / 100, years))}</Text>
+            </div>
+          </Group>
+          {band && lastSalary < band.max && pctRaise > 0 && (
+            <Text size="xs" c="dimmed" mt="xs">
+              At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / lastSalary) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
+            </Text>
+          )}
         </Card>
       )}
 

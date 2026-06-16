@@ -17,6 +17,7 @@ export interface SnapshotInfo {
   unmapped_headers: string[];
   status: 'ok' | 'warning' | 'error' | 'info';
   messages: string[];
+  note?: string;
 }
 
 export interface Manifest {

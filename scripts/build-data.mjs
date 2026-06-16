@@ -319,6 +319,12 @@ async function main() {
   await writeParquet(ndjson, path.join(OUT_DIR, 'salaries.parquet'));
   fs.unlinkSync(ndjson);
 
+  // optional maintainer snapshot notes (no-op if absent) — attach before writing manifest
+  const notes = readJsonIfExists(path.join(ROOT, 'data', 'snapshot-notes.json')) || {};
+  for (const m of manifest) {
+    if (m.snapshot_id && notes[m.snapshot_id]) m.note = notes[m.snapshot_id];
+  }
+
   // manifest + summary
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify({
     generated_at: new Date().toISOString(),

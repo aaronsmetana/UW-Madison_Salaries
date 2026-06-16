@@ -1,5 +1,6 @@
-import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor } from '@mantine/core';
-import { useManifest } from '../lib/hooks';
+import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card } from '@mantine/core';
+import { useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
+import { sqlStr } from '../lib/duckdb';
 import { num, usd } from '../lib/format';
 import type { SnapshotInfo } from '../lib/manifest';
 
@@ -7,6 +8,14 @@ const STATUS_COLOR: Record<string, string> = { ok: 'teal', warning: 'yellow', er
 
 export default function DataHealth() {
   const { data: manifest, isLoading, error } = useManifest();
+  const snapId = useActiveSnapshotId();
+  const { data: dups } = useSql<{ first_name: string; last_name: string; keys: number }>(
+    ['id-review', snapId ?? ''],
+    `SELECT first_name, last_name, count(DISTINCT person_key) keys
+     FROM salaries WHERE snapshot_id = ${sqlStr(snapId ?? '')} AND first_name IS NOT NULL AND last_name IS NOT NULL
+     GROUP BY first_name, last_name HAVING count(DISTINCT person_key) > 1 ORDER BY keys DESC, last_name LIMIT 30`,
+    !!snapId
+  );
 
   if (isLoading) return <Loader />;
   if (error) return <Alert color="red">Failed to load manifest: {(error as Error).message}</Alert>;
@@ -75,11 +84,34 @@ export default function DataHealth() {
                 {s.unmapped_headers.length > 0 && (
                   <Text size="xs" c="dimmed" mt={2}>unmapped: {s.unmapped_headers.join(', ')}</Text>
                 )}
+                {s.note && (
+                  <Text size="xs" fs="italic" c="blue" mt={2}>{s.note}</Text>
+                )}
               </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
+
+      {(dups ?? []).length > 0 && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="xs">Possible duplicate identities (review)</Text>
+          <Text size="xs" c="dimmed" mb="sm">
+            Same name resolving to more than one person (different hire dates) in the latest snapshot — usually
+            genuinely different people, but worth a glance. Confirm true duplicates via data/corrections.json.
+          </Text>
+          <Table>
+            <Table.Tbody>
+              {(dups ?? []).map((d) => (
+                <Table.Tr key={`${d.first_name} ${d.last_name}`}>
+                  <Table.Td>{d.first_name} {d.last_name}</Table.Td>
+                  <Table.Td ta="right">{d.keys} identities</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
     </Stack>
   );
 }

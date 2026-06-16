@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert,
+  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl,
 } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import {
@@ -36,6 +36,7 @@ export default function School() {
   const { metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const { add, has } = useTray();
+  const [distScale, setDistScale] = useState<'linear' | 'log'>('linear');
   const enabled = !!snap;
   const fk = filterKey(filters);
   const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(name)} AND ${filterWhere(filters)}`;
@@ -184,12 +185,26 @@ export default function School() {
       </Card>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Salary distribution (current snapshot, $20k bins)</Text>
+        <Group justify="space-between" mb="md">
+          <Text size="sm" fw={600}>Salary distribution (current snapshot, $20k bins)</Text>
+          <SegmentedControl
+            size="xs"
+            value={distScale}
+            onChange={(v) => setDistScale(v as 'linear' | 'log')}
+            data={[{ value: 'linear', label: 'Linear' }, { value: 'log', label: 'Log' }]}
+          />
+        </Group>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={distData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis width={48} tick={{ fontSize: 12 }} />
+            <YAxis
+              width={48}
+              tick={{ fontSize: 12 }}
+              scale={distScale === 'log' ? 'log' : 'auto'}
+              domain={distScale === 'log' ? [0.5, 'auto'] : undefined}
+              allowDataOverflow={distScale === 'log'}
+            />
             <Tooltip />
             <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
           </BarChart>

@@ -1,0 +1,6 @@
+{
+  "_comment": "Optional maintainer notes per snapshot id (shown on Data Health and where relevant). Keyed by snapshot_id (e.g. '2021-11-post').",
+  "2021-11-pre": "Pre-TTC taxonomy — titles, job codes, and grades as they were before the Nov 7, 2021 restructure.",
+  "2021-11-post": "Post-TTC restructure: on Nov 7, 2021 nearly every title/job code/grade changed at once. Title changes across this boundary are a structural reclassification, not promotions.",
+  "2023-10": "Headcount drops ~21% vs 2022 — this dump appears to exclude students/trainees. Joiner/leaver and headcount comparisons across this point partly reflect a scope change, not real hiring/attrition."
+}
