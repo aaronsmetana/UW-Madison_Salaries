@@ -82,7 +82,8 @@ export function SearchBox({
         aria-label="Search a person"
         data-autofocus={autoFocus || undefined}
         autoFocus={autoFocus}
-        styles={prominent ? { input: { minHeight: 66, height: 66, fontSize: '1.25rem' } } : undefined}
+        classNames={prominent ? { input: 'hero-search-input' } : undefined}
+        styles={prominent ? { input: { minHeight: 66, height: 66, fontSize: '1.25rem', boxShadow: 'var(--mantine-shadow-md)' } } : undefined}
       />
       {open && (
         <Paper withBorder shadow="md" mt={4} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, maxHeight: 360, overflowY: 'auto' }}>

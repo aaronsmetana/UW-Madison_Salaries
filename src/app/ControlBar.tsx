@@ -75,6 +75,7 @@ export function ControlBar() {
       <SegmentedControl
         size="xs"
         radius="xl"
+        color="indigo"
         style={{ flexShrink: 0 }}
         value={metric}
         onChange={(v) => setMetric(v as Metric)}

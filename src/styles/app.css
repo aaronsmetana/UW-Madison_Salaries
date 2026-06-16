@@ -1,14 +1,14 @@
 /* App-wide UI polish that's easier to express in CSS than per-component props. */
 
-/* Brighten low-contrast secondary ("dimmed") text for readability/accessibility. */
+/* Brighten/darken low-contrast secondary ("dimmed") text for readability/accessibility. */
 :root[data-mantine-color-scheme='dark'] {
   --mantine-color-dimmed: #c1c2c5;
 }
 :root[data-mantine-color-scheme='light'] {
-  --mantine-color-dimmed: #555a63;
+  --mantine-color-dimmed: #495057;
 }
 
-/* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab. */
+/* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker underline. */
 .mantine-Tabs-tab {
   color: var(--mantine-color-dimmed);
   font-weight: 500;
@@ -16,4 +16,26 @@
 .mantine-Tabs-tab[data-active] {
   color: var(--mantine-color-text);
   font-weight: 700;
+  box-shadow: inset 0 -3px 0 0 var(--mantine-color-indigo-6);
+}
+
+/* Obvious, consistent keyboard focus on every interactive element. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-6);
+  outline-offset: 2px;
+}
+.mantine-Table-tr:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-6);
+  outline-offset: -2px;
+}
+
+/* Hero search input: deepen the border in light mode so it stands out on white. */
+:root[data-mantine-color-scheme='light'] .hero-search-input {
+  border-color: var(--mantine-color-gray-4);
 }

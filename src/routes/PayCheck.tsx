@@ -114,7 +114,7 @@ export default function PayCheck() {
       </Box>
 
       <Card padding="lg">
-        <Group align="flex-end" wrap="wrap" gap="xl">
+        <Group align="flex-end" wrap="wrap" gap="xl" maw={920}>
           <Select
             label="Your title"
             placeholder="Search titles…"
@@ -160,8 +160,19 @@ export default function PayCheck() {
             <Skeleton height={104} radius="lg" />
             <Skeleton height={104} radius="lg" />
           </SimpleGrid>
-          <Skeleton height={260} radius="lg" />
-          <Skeleton height={220} radius="lg" />
+          {/* Mock distribution chart: faint axes + pulsing skeleton bars. */}
+          <Card withBorder padding="lg">
+            <Skeleton height={12} width={200} radius="sm" mb="lg" />
+            <Box style={{ position: 'relative', height: 200 }}>
+              <div style={{ position: 'absolute', left: 36, top: 0, bottom: 28, width: 1, background: 'var(--mantine-color-default-border)' }} />
+              <div style={{ position: 'absolute', left: 36, right: 0, bottom: 28, height: 1, background: 'var(--mantine-color-default-border)' }} />
+              <Group gap="sm" align="flex-end" wrap="nowrap" style={{ position: 'absolute', left: 52, right: 8, bottom: 29, height: 168 }}>
+                {[45, 80, 130, 165, 120, 70, 40].map((h, i) => (
+                  <Skeleton key={i} height={h} radius="sm" style={{ flex: 1 }} />
+                ))}
+              </Group>
+            </Box>
+          </Card>
         </Stack>
       ) : !pct ? (
         <Loader />

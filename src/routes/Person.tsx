@@ -274,6 +274,14 @@ export default function Person() {
                         <Table.Tr
                           key={p.person_key}
                           onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
+                          tabIndex={isYou ? undefined : 0}
+                          role={isYou ? undefined : 'button'}
+                          onKeyDown={(e) => {
+                            if (!isYou && (e.key === 'Enter' || e.key === ' ')) {
+                              e.preventDefault();
+                              nav(`/person/${encodeURIComponent(p.person_key)}`);
+                            }
+                          }}
                           style={{ cursor: isYou ? 'default' : 'pointer' }}
                         >
                           <Table.Td>

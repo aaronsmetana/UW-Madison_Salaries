@@ -53,11 +53,11 @@ export default function Home() {
         <Stack gap="lg" maw={760} mx="auto" w="100%">
           <SearchBox prominent placeholder="Search for an employee by name…" />
 
-          <Paper withBorder radius="lg" p="lg" w="100%">
-            <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="md" style={{ letterSpacing: '0.06em' }}>
+          <Paper withBorder radius="lg" px="lg" py="md" w="100%">
+            <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.06em' }}>
               System-wide
             </Text>
-            <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="xl">
+            <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg" verticalSpacing="sm">
               <Kpi label="Total records" value={num(summary?.total_rows)} icon={<IconDatabase size={18} />} color="cyan" />
               <Kpi label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
               <Kpi label="Total payroll (latest)" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
@@ -65,11 +65,11 @@ export default function Home() {
           </Paper>
         </Stack>
 
-        <Group justify="center" gap="md" mt="xs" wrap="wrap">
-          <Button component={Link} to="/paycheck" variant="default" radius="xl" leftSection={<IconScale size={16} />} rightSection={<IconArrowRight size={15} />}>
+        <Group justify="center" gap="md" mt="sm" wrap="wrap">
+          <Button component={Link} to="/paycheck" variant="default" size="md" radius="xl" px="xl" leftSection={<IconScale size={18} />} rightSection={<IconArrowRight size={16} />}>
             Search title salaries
           </Button>
-          <Button component={Link} to="/compare" variant="default" radius="xl" leftSection={<IconUsersGroup size={16} />} rightSection={<IconArrowRight size={15} />}>
+          <Button component={Link} to="/compare" variant="default" size="md" radius="xl" px="xl" leftSection={<IconUsersGroup size={18} />} rightSection={<IconArrowRight size={16} />}>
             Compare people, titles &amp; schools
           </Button>
         </Group>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon } from '@mantine/core';
+import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
 import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -200,12 +200,12 @@ export default function Compare() {
       {/* ── Build your comparison: three labeled add blocks ── */}
       <Card withBorder padding="lg">
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
-          <div>
-            <Group gap={6} mb={6}><IconUser size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add person</Text></Group>
+          <Paper p="sm" radius="md" withBorder shadow="xs">
+            <Group gap={6} mb={8}><IconUser size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add person</Text></Group>
             <SearchBox placeholder="Search a person by name…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
-          </div>
-          <div>
-            <Group gap={6} mb={6}><IconBriefcase size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add title</Text></Group>
+          </Paper>
+          <Paper p="sm" radius="md" withBorder shadow="xs">
+            <Group gap={6} mb={8}><IconBriefcase size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add title</Text></Group>
             <Select
               placeholder="Search a title…"
               data={titleSelectData}
@@ -218,9 +218,9 @@ export default function Compare() {
               searchable
               nothingFoundMessage="No matching title"
             />
-          </div>
-          <div>
-            <Group gap={6} mb={6}><IconBuildingBank size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add school / division</Text></Group>
+          </Paper>
+          <Paper p="sm" radius="md" withBorder shadow="xs">
+            <Group gap={6} mb={8}><IconBuildingBank size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add school / division</Text></Group>
             <Select
               placeholder="Search a school…"
               data={(schoolOpts ?? []).map((s) => s.school)}
@@ -229,7 +229,7 @@ export default function Compare() {
               searchable
               nothingFoundMessage="No matching school"
             />
-          </div>
+          </Paper>
         </SimpleGrid>
 
         {items.length > 0 && (

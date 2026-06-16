@@ -44,8 +44,8 @@ export function AppShellLayout() {
           root: {
             borderRadius: 'var(--mantine-radius-md)',
             marginBottom: 2,
-            // Bright accent line on the left of the active item.
-            borderLeft: `3px solid ${active ? 'var(--mantine-color-indigo-4)' : 'transparent'}`,
+            // Solid, bright accent bar on the left of the active item.
+            borderLeft: `4px solid ${active ? 'var(--mantine-color-indigo-6)' : 'transparent'}`,
           },
           label: { fontWeight: active ? 700 : 500 },
           section: collapsed ? { marginInlineEnd: 0 } : undefined,
