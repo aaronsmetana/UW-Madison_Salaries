@@ -76,6 +76,17 @@ export default function Person() {
     return grades.find((g) => g.grade === latest.grade_number && g.basis === latest.grade_basis) ?? null;
   }, [latest, grades]);
 
+  const lastSnap = latest?.snapshot_id ?? '';
+  const { data: standingRows } = useSql<{ uw: number; sch: number | null }>(
+    ['standing', key, lastSnap, lastSalary ?? 0],
+    `WITH pp AS (SELECT person_key, sum(salary) pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
+     SELECT round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END), 0) uw,
+            round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END) FILTER (WHERE school = ${sqlStr(latest?.school ?? '')}), 0) sch
+     FROM pp WHERE pay > 0`,
+    !!latest && lastSalary != null && lastSalary > 0
+  );
+  const standing = standingRows?.[0];
+
   if (isLoading) return <Loader />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
   if (!rows.length) return <Alert color="gray">No records found for this person.</Alert>;
@@ -124,6 +135,18 @@ export default function Person() {
           <Text fw={600}>{num(trend.length)}</Text>
         </Card>
       </SimpleGrid>
+
+      {standing && (
+        <Card withBorder padding="md">
+          <Text size="sm" fw={600} mb="xs">Standing (latest snapshot)</Text>
+          <Group gap="xl">
+            <Text size="sm">All-UW: paid more than <b>{standing.uw}%</b></Text>
+            {standing.sch != null && (
+              <Text size="sm">Within {latest?.school}: more than <b>{standing.sch}%</b></Text>
+            )}
+          </Group>
+        </Card>
+      )}
 
       {band && lastSalary != null && (
         <Card withBorder padding="lg">
