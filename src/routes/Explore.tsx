@@ -84,8 +84,8 @@ export default function Explore() {
   return (
     <Stack gap="lg">
       <div>
-        <Title order={2}>Explore</Title>
-        <Text c="dimmed">Search a person, scan the current scope, or browse schools and top earners.</Text>
+        <Title order={2}>Compare Divisions / Schools</Title>
+        <Text c="dimmed">Browse divisions and schools side by side — headcount, median pay, and top earners — then add any school or title (＋ Compare) to line them up on the Compare page. Or jump straight to a person.</Text>
       </div>
 
       <SearchBox />
@@ -155,7 +155,7 @@ export default function Explore() {
                   <Table.Td ta="right">{usd(s.med)}</Table.Td>
                   <Table.Td ta="right">
                     <Button size="compact-xs" variant="subtle" onClick={() => add({ type: 'school', id: s.school, label: s.school })}>
-                      + tray
+                      ＋ Compare
                     </Button>
                   </Table.Td>
                 </Table.Tr>
@@ -199,6 +199,7 @@ export default function Explore() {
                 <Table.Th>Job code</Table.Th>
                 <Table.Th ta="right">People</Table.Th>
                 <Table.Th ta="right">Median</Table.Th>
+                <Table.Th />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -210,6 +211,11 @@ export default function Explore() {
                   <Table.Td>{t.job_code}</Table.Td>
                   <Table.Td ta="right">{num(t.n)}</Table.Td>
                   <Table.Td ta="right">{usd(t.med)}</Table.Td>
+                  <Table.Td ta="right">
+                    <Button size="compact-xs" variant="subtle" onClick={() => add({ type: 'title', id: t.job_code, label: t.title })}>
+                      ＋ Compare
+                    </Button>
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

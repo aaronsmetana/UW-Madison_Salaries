@@ -18,11 +18,14 @@ export function SearchBox({
   placeholder = 'Search a person…',
   autoFocus = false,
   onSelect,
+  onPick,
   prominent = false,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
   onSelect?: () => void;
+  /** When set, picking a result calls this (and clears the input) instead of navigating to the profile. */
+  onPick?: (hit: { person_key: string; name: string }) => void;
   prominent?: boolean;
 }) {
   const [term, setTerm] = useState('');
@@ -72,8 +75,13 @@ export function SearchBox({
                   px="sm"
                   py={8}
                   onClick={() => {
-                    nav(`/person/${encodeURIComponent(h.person_key)}`);
-                    onSelect?.();
+                    if (onPick) {
+                      onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
+                      setTerm('');
+                    } else {
+                      nav(`/person/${encodeURIComponent(h.person_key)}`);
+                      onSelect?.();
+                    }
                   }}
                   style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
                 >

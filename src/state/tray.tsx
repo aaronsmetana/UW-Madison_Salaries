@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 export interface TrayItem {
-  type: 'person' | 'school';
+  type: 'person' | 'school' | 'title';
   id: string;
   label: string;
 }

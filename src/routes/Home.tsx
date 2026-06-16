@@ -39,10 +39,10 @@ export default function Home() {
 
       <Group justify="center" gap="xl" mt="xs">
         <Anchor component={Link} to="/paycheck" c="dimmed">
-          <Group gap={6}><IconScale size={16} /> Self-Check: am I paid fairly for my title?</Group>
+          <Group gap={6}><IconScale size={16} /> Search title salaries — how does your pay compare?</Group>
         </Anchor>
         <Anchor component={Link} to="/compare" c="dimmed">
-          <Group gap={6}><IconUsersGroup size={16} /> Compare a team</Group>
+          <Group gap={6}><IconUsersGroup size={16} /> Compare people, titles &amp; schools</Group>
         </Anchor>
       </Group>
     </Stack>

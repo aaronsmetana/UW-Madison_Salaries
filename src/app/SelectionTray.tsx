@@ -13,7 +13,7 @@ export function SelectionTray() {
       </Text>
       {items.length === 0 ? (
         <Text size="sm" c="dimmed">
-          Add people or schools (＋) to compare or track them.
+          Add people, titles, or schools (＋) to compare or track them.
         </Text>
       ) : (
         <>

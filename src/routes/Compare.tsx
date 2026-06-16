@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group } from '@mantine/core';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ScatterChart, Scatter,
@@ -11,6 +11,7 @@ import { sqlStr } from '../lib/duckdb';
 import { salaryExpr } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
+import { SearchBox } from '../components/SearchBox';
 
 const PALETTE = [
   'var(--mantine-color-indigo-6)', 'var(--mantine-color-teal-6)', 'var(--mantine-color-orange-6)',
@@ -20,9 +21,11 @@ const PALETTE = [
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
+interface TStatRow { job_code: string; headcount: number; med: number | null; p25: number | null; p75: number | null; p90: number | null }
+interface TTrendRow { job_code: string; label: string; date: string; med: number }
 
 export default function Compare() {
-  const { items } = useTray();
+  const { items, add, remove, clear } = useTray();
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
@@ -30,8 +33,24 @@ export default function Compare() {
 
   const persons = items.filter((i) => i.type === 'person');
   const schools = items.filter((i) => i.type === 'school');
+  const titles = items.filter((i) => i.type === 'title');
   const personIds = persons.map((p) => sqlStr(p.id)).join(',');
   const schoolNames = schools.map((s) => sqlStr(s.id)).join(',');
+  const titleCodes = titles.map((t) => sqlStr(t.id)).join(',');
+
+  // ── option lists for the in-page pickers ──────────────────────────────────
+  const { data: schoolOpts } = useSql<{ school: string }>(
+    ['cmp-school-opts', snap ?? ''],
+    `SELECT DISTINCT school FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL ORDER BY school`,
+    !!snap
+  );
+  const { data: titleOpts } = useSql<{ job_code: string; title: string; n: number }>(
+    ['cmp-title-opts', snap ?? ''],
+    `SELECT job_code, arg_max(title, salary) title, count(DISTINCT person_key) n
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IS NOT NULL
+     GROUP BY job_code ORDER BY n DESC`,
+    !!snap
+  );
 
   const { data: pdata, isFetching: pLoading } = useSql<PRow>(
     ['cmp-people', personIds, metric],
@@ -51,6 +70,29 @@ export default function Compare() {
     schools.length > 0 && !!snap
   );
 
+  // Titles — side-by-side (current snapshot), per-person salary sums within each title.
+  const { data: tdata, isFetching: tLoading } = useSql<TStatRow>(
+    ['cmp-titles', titleCodes, snap ?? '', metric],
+    `WITH pp AS (SELECT person_key, job_code, sum(${expr}) pay FROM salaries
+        WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IN (${titleCodes}) GROUP BY person_key, job_code)
+     SELECT job_code, count(*) headcount, median(pay) med,
+        quantile_cont(pay, 0.25) p25, quantile_cont(pay, 0.75) p75, quantile_cont(pay, 0.90) p90
+     FROM pp WHERE pay > 0 GROUP BY job_code`,
+    titles.length > 0 && !!snap
+  );
+
+  // Titles — median salary over time.
+  const { data: ttrend } = useSql<TTrendRow>(
+    ['cmp-title-trend', titleCodes, metric],
+    `WITH pp AS (SELECT snapshot_id, job_code, person_key,
+          any_value(snapshot_label) AS lbl, any_value(snapshot_date) AS dt, sum(${expr}) pay
+        FROM salaries WHERE job_code IN (${titleCodes}) AND ${expr} > 0
+        GROUP BY snapshot_id, job_code, person_key)
+     SELECT job_code, any_value(lbl) AS "label", any_value(dt) date, median(pay) med
+     FROM pp GROUP BY snapshot_id, job_code ORDER BY date`,
+    titles.length > 0
+  );
+
   const { data: standingData } = useSql<{ person_key: string; label: string; date: string; pctile: number }>(
     ['cmp-standing', personIds, metric],
     `WITH pop AS (SELECT snapshot_id, any_value(snapshot_label) AS "label", any_value(snapshot_date) date, school, person_key, sum(${expr}) pay
@@ -61,6 +103,7 @@ export default function Compare() {
   );
 
   const labelMap = useMemo(() => new Map(persons.map((p) => [p.id, p.label])), [persons]);
+  const titleLabelMap = useMemo(() => new Map(titles.map((t) => [t.id, t.label])), [titles]);
 
   const standingSeries = useMemo(() => {
     const byLabel = new Map<string, Record<string, string | number>>();
@@ -95,6 +138,17 @@ export default function Compare() {
     const series = [...byLabel.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     return { series, latest: latestByPerson };
   }, [pdata]);
+
+  // Title median-over-time pivot: { label, date, [job_code]: med }.
+  const titleSeries = useMemo(() => {
+    const byLabel = new Map<string, Record<string, string | number>>();
+    for (const r of ttrend ?? []) {
+      const row = byLabel.get(r.label) ?? { label: r.label, date: r.date };
+      row[r.job_code] = r.med;
+      byLabel.set(r.label, row);
+    }
+    return [...byLabel.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [ttrend]);
 
   // gap to the top earner in the group, per snapshot
   const gapSeries = useMemo(
@@ -133,18 +187,61 @@ export default function Compare() {
     [perPerson, persons]
   );
 
-  if (items.length === 0) {
-    return (
-      <Stack>
-        <Title order={2}>Compare</Title>
-        <Text c="dimmed">Your tray is empty — add people or schools (＋) from Explore or a profile to compare them here.</Text>
-      </Stack>
-    );
-  }
+  const titleSelectData = (titleOpts ?? []).map((t) => ({ value: t.job_code, label: `${t.title} (${t.job_code} · ${num(t.n)})` }));
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Compare</Title>
+      <div>
+        <Title order={2}>Compare People, Titles &amp; Schools</Title>
+        <Text c="dimmed">Search and add anyone, any title, or any school, then compare salaries side by side. Selections are saved (your tray) so you can keep building across pages.</Text>
+      </div>
+
+      {/* ── Build your comparison ── */}
+      <Card withBorder padding="lg">
+        <Text size="sm" fw={600} mb="sm">Add to your comparison</Text>
+        <SimpleAddGrid
+          person={<SearchBox placeholder="Search a person by name…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />}
+          title={
+            <Select
+              placeholder="Add a title…"
+              data={titleSelectData}
+              value={null}
+              onChange={(v) => {
+                if (!v) return;
+                const t = titleOpts?.find((x) => x.job_code === v);
+                add({ type: 'title', id: v, label: t?.title ?? v });
+              }}
+              searchable
+              nothingFoundMessage="No matching title"
+            />
+          }
+          school={
+            <Select
+              placeholder="Add a school / division…"
+              data={(schoolOpts ?? []).map((s) => s.school)}
+              value={null}
+              onChange={(v) => v && add({ type: 'school', id: v, label: v })}
+              searchable
+              nothingFoundMessage="No matching school"
+            />
+          }
+        />
+
+        {items.length > 0 && (
+          <>
+            <SelectedRow label="People" items={persons} onRemove={remove} />
+            <SelectedRow label="Titles" items={titles} onRemove={remove} />
+            <SelectedRow label="Schools" items={schools} onRemove={remove} />
+            <Group justify="flex-end" mt="sm">
+              <Button size="xs" variant="subtle" color="gray" onClick={clear}>Clear all</Button>
+            </Group>
+          </>
+        )}
+      </Card>
+
+      {items.length === 0 && (
+        <Text c="dimmed">Add people, titles, or schools above to start comparing. You can also add people from their profile and schools/titles from Compare Divisions/Schools.</Text>
+      )}
 
       {persons.length > 0 && (
         <Card withBorder padding="lg">
@@ -271,6 +368,59 @@ export default function Compare() {
         </Card>
       )}
 
+      {titles.length > 0 && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="md">Titles — side-by-side (current snapshot)</Text>
+          {tLoading ? (
+            <Loader />
+          ) : (
+            <Table striped>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Title</Table.Th>
+                  <Table.Th ta="right">People</Table.Th>
+                  <Table.Th ta="right">Median</Table.Th>
+                  <Table.Th ta="right">25th</Table.Th>
+                  <Table.Th ta="right">75th</Table.Th>
+                  <Table.Th ta="right">90th</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {(tdata ?? []).map((t) => (
+                  <Table.Tr key={t.job_code}>
+                    <Table.Td>{titleLabelMap.get(t.job_code) ?? t.job_code}</Table.Td>
+                    <Table.Td ta="right">{num(t.headcount)}</Table.Td>
+                    <Table.Td ta="right">{usd(t.med)}</Table.Td>
+                    <Table.Td ta="right">{usd(t.p25)}</Table.Td>
+                    <Table.Td ta="right">{usd(t.p75)}</Table.Td>
+                    <Table.Td ta="right">{usd(t.p90)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {titles.length > 0 && titleSeries.length > 0 && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="md">Titles — median salary over time</Text>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+              <Tooltip formatter={(v: number, key) => [usd(v), titleLabelMap.get(String(key)) ?? key]} />
+              <Legend formatter={(key) => titleLabelMap.get(String(key)) ?? key} />
+              {titles.map((t, i) => (
+                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+          <Text size="xs" c="dimmed">Median salary per title at each snapshot.</Text>
+        </Card>
+      )}
+
       {schools.length > 0 && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Schools — side-by-side (current snapshot)</Text>
@@ -303,5 +453,31 @@ export default function Compare() {
         </Card>
       )}
     </Stack>
+  );
+}
+
+/** Three labeled inputs that wrap nicely on small screens. */
+function SimpleAddGrid({ person, title, school }: { person: ReactNode; title: ReactNode; school: ReactNode }) {
+  return (
+    <Group align="flex-start" grow wrap="wrap">
+      <div style={{ minWidth: 220 }}>{person}</div>
+      <div style={{ minWidth: 220 }}>{title}</div>
+      <div style={{ minWidth: 220 }}>{school}</div>
+    </Group>
+  );
+}
+
+/** A removable-pill row for one selection type; renders nothing when empty. */
+function SelectedRow({ label, items, onRemove }: { label: string; items: { type: string; id: string; label: string }[]; onRemove: (id: string) => void }) {
+  if (items.length === 0) return null;
+  return (
+    <Group gap="xs" mt="sm" wrap="wrap">
+      <Text size="xs" c="dimmed" w={56}>{label}</Text>
+      {items.map((i) => (
+        <Pill key={`${i.type}:${i.id}`} withRemoveButton onRemove={() => onRemove(i.id)}>
+          {i.label}
+        </Pill>
+      ))}
+    </Group>
   );
 }

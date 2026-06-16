@@ -107,7 +107,7 @@ export default function PayCheck() {
 
   return (
     <Stack gap="lg">
-      <Hero title="Am I paid fairly for my title?" subtitle="Pick your title, enter your salary, and see exactly where you land among everyone in that title — within UW and within your school. Your number stays in your browser." />
+      <Hero title="Search title salaries" subtitle="Pick a title and (optionally) enter a salary to see exactly where it lands among everyone in that title — within UW and within a school. Any salary you enter stays in your browser." />
 
       <Card padding="lg">
         <Group align="flex-end" wrap="wrap">
