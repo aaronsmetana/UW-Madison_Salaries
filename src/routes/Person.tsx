@@ -58,13 +58,17 @@ export default function Person() {
 
   // Salary trend: sum appointments within each snapshot.
   const trend = useMemo(() => {
-    const by = new Map<string, { label: string; date: string; salary: number }>();
+    const by = new Map<string, { id: string; label: string; date: string; salary: number }>();
     for (const r of rows) {
-      const cur = by.get(r.snapshot_id) ?? { label: r.snapshot_label, date: r.snapshot_date, salary: 0 };
+      const cur = by.get(r.snapshot_id) ?? { id: r.snapshot_id, label: r.snapshot_label, date: r.snapshot_date, salary: 0 };
       cur.salary += r.salary ?? 0;
       by.set(r.snapshot_id, cur);
     }
-    return [...by.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    // Same-date TTC pair: show pre-TTC to the left of post-TTC.
+    const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
+    return [...by.values()].sort(
+      (a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id)
+    );
   }, [rows]);
 
   const tenureYears = useMemo(() => {
