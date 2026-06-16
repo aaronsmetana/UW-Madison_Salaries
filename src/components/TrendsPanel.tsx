@@ -12,7 +12,7 @@ export function TrendsPanel() {
   const expr = salaryExpr(metric);
   const { data, isFetching } = useSql<Row>(
     ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
-    `SELECT any_value(snapshot_label) label, any_value(snapshot_date) date,
+    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
         median(${expr}) FILTER (WHERE ${expr} > 0) med, count(DISTINCT person_key) hc
      FROM salaries WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
   );

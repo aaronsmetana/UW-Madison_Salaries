@@ -84,7 +84,7 @@ export default function School() {
 
   const { data: trend } = useSql<{ label: string; date: string; med: number | null; hc: number }>(
     ['school-trend', name, metric, fk],
-    `SELECT any_value(snapshot_label) label, any_value(snapshot_date) date,
+    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
         median(${expr}) FILTER (WHERE ${expr} > 0) med, count(DISTINCT person_key) hc
      FROM salaries WHERE school = ${sqlStr(name)} AND ${filterWhere(filters)} GROUP BY snapshot_id ORDER BY date`,
     !!name

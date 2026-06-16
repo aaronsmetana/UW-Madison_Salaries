@@ -1,0 +1,4 @@
+{
+  "_comment": "Known-error overlay applied by the ETL — never edits the raw dumps. 'merge' maps a person_key to the canonical person_key it should be unified with (use the Data Health identity-review queue to find candidates). person_key format: normalize(first+last)+'|'+YYYY-MM-DD hire date, e.g. 'janesmith|2015-08-21'.",
+  "merge": {}
+}

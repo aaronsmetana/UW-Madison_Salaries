@@ -28,6 +28,8 @@ const RAW_DIR = path.join(ROOT, 'data', 'raw');
 const OUT_DIR = path.join(ROOT, 'public', 'data');
 const COLUMN_MAP = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'column-map.json'), 'utf8'));
 const VALUE_MAP = readJsonIfExists(path.join(ROOT, 'data', 'value-map.json')) || {};
+const CORRECTIONS = readJsonIfExists(path.join(ROOT, 'data', 'corrections.json')) || {};
+const MERGE = (CORRECTIONS.merge && typeof CORRECTIONS.merge === 'object') ? CORRECTIONS.merge : {};
 
 // ---------- helpers ----------
 function readJsonIfExists(p) {
@@ -249,7 +251,8 @@ async function main() {
       let zeroNull = 0;
       for (const row of res.rows) {
         const hireISO = row.date_of_hire;
-        const pkey = makePersonKey(row._first, row._last, hireISO);
+        const pkey0 = makePersonKey(row._first, row._last, hireISO);
+        const pkey = MERGE[pkey0] || pkey0; // corrections overlay: unify known-duplicate identities
         const dedupeKey = `${pkey}|${row.job_code || ''}|${row.title || ''}|${row.salary ?? ''}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
