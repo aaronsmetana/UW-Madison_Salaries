@@ -7,7 +7,6 @@ import { SearchBox } from '../components/SearchBox';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
-import { PercentilePanel } from '../components/PercentilePanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -128,7 +127,6 @@ export default function Explore() {
           <Tabs.Tab value="schools">Schools</Tabs.Tab>
           <Tabs.Tab value="earners">Top earners</Tabs.Tab>
           <Tabs.Tab value="titles">Titles</Tabs.Tab>
-          <Tabs.Tab value="stand">Where do I stand?</Tabs.Tab>
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
           <Tabs.Tab value="cohorts">Cohorts</Tabs.Tab>
@@ -216,10 +214,6 @@ export default function Explore() {
               ))}
             </Table.Tbody>
           </Table>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="stand" pt="md">
-          <PercentilePanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="trends" pt="md">

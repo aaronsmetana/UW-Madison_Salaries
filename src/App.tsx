@@ -8,6 +8,8 @@ import { TrayProvider } from './state/tray';
 import { AppShellLayout } from './app/AppShell';
 
 // Lazy-loaded routes → each becomes its own chunk (smaller initial bundle).
+const Home = lazy(() => import('./routes/Home'));
+const PayCheck = lazy(() => import('./routes/PayCheck'));
 const Explore = lazy(() => import('./routes/Explore'));
 const Compare = lazy(() => import('./routes/Compare'));
 const Reports = lazy(() => import('./routes/Reports'));
@@ -32,7 +34,9 @@ const router = createBrowserRouter(
         </ControlsProvider>
       ),
       children: [
-        { index: true, element: <Explore /> },
+        { index: true, element: <Home /> },
+        { path: 'paycheck', element: <PayCheck /> },
+        { path: 'explore', element: <Explore /> },
         { path: 'compare', element: <Compare /> },
         { path: 'reports', element: <Reports /> },
         { path: 'data', element: <DataHealth /> },
