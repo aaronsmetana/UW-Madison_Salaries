@@ -10,6 +10,7 @@ import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
+import { ChartData } from '../components/ChartData';
 
 const PALETTE = [
   'var(--mantine-color-indigo-6)', 'var(--mantine-color-teal-6)', 'var(--mantine-color-orange-6)',
@@ -191,6 +192,11 @@ export default function Compare() {
                   </ScatterChart>
                 )}
               </ResponsiveContainer>
+              <ChartData
+                caption="Salary by snapshot"
+                columns={['Snapshot', ...persons.map((p) => p.label)]}
+                rows={series.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+              />
               <Text size="xs" c="dimmed" mt={4}>
                 {xMode === 'tenure' ? 'Aligned by years since hire — compares people at the same career stage.' : 'By calendar snapshot.'}
               </Text>

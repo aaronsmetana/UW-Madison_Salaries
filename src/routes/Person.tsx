@@ -11,6 +11,7 @@ import { sqlStr } from '../lib/duckdb';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
+import { ChartData } from '../components/ChartData';
 
 interface Row {
   first_name: string | null;
@@ -195,6 +196,7 @@ export default function Person() {
             <Line type="monotone" dataKey="salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary']} rows={trend.map((t) => [t.label, t.salary])} />
       </Card>
 
       <Card withBorder padding="lg">

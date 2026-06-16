@@ -7,6 +7,7 @@ import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
+import { ChartData } from './ChartData';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
@@ -180,6 +181,7 @@ export function ChangesPanel() {
             <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
           </BarChart>
         </ResponsiveContainer>
+        <ChartData caption="Raise distribution (% change)" columns={['% bin', 'People']} rows={(raiseDist ?? []).map((r) => [`${r.pct_bucket}%`, r.n])} />
         <Text size="xs" c="dimmed">5% bins; values clamped to [−25%, +50%].</Text>
       </Card>
 

@@ -8,6 +8,7 @@ import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr } from '../lib/queries';
 import { usd, num } from '../lib/format';
+import { ChartData } from './ChartData';
 
 interface PctRow { pop: string; pct: number; n: number; med: number | null }
 
@@ -115,6 +116,7 @@ export function PercentilePanel() {
                 )}
               </BarChart>
             </ResponsiveContainer>
+            <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
           </Card>
         </>
       )}

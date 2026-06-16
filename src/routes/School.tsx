@@ -14,6 +14,7 @@ import { useControls } from '../state/controls';
 import { salaryExpr, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
+import { ChartData } from '../components/ChartData';
 
 interface Score {
   headcount: number; total_payroll: number | null; med: number | null; mean: number | null;
@@ -166,6 +167,7 @@ export default function School() {
             <Scatter data={tenurePay ?? []} fill="var(--mantine-color-indigo-5)" fillOpacity={0.5} />
           </ScatterChart>
         </ResponsiveContainer>
+        <ChartData caption="Tenure vs pay" columns={['Tenure (yrs)', 'Pay']} rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])} />
         <Text size="xs" c="dimmed">
           A flat or downward cloud suggests salary compression (newer hires paid like — or above — veterans).
         </Text>
@@ -182,6 +184,7 @@ export default function School() {
             <Line type="monotone" dataKey="med" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
+        <ChartData caption="Median salary over time" columns={['Snapshot', 'Median', 'Headcount']} rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])} />
       </Card>
 
       <Card withBorder padding="lg">
@@ -209,6 +212,7 @@ export default function School() {
             <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
           </BarChart>
         </ResponsiveContainer>
+        <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
       </Card>
 
       <SimpleGrid cols={{ base: 1, md: 2 }}>

@@ -4,6 +4,7 @@ import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
 import { salaryExpr, whereAll, filterKey } from '../lib/queries';
 import { usd } from '../lib/format';
+import { ChartData } from './ChartData';
 
 interface Row { label: string; date: string; med: number | null; hc: number }
 
@@ -34,6 +35,7 @@ export function TrendsPanel() {
           <Line yAxisId="hc" type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-teal-6)" strokeWidth={2} dot strokeDasharray="4 2" />
         </LineChart>
       </ResponsiveContainer>
+      <ChartData caption="Median salary & headcount over time" columns={['Snapshot', 'Median', 'Headcount']} rows={(data ?? []).map((d) => [d.label, d.med, d.hc])} />
     </Card>
   );
 }

@@ -4,6 +4,7 @@ import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { whereAll, filterKey } from '../lib/queries';
+import { ChartData } from './ChartData';
 
 export function CohortPanel() {
   const { scope, filters } = useControls();
@@ -41,6 +42,7 @@ export function CohortPanel() {
           <Bar dataKey="retention" fill="var(--mantine-color-teal-6)" />
         </BarChart>
       </ResponsiveContainer>
+      <ChartData caption="Cohort retention by hire year" columns={['Hire year', 'Retention %']} rows={chart.map((c) => [c.year, c.retention])} />
       <Text size="xs" c="dimmed">
         Of people with each hire year seen in the data, the share still present in the latest snapshot
         ({latest?.label}). Snapshots begin in 2021, so earlier cohorts reflect survivors already employed by then.

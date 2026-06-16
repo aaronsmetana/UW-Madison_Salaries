@@ -6,6 +6,7 @@ import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr } from '../lib/queries';
 import { usd, num } from '../lib/format';
+import { ChartData } from '../components/ChartData';
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -107,6 +108,7 @@ export default function TitlePage() {
             <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
           </BarChart>
         </ResponsiveContainer>
+        <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
       </Card>
 
       <Card withBorder padding="lg">
