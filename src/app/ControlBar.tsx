@@ -1,4 +1,4 @@
-import { Group, SegmentedControl, Select, Text, Badge } from '@mantine/core';
+import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button } from '@mantine/core';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -75,9 +75,18 @@ export function ControlBar() {
       />
       <FilterControls />
 
-      <Badge variant="light" color="indigo" ml="auto" style={{ flexShrink: 0 }}>
-        {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
-      </Badge>
+      <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>
+        <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
+          {({ copied, copy }) => (
+            <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>
+              {copied ? 'Copied!' : 'Copy link'}
+            </Button>
+          )}
+        </CopyButton>
+        <Badge variant="light" color="indigo">
+          {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
+        </Badge>
+      </Group>
     </Group>
   );
 }

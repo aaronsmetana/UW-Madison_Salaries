@@ -24,7 +24,13 @@ const router = createBrowserRouter(
   [
     {
       path: '/',
-      element: <AppShellLayout />,
+      element: (
+        <ControlsProvider>
+          <TrayProvider>
+            <AppShellLayout />
+          </TrayProvider>
+        </ControlsProvider>
+      ),
       children: [
         { index: true, element: <Explore /> },
         { path: 'compare', element: <Compare /> },
@@ -43,11 +49,7 @@ export default function App() {
   return (
     <MantineProvider theme={theme} defaultColorScheme="auto">
       <QueryClientProvider client={queryClient}>
-        <ControlsProvider>
-          <TrayProvider>
-            <RouterProvider router={router} />
-          </TrayProvider>
-        </ControlsProvider>
+        <RouterProvider router={router} />
       </QueryClientProvider>
     </MantineProvider>
   );
