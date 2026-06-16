@@ -342,9 +342,20 @@ async function main() {
     latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people, median: latest.salary_median } : null,
   }, null, 2));
 
-  // pay-band reference (grade → range)
+  // pay-band reference (grade → range) + freshness status
   const grades = readGrades();
   fs.writeFileSync(path.join(OUT_DIR, 'grades.json'), JSON.stringify(grades, null, 2));
+
+  const latestYear = dataSnaps.length ? dataSnaps[dataSnaps.length - 1].snapshot_year : null;
+  const maxEff = grades.reduce((m, g) => (g.effective_year != null && g.effective_year > m ? g.effective_year : m), 0) || null;
+  const refStatus = {
+    generated_at: new Date().toISOString(),
+    grades_count: grades.length,
+    max_effective_year: maxEff,
+    latest_snapshot_year: latestYear,
+    status: grades.length === 0 ? 'missing' : latestYear && maxEff && latestYear - maxEff > 1 ? 'stale' : 'ok',
+  };
+  fs.writeFileSync(path.join(OUT_DIR, 'reference-status.json'), JSON.stringify(refStatus, null, 2));
 
   console.log(`\nDone. ${allRows.length} rows across ${dataSnaps.length} snapshots, ${grades.length} grade ranges -> public/data/`);
   const warnings = manifest.filter((m) => m.status === 'warning' || m.status === 'error');

@@ -8,7 +8,7 @@ import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
 import { PercentilePanel } from '../components/PercentilePanel';
-import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
+import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -31,6 +31,7 @@ interface EarnerRow { person_key: string; fn: string; ln: string; title: string 
 export default function Explore() {
   const { data: summary, isLoading } = useSummary();
   const { data: manifest } = useManifest();
+  const { data: refStatus } = useReferenceStatus();
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
@@ -89,6 +90,14 @@ export default function Explore() {
       </div>
 
       <SearchBox />
+
+      {refStatus && refStatus.status !== 'ok' && (
+        <Alert color={refStatus.status === 'missing' ? 'gray' : 'orange'} title="Pay-band reference">
+          {refStatus.status === 'missing'
+            ? 'No pay-band grade ranges are loaded — paste them into data/reference/salary-grades.csv to enable pay-band views.'
+            : `Pay-band ranges are from ${refStatus.max_effective_year}, but the latest data is ${refStatus.latest_snapshot_year} — ranges may be out of date. Refresh data/reference/salary-grades.csv from the Salary Structure page.`}
+        </Alert>
+      )}
 
       {flagged.length > 0 && (
         <Alert color="yellow" title={`${flagged.length} data-health note${flagged.length > 1 ? 's' : ''}`}>

@@ -25,6 +25,19 @@ export function useGrades() {
   return useQuery({ queryKey: ['grades'], queryFn: () => fetchData<GradeRange[]>('grades.json') });
 }
 
+export interface ReferenceStatus {
+  generated_at: string;
+  grades_count: number;
+  max_effective_year: number | null;
+  latest_snapshot_year: number | null;
+  status: 'ok' | 'stale' | 'missing';
+}
+
+/** Freshness of the pay-band reference table (drives the staleness banner). */
+export function useReferenceStatus() {
+  return useQuery({ queryKey: ['ref-status'], queryFn: () => fetchData<ReferenceStatus>('reference-status.json') });
+}
+
 /** Run an arbitrary SQL query against the Parquet via DuckDB-WASM. */
 export function useSql<T = Record<string, unknown>>(
   key: readonly unknown[],
