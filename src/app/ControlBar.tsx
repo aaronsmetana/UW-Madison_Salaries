@@ -39,43 +39,51 @@ export function ControlBar() {
     <Group
       h={48}
       px="md"
-      gap="md"
+      gap="lg"
       wrap="nowrap"
       style={{ borderTop: '1px solid var(--mantine-color-default-border)', overflowX: 'auto' }}
     >
-      <Select
-        size="xs"
-        w={190}
-        label={undefined}
-        leftSection={<Text size="xs" c="dimmed">Scope</Text>}
-        leftSectionWidth={48}
-        data={scopeOptions}
-        value={scopeValue}
-        onChange={(v) =>
-          setScope(v && v.startsWith('school:') ? { kind: 'school', value: v.slice(7) } : { kind: 'all' })
-        }
-        allowDeselect={false}
-        searchable
-      />
-      <Select
-        size="xs"
-        w={190}
-        leftSection={<Text size="xs" c="dimmed">Snap</Text>}
-        leftSectionWidth={40}
-        data={snapOptions}
-        value={snapValue}
-        onChange={(v) => setActiveSnapshot(v === 'latest' ? null : v)}
-        allowDeselect={false}
-      />
+      {/* Lens: scope + snapshot grouped together */}
+      <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+        <Select
+          size="xs"
+          w={190}
+          label={undefined}
+          leftSection={<Text size="xs" c="dimmed">Scope</Text>}
+          leftSectionWidth={48}
+          data={scopeOptions}
+          value={scopeValue}
+          onChange={(v) =>
+            setScope(v && v.startsWith('school:') ? { kind: 'school', value: v.slice(7) } : { kind: 'all' })
+          }
+          allowDeselect={false}
+          searchable
+        />
+        <Select
+          size="xs"
+          w={190}
+          leftSection={<Text size="xs" c="dimmed">Snap</Text>}
+          leftSectionWidth={40}
+          data={snapOptions}
+          value={snapValue}
+          onChange={(v) => setActiveSnapshot(v === 'latest' ? null : v)}
+          allowDeselect={false}
+        />
+      </Group>
+
+      {/* Salary metric as a single pill toggle */}
       <SegmentedControl
         size="xs"
+        radius="xl"
+        style={{ flexShrink: 0 }}
         value={metric}
         onChange={(v) => setMetric(v as Metric)}
         data={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ value: m, label: METRIC_LABEL[m] }))}
       />
-      <FilterControls />
 
+      {/* Filters + actions grouped on the right */}
       <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>
+        <FilterControls />
         <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
           {({ copied, copy }) => (
             <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>

@@ -4,7 +4,7 @@ import { sqlStr } from '../lib/duckdb';
 import { num, usd } from '../lib/format';
 import type { SnapshotInfo } from '../lib/manifest';
 
-const STATUS_COLOR: Record<string, string> = { ok: 'teal', warning: 'yellow', error: 'red', info: 'gray' };
+const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
 
 export default function DataHealth() {
   const { data: manifest, isLoading, error } = useManifest();
@@ -47,7 +47,7 @@ export default function DataHealth() {
         )}
       </Group>
 
-      <Table striped highlightOnHover>
+      <Table striped highlightOnHover verticalSpacing="sm">
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Snapshot</Table.Th>
@@ -75,8 +75,8 @@ export default function DataHealth() {
               <Table.Td ta="right">{num(s.zero_or_null_salary)}</Table.Td>
               <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
               <Table.Td>
-                <Badge color={STATUS_COLOR[s.status] ?? 'gray'} variant="light">
-                  {s.status}
+                <Badge color={STATUS_COLOR[s.status] ?? 'gray'} variant="filled" radius="sm">
+                  {s.status.toUpperCase()}
                 </Badge>
                 {s.messages.length > 0 && (
                   <Text size="xs" c="dimmed" mt={2}>{s.messages.join('; ')}</Text>
@@ -100,12 +100,20 @@ export default function DataHealth() {
             Same name resolving to more than one person (different hire dates) in the latest snapshot — usually
             genuinely different people, but worth a glance. Confirm true duplicates via data/corrections.json.
           </Text>
-          <Table>
+          <Table striped highlightOnHover withTableBorder verticalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th ta="right">Distinct identities</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
             <Table.Tbody>
               {(dups ?? []).map((d) => (
                 <Table.Tr key={`${d.first_name} ${d.last_name}`}>
-                  <Table.Td>{d.first_name} {d.last_name}</Table.Td>
-                  <Table.Td ta="right">{d.keys} identities</Table.Td>
+                  <Table.Td fw={500}>{d.first_name} {d.last_name}</Table.Td>
+                  <Table.Td ta="right">
+                    <Badge variant="light" color="yellow" radius="sm">{d.keys}</Badge>
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

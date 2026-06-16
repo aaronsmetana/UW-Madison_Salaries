@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider,
+  Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
 } from '@mantine/core';
+import { IconDownload, IconPrinter } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -90,10 +91,11 @@ export default function Reports() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" className="no-print">
+      <Group justify="space-between" className="no-print" wrap="wrap" gap="md">
         <Title order={2}>Reports</Title>
-        <Group>
+        <Group gap="md">
           <SegmentedControl
+            radius="xl"
             value={type}
             onChange={setType}
             data={[
@@ -101,9 +103,19 @@ export default function Reports() {
               { value: 'comparison', label: 'Comparison (tray)' },
             ]}
           />
-          <Button variant="default" onClick={() => window.print()}>
-            Print / Save as PDF
-          </Button>
+          <Button.Group>
+            <Button
+              variant="default"
+              leftSection={<IconDownload size={16} />}
+              disabled={type !== 'school' || !earners?.length}
+              onClick={() => downloadCSV(`${school}-top-earners-${snap}.csv`, (earners ?? []) as unknown as Record<string, unknown>[])}
+            >
+              Download CSV
+            </Button>
+            <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>
+              Print / Save as PDF
+            </Button>
+          </Button.Group>
         </Group>
       </Group>
 
@@ -118,14 +130,6 @@ export default function Reports() {
               searchable
               w={360}
             />
-            <Button
-              variant="light"
-              mt={24}
-              disabled={!earners?.length}
-              onClick={() => downloadCSV(`${school}-top-earners-${snap}.csv`, (earners ?? []) as unknown as Record<string, unknown>[])}
-            >
-              Download CSV
-            </Button>
           </Group>
 
           <Card withBorder padding="xl" className="print-area">
@@ -144,7 +148,7 @@ export default function Reports() {
               <Stat label="90th pctile" value={usd(sc?.p90)} />
             </SimpleGrid>
             <Text size="sm" fw={600} mt="lg" mb="xs">Top earners</Text>
-            <Table>
+            <Table striped highlightOnHover style={{ maxWidth: 820 }}>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
@@ -234,10 +238,10 @@ export default function Reports() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <Paper withBorder radius="md" p="sm">
       <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={600}>{value}</Text>
-    </div>
+      <Text fw={700} fz="lg">{value}</Text>
+    </Paper>
   );
 }
 

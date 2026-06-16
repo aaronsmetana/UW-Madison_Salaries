@@ -3,6 +3,7 @@ import {
   Stack, Title, Text, Card, SimpleGrid, Group, Badge, Alert, Loader, Tabs, Table, Button, Anchor,
 } from '@mantine/core';
 import { Link } from 'react-router-dom';
+import { IconPlus } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
@@ -147,15 +148,15 @@ export default function Explore() {
               {(schools ?? []).map((s) => (
                 <Table.Tr key={s.school}>
                   <Table.Td>
-                    <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`}>
+                    <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500}>
                       {s.school}
                     </Anchor>
                   </Table.Td>
                   <Table.Td ta="right">{num(s.headcount)}</Table.Td>
                   <Table.Td ta="right">{usd(s.med)}</Table.Td>
                   <Table.Td ta="right">
-                    <Button size="compact-xs" variant="subtle" onClick={() => add({ type: 'school', id: s.school, label: s.school })}>
-                      ＋ Compare
+                    <Button size="compact-xs" variant="light" radius="xl" leftSection={<IconPlus size={12} />} onClick={() => add({ type: 'school', id: s.school, label: s.school })}>
+                      Compare
                     </Button>
                   </Table.Td>
                 </Table.Tr>
@@ -212,8 +213,8 @@ export default function Explore() {
                   <Table.Td ta="right">{num(t.n)}</Table.Td>
                   <Table.Td ta="right">{usd(t.med)}</Table.Td>
                   <Table.Td ta="right">
-                    <Button size="compact-xs" variant="subtle" onClick={() => add({ type: 'title', id: t.job_code, label: t.title })}>
-                      ＋ Compare
+                    <Button size="compact-xs" variant="light" radius="xl" leftSection={<IconPlus size={12} />} onClick={() => add({ type: 'title', id: t.job_code, label: t.title })}>
+                      Compare
                     </Button>
                   </Table.Td>
                 </Table.Tr>

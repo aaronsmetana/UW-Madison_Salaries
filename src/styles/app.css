@@ -1,0 +1,19 @@
+/* App-wide UI polish that's easier to express in CSS than per-component props. */
+
+/* Brighten low-contrast secondary ("dimmed") text for readability/accessibility. */
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-dimmed: #c1c2c5;
+}
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-dimmed: #555a63;
+}
+
+/* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab. */
+.mantine-Tabs-tab {
+  color: var(--mantine-color-dimmed);
+  font-weight: 500;
+}
+.mantine-Tabs-tab[data-active] {
+  color: var(--mantine-color-text);
+  font-weight: 700;
+}

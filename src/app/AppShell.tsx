@@ -1,9 +1,8 @@
 import { Suspense } from 'react';
-import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip, ActionIcon } from '@mantine/core';
+import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip, Divider } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
-  IconChevronLeft, IconChevronRight,
 } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
@@ -31,15 +30,27 @@ export function AppShellLayout() {
 
   const renderLink = (n: (typeof NAV)[number], dimmed = false) => {
     const Icon = n.icon;
+    const active = isActive(n.to);
     const link = (
       <NavLink
         component={Link}
         to={n.to}
         label={collapsed ? undefined : n.label}
         leftSection={<Icon size={20} stroke={1.7} />}
-        active={isActive(n.to)}
-        c={dimmed ? 'dimmed' : undefined}
-        styles={collapsed ? { section: { marginInlineEnd: 0 }, body: { display: 'none' } } : undefined}
+        active={active}
+        variant="light"
+        c={dimmed && !active ? 'dimmed' : undefined}
+        styles={{
+          root: {
+            borderRadius: 'var(--mantine-radius-md)',
+            marginBottom: 2,
+            // Bright accent line on the left of the active item.
+            borderLeft: `3px solid ${active ? 'var(--mantine-color-indigo-4)' : 'transparent'}`,
+          },
+          label: { fontWeight: active ? 700 : 500 },
+          section: collapsed ? { marginInlineEnd: 0 } : undefined,
+          body: collapsed ? { display: 'none' } : undefined,
+        }}
       />
     );
     return collapsed ? (
@@ -52,48 +63,50 @@ export function AppShellLayout() {
   };
 
   return (
-    <AppShell
-      header={{ height: showControl ? 96 : 48 }}
-      navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
-      footer={{ height: 56 }}
-      padding="md"
-    >
-      <AppShell.Header>
-        <Group h={48} px="md" justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
-            <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
-            <Anchor component={Link} to="/" underline="never" c="inherit">
-              <Title order={4}>UW–Madison Salaries</Title>
-            </Anchor>
+    <>
+      <AppShell
+        header={{ height: showControl ? 96 : 56 }}
+        navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
+        padding="md"
+      >
+        <AppShell.Header>
+          <Group h={56} px="md" justify="space-between" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap">
+              {/* Toggle sits inline with the title: hamburger on mobile (drawer), collapse on desktop. */}
+              <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
+              <Burger
+                opened={!collapsed}
+                onClick={toggleDesktop}
+                visibleFrom="sm"
+                size="sm"
+                aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              />
+              <Anchor component={Link} to="/" underline="never" c="inherit">
+                <Title order={4}>UW–Madison Salaries</Title>
+              </Anchor>
+            </Group>
+            <CommandSearch />
           </Group>
-          <CommandSearch />
-        </Group>
-        {showControl && <ControlBar />}
-      </AppShell.Header>
+          {showControl && <ControlBar />}
+        </AppShell.Header>
 
-      <AppShell.Navbar p="sm">
-        <Group justify={collapsed ? 'center' : 'flex-end'} mb="xs" visibleFrom="sm">
-          <Tooltip label={collapsed ? 'Expand menu' : 'Collapse menu'} position="right" withArrow>
-            <ActionIcon variant="subtle" color="gray" onClick={toggleDesktop} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}>
-              {collapsed ? <IconChevronRight size={18} /> : <IconChevronLeft size={18} />}
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-        <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
-        {renderLink({ label: 'Data · About', to: '/data', icon: IconInfoCircle }, true)}
-      </AppShell.Navbar>
+        <AppShell.Navbar p="sm">
+          <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
+          <Divider my="xs" />
+          {renderLink({ label: 'Data · About', to: '/data', icon: IconInfoCircle }, true)}
+        </AppShell.Navbar>
 
-      <AppShell.Main>
-        <ErrorBoundary key={loc.pathname}>
-          <Suspense fallback={<Loader />}>
-            <Outlet />
-          </Suspense>
-        </ErrorBoundary>
-      </AppShell.Main>
+        <AppShell.Main style={{ paddingBottom: 96 }}>
+          <ErrorBoundary key={loc.pathname}>
+            <Suspense fallback={<Loader />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
+        </AppShell.Main>
+      </AppShell>
 
-      <AppShell.Footer>
-        <SelectionTray />
-      </AppShell.Footer>
-    </AppShell>
+      {/* Floating "cart"-style selection tray, above the bottom edge. */}
+      <SelectionTray />
+    </>
   );
 }

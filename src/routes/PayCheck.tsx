@@ -1,7 +1,8 @@
 import { useSearchParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Card, Group, Select, NumberInput, SimpleGrid, Table, Anchor, Loader, Badge,
+  Stack, Title, Text, Card, Group, Select, NumberInput, SimpleGrid, Table, Anchor, Loader, Badge, Box, Skeleton,
 } from '@mantine/core';
+import { IconChevronDown } from '@tabler/icons-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
@@ -12,7 +13,6 @@ import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
 import { ChartData } from '../components/ChartData';
-import { Hero } from '../components/Hero';
 
 function ordinal(p: number): string {
   const r = Math.round(p);
@@ -107,10 +107,17 @@ export default function PayCheck() {
 
   return (
     <Stack gap="lg">
-      <Hero title="Search title salaries" subtitle="Pick a title and (optionally) enter a salary to see exactly where it lands among everyone in that title — within UW and within a school. Any salary you enter stays in your browser." />
+      <Box pl="md" style={{ borderLeft: '3px solid var(--mantine-color-indigo-5)' }}>
+        <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>
+          Search title salaries
+        </Title>
+        <Text c="dimmed" maw={640} mt={6} size="lg">
+          Pick a title and (optionally) enter a salary to see exactly where it lands among everyone in that title — within UW and within a school. Any salary you enter stays in your browser.
+        </Text>
+      </Box>
 
       <Card padding="lg">
-        <Group align="flex-end" wrap="wrap">
+        <Group align="flex-end" wrap="wrap" gap="xl">
           <Select
             label="Your title"
             placeholder="Search titles…"
@@ -120,6 +127,7 @@ export default function PayCheck() {
             searchable
             w={340}
             nothingFoundMessage="No matching title"
+            rightSection={<IconChevronDown size={18} stroke={2} />}
           />
           <Select
             label="Your school (optional)"
@@ -147,7 +155,17 @@ export default function PayCheck() {
       </Card>
 
       {!ready ? (
-        <Text c="dimmed">Choose a title and enter a salary to see your standing.</Text>
+        <Stack gap="lg">
+          <Text c="dimmed" ta="center">
+            Choose a title above (and optionally enter a salary) to see where it lands. Your results will appear here:
+          </Text>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <Skeleton height={104} radius="lg" />
+            <Skeleton height={104} radius="lg" />
+          </SimpleGrid>
+          <Skeleton height={260} radius="lg" />
+          <Skeleton height={220} radius="lg" />
+        </Stack>
       ) : !pct ? (
         <Loader />
       ) : (

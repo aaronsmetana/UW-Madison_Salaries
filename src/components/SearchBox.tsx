@@ -71,16 +71,18 @@ export function SearchBox({
   return (
     <div style={{ position: 'relative', width: '100%', maxWidth: prominent ? '100%' : 560, margin: prominent ? '0 auto' : undefined }}>
       <TextInput
-        size="md"
+        size={prominent ? 'xl' : 'md'}
         radius={prominent ? 'xl' : undefined}
-        leftSection={prominent ? <IconSearch size={18} /> : undefined}
+        leftSection={prominent ? <IconSearch size={26} /> : undefined}
+        leftSectionWidth={prominent ? 56 : undefined}
         placeholder={placeholder}
         value={term}
         onChange={(e) => setTerm(e.currentTarget.value)}
-        rightSection={isFetching ? <Loader size="xs" /> : null}
+        rightSection={isFetching ? <Loader size="sm" /> : null}
         aria-label="Search a person"
         data-autofocus={autoFocus || undefined}
         autoFocus={autoFocus}
+        styles={prominent ? { input: { minHeight: 66, height: 66, fontSize: '1.25rem' } } : undefined}
       />
       {open && (
         <Paper withBorder shadow="md" mt={4} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, maxHeight: 360, overflowY: 'auto' }}>

@@ -1,5 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon } from '@mantine/core';
+import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ScatterChart, Scatter,
@@ -196,14 +197,17 @@ export default function Compare() {
         <Text c="dimmed">Search and add anyone, any title, or any school, then compare salaries side by side. Selections are saved (your tray) so you can keep building across pages.</Text>
       </div>
 
-      {/* ── Build your comparison ── */}
+      {/* ── Build your comparison: three labeled add blocks ── */}
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="sm">Add to your comparison</Text>
-        <SimpleAddGrid
-          person={<SearchBox placeholder="Search a person by name…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />}
-          title={
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
+          <div>
+            <Group gap={6} mb={6}><IconUser size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add person</Text></Group>
+            <SearchBox placeholder="Search a person by name…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
+          </div>
+          <div>
+            <Group gap={6} mb={6}><IconBriefcase size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add title</Text></Group>
             <Select
-              placeholder="Add a title…"
+              placeholder="Search a title…"
               data={titleSelectData}
               value={null}
               onChange={(v) => {
@@ -214,18 +218,19 @@ export default function Compare() {
               searchable
               nothingFoundMessage="No matching title"
             />
-          }
-          school={
+          </div>
+          <div>
+            <Group gap={6} mb={6}><IconBuildingBank size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add school / division</Text></Group>
             <Select
-              placeholder="Add a school / division…"
+              placeholder="Search a school…"
               data={(schoolOpts ?? []).map((s) => s.school)}
               value={null}
               onChange={(v) => v && add({ type: 'school', id: v, label: v })}
               searchable
               nothingFoundMessage="No matching school"
             />
-          }
-        />
+          </div>
+        </SimpleGrid>
 
         {items.length > 0 && (
           <>
@@ -240,7 +245,17 @@ export default function Compare() {
       </Card>
 
       {items.length === 0 && (
-        <Text c="dimmed">Add people, titles, or schools above to start comparing. You can also add people from their profile and schools/titles from Compare Divisions/Schools.</Text>
+        <Card withBorder padding="xl">
+          <Stack align="center" gap="sm" py={48}>
+            <ThemeIcon size={64} radius="xl" variant="light" color="indigo">
+              <IconArrowsDiff size={32} />
+            </ThemeIcon>
+            <Title order={3} ta="center">Build a side-by-side comparison</Title>
+            <Text c="dimmed" ta="center" maw={480}>
+              Add people, titles, or schools using the search boxes above — or the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
+            </Text>
+          </Stack>
+        </Card>
       )}
 
       {persons.length > 0 && (
@@ -453,17 +468,6 @@ export default function Compare() {
         </Card>
       )}
     </Stack>
-  );
-}
-
-/** Three labeled inputs that wrap nicely on small screens. */
-function SimpleAddGrid({ person, title, school }: { person: ReactNode; title: ReactNode; school: ReactNode }) {
-  return (
-    <Group align="flex-start" grow wrap="wrap">
-      <div style={{ minWidth: 220 }}>{person}</div>
-      <div style={{ minWidth: 220 }}>{title}</div>
-      <div style={{ minWidth: 220 }}>{school}</div>
-    </Group>
   );
 }
 

@@ -5,12 +5,16 @@ import { createTheme } from '@mantine/core';
 export const theme = createTheme({
   primaryColor: 'indigo',
   defaultRadius: 'lg',
+  // Pick readable (dark) text automatically on light-luminance filled badges (e.g. yellow "WARNING").
+  autoContrast: true,
+  luminanceThreshold: 0.45,
   fontFamily:
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   headings: { fontWeight: '700' },
   shadows: {
     sm: '0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06)',
     md: '0 4px 14px rgba(15, 23, 42, 0.08)',
+    lg: '0 10px 30px rgba(15, 23, 42, 0.18)',
   },
   components: {
     Card: { defaultProps: { radius: 'lg', withBorder: true } },
