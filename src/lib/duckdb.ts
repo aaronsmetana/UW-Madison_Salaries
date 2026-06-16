@@ -30,7 +30,15 @@ async function initDB(): Promise<AsyncDuckDB> {
   await db.registerFileBuffer('salaries.parquet', buf);
 
   const conn = await db.connect();
-  await conn.query(`CREATE VIEW salaries AS SELECT * FROM parquet_scan('salaries.parquet')`);
+  // Expose DATE columns as ISO 'YYYY-MM-DD' strings: DuckDB-WASM hands raw DATE
+  // values to JS as non-strings, which breaks string ops (sorting, new Date()).
+  // SQL date functions still work via CAST(... AS DATE); ordering stays chronological.
+  await conn.query(
+    `CREATE VIEW salaries AS SELECT * REPLACE (
+       CAST(snapshot_date AS VARCHAR) AS snapshot_date,
+       CAST(date_of_hire AS VARCHAR) AS date_of_hire
+     ) FROM parquet_scan('salaries.parquet')`
+  );
 
   // Optional pay-band reference table (grade → range). Empty if not provided.
   await conn.query(`CREATE TABLE grades("grade" INTEGER, "basis" VARCHAR, "min" DOUBLE, "max" DOUBLE, effective_year INTEGER)`);

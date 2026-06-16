@@ -64,7 +64,7 @@ export default function Person() {
       cur.salary += r.salary ?? 0;
       by.set(r.snapshot_id, cur);
     }
-    return [...by.values()].sort((a, b) => a.date.localeCompare(b.date));
+    return [...by.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [rows]);
 
   const tenureYears = useMemo(() => {
