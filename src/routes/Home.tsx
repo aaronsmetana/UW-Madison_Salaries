@@ -1,11 +1,30 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Stack, Title, Text, SimpleGrid, Group, Anchor } from '@mantine/core';
+import { Stack, Title, Text, SimpleGrid, Group, Anchor, Card, ThemeIcon } from '@mantine/core';
 import { IconDatabase, IconCoin, IconReportMoney, IconScale, IconUsersGroup } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { num, usd } from '../lib/format';
-import { StatCard } from '../components/StatCard';
 import { SearchBox } from '../components/SearchBox';
+
+/** Compact KPI: icon + label on one line, value below — fits short and long numbers cleanly. */
+function Kpi({ icon, label, value, color }: { icon: ReactNode; label: string; value: string; color: string }) {
+  return (
+    <Card withBorder padding="md" radius="md">
+      <Group gap={8} wrap="nowrap">
+        <ThemeIcon size={30} radius="md" variant="light" color={color}>
+          {icon}
+        </ThemeIcon>
+        <Text size="xs" c="dimmed" lh={1.2}>
+          {label}
+        </Text>
+      </Group>
+      <Text fw={700} fz={20} mt={8} style={{ letterSpacing: '-0.01em' }}>
+        {value}
+      </Text>
+    </Card>
+  );
+}
 
 export default function Home() {
   const { data: summary } = useSummary();
@@ -29,20 +48,22 @@ export default function Home() {
         </Text>
       </Stack>
 
-      <SearchBox prominent placeholder="Search for an employee by name…" />
+      {/* Search + stats share one centered width so they line up. */}
+      <Stack gap="lg" maw={640} mx="auto" w="100%">
+        <SearchBox prominent placeholder="Search for an employee by name…" />
+        <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm" w="100%">
+          <Kpi label="Total records" value={num(summary?.total_rows)} icon={<IconDatabase size={18} />} color="cyan" />
+          <Kpi label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
+          <Kpi label="Total payroll (latest)" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
+        </SimpleGrid>
+      </Stack>
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }} maw={760} mx="auto" w="100%">
-        <StatCard label="Total records" value={num(summary?.total_rows)} icon={<IconDatabase size={20} />} color="cyan" />
-        <StatCard label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={20} />} color="teal" />
-        <StatCard label="Total payroll (latest)" value={usd(payroll)} icon={<IconReportMoney size={20} />} color="indigo" />
-      </SimpleGrid>
-
-      <Group justify="center" gap="xl" mt="xs">
+      <Group justify="center" gap="lg" mt="xs" wrap="wrap">
         <Anchor component={Link} to="/paycheck" c="dimmed">
-          <Group gap={6}><IconScale size={16} /> Search title salaries — how does your pay compare?</Group>
+          <Group gap={6} wrap="nowrap"><IconScale size={16} /> Search title salaries — how does your pay compare?</Group>
         </Anchor>
         <Anchor component={Link} to="/compare" c="dimmed">
-          <Group gap={6}><IconUsersGroup size={16} /> Compare people, titles &amp; schools</Group>
+          <Group gap={6} wrap="nowrap"><IconUsersGroup size={16} /> Compare people, titles &amp; schools</Group>
         </Anchor>
       </Group>
     </Stack>
