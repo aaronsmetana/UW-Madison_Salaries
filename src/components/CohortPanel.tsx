@@ -3,16 +3,16 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGri
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { scopeWhere } from '../lib/queries';
+import { whereAll, filterKey } from '../lib/queries';
 
 export function CohortPanel() {
-  const { scope } = useControls();
+  const { scope, filters } = useControls();
   const { data: summary } = useSummary();
   const latest = summary?.snapshots[summary.snapshots.length - 1];
-  const where = scopeWhere(scope);
+  const where = whereAll(scope, filters);
 
   const { data, isFetching } = useSql<{ hire_year: number; total: number; still_here: number }>(
-    ['cohort', scope.kind, scope.kind === 'school' ? scope.value : '', latest?.id ?? ''],
+    ['cohort', scope.kind, scope.kind === 'school' ? scope.value : '', latest?.id ?? '', filterKey(filters)],
     `WITH latest AS (SELECT DISTINCT person_key FROM salaries WHERE snapshot_id = ${sqlStr(latest?.id ?? '')} AND ${where})
      SELECT s.hire_year hire_year, count(DISTINCT s.person_key) total,
         count(DISTINCT s.person_key) FILTER (WHERE l.person_key IS NOT NULL) still_here

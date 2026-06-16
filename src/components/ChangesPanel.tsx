@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, scopeWhere } from '../lib/queries';
+import { salaryExpr, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
@@ -22,9 +22,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function ChangesPanel() {
-  const { scope, metric } = useControls();
+  const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
-  const where = scopeWhere(scope);
+  const where = whereAll(scope, filters);
   const { data: summary } = useSummary();
   const snaps = summary?.snapshots ?? [];
 
@@ -40,7 +40,7 @@ export function ChangesPanel() {
   const enabled = !!fromId && !!toId && fromId !== toId;
   const A = sqlStr(fromId ?? '');
   const B = sqlStr(toId ?? '');
-  const scopeKey = scope.kind === 'school' ? scope.value : '';
+  const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}`;
   const cte = `WITH a AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title
                           FROM salaries WHERE snapshot_id = ${A} AND ${where} GROUP BY person_key),
                     b AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title,

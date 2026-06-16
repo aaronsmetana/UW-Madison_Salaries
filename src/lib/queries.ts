@@ -1,5 +1,15 @@
-import type { Metric, Scope } from '../state/controls';
+import type { Metric, Scope, Filters } from '../state/controls';
 import { sqlStr } from './duckdb';
+
+/** allowed facet columns (canonical names — never user-typed) */
+export const FACETS: { field: string; label: string; searchable?: boolean }[] = [
+  { field: 'employee_category', label: 'Category' },
+  { field: 'employee_type', label: 'Employee type' },
+  { field: 'flsa_status', label: 'FLSA' },
+  { field: 'pay_rate_type', label: 'Pay type' },
+  { field: 'department', label: 'Department', searchable: true },
+];
+const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
 
 /** SQL expression for the selected salary metric. */
 export function salaryExpr(metric: Metric): string {
@@ -21,3 +31,19 @@ export function scopeWhere(scope: Scope): string {
 }
 
 export const snapWhere = (snapshotId: string): string => `snapshot_id = ${sqlStr(snapshotId)}`;
+
+/** WHERE fragment for the active facet filters (only whitelisted columns). */
+export function filterWhere(filters: Filters): string {
+  const parts = Object.entries(filters)
+    .filter(([field, vals]) => FACET_FIELDS.has(field) && vals && vals.length)
+    .map(([field, vals]) => `${field} IN (${vals.map(sqlStr).join(', ')})`);
+  return parts.length ? parts.join(' AND ') : 'TRUE';
+}
+
+/** scope + facet filters combined. */
+export function whereAll(scope: Scope, filters: Filters): string {
+  return `${scopeWhere(scope)} AND ${filterWhere(filters)}`;
+}
+
+/** stable string key for the active filters (for query caching). */
+export const filterKey = (filters: Filters): string => JSON.stringify(filters);

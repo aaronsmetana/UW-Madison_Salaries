@@ -13,7 +13,15 @@ interface Hit {
   title: string | null;
 }
 
-export function SearchBox({ placeholder = 'Search a person…' }: { placeholder?: string }) {
+export function SearchBox({
+  placeholder = 'Search a person…',
+  autoFocus = false,
+  onSelect,
+}: {
+  placeholder?: string;
+  autoFocus?: boolean;
+  onSelect?: () => void;
+}) {
   const [term, setTerm] = useState('');
   const [debounced] = useDebouncedValue(term, 200);
   const q = debounced.trim().toLowerCase();
@@ -46,6 +54,8 @@ export function SearchBox({ placeholder = 'Search a person…' }: { placeholder?
         onChange={(e) => setTerm(e.currentTarget.value)}
         rightSection={isFetching ? <Loader size="xs" /> : null}
         aria-label="Search a person"
+        data-autofocus={autoFocus || undefined}
+        autoFocus={autoFocus}
       />
       {open && (
         <Paper withBorder shadow="md" mt={4} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, maxHeight: 360, overflowY: 'auto' }}>
@@ -56,7 +66,10 @@ export function SearchBox({ placeholder = 'Search a person…' }: { placeholder?
                   key={h.person_key}
                   px="sm"
                   py={8}
-                  onClick={() => nav(`/person/${encodeURIComponent(h.person_key)}`)}
+                  onClick={() => {
+                    nav(`/person/${encodeURIComponent(h.person_key)}`);
+                    onSelect?.();
+                  }}
                   style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
                 >
                   <Group justify="space-between" wrap="nowrap">

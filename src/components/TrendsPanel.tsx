@@ -2,19 +2,19 @@ import { Card, Text, Loader } from '@mantine/core';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
-import { salaryExpr, scopeWhere } from '../lib/queries';
+import { salaryExpr, whereAll, filterKey } from '../lib/queries';
 import { usd } from '../lib/format';
 
 interface Row { label: string; date: string; med: number | null; hc: number }
 
 export function TrendsPanel() {
-  const { scope, metric } = useControls();
+  const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const { data, isFetching } = useSql<Row>(
-    ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric],
+    ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
     `SELECT any_value(snapshot_label) label, any_value(snapshot_date) date,
         median(${expr}) FILTER (WHERE ${expr} > 0) med, count(DISTINCT person_key) hc
-     FROM salaries WHERE ${scopeWhere(scope)} GROUP BY snapshot_id ORDER BY date`
+     FROM salaries WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
   );
 
   if (isFetching && !data) return <Loader />;

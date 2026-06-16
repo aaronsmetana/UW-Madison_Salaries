@@ -11,7 +11,7 @@ import {
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr } from '../lib/queries';
+import { salaryExpr, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 
@@ -33,14 +33,15 @@ export default function School() {
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
   const snap = useActiveSnapshotId();
-  const { metric } = useControls();
+  const { metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const { add, has } = useTray();
   const enabled = !!snap;
-  const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(name)}`;
+  const fk = filterKey(filters);
+  const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(name)} AND ${filterWhere(filters)}`;
 
   const { data: scoreRows, isLoading } = useSql<Score>(
-    ['school-score', name, snap ?? '', metric],
+    ['school-score', name, snap ?? '', metric, fk],
     `SELECT count(DISTINCT person_key) headcount,
         sum(${expr}) FILTER (WHERE ${expr} > 0) total_payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
@@ -56,7 +57,7 @@ export default function School() {
   const s = scoreRows?.[0];
 
   const { data: dist } = useSql<{ bucket: number; n: number }>(
-    ['school-dist', name, snap ?? '', metric],
+    ['school-dist', name, snap ?? '', metric, fk],
     `SELECT (floor(${expr} / 20000) * 20000)::BIGINT bucket, count(*) n
      FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1 ORDER BY 1`,
     enabled
@@ -67,29 +68,29 @@ export default function School() {
   );
 
   const { data: comp } = useSql<{ cat: string; n: number }>(
-    ['school-comp', name, snap ?? ''],
+    ['school-comp', name, snap ?? '', fk],
     `SELECT COALESCE(employee_category, '—') cat, count(DISTINCT person_key) n
      FROM salaries WHERE ${base} GROUP BY 1 ORDER BY 2 DESC`,
     enabled
   );
 
   const { data: earners } = useSql<{ person_key: string; fn: string; ln: string; title: string | null; pay: number }>(
-    ['school-earners', name, snap ?? '', metric],
+    ['school-earners', name, snap ?? '', metric, fk],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title, sum(${expr}) pay
      FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key ORDER BY pay DESC LIMIT 12`,
     enabled
   );
 
   const { data: trend } = useSql<{ label: string; date: string; med: number | null; hc: number }>(
-    ['school-trend', name, metric],
+    ['school-trend', name, metric, fk],
     `SELECT any_value(snapshot_label) label, any_value(snapshot_date) date,
         median(${expr}) FILTER (WHERE ${expr} > 0) med, count(DISTINCT person_key) hc
-     FROM salaries WHERE school = ${sqlStr(name)} GROUP BY snapshot_id ORDER BY date`,
+     FROM salaries WHERE school = ${sqlStr(name)} AND ${filterWhere(filters)} GROUP BY snapshot_id ORDER BY date`,
     !!name
   );
 
   const { data: bandRows } = useSql<{ banded: number; avg_pos: number | null; over_max: number; below_min: number }>(
-    ['school-band', name, snap ?? '', metric],
+    ['school-band', name, snap ?? '', metric, fk],
     `SELECT count(*) FILTER (WHERE g."grade" IS NOT NULL) banded,
         avg((p.pay - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.pay BETWEEN g."min" AND g."max") avg_pos,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay > g."max") over_max,
@@ -102,7 +103,7 @@ export default function School() {
   const band = bandRows?.[0];
 
   const { data: tenurePay } = useSql<{ tenure: number; pay: number }>(
-    ['school-tenure', name, snap ?? '', metric],
+    ['school-tenure', name, snap ?? '', metric, fk],
     `SELECT any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
         sum(${expr}) pay
      FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key LIMIT 3000`,

@@ -2,6 +2,7 @@ import { Group, SegmentedControl, Select, Text, Badge } from '@mantine/core';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
+import { FilterControls } from '../components/FilterControls';
 
 /**
  * Persistent control bar: Scope is the lens the whole app responds to, plus the
@@ -72,6 +73,8 @@ export function ControlBar() {
         onChange={(v) => setMetric(v as Metric)}
         data={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ value: m, label: METRIC_LABEL[m] }))}
       />
+      <FilterControls />
+
       <Badge variant="light" color="indigo" ml="auto" style={{ flexShrink: 0 }}>
         {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
       </Badge>

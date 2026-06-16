@@ -10,7 +10,7 @@ import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, scopeWhere, snapWhere } from '../lib/queries';
+import { salaryExpr, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 
@@ -30,7 +30,7 @@ interface EarnerRow { person_key: string; fn: string; ln: string; title: string 
 export default function Explore() {
   const { data: summary, isLoading } = useSummary();
   const { data: manifest } = useManifest();
-  const { scope, metric } = useControls();
+  const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { add } = useTray();
@@ -40,10 +40,11 @@ export default function Explore() {
   }, []);
 
   const enabled = !!snap;
-  const where = `${snapWhere(snap ?? '')} AND ${scopeWhere(scope)}`;
+  const fk = filterKey(filters);
+  const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const { data: kpis } = useSql<Kpis>(
-    ['kpis', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric],
+    ['kpis', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `SELECT count(DISTINCT person_key) headcount,
         sum(${expr}) FILTER (WHERE ${expr} > 0) total_payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med
@@ -53,7 +54,7 @@ export default function Explore() {
   const k = kpis?.[0];
 
   const { data: schools } = useSql<SchoolRow>(
-    ['browse-schools', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric],
+    ['browse-schools', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `SELECT school, count(DISTINCT person_key) headcount,
         median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${where} AND school IS NOT NULL
@@ -62,7 +63,7 @@ export default function Explore() {
   );
 
   const { data: earners } = useSql<EarnerRow>(
-    ['top-earners', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric],
+    ['top-earners', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(title) title, any_value(school) school, sum(${expr}) pay
      FROM salaries WHERE ${where} AND ${expr} > 0

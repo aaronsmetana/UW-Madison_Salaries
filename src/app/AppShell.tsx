@@ -3,6 +3,8 @@ import { AppShell, Group, Title, NavLink, Box, Loader } from '@mantine/core';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
+import { CommandSearch } from '../components/CommandSearch';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const NAV = [
   { label: 'Explore', to: '/' },
@@ -22,8 +24,9 @@ export function AppShellLayout() {
       padding="md"
     >
       <AppShell.Header>
-        <Group h={48} px="md">
+        <Group h={48} px="md" justify="space-between" wrap="nowrap">
           <Title order={4}>UW–Madison Salaries</Title>
+          <CommandSearch />
         </Group>
         <ControlBar />
       </AppShell.Header>
@@ -38,9 +41,11 @@ export function AppShellLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Suspense fallback={<Loader />}>
-          <Outlet />
-        </Suspense>
+        <ErrorBoundary key={loc.pathname}>
+          <Suspense fallback={<Loader />}>
+            <Outlet />
+          </Suspense>
+        </ErrorBoundary>
       </AppShell.Main>
 
       <AppShell.Footer>

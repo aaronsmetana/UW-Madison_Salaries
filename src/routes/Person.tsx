@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -86,7 +86,14 @@ export default function Person() {
         <div>
           <Title order={2}>{name}</Title>
           <Text c="dimmed">
-            {latest?.title} · {latest?.school}
+            {latest?.title} ·{' '}
+            {latest?.school ? (
+              <Anchor component={Link} to={`/school/${encodeURIComponent(latest.school)}`}>
+                {latest.school}
+              </Anchor>
+            ) : (
+              '—'
+            )}
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
         </div>

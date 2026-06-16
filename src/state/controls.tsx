@@ -7,6 +7,9 @@ export type Scope =
 
 export type Metric = 'full' | 'fte' | 'base';
 
+/** facet field (canonical column) -> selected values */
+export type Filters = Record<string, string[]>;
+
 export interface ControlsState {
   scope: Scope;
   setScope: (s: Scope) => void;
@@ -15,6 +18,9 @@ export interface ControlsState {
   /** active snapshot id for cross-sectional views; null = latest */
   activeSnapshot: string | null;
   setActiveSnapshot: (id: string | null) => void;
+  filters: Filters;
+  setFilter: (field: string, values: string[]) => void;
+  clearFilters: () => void;
 }
 
 const Ctx = createContext<ControlsState | null>(null);
@@ -23,9 +29,22 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
   const [scope, setScope] = useState<Scope>({ kind: 'all' });
   const [metric, setMetric] = useState<Metric>('full');
   const [activeSnapshot, setActiveSnapshot] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Filters>({});
+
   const value = useMemo(
-    () => ({ scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot }),
-    [scope, metric, activeSnapshot]
+    () => ({
+      scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot,
+      filters,
+      setFilter: (field: string, values: string[]) =>
+        setFilters((p) => {
+          const next = { ...p };
+          if (values.length) next[field] = values;
+          else delete next[field];
+          return next;
+        }),
+      clearFilters: () => setFilters({}),
+    }),
+    [scope, metric, activeSnapshot, filters]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
