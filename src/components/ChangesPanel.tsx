@@ -115,6 +115,15 @@ export function ChangesPanel() {
   );
   const equity = equityRows?.[0];
 
+  const { data: flows } = useSql<{ a_title: string | null; b_title: string | null; n: number; med_delta: number | null }>(
+    ['chg-flows', fromId, toId, scopeKey, metric],
+    `${cte}
+     SELECT a.title a_title, b.title b_title, count(*) n, round(median(b.pay - a.pay)) med_delta
+     FROM a JOIN b ON a.person_key = b.person_key WHERE a.job IS DISTINCT FROM b.job
+     GROUP BY a.title, b.title ORDER BY n DESC LIMIT 15`,
+    enabled
+  );
+
   const isTTC = !!fromId && !!toId && fromId.includes('pre') && toId.includes('post');
   const opts = [...snaps].reverse().map((x) => ({ value: x.id, label: x.label }));
 
@@ -223,6 +232,33 @@ export function ChangesPanel() {
           </Table.Tbody>
         </Table>
       </Card>
+
+      {(flows ?? []).length > 0 && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="sm">Top title transitions (flows)</Text>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>From → To title</Table.Th>
+                <Table.Th ta="right">People</Table.Th>
+                <Table.Th ta="right">Median pay Δ</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {(flows ?? []).map((f, i) => (
+                <Table.Tr key={i}>
+                  <Table.Td><Text size="sm">{f.a_title ?? '—'} → {f.b_title ?? '—'}</Text></Table.Td>
+                  <Table.Td ta="right">{num(f.n)}</Table.Td>
+                  <Table.Td ta="right" c={(f.med_delta ?? 0) >= 0 ? 'teal' : 'red'}>
+                    {f.med_delta == null ? '—' : `${f.med_delta >= 0 ? '+' : ''}${usd(f.med_delta)}`}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          <ChartData caption="Title transitions" columns={['From', 'To', 'People', 'Median pay change']} rows={(flows ?? []).map((f) => [f.a_title, f.b_title, f.n, f.med_delta])} />
+        </Card>
+      )}
 
       {(mobility ?? []).length > 0 && (
         <Card withBorder padding="lg">
