@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -126,6 +126,15 @@ export default function Person() {
         </Button>
       </Group>
 
+      <Tabs defaultValue="overview">
+        <Tabs.List>
+          <Tabs.Tab value="overview">Overview</Tabs.Tab>
+          <Tabs.Tab value="pay">Pay &amp; standing</Tabs.Tab>
+          <Tabs.Tab value="trends">Salary trend</Tabs.Tab>
+          <Tabs.Tab value="history">History</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="overview" pt="md">
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         <Card withBorder padding="md">
           <Text size="xs" c="dimmed">Latest salary</Text>
@@ -144,7 +153,10 @@ export default function Person() {
           <Text fw={600}>{num(trend.length)}</Text>
         </Card>
       </SimpleGrid>
+        </Tabs.Panel>
 
+        <Tabs.Panel value="pay" pt="md">
+          <Stack gap="lg">
       {standing && (
         <Card withBorder padding="md">
           <Text size="sm" fw={600} mb="xs">Standing (latest snapshot)</Text>
@@ -184,7 +196,10 @@ export default function Person() {
           )}
         </Card>
       )}
+          </Stack>
+        </Tabs.Panel>
 
+        <Tabs.Panel value="trends" pt="md">
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Salary over time</Text>
         <ResponsiveContainer width="100%" height={280}>
@@ -198,7 +213,9 @@ export default function Person() {
         </ResponsiveContainer>
         <ChartData caption="Salary over time" columns={['Snapshot', 'Salary']} rows={trend.map((t) => [t.label, t.salary])} />
       </Card>
+        </Tabs.Panel>
 
+        <Tabs.Panel value="history" pt="md">
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title & salary history</Text>
         <Table striped highlightOnHover>
@@ -231,6 +248,8 @@ export default function Person() {
           </Table.Tbody>
         </Table>
       </Card>
+        </Tabs.Panel>
+      </Tabs>
     </Stack>
   );
 }

@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import {
-  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl,
+  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
 } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import {
@@ -128,6 +128,14 @@ export default function School() {
         </Button>
       </Group>
 
+      <Tabs defaultValue="overview">
+        <Tabs.List>
+          <Tabs.Tab value="overview">Overview</Tabs.Tab>
+          <Tabs.Tab value="dist">Trends &amp; distribution</Tabs.Tab>
+          <Tabs.Tab value="people">People</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="overview" pt="md">
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         <Stat label="Headcount" value={num(s?.headcount)} />
         <Stat label="Median" value={usd(s?.med)} />
@@ -155,7 +163,10 @@ export default function School() {
           </Text>
         )}
       </Card>
+        </Tabs.Panel>
 
+        <Tabs.Panel value="dist" pt="md">
+          <Stack gap="lg">
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Tenure vs pay (compression check)</Text>
         <ResponsiveContainer width="100%" height={260}>
@@ -214,7 +225,10 @@ export default function School() {
         </ResponsiveContainer>
         <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
       </Card>
+          </Stack>
+        </Tabs.Panel>
 
+        <Tabs.Panel value="people" pt="md">
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Composition by category</Text>
@@ -249,6 +263,8 @@ export default function School() {
           </Table>
         </Card>
       </SimpleGrid>
+        </Tabs.Panel>
+      </Tabs>
     </Stack>
   );
 }
