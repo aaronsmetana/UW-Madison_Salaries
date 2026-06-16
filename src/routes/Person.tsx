@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs,
 } from '@mantine/core';
@@ -11,6 +11,7 @@ import { sqlStr } from '../lib/duckdb';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
+import { PeerRangeBar } from '../components/PeerRangeBar';
 import { ChartData } from '../components/ChartData';
 
 interface Row {
@@ -32,9 +33,13 @@ interface Row {
   grade_basis: string | null;
 }
 
+interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
+interface PeerRow { person_key: string; fn: string | null; ln: string | null; pay: number }
+
 export default function Person() {
   const { id } = useParams();
   const key = decodeURIComponent(id ?? '');
+  const nav = useNavigate();
   const { add, has } = useTray();
 
   const { data, isLoading, error } = useSql<Row>(
@@ -88,6 +93,26 @@ export default function Person() {
   );
   const standing = standingRows?.[0];
 
+  // Same-title peers = everyone sharing this person's job_code at the latest snapshot.
+  const jobCode = latest?.job_code ?? null;
+  const { data: peerStatsRows } = useSql<PeerStats>(
+    ['peer-stats', jobCode ?? '', lastSnap],
+    `WITH pp AS (SELECT person_key, sum(salary) pay FROM salaries
+        WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+     SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
+            quantile_cont(pay, 0.75) p75, max(pay) hi FROM pp WHERE pay > 0`,
+    !!lastSnap && !!jobCode
+  );
+  const peer = peerStatsRows?.[0];
+
+  const { data: peers } = useSql<PeerRow>(
+    ['peer-list', jobCode ?? '', lastSnap],
+    `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, sum(salary) pay
+        FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+     SELECT person_key, fn, ln, pay FROM pp WHERE pay > 0 ORDER BY pay DESC LIMIT 25`,
+    !!lastSnap && !!jobCode
+  );
+
   const [pctRaise, setPctRaise] = useState<number>(3);
   const [years, setYears] = useState<number>(5);
 
@@ -135,24 +160,76 @@ export default function Person() {
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
-        <Card withBorder padding="md">
-          <Text size="xs" c="dimmed">Latest salary</Text>
-          <Text fw={600}>{usd(lastSalary)}</Text>
-        </Card>
-        <Card withBorder padding="md">
-          <Text size="xs" c="dimmed">Change (first→latest)</Text>
-          <Text fw={600}>{totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}</Text>
-        </Card>
-        <Card withBorder padding="md">
-          <Text size="xs" c="dimmed">Tenure</Text>
-          <Text fw={600}>{tenureYears == null ? '—' : `${tenureYears.toFixed(1)} yrs`}</Text>
-        </Card>
-        <Card withBorder padding="md">
-          <Text size="xs" c="dimmed">Snapshots present</Text>
-          <Text fw={600}>{num(trend.length)}</Text>
-        </Card>
-      </SimpleGrid>
+          <Stack gap="lg">
+            <Card withBorder padding="lg">
+              <Text size="sm" c="dimmed">Latest salary{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}</Text>
+              <Title order={1} style={{ fontSize: '2.5rem', lineHeight: 1.1 }}>{usd(lastSalary)}</Title>
+              {latest?.title && <Text size="sm" c="dimmed" mt={4}>{latest.title}</Text>}
+            </Card>
+
+            <SimpleGrid cols={{ base: 3, sm: 3 }}>
+              <Card withBorder padding="md">
+                <Text size="xs" c="dimmed">Change (first→latest)</Text>
+                <Text fw={600}>{totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}</Text>
+              </Card>
+              <Card withBorder padding="md">
+                <Text size="xs" c="dimmed">Tenure</Text>
+                <Text fw={600}>{tenureYears == null ? '—' : `${tenureYears.toFixed(1)} yrs`}</Text>
+              </Card>
+              <Card withBorder padding="md">
+                <Text size="xs" c="dimmed">Snapshots present</Text>
+                <Text fw={600}>{num(trend.length)}</Text>
+              </Card>
+            </SimpleGrid>
+
+            {peer && peer.n > 0 && lastSalary != null && jobCode &&
+              peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
+              <Card withBorder padding="lg">
+                <Group justify="space-between" mb="md" wrap="nowrap">
+                  <Text size="sm" fw={600}>How this person compares to others with the same title</Text>
+                  <Anchor component={Link} to={`/title/${encodeURIComponent(jobCode)}`} size="sm">Title page →</Anchor>
+                </Group>
+                <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} />
+                <Text size="xs" c="dimmed" mt="sm">
+                  Among {num(peer.n)} people with the title {latest?.title} (job code {jobCode}) in the latest snapshot.
+                </Text>
+              </Card>
+            )}
+
+            {peers && peers.length > 1 && (
+              <Card withBorder padding="lg">
+                <Text size="sm" fw={600} mb="md">Others with this title</Text>
+                <Table striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Name</Table.Th>
+                      <Table.Th ta="right">Salary</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {peers.map((p) => {
+                      const isYou = p.person_key === key;
+                      return (
+                        <Table.Tr
+                          key={p.person_key}
+                          onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
+                          style={{ cursor: isYou ? 'default' : 'pointer' }}
+                        >
+                          <Table.Td>
+                            <Text size="sm" c={isYou ? undefined : 'indigo'} fw={isYou ? 700 : undefined}>
+                              {`${p.fn ?? ''} ${p.ln ?? ''}`.trim() || '—'}
+                            </Text>
+                            {isYou && <Badge ml="xs" size="xs" variant="light">this person</Badge>}
+                          </Table.Td>
+                          <Table.Td ta="right">{usd(p.pay)}</Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Card>
+            )}
+          </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="pay" pt="md">

@@ -1,113 +1,49 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Stack, Card, Group, Title, Text, Select, NumberInput, Button, SimpleGrid, Anchor, ThemeIcon } from '@mantine/core';
-import {
-  IconScale, IconUserSearch, IconUsersGroup, IconUsers, IconCoin, IconCalendarStats, IconDatabase, IconArrowRight,
-} from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
+import { Stack, Title, Text, SimpleGrid, Group, Anchor } from '@mantine/core';
+import { IconDatabase, IconCoin, IconReportMoney, IconScale, IconUsersGroup } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { num, usd } from '../lib/format';
-import { Hero } from '../components/Hero';
 import { StatCard } from '../components/StatCard';
 import { SearchBox } from '../components/SearchBox';
 
 export default function Home() {
-  const nav = useNavigate();
-  const snap = useActiveSnapshotId();
   const { data: summary } = useSummary();
-  const latest = summary?.latest;
+  const snap = useActiveSnapshotId();
 
-  const [code, setCode] = useState<string | null>(null);
-  const [sal, setSal] = useState<number | string>('');
-
-  const { data: titles } = useSql<{ job_code: string; title: string; n: number }>(
-    ['pc-titles', snap ?? ''],
-    `SELECT job_code, arg_max(title, salary) title, count(DISTINCT person_key) n
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IS NOT NULL
-     GROUP BY job_code ORDER BY n DESC`,
+  const { data: payrollRows } = useSql<{ total: number | null }>(
+    ['home-payroll', snap ?? ''],
+    `SELECT sum(salary) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
     !!snap
   );
-  const titleData = (titles ?? []).map((t) => ({ value: t.job_code, label: `${t.title} (${t.job_code} · ${num(t.n)})` }));
-
-  const go = () => {
-    if (code && typeof sal === 'number' && sal > 0) nav(`/paycheck?code=${encodeURIComponent(code)}&sal=${sal}`);
-  };
+  const payroll = payrollRows?.[0]?.total ?? null;
 
   return (
-    <Stack gap="lg">
-      <Hero
-        title="UW–Madison Salaries"
-        subtitle="Explore public-record UW–Madison salary data across years. See how your pay compares for your title, look up anyone, and compare people or teams."
-      />
+    <Stack gap="xl">
+      <Stack gap={6} align="center" mt={{ base: 'md', sm: 48 }}>
+        <Title order={1} ta="center" style={{ letterSpacing: '-0.02em' }}>
+          UW–Madison Salaries
+        </Title>
+        <Text c="dimmed" ta="center" maw={560}>
+          Search public-record salaries by name, see what someone makes, and compare them to everyone with the same title.
+        </Text>
+      </Stack>
 
-      {/* Primary action */}
-      <Card padding="xl" shadow="sm" withBorder>
-        <Group gap="sm" mb="xs">
-          <ThemeIcon variant="light" size={36} radius="md"><IconScale size={20} /></ThemeIcon>
-          <Title order={3}>Am I paid fairly for my title?</Title>
-        </Group>
-        <Text c="dimmed" mb="md">Pick your title and enter your salary — see your percentile within that title, the official pay band, and how schools compare. Your number stays in your browser.</Text>
-        <Group align="flex-end" wrap="wrap">
-          <Select
-            label="Your title"
-            placeholder="Search titles…"
-            data={titleData}
-            value={code}
-            onChange={setCode}
-            searchable
-            w={360}
-            nothingFoundMessage="No matching title"
-          />
-          <NumberInput
-            label="Your annual salary"
-            placeholder="e.g. 120000"
-            value={sal}
-            onChange={setSal}
-            min={0}
-            step={1000}
-            thousandSeparator=","
-            prefix="$"
-            w={200}
-          />
-          <Button size="md" rightSection={<IconArrowRight size={16} />} onClick={go} disabled={!code || !(typeof sal === 'number' && sal > 0)}>
-            Check my pay
-          </Button>
-        </Group>
-      </Card>
+      <SearchBox prominent placeholder="Search for an employee by name…" />
 
-      {/* Secondary actions */}
-      <SimpleGrid cols={{ base: 1, md: 2 }}>
-        <Card padding="lg" shadow="sm" withBorder>
-          <Group gap="sm" mb="xs">
-            <ThemeIcon variant="light" color="teal" size={32} radius="md"><IconUserSearch size={18} /></ThemeIcon>
-            <Title order={4}>Look up a person</Title>
-          </Group>
-          <Text c="dimmed" size="sm" mb="sm">Find anyone and see all their known salaries, titles, tenure, and pay-band position over time.</Text>
-          <SearchBox />
-        </Card>
-
-        <Card padding="lg" shadow="sm" withBorder>
-          <Group gap="sm" mb="xs">
-            <ThemeIcon variant="light" color="grape" size={32} radius="md"><IconUsersGroup size={18} /></ThemeIcon>
-            <Title order={4}>Compare people or a team</Title>
-          </Group>
-          <Text c="dimmed" size="sm" mb="sm">Add people (or whole schools) to your tray from anywhere, then compare salary trajectories, gaps, and standing.</Text>
-          <Button variant="light" component={Link} to="/compare" rightSection={<IconArrowRight size={16} />}>
-            Open Compare
-          </Button>
-        </Card>
+      <SimpleGrid cols={{ base: 1, sm: 3 }} maw={760} mx="auto" w="100%">
+        <StatCard label="Total records" value={num(summary?.total_rows)} icon={<IconDatabase size={20} />} color="cyan" />
+        <StatCard label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={20} />} color="teal" />
+        <StatCard label="Total payroll (latest)" value={usd(payroll)} icon={<IconReportMoney size={20} />} color="indigo" />
       </SimpleGrid>
 
-      {/* Supporting KPIs */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
-        <StatCard label="People (latest)" value={num(latest?.headcount)} icon={<IconUsers size={20} />} />
-        <StatCard label="Median salary" value={usd(latest?.median)} icon={<IconCoin size={20} />} color="teal" />
-        <StatCard label="Snapshots" value={num(summary?.snapshot_count)} icon={<IconCalendarStats size={20} />} color="grape" />
-        <StatCard label="Records" value={num(summary?.total_rows)} icon={<IconDatabase size={20} />} color="cyan" />
-      </SimpleGrid>
-
-      <Group justify="center">
-        <Anchor component={Link} to="/explore" c="dimmed">Browse all data (schools, trends, changes) → Explore</Anchor>
+      <Group justify="center" gap="xl" mt="xs">
+        <Anchor component={Link} to="/paycheck" c="dimmed">
+          <Group gap={6}><IconScale size={16} /> Self-Check: am I paid fairly for my title?</Group>
+        </Anchor>
+        <Anchor component={Link} to="/compare" c="dimmed">
+          <Group gap={6}><IconUsersGroup size={16} /> Compare a team</Group>
+        </Anchor>
       </Group>
     </Stack>
   );

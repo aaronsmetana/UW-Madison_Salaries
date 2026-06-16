@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { TextInput, Paper, Loader, Stack, UnstyledButton, Text, Group } from '@mantine/core';
+import { IconSearch } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql } from '../lib/hooks';
@@ -17,10 +18,12 @@ export function SearchBox({
   placeholder = 'Search a person…',
   autoFocus = false,
   onSelect,
+  prominent = false,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
   onSelect?: () => void;
+  prominent?: boolean;
 }) {
   const [term, setTerm] = useState('');
   const [debounced] = useDebouncedValue(term, 200);
@@ -46,9 +49,11 @@ export function SearchBox({
   const open = enabled && (isFetching || (data && data.length >= 0));
 
   return (
-    <div style={{ position: 'relative', maxWidth: 560 }}>
+    <div style={{ position: 'relative', maxWidth: prominent ? 640 : 560, margin: prominent ? '0 auto' : undefined }}>
       <TextInput
-        size="md"
+        size={prominent ? 'xl' : 'md'}
+        radius={prominent ? 'xl' : undefined}
+        leftSection={prominent ? <IconSearch size={20} /> : undefined}
         placeholder={placeholder}
         value={term}
         onChange={(e) => setTerm(e.currentTarget.value)}

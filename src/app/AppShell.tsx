@@ -7,10 +7,10 @@ import { CommandSearch } from '../components/CommandSearch';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const NAV = [
-  { label: 'Home', to: '/' },
-  { label: 'Pay check', to: '/paycheck' },
-  { label: 'Explore', to: '/explore' },
-  { label: 'Compare', to: '/compare' },
+  { label: 'Search', to: '/' },
+  { label: 'Self-Check', to: '/paycheck' },
+  { label: 'Explore Departments', to: '/explore' },
+  { label: 'Compare Teams', to: '/compare' },
   { label: 'Reports', to: '/reports' },
 ];
 
