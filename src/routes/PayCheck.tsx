@@ -3,16 +3,13 @@ import {
   Stack, Title, Text, Card, Group, Select, NumberInput, SimpleGrid, Table, Anchor, Loader, Badge, Box, Skeleton,
 } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
-import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
-} from 'recharts';
 import { useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { useControls } from '../state/controls';
 import { salaryExpr } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
-import { ChartData } from '../components/ChartData';
+import { SalaryHistogram } from '../components/SalaryHistogram';
 
 function ordinal(p: number): string {
   const r = Math.round(p);
@@ -78,14 +75,14 @@ export default function PayCheck() {
   const titleRow = pct?.find((r) => r.scope === 'title');
   const schoolRow = pct?.find((r) => r.scope === 'title_school');
 
-  // distribution for the title (with a "you" marker)
-  const { data: dist } = useSql<{ bucket: number; n: number }>(
-    ['pc-dist', snap ?? '', code, metric],
-    `SELECT (floor(${expr} / 20000) * 20000)::BIGINT bucket, count(*) n FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1 ORDER BY 1`,
+  // distribution for the title (per-person salary sums, with a "you" marker)
+  const { data: payRows } = useSql<{ pay: number }>(
+    ['pc-pays', snap ?? '', code, metric],
+    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries WHERE ${base} GROUP BY person_key)
+     SELECT pay FROM pp WHERE pay > 0`,
     ready
   );
-  const distData = (dist ?? []).map((d) => ({ label: `${Math.round(d.bucket / 1000)}k`, n: d.n }));
-  const markerLabel = ready ? `${Math.round((Math.floor(salary / 20000) * 20000) / 1000)}k` : null;
+  const pays = (payRows ?? []).map((r) => r.pay);
 
   // by-school market view
   const { data: bySchool } = useSql<{ school: string; n: number; med: number | null }>(
@@ -197,20 +194,13 @@ export default function PayCheck() {
           )}
 
           <Card padding="lg">
-            <Text size="sm" fw={600} mb="md">Where you fall in the {titleLabel} pay distribution ($20k bins)</Text>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={distData} margin={{ left: 12, right: 12 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis width={48} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="n" fill="var(--mantine-color-indigo-4)" />
-                {markerLabel && (
-                  <ReferenceLine x={markerLabel} stroke="var(--mantine-color-red-6)" strokeWidth={2} label={{ value: 'you', position: 'top', fontSize: 11 }} />
-                )}
-              </BarChart>
-            </ResponsiveContainer>
-            <ChartData caption={`${titleLabel} salary distribution`} columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
+            <Text size="sm" fw={600} mb="md">Where you fall in the {titleLabel} pay distribution</Text>
+            <SalaryHistogram
+              values={pays}
+              markerValue={salary}
+              markerLabel="you"
+              tooFewText={`Only ${num(pays.length)} ${pays.length === 1 ? 'person has' : 'people have'} this title — too few to chart a meaningful distribution.`}
+            />
           </Card>
 
           <Card padding="lg">
