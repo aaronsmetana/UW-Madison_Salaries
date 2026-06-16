@@ -48,10 +48,10 @@ export default function Home() {
         </Text>
       </Stack>
 
-      {/* Search + stats share one centered width so they line up. */}
-      <Stack gap="lg" maw={640} mx="auto" w="100%">
+      {/* Wide hero search; stat cards sit centered beneath it. */}
+      <Stack gap="lg" maw={1150} mx="auto" w="100%">
         <SearchBox prominent placeholder="Search for an employee by name…" />
-        <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm" w="100%">
+        <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm" maw={760} mx="auto" w="100%">
           <Kpi label="Total records" value={num(summary?.total_rows)} icon={<IconDatabase size={18} />} color="cyan" />
           <Kpi label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
           <Kpi label="Total payroll (latest)" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />

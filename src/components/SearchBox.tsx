@@ -52,7 +52,7 @@ export function SearchBox({
   const open = enabled && (isFetching || (data && data.length >= 0));
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: prominent ? 640 : 560, margin: prominent ? '0 auto' : undefined }}>
+    <div style={{ position: 'relative', width: '100%', maxWidth: prominent ? '100%' : 560, margin: prominent ? '0 auto' : undefined }}>
       <TextInput
         size={prominent ? 'xl' : 'md'}
         radius={prominent ? 'xl' : undefined}
@@ -85,11 +85,11 @@ export function SearchBox({
                   }}
                   style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
                 >
-                  <Group justify="space-between" wrap="nowrap" gap="md">
+                  <Group wrap="nowrap" gap="sm">
                     <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                       {h.fn} {h.ln}
                     </Text>
-                    <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, textAlign: 'right' }}>
+                    <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
                       {[h.title, h.school].filter(Boolean).join(' · ')}
                     </Text>
                   </Group>
