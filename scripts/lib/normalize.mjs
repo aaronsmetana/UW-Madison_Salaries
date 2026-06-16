@@ -111,7 +111,7 @@ export function snapshotMeta(snap) {
   const id = `${snap.year}-${mm}${snap.variant ? `-${snap.variant}` : ''}`;
   const date = `${snap.year}-${snap.month ? mm : '01'}-01`;
   const label = `${snap.month ? MONTH_LABEL[snap.month] + ' ' : ''}${snap.year}` +
-    (snap.variant ? ` (${snap.variant.toUpperCase()}-TTC)` : '');
+    (snap.variant ? ` (${snap.variant[0].toUpperCase()}${snap.variant.slice(1)}-TTC)` : '');
   return { id, date, label, year: snap.year, month: snap.month, variant: snap.variant || null };
 }
 

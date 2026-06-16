@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -12,7 +12,21 @@ import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
+import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
+
+/** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number } }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <Paper withBorder shadow="sm" p="xs">
+      <Text size="sm" fw={600}>{d.full}</Text>
+      <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
+      <Text size="sm">Salary: {usd(d.salary)}</Text>
+    </Paper>
+  );
+}
 
 interface Row {
   first_name: string | null;
@@ -56,18 +70,36 @@ export default function Person() {
   const latest = rows[rows.length - 1];
   const name = latest ? `${latest.first_name ?? ''} ${latest.last_name ?? ''}`.trim() : key;
 
-  // Salary trend: sum appointments within each snapshot.
+  // Salary trend: sum appointments within each snapshot (carry the snapshot's title for the tooltip).
   const trend = useMemo(() => {
-    const by = new Map<string, { id: string; label: string; date: string; salary: number }>();
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const ttcSuffix = (id: string) => (id.endsWith('-pre') ? ' (Pre-TTC)' : id.endsWith('-post') ? ' (Post-TTC)' : '');
+    const fullLabel = (date: string, id: string) => {
+      const m = Number(String(date).slice(5, 7));
+      return `${MONTHS[m - 1] ?? ''} ${String(date).slice(0, 4)}${ttcSuffix(id)}`.trim();
+    };
+    const by = new Map<string, { id: string; label: string; full: string; date: string; salary: number; title: string | null; max: number }>();
     for (const r of rows) {
-      const cur = by.get(r.snapshot_id) ?? { id: r.snapshot_id, label: r.snapshot_label, date: r.snapshot_date, salary: 0 };
+      let cur = by.get(r.snapshot_id);
+      if (!cur) {
+        cur = { id: r.snapshot_id, label: r.snapshot_label, full: fullLabel(r.snapshot_date, r.snapshot_id), date: r.snapshot_date, salary: 0, title: r.title, max: -1 };
+        by.set(r.snapshot_id, cur);
+      }
       cur.salary += r.salary ?? 0;
-      by.set(r.snapshot_id, cur);
+      if ((r.salary ?? 0) >= cur.max) { cur.max = r.salary ?? 0; cur.title = r.title; }
     }
     // Same-date TTC pair: show pre-TTC to the left of post-TTC.
     const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
     return [...by.values()].sort(
       (a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id)
+    );
+  }, [rows]);
+
+  // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair.
+  const historyRows = useMemo(() => {
+    const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
+    return [...rows].sort(
+      (a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date)) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)
     );
   }, [rows]);
 
@@ -116,6 +148,20 @@ export default function Person() {
      SELECT person_key, fn, ln, pay FROM pp WHERE pay > 0 ORDER BY pay DESC LIMIT 25`,
     !!lastSnap && !!jobCode
   );
+
+  const { data: peerPayRows } = useSql<{ pay: number }>(
+    ['peer-pays', jobCode ?? '', lastSnap],
+    `WITH pp AS (SELECT person_key, sum(salary) pay FROM salaries
+        WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+     SELECT pay FROM pp WHERE pay > 0`,
+    !!lastSnap && !!jobCode
+  );
+  const peerPays = useMemo(() => (peerPayRows ?? []).map((r) => r.pay), [peerPayRows]);
+  const peerPct = useMemo(() => {
+    if (!peerPays.length || lastSalary == null) return null;
+    const below = peerPays.filter((p) => p <= lastSalary).length;
+    return Math.round((100 * below) / peerPays.length);
+  }, [peerPays, lastSalary]);
 
   const [pctRaise, setPctRaise] = useState<number>(3);
   const [years, setYears] = useState<number>(5);
@@ -181,7 +227,7 @@ export default function Person() {
                 <Text fw={600}>{tenureYears == null ? '—' : `${tenureYears.toFixed(1)} yrs`}</Text>
               </Card>
               <Card withBorder padding="md">
-                <Text size="xs" c="dimmed">Snapshots present</Text>
+                <Text size="xs" c="dimmed">Salary Snapshots With Persons Name Available</Text>
                 <Text fw={600}>{num(trend.length)}</Text>
               </Card>
             </SimpleGrid>
@@ -194,9 +240,20 @@ export default function Person() {
                   <Anchor component={Link} to={`/title/${encodeURIComponent(jobCode)}`} size="sm">Title page →</Anchor>
                 </Group>
                 <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} />
-                <Text size="xs" c="dimmed" mt="sm">
+                {peerPct != null && (
+                  <Text size="sm" mt="sm">
+                    Paid more than <b>{peerPct}%</b> of people with this title.
+                  </Text>
+                )}
+                <Text size="xs" c="dimmed" mt={4} mb="md">
                   Among {num(peer.n)} people with the title {latest?.title} (job code {jobCode}) in the latest snapshot.
                 </Text>
+                <SalaryHistogram
+                  values={peerPays}
+                  markerValue={lastSalary}
+                  markerLabel="this person"
+                  tooFewText={`Only ${num(peer.n)} ${peer.n === 1 ? 'person has' : 'people have'} this title — too few to chart a distribution.`}
+                />
               </Card>
             )}
 
@@ -288,7 +345,7 @@ export default function Person() {
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v: number) => usd(v)} />
+            <Tooltip content={<TrendTooltip />} />
             <Line type="monotone" dataKey="salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
@@ -311,7 +368,7 @@ export default function Person() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {rows.map((r, i) => (
+            {historyRows.map((r, i) => (
               <Table.Tr key={`${r.snapshot_id}-${i}`}>
                 <Table.Td>
                   <Badge variant="light" size="sm">{r.snapshot_label}</Badge>

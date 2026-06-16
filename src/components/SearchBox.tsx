@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { TextInput, Paper, Loader, Stack, UnstyledButton, Text, Group } from '@mantine/core';
-import { IconSearch } from '@tabler/icons-react';
+import { useState, useMemo } from 'react';
+import { TextInput, Paper, Loader, Stack, UnstyledButton, Text, Group, Tooltip } from '@mantine/core';
+import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql } from '../lib/hooks';
@@ -12,6 +12,7 @@ interface Hit {
   ln: string;
   school: string | null;
   title: string | null;
+  max_appts: number;
 }
 
 export function SearchBox({
@@ -35,18 +36,34 @@ export function SearchBox({
 
   const { data, isFetching } = useSql<Hit>(
     ['search', q],
-    `SELECT person_key,
+    `WITH m AS (
+        SELECT person_key, first_name, last_name, school, title, snapshot_date,
+               count(*) OVER (PARTITION BY person_key, snapshot_id) per_snap
+        FROM salaries
+        WHERE lower(first_name || ' ' || last_name) LIKE ${sqlStr(`%${q}%`)}
+     )
+     SELECT person_key,
         arg_max(first_name, snapshot_date) AS fn,
         arg_max(last_name, snapshot_date)  AS ln,
         arg_max(school, snapshot_date)     AS school,
-        arg_max(title, snapshot_date)      AS title
-     FROM salaries
-     WHERE lower(first_name || ' ' || last_name) LIKE ${sqlStr(`%${q}%`)}
+        arg_max(title, snapshot_date)      AS title,
+        max(per_snap)                      AS max_appts
+     FROM m
      GROUP BY person_key
      ORDER BY ln, fn
      LIMIT 25`,
     enabled
   );
+
+  // Detect homonyms within the current results (same display name, different person).
+  const nameCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const h of data ?? []) {
+      const k = `${h.fn} ${h.ln}`.trim().toLowerCase();
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  }, [data]);
 
   const nav = useNavigate();
   const open = enabled && (isFetching || (data && data.length >= 0));
@@ -54,9 +71,9 @@ export function SearchBox({
   return (
     <div style={{ position: 'relative', width: '100%', maxWidth: prominent ? '100%' : 560, margin: prominent ? '0 auto' : undefined }}>
       <TextInput
-        size={prominent ? 'xl' : 'md'}
+        size="md"
         radius={prominent ? 'xl' : undefined}
-        leftSection={prominent ? <IconSearch size={20} /> : undefined}
+        leftSection={prominent ? <IconSearch size={18} /> : undefined}
         placeholder={placeholder}
         value={term}
         onChange={(e) => setTerm(e.currentTarget.value)}
@@ -69,32 +86,46 @@ export function SearchBox({
         <Paper withBorder shadow="md" mt={4} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, maxHeight: 360, overflowY: 'auto' }}>
           {data && data.length > 0 ? (
             <Stack gap={0}>
-              {data.map((h) => (
-                <UnstyledButton
-                  key={h.person_key}
-                  px="sm"
-                  py={8}
-                  onClick={() => {
-                    if (onPick) {
-                      onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
-                      setTerm('');
-                    } else {
-                      nav(`/person/${encodeURIComponent(h.person_key)}`);
-                      onSelect?.();
-                    }
-                  }}
-                  style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
-                >
-                  <Group wrap="nowrap" gap="sm">
-                    <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {h.fn} {h.ln}
-                    </Text>
-                    <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
-                      {[h.title, h.school].filter(Boolean).join(' · ')}
-                    </Text>
-                  </Group>
-                </UnstyledButton>
-              ))}
+              {data.map((h) => {
+                const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
+                const multiAppt = (h.max_appts ?? 0) > 1;
+                const flags: string[] = [];
+                if (sharedName) flags.push('Multiple people share this name — double-check this is the right person.');
+                if (multiAppt) flags.push('Has multiple appointment entries in a snapshot (e.g., split or joint roles).');
+                return (
+                  <UnstyledButton
+                    key={h.person_key}
+                    px="sm"
+                    py={8}
+                    onClick={() => {
+                      if (onPick) {
+                        onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
+                        setTerm('');
+                      } else {
+                        nav(`/person/${encodeURIComponent(h.person_key)}`);
+                        onSelect?.();
+                      }
+                    }}
+                    style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+                  >
+                    <Group wrap="nowrap" gap="sm">
+                      <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {h.fn} {h.ln}
+                      </Text>
+                      {flags.length > 0 && (
+                        <Tooltip label={flags.join(' ')} multiline w={260} withArrow position="top">
+                          <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+                            <IconAlertTriangle size={14} color="var(--mantine-color-yellow-6)" />
+                          </span>
+                        </Tooltip>
+                      )}
+                      <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+                        {[h.title, h.school].filter(Boolean).join(' · ')}
+                      </Text>
+                    </Group>
+                  </UnstyledButton>
+                );
+              })}
             </Stack>
           ) : (
             !isFetching && (

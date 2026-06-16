@@ -1,8 +1,9 @@
 import { Suspense } from 'react';
-import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip } from '@mantine/core';
+import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip, ActionIcon } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
+  IconChevronLeft, IconChevronRight,
 } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
@@ -53,7 +54,7 @@ export function AppShellLayout() {
   return (
     <AppShell
       header={{ height: showControl ? 96 : 48 }}
-      navbar={{ width: collapsed ? 64 : 263, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
+      navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
       footer={{ height: 56 }}
       padding="md"
     >
@@ -61,7 +62,6 @@ export function AppShellLayout() {
         <Group h={48} px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
             <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
-            <Burger opened={!collapsed} onClick={toggleDesktop} visibleFrom="sm" size="sm" aria-label="Collapse navigation" />
             <Anchor component={Link} to="/" underline="never" c="inherit">
               <Title order={4}>UW–Madison Salaries</Title>
             </Anchor>
@@ -72,6 +72,13 @@ export function AppShellLayout() {
       </AppShell.Header>
 
       <AppShell.Navbar p="sm">
+        <Group justify={collapsed ? 'center' : 'flex-end'} mb="xs" visibleFrom="sm">
+          <Tooltip label={collapsed ? 'Expand menu' : 'Collapse menu'} position="right" withArrow>
+            <ActionIcon variant="subtle" color="gray" onClick={toggleDesktop} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}>
+              {collapsed ? <IconChevronRight size={18} /> : <IconChevronLeft size={18} />}
+            </ActionIcon>
+          </Tooltip>
+        </Group>
         <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
         {renderLink({ label: 'Data · About', to: '/data', icon: IconInfoCircle }, true)}
       </AppShell.Navbar>

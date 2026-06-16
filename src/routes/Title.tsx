@@ -1,12 +1,11 @@
 import { useParams, Link } from 'react-router-dom';
 import { Stack, Title, Text, Card, Table, Anchor, Loader, Alert, SimpleGrid, Badge } from '@mantine/core';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr } from '../lib/queries';
 import { usd, num } from '../lib/format';
-import { ChartData } from '../components/ChartData';
+import { SalaryHistogram } from '../components/SalaryHistogram';
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -42,12 +41,13 @@ export default function TitlePage() {
     enabled
   );
 
-  const { data: dist } = useSql<{ bucket: number; n: number }>(
-    ['title-dist', jobCode, snap ?? '', metric],
-    `SELECT (floor(${expr} / 20000) * 20000)::BIGINT bucket, count(*) n FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1 ORDER BY 1`,
+  const { data: payRows } = useSql<{ pay: number }>(
+    ['title-pays', jobCode, snap ?? '', metric],
+    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key)
+     SELECT pay FROM pp`,
     enabled
   );
-  const distData = (dist ?? []).map((d) => ({ label: `${Math.round(d.bucket / 1000)}k`, n: d.n }));
+  const pays = (payRows ?? []).map((r) => r.pay);
 
   const { data: people } = useSql<{ person_key: string; fn: string; ln: string; school: string | null; pay: number }>(
     ['title-people', jobCode, snap ?? '', metric],
@@ -98,17 +98,11 @@ export default function TitlePage() {
       </Card>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Salary distribution ($20k bins)</Text>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={distData} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis width={48} tick={{ fontSize: 12 }} />
-            <Tooltip />
-            <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
-          </BarChart>
-        </ResponsiveContainer>
-        <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
+        <Text size="sm" fw={600} mb="md">Salary distribution</Text>
+        <SalaryHistogram
+          values={pays}
+          tooFewText={`Only ${num(pays.length)} ${pays.length === 1 ? 'person has' : 'people have'} this title — too few to chart a meaningful salary distribution.`}
+        />
       </Card>
 
       <Card withBorder padding="lg">

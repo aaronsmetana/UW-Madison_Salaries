@@ -68,7 +68,7 @@ describe('snapshot date resolution', () => {
   it('builds id + label', () => {
     const m = snapshotMeta({ year: 2021, month: 11, variant: 'post' });
     expect(m.id).toBe('2021-11-post');
-    expect(m.label).toBe('Nov 2021 (POST-TTC)');
+    expect(m.label).toBe('Nov 2021 (Post-TTC)');
   });
 });
 

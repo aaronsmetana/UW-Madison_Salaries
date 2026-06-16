@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
 } from '@mantine/core';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
@@ -15,6 +15,22 @@ import { salaryExpr, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { ChartData } from '../components/ChartData';
+
+interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
+
+/** Tenure-vs-pay hover card: who the dot is, their pay and tenure, and a click hint. */
+function TenureTip({ active, payload }: { active?: boolean; payload?: { payload: TenureRow }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{ background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 8, padding: '6px 10px' }}>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>{`${d.fn ?? ''} ${d.ln ?? ''}`.trim() || '—'}</div>
+      <div style={{ fontSize: 12 }}>Pay: {usd(d.pay)}</div>
+      <div style={{ fontSize: 12 }}>Tenure: {d.tenure.toFixed(1)} years</div>
+      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>Click to view profile</div>
+    </div>
+  );
+}
 
 interface Score {
   headcount: number; total_payroll: number | null; med: number | null; mean: number | null;
@@ -37,6 +53,7 @@ export default function School() {
   const { metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const { add, has } = useTray();
+  const nav = useNavigate();
   const [distScale, setDistScale] = useState<'linear' | 'log'>('linear');
   const enabled = !!snap;
   const fk = filterKey(filters);
@@ -104,9 +121,10 @@ export default function School() {
   );
   const band = bandRows?.[0];
 
-  const { data: tenurePay } = useSql<{ tenure: number; pay: number }>(
+  const { data: tenurePay } = useSql<TenureRow>(
     ['school-tenure', name, snap ?? '', metric, fk],
-    `SELECT any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
         sum(${expr}) pay
      FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key LIMIT 3000`,
     enabled
@@ -172,10 +190,19 @@ export default function School() {
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ left: 12, right: 12 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={{ fontSize: 12 }} />
+            <XAxis type="number" dataKey="tenure" name="Tenure" unit=" yrs" tick={{ fontSize: 12 }} />
             <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} />
-            <Scatter data={tenurePay ?? []} fill="var(--mantine-color-indigo-5)" fillOpacity={0.5} />
+            <Tooltip content={<TenureTip />} cursor={{ strokeDasharray: '3 3' }} />
+            <Scatter
+              data={tenurePay ?? []}
+              fill="var(--mantine-color-indigo-5)"
+              fillOpacity={0.5}
+              cursor="pointer"
+              onClick={(pt: { person_key?: string; payload?: { person_key?: string } }) => {
+                const k = pt?.person_key ?? pt?.payload?.person_key;
+                if (k) nav(`/person/${encodeURIComponent(k)}`);
+              }}
+            />
           </ScatterChart>
         </ResponsiveContainer>
         <ChartData caption="Tenure vs pay" columns={['Tenure (yrs)', 'Pay']} rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])} />
