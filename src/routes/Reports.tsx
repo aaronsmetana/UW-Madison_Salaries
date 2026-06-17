@@ -13,12 +13,9 @@ import { usd, num, pct } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { PayBandBar } from '../components/PayBandBar';
+import { PersonDashboard } from '../components/PersonDashboard';
+import { SearchBox } from '../components/SearchBox';
 
-interface Score {
-  headcount: number; total_payroll: number | null; med: number | null; mean: number | null;
-  p25: number | null; p75: number | null; p90: number | null;
-}
-interface Earner { person_key: string; fn: string; ln: string; title: string | null; pay: number }
 interface SchoolCard { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
@@ -49,7 +46,7 @@ function median(nums: number[]): number | null {
 }
 
 export default function Reports() {
-  const { scope, metric } = useControls();
+  const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
@@ -58,41 +55,15 @@ export default function Reports() {
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = new Date().toISOString().slice(0, 10);
 
-  const [type, setType] = useState('school');
+  const [type, setType] = useState('person');
 
-  // ── School report (unchanged) ───────────────────────────────────────────
-  const { data: schoolList } = useSql<{ school: string }>(
-    ['rpt-schools', snap ?? ''],
-    `SELECT DISTINCT school FROM salaries WHERE school IS NOT NULL AND snapshot_id = ${sqlStr(snap ?? '')} ORDER BY school`,
-    !!snap
-  );
-  const [school, setSchool] = useState<string | null>(null);
-  useEffect(() => {
-    if (!school) setSchool(scope.kind === 'school' ? scope.value : (schoolList?.[0]?.school ?? null));
-  }, [school, scope, schoolList]);
-
-  const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(school ?? '')}`;
-  const schoolEnabled = type === 'school' && !!snap && !!school;
-
-  const { data: scoreRows } = useSql<Score>(
-    ['rpt-score', school, snap ?? '', metric],
-    `SELECT count(DISTINCT person_key) headcount,
-        sum(${expr}) FILTER (WHERE ${expr} > 0) total_payroll,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        avg(${expr}) FILTER (WHERE ${expr} > 0) mean,
-        quantile_cont(${expr}, 0.25) FILTER (WHERE ${expr} > 0) p25,
-        quantile_cont(${expr}, 0.75) FILTER (WHERE ${expr} > 0) p75,
-        quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90
-     FROM salaries WHERE ${base}`,
-    schoolEnabled
-  );
-  const sc = scoreRows?.[0];
-
-  const { data: earners } = useSql<Earner>(
-    ['rpt-earners', school, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title, sum(${expr}) pay
-     FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key ORDER BY pay DESC LIMIT 25`,
-    schoolEnabled
+  // ── Report on person: pick any employee; history rows power the CSV export ──
+  const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(null);
+  const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
+    ['rpt-person-hist', selPerson?.key ?? '', metric],
+    `SELECT snapshot_label AS snapshot, title, job_code, school, ${expr} AS pay, fte
+     FROM salaries WHERE person_key = ${sqlStr(selPerson?.key ?? '')} ORDER BY snapshot_date`,
+    type === 'person' && !!selPerson
   );
 
   // ── Justification report (tray) ─────────────────────────────────────────
@@ -295,18 +266,18 @@ export default function Reports() {
             value={type}
             onChange={setType}
             data={[
-              { value: 'school', label: 'School' },
-              { value: 'comparison', label: 'Justification (tray)' },
+              { value: 'person', label: 'Report On Person' },
+              { value: 'comparison', label: 'Salary Increase Justification (People In Tray)' },
             ]}
           />
           <Button.Group>
             <Button
               variant="default"
               leftSection={<IconDownload size={16} />}
-              disabled={type === 'school' ? !earners?.length : !peerListRows?.length}
+              disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
               onClick={() =>
-                type === 'school'
-                  ? downloadCSV(`${school}-top-earners-${snap}.csv`, (earners ?? []) as unknown as Record<string, unknown>[])
+                type === 'person'
+                  ? downloadCSV(`${selPerson?.name ?? 'employee'}-history.csv`, (personHistory ?? []) as unknown as Record<string, unknown>[])
                   : benchmarkCsv()
               }
             >
@@ -319,55 +290,28 @@ export default function Reports() {
         </Group>
       </Group>
 
-      {type === 'school' && (
+      {type === 'person' && (
         <>
-          <Group className="no-print">
-            <Select
-              label="School"
-              data={(schoolList ?? []).map((s) => ({ value: s.school, label: s.school }))}
-              value={school}
-              onChange={setSchool}
-              searchable
-              w={360}
-            />
-          </Group>
-
-          <Card withBorder padding="xl" className="print-area">
-            <Title order={3}>UW–Madison Salary Report</Title>
-            <Text c="dimmed">
-              {school} · as of {snapLabel} · {METRIC_LABEL[metric]} · generated {generated}
+          <Card withBorder padding="lg" className="no-print">
+            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.05em' }}>
+              Report on
             </Text>
-            <Divider my="md" />
-            <SimpleGrid cols={{ base: 2, sm: 4 }}>
-              <Stat label="Headcount" value={num(sc?.headcount)} />
-              <Stat label="Total payroll" value={usd(sc?.total_payroll)} />
-              <Stat label="Median" value={usd(sc?.med)} />
-              <Stat label="Mean" value={usd(sc?.mean)} />
-              <Stat label="25th pctile" value={usd(sc?.p25)} />
-              <Stat label="75th pctile" value={usd(sc?.p75)} />
-              <Stat label="90th pctile" value={usd(sc?.p90)} />
-            </SimpleGrid>
-            <Text size="sm" fw={600} mt="lg" mb="xs">Top earners</Text>
-            <Table striped highlightOnHover style={{ maxWidth: 820 }}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Title</Table.Th>
-                  <Table.Th ta="right">Salary</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {(earners ?? []).map((e) => (
-                  <Table.Tr key={e.person_key}>
-                    <Table.Td>{e.fn} {e.ln}</Table.Td>
-                    <Table.Td>{e.title ?? '—'}</Table.Td>
-                    <Table.Td ta="right">{usd(e.pay)}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            <Footer />
+            <SearchBox
+              placeholder="Search an employee by name…"
+              onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })}
+            />
+            {selPerson && <Text size="sm" mt="sm">Showing report for <b>{selPerson.name}</b>.</Text>}
           </Card>
+
+          {selPerson ? (
+            <div className="print-area">
+              <PersonDashboard personKey={selPerson.key} metric={metric} />
+            </div>
+          ) : (
+            <Card withBorder padding="xl">
+              <Text c="dimmed">Search and pick an employee above to generate a single-page report on their pay, title history, and how they compare to others in their title.</Text>
+            </Card>
+          )}
         </>
       )}
 
