@@ -1,8 +1,9 @@
 import { Suspense } from 'react';
-import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip, Divider } from '@mantine/core';
+import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip, Divider, Button } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
+  IconChevronLeft, IconChevronRight,
 } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
@@ -39,13 +40,14 @@ export function AppShellLayout() {
         leftSection={<Icon size={20} stroke={1.7} />}
         active={active}
         variant="light"
+        color={active ? 'blue' : undefined}
         c={dimmed && !active ? 'dimmed' : undefined}
         styles={{
           root: {
             borderRadius: 'var(--mantine-radius-md)',
             marginBottom: 2,
-            // Solid, bright accent bar on the left of the active item.
-            borderLeft: `4px solid ${active ? 'var(--mantine-color-indigo-6)' : 'transparent'}`,
+            // Thick, bright-blue accent bar on the left of the active item.
+            borderLeft: `4px solid ${active ? 'var(--mantine-color-blue-6)' : 'transparent'}`,
           },
           label: { fontWeight: active ? 700 : 500 },
           section: collapsed ? { marginInlineEnd: 0 } : undefined,
@@ -72,15 +74,8 @@ export function AppShellLayout() {
         <AppShell.Header>
           <Group h={56} px="md" justify="space-between" wrap="nowrap">
             <Group gap="sm" wrap="nowrap">
-              {/* Toggle sits inline with the title: hamburger on mobile (drawer), collapse on desktop. */}
+              {/* Mobile-only burger opens the nav drawer; desktop collapse lives at the bottom of the sidebar. */}
               <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
-              <Burger
-                opened={!collapsed}
-                onClick={toggleDesktop}
-                visibleFrom="sm"
-                size="sm"
-                aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-              />
               <Anchor component={Link} to="/" underline="never" c="inherit">
                 <Title order={4}>UW–Madison Salaries</Title>
               </Anchor>
@@ -94,6 +89,24 @@ export function AppShellLayout() {
           <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
           <Divider my="xs" />
           {renderLink({ label: 'Data · About', to: '/data', icon: IconInfoCircle }, true)}
+          {/* Collapse/expand toggle anchored at the bottom of the sidebar (desktop only). */}
+          <Tooltip label="Expand menu" position="right" withArrow disabled={!collapsed}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="sm"
+              mt="xs"
+              fullWidth
+              visibleFrom="sm"
+              justify={collapsed ? 'center' : 'flex-start'}
+              px={collapsed ? 0 : undefined}
+              onClick={toggleDesktop}
+              leftSection={collapsed ? undefined : <IconChevronLeft size={18} />}
+              aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+            >
+              {collapsed ? <IconChevronRight size={18} /> : 'Collapse'}
+            </Button>
+          </Tooltip>
         </AppShell.Navbar>
 
         <AppShell.Main style={{ paddingBottom: 96 }}>
