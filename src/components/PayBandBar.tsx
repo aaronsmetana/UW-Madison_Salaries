@@ -2,13 +2,13 @@ import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
 import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 
-/** Horizontal pay-band bar: blue dot at `value` (current), optional green `target` line. */
-export function PayBandBar({ min, max, value, target = null }: { min: number; max: number; value: number; target?: number | null }) {
+/** Horizontal pay-band bar: blue dot at `value` (current, optional), optional green `target` line. */
+export function PayBandBar({ min, max, value = null, target = null }: { min: number; max: number; value?: number | null; target?: number | null }) {
   const span = max - min;
-  const raw = span > 0 ? (value - min) / span : 0;
+  const raw = value != null && span > 0 ? (value - min) / span : 0;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
-  const status = value < min ? 'below min' : value > max ? 'over max' : `${Math.round(raw * 100)}% through band`;
-  const color = value < min ? 'yellow' : value > max ? 'red' : 'teal';
+  const status = value == null ? null : value < min ? 'below min' : value > max ? 'over max' : `${Math.round(raw * 100)}% through band`;
+  const color = value == null ? 'gray' : value < min ? 'yellow' : value > max ? 'red' : 'teal';
   const H = 22;
 
   return (
@@ -35,24 +35,26 @@ export function PayBandBar({ min, max, value, target = null }: { min: number; ma
             }}
           />
         )}
-        <div
-          style={{
-            position: 'absolute',
-            left: `${at(value)}%`,
-            top: '50%',
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            background: MARK_CURRENT,
-            border: '2px solid var(--mantine-color-body)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
-            transform: 'translate(-50%, -50%)',
-          }}
-        />
+        {value != null && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${at(value)}%`,
+              top: '50%',
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              background: MARK_CURRENT,
+              border: '2px solid var(--mantine-color-body)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+              transform: 'translate(-50%, -50%)',
+            }}
+          />
+        )}
       </div>
       <Group justify="space-between" mt={6}>
         <Text size="xs" c="dimmed">{usd(min)}</Text>
-        <Badge size="sm" variant="light" color={color}>{status}</Badge>
+        {status && <Badge size="sm" variant="light" color={color}>{status}</Badge>}
         <Text size="xs" c="dimmed">{usd(max)}</Text>
       </Group>
       {target != null && (
