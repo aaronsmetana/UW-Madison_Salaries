@@ -380,24 +380,33 @@ export default function Reports() {
                 </Text>
                 <Divider my="md" />
 
-                {/* Recommendation callout — experience/scope-adjusted target is the headline */}
-                <Paper radius="md" p="lg" bg="var(--mantine-color-indigo-light)" mb="lg">
+                {/* Recommendation callout — the experience/scope-adjusted target is the hero number */}
+                <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="lg">
                   {belowTarget && primaryTarget != null ? (
-                    <Group justify="space-between" wrap="wrap" gap="md" align="center">
-                      <div>
-                        <Text size="xs" c="dimmed">Current ({METRIC_LABEL[metric]})</Text>
-                        <Text fw={700} fz="xl">{usd(subjectPay)}</Text>
-                      </div>
-                      <Text fz={28} c="green.7">→</Text>
-                      <div>
-                        <Text size="xs" c="dimmed">Target salary (experience &amp; scope adjusted)</Text>
-                        <Text fw={800} fz={30} c="green.8" lh={1.1}>{usd(primaryTarget)}</Text>
-                      </div>
-                      <div>
-                        <Text size="xs" c="dimmed">Adjustment</Text>
-                        <Text fw={700} fz="xl" c="green.7">+{usd(targetDelta)} ({pct(targetPct)})</Text>
-                      </div>
-                    </Group>
+                    <>
+                      <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>
+                        Target salary — experience &amp; scope adjusted
+                      </Text>
+                      <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
+                        {usd(primaryTarget)}
+                      </Text>
+                      <Group gap="xl" mt="md" wrap="wrap">
+                        <div>
+                          <Text size="xs" c="dimmed">Current ({METRIC_LABEL[metric]})</Text>
+                          <Text fw={600} fz="lg">{usd(subjectPay)}</Text>
+                        </div>
+                        <div>
+                          <Text size="xs" c="dimmed">Suggested adjustment</Text>
+                          <Text fw={700} fz="lg" c="green.7">+{usd(targetDelta)} ({pct(targetPct)})</Text>
+                        </div>
+                        {med != null && (
+                          <div>
+                            <Text size="xs" c="dimmed">Title median (parity)</Text>
+                            <Text fw={500} fz="sm" c="dimmed">{usd(med)}</Text>
+                          </div>
+                        )}
+                      </Group>
+                    </>
                   ) : (
                     <Text fw={600}>
                       {subjectPay != null
@@ -405,10 +414,9 @@ export default function Reports() {
                         : 'No salary on record for the subject in this snapshot.'}
                     </Text>
                   )}
-                  <Text size="xs" c="dimmed" mt="xs">
-                    {med != null && `For reference, the ${subj?.title ?? 'title'} market median (parity) is ${usd(med)}.`}
-                    {supervises ? ` Plus supervisory scope (${supN} ${supN === 1 ? 'report' : 'staff'}) beyond title.` : ''}
-                  </Text>
+                  {supervises && (
+                    <Text size="xs" c="dimmed" mt="sm">Plus supervisory scope ({supN} {supN === 1 ? 'report' : 'staff'}) beyond title.</Text>
+                  )}
                 </Paper>
 
                 {!jobCode && (
