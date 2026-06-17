@@ -85,8 +85,8 @@ export function SearchBox({
           <TextInput
             size={prominent ? 'xl' : 'md'}
             radius={prominent ? 'xl' : undefined}
-            leftSection={prominent ? <IconSearch size={26} /> : undefined}
-            leftSectionWidth={prominent ? 56 : undefined}
+            leftSection={prominent ? <IconSearch size={28} /> : undefined}
+            leftSectionWidth={prominent ? 60 : undefined}
             placeholder={placeholder}
             value={term}
             onChange={(e) => setTerm(e.currentTarget.value)}
@@ -95,7 +95,7 @@ export function SearchBox({
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
             classNames={prominent ? { input: 'hero-search-input' } : undefined}
-            styles={prominent ? { input: { minHeight: 66, height: 66, fontSize: '1.25rem', boxShadow: 'var(--mantine-shadow-md)' } } : undefined}
+            styles={prominent ? { input: { minHeight: 72, height: 72, fontSize: '1.4rem', boxShadow: 'var(--mantine-shadow-lg)' } } : undefined}
           />
         </div>
       </Popover.Target>
