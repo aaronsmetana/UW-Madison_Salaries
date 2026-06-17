@@ -5,7 +5,7 @@ import {
 import { IconChevronDown } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { useControls } from '../state/controls';
-import { salaryExpr } from '../lib/queries';
+import { salaryExpr, personPay } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
@@ -65,7 +65,7 @@ export default function PayCheck() {
   // percentile within the title (and title+school)
   const { data: pct } = useSql<PctRow>(
     ['pc-pct', snap ?? '', code, school, salary, metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay, any_value(school) school FROM salaries WHERE ${base} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school FROM salaries WHERE ${base} GROUP BY person_key)
      SELECT 'title' AS "scope", round(100.0 * avg(CASE WHEN pay <= ${salary} THEN 1 ELSE 0 END), 1) pct,
         count(*) n, median(pay) med, quantile_cont(pay, 0.25) p25, quantile_cont(pay, 0.75) p75 FROM pp WHERE pay > 0
      ${school ? `UNION ALL SELECT 'title_school' AS "scope", round(100.0 * avg(CASE WHEN pay <= ${salary} THEN 1 ELSE 0 END), 1) pct,
@@ -78,7 +78,7 @@ export default function PayCheck() {
   // distribution for the title (per-person salary sums, with a "you" marker)
   const { data: payRows } = useSql<{ pay: number }>(
     ['pc-pays', snap ?? '', code, metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries WHERE ${base} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries WHERE ${base} GROUP BY person_key)
      SELECT pay FROM pp WHERE pay > 0`,
     ready
   );

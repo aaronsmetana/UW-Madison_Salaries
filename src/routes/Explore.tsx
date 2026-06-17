@@ -11,7 +11,7 @@ import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 
@@ -48,7 +48,7 @@ export default function Explore() {
   const { data: kpis } = useSql<Kpis>(
     ['kpis', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `SELECT count(DISTINCT person_key) headcount,
-        sum(${expr}) FILTER (WHERE ${expr} > 0) total_payroll,
+        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${where}`,
     enabled
@@ -67,7 +67,7 @@ export default function Explore() {
   const { data: earners } = useSql<EarnerRow>(
     ['top-earners', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
-        any_value(title) title, any_value(school) school, sum(${expr}) pay
+        any_value(title) title, any_value(school) school, ${personPay(metric)} pay
      FROM salaries WHERE ${where} AND ${expr} > 0
      GROUP BY person_key ORDER BY pay DESC LIMIT 15`,
     enabled

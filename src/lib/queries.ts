@@ -11,7 +11,7 @@ export const FACETS: { field: string; label: string; searchable?: boolean }[] = 
 ];
 const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
 
-/** SQL expression for the selected salary metric. */
+/** SQL expression for the selected salary metric (per appointment; full annual rate for full/base). */
 export function salaryExpr(metric: Metric): string {
   switch (metric) {
     case 'fte':
@@ -21,6 +21,27 @@ export function salaryExpr(metric: Metric): string {
     default:
       return 'salary';
   }
+}
+
+/** Per-appointment ACTUAL earnings (rate × FTE) for the metric — used to blend concurrent roles. */
+export function earningsExpr(metric: Metric): string {
+  switch (metric) {
+    case 'fte':
+      return 'COALESCE(salary_fte_adjusted, salary * COALESCE(fte, 1))';
+    case 'base':
+      return 'COALESCE(base_pay, salary) * COALESCE(fte, 1)';
+    default:
+      return 'salary * COALESCE(fte, 1)';
+  }
+}
+
+/**
+ * A person's pay within a `GROUP BY person_key` group — use in place of `sum(salaryExpr)`.
+ * One appointment → the metric's value as-is (e.g. full annual rate); multiple concurrent
+ * appointments → FTE-blended actual earnings, so split roles aren't double-counted.
+ */
+export function personPay(metric: Metric): string {
+  return `CASE WHEN count(*) > 1 THEN sum(${earningsExpr(metric)}) ELSE any_value(${salaryExpr(metric)}) END`;
 }
 
 /** WHERE fragment restricting to the current scope. */

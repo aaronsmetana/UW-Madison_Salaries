@@ -9,7 +9,7 @@ import { useTray } from '../state/tray';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { SearchBox } from '../components/SearchBox';
@@ -55,7 +55,7 @@ export default function Compare() {
 
   const { data: pdata, isFetching: pLoading } = useSql<PRow>(
     ['cmp-people', personIds, metric],
-    `SELECT person_key, any_value(snapshot_label) AS "label", any_value(snapshot_date) date, sum(${expr}) pay,
+    `SELECT person_key, any_value(snapshot_label) AS "label", any_value(snapshot_date) date, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key, snapshot_id ORDER BY date`,
     persons.length > 0
@@ -64,7 +64,7 @@ export default function Compare() {
   const { data: sdata, isFetching: sLoading } = useSql<SRow>(
     ['cmp-schools', schoolNames, snap ?? '', metric],
     `SELECT school, count(DISTINCT person_key) headcount,
-        sum(${expr}) FILTER (WHERE ${expr} > 0) payroll,
+        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
         quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IN (${schoolNames}) GROUP BY school`,
@@ -74,7 +74,7 @@ export default function Compare() {
   // Titles — side-by-side (current snapshot), per-person salary sums within each title.
   const { data: tdata, isFetching: tLoading } = useSql<TStatRow>(
     ['cmp-titles', titleCodes, snap ?? '', metric],
-    `WITH pp AS (SELECT person_key, job_code, sum(${expr}) pay FROM salaries
+    `WITH pp AS (SELECT person_key, job_code, ${personPay(metric)} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IN (${titleCodes}) GROUP BY person_key, job_code)
      SELECT job_code, count(*) headcount, median(pay) med,
         quantile_cont(pay, 0.25) p25, quantile_cont(pay, 0.75) p75, quantile_cont(pay, 0.90) p90
@@ -86,7 +86,7 @@ export default function Compare() {
   const { data: ttrend } = useSql<TTrendRow>(
     ['cmp-title-trend', titleCodes, metric],
     `WITH pp AS (SELECT snapshot_id, job_code, person_key,
-          any_value(snapshot_label) AS lbl, any_value(snapshot_date) AS dt, sum(${expr}) pay
+          any_value(snapshot_label) AS lbl, any_value(snapshot_date) AS dt, ${personPay(metric)} pay
         FROM salaries WHERE job_code IN (${titleCodes}) AND ${expr} > 0
         GROUP BY snapshot_id, job_code, person_key)
      SELECT job_code, any_value(lbl) AS "label", any_value(dt) date, median(pay) med
@@ -96,7 +96,7 @@ export default function Compare() {
 
   const { data: standingData } = useSql<{ person_key: string; label: string; date: string; pctile: number }>(
     ['cmp-standing', personIds, metric],
-    `WITH pop AS (SELECT snapshot_id, any_value(snapshot_label) AS "label", any_value(snapshot_date) date, school, person_key, sum(${expr}) pay
+    `WITH pop AS (SELECT snapshot_id, any_value(snapshot_label) AS "label", any_value(snapshot_date) date, school, person_key, ${personPay(metric)} pay
                   FROM salaries WHERE ${expr} > 0 GROUP BY snapshot_id, school, person_key),
           ranked AS (SELECT *, percent_rank() OVER (PARTITION BY snapshot_id, school ORDER BY pay) pr FROM pop)
      SELECT person_key, label, date, round(pr * 100) pctile FROM ranked WHERE person_key IN (${personIds}) ORDER BY date`,

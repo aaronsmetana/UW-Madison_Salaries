@@ -34,7 +34,7 @@ export default function Home() {
 
   const { data: payrollRows } = useSql<{ total: number | null }>(
     ['home-payroll', snap ?? ''],
-    `SELECT sum(salary) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
+    `SELECT sum(salary * COALESCE(fte, 1)) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
     !!snap
   );
   const payroll = payrollRows?.[0]?.total ?? null;

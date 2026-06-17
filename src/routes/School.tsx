@@ -11,7 +11,7 @@ import {
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, filterWhere, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { ChartData } from '../components/ChartData';
@@ -62,7 +62,7 @@ export default function School() {
   const { data: scoreRows, isLoading } = useSql<Score>(
     ['school-score', name, snap ?? '', metric, fk],
     `SELECT count(DISTINCT person_key) headcount,
-        sum(${expr}) FILTER (WHERE ${expr} > 0) total_payroll,
+        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
         avg(${expr}) FILTER (WHERE ${expr} > 0) mean,
         quantile_cont(${expr}, 0.25) FILTER (WHERE ${expr} > 0) p25,
@@ -95,7 +95,7 @@ export default function School() {
 
   const { data: earners } = useSql<{ person_key: string; fn: string; ln: string; title: string | null; pay: number }>(
     ['school-earners', name, snap ?? '', metric, fk],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title, sum(${expr}) pay
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title, ${personPay(metric)} pay
      FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key ORDER BY pay DESC LIMIT 12`,
     enabled
   );
@@ -114,7 +114,7 @@ export default function School() {
         avg((p.pay - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.pay BETWEEN g."min" AND g."max") avg_pos,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay > g."max") over_max,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay < g."min") below_min
-     FROM (SELECT person_key, grade_number, grade_basis, sum(${expr}) pay
+     FROM (SELECT person_key, grade_number, grade_basis, ${personPay(metric)} pay
            FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1, 2, 3) p
      LEFT JOIN grades g ON g."grade" = p.grade_number AND g."basis" = p.grade_basis`,
     enabled
@@ -125,7 +125,7 @@ export default function School() {
     ['school-tenure', name, snap ?? '', metric, fk],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
-        sum(${expr}) pay
+        ${personPay(metric)} pay
      FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key LIMIT 3000`,
     enabled
   );

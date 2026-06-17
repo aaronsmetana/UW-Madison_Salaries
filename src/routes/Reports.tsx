@@ -7,7 +7,7 @@ import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, Ico
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, pct } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -95,7 +95,7 @@ export default function Reports() {
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
-    `SELECT sum(${expr}) pay,
+    `SELECT ${personPay(metric)} pay,
         arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
         arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
         any_value(school) school, any_value(department) department, min(date_of_hire) date_of_hire
@@ -108,7 +108,7 @@ export default function Reports() {
 
   const { data: peerStatRows } = useSql<PeerStat>(
     ['rpt-peerstat', jobCode ?? '', snap ?? '', metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
         quantile_cont(pay, 0.75) p75, quantile_cont(pay, 0.90) p90, max(pay) hi FROM pp WHERE pay > 0`,
@@ -118,7 +118,7 @@ export default function Reports() {
 
   const { data: peerListRows } = useSql<{ pay: number; tenure: number | null }>(
     ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay,
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
         FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT pay, tenure FROM pp WHERE pay > 0`,
@@ -127,14 +127,14 @@ export default function Reports() {
 
   const { data: subjHistory } = useSql<{ label: string; date: string; pay: number }>(
     ['rpt-subj-hist', subjectKey, metric],
-    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date, sum(${expr}) pay
+    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date, ${personPay(metric)} pay
      FROM salaries WHERE person_key = ${sqlStr(subjectKey ?? '')} GROUP BY snapshot_id ORDER BY date`,
     cmpReady
   );
 
   const { data: trayPeople } = useSql<TrayPerson>(
     ['rpt-tray', personIds, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, sum(${expr}) pay
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, ${personPay(metric)} pay
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
     type === 'comparison' && persons.length > 0 && !!snap
   );
@@ -142,7 +142,7 @@ export default function Reports() {
   const { data: cmpSchools } = useSql<SchoolCard>(
     ['rpt-cmp-schools', schoolNames, snap ?? '', metric],
     `SELECT school, count(DISTINCT person_key) headcount,
-        sum(${expr}) FILTER (WHERE ${expr} > 0) payroll,
+        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
         quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IN (${schoolNames}) GROUP BY school`,

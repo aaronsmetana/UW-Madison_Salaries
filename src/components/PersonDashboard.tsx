@@ -3,7 +3,7 @@ import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert, Paper
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num } from '../lib/format';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -23,6 +23,7 @@ interface Row {
   title: string | null;
   job_code: string | null;
   pay: number | null;
+  earn: number | null;
   fte: number | null;
   date_of_hire: string | null;
   grade_number: number | null;
@@ -31,7 +32,7 @@ interface Row {
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
 
 /** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; appts?: number } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -39,6 +40,9 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
       <Text size="sm">Salary: {usd(d.salary)}</Text>
+      {d.appts && d.appts > 1 && (
+        <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
+      )}
     </Paper>
   );
 }
@@ -64,7 +68,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],
     `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
-            title, job_code, ${expr} AS pay, fte, date_of_hire, grade_number, grade_basis
+            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, fte, date_of_hire, grade_number, grade_basis
      FROM salaries WHERE person_key = ${sqlStr(personKey)} ORDER BY snapshot_date`,
     !!personKey
   );
@@ -81,18 +85,34 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       const m = Number(String(date).slice(5, 7));
       return `${MONTHS[m - 1] ?? ''} ${String(date).slice(0, 4)}${ttcSuffix(id)}`.trim();
     };
-    const by = new Map<string, { id: string; label: string; full: string; date: string; salary: number; title: string | null; max: number }>();
+    const by = new Map<string, { id: string; label: string; full: string; date: string; rows: Row[] }>();
     for (const r of rows) {
       let cur = by.get(r.snapshot_id);
       if (!cur) {
-        cur = { id: r.snapshot_id, label: r.snapshot_label, full: fullLabel(r.snapshot_date, r.snapshot_id), date: r.snapshot_date, salary: 0, title: r.title, max: -1 };
+        cur = { id: r.snapshot_id, label: r.snapshot_label, full: fullLabel(r.snapshot_date, r.snapshot_id), date: r.snapshot_date, rows: [] };
         by.set(r.snapshot_id, cur);
       }
-      cur.salary += r.pay ?? 0;
-      if ((r.pay ?? 0) >= cur.max) { cur.max = r.pay ?? 0; cur.title = r.title; }
+      cur.rows.push(r);
     }
     const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
-    return [...by.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
+    return [...by.values()]
+      .map((g) => {
+        const appts = g.rows.length;
+        // Single appointment → metric value; multiple concurrent → FTE-blended actual earnings.
+        const salary = appts > 1 ? g.rows.reduce((s, r) => s + (r.earn ?? 0), 0) : (g.rows[0].pay ?? 0);
+        const primary = g.rows.reduce((best, r) => {
+          const bf = best.fte ?? 0, rf = r.fte ?? 0;
+          return rf > bf || (rf === bf && (r.pay ?? 0) > (best.pay ?? 0)) ? r : best;
+        }, g.rows[0]);
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, appts };
+      })
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
+  }, [rows]);
+
+  const apptCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
+    return m;
   }, [rows]);
 
   const historyRows = useMemo(() => {
@@ -118,7 +138,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const lastSnap = latest?.snapshot_id ?? '';
   const { data: standingRows } = useSql<{ uw: number; sch: number | null }>(
     ['dash-standing', personKey, lastSnap, lastSalary ?? 0, metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
      SELECT round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END), 0) uw,
             round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END) FILTER (WHERE school = ${sqlStr(latest?.school ?? '')}), 0) sch
      FROM pp WHERE pay > 0`,
@@ -129,7 +149,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const jobCode = latest?.job_code ?? null;
   const { data: peerStatsRows } = useSql<PeerStats>(
     ['dash-peer-stats', jobCode ?? '', lastSnap, metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
             quantile_cont(pay, 0.75) p75, max(pay) hi FROM pp WHERE pay > 0`,
@@ -139,7 +159,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
   const { data: peerPayRows } = useSql<{ pay: number }>(
     ['dash-peer-pays', jobCode ?? '', lastSnap, metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT pay FROM pp WHERE pay > 0`,
     !!lastSnap && !!jobCode
@@ -216,7 +236,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           <Table.Tbody>
             {historyRows.map((r, i) => (
               <Table.Tr key={`${r.snapshot_id}-${i}`}>
-                <Table.Td><Badge variant="light" size="sm">{r.snapshot_label}</Badge></Table.Td>
+                <Table.Td>
+                  <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                  {(apptCounts.get(r.snapshot_id) ?? 0) > 1 && (
+                    <Badge variant="light" color="orange" size="xs" ml={6}>split</Badge>
+                  )}
+                </Table.Td>
                 <Table.Td>{r.title ?? '—'}</Table.Td>
                 <Table.Td>{r.job_code ?? '—'}</Table.Td>
                 <Table.Td>

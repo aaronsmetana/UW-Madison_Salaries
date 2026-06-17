@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
+import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
@@ -17,7 +18,7 @@ import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 
 /** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; appts?: number } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -25,6 +26,9 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
       <Text size="sm">Salary: {usd(d.salary)}</Text>
+      {d.appts && d.appts > 1 && (
+        <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
+      )}
     </Paper>
   );
 }
@@ -71,7 +75,8 @@ export default function Person() {
   const latest = rows[rows.length - 1];
   const name = latest ? `${latest.first_name ?? ''} ${latest.last_name ?? ''}`.trim() : key;
 
-  // Salary trend: sum appointments within each snapshot (carry the snapshot's title for the tooltip).
+  // Salary trend: one point per snapshot. Single appointment → its full rate; multiple concurrent
+  // appointments → FTE-blended actual earnings (Σ rate × FTE), not the nonsensical sum of full rates.
   const trend = useMemo(() => {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const ttcSuffix = (id: string) => (id.endsWith('-pre') ? ' (Pre-TTC)' : id.endsWith('-post') ? ' (Post-TTC)' : '');
@@ -79,21 +84,37 @@ export default function Person() {
       const m = Number(String(date).slice(5, 7));
       return `${MONTHS[m - 1] ?? ''} ${String(date).slice(0, 4)}${ttcSuffix(id)}`.trim();
     };
-    const by = new Map<string, { id: string; label: string; full: string; date: string; salary: number; title: string | null; max: number }>();
+    const by = new Map<string, { id: string; label: string; full: string; date: string; rows: Row[] }>();
     for (const r of rows) {
       let cur = by.get(r.snapshot_id);
       if (!cur) {
-        cur = { id: r.snapshot_id, label: r.snapshot_label, full: fullLabel(r.snapshot_date, r.snapshot_id), date: r.snapshot_date, salary: 0, title: r.title, max: -1 };
+        cur = { id: r.snapshot_id, label: r.snapshot_label, full: fullLabel(r.snapshot_date, r.snapshot_id), date: r.snapshot_date, rows: [] };
         by.set(r.snapshot_id, cur);
       }
-      cur.salary += r.salary ?? 0;
-      if ((r.salary ?? 0) >= cur.max) { cur.max = r.salary ?? 0; cur.title = r.title; }
+      cur.rows.push(r);
     }
-    // Same-date TTC pair: show pre-TTC to the left of post-TTC.
     const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
-    return [...by.values()].sort(
-      (a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id)
-    );
+    return [...by.values()]
+      .map((g) => {
+        const appts = g.rows.length;
+        const salary = appts > 1
+          ? g.rows.reduce((s, r) => s + (r.salary ?? 0) * (r.fte ?? 1), 0)
+          : (g.rows[0].salary ?? 0);
+        // primary appointment = highest FTE (tie-break highest salary) — drives the displayed title
+        const primary = g.rows.reduce((best, r) => {
+          const bf = best.fte ?? 0, rf = r.fte ?? 0;
+          return rf > bf || (rf === bf && (r.salary ?? 0) > (best.salary ?? 0)) ? r : best;
+        }, g.rows[0]);
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, appts };
+      })
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
+  }, [rows]);
+
+  // Appointment count per snapshot (for the "split" flag in the history table).
+  const apptCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
+    return m;
   }, [rows]);
 
   // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair.
@@ -122,7 +143,7 @@ export default function Person() {
   const lastSnap = latest?.snapshot_id ?? '';
   const { data: standingRows } = useSql<{ uw: number; sch: number | null }>(
     ['standing', key, lastSnap, lastSalary ?? 0],
-    `WITH pp AS (SELECT person_key, sum(salary) pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${personPay('full')} pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
      SELECT round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END), 0) uw,
             round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END) FILTER (WHERE school = ${sqlStr(latest?.school ?? '')}), 0) sch
      FROM pp WHERE pay > 0`,
@@ -134,7 +155,7 @@ export default function Person() {
   const jobCode = latest?.job_code ?? null;
   const { data: peerStatsRows } = useSql<PeerStats>(
     ['peer-stats', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, sum(salary) pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay('full')} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
             quantile_cont(pay, 0.75) p75, max(pay) hi FROM pp WHERE pay > 0`,
@@ -144,7 +165,7 @@ export default function Person() {
 
   const { data: peers } = useSql<PeerRow>(
     ['peer-list', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, sum(salary) pay
+    `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay('full')} pay
         FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT person_key, fn, ln, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
@@ -156,7 +177,7 @@ export default function Person() {
 
   const { data: peerPayRows } = useSql<{ pay: number }>(
     ['peer-pays', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, sum(salary) pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay('full')} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT pay FROM pp WHERE pay > 0`,
     !!lastSnap && !!jobCode
@@ -414,6 +435,9 @@ export default function Person() {
               <Table.Tr key={`${r.snapshot_id}-${i}`}>
                 <Table.Td>
                   <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                  {(apptCounts.get(r.snapshot_id) ?? 0) > 1 && (
+                    <Badge variant="light" color="orange" size="xs" ml={6}>split</Badge>
+                  )}
                 </Table.Td>
                 <Table.Td>{r.title ?? '—'}</Table.Td>
                 <Table.Td>{r.job_code ?? '—'}</Table.Td>

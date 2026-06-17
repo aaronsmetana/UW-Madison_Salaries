@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, whereAll, filterKey } from '../lib/queries';
+import { personPay, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from './ChartData';
 
@@ -24,7 +24,6 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function ChangesPanel() {
   const { scope, metric, filters } = useControls();
-  const expr = salaryExpr(metric);
   const where = whereAll(scope, filters);
   const { data: summary } = useSummary();
   const snaps = summary?.snapshots ?? [];
@@ -42,9 +41,9 @@ export function ChangesPanel() {
   const A = sqlStr(fromId ?? '');
   const B = sqlStr(toId ?? '');
   const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}`;
-  const cte = `WITH a AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school
+  const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school
                           FROM salaries WHERE snapshot_id = ${A} AND ${where} GROUP BY person_key),
-                    b AS (SELECT person_key, sum(${expr}) pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
+                    b AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
                                  any_value(first_name) fn, any_value(last_name) ln
                           FROM salaries WHERE snapshot_id = ${B} AND ${where} GROUP BY person_key)`;
 

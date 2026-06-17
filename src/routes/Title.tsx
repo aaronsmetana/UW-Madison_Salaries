@@ -3,7 +3,7 @@ import { Stack, Title, Text, Card, Table, Anchor, Loader, Alert, SimpleGrid, Bad
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr } from '../lib/queries';
+import { salaryExpr, personPay } from '../lib/queries';
 import { usd, num } from '../lib/format';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 
@@ -43,7 +43,7 @@ export default function TitlePage() {
 
   const { data: payRows } = useSql<{ pay: number }>(
     ['title-pays', jobCode, snap ?? '', metric],
-    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key)
      SELECT pay FROM pp`,
     enabled
   );
@@ -51,7 +51,7 @@ export default function TitlePage() {
 
   const { data: people } = useSql<{ person_key: string; fn: string; ln: string; school: string | null; pay: number }>(
     ['title-people', jobCode, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(school) school, sum(${expr}) pay
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(school) school, ${personPay(metric)} pay
      FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key ORDER BY pay DESC LIMIT 25`,
     enabled
   );
