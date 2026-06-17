@@ -163,7 +163,7 @@ export default function Person() {
     return Math.round((100 * below) / peerPays.length);
   }, [peerPays, lastSalary]);
 
-  const [pctRaise, setPctRaise] = useState<number>(3);
+  const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
 
   if (isLoading) return <Loader />;
@@ -335,6 +335,11 @@ export default function Person() {
               <Text fw={700} size="lg">{usd(lastSalary * Math.pow(1 + pctRaise / 100, years))}</Text>
             </div>
           </Group>
+          {band && lastSalary >= band.max && (
+            <Text size="xs" c="dimmed" mt="xs">
+              This salary is already at or above the top of grade {latest?.grade_number}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
+            </Text>
+          )}
           {band && lastSalary < band.max && pctRaise > 0 && (
             <Text size="xs" c="dimmed" mt="xs">
               At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / lastSalary) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
