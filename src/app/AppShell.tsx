@@ -15,7 +15,7 @@ import { GlobalLoadingBar, LoadingState, DataErrorBanner } from '../components/L
 const NAV = [
   { label: 'Search Person', to: '/', icon: IconUserSearch },
   { label: 'Search Title Salaries', to: '/paycheck', icon: IconBriefcase },
-  { label: 'Compare Divisions/Schools', to: '/explore', icon: IconBuildingBank },
+  { label: 'General Comparisons', to: '/explore', icon: IconBuildingBank },
   { label: 'Compare People/Title/Schools', to: '/compare', icon: IconArrowsDiff },
   { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
 ];

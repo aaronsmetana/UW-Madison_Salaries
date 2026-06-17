@@ -85,7 +85,7 @@ export default function Explore() {
   return (
     <Stack gap="lg">
       <div>
-        <Title order={2}>Compare Divisions / Schools</Title>
+        <Title order={2}>General Comparisons</Title>
         <Text c="dimmed">Browse divisions and schools side by side — headcount, median pay, and top earners — then add any school or title (＋ Compare) to line them up on the Compare page. Or jump straight to a person.</Text>
       </div>
 
