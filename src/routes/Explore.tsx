@@ -137,7 +137,7 @@ export default function Explore() {
           <Tabs.Tab value="titles">Titles</Tabs.Tab>
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
-          <Tabs.Tab value="cohorts">Cohorts</Tabs.Tab>
+          <Tabs.Tab value="cohorts">Retention</Tabs.Tab>
           <Tabs.Tab value="coverage">Coverage</Tabs.Tab>
         </Tabs.List>
 
