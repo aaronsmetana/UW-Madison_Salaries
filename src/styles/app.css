@@ -39,3 +39,31 @@ textarea:focus-visible,
 :root[data-mantine-color-scheme='light'] .hero-search-input {
   border-color: var(--mantine-color-gray-4);
 }
+
+/* Non-blocking global loading bar: a thin indeterminate strip pinned to the top. */
+.global-loading-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 3px;
+  z-index: 1100;
+  background: var(--mantine-color-blue-1);
+  overflow: hidden;
+  pointer-events: none;
+}
+.global-loading-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: var(--mantine-color-blue-6);
+  border-radius: 0 2px 2px 0;
+  animation: global-loading-slide 1.1s ease-in-out infinite;
+}
+@keyframes global-loading-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(360%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .global-loading-bar::after { animation: none; width: 100%; opacity: 0.6; }
+}

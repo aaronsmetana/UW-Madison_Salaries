@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -14,6 +14,7 @@ import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
+import { LoadingState } from '../components/Loading';
 
 /** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number } }[] }) {
@@ -182,7 +183,7 @@ export default function Person() {
   const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
 
-  if (isLoading) return <Loader />;
+  if (isLoading) return <LoadingState label="Loading person…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
   if (!rows.length) return <Alert color="gray">No records found for this person.</Alert>;
 

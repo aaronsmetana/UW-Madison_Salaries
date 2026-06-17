@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Loader, Alert, Paper } from '@mantine/core';
+import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert, Paper } from '@mantine/core';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -10,6 +10,7 @@ import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
+import { LoadingState } from './Loading';
 
 interface Row {
   first_name: string | null;
@@ -153,7 +154,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return peerPays.filter((p) => p > lastSalary).length + 1;
   }, [peerPays, lastSalary]);
 
-  if (isLoading) return <Loader />;
+  if (isLoading) return <LoadingState label="Loading report…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
   if (!rows.length) return <Alert color="gray">No records found for this person.</Alert>;
 

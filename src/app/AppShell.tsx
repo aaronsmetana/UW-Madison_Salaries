@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AppShell, Group, Title, NavLink, Box, Loader, Anchor, Burger, Tooltip, Divider, Button } from '@mantine/core';
+import { AppShell, Group, Title, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
@@ -10,6 +10,7 @@ import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
 import { CommandSearch } from '../components/CommandSearch';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { GlobalLoadingBar, LoadingState } from '../components/Loading';
 
 const NAV = [
   { label: 'Search Person', to: '/', icon: IconUserSearch },
@@ -66,6 +67,7 @@ export function AppShellLayout() {
 
   return (
     <>
+      <GlobalLoadingBar />
       <AppShell
         header={{ height: showControl ? 96 : 56 }}
         navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
@@ -111,7 +113,7 @@ export function AppShellLayout() {
 
         <AppShell.Main style={{ paddingBottom: 96 }}>
           <ErrorBoundary key={loc.pathname}>
-            <Suspense fallback={<Loader />}>
+            <Suspense fallback={<LoadingState label="Loading…" />}>
               <Outlet />
             </Suspense>
           </ErrorBoundary>
