@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
+  Checkbox, NumberInput, TextInput, List, Alert,
 } from '@mantine/core';
 import { IconDownload, IconPrinter } from '@tabler/icons-react';
-import { useControls, METRIC_LABEL, scopeLabel } from '../state/controls';
-import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
+import { useControls, METRIC_LABEL } from '../state/controls';
+import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num } from '../lib/format';
+import { usd, num, pct } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
+import { PeerRangeBar } from '../components/PeerRangeBar';
+import { PayBandBar } from '../components/PayBandBar';
 
 interface Score {
   headcount: number; total_payroll: number | null; med: number | null; mean: number | null;
@@ -17,18 +20,47 @@ interface Score {
 }
 interface Earner { person_key: string; fn: string; ln: string; title: string | null; pay: number }
 interface SchoolCard { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
-interface Peep { person_key: string; fn: string; ln: string; title: string | null; latest_pay: number | null }
+interface Subject {
+  pay: number | null; title: string | null; job_code: string | null;
+  grade_number: number | null; grade_basis: string | null;
+  school: string | null; department: string | null; date_of_hire: string | null;
+}
+interface PeerStat { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; p90: number | null; hi: number | null }
+interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; pay: number }
+
+const SECTIONS = [
+  { value: 'talking', label: 'Talking points' },
+  { value: 'benchmark', label: 'Title benchmark' },
+  { value: 'band', label: 'Pay band' },
+  { value: 'tenure', label: 'Tenure & growth' },
+  { value: 'peers', label: 'Direct peers' },
+];
+
+function ordinal(n: number): string {
+  const v = n % 100;
+  const s = ['th', 'st', 'nd', 'rd'];
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+function median(nums: number[]): number | null {
+  const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
 
 export default function Reports() {
   const { scope, metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
+  const { data: grades } = useGrades();
   const { items } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
+  const generated = new Date().toISOString().slice(0, 10);
 
   const [type, setType] = useState('school');
 
+  // ── School report (unchanged) ───────────────────────────────────────────
   const { data: schoolList } = useSql<{ school: string }>(
     ['rpt-schools', snap ?? ''],
     `SELECT DISTINCT school FROM salaries WHERE school IS NOT NULL AND snapshot_id = ${sqlStr(snap ?? '')} ORDER BY school`,
@@ -63,18 +95,77 @@ export default function Reports() {
     schoolEnabled
   );
 
-  // Comparison report (tray)
+  // ── Justification report (tray) ─────────────────────────────────────────
   const persons = items.filter((i) => i.type === 'person');
   const schools = items.filter((i) => i.type === 'school');
-  const personIds = persons.map((p) => sqlStr(p.id)).join(',');
   const schoolNames = schools.map((s) => sqlStr(s.id)).join(',');
+  const personIds = persons.map((p) => sqlStr(p.id)).join(',');
 
-  const { data: peeps } = useSql<Peep>(
-    ['rpt-peeps', personIds, metric],
-    `SELECT person_key, arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln,
-        arg_max(title, snapshot_date) title, arg_max(${expr}, snapshot_date) latest_pay
-     FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key`,
-    type === 'comparison' && persons.length > 0
+  const [subjectKey, setSubjectKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) {
+      setSubjectKey(persons[0].id);
+    }
+    if (!persons.length && subjectKey) setSubjectKey(null);
+  }, [persons, subjectKey]);
+  const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
+  const subjectFirst = subjectName.split(' ')[0] || 'They';
+
+  const [sections, setSections] = useState<string[]>(SECTIONS.map((s) => s.value));
+  const has = (s: string) => sections.includes(s);
+
+  const [superviseOn, setSuperviseOn] = useState(false);
+  const [superviseCount, setSuperviseCount] = useState<number | ''>(0);
+  const [superviseNote, setSuperviseNote] = useState('');
+  const supN = typeof superviseCount === 'number' ? superviseCount : 0;
+  const supervises = superviseOn && supN > 0;
+
+  const cmpReady = type === 'comparison' && !!snap && !!subjectKey;
+
+  const { data: subjRows } = useSql<Subject>(
+    ['rpt-subj', subjectKey, snap ?? '', metric],
+    `SELECT sum(${expr}) pay,
+        arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
+        arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
+        any_value(school) school, any_value(department) department, min(date_of_hire) date_of_hire
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')}`,
+    cmpReady
+  );
+  const subj = subjRows?.[0];
+  const subjectPay = subj?.pay ?? null;
+  const jobCode = subj?.job_code ?? null;
+
+  const { data: peerStatRows } = useSql<PeerStat>(
+    ['rpt-peerstat', jobCode ?? '', snap ?? '', metric],
+    `WITH pp AS (SELECT person_key, sum(${expr}) pay FROM salaries
+        WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+     SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
+        quantile_cont(pay, 0.75) p75, quantile_cont(pay, 0.90) p90, max(pay) hi FROM pp WHERE pay > 0`,
+    cmpReady && !!jobCode
+  );
+  const peer = peerStatRows?.[0];
+
+  const { data: peerListRows } = useSql<{ pay: number; tenure: number | null }>(
+    ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
+    `WITH pp AS (SELECT person_key, sum(${expr}) pay,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
+        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+     SELECT pay, tenure FROM pp WHERE pay > 0`,
+    cmpReady && !!jobCode
+  );
+
+  const { data: subjHistory } = useSql<{ label: string; date: string; pay: number }>(
+    ['rpt-subj-hist', subjectKey, metric],
+    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date, sum(${expr}) pay
+     FROM salaries WHERE person_key = ${sqlStr(subjectKey ?? '')} GROUP BY snapshot_id ORDER BY date`,
+    cmpReady
+  );
+
+  const { data: trayPeople } = useSql<TrayPerson>(
+    ['rpt-tray', personIds, snap ?? '', metric],
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, sum(${expr}) pay
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
+    type === 'comparison' && persons.length > 0 && !!snap
   );
 
   const { data: cmpSchools } = useSql<SchoolCard>(
@@ -87,7 +178,95 @@ export default function Reports() {
     type === 'comparison' && schools.length > 0 && !!snap
   );
 
-  const generated = new Date().toISOString().slice(0, 10);
+  // ── Derived stats ───────────────────────────────────────────────────────
+  const tenureYears = useMemo(() => {
+    if (!subj?.date_of_hire) return null;
+    return Math.max(0, (Date.now() - new Date(subj.date_of_hire).getTime()) / (365.25 * 864e5));
+  }, [subj]);
+
+  const percentile = useMemo(() => {
+    if (!peerListRows?.length || subjectPay == null) return null;
+    const below = peerListRows.filter((p) => p.pay <= subjectPay).length;
+    return Math.round((100 * below) / peerListRows.length);
+  }, [peerListRows, subjectPay]);
+
+  const expMedian = useMemo(() => {
+    if (!peerListRows || tenureYears == null) return null;
+    const cohort = peerListRows.filter((p) => p.tenure != null && p.tenure >= tenureYears - 1).map((p) => p.pay);
+    return cohort.length >= 5 ? median(cohort) : null;
+  }, [peerListRows, tenureYears]);
+
+  const growth = useMemo(() => {
+    const hist = (subjHistory ?? []).filter((h) => h.pay > 0);
+    if (!hist.length) return null;
+    let raises = 0, sum = 0, streak = 0, longest = 0;
+    for (let i = 1; i < hist.length; i++) {
+      const d = hist[i].pay - hist[i - 1].pay;
+      if (d > 0) { raises++; sum += d / hist[i - 1].pay; streak = 0; }
+      else { streak++; longest = Math.max(longest, streak); }
+    }
+    const first = hist[0].pay, last = hist[hist.length - 1].pay;
+    return { totalPct: first ? (last - first) / first : null, raises, periods: Math.max(0, hist.length - 1), avgPct: raises ? sum / raises : null, longest };
+  }, [subjHistory]);
+
+  const band = useMemo(() => {
+    if (!subj || subj.grade_number == null || !grades) return null;
+    return grades.find((g) => g.grade === subj.grade_number && g.basis === subj.grade_basis) ?? null;
+  }, [subj, grades]);
+
+  const med = peer?.med ?? null;
+  const belowMarket = subjectPay != null && med != null && subjectPay < med;
+  const raiseDelta = belowMarket && med != null && subjectPay != null ? med - subjectPay : 0;
+  const raisePct = belowMarket && subjectPay ? raiseDelta / subjectPay : 0;
+
+  const otherPeers = useMemo(
+    () => (trayPeople ?? [])
+      .filter((p) => p.person_key !== subjectKey)
+      .map((p) => ({ ...p, delta: (subjectPay ?? 0) - p.pay }))
+      .sort((a, b) => b.pay - a.pay),
+    [trayPeople, subjectKey, subjectPay]
+  );
+  const topPaidPeer = otherPeers.filter((p) => p.pay > (subjectPay ?? 0)).sort((a, b) => b.pay - a.pay)[0];
+
+  // ── Extensive talking points (each shown only when it supports the case) ──
+  const talkingPoints = useMemo(() => {
+    const tp: string[] = [];
+    if (subjectPay == null || !subj) return tp;
+    const title = subj.title ?? 'this title';
+    if (peer && percentile != null && med != null) {
+      tp.push(`At ${usd(subjectPay)}, ${subjectName} ranks in the ${ordinal(percentile)} percentile of ${num(peer.n)} ${title} employees at UW (median ${usd(med)}, 75th ${usd(peer.p75)}).`);
+    }
+    if (belowMarket && med != null) {
+      tp.push(`That is ${usd(med - subjectPay)} (${pct(raisePct)}) below the title median — the benchmark for fair, market-rate pay.`);
+    }
+    if (expMedian != null && subjectPay < expMedian && tenureYears != null) {
+      tp.push(`Same-title colleagues with comparable or greater tenure earn a median of ${usd(expMedian)}; ${subjectName} is paid ${usd(expMedian - subjectPay)} below that despite ${tenureYears.toFixed(1)} years of service.`);
+    } else if (tenureYears != null) {
+      tp.push(`${subjectName} has ${tenureYears.toFixed(1)} years of UW service — experience the current salary does not yet reflect.`);
+    }
+    if (band && subjectPay < band.max) {
+      const through = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
+      tp.push(`Within grade ${subj.grade_number}'s official pay band (${usd(band.min)}–${usd(band.max)}), this salary sits at ${through}% of range — ${usd(band.max - subjectPay)} below the band maximum.`);
+    }
+    if (growth && growth.periods > 0) {
+      tp.push(`Over ${growth.periods} review periods, ${subjectName} received ${growth.raises} increase${growth.raises === 1 ? '' : 's'}${growth.avgPct != null ? ` (avg ${pct(growth.avgPct)})` : ''}; the longest stretch without a raise was ${growth.longest} period${growth.longest === 1 ? '' : 's'}.`);
+    }
+    if (topPaidPeer) {
+      tp.push(`${subjectName} is paid ${usd(topPaidPeer.pay - (subjectPay ?? 0))} less than ${topPaidPeer.fn} ${topPaidPeer.ln} (${topPaidPeer.title ?? '—'}) in a comparable role.`);
+    }
+    if (supervises) {
+      tp.push(`${subjectName} also supervises ${supN} ${supN === 1 ? 'person' : 'people'}${superviseNote ? ` (${superviseNote})` : ''} — managerial scope beyond the base ${title} title.`);
+    }
+    if (belowMarket && med != null) {
+      tp.push(`Recommendation: a ${pct(raisePct)} adjustment to ${usd(med)} would restore market parity for the title given ${subjectName}'s experience${supervises ? ' and supervisory responsibilities' : ''}.`);
+    }
+    return tp;
+  }, [subj, subjectPay, peer, percentile, med, belowMarket, raisePct, expMedian, tenureYears, band, growth, topPaidPeer, supervises, supN, superviseNote, subjectName]);
+
+  const benchmarkCsv = () => {
+    const rows = (peerListRows ?? []).map((p) => ({ pay: p.pay, tenure_years: p.tenure?.toFixed?.(1) ?? '' }));
+    downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, rows as unknown as Record<string, unknown>[]);
+  };
 
   return (
     <Stack gap="lg">
@@ -100,15 +279,19 @@ export default function Reports() {
             onChange={setType}
             data={[
               { value: 'school', label: 'School' },
-              { value: 'comparison', label: 'Comparison (tray)' },
+              { value: 'comparison', label: 'Justification (tray)' },
             ]}
           />
           <Button.Group>
             <Button
               variant="default"
               leftSection={<IconDownload size={16} />}
-              disabled={type !== 'school' || !earners?.length}
-              onClick={() => downloadCSV(`${school}-top-earners-${snap}.csv`, (earners ?? []) as unknown as Record<string, unknown>[])}
+              disabled={type === 'school' ? !earners?.length : !peerListRows?.length}
+              onClick={() =>
+                type === 'school'
+                  ? downloadCSV(`${school}-top-earners-${snap}.csv`, (earners ?? []) as unknown as Record<string, unknown>[])
+                  : benchmarkCsv()
+              }
             >
               Download CSV
             </Button>
@@ -172,65 +355,244 @@ export default function Reports() {
       )}
 
       {type === 'comparison' && (
-        <Card withBorder padding="xl" className="print-area">
-          <Title order={3}>UW–Madison Salary Comparison</Title>
-          <Text c="dimmed">
-            {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]} · generated {generated}
-          </Text>
-          <Divider my="md" />
-          {items.length === 0 && <Text c="dimmed">Add people or schools to the tray to build a comparison report.</Text>}
-          {persons.length > 0 && (
+        <>
+          {persons.length === 0 ? (
+            <Card withBorder padding="xl">
+              <Text c="dimmed">Add people to the tray (the search/＋ Compare buttons around the app), then pick a subject to build a salary-adjustment justification.</Text>
+            </Card>
+          ) : (
             <>
-              <Text size="sm" fw={600} mb="xs">People</Text>
-              <Table mb="lg">
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Title (latest)</Table.Th>
-                    <Table.Th ta="right">Latest salary</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {(peeps ?? []).map((p) => (
-                    <Table.Tr key={p.person_key}>
-                      <Table.Td>{p.fn} {p.ln}</Table.Td>
-                      <Table.Td>{p.title ?? '—'}</Table.Td>
-                      <Table.Td ta="right">{usd(p.latest_pay)}</Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
+              {/* Controls (not printed) */}
+              <Card withBorder padding="lg" className="no-print">
+                <Group align="flex-end" wrap="wrap" gap="lg">
+                  <Select
+                    label="Subject (raise case)"
+                    data={persons.map((p) => ({ value: p.id, label: p.label }))}
+                    value={subjectKey}
+                    onChange={setSubjectKey}
+                    w={260}
+                  />
+                </Group>
+                <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="md" mb={6} style={{ letterSpacing: '0.05em' }}>
+                  Include in report
+                </Text>
+                <Checkbox.Group value={sections} onChange={setSections}>
+                  <Group gap="lg">
+                    {SECTIONS.map((s) => (
+                      <Checkbox key={s.value} value={s.value} label={s.label} />
+                    ))}
+                  </Group>
+                </Checkbox.Group>
+                <Group align="flex-end" wrap="wrap" gap="md" mt="md">
+                  <Checkbox
+                    label="I also supervise"
+                    checked={superviseOn}
+                    onChange={(e) => setSuperviseOn(e.currentTarget.checked)}
+                  />
+                  <NumberInput
+                    label="# of people"
+                    value={superviseCount}
+                    onChange={(v) => setSuperviseCount(typeof v === 'number' ? v : 0)}
+                    min={0}
+                    w={120}
+                    disabled={!superviseOn}
+                  />
+                  <TextInput
+                    label="Note (optional)"
+                    placeholder="e.g. a team of 8 / 4 direct reports"
+                    value={superviseNote}
+                    onChange={(e) => setSuperviseNote(e.currentTarget.value)}
+                    w={300}
+                    disabled={!superviseOn}
+                  />
+                </Group>
+              </Card>
+
+              {/* The report */}
+              <Card withBorder padding="xl" className="print-area">
+                <Title order={3}>Salary Adjustment Justification — {subjectName}</Title>
+                <Text c="dimmed">
+                  {[subj?.title, subj?.grade_number != null ? `grade ${subj.grade_number}` : null, subj?.school]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  {subj?.title ? ' · ' : ''}{snapLabel} · {METRIC_LABEL[metric]} · generated {generated}
+                </Text>
+                <Divider my="md" />
+
+                {/* Recommendation callout */}
+                <Paper radius="md" p="md" bg="var(--mantine-color-indigo-light)" mb="lg">
+                  {belowMarket && med != null ? (
+                    <Group justify="space-between" wrap="wrap" gap="md">
+                      <div>
+                        <Text size="xs" c="dimmed">Current ({METRIC_LABEL[metric]})</Text>
+                        <Text fw={700} fz="xl">{usd(subjectPay)}</Text>
+                      </div>
+                      <Text fz={28} c="dimmed">→</Text>
+                      <div>
+                        <Text size="xs" c="dimmed">Suggested (title median / parity)</Text>
+                        <Text fw={700} fz="xl">{usd(med)}</Text>
+                      </div>
+                      <div>
+                        <Text size="xs" c="dimmed">Adjustment</Text>
+                        <Text fw={700} fz="xl" c="indigo">+{usd(raiseDelta)} ({pct(raisePct)})</Text>
+                      </div>
+                    </Group>
+                  ) : (
+                    <Text fw={600}>
+                      {subjectPay != null
+                        ? `Current salary ${usd(subjectPay)}${med != null ? ` is at or above the ${subj?.title ?? 'title'} median (${usd(med)})` : ''}.`
+                        : 'No salary on record for the subject in this snapshot.'}
+                    </Text>
+                  )}
+                  {expMedian != null && subjectPay != null && subjectPay < expMedian && (
+                    <Text size="sm" mt="xs">
+                      Experience-adjusted target (same-title peers with comparable tenure): <b>{usd(expMedian)}</b>.
+                    </Text>
+                  )}
+                </Paper>
+
+                {!jobCode && (
+                  <Alert color="gray" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is unavailable.</Alert>
+                )}
+
+                {/* Talking points */}
+                {has('talking') && talkingPoints.length > 0 && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Justification summary</Text>
+                    <List spacing="xs" size="sm" mb="lg">
+                      {talkingPoints.map((t, i) => (
+                        <List.Item key={i}>{t}</List.Item>
+                      ))}
+                    </List>
+                  </>
+                )}
+
+                {/* Title benchmark */}
+                {has('benchmark') && peer && peer.n > 0 && subjectPay != null &&
+                  peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Title-market benchmark — {subj?.title}</Text>
+                    <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={subjectPay} />
+                    <SimpleGrid cols={{ base: 2, sm: 4 }} mt="md" mb="lg">
+                      <Stat label="Peers in title" value={num(peer.n)} />
+                      <Stat label="Percentile" value={percentile != null ? ordinal(percentile) : '—'} />
+                      <Stat label="Median (parity)" value={usd(peer.med)} />
+                      <Stat label="Gap to median" value={belowMarket ? `−${usd(raiseDelta)}` : '—'} />
+                      <Stat label="25th / 75th" value={`${usd(peer.p25)} / ${usd(peer.p75)}`} />
+                      <Stat label="90th pctile" value={usd(peer.p90)} />
+                      <Stat label="Range" value={`${usd(peer.lo)} – ${usd(peer.hi)}`} />
+                      <Stat label="Experience-adjusted" value={expMedian != null ? usd(expMedian) : '—'} />
+                    </SimpleGrid>
+                  </>
+                )}
+
+                {/* Pay band */}
+                {has('band') && band && subjectPay != null && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Pay-band position — grade {subj?.grade_number}</Text>
+                    <PayBandBar min={band.min} max={band.max} value={subjectPay} />
+                    <div style={{ height: 16 }} />
+                  </>
+                )}
+
+                {/* Tenure & growth */}
+                {has('tenure') && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Tenure & growth</Text>
+                    <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
+                      <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
+                      <Stat label="Total growth" value={growth?.totalPct != null ? pct(growth.totalPct) : '—'} />
+                      <Stat label="Raises" value={growth ? `${growth.raises} / ${growth.periods}` : '—'} />
+                      <Stat label="Avg raise" value={growth?.avgPct != null ? pct(growth.avgPct) : '—'} />
+                      <Stat label="Longest no-raise streak" value={growth ? `${growth.longest} period${growth.longest === 1 ? '' : 's'}` : '—'} />
+                    </SimpleGrid>
+                  </>
+                )}
+
+                {/* Direct peers */}
+                {has('peers') && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Direct peer comparison</Text>
+                    {otherPeers.length > 0 ? (
+                      <Table striped highlightOnHover style={{ maxWidth: 820 }} mb="lg">
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th>Name</Table.Th>
+                            <Table.Th>Title</Table.Th>
+                            <Table.Th ta="right">Salary</Table.Th>
+                            <Table.Th ta="right">Δ vs {subjectFirst}</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {otherPeers.map((p) => (
+                            <Table.Tr key={p.person_key}>
+                              <Table.Td>{p.fn} {p.ln}</Table.Td>
+                              <Table.Td>{p.title ?? '—'}</Table.Td>
+                              <Table.Td ta="right">{usd(p.pay)}</Table.Td>
+                              <Table.Td ta="right" c={p.delta < 0 ? 'red' : 'teal'}>
+                                {p.delta < 0 ? '−' : '+'}{usd(Math.abs(p.delta))}
+                              </Table.Td>
+                            </Table.Tr>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    ) : (
+                      <Text size="sm" c="dimmed" mb="lg">Add more people to the tray to compare {subjectFirst} against direct peers.</Text>
+                    )}
+                  </>
+                )}
+
+                {/* Supervision callout */}
+                {supervises && (
+                  <Paper withBorder radius="md" p="md" mb="lg">
+                    <Text size="sm" fw={600}>Added responsibilities</Text>
+                    <Text size="sm">
+                      {subjectName} supervises {supN} {supN === 1 ? 'person' : 'people'}
+                      {superviseNote ? ` (${superviseNote})` : ''} — managerial scope beyond the base title.
+                    </Text>
+                  </Paper>
+                )}
+
+                {/* Schools (secondary context) */}
+                {schools.length > 0 && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Schools (context)</Text>
+                    <Table mb="lg">
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>School</Table.Th>
+                          <Table.Th ta="right">Headcount</Table.Th>
+                          <Table.Th ta="right">Median</Table.Th>
+                          <Table.Th ta="right">90th pctile</Table.Th>
+                          <Table.Th ta="right">Total payroll</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {(cmpSchools ?? []).map((s) => (
+                          <Table.Tr key={s.school}>
+                            <Table.Td>{s.school}</Table.Td>
+                            <Table.Td ta="right">{num(s.headcount)}</Table.Td>
+                            <Table.Td ta="right">{usd(s.med)}</Table.Td>
+                            <Table.Td ta="right">{usd(s.p90)}</Table.Td>
+                            <Table.Td ta="right">{usd(s.payroll)}</Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </>
+                )}
+
+                <Text size="xs" c="dimmed" mt="md">
+                  Methodology: "parity" = the median pay of everyone sharing the subject's job code at this snapshot;
+                  the experience-adjusted figure is the median for same-title peers with at least the subject's tenure.
+                  Supervisory scope is self-reported (not in the salary dataset). Pay-band ranges are best-effort and
+                  only partially seeded.
+                </Text>
+                <Footer />
+              </Card>
             </>
           )}
-          {schools.length > 0 && (
-            <>
-              <Text size="sm" fw={600} mb="xs">Schools</Text>
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>School</Table.Th>
-                    <Table.Th ta="right">Headcount</Table.Th>
-                    <Table.Th ta="right">Median</Table.Th>
-                    <Table.Th ta="right">90th pctile</Table.Th>
-                    <Table.Th ta="right">Total payroll</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {(cmpSchools ?? []).map((s) => (
-                    <Table.Tr key={s.school}>
-                      <Table.Td>{s.school}</Table.Td>
-                      <Table.Td ta="right">{num(s.headcount)}</Table.Td>
-                      <Table.Td ta="right">{usd(s.med)}</Table.Td>
-                      <Table.Td ta="right">{usd(s.p90)}</Table.Td>
-                      <Table.Td ta="right">{usd(s.payroll)}</Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </>
-          )}
-          <Footer />
-        </Card>
+        </>
       )}
     </Stack>
   );
