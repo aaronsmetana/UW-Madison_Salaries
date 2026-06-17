@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Loader, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -145,9 +145,13 @@ export default function Person() {
     ['peer-list', jobCode ?? '', lastSnap],
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, sum(salary) pay
         FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT person_key, fn, ln, pay FROM pp WHERE pay > 0 ORDER BY pay DESC LIMIT 25`,
+     SELECT person_key, fn, ln, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
   );
+  const peerRank = useMemo(() => {
+    const i = (peers ?? []).findIndex((p) => p.person_key === key);
+    return i >= 0 ? i + 1 : null;
+  }, [peers, key]);
 
   const { data: peerPayRows } = useSql<{ pay: number }>(
     ['peer-pays', jobCode ?? '', lastSnap],
@@ -162,6 +166,18 @@ export default function Person() {
     const below = peerPays.filter((p) => p <= lastSalary).length;
     return Math.round((100 * below) / peerPays.length);
   }, [peerPays, lastSalary]);
+
+  // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
+  const peerViewportRef = useRef<HTMLDivElement>(null);
+  const subjectRowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    const vp = peerViewportRef.current;
+    const row = subjectRowRef.current;
+    if (!vp || !row) return;
+    const vpRect = vp.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    vp.scrollTop += rowRect.top - vpRect.top - vp.clientHeight / 2 + rowRect.height / 2;
+  }, [peers]);
 
   const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
@@ -259,43 +275,55 @@ export default function Person() {
 
             {peers && peers.length > 1 && (
               <Card withBorder padding="lg">
-                <Text size="sm" fw={600} mb="md">Others with this title</Text>
-                <Table striped highlightOnHover>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Name</Table.Th>
-                      <Table.Th ta="right">Salary</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {peers.map((p) => {
-                      const isYou = p.person_key === key;
-                      return (
-                        <Table.Tr
-                          key={p.person_key}
-                          onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
-                          tabIndex={isYou ? undefined : 0}
-                          role={isYou ? undefined : 'button'}
-                          onKeyDown={(e) => {
-                            if (!isYou && (e.key === 'Enter' || e.key === ' ')) {
-                              e.preventDefault();
-                              nav(`/person/${encodeURIComponent(p.person_key)}`);
-                            }
-                          }}
-                          style={{ cursor: isYou ? 'default' : 'pointer' }}
-                        >
-                          <Table.Td>
-                            <Text size="sm" c={isYou ? undefined : 'indigo'} fw={isYou ? 700 : undefined}>
-                              {`${p.fn ?? ''} ${p.ln ?? ''}`.trim() || '—'}
-                            </Text>
-                            {isYou && <Badge ml="xs" size="xs" variant="light">this person</Badge>}
-                          </Table.Td>
-                          <Table.Td ta="right">{usd(p.pay)}</Table.Td>
-                        </Table.Tr>
-                      );
-                    })}
-                  </Table.Tbody>
-                </Table>
+                <Group justify="space-between" mb="md" wrap="nowrap">
+                  <Text size="sm" fw={600}>Others with this title</Text>
+                  {peerRank != null && (
+                    <Text size="sm" c="dimmed">
+                      {name} ranks <b>#{peerRank}</b> of {num(peers.length)} by salary
+                    </Text>
+                  )}
+                </Group>
+                <ScrollArea.Autosize mah={460} type="auto" viewportRef={peerViewportRef}>
+                  <Table striped highlightOnHover stickyHeader>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th w={48} ta="right">#</Table.Th>
+                        <Table.Th>Name</Table.Th>
+                        <Table.Th ta="right">Salary</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {peers.map((p, i) => {
+                        const isYou = p.person_key === key;
+                        return (
+                          <Table.Tr
+                            key={p.person_key}
+                            ref={isYou ? subjectRowRef : undefined}
+                            onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
+                            tabIndex={isYou ? undefined : 0}
+                            role={isYou ? undefined : 'button'}
+                            onKeyDown={(e) => {
+                              if (!isYou && (e.key === 'Enter' || e.key === ' ')) {
+                                e.preventDefault();
+                                nav(`/person/${encodeURIComponent(p.person_key)}`);
+                              }
+                            }}
+                            style={{ cursor: isYou ? 'default' : 'pointer', background: isYou ? 'var(--mantine-color-indigo-light)' : undefined }}
+                          >
+                            <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
+                            <Table.Td>
+                              <Text span size="sm" c={isYou ? undefined : 'indigo'} fw={isYou ? 700 : undefined}>
+                                {`${p.fn ?? ''} ${p.ln ?? ''}`.trim() || '—'}
+                              </Text>
+                              {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
+                            </Table.Td>
+                            <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea.Autosize>
               </Card>
             )}
           </Stack>
