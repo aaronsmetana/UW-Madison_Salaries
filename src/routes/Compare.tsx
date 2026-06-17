@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
 import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
 import { useTray } from '../state/tray';
@@ -234,9 +234,12 @@ export default function Compare() {
 
         {items.length > 0 && (
           <>
-            <SelectedRow label="People" items={persons} onRemove={remove} />
-            <SelectedRow label="Titles" items={titles} onRemove={remove} />
+            <SelectedRow label="People" items={persons} onRemove={remove} colored />
+            <SelectedRow label="Titles" items={titles} onRemove={remove} colored />
             <SelectedRow label="Schools" items={schools} onRemove={remove} />
+            {(persons.length > 0 || titles.length > 0) && (
+              <Text size="xs" c="dimmed" mt={6}>The colored dots are the key for the charts below.</Text>
+            )}
             <Group justify="flex-end" mt="sm">
               <Button size="xs" variant="subtle" color="gray" onClick={clear}>Clear all</Button>
             </Group>
@@ -280,7 +283,6 @@ export default function Compare() {
                     <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
                     <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
-                    <Legend formatter={(key) => labelMap.get(String(key)) ?? key} />
                     {persons.map((p, i) => (
                       <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
                     ))}
@@ -291,7 +293,6 @@ export default function Compare() {
                     <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={{ fontSize: 12 }} />
                     <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
                     <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} />
-                    <Legend />
                     {persons.map((p, i) => (
                       <Scatter
                         key={p.id}
@@ -326,7 +327,6 @@ export default function Compare() {
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
               <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
-              <Legend formatter={(key) => labelMap.get(String(key)) ?? key} />
               {persons.map((p, i) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
               ))}
@@ -345,7 +345,6 @@ export default function Compare() {
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis domain={[0, 100]} width={48} tick={{ fontSize: 12 }} unit="%" />
               <Tooltip formatter={(v: number, key) => [`${v}th pctile`, labelMap.get(String(key)) ?? key]} />
-              <Legend formatter={(key) => labelMap.get(String(key)) ?? key} />
               {persons.map((p, i) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
               ))}
@@ -358,7 +357,7 @@ export default function Compare() {
       {persons.length > 0 && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Raise cadence &amp; stagnation</Text>
-          <Table>
+          <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Person</Table.Th>
@@ -426,7 +425,6 @@ export default function Compare() {
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
               <Tooltip formatter={(v: number, key) => [usd(v), titleLabelMap.get(String(key)) ?? key]} />
-              <Legend formatter={(key) => titleLabelMap.get(String(key)) ?? key} />
               {titles.map((t, i) => (
                 <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
               ))}
@@ -471,14 +469,31 @@ export default function Compare() {
   );
 }
 
-/** A removable-pill row for one selection type; renders nothing when empty. */
-function SelectedRow({ label, items, onRemove }: { label: string; items: { type: string; id: string; label: string }[]; onRemove: (id: string) => void }) {
+/**
+ * A removable-pill row for one selection type; renders nothing when empty.
+ * When `colored`, each pill shows its persistent chart color (matching the line
+ * colors below, by position) so the tags double as the charts' legend.
+ */
+function SelectedRow({ label, items, onRemove, colored = false }: { label: string; items: { type: string; id: string; label: string }[]; onRemove: (id: string) => void; colored?: boolean }) {
   if (items.length === 0) return null;
   return (
     <Group gap="xs" mt="sm" wrap="wrap">
       <Text size="xs" c="dimmed" w={56}>{label}</Text>
-      {items.map((i) => (
+      {items.map((i, idx) => (
         <Pill key={`${i.type}:${i.id}`} withRemoveButton onRemove={() => onRemove(i.id)}>
+          {colored && (
+            <span
+              style={{
+                display: 'inline-block',
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: PALETTE[idx % PALETTE.length],
+                marginRight: 6,
+                verticalAlign: 'middle',
+              }}
+            />
+          )}
           {i.label}
         </Pill>
       ))}

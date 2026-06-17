@@ -118,8 +118,8 @@ export function AppShellLayout() {
         </AppShell.Main>
       </AppShell>
 
-      {/* Floating "cart"-style selection tray, above the bottom edge. */}
-      <SelectionTray />
+      {/* Floating "cart"-style selection tray — hidden on /compare (its selections are shown in-page). */}
+      {!loc.pathname.startsWith('/compare') && <SelectionTray />}
     </>
   );
 }
