@@ -350,7 +350,7 @@ export default function Person() {
                     </Text>
                   )}
                 </Group>
-                <ScrollArea.Autosize mah={460} type="auto" viewportRef={peerViewportRef}>
+                <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
                   <Table striped highlightOnHover stickyHeader>
                     <Table.Thead>
                       <Table.Tr>

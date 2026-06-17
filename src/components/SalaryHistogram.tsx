@@ -1,5 +1,5 @@
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import { Text } from '@mantine/core';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
@@ -70,23 +70,39 @@ export function SalaryHistogram({
   const markerFraction = markerValue != null && Number.isFinite(markerValue) && hi > lo
     ? (Math.max(lo, Math.min(hi, markerValue)) - lo) / (hi - lo)
     : null;
+  // Index of the bin the marked value falls in (last bin is inclusive, matching binSalaries), so we
+  // can recolor that one bar. null when there's no marker → every bar keeps the default fill.
+  let markerBin: number | null = null;
+  if (markerValue != null && Number.isFinite(markerValue) && hi > lo) {
+    const v = Math.max(lo, Math.min(hi, markerValue));
+    const idx = bins.findIndex((b) => v < b.hi);
+    markerBin = idx === -1 ? bins.length - 1 : idx;
+  }
   // Recharts plot insets for this chart: left margin (12) + YAxis width (48); right margin (12);
-  // top margin (16); default XAxis height (30) at the bottom.
+  // top margin (matches PLOT_TOP — headroom for the marker pin + label above the bars); default
+  // XAxis height (30) at the bottom.
   const PLOT_LEFT = 60;
   const PLOT_RIGHT = 12;
-  const PLOT_TOP = 16;
+  const PLOT_TOP = 30;
   const X_AXIS_H = 30;
 
   return (
     <>
       <div style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={data} margin={{ left: 12, right: 12, top: 16 }}>
+          <BarChart data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} padding={{ left: 0, right: 0 }} />
             <YAxis width={48} tick={{ fontSize: 12 }} allowDecimals={false} />
             <Tooltip content={<HistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
-            <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
+            <Bar dataKey="n">
+              {data.map((_, i) => (
+                <Cell
+                  key={i}
+                  fill={i === markerBin ? 'var(--mantine-color-blue-7)' : 'var(--mantine-color-indigo-5)'}
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
         {markerFraction != null && (
@@ -100,14 +116,30 @@ export function SalaryHistogram({
               width: 2,
               marginLeft: -1,
               background: 'var(--mantine-color-blue-6)',
+              // White casing so the line stays legible over a colored (highlighted) bar.
+              boxShadow: '0 0 0 1.5px var(--mantine-color-body)',
               pointerEvents: 'none',
             }}
           >
+            {/* Always-visible pin: a downward caret sitting above the tallest bar, tip on the line. */}
+            <span
+              style={{
+                position: 'absolute',
+                top: -8,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 0,
+                height: 0,
+                borderLeft: '5px solid transparent',
+                borderRight: '5px solid transparent',
+                borderTop: '8px solid var(--mantine-color-blue-6)',
+              }}
+            />
             <Text
               component="span"
               style={{
                 position: 'absolute',
-                bottom: '100%',
+                top: -24,
                 left: '50%',
                 transform: 'translateX(-50%)',
                 whiteSpace: 'nowrap',
