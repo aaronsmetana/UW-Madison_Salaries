@@ -27,9 +27,6 @@ export function PeerRangeBar({
 }) {
   const span = max - min;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
-  const pos = span > 0 ? (value - min) / span : 0;
-  const rank =
-    value < min ? 'below the range' : value > max ? 'above the range' : `${Math.round(pos * 100)}% of the way up`;
   const H = 26;
 
   return (
@@ -105,7 +102,7 @@ export function PeerRangeBar({
 
       <MarkerLegend
         items={[
-          { color: MARK_CURRENT, round: true, label: `Current ${usd(value)} · ${rank}` },
+          { color: MARK_CURRENT, round: true, label: `Current ${usd(value)}` },
           ...(target != null ? [{ color: MARK_TARGET, label: `Target ${usd(target)}` }] : []),
         ]}
       />

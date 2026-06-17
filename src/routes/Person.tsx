@@ -4,14 +4,14 @@ import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot,
 } from 'recharts';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num } from '../lib/format';
+import { usd, num, pct } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
@@ -19,7 +19,7 @@ import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 
 /** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; appts?: number } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; appts?: number; med?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -27,6 +27,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
       <Text size="sm">Salary: {usd(d.salary)}</Text>
+      {d.med != null && <Text size="xs" c="dimmed">Title median: {usd(d.med)}</Text>}
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
@@ -112,10 +113,26 @@ export default function Person() {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.salary ?? 0) > (best.salary ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, appts };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, appts };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
+
+  // Median pay for the title the person held at each snapshot (market context for the trend).
+  const { data: titleMedRows } = useSql<{ snapshot_id: string; med: number | null }>(
+    ['person-title-med', key],
+    `WITH me AS (SELECT snapshot_id, arg_max(job_code, salary) job FROM salaries
+        WHERE person_key = ${sqlStr(key)} AND job_code IS NOT NULL GROUP BY snapshot_id),
+      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('full')} pay
+        FROM salaries s JOIN me ON s.snapshot_id = me.snapshot_id AND s.job_code = me.job
+        GROUP BY s.snapshot_id, s.person_key)
+     SELECT snapshot_id, median(pay) med FROM pp WHERE pay > 0 GROUP BY snapshot_id`,
+    !!key
+  );
+  const trendData = useMemo(() => {
+    const med = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med]));
+    return trend.map((t) => ({ ...t, med: med.get(t.id) ?? null }));
+  }, [trend, titleMedRows]);
 
   // Appointment count per snapshot (for the "split" flag in the history table).
   const apptCounts = useMemo(() => {
@@ -141,6 +158,20 @@ export default function Person() {
   const firstSalary = trend[0]?.salary ?? null;
   const lastSalary = trend[trend.length - 1]?.salary ?? null;
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
+
+  // One-line career summary under the header.
+  const careerLine = useMemo(() => {
+    const firstTitle = trend[0]?.title;
+    const latestTitle = latest?.title;
+    if (!latestTitle || trend.length === 0) return null;
+    const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4);
+    const chg = totalChange != null ? `${totalChange > 0 ? '+' : ''}${(totalChange * 100).toFixed(0)}%` : null;
+    const span = `${num(trend.length)} salary snapshots`;
+    if (firstTitle && firstTitle !== latestTitle) {
+      return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}${chg ? ` (${chg} over ${span})` : ''}.`;
+    }
+    return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}${chg ? ` — ${chg} over ${span}` : ''}.`;
+  }, [trend, latest, rows, totalChange]);
 
   const band = useMemo(() => {
     if (!latest || latest.grade_number == null || !grades) return null;
@@ -236,6 +267,7 @@ export default function Person() {
             )}
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
+          {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
         </div>
         <Button
           variant={has(key) ? 'light' : 'filled'}
@@ -278,7 +310,7 @@ export default function Person() {
                 <Text fw={600}>{tenureYears == null ? '—' : `${tenureYears.toFixed(1)} yrs`}</Text>
               </Card>
               <Card withBorder padding="md">
-                <Text size="xs" c="dimmed">Salary Snapshots With Persons Name Available</Text>
+                <Text size="xs" c="dimmed">Salary snapshots on record</Text>
                 <Text fw={600}>{num(trend.length)}</Text>
               </Card>
             </SimpleGrid>
@@ -417,15 +449,22 @@ export default function Person() {
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Salary over time</Text>
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={trend} margin={{ left: 12, right: 12 }}>
+          <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
             <Tooltip content={<TrendTooltip />} />
+            <Line type="monotone" dataKey="med" stroke="var(--mantine-color-gray-5)" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls />
             <Line type="monotone" dataKey="salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            {trendData.map((t, i) =>
+              i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
+                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-indigo-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
+              ) : null
+            )}
           </LineChart>
         </ResponsiveContainer>
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary']} rows={trend.map((t) => [t.label, t.salary])} />
+        <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change · dashed line = median for the title held at the time.</Text>
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} />
       </Card>
         </Tabs.Panel>
 
@@ -445,24 +484,45 @@ export default function Person() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {historyRows.map((r, i) => (
-              <Table.Tr key={`${r.snapshot_id}-${i}`}>
-                <Table.Td>
-                  <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                  {(apptCounts.get(r.snapshot_id) ?? 0) > 1 && (
-                    <Badge variant="light" color="orange" size="xs" ml={6}>split</Badge>
-                  )}
-                </Table.Td>
-                <Table.Td>{r.title ?? '—'}</Table.Td>
-                <Table.Td>{r.job_code ?? '—'}</Table.Td>
-                <Table.Td>
-                  <Text size="sm">{r.school ?? '—'}</Text>
-                  <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
-                </Table.Td>
-                <Table.Td ta="right">{usd(r.salary)}</Table.Td>
-                <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
-              </Table.Tr>
-            ))}
+            {historyRows.map((r, i) => {
+              const prior = i > 0 ? historyRows[i - 1] : null;
+              const jobChanged = !!prior && r.job_code !== prior.job_code;
+              const sameDate = !!prior && String(r.snapshot_date) === String(prior.snapshot_date);
+              const ttcReclass = jobChanged && sameDate && (r.salary ?? 0) === (prior?.salary ?? 0);
+              const deltaPct = prior && prior.salary ? ((r.salary ?? 0) - prior.salary) / prior.salary : null;
+              return (
+                <Table.Tr key={`${r.snapshot_id}-${i}`}>
+                  <Table.Td>
+                    <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                    {(apptCounts.get(r.snapshot_id) ?? 0) > 1 && (
+                      <Badge variant="light" color="orange" size="xs" ml={6}>split</Badge>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    {r.title ?? '—'}
+                    {jobChanged && (
+                      <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'indigo'}>
+                        {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
+                      </Badge>
+                    )}
+                  </Table.Td>
+                  <Table.Td>{r.job_code ?? '—'}</Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{r.school ?? '—'}</Text>
+                    <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
+                  </Table.Td>
+                  <Table.Td ta="right">
+                    {usd(r.salary)}
+                    {deltaPct != null && deltaPct !== 0 && (
+                      <Text size="xs" c={deltaPct > 0 ? 'teal' : 'red'}>
+                        {deltaPct > 0 ? '+' : ''}{pct(deltaPct)}
+                      </Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
+                </Table.Tr>
+              );
+            })}
           </Table.Tbody>
         </Table>
         </Table.ScrollContainer>
