@@ -6,7 +6,7 @@ import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, whereAll, filterKey } from '../lib/queries';
-import { usd, num, pct } from '../lib/format';
+import { usd, num, pct, fullName } from '../lib/format';
 import { ChartData } from './ChartData';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
@@ -132,7 +132,7 @@ export function ChangesPanel() {
     (rows ?? []).map((m) => (
       <Table.Tr key={m.person_key}>
         <Table.Td>
-          <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{m.fn} {m.ln}</Anchor>
+          <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{fullName(m.fn, m.ln)}</Anchor>
           <Text size="xs" c="dimmed">{m.title}</Text>
         </Table.Td>
         <Table.Td ta="right">{usd(m.a_pay)} → {usd(m.b_pay)}</Table.Td>
@@ -220,7 +220,7 @@ export function ChangesPanel() {
             {(promos ?? []).map((p) => (
               <Table.Tr key={p.person_key}>
                 <Table.Td>
-                  <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`}>{p.fn} {p.ln}</Anchor>
+                  <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`}>{fullName(p.fn, p.ln)}</Anchor>
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm">{p.a_title ?? '—'} → {p.b_title ?? '—'}</Text>
@@ -276,7 +276,7 @@ export function ChangesPanel() {
               {(mobility ?? []).map((m) => (
                 <Table.Tr key={m.person_key}>
                   <Table.Td>
-                    <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{m.fn} {m.ln}</Anchor>
+                    <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{fullName(m.fn, m.ln)}</Anchor>
                   </Table.Td>
                   <Table.Td><Text size="sm">{m.a_school ?? '—'} → {m.b_school ?? '—'}</Text></Table.Td>
                   <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'teal' : 'red'}>

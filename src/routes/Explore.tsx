@@ -13,7 +13,7 @@ import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num } from '../lib/format';
+import { usd, num, fullName } from '../lib/format';
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
@@ -187,7 +187,7 @@ export default function Explore() {
                 <Table.Tr key={e.person_key}>
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>
-                      {e.fn} {e.ln}
+                      {fullName(e.fn, e.ln)}
                     </Anchor>
                   </Table.Td>
                   <Table.Td>{e.title ?? '—'}</Table.Td>

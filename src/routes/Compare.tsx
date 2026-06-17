@@ -207,6 +207,7 @@ export default function Compare() {
           <Paper p="sm" radius="md" withBorder shadow="xs">
             <Group gap={6} mb={8}><IconBriefcase size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add title</Text></Group>
             <Select
+              size="md"
               placeholder="Search a title…"
               data={titleSelectData}
               value={null}
@@ -222,6 +223,7 @@ export default function Compare() {
           <Paper p="sm" radius="md" withBorder shadow="xs">
             <Group gap={6} mb={8}><IconBuildingBank size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add school / division</Text></Group>
             <Select
+              size="md"
               placeholder="Search a school…"
               data={(schoolOpts ?? []).map((s) => s.school)}
               value={null}

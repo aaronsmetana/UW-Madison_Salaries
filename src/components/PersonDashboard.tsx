@@ -6,7 +6,7 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct } from '../lib/format';
+import { usd, num, pct, fullName } from '../lib/format';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
@@ -80,7 +80,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
   const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
-  const name = latest ? `${latest.first_name ?? ''} ${latest.last_name ?? ''}`.trim() : personKey;
+  const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || personKey;
 
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
   const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));

@@ -116,6 +116,7 @@ export default function PayCheck() {
       <Card padding="lg">
         <Group align="flex-end" wrap="wrap" gap="xl" maw={920}>
           <Select
+            size="md"
             label="Your title"
             placeholder="Search titles…"
             data={titleData}
@@ -127,6 +128,7 @@ export default function PayCheck() {
             rightSection={<IconChevronDown size={18} stroke={2} />}
           />
           <Select
+            size="md"
             label="Your school (optional)"
             placeholder="All UW"
             data={(schools ?? []).map((s) => s.school)}
@@ -137,6 +139,7 @@ export default function PayCheck() {
             w={300}
           />
           <NumberInput
+            size="md"
             label="Your annual salary"
             placeholder="e.g. 120000"
             value={salStr ? Number(salStr) : ''}

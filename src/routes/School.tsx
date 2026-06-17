@@ -13,7 +13,7 @@ import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num } from '../lib/format';
+import { usd, num, fullName } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 
 interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
@@ -24,7 +24,7 @@ function TenureTip({ active, payload }: { active?: boolean; payload?: { payload:
   const d = payload[0].payload;
   return (
     <div style={{ background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 8, padding: '6px 10px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600 }}>{`${d.fn ?? ''} ${d.ln ?? ''}`.trim() || '—'}</div>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>{fullName(d.fn, d.ln) || '—'}</div>
       <div style={{ fontSize: 12 }}>Pay: {usd(d.pay)}</div>
       <div style={{ fontSize: 12 }}>Tenure: {d.tenure.toFixed(1)} years</div>
       <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>Click to view profile</div>
@@ -279,7 +279,7 @@ export default function School() {
                 <Table.Tr key={e.person_key}>
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>
-                      {e.fn} {e.ln}
+                      {fullName(e.fn, e.ln)}
                     </Anchor>
                     <Text size="xs" c="dimmed">{e.title}</Text>
                   </Table.Td>

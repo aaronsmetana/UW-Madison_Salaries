@@ -11,7 +11,7 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num, pct } from '../lib/format';
+import { usd, num, pct, fullName } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
@@ -77,7 +77,7 @@ export default function Person() {
 
   const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
-  const name = latest ? `${latest.first_name ?? ''} ${latest.last_name ?? ''}`.trim() : key;
+  const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
 
   // Flag people who aren't in the most recent snapshot (likely no longer employed).
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
@@ -380,7 +380,7 @@ export default function Person() {
                             <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
                             <Table.Td>
                               <Text span size="sm" c={isYou ? undefined : 'indigo'} fw={isYou ? 700 : undefined}>
-                                {`${p.fn ?? ''} ${p.ln ?? ''}`.trim() || '—'}
+                                {fullName(p.fn, p.ln) || '—'}
                               </Text>
                               {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
                             </Table.Td>

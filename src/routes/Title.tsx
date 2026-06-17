@@ -4,7 +4,7 @@ import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
-import { usd, num } from '../lib/format';
+import { usd, num, fullName } from '../lib/format';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -112,7 +112,7 @@ export default function TitlePage() {
             {(people ?? []).map((p) => (
               <Table.Tr key={p.person_key}>
                 <Table.Td>
-                  <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`}>{p.fn} {p.ln}</Anchor>
+                  <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`}>{fullName(p.fn, p.ln)}</Anchor>
                   <Text size="xs" c="dimmed">{p.school}</Text>
                 </Table.Td>
                 <Table.Td ta="right">{usd(p.pay)}</Table.Td>

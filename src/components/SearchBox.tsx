@@ -5,6 +5,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
+import { fullName } from '../lib/format';
 
 interface Hit {
   person_key: string;
@@ -78,7 +79,7 @@ export function SearchBox({
 
   const select = (h: Hit) => {
     if (onPick) {
-      onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
+      onPick({ person_key: h.person_key, name: fullName(h.fn, h.ln) });
       setTerm('');
     } else {
       nav(`/person/${encodeURIComponent(h.person_key)}`);
@@ -107,11 +108,11 @@ export function SearchBox({
       closeOnEscape
     >
       <Popover.Target>
-        <div style={{ width: '100%', maxWidth: prominent ? '100%' : 560, margin: prominent ? '0 auto' : undefined }}>
+        <div style={{ width: '100%', maxWidth: prominent ? '100%' : 720, margin: prominent ? '0 auto' : undefined }}>
           <TextInput
             size={prominent ? 'xl' : 'md'}
-            radius={prominent ? 'xl' : undefined}
-            leftSection={prominent ? <IconSearch size={28} /> : undefined}
+            radius={prominent ? 'xl' : 'md'}
+            leftSection={<IconSearch size={prominent ? 28 : 18} />}
             leftSectionWidth={prominent ? 60 : undefined}
             placeholder={placeholder}
             value={term}
@@ -131,7 +132,7 @@ export function SearchBox({
           />
         </div>
       </Popover.Target>
-      <Popover.Dropdown p={0} style={{ maxHeight: 360, overflowY: 'auto' }}>
+      <Popover.Dropdown p={0} style={{ maxHeight: 460, overflowY: 'auto' }}>
         {data && data.length > 0 ? (
           <Stack gap={0} role="listbox" id={listId}>
             {data.map((h, i) => {
@@ -147,8 +148,8 @@ export function SearchBox({
                   role="option"
                   aria-selected={i === active}
                   onMouseEnter={() => setActive(i)}
-                  px="sm"
-                  py={8}
+                  px="md"
+                  py={11}
                   onClick={() => select(h)}
                   style={{
                     borderBottom: '1px solid var(--mantine-color-default-border)',
@@ -156,8 +157,8 @@ export function SearchBox({
                   }}
                 >
                   <Group wrap="nowrap" gap="sm">
-                    <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {h.fn} {h.ln}
+                    <Text size="md" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {fullName(h.fn, h.ln)}
                     </Text>
                     {flags.length > 0 && (
                       <Tooltip label={flags.join(' ')} multiline w={260} withArrow position="top">
@@ -166,7 +167,7 @@ export function SearchBox({
                         </span>
                       </Tooltip>
                     )}
-                    <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+                    <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
                       {[h.title, h.school].filter(Boolean).join(' · ')}
                     </Text>
                   </Group>

@@ -9,7 +9,7 @@ import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num, pct } from '../lib/format';
+import { usd, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { PayBandBar } from '../components/PayBandBar';
@@ -220,7 +220,7 @@ export default function Reports() {
       cards.push({
         icon: <IconUsers size={20} />, color: 'red',
         value: `−${usd(topPeerGap)}`,
-        label: `vs ${topPaidPeer.fn} ${topPaidPeer.ln} in a comparable role`,
+        label: `vs ${fullName(topPaidPeer.fn, topPaidPeer.ln)} in a comparable role`,
       });
     } else if (belowTarget) {
       cards.push({
@@ -453,7 +453,7 @@ export default function Reports() {
                         <Table.Tbody>
                           {otherPeers.map((p) => (
                             <Table.Tr key={p.person_key}>
-                              <Table.Td>{p.fn} {p.ln}</Table.Td>
+                              <Table.Td>{fullName(p.fn, p.ln)}</Table.Td>
                               <Table.Td>{p.title ?? '—'}</Table.Td>
                               <Table.Td ta="right">{usd(p.pay)}</Table.Td>
                               <Table.Td ta="right">
