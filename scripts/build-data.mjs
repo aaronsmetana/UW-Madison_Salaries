@@ -248,6 +248,7 @@ async function main() {
       const seen = new Set();
       const salaries = [];
       const people = new Set();
+      const paidPeople = new Set(); // people with ≥1 positive-salary appointment = the employee headcount
       let zeroNull = 0;
       for (const row of res.rows) {
         const hireISO = row.date_of_hire;
@@ -258,7 +259,7 @@ async function main() {
         seen.add(dedupeKey);
         delete row._first; delete row._last;
         const flags = row._flags; delete row._flags;
-        if (row.salary == null || row.salary === 0) zeroNull++; else salaries.push(row.salary);
+        if (row.salary == null || row.salary === 0) zeroNull++; else { salaries.push(row.salary); paidPeople.add(pkey); }
         people.add(pkey);
         allRows.push({
           snapshot_id: id,
@@ -290,6 +291,7 @@ async function main() {
         source_sheet: name,
         row_count: seen.size,
         distinct_people: people.size,
+        distinct_people_paid: paidPeople.size,
         zero_or_null_salary: zeroNull,
         salary_min: min,
         salary_median: med,
@@ -303,12 +305,14 @@ async function main() {
     }
   }
 
-  // cross-snapshot anomaly: headcount cliffs vs neighbors
+  // cross-snapshot anomaly: headcount cliffs vs neighbors. Use PAID headcount (people with a salary),
+  // not raw row_count — unpaid $0 affiliate appointments came and went over time (≈6k in 2022 → 0 by
+  // Oct 2023) and would otherwise flag a false ~−21% "scope change" that isn't a real staffing shift.
   const dataSnaps = manifest.filter((m) => m.row_count).sort((a, b) => (a.snapshot_date > b.snapshot_date ? 1 : -1));
   for (let i = 1; i < dataSnaps.length; i++) {
     const prev = dataSnaps[i - 1], cur = dataSnaps[i];
-    if (prev.row_count && cur.row_count) {
-      const change = (cur.row_count - prev.row_count) / prev.row_count;
+    if (prev.distinct_people_paid && cur.distinct_people_paid) {
+      const change = (cur.distinct_people_paid - prev.distinct_people_paid) / prev.distinct_people_paid;
       if (Math.abs(change) > 0.15) {
         cur.messages.push(`headcount ${change > 0 ? 'up' : 'down'} ${(change * 100).toFixed(0)}% vs ${prev.snapshot_id} (possible scope change)`);
         if (cur.status === 'ok') cur.status = 'warning';
@@ -342,7 +346,7 @@ async function main() {
     total_rows: allRows.length,
     snapshot_count: dataSnaps.length,
     snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, median: s.salary_median })),
-    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people, median: latest.salary_median } : null,
+    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median } : null,
   }, null, 2));
 
   // pay-band reference (grade → range) + freshness status

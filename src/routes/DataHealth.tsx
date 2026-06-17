@@ -55,7 +55,8 @@ export default function DataHealth() {
             <Table.Th>Source (file · sheet)</Table.Th>
             <Table.Th ta="right">Rows</Table.Th>
             <Table.Th ta="right">People</Table.Th>
-            <Table.Th ta="right">$0/null</Table.Th>
+            <Table.Th ta="right">Paid</Table.Th>
+            <Table.Th ta="right">Unpaid $0</Table.Th>
             <Table.Th ta="right">Median</Table.Th>
             <Table.Th>Status</Table.Th>
           </Table.Tr>
@@ -73,6 +74,7 @@ export default function DataHealth() {
               </Table.Td>
               <Table.Td ta="right">{num(s.row_count)}</Table.Td>
               <Table.Td ta="right">{num(s.distinct_people)}</Table.Td>
+              <Table.Td ta="right">{s.distinct_people_paid != null ? num(s.distinct_people_paid) : '—'}</Table.Td>
               <Table.Td ta="right">{num(s.zero_or_null_salary)}</Table.Td>
               <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
               <Table.Td>
@@ -94,6 +96,11 @@ export default function DataHealth() {
         </Table.Tbody>
       </Table>
       </Table.ScrollContainer>
+      <Text size="xs" c="dimmed">
+        <b>People</b> = distinct identities in the dump. <b>Paid</b> = people with at least one paid appointment —
+        the "headcount" used across the site. <b>Unpaid $0</b> = appointments with no salary (affiliates given
+        campus access), excluded from headcount and salary stats.
+      </Text>
 
       {(dups ?? []).length > 0 && (
         <Card withBorder padding="lg">

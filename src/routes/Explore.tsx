@@ -11,7 +11,7 @@ import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, personPay, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 
@@ -24,7 +24,7 @@ function Kpi({ label, value }: { label: string; value: string }) {
   );
 }
 
-interface Kpis { headcount: number; total_payroll: number | null; med: number | null }
+interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null }
 interface SchoolRow { school: string; headcount: number; med: number | null }
 interface EarnerRow { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number }
 
@@ -47,7 +47,7 @@ export default function Explore() {
 
   const { data: kpis } = useSql<Kpis>(
     ['kpis', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT count(DISTINCT person_key) headcount,
+    `SELECT ${paidHeadcount(metric)} headcount, count(DISTINCT person_key) all_people,
         sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${where}`,
@@ -57,7 +57,7 @@ export default function Explore() {
 
   const { data: schools } = useSql<SchoolRow>(
     ['browse-schools', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT school, count(DISTINCT person_key) headcount,
+    `SELECT school, ${paidHeadcount(metric)} headcount,
         median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${where} AND school IS NOT NULL
      GROUP BY school ORDER BY headcount DESC`,
@@ -75,7 +75,7 @@ export default function Explore() {
 
   const { data: titles } = useSql<{ job_code: string; title: string; n: number; med: number | null }>(
     ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT job_code, arg_max(title, salary) title, count(DISTINCT person_key) n, median(${expr}) FILTER (WHERE ${expr} > 0) med
+    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n, median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${where} AND job_code IS NOT NULL GROUP BY job_code ORDER BY n DESC LIMIT 150`,
     enabled
   );
@@ -115,12 +115,19 @@ export default function Explore() {
       {isLoading ? (
         <Loader />
       ) : (
-        <SimpleGrid cols={{ base: 1, sm: 4 }}>
-          <Kpi label="Headcount" value={num(k?.headcount)} />
-          <Kpi label="Median salary" value={usd(k?.med)} />
-          <Kpi label="Total payroll" value={usd(k?.total_payroll)} />
-          <Kpi label="Snapshots" value={num(summary?.snapshot_count)} />
-        </SimpleGrid>
+        <div>
+          <SimpleGrid cols={{ base: 1, sm: 4 }}>
+            <Kpi label="Headcount" value={num(k?.headcount)} />
+            <Kpi label="Median salary" value={usd(k?.med)} />
+            <Kpi label="Total payroll" value={usd(k?.total_payroll)} />
+            <Kpi label="Snapshots" value={num(summary?.snapshot_count)} />
+          </SimpleGrid>
+          {k && k.all_people > k.headcount && (
+            <Text size="xs" c="dimmed" mt="xs">
+              Headcount counts paid employees; {num(k.all_people - k.headcount)} unpaid $0 affiliate appointments excluded.
+            </Text>
+          )}
+        </div>
       )}
 
       <Tabs defaultValue="schools">

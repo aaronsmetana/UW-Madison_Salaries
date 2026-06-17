@@ -9,6 +9,7 @@ export interface SnapshotInfo {
   source_sheet: string;
   row_count: number;
   distinct_people: number;
+  distinct_people_paid?: number;
   zero_or_null_salary: number;
   salary_min: number | null;
   salary_median: number | null;

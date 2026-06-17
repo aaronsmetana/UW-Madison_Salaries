@@ -13,7 +13,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner } from '../components/Loading';
 
 const NAV = [
-  { label: 'Search Person', to: '/', icon: IconUserSearch },
+  { label: "Search Person's Salary", to: '/', icon: IconUserSearch },
   { label: 'Search Title Salaries', to: '/paycheck', icon: IconBriefcase },
   { label: 'General Comparisons', to: '/explore', icon: IconBuildingBank },
   { label: 'Compare People/Title/Schools', to: '/compare', icon: IconArrowsDiff },

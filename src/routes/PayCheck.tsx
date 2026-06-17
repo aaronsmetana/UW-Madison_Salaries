@@ -5,7 +5,7 @@ import {
 import { IconChevronDown } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { useControls } from '../state/controls';
-import { salaryExpr, personPay } from '../lib/queries';
+import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { PayBandBar } from '../components/PayBandBar';
@@ -45,8 +45,8 @@ export default function PayCheck() {
 
   // option lists
   const { data: titles } = useSql<{ job_code: string; title: string; n: number }>(
-    ['pc-titles', snap ?? ''],
-    `SELECT job_code, arg_max(title, salary) title, count(DISTINCT person_key) n
+    ['pc-titles', snap ?? '', metric],
+    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IS NOT NULL
      GROUP BY job_code ORDER BY n DESC`,
     !!snap
@@ -87,7 +87,7 @@ export default function PayCheck() {
   // by-school market view
   const { data: bySchool } = useSql<{ school: string; n: number; med: number | null }>(
     ['pc-school', snap ?? '', code, metric],
-    `SELECT school, count(DISTINCT person_key) n, median(${expr}) FILTER (WHERE ${expr} > 0) med
+    `SELECT school, ${paidHeadcount(metric)} n, median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${base} AND school IS NOT NULL GROUP BY school ORDER BY n DESC`,
     ready
   );

@@ -11,7 +11,7 @@ import {
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, personPay, filterWhere, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, paidHeadcount, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num } from '../lib/format';
 import { ChartData } from '../components/ChartData';
@@ -61,7 +61,7 @@ export default function School() {
 
   const { data: scoreRows, isLoading } = useSql<Score>(
     ['school-score', name, snap ?? '', metric, fk],
-    `SELECT count(DISTINCT person_key) headcount,
+    `SELECT ${paidHeadcount(metric)} headcount,
         sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
         avg(${expr}) FILTER (WHERE ${expr} > 0) mean,
@@ -87,8 +87,8 @@ export default function School() {
   );
 
   const { data: comp } = useSql<{ cat: string; n: number }>(
-    ['school-comp', name, snap ?? '', fk],
-    `SELECT COALESCE(employee_category, '—') cat, count(DISTINCT person_key) n
+    ['school-comp', name, snap ?? '', metric, fk],
+    `SELECT COALESCE(employee_category, '—') cat, ${paidHeadcount(metric)} n
      FROM salaries WHERE ${base} GROUP BY 1 ORDER BY 2 DESC`,
     enabled
   );
@@ -103,7 +103,7 @@ export default function School() {
   const { data: trend } = useSql<{ label: string; date: string; med: number | null; hc: number }>(
     ['school-trend', name, metric, fk],
     `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med, count(DISTINCT person_key) hc
+        median(${expr}) FILTER (WHERE ${expr} > 0) med, ${paidHeadcount(metric)} hc
      FROM salaries WHERE school = ${sqlStr(name)} AND ${filterWhere(filters)} GROUP BY snapshot_id ORDER BY date`,
     !!name
   );

@@ -7,7 +7,7 @@ import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, Ico
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, pct } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -141,7 +141,7 @@ export default function Reports() {
 
   const { data: cmpSchools } = useSql<SchoolCard>(
     ['rpt-cmp-schools', schoolNames, snap ?? '', metric],
-    `SELECT school, count(DISTINCT person_key) headcount,
+    `SELECT school, ${paidHeadcount(metric)} headcount,
         sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
         quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90

@@ -41,11 +41,13 @@ export function ChangesPanel() {
   const A = sqlStr(fromId ?? '');
   const B = sqlStr(toId ?? '');
   const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}`;
+  // Restrict both sides to people with a paid appointment so unpaid $0 affiliates don't read as
+  // joiners/leavers (a $0-only person has NULL personPay and is dropped by the HAVING).
   const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school
-                          FROM salaries WHERE snapshot_id = ${A} AND ${where} GROUP BY person_key),
+                          FROM salaries WHERE snapshot_id = ${A} AND ${where} GROUP BY person_key HAVING ${personPay(metric)} > 0),
                     b AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
                                  any_value(first_name) fn, any_value(last_name) ln
-                          FROM salaries WHERE snapshot_id = ${B} AND ${where} GROUP BY person_key)`;
+                          FROM salaries WHERE snapshot_id = ${B} AND ${where} GROUP BY person_key HAVING ${personPay(metric)} > 0)`;
 
   const { data: sumData } = useSql<SummaryRow>(
     ['chg-sum', fromId, toId, scopeKey, metric],

@@ -9,7 +9,7 @@ import { useTray } from '../state/tray';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { SearchBox } from '../components/SearchBox';
@@ -46,8 +46,8 @@ export default function Compare() {
     !!snap
   );
   const { data: titleOpts } = useSql<{ job_code: string; title: string; n: number }>(
-    ['cmp-title-opts', snap ?? ''],
-    `SELECT job_code, arg_max(title, salary) title, count(DISTINCT person_key) n
+    ['cmp-title-opts', snap ?? '', metric],
+    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IS NOT NULL
      GROUP BY job_code ORDER BY n DESC`,
     !!snap
@@ -63,7 +63,7 @@ export default function Compare() {
 
   const { data: sdata, isFetching: sLoading } = useSql<SRow>(
     ['cmp-schools', schoolNames, snap ?? '', metric],
-    `SELECT school, count(DISTINCT person_key) headcount,
+    `SELECT school, ${paidHeadcount(metric)} headcount,
         sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll,
         median(${expr}) FILTER (WHERE ${expr} > 0) med,
         quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90

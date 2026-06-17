@@ -48,6 +48,16 @@ export function personPay(metric: Metric): string {
             ELSE any_value(${salaryExpr(metric)}) FILTER (WHERE salary > 0) END`;
 }
 
+/**
+ * Distinct people with at least one paid (positive-metric) appointment — the "employee" headcount.
+ * Use instead of `count(DISTINCT person_key)` so headcount runs on the same population as the medians
+ * and totals (which already filter `${salaryExpr(metric)} > 0`), excluding unpaid $0 affiliate
+ * appointments. Multi-appointment people keep counting as long as one role is paid.
+ */
+export function paidHeadcount(metric: Metric): string {
+  return `count(DISTINCT person_key) FILTER (WHERE ${salaryExpr(metric)} > 0)`;
+}
+
 /** WHERE fragment restricting to the current scope. */
 export function scopeWhere(scope: Scope): string {
   if (scope.kind === 'school') return `school = ${sqlStr(scope.value)}`;

@@ -3,7 +3,7 @@ import { Stack, Title, Text, Card, Table, Anchor, Loader, Alert, SimpleGrid, Bad
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, personPay } from '../lib/queries';
+import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
 import { usd, num } from '../lib/format';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 
@@ -27,7 +27,7 @@ export default function TitlePage() {
 
   const { data: hdr, isLoading } = useSql<{ title: string; n: number; med: number | null; lo: number | null; hi: number | null }>(
     ['title-hdr', jobCode, snap ?? '', metric],
-    `SELECT arg_max(title, salary) title, count(DISTINCT person_key) n,
+    `SELECT arg_max(title, salary) title, ${paidHeadcount(metric)} n,
         median(${expr}) FILTER (WHERE ${expr} > 0) med, min(${expr}) FILTER (WHERE ${expr} > 0) lo, max(${expr}) FILTER (WHERE ${expr} > 0) hi
      FROM salaries WHERE ${base}`,
     enabled
@@ -36,7 +36,7 @@ export default function TitlePage() {
 
   const { data: bySchool } = useSql<{ school: string; n: number; med: number | null }>(
     ['title-school', jobCode, snap ?? '', metric],
-    `SELECT school, count(DISTINCT person_key) n, median(${expr}) FILTER (WHERE ${expr} > 0) med
+    `SELECT school, ${paidHeadcount(metric)} n, median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${base} AND school IS NOT NULL GROUP BY school ORDER BY n DESC`,
     enabled
   );
