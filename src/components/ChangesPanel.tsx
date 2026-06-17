@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Link } from 'react-router-dom';
@@ -26,7 +26,7 @@ export function ChangesPanel() {
   const { scope, metric, filters } = useControls();
   const where = whereAll(scope, filters);
   const { data: summary } = useSummary();
-  const snaps = summary?.snapshots ?? [];
+  const snaps = useMemo(() => summary?.snapshots ?? [], [summary]);
 
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);

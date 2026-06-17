@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert, Paper } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { useSql, useGrades } from '../lib/hooks';
+import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { METRIC_LABEL, type Metric } from '../state/controls';
@@ -74,9 +75,14 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   );
   const { data: grades } = useGrades();
 
-  const rows = data ?? [];
+  const { data: summary } = useSummary();
+
+  const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
   const name = latest ? `${latest.first_name ?? ''} ${latest.last_name ?? ''}`.trim() : personKey;
+
+  const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
+  const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));
 
   const trend = useMemo(() => {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -193,6 +199,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Text>
       </div>
 
+      {departed && (
+        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+          Not in the latest snapshot ({campusLatest?.label}) — may no longer be employed. Last seen {latest?.snapshot_label}.
+        </Alert>
+      )}
+
       {/* Headline stats */}
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         <Stat label="Current salary" value={usd(lastSalary)} />
@@ -222,6 +234,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {/* Title & salary history */}
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title &amp; salary history</Text>
+        <Table.ScrollContainer minWidth={680}>
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -254,6 +267,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             ))}
           </Table.Tbody>
         </Table>
+        </Table.ScrollContainer>
       </Card>
 
       {/* Same-title comparison (compact) */}

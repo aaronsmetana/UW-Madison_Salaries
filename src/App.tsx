@@ -19,7 +19,7 @@ const School = lazy(() => import('./routes/School'));
 const TitlePage = lazy(() => import('./routes/Title'));
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: Infinity, refetchOnWindowFocus: false } },
+  defaultOptions: { queries: { staleTime: Infinity, refetchOnWindowFocus: false, retry: 1 } },
 });
 
 const router = createBrowserRouter(

@@ -266,7 +266,7 @@ export default function Reports() {
             value={type}
             onChange={setType}
             data={[
-              { value: 'person', label: 'Report On Person' },
+              { value: 'person', label: 'On a Specified Person' },
               { value: 'comparison', label: 'Salary Increase Justification (People In Tray)' },
             ]}
           />

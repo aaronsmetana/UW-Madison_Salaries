@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId, useEffect, type KeyboardEvent } from 'react';
 import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip } from '@mantine/core';
 import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -68,6 +68,32 @@ export function SearchBox({
   const nav = useNavigate();
   const opened = enabled && (isFetching || (data?.length ?? 0) >= 0);
 
+  // Keyboard navigation for the autocomplete (combobox semantics).
+  const results = data ?? [];
+  const listId = useId();
+  const optId = (i: number) => `${listId}-opt-${i}`;
+  const [active, setActive] = useState(0);
+  useEffect(() => { setActive(0); }, [data]);
+  useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, listId]);
+
+  const select = (h: Hit) => {
+    if (onPick) {
+      onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
+      setTerm('');
+    } else {
+      nav(`/person/${encodeURIComponent(h.person_key)}`);
+      onSelect?.();
+    }
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') { setTerm(''); return; }
+    if (!opened || results.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(results.length - 1, a + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); const h = results[active]; if (h) select(h); }
+  };
+
   return (
     <Popover
       opened={!!opened}
@@ -90,8 +116,14 @@ export function SearchBox({
             placeholder={placeholder}
             value={term}
             onChange={(e) => setTerm(e.currentTarget.value)}
+            onKeyDown={onKeyDown}
             rightSection={isFetching ? <Loader size="sm" /> : null}
             aria-label="Search a person"
+            role="combobox"
+            aria-expanded={!!opened}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={opened && results.length ? optId(active) : undefined}
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
             classNames={prominent ? { input: 'hero-search-input' } : undefined}
@@ -101,8 +133,8 @@ export function SearchBox({
       </Popover.Target>
       <Popover.Dropdown p={0} style={{ maxHeight: 360, overflowY: 'auto' }}>
         {data && data.length > 0 ? (
-          <Stack gap={0}>
-            {data.map((h) => {
+          <Stack gap={0} role="listbox" id={listId}>
+            {data.map((h, i) => {
               const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
               const multiAppt = (h.max_appts ?? 0) > 1;
               const flags: string[] = [];
@@ -111,18 +143,17 @@ export function SearchBox({
               return (
                 <UnstyledButton
                   key={h.person_key}
+                  id={optId(i)}
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
                   px="sm"
                   py={8}
-                  onClick={() => {
-                    if (onPick) {
-                      onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
-                      setTerm('');
-                    } else {
-                      nav(`/person/${encodeURIComponent(h.person_key)}`);
-                      onSelect?.();
-                    }
+                  onClick={() => select(h)}
+                  style={{
+                    borderBottom: '1px solid var(--mantine-color-default-border)',
+                    background: i === active ? 'var(--mantine-color-default-hover)' : undefined,
                   }}
-                  style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
                 >
                   <Group wrap="nowrap" gap="sm">
                     <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>

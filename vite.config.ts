@@ -13,6 +13,8 @@ const CSP = [
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
 ].join('; ');
 
 // Inject the CSP <meta> only into the production build (keeps dev/HMR working).

@@ -47,6 +47,7 @@ export default function DataHealth() {
         )}
       </Group>
 
+      <Table.ScrollContainer minWidth={760}>
       <Table striped highlightOnHover verticalSpacing="sm">
         <Table.Thead>
           <Table.Tr>
@@ -92,6 +93,7 @@ export default function DataHealth() {
           ))}
         </Table.Tbody>
       </Table>
+      </Table.ScrollContainer>
 
       {(dups ?? []).length > 0 && (
         <Card withBorder padding="lg">

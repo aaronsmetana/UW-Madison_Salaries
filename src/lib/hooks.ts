@@ -1,7 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { query } from './duckdb';
+import { query, getDB } from './duckdb';
 import { fetchData, type Manifest, type Summary } from './manifest';
 import { useControls } from '../state/controls';
+
+/** Resolves once DuckDB-WASM + the Parquet have loaded; errors if the dataset can't be loaded. */
+export function useDbReady() {
+  return useQuery({ queryKey: ['db-ready'], queryFn: () => getDB().then(() => true), retry: 1 });
+}
 
 /** Headline KPIs + snapshot list (static JSON — works even if DuckDB/Parquet fail to load). */
 export function useSummary() {
@@ -44,7 +49,8 @@ export function useSql<T = Record<string, unknown>>(
   sql: string,
   enabled = true
 ) {
-  return useQuery({ queryKey: ['sql', ...key], queryFn: () => query<T>(sql), enabled });
+  // Include the SQL text in the key so changing a query without changing its key can't serve stale data.
+  return useQuery({ queryKey: ['sql', ...key, sql], queryFn: () => query<T>(sql), enabled });
 }
 
 /** The active snapshot id, resolving the `latest` default from the summary. */

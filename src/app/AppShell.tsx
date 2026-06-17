@@ -10,7 +10,7 @@ import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
 import { CommandSearch } from '../components/CommandSearch';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { GlobalLoadingBar, LoadingState } from '../components/Loading';
+import { GlobalLoadingBar, LoadingState, DataErrorBanner } from '../components/Loading';
 
 const NAV = [
   { label: 'Search Person', to: '/', icon: IconUserSearch },
@@ -112,6 +112,7 @@ export function AppShellLayout() {
         </AppShell.Navbar>
 
         <AppShell.Main style={{ paddingBottom: 96 }}>
+          <DataErrorBanner />
           <ErrorBoundary key={loc.pathname}>
             <Suspense fallback={<LoadingState label="Loading…" />}>
               <Outlet />

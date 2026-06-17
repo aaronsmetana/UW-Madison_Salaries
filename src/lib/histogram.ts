@@ -53,11 +53,3 @@ export function binSalaries(values: number[], targetBins = 10): Bin[] {
   }
   return bins;
 }
-
-/** Index of the bin a value falls in (clamped to the ends). */
-export function binIndexFor(value: number, bins: Bin[]): number {
-  for (let i = 0; i < bins.length; i++) {
-    if (value <= bins[i].hi || i === bins.length - 1) return i;
-  }
-  return -1;
-}

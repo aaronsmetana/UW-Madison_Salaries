@@ -332,6 +332,11 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          <ChartData
+            caption="Pay gap to the top earner by snapshot"
+            columns={['Snapshot', ...persons.map((p) => p.label)]}
+            rows={gapSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+          />
           <Text size="xs" c="dimmed">0 = highest-paid in the group at that snapshot; below 0 = behind by that amount.</Text>
         </Card>
       )}
@@ -350,6 +355,11 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          <ChartData
+            caption="Percentile within school over time"
+            columns={['Snapshot', ...persons.map((p) => p.label)]}
+            rows={standingSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+          />
           <Text size="xs" c="dimmed">Each person's percentile among peers in their own school at that snapshot.</Text>
         </Card>
       )}
@@ -388,6 +398,7 @@ export default function Compare() {
           {tLoading ? (
             <Loader />
           ) : (
+            <Table.ScrollContainer minWidth={560}>
             <Table striped>
               <Table.Thead>
                 <Table.Tr>
@@ -412,6 +423,7 @@ export default function Compare() {
                 ))}
               </Table.Tbody>
             </Table>
+            </Table.ScrollContainer>
           )}
         </Card>
       )}
@@ -430,6 +442,11 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          <ChartData
+            caption="Median salary per title over time"
+            columns={['Snapshot', ...titles.map((t) => t.label)]}
+            rows={titleSeries.map((row) => [row.label as string, ...titles.map((t) => row[t.id] ?? null)])}
+          />
           <Text size="xs" c="dimmed">Median salary per title at each snapshot.</Text>
         </Card>
       )}
@@ -440,6 +457,7 @@ export default function Compare() {
           {sLoading ? (
             <Loader />
           ) : (
+            <Table.ScrollContainer minWidth={520}>
             <Table striped>
               <Table.Thead>
                 <Table.Tr>
@@ -462,6 +480,7 @@ export default function Compare() {
                 ))}
               </Table.Tbody>
             </Table>
+            </Table.ScrollContainer>
           )}
         </Card>
       )}

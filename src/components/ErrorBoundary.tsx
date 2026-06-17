@@ -13,6 +13,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     return { error };
   }
 
+  componentDidCatch(error: Error, info: { componentStack?: string | null }) {
+    // Log so caught render errors are diagnosable in the console.
+    console.error('ErrorBoundary caught:', error, info.componentStack);
+  }
+
   render() {
     if (this.state.error) {
       return (

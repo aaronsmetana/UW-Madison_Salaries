@@ -23,7 +23,3 @@ export const theme = createTheme({
 
 // Semantic, colorblind-safe accents (raises/cuts) used by charts/badges.
 export const SEMANTIC = { up: 'teal', down: 'red', neutral: 'gray' } as const;
-
-// Hero band gradient (indigo → cyan): pretty, distinct from official UW red.
-export const HERO_GRADIENT =
-  'linear-gradient(135deg, var(--mantine-color-indigo-7) 0%, var(--mantine-color-cyan-6) 100%)';

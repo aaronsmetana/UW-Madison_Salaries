@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Loader, Group, Text, Transition } from '@mantine/core';
+import { Loader, Group, Text, Transition, Alert, Button } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { useIsFetching } from '@tanstack/react-query';
+import { useDbReady, useSummary } from '../lib/hooks';
 
 /**
  * Thin, indeterminate top progress bar shown whenever data is being fetched/parsed
@@ -25,6 +27,23 @@ export function GlobalLoadingBar() {
     <Transition mounted={show} transition="fade" duration={200}>
       {(style) => <div className="global-loading-bar" style={style} aria-hidden />}
     </Transition>
+  );
+}
+
+/** Global banner shown when the salary dataset (DuckDB/Parquet) or summary fails to load. */
+export function DataErrorBanner() {
+  const db = useDbReady();
+  const summary = useSummary();
+  if (!db.isError && !summary.isError) return null;
+  return (
+    <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Couldn't load the salary data" mb="md">
+      <Group justify="space-between" wrap="wrap" gap="sm">
+        <Text size="sm">The dataset failed to load — check your connection, then reload to try again.</Text>
+        <Button size="xs" variant="white" color="red" onClick={() => window.location.reload()}>
+          Reload
+        </Button>
+      </Group>
+    </Alert>
   );
 }
 

@@ -15,7 +15,7 @@ const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
 export function salaryExpr(metric: Metric): string {
   switch (metric) {
     case 'fte':
-      return 'COALESCE(salary_fte_adjusted, salary * fte)';
+      return 'COALESCE(salary_fte_adjusted, salary * COALESCE(fte, 1))';
     case 'base':
       return 'COALESCE(base_pay, salary)';
     default:
@@ -41,7 +41,11 @@ export function earningsExpr(metric: Metric): string {
  * appointments → FTE-blended actual earnings, so split roles aren't double-counted.
  */
 export function personPay(metric: Metric): string {
-  return `CASE WHEN count(*) > 1 THEN sum(${earningsExpr(metric)}) ELSE any_value(${salaryExpr(metric)}) END`;
+  // Only count real (positive-salary) appointments: one → the metric value; several concurrent →
+  // FTE-blended actual earnings. Guarding on salary>0 avoids a $0 placeholder row triggering a blend.
+  return `CASE WHEN count(*) FILTER (WHERE salary > 0) > 1
+            THEN sum(${earningsExpr(metric)}) FILTER (WHERE salary > 0)
+            ELSE any_value(${salaryExpr(metric)}) FILTER (WHERE salary > 0) END`;
 }
 
 /** WHERE fragment restricting to the current scope. */

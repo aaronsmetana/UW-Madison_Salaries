@@ -61,9 +61,14 @@ async function initDB(): Promise<AsyncDuckDB> {
   return db;
 }
 
-/** Lazily instantiate DuckDB-WASM + load the Parquet (once). */
+/** Lazily instantiate DuckDB-WASM + load the Parquet (once). Resets on failure so callers can retry. */
 export function getDB(): Promise<AsyncDuckDB> {
-  if (!dbPromise) dbPromise = initDB();
+  if (!dbPromise) {
+    dbPromise = initDB().catch((e) => {
+      dbPromise = null; // a transient failure shouldn't be cached forever — allow a retry
+      throw e instanceof Error ? e : new Error(String(e));
+    });
+  }
   return dbPromise;
 }
 

@@ -6,7 +6,8 @@ import {
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
-import { useSql, useGrades } from '../lib/hooks';
+import { IconAlertTriangle } from '@tabler/icons-react';
+import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
@@ -71,9 +72,15 @@ export default function Person() {
   );
   const { data: grades } = useGrades();
 
-  const rows = data ?? [];
+  const { data: summary } = useSummary();
+
+  const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
   const name = latest ? `${latest.first_name ?? ''} ${latest.last_name ?? ''}`.trim() : key;
+
+  // Flag people who aren't in the most recent snapshot (likely no longer employed).
+  const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
+  const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));
 
   // Salary trend: one point per snapshot. Single appointment → its full rate; multiple concurrent
   // appointments → FTE-blended actual earnings (Σ rate × FTE), not the nonsensical sum of full rates.
@@ -238,6 +245,12 @@ export default function Person() {
           {has(key) ? 'In tray' : '+ Add to tray'}
         </Button>
       </Group>
+
+      {departed && (
+        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+          Not in the latest snapshot ({campusLatest?.label}) — may no longer be employed. Last seen {latest?.snapshot_label}.
+        </Alert>
+      )}
 
       <Tabs defaultValue="overview">
         <Tabs.List>
@@ -419,6 +432,7 @@ export default function Person() {
         <Tabs.Panel value="history" pt="md">
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title & salary history</Text>
+        <Table.ScrollContainer minWidth={680}>
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -451,6 +465,7 @@ export default function Person() {
             ))}
           </Table.Tbody>
         </Table>
+        </Table.ScrollContainer>
       </Card>
         </Tabs.Panel>
       </Tabs>
