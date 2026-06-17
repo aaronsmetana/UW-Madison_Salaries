@@ -1,12 +1,9 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, SimpleGrid, Group, Button, Paper, ThemeIcon } from '@mantine/core';
-import {
-  IconDatabase, IconCoin, IconReportMoney, IconScale, IconUsersGroup, IconArrowRight,
-} from '@tabler/icons-react';
+import { Box, Stack, Title, Text, SimpleGrid, Group, Paper, ThemeIcon } from '@mantine/core';
+import { IconCoin, IconReportMoney } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { num, usd } from '../lib/format';
+import { usd } from '../lib/format';
 import { SearchBox } from '../components/SearchBox';
 
 /** One system-wide stat: icon + label, value below. Borderless — grouped inside a shared container. */
@@ -57,25 +54,20 @@ export default function Home() {
 
           {/* System-wide stats */}
           <Paper withBorder radius="lg" px="lg" py="md" w="100%">
-            <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.06em' }}>
-              System-wide
-            </Text>
-            <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg" verticalSpacing="sm">
-              <Kpi label="Total records" value={num(summary?.total_rows)} icon={<IconDatabase size={18} />} color="cyan" />
+            <Group justify="space-between" align="baseline" mb="xs">
+              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.06em' }}>
+                System-wide
+              </Text>
+              {summary?.latest?.label && (
+                <Text size="xs" c="dimmed">from the {summary.latest.label} salary report</Text>
+              )}
+            </Group>
+            <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="lg" verticalSpacing="sm">
               <Kpi label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
-              <Kpi label="Total payroll (latest)" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
+              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
             </SimpleGrid>
           </Paper>
         </Stack>
-
-        <Group justify="center" gap="md" mt="sm" wrap="wrap">
-          <Button component={Link} to="/paycheck" variant="default" size="md" radius="xl" px="xl" leftSection={<IconScale size={18} />} rightSection={<IconArrowRight size={16} />}>
-            Search title salaries
-          </Button>
-          <Button component={Link} to="/compare" variant="default" size="md" radius="xl" px="xl" leftSection={<IconUsersGroup size={18} />} rightSection={<IconArrowRight size={16} />}>
-            Compare people, titles &amp; schools
-          </Button>
-        </Group>
       </Stack>
     </Box>
   );
