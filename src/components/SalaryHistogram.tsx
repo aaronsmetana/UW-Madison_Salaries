@@ -75,7 +75,7 @@ export function SalaryHistogram({
           {marker && (
             <ReferenceLine
               x={marker}
-              stroke="var(--mantine-color-teal-6)"
+              stroke="var(--mantine-color-blue-6)"
               strokeWidth={2}
               label={{ value: markerLabel, position: 'top', fontSize: 11 }}
             />

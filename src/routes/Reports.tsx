@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
-  Checkbox, NumberInput, TextInput, List, Alert,
+  Checkbox, NumberInput, TextInput, Alert, Accordion, ThemeIcon,
 } from '@mantine/core';
-import { IconDownload, IconPrinter } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, IconClock } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -29,11 +29,11 @@ interface PeerStat { n: number; lo: number | null; p25: number | null; med: numb
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; pay: number }
 
 const SECTIONS = [
-  { value: 'talking', label: 'Talking points' },
+  { value: 'highlights', label: 'Highlights' },
+  { value: 'peers', label: 'Direct peers' },
   { value: 'benchmark', label: 'Title benchmark' },
   { value: 'band', label: 'Pay band' },
   { value: 'tenure', label: 'Tenure & growth' },
-  { value: 'peers', label: 'Direct peers' },
 ];
 
 function ordinal(n: number): string {
@@ -214,10 +214,7 @@ export default function Reports() {
     return grades.find((g) => g.grade === subj.grade_number && g.basis === subj.grade_basis) ?? null;
   }, [subj, grades]);
 
-  const med = peer?.med ?? null;
-  const belowMarket = subjectPay != null && med != null && subjectPay < med;
-  const raiseDelta = belowMarket && med != null && subjectPay != null ? med - subjectPay : 0;
-  const raisePct = belowMarket && subjectPay ? raiseDelta / subjectPay : 0;
+  const med = peer?.med ?? null; // market parity (title median) — shown as a secondary reference
 
   const otherPeers = useMemo(
     () => (trayPeople ?? [])
@@ -228,40 +225,60 @@ export default function Reports() {
   );
   const topPaidPeer = otherPeers.filter((p) => p.pay > (subjectPay ?? 0)).sort((a, b) => b.pay - a.pay)[0];
 
-  // ── Extensive talking points (each shown only when it supports the case) ──
-  const talkingPoints = useMemo(() => {
-    const tp: string[] = [];
-    if (subjectPay == null || !subj) return tp;
-    const title = subj.title ?? 'this title';
-    if (peer && percentile != null && med != null) {
-      tp.push(`At ${usd(subjectPay)}, ${subjectName} ranks in the ${ordinal(percentile)} percentile of ${num(peer.n)} ${title} employees at UW (median ${usd(med)}, 75th ${usd(peer.p75)}).`);
+  // ── Targets: experience/scope-adjusted is primary; market median is secondary ──
+  const primaryTarget = expMedian ?? peer?.p75 ?? med ?? null;
+  const belowTarget = subjectPay != null && primaryTarget != null && subjectPay < primaryTarget;
+  const targetDelta = belowTarget && primaryTarget != null && subjectPay != null ? primaryTarget - subjectPay : 0;
+  const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
+  const topPeerGap = topPaidPeer && subjectPay != null ? topPaidPeer.pay - subjectPay : null;
+
+  // ── Highlight reel: three punchy cards (only what sells the increase) ──
+  const highlights = useMemo(() => {
+    const cards: { icon: ReactNode; color: string; value: string; label: string }[] = [];
+    if (subjectPay == null) return cards;
+    if (percentile != null) {
+      cards.push({
+        icon: <IconChartBar size={20} />, color: 'orange',
+        value: `${ordinal(percentile)} percentile`,
+        label: tenureYears != null
+          ? `despite ${tenureYears.toFixed(1)} years of tenure`
+          : `among ${num(peer?.n)} ${subj?.title ?? 'peers'} at UW`,
+      });
     }
-    if (belowMarket && med != null) {
-      tp.push(`That is ${usd(med - subjectPay)} (${pct(raisePct)}) below the title median — the benchmark for fair, market-rate pay.`);
-    }
-    if (expMedian != null && subjectPay < expMedian && tenureYears != null) {
-      tp.push(`Same-title colleagues with comparable or greater tenure earn a median of ${usd(expMedian)}; ${subjectName} is paid ${usd(expMedian - subjectPay)} below that despite ${tenureYears.toFixed(1)} years of service.`);
-    } else if (tenureYears != null) {
-      tp.push(`${subjectName} has ${tenureYears.toFixed(1)} years of UW service — experience the current salary does not yet reflect.`);
-    }
-    if (band && subjectPay < band.max) {
-      const through = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
-      tp.push(`Within grade ${subj.grade_number}'s official pay band (${usd(band.min)}–${usd(band.max)}), this salary sits at ${through}% of range — ${usd(band.max - subjectPay)} below the band maximum.`);
-    }
-    if (growth && growth.periods > 0) {
-      tp.push(`Over ${growth.periods} review periods, ${subjectName} received ${growth.raises} increase${growth.raises === 1 ? '' : 's'}${growth.avgPct != null ? ` (avg ${pct(growth.avgPct)})` : ''}; the longest stretch without a raise was ${growth.longest} period${growth.longest === 1 ? '' : 's'}.`);
-    }
-    if (topPaidPeer) {
-      tp.push(`${subjectName} is paid ${usd(topPaidPeer.pay - (subjectPay ?? 0))} less than ${topPaidPeer.fn} ${topPaidPeer.ln} (${topPaidPeer.title ?? '—'}) in a comparable role.`);
+    if (topPeerGap != null && topPeerGap > 0 && topPaidPeer) {
+      cards.push({
+        icon: <IconUsers size={20} />, color: 'red',
+        value: `−${usd(topPeerGap)}`,
+        label: `vs ${topPaidPeer.fn} ${topPaidPeer.ln} in a comparable role`,
+      });
+    } else if (belowTarget) {
+      cards.push({
+        icon: <IconUsers size={20} />, color: 'red',
+        value: `−${usd(targetDelta)}`,
+        label: 'below your experience-adjusted target',
+      });
     }
     if (supervises) {
-      tp.push(`${subjectName} also supervises ${supN} ${supN === 1 ? 'person' : 'people'}${superviseNote ? ` (${superviseNote})` : ''} — managerial scope beyond the base ${title} title.`);
+      cards.push({
+        icon: <IconUsersGroup size={20} />, color: 'indigo',
+        value: `${supN} ${supN === 1 ? 'report' : 'staff'}`,
+        label: `supervised beyond base title${superviseNote ? ` (${superviseNote})` : ''}`,
+      });
+    } else if (band && subjectPay < band.max) {
+      cards.push({
+        icon: <IconUsersGroup size={20} />, color: 'indigo',
+        value: `−${usd(band.max - subjectPay)}`,
+        label: `below grade ${subj?.grade_number} band maximum`,
+      });
+    } else if (tenureYears != null) {
+      cards.push({
+        icon: <IconClock size={20} />, color: 'indigo',
+        value: `${tenureYears.toFixed(1)} yrs`,
+        label: 'of experience to recognize',
+      });
     }
-    if (belowMarket && med != null) {
-      tp.push(`Recommendation: a ${pct(raisePct)} adjustment to ${usd(med)} would restore market parity for the title given ${subjectName}'s experience${supervises ? ' and supervisory responsibilities' : ''}.`);
-    }
-    return tp;
-  }, [subj, subjectPay, peer, percentile, med, belowMarket, raisePct, expMedian, tenureYears, band, growth, topPaidPeer, supervises, supN, superviseNote, subjectName]);
+    return cards;
+  }, [subjectPay, percentile, tenureYears, peer, subj, topPeerGap, topPaidPeer, belowTarget, targetDelta, supervises, supN, superviseNote, band]);
 
   const benchmarkCsv = () => {
     const rows = (peerListRows ?? []).map((p) => ({ pay: p.pay, tenure_years: p.tenure?.toFixed?.(1) ?? '' }));
@@ -385,7 +402,7 @@ export default function Reports() {
                 </Checkbox.Group>
                 <Group align="flex-end" wrap="wrap" gap="md" mt="md">
                   <Checkbox
-                    label="I also supervise"
+                    label="I also supervise, not as a responsibility of title"
                     checked={superviseOn}
                     onChange={(e) => setSuperviseOn(e.currentTarget.checked)}
                   />
@@ -419,97 +436,55 @@ export default function Reports() {
                 </Text>
                 <Divider my="md" />
 
-                {/* Recommendation callout */}
-                <Paper radius="md" p="md" bg="var(--mantine-color-indigo-light)" mb="lg">
-                  {belowMarket && med != null ? (
-                    <Group justify="space-between" wrap="wrap" gap="md">
+                {/* Recommendation callout — experience/scope-adjusted target is the headline */}
+                <Paper radius="md" p="lg" bg="var(--mantine-color-indigo-light)" mb="lg">
+                  {belowTarget && primaryTarget != null ? (
+                    <Group justify="space-between" wrap="wrap" gap="md" align="center">
                       <div>
                         <Text size="xs" c="dimmed">Current ({METRIC_LABEL[metric]})</Text>
                         <Text fw={700} fz="xl">{usd(subjectPay)}</Text>
                       </div>
-                      <Text fz={28} c="dimmed">→</Text>
+                      <Text fz={28} c="green.7">→</Text>
                       <div>
-                        <Text size="xs" c="dimmed">Suggested (title median / parity)</Text>
-                        <Text fw={700} fz="xl">{usd(med)}</Text>
+                        <Text size="xs" c="dimmed">Target salary (experience &amp; scope adjusted)</Text>
+                        <Text fw={800} fz={30} c="green.8" lh={1.1}>{usd(primaryTarget)}</Text>
                       </div>
                       <div>
                         <Text size="xs" c="dimmed">Adjustment</Text>
-                        <Text fw={700} fz="xl" c="indigo">+{usd(raiseDelta)} ({pct(raisePct)})</Text>
+                        <Text fw={700} fz="xl" c="green.7">+{usd(targetDelta)} ({pct(targetPct)})</Text>
                       </div>
                     </Group>
                   ) : (
                     <Text fw={600}>
                       {subjectPay != null
-                        ? `Current salary ${usd(subjectPay)}${med != null ? ` is at or above the ${subj?.title ?? 'title'} median (${usd(med)})` : ''}.`
+                        ? `Current salary ${usd(subjectPay)}${primaryTarget != null ? ` is at or above the experience-adjusted target (${usd(primaryTarget)})` : ''}.`
                         : 'No salary on record for the subject in this snapshot.'}
                     </Text>
                   )}
-                  {expMedian != null && subjectPay != null && subjectPay < expMedian && (
-                    <Text size="sm" mt="xs">
-                      Experience-adjusted target (same-title peers with comparable tenure): <b>{usd(expMedian)}</b>.
-                    </Text>
-                  )}
+                  <Text size="xs" c="dimmed" mt="xs">
+                    {med != null && `For reference, the ${subj?.title ?? 'title'} market median (parity) is ${usd(med)}.`}
+                    {supervises ? ` Plus supervisory scope (${supN} ${supN === 1 ? 'report' : 'staff'}) beyond title.` : ''}
+                  </Text>
                 </Paper>
 
                 {!jobCode && (
                   <Alert color="gray" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is unavailable.</Alert>
                 )}
 
-                {/* Talking points */}
-                {has('talking') && talkingPoints.length > 0 && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Justification summary</Text>
-                    <List spacing="xs" size="sm" mb="lg">
-                      {talkingPoints.map((t, i) => (
-                        <List.Item key={i}>{t}</List.Item>
-                      ))}
-                    </List>
-                  </>
+                {/* Highlight reel — three punchy cards */}
+                {has('highlights') && highlights.length > 0 && (
+                  <SimpleGrid cols={{ base: 1, sm: 3 }} mb="lg">
+                    {highlights.map((h, i) => (
+                      <Card key={i} withBorder radius="md" padding="lg">
+                        <ThemeIcon variant="light" color={h.color} size={38} radius="md">{h.icon}</ThemeIcon>
+                        <Text fw={800} fz={26} mt="sm" lh={1.1}>{h.value}</Text>
+                        <Text size="sm" c="dimmed" mt={4}>{h.label}</Text>
+                      </Card>
+                    ))}
+                  </SimpleGrid>
                 )}
 
-                {/* Title benchmark */}
-                {has('benchmark') && peer && peer.n > 0 && subjectPay != null &&
-                  peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Title-market benchmark — {subj?.title}</Text>
-                    <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={subjectPay} />
-                    <SimpleGrid cols={{ base: 2, sm: 4 }} mt="md" mb="lg">
-                      <Stat label="Peers in title" value={num(peer.n)} />
-                      <Stat label="Percentile" value={percentile != null ? ordinal(percentile) : '—'} />
-                      <Stat label="Median (parity)" value={usd(peer.med)} />
-                      <Stat label="Gap to median" value={belowMarket ? `−${usd(raiseDelta)}` : '—'} />
-                      <Stat label="25th / 75th" value={`${usd(peer.p25)} / ${usd(peer.p75)}`} />
-                      <Stat label="90th pctile" value={usd(peer.p90)} />
-                      <Stat label="Range" value={`${usd(peer.lo)} – ${usd(peer.hi)}`} />
-                      <Stat label="Experience-adjusted" value={expMedian != null ? usd(expMedian) : '—'} />
-                    </SimpleGrid>
-                  </>
-                )}
-
-                {/* Pay band */}
-                {has('band') && band && subjectPay != null && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Pay-band position — grade {subj?.grade_number}</Text>
-                    <PayBandBar min={band.min} max={band.max} value={subjectPay} />
-                    <div style={{ height: 16 }} />
-                  </>
-                )}
-
-                {/* Tenure & growth */}
-                {has('tenure') && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Tenure & growth</Text>
-                    <SimpleGrid cols={{ base: 2, sm: 4 }} mb="lg">
-                      <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
-                      <Stat label="Total growth" value={growth?.totalPct != null ? pct(growth.totalPct) : '—'} />
-                      <Stat label="Raises" value={growth ? `${growth.raises} / ${growth.periods}` : '—'} />
-                      <Stat label="Avg raise" value={growth?.avgPct != null ? pct(growth.avgPct) : '—'} />
-                      <Stat label="Longest no-raise streak" value={growth ? `${growth.longest} period${growth.longest === 1 ? '' : 's'}` : '—'} />
-                    </SimpleGrid>
-                  </>
-                )}
-
-                {/* Direct peers */}
+                {/* Direct peers — the most persuasive evidence, up top */}
                 {has('peers') && (
                   <>
                     <Text size="sm" fw={600} mb="xs">Direct peer comparison</Text>
@@ -529,8 +504,10 @@ export default function Reports() {
                               <Table.Td>{p.fn} {p.ln}</Table.Td>
                               <Table.Td>{p.title ?? '—'}</Table.Td>
                               <Table.Td ta="right">{usd(p.pay)}</Table.Td>
-                              <Table.Td ta="right" c={p.delta < 0 ? 'red' : 'teal'}>
-                                {p.delta < 0 ? '−' : '+'}{usd(Math.abs(p.delta))}
+                              <Table.Td ta="right">
+                                <Text span fw={700} fz="sm" c={p.delta < 0 ? 'red.7' : 'teal.7'}>
+                                  {p.delta < 0 ? '−' : '+'}{usd(Math.abs(p.delta))}
+                                </Text>
                               </Table.Td>
                             </Table.Tr>
                           ))}
@@ -540,6 +517,62 @@ export default function Reports() {
                       <Text size="sm" c="dimmed" mb="lg">Add more people to the tray to compare {subjectFirst} against direct peers.</Text>
                     )}
                   </>
+                )}
+
+                {/* Title benchmark */}
+                {has('benchmark') && peer && peer.n > 0 && subjectPay != null &&
+                  peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Title-market benchmark — {subj?.title}</Text>
+                    <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={subjectPay} target={primaryTarget} />
+                    <SimpleGrid cols={{ base: 2, sm: 4 }} mt="md" mb="lg">
+                      <Stat label="Percentile" value={percentile != null ? ordinal(percentile) : '—'} />
+                      <Stat label="Target (exp-adjusted)" value={primaryTarget != null ? usd(primaryTarget) : '—'} />
+                      <Stat label="Gap to target" value={belowTarget ? `−${usd(targetDelta)}` : '—'} />
+                      <Stat label="Peers in title" value={num(peer.n)} />
+                    </SimpleGrid>
+                  </>
+                )}
+
+                {/* Pay band */}
+                {has('band') && band && subjectPay != null && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Pay-band position — grade {subj?.grade_number}</Text>
+                    <PayBandBar min={band.min} max={band.max} value={subjectPay} target={primaryTarget} />
+                    <div style={{ height: 16 }} />
+                  </>
+                )}
+
+                {/* Tenure & experience (lean — supports the case only) */}
+                {has('tenure') && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Tenure &amp; experience</Text>
+                    <SimpleGrid cols={{ base: 2, sm: 2 }} mb="lg">
+                      <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
+                      <Stat label="Longest no-raise streak" value={growth ? `${growth.longest} period${growth.longest === 1 ? '' : 's'}` : '—'} />
+                    </SimpleGrid>
+                  </>
+                )}
+
+                {/* Deep stats tucked away (screen-only drill-down) */}
+                {(peer || growth) && (
+                  <Accordion variant="contained" mb="lg" className="no-print">
+                    <Accordion.Item value="deep">
+                      <Accordion.Control>View deep statistical breakdown</Accordion.Control>
+                      <Accordion.Panel>
+                        <SimpleGrid cols={{ base: 2, sm: 4 }}>
+                          {peer?.p25 != null && <Stat label="25th pctile" value={usd(peer.p25)} />}
+                          {peer?.med != null && <Stat label="Median" value={usd(peer.med)} />}
+                          {peer?.p75 != null && <Stat label="75th pctile" value={usd(peer.p75)} />}
+                          {peer?.p90 != null && <Stat label="90th pctile" value={usd(peer.p90)} />}
+                          {peer?.lo != null && peer?.hi != null && <Stat label="Range" value={`${usd(peer.lo)} – ${usd(peer.hi)}`} />}
+                          {growth?.totalPct != null && <Stat label="Total growth" value={pct(growth.totalPct)} />}
+                          {growth && <Stat label="Raises" value={`${growth.raises} / ${growth.periods}`} />}
+                          {growth?.avgPct != null && <Stat label="Avg raise" value={pct(growth.avgPct)} />}
+                        </SimpleGrid>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  </Accordion>
                 )}
 
                 {/* Supervision callout */}

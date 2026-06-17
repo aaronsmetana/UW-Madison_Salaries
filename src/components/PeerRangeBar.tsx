@@ -1,11 +1,12 @@
-import { Group, Text, Badge } from '@mantine/core';
+import { Group, Text } from '@mantine/core';
 import { usd } from '../lib/format';
+import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 
 /**
  * Responsive horizontal range bar for a peer group: spans min→max, shades the
- * interquartile (p25→p75) range, ticks the median, and drops a bright marker at
- * `value` (this person's salary). Div/percentage based — fully responsive and
- * dark-mode friendly (mirrors PayBandBar).
+ * interquartile (p25→p75) range, lightly ticks the median, and marks `value`
+ * (current salary) as a blue dot — with an optional bright-green `target` line so
+ * the distance to close reads at a glance. Div/percentage based and dark-mode safe.
  */
 export function PeerRangeBar({
   min,
@@ -14,6 +15,7 @@ export function PeerRangeBar({
   p75,
   max,
   value,
+  target = null,
 }: {
   min: number;
   p25: number;
@@ -21,20 +23,22 @@ export function PeerRangeBar({
   p75: number;
   max: number;
   value: number;
+  target?: number | null;
 }) {
   const span = max - min;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
   const pos = span > 0 ? (value - min) / span : 0;
   const rank =
     value < min ? 'below the range' : value > max ? 'above the range' : `${Math.round(pos * 100)}% of the way up`;
+  const H = 26;
 
   return (
     <div>
       <div
         style={{
           position: 'relative',
-          height: 16,
-          borderRadius: 8,
+          height: H,
+          borderRadius: H / 2,
           background: 'linear-gradient(90deg, var(--mantine-color-gray-2), var(--mantine-color-gray-4))',
         }}
       >
@@ -46,34 +50,50 @@ export function PeerRangeBar({
             width: `${Math.max(0, at(p75) - at(p25))}%`,
             top: 0,
             bottom: 0,
-            background: 'var(--mantine-color-indigo-4)',
-            opacity: 0.55,
+            background: 'var(--mantine-color-indigo-3)',
+            opacity: 0.5,
           }}
         />
-        {/* median tick */}
+        {/* median tick (subtle, secondary) */}
         <div
           style={{
             position: 'absolute',
             left: `${at(median)}%`,
-            top: -3,
+            top: 4,
+            bottom: 4,
             width: 2,
-            height: 22,
-            background: 'var(--mantine-color-indigo-7)',
+            background: 'var(--mantine-color-gray-6)',
             transform: 'translateX(-50%)',
           }}
         />
-        {/* this person's marker */}
+        {/* target marker — bright green line */}
+        {target != null && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${at(target)}%`,
+              top: -5,
+              bottom: -5,
+              width: 3,
+              borderRadius: 2,
+              background: MARK_TARGET,
+              transform: 'translateX(-50%)',
+            }}
+          />
+        )}
+        {/* current marker — blue dot */}
         <div
           style={{
             position: 'absolute',
             left: `${at(value)}%`,
-            top: -6,
-            width: 4,
-            height: 28,
-            borderRadius: 2,
-            background: 'var(--mantine-color-teal-6)',
-            transform: 'translateX(-50%)',
-            boxShadow: '0 0 0 2px var(--mantine-color-body)',
+            top: '50%',
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            background: MARK_CURRENT,
+            border: '2px solid var(--mantine-color-body)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+            transform: 'translate(-50%, -50%)',
           }}
         />
       </div>
@@ -83,12 +103,15 @@ export function PeerRangeBar({
         <Text size="xs" c="dimmed">{usd(max)}</Text>
       </Group>
 
-      <Group justify="center" gap="md" mt="xs">
-        <Text size="xs" c="dimmed">p25 {usd(p25)}</Text>
-        <Text size="xs" fw={600}>median {usd(median)}</Text>
-        <Text size="xs" c="dimmed">p75 {usd(p75)}</Text>
-        <Badge variant="light" color="teal">This person {usd(value)} · {rank}</Badge>
-      </Group>
+      <MarkerLegend
+        items={[
+          { color: MARK_CURRENT, round: true, label: `Current ${usd(value)} · ${rank}` },
+          ...(target != null ? [{ color: MARK_TARGET, label: `Target ${usd(target)}` }] : []),
+        ]}
+      />
+      <Text size="xs" c="dimmed" ta="center" mt={4}>
+        median {usd(median)} · p25 {usd(p25)} · p75 {usd(p75)}
+      </Text>
     </div>
   );
 }
