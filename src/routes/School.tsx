@@ -219,7 +219,7 @@ export default function School() {
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
             <Tooltip formatter={(v: number) => usd(v)} />
-            <Line type="monotone" dataKey="med" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
         <ChartData caption="Median salary over time" columns={['Snapshot', 'Median', 'Headcount']} rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])} />
@@ -246,8 +246,8 @@ export default function School() {
               domain={distScale === 'log' ? [0.5, 'auto'] : undefined}
               allowDataOverflow={distScale === 'log'}
             />
-            <Tooltip />
-            <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
+            <Tooltip formatter={(v: number) => [num(v), 'People']} />
+            <Bar dataKey="n" name="People" fill="var(--mantine-color-indigo-5)" />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />

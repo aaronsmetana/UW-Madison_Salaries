@@ -187,8 +187,8 @@ export function ChangesPanel() {
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
             <YAxis width={48} tick={{ fontSize: 12 }} />
-            <Tooltip />
-            <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
+            <Tooltip formatter={(v: number) => [num(v), 'People']} />
+            <Bar dataKey="n" name="People" fill="var(--mantine-color-indigo-5)" />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Raise distribution (% change)" columns={['% bin', 'People']} rows={(raiseDist ?? []).map((r) => [`${r.pct_bucket}%`, r.n])} />

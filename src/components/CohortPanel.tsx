@@ -1,10 +1,28 @@
-import { Card, Text, Loader } from '@mantine/core';
+import { Card, Text, Loader, Paper } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { whereAll, filterKey } from '../lib/queries';
+import { num } from '../lib/format';
 import { ChartData } from './ChartData';
+
+/** Hover card: capitalized "Retention" plus the underlying counts so the % is grounded. */
+function RetentionTip({ active, payload, label }: {
+  active?: boolean;
+  label?: string;
+  payload?: { payload: { retention: number; stayed: number; left: number; total: number } }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <Paper withBorder shadow="sm" p="xs">
+      <Text size="sm" fw={600}>Hired {label}</Text>
+      <Text size="sm">Retention: {d.retention}%</Text>
+      <Text size="xs" c="dimmed">{num(d.stayed)} stayed · {num(d.left)} left · {num(d.total)} hired</Text>
+    </Paper>
+  );
+}
 
 export function CohortPanel() {
   const { scope, filters } = useControls();
@@ -26,6 +44,9 @@ export function CohortPanel() {
   const chart = (data ?? []).map((r) => ({
     year: String(r.hire_year),
     retention: r.total ? Math.round((100 * r.still_here) / r.total) : 0,
+    stayed: r.still_here,
+    left: r.total - r.still_here,
+    total: r.total,
   }));
 
   if (isFetching && !data) return <Loader />;
@@ -38,8 +59,8 @@ export function CohortPanel() {
           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
           <XAxis dataKey="year" tick={{ fontSize: 10 }} interval={2} />
           <YAxis width={48} tick={{ fontSize: 12 }} unit="%" domain={[0, 100]} />
-          <Tooltip formatter={(v: number) => `${v}%`} />
-          <Bar dataKey="retention" fill="var(--mantine-color-teal-6)" />
+          <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
+          <Bar dataKey="retention" name="Retention" fill="var(--mantine-color-teal-6)" />
         </BarChart>
       </ResponsiveContainer>
       <ChartData caption="Cohort retention by hire year" columns={['Hire year', 'Retention %']} rows={chart.map((c) => [c.year, c.retention])} />
