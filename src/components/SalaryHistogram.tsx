@@ -2,7 +2,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { Text } from '@mantine/core';
-import { binSalaries, binIndexFor, MIN_FOR_HISTOGRAM } from '../lib/histogram';
+import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num } from '../lib/format';
 import { ChartData } from './ChartData';
 
@@ -60,24 +60,31 @@ export function SalaryHistogram({
   }
 
   const data = bins.map((b) => ({ label: b.label, range: b.range, n: b.n }));
-  const markerIdx = markerValue != null ? binIndexFor(markerValue, bins) : -1;
-  const marker = markerIdx >= 0 ? bins[markerIdx].label : null;
+  // Place the marker on a continuous scale (a hidden numeric x-axis aligned to the bins) so it lands
+  // at the exact salary — e.g. $120k sits at the 120k position, not snapped to a bar's center.
+  const lo = bins[0].lo;
+  const hi = bins[bins.length - 1].hi;
+  const markerX = markerValue != null && Number.isFinite(markerValue)
+    ? Math.max(lo, Math.min(hi, markerValue))
+    : null;
 
   return (
     <>
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data} margin={{ left: 12, right: 12 }}>
+        <BarChart data={data} margin={{ left: 12, right: 12, top: 16 }}>
           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-          <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} />
+          <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} padding={{ left: 0, right: 0 }} />
+          <XAxis xAxisId="val" type="number" domain={[lo, hi]} hide padding={{ left: 0, right: 0 }} />
           <YAxis width={48} tick={{ fontSize: 12 }} allowDecimals={false} />
           <Tooltip content={<HistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
           <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
-          {marker && (
+          {markerX != null && (
             <ReferenceLine
-              x={marker}
+              xAxisId="val"
+              x={markerX}
               stroke="var(--mantine-color-blue-6)"
               strokeWidth={2}
-              label={{ value: markerLabel, position: 'top', fontSize: 11 }}
+              label={{ value: markerLabel, position: 'top', fontSize: 11, fill: 'var(--mantine-color-blue-6)' }}
             />
           )}
         </BarChart>
