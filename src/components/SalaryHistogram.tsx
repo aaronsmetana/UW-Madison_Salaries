@@ -60,16 +60,8 @@ export function SalaryHistogram({
   }
 
   const data = bins.map((b) => ({ label: b.label, range: b.range, n: b.n }));
-  // Place the marker on the bins' continuous scale so it lands at the exact salary — e.g. a value
-  // 84% of the way through the $110k–$115k bin sits 84% across that bar, not snapped to its center.
-  // Rendered as a CSS overlay (not a Recharts ReferenceLine on a second numeric axis, which silently
-  // anchors a data-less number axis at 0 and misplaces the marker). The bins are uniform width, so a
-  // value maps linearly across the plot rect: bin edges align to the bar bands.
   const lo = bins[0].lo;
   const hi = bins[bins.length - 1].hi;
-  const markerFraction = markerValue != null && Number.isFinite(markerValue) && hi > lo
-    ? (Math.max(lo, Math.min(hi, markerValue)) - lo) / (hi - lo)
-    : null;
   // Index of the bin the marked value falls in (last bin is inclusive, matching binSalaries), so we
   // can recolor that one bar. null when there's no marker → every bar keeps the default fill.
   let markerBin: number | null = null;
@@ -77,6 +69,21 @@ export function SalaryHistogram({
     const v = Math.max(lo, Math.min(hi, markerValue));
     const idx = bins.findIndex((b) => v < b.hi);
     markerBin = idx === -1 ? bins.length - 1 : idx;
+  }
+  // Horizontal position of the marker as a fraction of the plot width, rendered as a CSS overlay
+  // (a Recharts ReferenceLine on a second numeric axis silently anchors a data-less number axis at 0).
+  // Map the value onto the *visible bar* for its bin — not a naive value→band-edge scale — because
+  // Recharts insets each bar by barCategoryGap (default 10% of the band per side), so it fills the
+  // middle 80%. Without this, a round-number salary on a bin boundary (e.g. $95,000) would land in the
+  // empty gap *between* bars instead of on its bin's bar. `within` is how far into the bin the value
+  // sits (0 = bar's left edge … 1 = right edge).
+  const BAR_GAP = 0.1; // Recharts barCategoryGap default "10%", per side of each band
+  let markerFraction: number | null = null;
+  if (markerBin != null && markerValue != null) {
+    const b = bins[markerBin];
+    const within = b.hi > b.lo ? Math.max(0, Math.min(1, (markerValue - b.lo) / (b.hi - b.lo))) : 0;
+    const band = 1 / bins.length;
+    markerFraction = band * (markerBin + BAR_GAP + within * (1 - 2 * BAR_GAP));
   }
   // Recharts plot insets for this chart: left margin (12) + YAxis width (48); right margin (12);
   // top margin (matches PLOT_TOP — headroom for the marker pin + label above the bars); default
