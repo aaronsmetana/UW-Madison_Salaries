@@ -1,5 +1,5 @@
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import { Text } from '@mantine/core';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
@@ -60,35 +60,67 @@ export function SalaryHistogram({
   }
 
   const data = bins.map((b) => ({ label: b.label, range: b.range, n: b.n }));
-  // Place the marker on a continuous scale (a hidden numeric x-axis aligned to the bins) so it lands
-  // at the exact salary — e.g. $120k sits at the 120k position, not snapped to a bar's center.
+  // Place the marker on the bins' continuous scale so it lands at the exact salary — e.g. a value
+  // 84% of the way through the $110k–$115k bin sits 84% across that bar, not snapped to its center.
+  // Rendered as a CSS overlay (not a Recharts ReferenceLine on a second numeric axis, which silently
+  // anchors a data-less number axis at 0 and misplaces the marker). The bins are uniform width, so a
+  // value maps linearly across the plot rect: bin edges align to the bar bands.
   const lo = bins[0].lo;
   const hi = bins[bins.length - 1].hi;
-  const markerX = markerValue != null && Number.isFinite(markerValue)
-    ? Math.max(lo, Math.min(hi, markerValue))
+  const markerFraction = markerValue != null && Number.isFinite(markerValue) && hi > lo
+    ? (Math.max(lo, Math.min(hi, markerValue)) - lo) / (hi - lo)
     : null;
+  // Recharts plot insets for this chart: left margin (12) + YAxis width (48); right margin (12);
+  // top margin (16); default XAxis height (30) at the bottom.
+  const PLOT_LEFT = 60;
+  const PLOT_RIGHT = 12;
+  const PLOT_TOP = 16;
+  const X_AXIS_H = 30;
 
   return (
     <>
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data} margin={{ left: 12, right: 12, top: 16 }}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-          <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} padding={{ left: 0, right: 0 }} />
-          <XAxis xAxisId="val" type="number" domain={[lo, hi]} hide padding={{ left: 0, right: 0 }} />
-          <YAxis width={48} tick={{ fontSize: 12 }} allowDecimals={false} />
-          <Tooltip content={<HistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
-          <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
-          {markerX != null && (
-            <ReferenceLine
-              xAxisId="val"
-              x={markerX}
-              stroke="var(--mantine-color-blue-6)"
-              strokeWidth={2}
-              label={{ value: markerLabel, position: 'top', fontSize: 11, fill: 'var(--mantine-color-blue-6)' }}
-            />
-          )}
-        </BarChart>
-      </ResponsiveContainer>
+      <div style={{ position: 'relative' }}>
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart data={data} margin={{ left: 12, right: 12, top: 16 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} padding={{ left: 0, right: 0 }} />
+            <YAxis width={48} tick={{ fontSize: 12 }} allowDecimals={false} />
+            <Tooltip content={<HistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
+            <Bar dataKey="n" fill="var(--mantine-color-indigo-5)" />
+          </BarChart>
+        </ResponsiveContainer>
+        {markerFraction != null && (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: PLOT_TOP,
+              bottom: X_AXIS_H,
+              left: `calc(${PLOT_LEFT}px + ${markerFraction} * (100% - ${PLOT_LEFT + PLOT_RIGHT}px))`,
+              width: 2,
+              marginLeft: -1,
+              background: 'var(--mantine-color-blue-6)',
+              pointerEvents: 'none',
+            }}
+          >
+            <Text
+              component="span"
+              style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap',
+                fontSize: 11,
+                lineHeight: 1,
+                color: 'var(--mantine-color-blue-6)',
+              }}
+            >
+              {markerLabel}
+            </Text>
+          </div>
+        )}
+      </div>
       <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} />
     </>
   );
