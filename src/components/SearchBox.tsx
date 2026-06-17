@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { TextInput, Paper, Loader, Stack, UnstyledButton, Text, Group, Tooltip } from '@mantine/core';
+import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip } from '@mantine/core';
 import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
@@ -66,79 +66,91 @@ export function SearchBox({
   }, [data]);
 
   const nav = useNavigate();
-  const open = enabled && (isFetching || (data && data.length >= 0));
+  const opened = enabled && (isFetching || (data?.length ?? 0) >= 0);
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: prominent ? '100%' : 560, margin: prominent ? '0 auto' : undefined }}>
-      <TextInput
-        size={prominent ? 'xl' : 'md'}
-        radius={prominent ? 'xl' : undefined}
-        leftSection={prominent ? <IconSearch size={26} /> : undefined}
-        leftSectionWidth={prominent ? 56 : undefined}
-        placeholder={placeholder}
-        value={term}
-        onChange={(e) => setTerm(e.currentTarget.value)}
-        rightSection={isFetching ? <Loader size="sm" /> : null}
-        aria-label="Search a person"
-        data-autofocus={autoFocus || undefined}
-        autoFocus={autoFocus}
-        classNames={prominent ? { input: 'hero-search-input' } : undefined}
-        styles={prominent ? { input: { minHeight: 66, height: 66, fontSize: '1.25rem', boxShadow: 'var(--mantine-shadow-md)' } } : undefined}
-      />
-      {open && (
-        <Paper withBorder shadow="md" mt={4} style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, maxHeight: 360, overflowY: 'auto' }}>
-          {data && data.length > 0 ? (
-            <Stack gap={0}>
-              {data.map((h) => {
-                const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
-                const multiAppt = (h.max_appts ?? 0) > 1;
-                const flags: string[] = [];
-                if (sharedName) flags.push('Multiple people share this name — double-check this is the right person.');
-                if (multiAppt) flags.push('Has multiple appointment entries in a snapshot (e.g., split or joint roles).');
-                return (
-                  <UnstyledButton
-                    key={h.person_key}
-                    px="sm"
-                    py={8}
-                    onClick={() => {
-                      if (onPick) {
-                        onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
-                        setTerm('');
-                      } else {
-                        nav(`/person/${encodeURIComponent(h.person_key)}`);
-                        onSelect?.();
-                      }
-                    }}
-                    style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
-                  >
-                    <Group wrap="nowrap" gap="sm">
-                      <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        {h.fn} {h.ln}
-                      </Text>
-                      {flags.length > 0 && (
-                        <Tooltip label={flags.join(' ')} multiline w={260} withArrow position="top">
-                          <span style={{ display: 'inline-flex', flexShrink: 0 }}>
-                            <IconAlertTriangle size={14} color="var(--mantine-color-yellow-6)" />
-                          </span>
-                        </Tooltip>
-                      )}
-                      <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
-                        {[h.title, h.school].filter(Boolean).join(' · ')}
-                      </Text>
-                    </Group>
-                  </UnstyledButton>
-                );
-              })}
-            </Stack>
-          ) : (
-            !isFetching && (
-              <Text size="sm" c="dimmed" px="sm" py={8}>
-                No matches for “{debounced}”.
-              </Text>
-            )
-          )}
-        </Paper>
-      )}
-    </div>
+    <Popover
+      opened={!!opened}
+      width="target"
+      position="bottom-start"
+      shadow="md"
+      withinPortal
+      trapFocus={false}
+      returnFocus={false}
+      closeOnClickOutside={false}
+      closeOnEscape
+    >
+      <Popover.Target>
+        <div style={{ width: '100%', maxWidth: prominent ? '100%' : 560, margin: prominent ? '0 auto' : undefined }}>
+          <TextInput
+            size={prominent ? 'xl' : 'md'}
+            radius={prominent ? 'xl' : undefined}
+            leftSection={prominent ? <IconSearch size={26} /> : undefined}
+            leftSectionWidth={prominent ? 56 : undefined}
+            placeholder={placeholder}
+            value={term}
+            onChange={(e) => setTerm(e.currentTarget.value)}
+            rightSection={isFetching ? <Loader size="sm" /> : null}
+            aria-label="Search a person"
+            data-autofocus={autoFocus || undefined}
+            autoFocus={autoFocus}
+            classNames={prominent ? { input: 'hero-search-input' } : undefined}
+            styles={prominent ? { input: { minHeight: 66, height: 66, fontSize: '1.25rem', boxShadow: 'var(--mantine-shadow-md)' } } : undefined}
+          />
+        </div>
+      </Popover.Target>
+      <Popover.Dropdown p={0} style={{ maxHeight: 360, overflowY: 'auto' }}>
+        {data && data.length > 0 ? (
+          <Stack gap={0}>
+            {data.map((h) => {
+              const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
+              const multiAppt = (h.max_appts ?? 0) > 1;
+              const flags: string[] = [];
+              if (sharedName) flags.push('Multiple people share this name — double-check this is the right person.');
+              if (multiAppt) flags.push('Has multiple appointment entries in a snapshot (e.g., split or joint roles).');
+              return (
+                <UnstyledButton
+                  key={h.person_key}
+                  px="sm"
+                  py={8}
+                  onClick={() => {
+                    if (onPick) {
+                      onPick({ person_key: h.person_key, name: `${h.fn} ${h.ln}`.trim() });
+                      setTerm('');
+                    } else {
+                      nav(`/person/${encodeURIComponent(h.person_key)}`);
+                      onSelect?.();
+                    }
+                  }}
+                  style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+                >
+                  <Group wrap="nowrap" gap="sm">
+                    <Text size="sm" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {h.fn} {h.ln}
+                    </Text>
+                    {flags.length > 0 && (
+                      <Tooltip label={flags.join(' ')} multiline w={260} withArrow position="top">
+                        <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+                          <IconAlertTriangle size={14} color="var(--mantine-color-yellow-6)" />
+                        </span>
+                      </Tooltip>
+                    )}
+                    <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+                      {[h.title, h.school].filter(Boolean).join(' · ')}
+                    </Text>
+                  </Group>
+                </UnstyledButton>
+              );
+            })}
+          </Stack>
+        ) : (
+          !isFetching && (
+            <Text size="sm" c="dimmed" px="sm" py={8}>
+              No matches for “{debounced}”.
+            </Text>
+          )
+        )}
+      </Popover.Dropdown>
+    </Popover>
   );
 }
