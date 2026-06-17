@@ -6,7 +6,7 @@ import {
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot,
 } from 'recharts';
-import { IconAlertTriangle } from '@tabler/icons-react';
+import { IconAlertTriangle, IconPlus } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
@@ -55,7 +55,15 @@ interface Row {
 }
 
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
-interface PeerRow { person_key: string; fn: string | null; ln: string | null; pay: number }
+interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; pay: number }
+
+/** Stable color per school so people in the same school read as a group (and different schools differ). */
+function schoolHue(s: string | null): number {
+  if (!s) return 0;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
 
 export default function Person() {
   const { id } = useParams();
@@ -203,9 +211,10 @@ export default function Person() {
 
   const { data: peers } = useSql<PeerRow>(
     ['peer-list', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay('full')} pay
+    `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
+        any_value(school) school, any_value(department) department, ${personPay('full')} pay
         FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT person_key, fn, ln, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
+     SELECT person_key, fn, ln, school, department, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
   );
   const peerRank = useMemo(() => {
@@ -351,20 +360,25 @@ export default function Person() {
                   )}
                 </Group>
                 <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
-                  <Table striped highlightOnHover stickyHeader>
+                  <Table striped highlightOnHover stickyHeader miw={680}>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th w={48} ta="right">#</Table.Th>
                         <Table.Th>Name</Table.Th>
+                        <Table.Th>School</Table.Th>
+                        <Table.Th>Department</Table.Th>
                         <Table.Th ta="right">Salary</Table.Th>
+                        <Table.Th w={132} />
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
                       {peers.map((p, i) => {
                         const isYou = p.person_key === key;
+                        const inTray = has(p.person_key);
                         return (
                           <Table.Tr
                             key={p.person_key}
+                            className="peer-row"
                             ref={isYou ? subjectRowRef : undefined}
                             onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
                             tabIndex={isYou ? undefined : 0}
@@ -384,7 +398,37 @@ export default function Person() {
                               </Text>
                               {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
                             </Table.Td>
+                            <Table.Td>
+                              <Group gap={6} wrap="nowrap">
+                                <span
+                                  aria-hidden
+                                  style={{
+                                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                    background: p.school ? `hsl(${schoolHue(p.school)} 55% 55%)` : 'var(--mantine-color-gray-4)',
+                                  }}
+                                />
+                                <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
+                              </Group>
+                            </Table.Td>
+                            <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
+                            <Table.Td ta="right">
+                              <Button
+                                className="peer-add"
+                                size="compact-xs"
+                                variant={inTray ? 'light' : 'filled'}
+                                color={inTray ? 'gray' : 'indigo'}
+                                radius="xl"
+                                leftSection={inTray ? undefined : <IconPlus size={12} />}
+                                disabled={inTray}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) });
+                                }}
+                              >
+                                {inTray ? 'In tray' : 'Add to tray'}
+                              </Button>
+                            </Table.Td>
                           </Table.Tr>
                         );
                       })}

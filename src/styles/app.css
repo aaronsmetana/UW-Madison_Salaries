@@ -67,3 +67,9 @@ textarea:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .global-loading-bar::after { animation: none; width: 100%; opacity: 0.6; }
 }
+
+/* Peer table: the "Add to tray" button stays muted until its row is hovered/focused,
+   so a long list isn't a wall of repeated blue buttons (it pops blue on hover). */
+.peer-row .peer-add { opacity: 0.28; transition: opacity 120ms ease; }
+.peer-row:hover .peer-add,
+.peer-row:focus-within .peer-add { opacity: 1; }
