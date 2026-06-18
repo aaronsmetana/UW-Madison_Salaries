@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Group, Button, Popover, Stack, MultiSelect, Pill, Indicator } from '@mantine/core';
+import { Group, Button, Popover, Stack, MultiSelect, Pill, Indicator, Text } from '@mantine/core';
 import { IconFilter, IconFilterFilled } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
@@ -42,7 +42,11 @@ export function FilterControls() {
       <Popover
         position="bottom-start"
         withArrow
-        shadow="md"
+        arrowSize={12}
+        arrowOffset={16}
+        arrowPosition="side"
+        shadow="xl"
+        radius="md"
         trapFocus
         onOpen={() => setOpened(true)}
         onClose={() => setOpened(false)}
@@ -71,16 +75,32 @@ export function FilterControls() {
             </Button>
           </Indicator>
         </Popover.Target>
-        <Popover.Dropdown>
-          <Stack gap="sm" w={280}>
-            {FACETS.map((f) => (
-              <FacetMultiSelect key={f.field} field={f.field} label={f.label} searchable={f.searchable} />
-            ))}
-            {count > 0 && (
-              <Button size="xs" variant="subtle" color="gray" onClick={clearFilters}>
-                Clear all filters
+        <Popover.Dropdown p={0}>
+          <Stack gap={0} w={300}>
+            {/* Header: defines the menu and offers a one-click reset on the right. */}
+            <Group
+              justify="space-between"
+              align="center"
+              px="md"
+              py={8}
+              style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+            >
+              <Text fw={700} size="sm">Filters</Text>
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="gray"
+                onClick={clearFilters}
+                disabled={count === 0}
+              >
+                Clear all
               </Button>
-            )}
+            </Group>
+            <Stack gap="sm" px="md" py="md">
+              {FACETS.map((f) => (
+                <FacetMultiSelect key={f.field} field={f.field} label={f.label} searchable={f.searchable} />
+              ))}
+            </Stack>
           </Stack>
         </Popover.Dropdown>
       </Popover>
