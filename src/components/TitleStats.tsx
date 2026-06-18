@@ -21,14 +21,6 @@ function ordinal(p: number): string {
   return r + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-/** Stable color per school so people in the same school read as a group. */
-function schoolHue(s: string | null): number {
-  if (!s) return 0;
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-}
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <Card withBorder padding="md">
@@ -229,12 +221,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                   >
                     <Table.Td ta="right" c="dimmed">{realRank}</Table.Td>
                     <Table.Td><Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} onClick={(e) => e.stopPropagation()}>{fullName(p.fn, p.ln) || '—'}</Anchor></Table.Td>
-                    <Table.Td>
-                      <Group gap={6} wrap="nowrap">
-                        <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: p.school ? `hsl(${schoolHue(p.school)} 55% 55%)` : 'var(--mantine-color-gray-4)' }} />
-                        <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
-                      </Group>
-                    </Table.Td>
+                    <Table.Td><Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text></Table.Td>
                     <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
                     <Table.Td ta="right">{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                     <Table.Td ta="right">{usd(p.pay)}</Table.Td>
@@ -276,7 +263,6 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
               <Table.Tr key={r.school} style={{ background: school === r.school ? 'var(--mantine-color-indigo-light)' : undefined }}>
                 <Table.Td>
                   <Group gap={6} wrap="nowrap">
-                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: `hsl(${schoolHue(r.school)} 55% 55%)` }} />
                     <Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor>
                     {school === r.school && <Badge size="xs" variant="light">filtered</Badge>}
                   </Group>

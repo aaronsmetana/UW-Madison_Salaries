@@ -57,14 +57,6 @@ interface Row {
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
 interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
 
-/** Stable color per school so people in the same school read as a group (and different schools differ). */
-function schoolHue(s: string | null): number {
-  if (!s) return 0;
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-}
-
 export default function Person() {
   const { id } = useParams();
   const key = decodeURIComponent(id ?? '');
@@ -403,14 +395,10 @@ export default function Person() {
                             </Table.Td>
                             <Table.Td>
                               <Group gap={6} wrap="nowrap">
-                                <span
-                                  aria-hidden
-                                  style={{
-                                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                    background: p.school ? `hsl(${schoolHue(p.school)} 55% 55%)` : 'var(--mantine-color-gray-4)',
-                                  }}
-                                />
                                 <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
+                                {!isYou && p.school && p.school === latest?.school && (
+                                  <Badge size="xs" variant="light" color="teal">Same school</Badge>
+                                )}
                               </Group>
                             </Table.Td>
                             <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
