@@ -89,11 +89,11 @@ export function AppShellLayout() {
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
                 <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
                   Salary report files sourced from the work of{' '}
-                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="dimmed" underline="hover" inherit>
+                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="blue.5" underline="hover" inherit>
                     UFAS Local 223
                   </Anchor>
                 </Text>
-                <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
+                <Text c="dimmed" ta="center" w="100%" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
               </Stack>
             </Group>
           </Group>
