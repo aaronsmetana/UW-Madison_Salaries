@@ -4,6 +4,7 @@ import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/con
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { FilterControls } from '../components/FilterControls';
+import { optionDropdownProps } from '../lib/selectProps';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
 const METRIC_HELP: Record<Metric, string> = {
@@ -52,6 +53,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
       </Text>
       <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
         <Select
+          {...optionDropdownProps}
           size="xs"
           w={180}
           aria-label="Scope"
@@ -66,6 +68,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
           searchable
         />
         <Select
+          {...optionDropdownProps}
           size="xs"
           w={180}
           aria-label="Snapshot"

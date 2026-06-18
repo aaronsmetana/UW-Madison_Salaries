@@ -7,6 +7,7 @@ import { useControls } from '../state/controls';
 import { paidHeadcount } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { num } from '../lib/format';
+import { bigPickerProps, PICKER_HEIGHT } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
 
 export default function PayCheck() {
@@ -109,6 +110,7 @@ export default function PayCheck() {
       <Card padding="lg">
         <Group align="flex-end" wrap="wrap" gap="xl">
           <Select
+            {...bigPickerProps}
             size="md"
             label="Title"
             placeholder="Search titles…"
@@ -116,11 +118,12 @@ export default function PayCheck() {
             value={code}
             onChange={(v) => setP('code', v)}
             searchable
-            w={360}
+            w={440}
             nothingFoundMessage="No matching title"
             rightSection={<IconChevronDown size={18} stroke={2} />}
           />
           <Select
+            {...bigPickerProps}
             size="md"
             label="School (optional filter)"
             placeholder="All UW"
@@ -129,7 +132,7 @@ export default function PayCheck() {
             onChange={(v) => setP('sch', v)}
             searchable
             clearable
-            w={300}
+            w={360}
           />
           <NumberInput
             size="md"
@@ -142,6 +145,7 @@ export default function PayCheck() {
             thousandSeparator=","
             prefix="$"
             w={200}
+            styles={{ input: { minHeight: PICKER_HEIGHT, height: PICKER_HEIGHT } }}
           />
         </Group>
         <Text size="xs" c="dimmed" mt="xs">Private — any salary you enter is never uploaded or stored.</Text>

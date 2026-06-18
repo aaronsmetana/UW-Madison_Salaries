@@ -101,16 +101,6 @@ export default function Home() {
             </Text>
           )}
         </Stack>
-
-        {/* Credit + data-source attribution */}
-        <Group justify="center" gap={8} mt="xs">
-          <Text size="xs" c="dimmed">Built by Aaron Smetana</Text>
-          <Text size="xs" c="dimmed">·</Text>
-          <Text size="xs" c="dimmed">
-            Salary report files sourced from the work of{' '}
-            <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer">UFAS Local 223</Anchor>
-          </Text>
-        </Group>
       </Stack>
     </Box>
   );

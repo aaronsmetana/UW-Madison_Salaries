@@ -7,6 +7,7 @@ import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct, fullName } from '../lib/format';
+import { optionDropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
@@ -164,15 +165,17 @@ export function ChangesPanel() {
   return (
     <Stack gap="lg">
       <Group align="flex-end" wrap="wrap" gap="md">
-        <Select size="xs" w={150} label="From" data={opts} value={fromId} onChange={setFromId} allowDeselect={false} />
-        <Select size="xs" w={150} label="To" data={opts} value={toId} onChange={setToId} allowDeselect={false} />
+        <Select {...optionDropdownProps} size="xs" w={150} label="From" data={opts} value={fromId} onChange={setFromId} allowDeselect={false} />
+        <Select {...optionDropdownProps} size="xs" w={150} label="To" data={opts} value={toId} onChange={setToId} allowDeselect={false} />
         <Select
+          {...optionDropdownProps}
           size="xs" w={230} label="School" placeholder="All UW" searchable clearable
           data={(schoolOpts ?? []).map((x) => x.school)}
           value={filterSchool}
           onChange={(v) => { setFilterSchool(v); setFilterDept(null); }}
         />
         <Select
+          {...optionDropdownProps}
           size="xs" w={250} label="Department" placeholder="All departments" searchable clearable
           data={(deptOpts ?? []).map((x) => x.department)}
           value={filterDept}

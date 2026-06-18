@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AppShell, Group, Title, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button } from '@mantine/core';
+import { AppShell, Group, Title, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
@@ -83,7 +83,19 @@ export function AppShellLayout() {
                 <Title order={4}>UW–Madison Salaries</Title>
               </Anchor>
             </Group>
-            <CommandSearch />
+            <Group gap="md" wrap="nowrap">
+              <CommandSearch />
+              {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
+              <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
+                <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
+                  Salary report files sourced from the work of{' '}
+                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="dimmed" underline="hover" inherit>
+                    UFAS Local 223
+                  </Anchor>
+                </Text>
+                <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
+              </Stack>
+            </Group>
           </Group>
           {showControl && <ControlBar />}
         </AppShell.Header>

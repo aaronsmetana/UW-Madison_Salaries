@@ -3,6 +3,7 @@ import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { FACETS } from '../lib/queries';
+import { optionDropdownProps } from '../lib/selectProps';
 
 function FacetMultiSelect({ field, label, searchable }: { field: string; label: string; searchable?: boolean }) {
   const { filters, setFilter } = useControls();
@@ -14,6 +15,7 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
   );
   return (
     <MultiSelect
+      {...optionDropdownProps}
       size="xs"
       label={label}
       placeholder="Any"
@@ -22,7 +24,6 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
       onChange={(v) => setFilter(field, v)}
       searchable={searchable}
       clearable
-      maxDropdownHeight={220}
     />
   );
 }

@@ -22,6 +22,7 @@ export function SearchBox({
   onSelect,
   onPick,
   prominent = false,
+  inputHeight,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -29,6 +30,8 @@ export function SearchBox({
   /** When set, picking a result calls this (and clears the input) instead of navigating to the profile. */
   onPick?: (hit: { person_key: string; name: string }) => void;
   prominent?: boolean;
+  /** Taller closed control (px) so this matches sibling pickers (e.g. the Compare add blocks). */
+  inputHeight?: number;
 }) {
   const [term, setTerm] = useState('');
   const [debounced] = useDebouncedValue(term, 200);
@@ -128,7 +131,13 @@ export function SearchBox({
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
             classNames={prominent ? { input: 'hero-search-input' } : undefined}
-            styles={prominent ? { input: { minHeight: 72, height: 72, fontSize: '1.4rem' } } : undefined}
+            styles={
+              prominent
+                ? { input: { minHeight: 72, height: 72, fontSize: '1.4rem' } }
+                : inputHeight
+                  ? { input: { minHeight: inputHeight, height: inputHeight } }
+                  : undefined
+            }
           />
         </div>
       </Popover.Target>
