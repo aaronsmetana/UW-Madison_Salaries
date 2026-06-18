@@ -21,8 +21,8 @@ const NAV = [
 ];
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
-// Compare renders its own controls inline in the page content, so it's excluded here.
-const CONTROL_PATHS = ['/explore', '/school', '/title'];
+// Explore + Compare render their own controls inline in the page content, so they're excluded here.
+const CONTROL_PATHS = ['/school', '/title'];
 
 export function AppShellLayout() {
   const loc = useLocation();

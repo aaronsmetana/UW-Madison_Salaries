@@ -14,6 +14,7 @@ import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, fullName } from '../lib/format';
+import { ControlBar } from '../app/ControlBar';
 
 function Kpi({ label, value, to }: { label: string; value: string; to?: string }) {
   const card = (
@@ -117,6 +118,8 @@ export default function Explore() {
         <Title order={2}>General Comparisons</Title>
         <Text c="dimmed">Browse divisions and schools side by side — headcount, median pay, and top earners — then add any school or title (＋ Compare) to line them up on the Compare page. Or jump straight to a person.</Text>
       </div>
+
+      <ControlBar inline />
 
       <SearchBox />
 
