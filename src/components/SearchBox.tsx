@@ -128,7 +128,7 @@ export function SearchBox({
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
             classNames={prominent ? { input: 'hero-search-input' } : undefined}
-            styles={prominent ? { input: { minHeight: 72, height: 72, fontSize: '1.4rem', boxShadow: 'var(--mantine-shadow-lg)' } } : undefined}
+            styles={prominent ? { input: { minHeight: 72, height: 72, fontSize: '1.4rem' } } : undefined}
           />
         </div>
       </Popover.Target>

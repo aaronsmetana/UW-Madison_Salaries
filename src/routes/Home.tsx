@@ -1,28 +1,28 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, SimpleGrid, Group, Paper, ThemeIcon, Anchor } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, Divider, Paper, ThemeIcon, Anchor } from '@mantine/core';
 import { IconCoin, IconReportMoney, IconUsers } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { SearchBox } from '../components/SearchBox';
 
-/** One system-wide stat: icon + label, value below. Borderless — grouped inside a shared container. */
+/** One system-wide stat: centered icon+label over its value — a tight, symmetrical column. */
 function Kpi({ icon, label, value, color }: { icon: ReactNode; label: string; value: string; color: string }) {
   return (
-    <div>
-      <Group gap={8} wrap="nowrap" h={30}>
-        <ThemeIcon size={30} radius="md" variant="light" color={color}>
+    <Stack gap={2} align="center" style={{ flex: 1, minWidth: 0 }}>
+      <Group gap={6} justify="center" wrap="nowrap">
+        <ThemeIcon size={22} radius="md" variant="light" color={color}>
           {icon}
         </ThemeIcon>
-        <Text size="xs" c="dimmed" lh={1.2} lineClamp={1} style={{ whiteSpace: 'nowrap' }}>
+        <Text size="xs" c="dimmed" lh={1.2} ta="center" lineClamp={1}>
           {label}
         </Text>
       </Group>
-      <Text fw={700} fz={22} mt={8} style={{ letterSpacing: '-0.01em' }}>
+      <Text fw={700} fz={22} ta="center" style={{ letterSpacing: '-0.01em' }}>
         {value}
       </Text>
-    </div>
+    </Stack>
   );
 }
 
@@ -84,11 +84,13 @@ export default function Home() {
                 <Text size="xs" c="dimmed">latest snapshot · {latestLabel}</Text>
               )}
             </Group>
-            <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg" verticalSpacing="sm">
-              <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
-              <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={18} />} color="blue" />
-              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
-            </SimpleGrid>
+            <Group gap="md" align="stretch" wrap="nowrap">
+              <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="teal" />
+              <Divider orientation="vertical" />
+              <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={16} />} color="blue" />
+              <Divider orientation="vertical" />
+              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={16} />} color="indigo" />
+            </Group>
           </Paper>
 
           {summary?.snapshot_count != null && firstSnap && latestLabel && (
