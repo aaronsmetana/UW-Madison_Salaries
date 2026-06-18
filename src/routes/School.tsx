@@ -114,7 +114,7 @@ export default function School() {
         avg((p.pay - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.pay BETWEEN g."min" AND g."max") avg_pos,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay > g."max") over_max,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay < g."min") below_min
-     FROM (SELECT person_key, grade_number, grade_basis, ${personPay(metric)} pay
+     FROM (SELECT person_key, grade_number, grade_basis, ${personPay('full')} pay
            FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1, 2, 3) p
      LEFT JOIN grades g ON g."grade" = p.grade_number AND g."basis" = p.grade_basis`,
     enabled

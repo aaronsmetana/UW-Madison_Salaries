@@ -259,7 +259,10 @@ async function main() {
         seen.add(dedupeKey);
         delete row._first; delete row._last;
         const flags = row._flags; delete row._flags;
-        if (row.salary == null || row.salary === 0) zeroNull++; else { salaries.push(row.salary); paidPeople.add(pkey); }
+        // Median/min/max are on ACTUAL pay (FTE-adjusted) — matches what the app shows; "paid" is still
+        // gated on a positive full-time salary.
+        if (row.salary == null || row.salary === 0) zeroNull++;
+        else { salaries.push(row.salary_fte_adjusted ?? row.salary * (row.fte ?? 1)); paidPeople.add(pkey); }
         people.add(pkey);
         allRows.push({
           snapshot_id: id,

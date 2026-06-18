@@ -18,7 +18,7 @@ import { SearchBox } from '../components/SearchBox';
 
 interface SchoolCard { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
 interface Subject {
-  pay: number | null; title: string | null; job_code: string | null;
+  pay: number | null; rate: number | null; title: string | null; job_code: string | null;
   grade_number: number | null; grade_basis: string | null;
   school: string | null; department: string | null; date_of_hire: string | null;
 }
@@ -95,7 +95,7 @@ export default function Reports() {
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
-    `SELECT ${personPay(metric)} pay,
+    `SELECT ${personPay(metric)} pay, ${personPay('full')} rate,
         arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
         arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
         any_value(school) school, any_value(department) department, min(date_of_hire) date_of_hire
@@ -104,6 +104,7 @@ export default function Reports() {
   );
   const subj = subjRows?.[0];
   const subjectPay = subj?.pay ?? null;
+  const subjectRate = subj?.rate ?? null; // full-time rate, for the grade-band marker
   const jobCode = subj?.job_code ?? null;
 
   const { data: peerStatRows } = useSql<PeerStat>(
@@ -486,11 +487,11 @@ export default function Reports() {
                   </>
                 )}
 
-                {/* Pay band */}
-                {has('band') && band && subjectPay != null && (
+                {/* Pay band — full-time grade scale, so the marker is the rate (not prorated actual) */}
+                {has('band') && band && subjectRate != null && (
                   <>
-                    <Text size="sm" fw={600} mb="xs">Pay-band position — grade {subj?.grade_number}</Text>
-                    <PayBandBar min={band.min} max={band.max} value={subjectPay} target={primaryTarget} />
+                    <Text size="sm" fw={600} mb="xs">Pay-band position — grade {subj?.grade_number} (full-time rate)</Text>
+                    <PayBandBar min={band.min} max={band.max} value={subjectRate} target={primaryTarget} />
                     <div style={{ height: 16 }} />
                   </>
                 )}

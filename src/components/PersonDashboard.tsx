@@ -25,6 +25,7 @@ interface Row {
   job_code: string | null;
   pay: number | null;
   earn: number | null;
+  rate_raw: number | null;
   fte: number | null;
   date_of_hire: string | null;
   grade_number: number | null;
@@ -70,7 +71,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],
     `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
-            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, fte, date_of_hire, grade_number, grade_basis
+            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, fte, date_of_hire, grade_number, grade_basis
      FROM salaries WHERE person_key = ${sqlStr(personKey)} ORDER BY snapshot_date`,
     !!personKey
   );
@@ -107,11 +108,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         const appts = g.rows.length;
         // Single appointment → metric value; multiple concurrent → FTE-blended actual earnings.
         const salary = appts > 1 ? g.rows.reduce((s, r) => s + (r.earn ?? 0), 0) : (g.rows[0].pay ?? 0);
+        const rate = g.rows.reduce((s, r) => s + (r.rate_raw ?? 0), 0); // full-time rate (for the pay band)
         const primary = g.rows.reduce((best, r) => {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.pay ?? 0) > (best.pay ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, appts };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, title: primary.title, job_code: primary.job_code, appts };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -150,6 +152,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
   const firstSalary = trend[0]?.salary ?? null;
   const lastSalary = trend[trend.length - 1]?.salary ?? null;
+  const lastRate = trend[trend.length - 1]?.rate ?? null; // full-time rate, for the pay-band placement
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
 
   const careerLine = useMemo(() => {
@@ -362,10 +365,10 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       )}
 
       {/* Pay band */}
-      {band && lastSalary != null && (
+      {band && lastRate != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Pay band — grade {latest?.grade_number} (latest snapshot)</Text>
-          <PayBandBar min={band.min} max={band.max} value={lastSalary} />
+          <Text size="sm" fw={600} mb="md">Pay band — grade {latest?.grade_number} (full-time rate vs the official range)</Text>
+          <PayBandBar min={band.min} max={band.max} value={lastRate} />
         </Card>
       )}
 
