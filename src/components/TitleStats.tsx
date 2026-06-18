@@ -182,34 +182,6 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       )}
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Pay by school (market view)</Text>
-        <Table striped>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>School</Table.Th>
-              <Table.Th ta="right">People</Table.Th>
-              <Table.Th ta="right">Median</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {(bySchool ?? []).map((r) => (
-              <Table.Tr key={r.school} style={{ background: school === r.school ? 'var(--mantine-color-indigo-light)' : undefined }}>
-                <Table.Td>
-                  <Group gap={6} wrap="nowrap">
-                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: `hsl(${schoolHue(r.school)} 55% 55%)` }} />
-                    <Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor>
-                    {school === r.school && <Badge size="xs" variant="light">filtered</Badge>}
-                  </Group>
-                </Table.Td>
-                <Table.Td ta="right">{num(r.n)}</Table.Td>
-                <Table.Td ta="right">{usd(r.med)}</Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Card>
-
-      <Card withBorder padding="lg">
         <Group justify="space-between" mb="sm" wrap="nowrap">
           <Text size="sm" fw={600}>People with this title{scopeLabel}</Text>
           {pinned && rank != null && (
@@ -281,6 +253,34 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           </Table>
         </ScrollArea.Autosize>
         {people.length >= 1000 && <Text size="xs" c="dimmed" mt="xs">Showing the top 1,000 by pay.</Text>}
+      </Card>
+
+      <Card withBorder padding="lg">
+        <Text size="sm" fw={600} mb="md">Pay by school (market view)</Text>
+        <Table striped>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>School</Table.Th>
+              <Table.Th ta="right">People</Table.Th>
+              <Table.Th ta="right">Median</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {(bySchool ?? []).map((r) => (
+              <Table.Tr key={r.school} style={{ background: school === r.school ? 'var(--mantine-color-indigo-light)' : undefined }}>
+                <Table.Td>
+                  <Group gap={6} wrap="nowrap">
+                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: `hsl(${schoolHue(r.school)} 55% 55%)` }} />
+                    <Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor>
+                    {school === r.school && <Badge size="xs" variant="light">filtered</Badge>}
+                  </Group>
+                </Table.Td>
+                <Table.Td ta="right">{num(r.n)}</Table.Td>
+                <Table.Td ta="right">{usd(r.med)}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
       </Card>
     </Stack>
   );
