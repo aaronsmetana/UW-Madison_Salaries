@@ -1,12 +1,20 @@
-import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button } from '@mantine/core';
+import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack } from '@mantine/core';
+import { IconBuildingBank, IconCalendar, IconInfoCircle } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { FilterControls } from '../components/FilterControls';
 
+/** Plain-language explanation of each pay metric, shown in the (i) hover card. */
+const METRIC_HELP: Record<Metric, string> = {
+  full: 'The listed annual salary (full-time-equivalent rate). For part-time staff this is more than they actually earned.',
+  fte: "Annual salary scaled to the person's FTE — closest to what they were actually paid.",
+  base: 'Base salary as reported (may exclude supplemental or overload pay).',
+};
+
 /**
- * Persistent control bar: Scope is the lens the whole app responds to, plus the
- * active snapshot and salary metric. A context badge always shows the current lens.
+ * Persistent control bar: scope + snapshot are the lens the whole app responds to, plus the salary
+ * metric (defaulting to actual, FTE-adjusted pay). A context badge always shows the current lens.
  */
 export function ControlBar() {
   const { scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot } = useControls();
@@ -39,18 +47,21 @@ export function ControlBar() {
     <Group
       h={48}
       px="md"
-      gap="lg"
+      gap="md"
       wrap="nowrap"
       style={{ borderTop: '1px solid var(--mantine-color-default-border)', overflowX: 'auto' }}
     >
-      {/* Lens: scope + snapshot grouped together */}
+      {/* Lens: which slice of the data is shown */}
+      <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em', flexShrink: 0 }}>
+        Showing
+      </Text>
       <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
         <Select
           size="xs"
-          w={190}
-          label={undefined}
-          leftSection={<Text size="xs" c="dimmed">Scope</Text>}
-          leftSectionWidth={48}
+          w={180}
+          aria-label="Scope"
+          leftSection={<IconBuildingBank size={15} />}
+          leftSectionWidth={30}
           data={scopeOptions}
           value={scopeValue}
           onChange={(v) =>
@@ -61,9 +72,10 @@ export function ControlBar() {
         />
         <Select
           size="xs"
-          w={190}
-          leftSection={<Text size="xs" c="dimmed">Snap</Text>}
-          leftSectionWidth={40}
+          w={180}
+          aria-label="Snapshot"
+          leftSection={<IconCalendar size={15} />}
+          leftSectionWidth={30}
           data={snapOptions}
           value={snapValue}
           onChange={(v) => setActiveSnapshot(v === 'latest' ? null : v)}
@@ -71,16 +83,34 @@ export function ControlBar() {
         />
       </Group>
 
-      {/* Salary metric as a single pill toggle */}
-      <SegmentedControl
-        size="xs"
-        radius="xl"
-        color="indigo"
-        style={{ flexShrink: 0 }}
-        value={metric}
-        onChange={(v) => setMetric(v as Metric)}
-        data={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ value: m, label: METRIC_LABEL[m] }))}
-      />
+      {/* How pay is measured */}
+      <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>
+          Pay
+        </Text>
+        <SegmentedControl
+          size="xs"
+          radius="xl"
+          color="indigo"
+          value={metric}
+          onChange={(v) => setMetric(v as Metric)}
+          data={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ value: m, label: METRIC_LABEL[m] }))}
+        />
+        <HoverCard width={300} shadow="md" position="bottom" withArrow>
+          <HoverCard.Target>
+            <ActionIcon variant="subtle" color="gray" size="sm" aria-label="What do these pay options mean?">
+              <IconInfoCircle size={16} />
+            </ActionIcon>
+          </HoverCard.Target>
+          <HoverCard.Dropdown>
+            <Stack gap={6}>
+              {(Object.keys(METRIC_LABEL) as Metric[]).map((m) => (
+                <Text size="xs" key={m}><b>{METRIC_LABEL[m]}</b> — {METRIC_HELP[m]}</Text>
+              ))}
+            </Stack>
+          </HoverCard.Dropdown>
+        </HoverCard>
+      </Group>
 
       {/* Filters + actions grouped on the right */}
       <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>

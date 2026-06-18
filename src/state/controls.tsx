@@ -46,7 +46,7 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
       : params.get('dept')
         ? { kind: 'department', value: params.get('dept')! }
         : { kind: 'all' };
-    const metric = (params.get('metric') as Metric) || 'full';
+    const metric = (params.get('metric') as Metric) || 'fte';
     const activeSnapshot = params.get('snap');
     const filters = parseFilters(params.get('filt'));
 
@@ -72,7 +72,7 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
           if (s.kind === 'school') p.set('school', s.value);
           else if (s.kind === 'department') p.set('dept', s.value);
         }),
-      setMetric: (m) => update((p) => (m === 'full' ? p.delete('metric') : p.set('metric', m))),
+      setMetric: (m) => update((p) => (m === 'fte' ? p.delete('metric') : p.set('metric', m))),
       setActiveSnapshot: (id) => update((p) => (id ? p.set('snap', id) : p.delete('snap'))),
       setFilter: (field, values) =>
         update((p) => {
@@ -97,8 +97,8 @@ export function useControls(): ControlsState {
 }
 
 export const METRIC_LABEL: Record<Metric, string> = {
-  full: 'Full annual $',
-  fte: 'FTE-adjusted $',
+  full: 'Full-time rate',
+  fte: 'Actual pay',
   base: 'Base pay',
 };
 
