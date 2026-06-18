@@ -85,8 +85,8 @@ export default function Home() {
             </Group>
             <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg" verticalSpacing="sm">
               <Kpi label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
-              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
               <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={18} />} color="blue" />
+              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
             </SimpleGrid>
           </Paper>
 
