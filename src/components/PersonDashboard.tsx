@@ -329,7 +329,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       </Card>
 
       {/* Same-title comparison (compact) */}
-      {peer && peer.n > 0 && lastSalary != null && jobCode &&
+      {peer && peer.n === 1 && jobCode && (
+        <Card withBorder padding="lg">
+          <Text size="sm">
+            {name} is the only employee at UW with the title {latest?.title} (job code {jobCode}) in the latest snapshot — no one else to compare against.
+          </Text>
+        </Card>
+      )}
+
+      {peer && peer.n > 1 && lastSalary != null && jobCode &&
         peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
         <Card withBorder padding="lg">
           <Group justify="space-between" mb="md" wrap="nowrap">
