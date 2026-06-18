@@ -18,15 +18,19 @@ import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 
-/** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; appts?: number; med?: number | null } }[] }) {
+/** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  const partTime = d.rate != null && Math.round(d.rate) !== Math.round(d.salary);
   return (
     <Paper withBorder shadow="sm" p="xs">
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
-      <Text size="sm">Salary: {usd(d.salary)}</Text>
+      <Text size="sm">Actual paid: {usd(d.salary)}</Text>
+      {partTime && (
+        <Text size="xs" c="dimmed">Full-time rate: {usd(d.rate)}{d.fte != null ? ` · ${+d.fte.toFixed(2)} FTE` : ''}</Text>
+      )}
       {d.med != null && <Text size="xs" c="dimmed">Title median: {usd(d.med)}</Text>}
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
@@ -83,8 +87,9 @@ export default function Person() {
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
   const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));
 
-  // Salary trend: one point per snapshot. Single appointment → its full rate; multiple concurrent
-  // appointments → FTE-blended actual earnings (Σ rate × FTE), not the nonsensical sum of full rates.
+  // Salary trend: one point per snapshot. `salary` (the plotted line) is ACTUAL pay — the reported
+  // FTE-adjusted figure (Σ salary_fte_adjusted, falling back to rate × FTE), summed across concurrent
+  // appointments. We also carry the full-time `rate` (Σ salary) and total `fte` for the breakdown.
   const trend = useMemo(() => {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const ttcSuffix = (id: string) => (id.endsWith('-pre') ? ' (Pre-TTC)' : id.endsWith('-post') ? ' (Post-TTC)' : '');
@@ -105,15 +110,15 @@ export default function Person() {
     return [...by.values()]
       .map((g) => {
         const appts = g.rows.length;
-        const salary = appts > 1
-          ? g.rows.reduce((s, r) => s + (r.salary ?? 0) * (r.fte ?? 1), 0)
-          : (g.rows[0].salary ?? 0);
+        const paid = g.rows.reduce((s, r) => s + (r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1)), 0);
+        const rate = g.rows.reduce((s, r) => s + (r.salary ?? 0), 0);
+        const fte = g.rows.reduce((s, r) => s + (r.fte ?? 1), 0);
         // primary appointment = highest FTE (tie-break highest salary) — drives the displayed title
         const primary = g.rows.reduce((best, r) => {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.salary ?? 0) > (best.salary ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, appts };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, appts };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -123,7 +128,7 @@ export default function Person() {
     ['person-title-med', key],
     `WITH me AS (SELECT snapshot_id, arg_max(job_code, salary) job FROM salaries
         WHERE person_key = ${sqlStr(key)} AND job_code IS NOT NULL GROUP BY snapshot_id),
-      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('full')} pay
+      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('fte')} pay
         FROM salaries s JOIN me ON s.snapshot_id = me.snapshot_id AND s.job_code = me.job
         GROUP BY s.snapshot_id, s.person_key)
      SELECT snapshot_id, median(pay) med FROM pp WHERE pay > 0 GROUP BY snapshot_id`,
@@ -155,9 +160,17 @@ export default function Person() {
     return Math.max(0, (Date.now() - new Date(hire).getTime()) / (365.25 * 864e5));
   }, [rows]);
 
-  const firstSalary = trend[0]?.salary ?? null;
-  const lastSalary = trend[trend.length - 1]?.salary ?? null;
+  const firstSalary = trend[0]?.salary ?? null; // actual paid
+  const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
+  // Full-time rate (and its growth) — shown alongside actual pay where they diverge (FTE changes).
+  const firstRate = trend[0]?.rate ?? null;
+  const lastRate = trend[trend.length - 1]?.rate ?? null;
+  const lastFte = trend[trend.length - 1]?.fte ?? null;
+  const rateChange = firstRate && lastRate ? (lastRate - firstRate) / firstRate : null;
+  const partTime = lastRate != null && lastSalary != null && Math.round(lastRate) !== Math.round(lastSalary);
+  const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
+  const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
 
   // One-line career summary under the header.
   const careerLine = useMemo(() => {
@@ -165,13 +178,16 @@ export default function Person() {
     const latestTitle = latest?.title;
     if (!latestTitle || trend.length === 0) return null;
     const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4);
-    const chg = totalChange != null ? `${totalChange > 0 ? '+' : ''}${(totalChange * 100).toFixed(0)}%` : null;
+    const p0 = (x: number) => `${x > 0 ? '+' : ''}${(x * 100).toFixed(0)}%`;
+    const chg = totalChange == null ? null
+      : chgDiffer && rateChange != null ? `actual ${p0(totalChange)} · rate ${p0(rateChange)}`
+      : p0(totalChange);
     const span = `${num(trend.length)} salary snapshots`;
     if (firstTitle && firstTitle !== latestTitle) {
       return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}${chg ? ` (${chg} over ${span})` : ''}.`;
     }
     return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}${chg ? ` — ${chg} over ${span}` : ''}.`;
-  }, [trend, latest, rows, totalChange]);
+  }, [trend, latest, rows, totalChange, rateChange, chgDiffer]);
 
   const band = useMemo(() => {
     if (!latest || latest.grade_number == null || !grades) return null;
@@ -181,7 +197,7 @@ export default function Person() {
   const lastSnap = latest?.snapshot_id ?? '';
   const { data: standingRows } = useSql<{ uw: number; sch: number | null }>(
     ['standing', key, lastSnap, lastSalary ?? 0],
-    `WITH pp AS (SELECT person_key, ${personPay('full')} pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
      SELECT round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END), 0) uw,
             round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END) FILTER (WHERE school = ${sqlStr(latest?.school ?? '')}), 0) sch
      FROM pp WHERE pay > 0`,
@@ -193,7 +209,7 @@ export default function Person() {
   const jobCode = latest?.job_code ?? null;
   const { data: peerStatsRows } = useSql<PeerStats>(
     ['peer-stats', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, ${personPay('full')} pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
             quantile_cont(pay, 0.75) p75, max(pay) hi FROM pp WHERE pay > 0`,
@@ -206,7 +222,7 @@ export default function Person() {
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(school) school, any_value(department) department,
         date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 AS tenure,
-        ${personPay('full')} pay
+        ${personPay('fte')} pay
         FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
@@ -218,7 +234,7 @@ export default function Person() {
 
   const { data: peerPayRows } = useSql<{ pay: number }>(
     ['peer-pays', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, ${personPay('full')} pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT pay FROM pp WHERE pay > 0`,
     !!lastSnap && !!jobCode
@@ -298,15 +314,21 @@ export default function Person() {
         <Tabs.Panel value="overview" pt="md">
           <Stack gap="lg">
             <Card withBorder padding="lg">
-              <Text size="sm" c="dimmed">Latest salary{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}</Text>
+              <Text size="sm" c="dimmed">Actual pay{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}</Text>
               <Title order={1} style={{ fontSize: '2.5rem', lineHeight: 1.1 }}>{usd(lastSalary)}</Title>
               {latest?.title && <Text size="sm" c="dimmed" mt={4}>{latest.title}</Text>}
+              {partTime && (
+                <Text size="xs" c="dimmed" mt={2}>
+                  {lastFte != null ? `${+lastFte.toFixed(2)} FTE · ` : ''}full-time rate {usd(lastRate)}
+                </Text>
+              )}
             </Card>
 
             <SimpleGrid cols={{ base: 3, sm: 3 }}>
               <Card withBorder padding="md">
                 <Text size="xs" c="dimmed">Change (first→latest)</Text>
-                <Text fw={600}>{totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}</Text>
+                <Text fw={600}>{sgnPct(totalChange)}</Text>
+                {chgDiffer && <Text size="xs" c="dimmed">rate {sgnPct(rateChange)}</Text>}
               </Card>
               <Card withBorder padding="md">
                 <Text size="xs" c="dimmed">Tenure</Text>
@@ -456,34 +478,35 @@ export default function Person() {
         </Card>
       )}
 
-      {band && lastSalary != null && (
+      {band && lastRate != null && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">
-            Pay band — grade {latest?.grade_number} (latest snapshot)
+            Pay band — grade {latest?.grade_number} (full-time rate vs the official range)
           </Text>
-          <PayBandBar min={band.min} max={band.max} value={lastSalary} />
+          <PayBandBar min={band.min} max={band.max} value={lastRate} />
         </Card>
       )}
 
-      {lastSalary != null && (
+      {lastRate != null && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="sm">Raise / what-if simulator</Text>
+          <Text size="xs" c="dimmed" mb="sm">Projects the full-time salary rate; actual pay scales with FTE.</Text>
           <Group align="flex-end" wrap="wrap">
             <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={140} step={0.5} min={0} suffix="%" />
             <NumberInput label="Years" value={years} onChange={(v) => setYears(typeof v === 'number' ? v : 0)} w={120} min={0} max={40} />
             <div>
-              <Text size="xs" c="dimmed">Projected salary</Text>
-              <Text fw={700} size="lg">{usd(lastSalary * Math.pow(1 + pctRaise / 100, years))}</Text>
+              <Text size="xs" c="dimmed">Projected full-time rate</Text>
+              <Text fw={700} size="lg">{usd(lastRate * Math.pow(1 + pctRaise / 100, years))}</Text>
             </div>
           </Group>
-          {band && lastSalary >= band.max && (
+          {band && lastRate >= band.max && (
             <Text size="xs" c="dimmed" mt="xs">
-              This salary is already at or above the top of grade {latest?.grade_number}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
+              This rate is already at or above the top of grade {latest?.grade_number}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
             </Text>
           )}
-          {band && lastSalary < band.max && pctRaise > 0 && (
+          {band && lastRate < band.max && pctRaise > 0 && (
             <Text size="xs" c="dimmed" mt="xs">
-              At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / lastSalary) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
+              At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / lastRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
             </Text>
           )}
         </Card>
@@ -502,7 +525,7 @@ export default function Person() {
             <Tooltip content={<TrendTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />
-            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Line type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
             {trendData.map((t, i) =>
               i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
                 <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-indigo-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
@@ -511,14 +534,14 @@ export default function Person() {
           </LineChart>
         </ResponsiveContainer>
         <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.</Text>
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} />
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])} />
       </Card>
         </Tabs.Panel>
 
         <Tabs.Panel value="history" pt="md">
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title & salary history</Text>
-        <Table.ScrollContainer minWidth={680}>
+        <Table.ScrollContainer minWidth={760}>
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -526,7 +549,8 @@ export default function Person() {
               <Table.Th>Title</Table.Th>
               <Table.Th>Job code</Table.Th>
               <Table.Th>School / Dept</Table.Th>
-              <Table.Th ta="right">Salary</Table.Th>
+              <Table.Th ta="right">Rate</Table.Th>
+              <Table.Th ta="right">Actual pay</Table.Th>
               <Table.Th ta="right">FTE</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -536,7 +560,9 @@ export default function Person() {
               const jobChanged = !!prior && r.job_code !== prior.job_code;
               const sameDate = !!prior && String(r.snapshot_date) === String(prior.snapshot_date);
               const ttcReclass = jobChanged && sameDate && (r.salary ?? 0) === (prior?.salary ?? 0);
-              const deltaPct = prior && prior.salary ? ((r.salary ?? 0) - prior.salary) / prior.salary : null;
+              const actual = r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1);
+              const priorActual = prior ? (prior.salary_fte_adjusted ?? (prior.salary ?? 0) * (prior.fte ?? 1)) : null;
+              const deltaPct = priorActual ? (actual - priorActual) / priorActual : null;
               return (
                 <Table.Tr key={`${r.snapshot_id}-${i}`}>
                   <Table.Td>
@@ -558,8 +584,9 @@ export default function Person() {
                     <Text size="sm">{r.school ?? '—'}</Text>
                     <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
                   </Table.Td>
+                  <Table.Td ta="right">{usd(r.salary)}</Table.Td>
                   <Table.Td ta="right">
-                    {usd(r.salary)}
+                    {usd(actual)}
                     {deltaPct != null && deltaPct !== 0 && (
                       <Text size="xs" c={deltaPct > 0 ? 'teal' : 'red'}>
                         {deltaPct > 0 ? '+' : ''}{pct(deltaPct)}
