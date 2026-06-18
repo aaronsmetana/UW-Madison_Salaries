@@ -11,11 +11,11 @@ import { SearchBox } from '../components/SearchBox';
 function Kpi({ icon, label, value, color }: { icon: ReactNode; label: string; value: string; color: string }) {
   return (
     <div>
-      <Group gap={8} wrap="nowrap">
+      <Group gap={8} wrap="nowrap" h={30}>
         <ThemeIcon size={30} radius="md" variant="light" color={color}>
           {icon}
         </ThemeIcon>
-        <Text size="xs" c="dimmed" lh={1.2}>
+        <Text size="xs" c="dimmed" lh={1.2} lineClamp={1} style={{ whiteSpace: 'nowrap' }}>
           {label}
         </Text>
       </Group>
@@ -36,7 +36,8 @@ export default function Home() {
     !!snap
   );
   const payroll = payrollRows?.[0]?.total ?? null;
-  const firstSnap = summary?.snapshots?.[0]?.label;
+  const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
+  const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
   const latestLabel = summary?.latest?.label;
 
   return (
@@ -84,7 +85,7 @@ export default function Home() {
               )}
             </Group>
             <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg" verticalSpacing="sm">
-              <Kpi label="Median campus salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
+              <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={18} />} color="teal" />
               <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={18} />} color="blue" />
               <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={18} />} color="indigo" />
             </SimpleGrid>
@@ -93,7 +94,7 @@ export default function Home() {
           {summary?.snapshot_count != null && firstSnap && latestLabel && (
             <Text size="xs" c="dimmed" ta="center">
               <Anchor component={Link} to="/data" c="dimmed" underline="hover">
-                {num(summary.snapshot_count)} snapshots · {firstSnap} – {latestLabel}
+                {num(summary.snapshot_count)} snapshots spanning {firstSnap} – {latestLabel}
               </Anchor>
             </Text>
           )}

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Title, Text, Card, Group, Select, NumberInput, Box } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
@@ -42,7 +43,56 @@ export default function PayCheck() {
     `SELECT DISTINCT school FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL ORDER BY school`,
     !!snap
   );
-  const titleData = (titles ?? []).map((t) => ({ value: t.job_code, label: `${t.title} (${t.job_code} · ${num(t.n)})` }));
+  // Per-school counts for the selected title, and per-title counts in the selected school — used to
+  // annotate / grey out non-applicable options in the opposite dropdown so empty combos are obvious.
+  const { data: schoolCounts } = useSql<{ school: string; n: number }>(
+    ['pc-school-counts', snap ?? '', code ?? '', metric],
+    `SELECT school, ${paidHeadcount(metric)} n FROM salaries
+     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(code ?? '')} AND school IS NOT NULL
+     GROUP BY school`,
+    !!snap && !!code
+  );
+  const { data: titleCounts } = useSql<{ job_code: string; n: number }>(
+    ['pc-title-counts', snap ?? '', school ?? '', metric],
+    `SELECT job_code, ${paidHeadcount(metric)} n FROM salaries
+     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(school ?? '')} AND job_code IS NOT NULL
+     GROUP BY job_code`,
+    !!snap && !!school
+  );
+
+  const titleData = useMemo(() => {
+    const base = titles ?? [];
+    if (!school || !titleCounts) {
+      return base.map((t) => ({ value: t.job_code, label: `${t.title} (${t.job_code} · ${num(t.n)})` }));
+    }
+    const m = new Map(titleCounts.map((r) => [r.job_code, r.n]));
+    return base
+      .map((t) => {
+        const n = m.get(t.job_code) ?? 0;
+        return {
+          value: t.job_code,
+          label: n > 0 ? `${t.title} (${t.job_code} · ${num(n)})` : `${t.title} (${t.job_code}) · none in ${school}`,
+          disabled: n === 0,
+          _n: n,
+          _uw: t.n,
+        };
+      })
+      .sort((a, b) => b._n - a._n || b._uw - a._uw)
+      .map(({ value, label, disabled }) => ({ value, label, disabled }));
+  }, [titles, school, titleCounts]);
+
+  const schoolData = useMemo(() => {
+    const all = (schools ?? []).map((s) => s.school);
+    if (!code || !schoolCounts) return all.map((s) => ({ value: s, label: s }));
+    const m = new Map(schoolCounts.map((r) => [r.school, r.n]));
+    return all
+      .map((s) => {
+        const n = m.get(s) ?? 0;
+        return { value: s, label: n > 0 ? `${s} · ${num(n)}` : `${s} · no one with this title`, disabled: n === 0, _n: n };
+      })
+      .sort((a, b) => b._n - a._n || a.value.localeCompare(b.value))
+      .map(({ value, label, disabled }) => ({ value, label, disabled }));
+  }, [schools, code, schoolCounts]);
 
   return (
     <Stack gap="lg">
@@ -74,7 +124,7 @@ export default function PayCheck() {
             size="md"
             label="School (optional filter)"
             placeholder="All UW"
-            data={(schools ?? []).map((s) => s.school)}
+            data={schoolData}
             value={school}
             onChange={(v) => setP('sch', v)}
             searchable

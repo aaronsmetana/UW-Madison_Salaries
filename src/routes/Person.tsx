@@ -4,7 +4,7 @@ import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend,
 } from 'recharts';
 import { IconAlertTriangle, IconPlus } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
@@ -501,8 +501,9 @@ export default function Person() {
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
             <Tooltip content={<TrendTooltip />} />
-            <Line type="monotone" dataKey="med" stroke="var(--mantine-color-gray-5)" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls />
-            <Line type="monotone" dataKey="salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Legend />
+            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />
+            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
             {trendData.map((t, i) =>
               i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
                 <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-indigo-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
@@ -510,7 +511,7 @@ export default function Person() {
             )}
           </LineChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change · dashed line = median for the title held at the time.</Text>
+        <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.</Text>
         <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} />
       </Card>
         </Tabs.Panel>
