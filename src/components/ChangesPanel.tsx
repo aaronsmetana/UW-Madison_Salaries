@@ -30,6 +30,8 @@ export function ChangesPanel() {
 
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
+  const [filterSchool, setFilterSchool] = useState<string | null>(null);
+  const [filterDept, setFilterDept] = useState<string | null>(null);
   useEffect(() => {
     if (snaps.length >= 2 && !fromId && !toId) {
       setFromId(snaps[snaps.length - 2].id);
@@ -40,14 +42,29 @@ export function ChangesPanel() {
   const enabled = !!fromId && !!toId && fromId !== toId;
   const A = sqlStr(fromId ?? '');
   const B = sqlStr(toId ?? '');
-  const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}`;
+  // In-panel school/department filter — scopes the whole panel (composes with the global scope).
+  const localWhere = `${where}${filterSchool ? ` AND school = ${sqlStr(filterSchool)}` : ''}${filterDept ? ` AND department = ${sqlStr(filterDept)}` : ''}`;
+  const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}|${filterSchool ?? ''}|${filterDept ?? ''}`;
+
+  const { data: schoolOpts } = useSql<{ school: string }>(
+    ['chg-schools', fromId, toId],
+    `SELECT DISTINCT school FROM salaries WHERE snapshot_id IN (${A}, ${B}) AND school IS NOT NULL ORDER BY school`,
+    enabled
+  );
+  const { data: deptOpts } = useSql<{ department: string }>(
+    ['chg-depts', fromId, toId, filterSchool ?? ''],
+    `SELECT DISTINCT department FROM salaries WHERE snapshot_id IN (${A}, ${B}) AND department IS NOT NULL
+     ${filterSchool ? `AND school = ${sqlStr(filterSchool)}` : ''} ORDER BY department`,
+    enabled
+  );
+
   // Restrict both sides to people with a paid appointment so unpaid $0 affiliates don't read as
   // joiners/leavers (a $0-only person has NULL personPay and is dropped by the HAVING).
   const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school
-                          FROM salaries WHERE snapshot_id = ${A} AND ${where} GROUP BY person_key HAVING ${personPay(metric)} > 0),
+                          FROM salaries WHERE snapshot_id = ${A} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0),
                     b AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
                                  any_value(first_name) fn, any_value(last_name) ln
-                          FROM salaries WHERE snapshot_id = ${B} AND ${where} GROUP BY person_key HAVING ${personPay(metric)} > 0)`;
+                          FROM salaries WHERE snapshot_id = ${B} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0)`;
 
   const { data: sumData } = useSql<SummaryRow>(
     ['chg-sum', fromId, toId, scopeKey, metric],
@@ -127,6 +144,9 @@ export function ChangesPanel() {
 
   const isTTC = !!fromId && !!toId && fromId.includes('pre') && toId.includes('post');
   const opts = [...snaps].reverse().map((x) => ({ value: x.id, label: x.label }));
+  const fromLabel = snaps.find((x) => x.id === fromId)?.label ?? '—';
+  const toLabel = snaps.find((x) => x.id === toId)?.label ?? '—';
+  const scopeText = filterDept ? ` in ${filterDept}` : filterSchool ? ` in ${filterSchool}` : '';
 
   const moverRows = (rows?: Mover[]) =>
     (rows ?? []).map((m) => (
@@ -143,10 +163,29 @@ export function ChangesPanel() {
 
   return (
     <Stack gap="lg">
-      <Group>
-        <Select size="xs" w={170} label="From" data={opts} value={fromId} onChange={setFromId} allowDeselect={false} />
-        <Select size="xs" w={170} label="To" data={opts} value={toId} onChange={setToId} allowDeselect={false} />
+      <Group align="flex-end" wrap="wrap" gap="md">
+        <Select size="xs" w={150} label="From" data={opts} value={fromId} onChange={setFromId} allowDeselect={false} />
+        <Select size="xs" w={150} label="To" data={opts} value={toId} onChange={setToId} allowDeselect={false} />
+        <Select
+          size="xs" w={230} label="School" placeholder="All UW" searchable clearable
+          data={(schoolOpts ?? []).map((x) => x.school)}
+          value={filterSchool}
+          onChange={(v) => { setFilterSchool(v); setFilterDept(null); }}
+        />
+        <Select
+          size="xs" w={250} label="Department" placeholder="All departments" searchable clearable
+          data={(deptOpts ?? []).map((x) => x.department)}
+          value={filterDept}
+          onChange={setFilterDept}
+        />
       </Group>
+
+      {s && enabled && (
+        <Text size="sm" c="dimmed">
+          Between <b>{fromLabel}</b> and <b>{toLabel}</b>{scopeText}: {num(s.stayers)} stayed, {num(s.joiners)} joined,
+          {' '}{num(s.leavers)} left; median raise {s.median_raise == null ? '—' : pct(s.median_raise)}.
+        </Text>
+      )}
 
       {isTTC && (
         <Alert color="blue" title="TTC reclassification boundary">

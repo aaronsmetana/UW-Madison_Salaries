@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  Stack, Title, Text, Card, SimpleGrid, Group, Badge, Alert, Loader, Tabs, Table, Button, Anchor,
+  Stack, Title, Text, Card, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput,
 } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { IconPlus } from '@tabler/icons-react';
+import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
@@ -15,13 +15,14 @@ import { salaryExpr, earningsExpr, personPay, paidHeadcount, snapWhere, whereAll
 import { useTray } from '../state/tray';
 import { usd, num, fullName } from '../lib/format';
 
-function Kpi({ label, value }: { label: string; value: string }) {
-  return (
-    <Card withBorder padding="lg">
-      <Text size="sm" c="dimmed">{label}</Text>
+function Kpi({ label, value, to }: { label: string; value: string; to?: string }) {
+  const card = (
+    <Card withBorder padding="lg" style={to ? { cursor: 'pointer', height: '100%' } : undefined}>
+      <Text size="sm" c="dimmed">{label}{to && <Text span size="xs" c="indigo"> →</Text>}</Text>
       <Title order={3}>{value}</Title>
     </Card>
   );
+  return to ? <Anchor component={Link} to={to} underline="never" c="inherit">{card}</Anchor> : card;
 }
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null }
@@ -69,15 +70,43 @@ export default function Explore() {
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(title) title, any_value(school) school, ${personPay(metric)} pay
      FROM salaries WHERE ${where} AND ${expr} > 0
-     GROUP BY person_key ORDER BY pay DESC LIMIT 15`,
+     GROUP BY person_key ORDER BY pay DESC LIMIT 100`,
     enabled
   );
 
-  const { data: titles } = useSql<{ job_code: string; title: string; n: number; med: number | null }>(
+  const { data: titles } = useSql<{ job_code: string; title: string; n: number; med: number | null; lo: number | null; hi: number | null }>(
     ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n, median(${expr}) FILTER (WHERE ${expr} > 0) med
-     FROM salaries WHERE ${where} AND job_code IS NOT NULL GROUP BY job_code ORDER BY n DESC LIMIT 150`,
+    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n,
+        median(${expr}) FILTER (WHERE ${expr} > 0) med,
+        min(${expr}) FILTER (WHERE ${expr} > 0) lo, max(${expr}) FILTER (WHERE ${expr} > 0) hi
+     FROM salaries WHERE ${where} AND job_code IS NOT NULL GROUP BY job_code ORDER BY n DESC`,
     enabled
+  );
+
+  // Titles tab: client-side search + sort over all titles.
+  const [titleQ, setTitleQ] = useState('');
+  const [titleSort, setTitleSort] = useState<{ key: 'title' | 'job_code' | 'n' | 'med'; dir: 'asc' | 'desc' }>({ key: 'n', dir: 'desc' });
+  const titleView = useMemo(() => {
+    const q = titleQ.trim().toLowerCase();
+    let rows = titles ?? [];
+    if (q) rows = rows.filter((t) => t.title.toLowerCase().includes(q) || t.job_code.toLowerCase().includes(q));
+    const { key, dir } = titleSort;
+    const sorted = [...rows].sort((a, b) => {
+      const cmp = key === 'title' || key === 'job_code'
+        ? String(a[key]).localeCompare(String(b[key]))
+        : (Number(a[key] ?? 0) - Number(b[key] ?? 0));
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [titles, titleQ, titleSort]);
+  const sortTh = (key: 'title' | 'job_code' | 'n' | 'med', label: string, align?: 'right') => (
+    <Table.Th
+      ta={align}
+      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+      onClick={() => setTitleSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))}
+    >
+      {label}{titleSort.key === key ? (titleSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+    </Table.Th>
   );
 
   const flagged = manifest?.snapshots.filter((s) => s.status === 'warning' || s.status === 'error') ?? [];
@@ -120,7 +149,7 @@ export default function Explore() {
             <Kpi label="Headcount" value={num(k?.headcount)} />
             <Kpi label="Median salary" value={usd(k?.med)} />
             <Kpi label="Total payroll" value={usd(k?.total_payroll)} />
-            <Kpi label="Snapshots" value={num(summary?.snapshot_count)} />
+            <Kpi label="Snapshots" value={num(summary?.snapshot_count)} to="/data" />
           </SimpleGrid>
           {k && k.all_people > k.headcount && (
             <Text size="xs" c="dimmed" mt="xs">
@@ -138,7 +167,6 @@ export default function Explore() {
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
           <Tabs.Tab value="cohorts">Retention</Tabs.Tab>
-          <Tabs.Tab value="coverage">Coverage</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="schools" pt="md">
@@ -173,61 +201,81 @@ export default function Explore() {
         </Tabs.Panel>
 
         <Tabs.Panel value="earners" pt="md">
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Title</Table.Th>
-                <Table.Th>School</Table.Th>
-                <Table.Th ta="right">Pay</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {(earners ?? []).map((e) => (
-                <Table.Tr key={e.person_key}>
-                  <Table.Td>
-                    <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>
-                      {fullName(e.fn, e.ln)}
-                    </Anchor>
-                  </Table.Td>
-                  <Table.Td>{e.title ?? '—'}</Table.Td>
-                  <Table.Td>{e.school ?? '—'}</Table.Td>
-                  <Table.Td ta="right">{usd(e.pay)}</Table.Td>
+          <Text size="xs" c="dimmed" mb="xs">Top {num((earners ?? []).length)} by pay in this scope.</Text>
+          <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
+            <Table striped highlightOnHover stickyHeader miw={620}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={48} ta="right">#</Table.Th>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Title</Table.Th>
+                  <Table.Th>School</Table.Th>
+                  <Table.Th ta="right">Pay</Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {(earners ?? []).map((e, i) => (
+                  <Table.Tr key={e.person_key}>
+                    <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
+                    <Table.Td>
+                      <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>
+                        {fullName(e.fn, e.ln)}
+                      </Anchor>
+                    </Table.Td>
+                    <Table.Td>{e.title ?? '—'}</Table.Td>
+                    <Table.Td>{e.school ?? '—'}</Table.Td>
+                    <Table.Td ta="right">{usd(e.pay)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea.Autosize>
         </Tabs.Panel>
 
         <Tabs.Panel value="titles" pt="md">
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Title</Table.Th>
-                <Table.Th>Job code</Table.Th>
-                <Table.Th ta="right">People</Table.Th>
-                <Table.Th ta="right">Median</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {(titles ?? []).map((t) => (
-                <Table.Tr key={t.job_code}>
-                  <Table.Td>
-                    <Anchor component={Link} to={`/title/${encodeURIComponent(t.job_code)}`}>{t.title}</Anchor>
-                  </Table.Td>
-                  <Table.Td>{t.job_code}</Table.Td>
-                  <Table.Td ta="right">{num(t.n)}</Table.Td>
-                  <Table.Td ta="right">{usd(t.med)}</Table.Td>
-                  <Table.Td ta="right">
-                    <Button size="compact-xs" variant="light" radius="xl" leftSection={<IconPlus size={12} />} onClick={() => add({ type: 'title', id: t.job_code, label: t.title })}>
-                      Compare
-                    </Button>
-                  </Table.Td>
+          <Group justify="space-between" mb="sm" wrap="nowrap">
+            <TextInput
+              size="md"
+              w={360}
+              placeholder="Search titles or job codes…"
+              leftSection={<IconSearch size={16} />}
+              value={titleQ}
+              onChange={(e) => setTitleQ(e.currentTarget.value)}
+            />
+            <Text size="xs" c="dimmed">{num(titleView.length)} of {num((titles ?? []).length)} titles</Text>
+          </Group>
+          <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
+            <Table striped highlightOnHover stickyHeader miw={720}>
+              <Table.Thead>
+                <Table.Tr>
+                  {sortTh('title', 'Title')}
+                  {sortTh('job_code', 'Job code')}
+                  {sortTh('n', 'People', 'right')}
+                  {sortTh('med', 'Median', 'right')}
+                  <Table.Th ta="right">Range</Table.Th>
+                  <Table.Th />
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {titleView.map((t) => (
+                  <Table.Tr key={t.job_code}>
+                    <Table.Td>
+                      <Anchor component={Link} to={`/title/${encodeURIComponent(t.job_code)}`}>{t.title}</Anchor>
+                    </Table.Td>
+                    <Table.Td>{t.job_code}</Table.Td>
+                    <Table.Td ta="right">{num(t.n)}</Table.Td>
+                    <Table.Td ta="right">{usd(t.med)}</Table.Td>
+                    <Table.Td ta="right" c="dimmed">{t.lo != null && t.hi != null ? `${usd(t.lo)}–${usd(t.hi)}` : '—'}</Table.Td>
+                    <Table.Td ta="right">
+                      <Button size="compact-xs" variant="light" radius="xl" leftSection={<IconPlus size={12} />} onClick={() => add({ type: 'title', id: t.job_code, label: t.title })}>
+                        Compare
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea.Autosize>
         </Tabs.Panel>
 
         <Tabs.Panel value="trends" pt="md">
@@ -240,16 +288,6 @@ export default function Explore() {
 
         <Tabs.Panel value="cohorts" pt="md">
           <CohortPanel />
-        </Tabs.Panel>
-
-        <Tabs.Panel value="coverage" pt="md">
-          <Group gap="xs">
-            {summary?.snapshots.map((s) => (
-              <Badge key={s.id} variant="outline" color="gray">
-                {s.label} · {num(s.rows)}
-              </Badge>
-            ))}
-          </Group>
         </Tabs.Panel>
       </Tabs>
     </Stack>
