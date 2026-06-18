@@ -73,3 +73,8 @@ textarea:focus-visible,
 .peer-row .peer-add { opacity: 0.28; transition: opacity 120ms ease; }
 .peer-row:hover .peer-add,
 .peer-row:focus-within .peer-add { opacity: 1; }
+
+/* Same-school peers: tint the whole row + a teal left-edge accent so they're obvious at a skim
+   (replaces the old badge that truncated at narrow widths). */
+.peer-same-school td { background-color: var(--mantine-color-teal-light); }
+.peer-same-school td:first-child { box-shadow: inset 3px 0 0 0 var(--mantine-color-teal-6); }

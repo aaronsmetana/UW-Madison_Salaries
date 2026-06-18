@@ -381,10 +381,11 @@ export default function Person() {
                       {peers.map((p, i) => {
                         const isYou = p.person_key === key;
                         const inTray = has(p.person_key);
+                        const sameSchool = !isYou && !!p.school && p.school === latest?.school;
                         return (
                           <Table.Tr
                             key={p.person_key}
-                            className="peer-row"
+                            className={`peer-row${sameSchool ? ' peer-same-school' : ''}`}
                             ref={isYou ? subjectRowRef : undefined}
                             onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
                             tabIndex={isYou ? undefined : 0}
@@ -404,13 +405,8 @@ export default function Person() {
                               </Text>
                               {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
                             </Table.Td>
-                            <Table.Td>
-                              <Group gap={6} wrap="nowrap">
-                                <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
-                                {!isYou && p.school && p.school === latest?.school && (
-                                  <Badge size="xs" variant="light" color="teal">Same school</Badge>
-                                )}
-                              </Group>
+                            <Table.Td title={sameSchool ? `Same school as ${name}` : undefined}>
+                              <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
                             </Table.Td>
                             <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
@@ -438,6 +434,9 @@ export default function Person() {
                     </Table.Tbody>
                   </Table>
                 </ScrollArea.Autosize>
+                {latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) && (
+                  <Text size="xs" c="dimmed" mt="xs">Rows shaded teal share {name}'s school ({latest.school}).</Text>
+                )}
               </Card>
             )}
           </Stack>
