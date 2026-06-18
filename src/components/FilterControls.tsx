@@ -1,4 +1,6 @@
-import { Group, Button, Popover, Stack, MultiSelect, Pill } from '@mantine/core';
+import { useState } from 'react';
+import { Group, Button, Popover, Stack, MultiSelect, Pill, Indicator } from '@mantine/core';
+import { IconFilter, IconFilterFilled } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -31,14 +33,43 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
 export function FilterControls() {
   const { filters, setFilter, clearFilters } = useControls();
   const count = Object.values(filters).reduce((a, v) => a + v.length, 0);
+  // Track the popover's open state so the button can show a clear "toggled on" look.
+  const [opened, setOpened] = useState(false);
+  const active = opened || count > 0;
 
   return (
     <Group gap="xs" wrap="nowrap">
-      <Popover position="bottom-start" withArrow shadow="md" trapFocus>
+      <Popover
+        position="bottom-start"
+        withArrow
+        shadow="md"
+        trapFocus
+        onOpen={() => setOpened(true)}
+        onClose={() => setOpened(false)}
+      >
         <Popover.Target>
-          <Button size="xs" variant={count ? 'light' : 'default'}>
-            Filters{count ? ` (${count})` : ''}
-          </Button>
+          {/* Notification badge with the applied-filter count, attached to the button. */}
+          <Indicator
+            label={count}
+            size={16}
+            color="blue"
+            offset={4}
+            withBorder
+            disabled={count === 0}
+            styles={{ indicator: { fontWeight: 700, pointerEvents: 'none' } }}
+          >
+            <Button
+              size="xs"
+              variant={active ? 'light' : 'default'}
+              color={active ? 'blue' : 'gray'}
+              aria-expanded={opened}
+              leftSection={
+                active ? <IconFilterFilled size={14} /> : <IconFilter size={14} stroke={1.8} />
+              }
+            >
+              Filters
+            </Button>
+          </Indicator>
         </Popover.Target>
         <Popover.Dropdown>
           <Stack gap="sm" w={280}>
