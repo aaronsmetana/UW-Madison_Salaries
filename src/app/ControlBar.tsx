@@ -1,4 +1,4 @@
-import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack } from '@mantine/core';
+import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconInfoCircle } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -13,10 +13,11 @@ const METRIC_HELP: Record<Metric, string> = {
 };
 
 /**
- * Persistent control bar: scope + snapshot are the lens the whole app responds to, plus the salary
- * metric (defaulting to actual, FTE-adjusted pay). A context badge always shows the current lens.
+ * Scope + snapshot are the lens the whole app responds to, plus the salary metric (defaulting to actual,
+ * FTE-adjusted pay). Two layouts: the persistent header strip (default), and an `inline` panel that
+ * pages can drop into their own content (used on Compare) so the controls anchor to the data below.
  */
-export function ControlBar() {
+export function ControlBar({ inline = false }: { inline?: boolean }) {
   const { scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot } = useControls();
   const { data: summary } = useSummary();
   const snapshots = summary?.snapshots ?? [];
@@ -43,15 +44,9 @@ export function ControlBar() {
     ? snapshots.find((s) => s.id === activeSnapshot)?.label ?? activeSnapshot
     : latest?.label ?? '—';
 
-  return (
-    <Group
-      h={48}
-      px="md"
-      gap="md"
-      wrap="nowrap"
-      style={{ borderTop: '1px solid var(--mantine-color-default-border)', overflowX: 'auto' }}
-    >
-      {/* Lens: which slice of the data is shown */}
+  // Shared control elements, arranged differently by the header vs inline layouts below.
+  const lens = (
+    <>
       <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em', flexShrink: 0 }}>
         Showing
       </Text>
@@ -82,8 +77,6 @@ export function ControlBar() {
           allowDeselect={false}
         />
       </Group>
-
-      {/* How pay is measured */}
       <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
         <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>
           Pay
@@ -111,17 +104,46 @@ export function ControlBar() {
           </HoverCard.Dropdown>
         </HoverCard>
       </Group>
+    </>
+  );
 
-      {/* Filters + actions grouped on the right */}
+  const actions = (
+    <>
+      <FilterControls />
+      <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
+        {({ copied, copy }) => (
+          <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>
+            {copied ? 'Copied!' : 'Copy link'}
+          </Button>
+        )}
+      </CopyButton>
+    </>
+  );
+
+  // Inline: an in-content panel (used on Compare) sharing the page background, controls left / actions right.
+  if (inline) {
+    return (
+      <Paper withBorder radius="md" px="sm" py="xs">
+        <Group justify="space-between" gap="md" wrap="wrap">
+          <Group gap="md" wrap="wrap" align="center">{lens}</Group>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>{actions}</Group>
+        </Group>
+      </Paper>
+    );
+  }
+
+  // Header strip: persistent bar with a context badge on the right.
+  return (
+    <Group
+      h={48}
+      px="md"
+      gap="md"
+      wrap="nowrap"
+      style={{ borderTop: '1px solid var(--mantine-color-default-border)', overflowX: 'auto' }}
+    >
+      {lens}
       <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>
-        <FilterControls />
-        <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
-          {({ copied, copy }) => (
-            <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>
-              {copied ? 'Copied!' : 'Copy link'}
-            </Button>
-          )}
-        </CopyButton>
+        {actions}
         <Badge variant="light" color="indigo">
           {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
         </Badge>

@@ -13,6 +13,7 @@ import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queri
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { SearchBox } from '../components/SearchBox';
+import { ControlBar } from '../app/ControlBar';
 
 const PALETTE = [
   'var(--mantine-color-indigo-6)', 'var(--mantine-color-teal-6)', 'var(--mantine-color-orange-6)',
@@ -196,6 +197,8 @@ export default function Compare() {
         <Title order={2}>Compare People, Titles &amp; Schools</Title>
         <Text c="dimmed">Search and add anyone, any title, or any school, then compare salaries side by side. Selections are saved (your tray) so you can keep building across pages.</Text>
       </div>
+
+      <ControlBar inline />
 
       {/* ── Build your comparison: three labeled add blocks ── */}
       <Card withBorder padding="lg">
