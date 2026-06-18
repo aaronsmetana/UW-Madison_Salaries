@@ -55,7 +55,7 @@ interface Row {
 }
 
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
-interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; pay: number }
+interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
 
 /** Stable color per school so people in the same school read as a group (and different schools differ). */
 function schoolHue(s: string | null): number {
@@ -212,9 +212,11 @@ export default function Person() {
   const { data: peers } = useSql<PeerRow>(
     ['peer-list', jobCode ?? '', lastSnap],
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
-        any_value(school) school, any_value(department) department, ${personPay('full')} pay
+        any_value(school) school, any_value(department) department,
+        date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 AS tenure,
+        ${personPay('full')} pay
         FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT person_key, fn, ln, school, department, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
+     SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
   );
   const peerRank = useMemo(() => {
@@ -360,13 +362,14 @@ export default function Person() {
                   )}
                 </Group>
                 <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
-                  <Table striped highlightOnHover stickyHeader miw={680}>
+                  <Table striped highlightOnHover stickyHeader miw={760}>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th w={48} ta="right">#</Table.Th>
                         <Table.Th>Name</Table.Th>
                         <Table.Th>School</Table.Th>
                         <Table.Th>Department</Table.Th>
+                        <Table.Th ta="right">Tenure</Table.Th>
                         <Table.Th ta="right">Salary</Table.Th>
                         <Table.Th w={132} />
                       </Table.Tr>
@@ -411,6 +414,7 @@ export default function Person() {
                               </Group>
                             </Table.Td>
                             <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
+                            <Table.Td ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
                             <Table.Td ta="right">
                               <Button

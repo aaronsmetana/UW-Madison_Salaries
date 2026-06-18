@@ -39,7 +39,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
-interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; pay: number }
+interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
 interface SchoolRow { school: string; n: number; med: number | null }
 interface PctRow { scope: string; pct: number; n: number }
 
@@ -88,9 +88,11 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   const { data: peopleRows } = useSql<PersonRow>(
     ['ts-people', jobCode, snap, school ?? '', metric],
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
-        any_value(school) school, any_value(department) department, ${personPay(metric)} pay
+        any_value(school) school, any_value(department) department,
+        date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 AS tenure,
+        ${personPay(metric)} pay
         FROM salaries WHERE ${base} GROUP BY person_key)
-     SELECT person_key, fn, ln, school, department, pay FROM pp WHERE pay > 0 ORDER BY pay DESC LIMIT 1000`,
+     SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC LIMIT 1000`,
     enabled
   );
   const people = useMemo(() => peopleRows ?? [], [peopleRows]);
@@ -199,13 +201,14 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           onChange={(e) => setQ(e.currentTarget.value)}
         />
         <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present">
-          <Table striped highlightOnHover stickyHeader miw={680}>
+          <Table striped highlightOnHover stickyHeader miw={760}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={48} ta="right">#</Table.Th>
                 <Table.Th>Name</Table.Th>
                 <Table.Th>School</Table.Th>
                 <Table.Th>Department</Table.Th>
+                <Table.Th ta="right">Tenure</Table.Th>
                 <Table.Th ta="right">Salary</Table.Th>
                 <Table.Th w={132} />
               </Table.Tr>
@@ -233,6 +236,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                       </Group>
                     </Table.Td>
                     <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
+                    <Table.Td ta="right">{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                     <Table.Td ta="right">{usd(p.pay)}</Table.Td>
                     <Table.Td ta="right">
                       <Button
