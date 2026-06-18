@@ -57,7 +57,7 @@ export default function PayCheck() {
       </Box>
 
       <Card padding="lg">
-        <Group align="flex-end" wrap="wrap" gap="xl" maw={920}>
+        <Group align="flex-end" wrap="wrap" gap="xl">
           <Select
             size="md"
             label="Title"

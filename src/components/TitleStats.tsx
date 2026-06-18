@@ -142,12 +142,14 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   return (
     <Stack gap="lg">
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
-        <Stat label={`People${scopeLabel ? ' (' + school + ')' : ''}`} value={num(s.n)} />
+        <Stat label="People" value={num(s.n)} />
         <Stat label="Median" value={usd(s.med)} />
         <Stat label="Lowest" value={usd(s.lo)} />
         <Stat label="Highest" value={usd(s.hi)} />
       </SimpleGrid>
-      <Text size="xs" c="dimmed" mt={-8}>p25 {usd(s.p25)} · median {usd(s.med)} · p75 {usd(s.p75)}{scopeLabel}</Text>
+      {!pinned && (
+        <Text size="xs" c="dimmed" mt={-8}>p25 {usd(s.p25)} · median {usd(s.med)} · p75 {usd(s.p75)}{scopeLabel}</Text>
+      )}
 
       {pinned && s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && (
         <Card withBorder padding="lg">
