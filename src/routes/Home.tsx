@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, Divider, Paper, ThemeIcon, Anchor } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, Divider, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
 import { IconCoin, IconReportMoney, IconUsers } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -75,15 +75,16 @@ export default function Home() {
           <SearchBox prominent autoFocus placeholder="Search for an employee by name…" />
 
           {/* System-wide stats (as of the latest snapshot) */}
-          <Paper withBorder radius="lg" px="lg" py="md" w="100%">
-            <Group justify="space-between" align="baseline" mb="xs">
-              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.06em' }}>
-                System-wide
-              </Text>
-              {latestLabel && (
-                <Text size="xs" c="dimmed">latest snapshot · {latestLabel}</Text>
-              )}
-            </Group>
+          <Paper withBorder radius="lg" px="lg" pt="xl" pb="lg" w="100%" style={{ position: 'relative', overflow: 'visible' }}>
+            {/* Centered title chip straddling the top border. */}
+            <Badge
+              variant="default"
+              radius="sm"
+              size="sm"
+              style={{ position: 'absolute', top: 0, left: '50%', transform: 'translate(-50%, -50%)' }}
+            >
+              System-Wide
+            </Badge>
             <Group gap="md" align="stretch" wrap="nowrap">
               <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="teal" />
               <Divider orientation="vertical" />
@@ -96,7 +97,7 @@ export default function Home() {
           {summary?.snapshot_count != null && firstSnap && latestLabel && (
             <Text size="xs" c="dimmed" ta="center">
               <Anchor component={Link} to="/data" c="dimmed" underline="hover">
-                {num(summary.snapshot_count)} snapshots spanning {firstSnap} – {latestLabel}
+                Data based on {num(summary.snapshot_count)} snapshots ({firstSnap} – {latestLabel}) • Latest: {latestLabel}
               </Anchor>
             </Text>
           )}

@@ -37,7 +37,7 @@ textarea:focus-visible,
 
 /* Hero search input: resting elevation, deeper border in light mode, and a clear focus ring. */
 .hero-search-input {
-  box-shadow: var(--mantine-shadow-lg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 :root[data-mantine-color-scheme='light'] .hero-search-input {
@@ -45,7 +45,7 @@ textarea:focus-visible,
 }
 :root .hero-search-input:focus {
   border-color: var(--mantine-color-indigo-6);
-  box-shadow: 0 0 0 3px var(--mantine-color-indigo-light), var(--mantine-shadow-lg);
+  box-shadow: 0 0 0 3px var(--mantine-color-indigo-light), 0 6px 18px rgba(0, 0, 0, 0.14);
 }
 
 /* Non-blocking global loading bar: a thin indeterminate strip pinned to the top. */
