@@ -13,7 +13,7 @@ interface Hit {
   ln: string;
   school: string | null;
   title: string | null;
-  max_appts: number;
+  latest_appts: number;
   last_date: string | null;
 }
 
@@ -52,7 +52,7 @@ export function SearchBox({
         arg_max(last_name, snapshot_date)  AS ln,
         arg_max(school, snapshot_date)     AS school,
         arg_max(title, snapshot_date)      AS title,
-        max(per_snap)                      AS max_appts,
+        arg_max(per_snap, snapshot_date)   AS latest_appts,
         max(snapshot_date)                 AS last_date
      FROM m
      GROUP BY person_key
@@ -153,7 +153,7 @@ export function SearchBox({
           <Stack gap={0} role="listbox" id={listId}>
             {data.map((h, i) => {
               const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
-              const multiAppt = (h.max_appts ?? 0) > 1;
+              const multiAppt = (h.latest_appts ?? 0) > 1; // only flag roles held in the latest snapshot
               const inactive = campusLatestDate != null && h.last_date != null && String(h.last_date) < String(campusLatestDate);
               const dim = inactive ? 0.55 : 1; // heavily grey out departed employees' text
               return (
@@ -183,7 +183,7 @@ export function SearchBox({
                       </Tooltip>
                     )}
                     {multiAppt && (
-                      <Tooltip label="Has multiple appointments in a snapshot (e.g., split or joint roles)." withArrow position="top">
+                      <Tooltip label="Holds multiple appointments in the latest snapshot (e.g., split or joint roles)." withArrow position="top">
                         <Badge size="xs" radius="sm" variant="default" tt="none" fw={500} style={{ flexShrink: 0, cursor: 'pointer' }}>
                           Multiple roles
                         </Badge>
