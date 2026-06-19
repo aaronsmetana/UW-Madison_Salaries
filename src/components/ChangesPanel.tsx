@@ -47,17 +47,39 @@ export function ChangesPanel() {
   const localWhere = `${where}${filterSchool ? ` AND school = ${sqlStr(filterSchool)}` : ''}${filterDept ? ` AND department = ${sqlStr(filterDept)}` : ''}`;
   const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}|${filterSchool ?? ''}|${filterDept ?? ''}`;
 
+  // Only offer divisions/departments present in BOTH snapshots. UW renamed and split divisions in the
+  // 2025 reorg (e.g. "Sch of Med & Public Health" → "School of Medicine and Public Health"), so a unit
+  // labelled differently across the pair can't be matched by name and would read as all-new-hires.
   const { data: schoolOpts } = useSql<{ school: string }>(
     ['chg-schools', fromId, toId],
-    `SELECT DISTINCT school FROM salaries WHERE snapshot_id IN (${A}, ${B}) AND school IS NOT NULL ORDER BY school`,
+    `SELECT school FROM (
+        SELECT school FROM salaries WHERE snapshot_id = ${A} AND school IS NOT NULL GROUP BY school
+        INTERSECT
+        SELECT school FROM salaries WHERE snapshot_id = ${B} AND school IS NOT NULL GROUP BY school
+     ) ORDER BY school`,
     enabled
   );
+  const deptSchoolClause = filterSchool ? ` AND school = ${sqlStr(filterSchool)}` : '';
   const { data: deptOpts } = useSql<{ department: string }>(
     ['chg-depts', fromId, toId, filterSchool ?? ''],
-    `SELECT DISTINCT department FROM salaries WHERE snapshot_id IN (${A}, ${B}) AND department IS NOT NULL
-     ${filterSchool ? `AND school = ${sqlStr(filterSchool)}` : ''} ORDER BY department`,
+    `SELECT department FROM (
+        SELECT department FROM salaries WHERE snapshot_id = ${A} AND department IS NOT NULL${deptSchoolClause} GROUP BY department
+        INTERSECT
+        SELECT department FROM salaries WHERE snapshot_id = ${B} AND department IS NOT NULL${deptSchoolClause} GROUP BY department
+     ) ORDER BY department`,
     enabled
   );
+
+  // Drop a selected school/department that isn't present in both snapshots (e.g. after moving "From"
+  // across the 2025 reorg) so the panel reverts to a valid scope instead of reading as all-new-hires.
+  useEffect(() => {
+    if (!schoolOpts || !filterSchool) return;
+    if (!schoolOpts.some((x) => x.school === filterSchool)) { setFilterSchool(null); setFilterDept(null); }
+  }, [schoolOpts, filterSchool]);
+  useEffect(() => {
+    if (!deptOpts || !filterDept) return;
+    if (!deptOpts.some((x) => x.department === filterDept)) setFilterDept(null);
+  }, [deptOpts, filterDept]);
 
   // Restrict both sides to people with a paid appointment so unpaid $0 affiliates don't read as
   // joiners/leavers (a $0-only person has NULL personPay and is dropped by the HAVING).
@@ -182,6 +204,10 @@ export function ChangesPanel() {
           onChange={setFilterDept}
         />
       </Group>
+      <Text size="xs" c="dimmed">
+        Division/department filters list only units present in both snapshots; some were renamed or split
+        in the 2025 reorganization, so a unit may not be selectable across that boundary.
+      </Text>
 
       {s && enabled && (
         <Text size="sm" c="dimmed">
