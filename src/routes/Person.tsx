@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine,
 } from 'recharts';
 import { IconAlertTriangle, IconPlus } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
@@ -38,6 +38,56 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
     </Paper>
   );
 }
+
+/** Title-change marker on the actual-pay line: a diamond with a faint halo (Recharts injects cx/cy). */
+function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
+  if (cx == null || cy == null) return <g />;
+  const s = 6;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={11} fill="var(--mantine-color-indigo-6)" opacity={0.15} />
+      <path
+        d={`M${cx},${cy - s} L${cx + s},${cy} L${cx},${cy + s} L${cx - s},${cy} Z`}
+        fill="var(--mantine-color-indigo-7)"
+        stroke="var(--mantine-color-body)"
+        strokeWidth={1.5}
+      />
+    </g>
+  );
+}
+
+/** Custom legend below the trend chart, explaining the title-era demarcations. */
+function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
+  const item = (swatch: ReactNode, label: string) => (
+    <Group gap={6} wrap="nowrap" align="center">
+      {swatch}
+      <Text size="xs" c="dimmed">{label}</Text>
+    </Group>
+  );
+  return (
+    <Group gap="lg" mt="xs" wrap="wrap">
+      {item(
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-indigo-6)" strokeWidth={2} /></svg>,
+        'Actual pay',
+      )}
+      {item(
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="5 3" /></svg>,
+        'Title median — resets at each title change',
+      )}
+      {hasTitleChange && item(
+        <svg width={14} height={14} aria-hidden><path d="M7,1 L13,7 L7,13 L1,7 Z" fill="var(--mantine-color-indigo-7)" /></svg>,
+        'Title change',
+      )}
+      {hasTitleChange && item(
+        <svg width={10} height={14} aria-hidden><line x1={5} y1={1} x2={5} y2={13} stroke="var(--mantine-color-gray-4)" strokeWidth={1} strokeDasharray="2 3" /></svg>,
+        'New title era',
+      )}
+    </Group>
+  );
+}
+
+/** Short label for the vertical title-era divider so long titles don't overrun the chart. */
+const shortTitle = (s: string | null) => (s && s.length > 16 ? `${s.slice(0, 15)}…` : s ?? '');
 
 interface Row {
   first_name: string | null;
@@ -136,8 +186,20 @@ export default function Person() {
   );
   const trendData = useMemo(() => {
     const med = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med]));
-    return trend.map((t) => ({ ...t, med: med.get(t.id) ?? null }));
+    // `era` increments at each title change so the median can be drawn as disconnected per-title segments.
+    let era = 0;
+    return trend.map((t, i) => {
+      if (i > 0 && t.job_code !== trend[i - 1].job_code) era++;
+      return { ...t, med: med.get(t.id) ?? null, era };
+    });
   }, [trend, titleMedRows]);
+
+  // Distinct title eras (for disconnected median segments) and the points where the title changes.
+  const eras = useMemo(() => [...new Set(trendData.map((t) => t.era))], [trendData]);
+  const titleChanges = useMemo(
+    () => trendData.filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
+    [trendData],
+  );
 
   // Appointment count per snapshot (for the "split" flag in the history table).
   const apptCounts = useMemo(() => {
@@ -529,22 +591,47 @@ export default function Person() {
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Salary over time</Text>
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
+          <LineChart data={trendData} margin={{ left: 12, right: 12, top: 18 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
             <Tooltip content={<TrendTooltip />} />
-            <Legend />
-            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />
+            {/* Faint divider + new-title label at each title change, segmenting the chart into title eras. */}
+            {titleChanges.map((t) => (
+              <ReferenceLine
+                key={`div-${t.id}`}
+                x={t.label}
+                stroke="var(--mantine-color-gray-4)"
+                strokeWidth={1}
+                strokeDasharray="2 4"
+                label={{ value: shortTitle(t.title), position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }}
+              />
+            ))}
+            {/* Title median drawn as one disconnected segment per era — old/new titles are different baselines. */}
+            {eras.map((e) => (
+              <Line
+                key={`med-${e}`}
+                type="monotone"
+                dataKey={(d) => (d.era === e ? d.med : null)}
+                name="Title median"
+                stroke="var(--mantine-color-gray-5)"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                dot={false}
+                connectNulls={false}
+                legendType="none"
+                isAnimationActive={false}
+              />
+            ))}
             <Line type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
-            {trendData.map((t, i) =>
-              i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
-                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-indigo-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
-              ) : null
+            {titleChanges.map((t) =>
+              t.salary != null ? (
+                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} shape={<TitleChangeDot />} />
+              ) : null,
             )}
           </LineChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.</Text>
+        <TrendLegend hasTitleChange={titleChanges.length > 0} />
         <ChartData caption="Salary over time" columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])} />
       </Card>
         </Tabs.Panel>
