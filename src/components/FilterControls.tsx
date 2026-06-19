@@ -1,28 +1,51 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Group, Button, Popover, Stack, MultiSelect, Pill, Indicator, Text } from '@mantine/core';
 import { IconFilter, IconFilterFilled } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
-import { sqlStr } from '../lib/duckdb';
-import { FACETS } from '../lib/queries';
+import { FACETS, whereAll, snapWhere, filterKey } from '../lib/queries';
+import { scopeKey } from '../state/controls';
 import { optionDropdownProps } from '../lib/selectProps';
 
 function FacetMultiSelect({ field, label, searchable }: { field: string; label: string; searchable?: boolean }) {
-  const { filters, setFilter } = useControls();
+  const { scope, filters, setFilter } = useControls();
   const snap = useActiveSnapshotId();
+  const selected = useMemo(() => filters[field] ?? [], [filters, field]);
+
+  // Options cascade: a facet's choices reflect the active snapshot + scope + every OTHER active filter
+  // (excluding itself so multi-select stays OR-within-a-facet). This keeps all controls interconnected.
+  const otherFilters = useMemo(() => {
+    const o = { ...filters };
+    delete o[field];
+    return o;
+  }, [filters, field]);
+
   const { data } = useSql<{ v: string }>(
-    ['facet', field, snap ?? ''],
-    `SELECT DISTINCT ${field} v FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${field} IS NOT NULL ORDER BY v LIMIT 500`,
+    ['facet', field, snap ?? '', scopeKey(scope), filterKey(otherFilters)],
+    `SELECT DISTINCT ${field} v FROM salaries
+     WHERE ${snapWhere(snap ?? '')} AND ${whereAll(scope, otherFilters)} AND ${field} IS NOT NULL
+     ORDER BY v LIMIT 500`,
     !!snap
   );
+
+  const options = useMemo(() => (data ?? []).map((d) => d.v), [data]);
+
+  // Auto-remove selected values that are no longer possible under the current constraints.
+  useEffect(() => {
+    if (!data) return; // wait until options have loaded
+    const valid = new Set(options);
+    const pruned = selected.filter((v) => valid.has(v));
+    if (pruned.length !== selected.length) setFilter(field, pruned);
+  }, [data, options, selected, field, setFilter]);
+
   return (
     <MultiSelect
       {...optionDropdownProps}
       size="xs"
       label={label}
       placeholder="Any"
-      data={(data ?? []).map((d) => d.v)}
-      value={filters[field] ?? []}
+      data={options}
+      value={selected}
       onChange={(v) => setFilter(field, v)}
       searchable={searchable}
       clearable
@@ -48,6 +71,7 @@ export function FilterControls() {
         shadow="xl"
         radius="md"
         trapFocus
+        keepMounted
         onOpen={() => setOpened(true)}
         onClose={() => setOpened(false)}
       >

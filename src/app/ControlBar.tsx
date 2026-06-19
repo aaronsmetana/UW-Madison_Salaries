@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconInfoCircle } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
@@ -24,11 +25,19 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   const snapshots = summary?.snapshots ?? [];
   const latest = snapshots[snapshots.length - 1];
 
+  // School list follows the active snapshot (a school may not exist in every month/year).
+  const snapId = activeSnapshot ?? latest?.id;
   const { data: schools } = useSql<{ school: string }>(
-    ['scope-schools', latest?.id ?? ''],
-    `SELECT DISTINCT school FROM salaries WHERE school IS NOT NULL AND snapshot_id = ${sqlStr(latest?.id ?? '')} ORDER BY school`,
-    !!latest
+    ['scope-schools', snapId ?? ''],
+    `SELECT DISTINCT school FROM salaries WHERE school IS NOT NULL AND snapshot_id = ${sqlStr(snapId ?? '')} ORDER BY school`,
+    !!snapId
   );
+
+  // If the scoped school isn't in the active snapshot, fall back to All UW (keeps the view non-empty).
+  useEffect(() => {
+    if (!schools || scope.kind !== 'school') return;
+    if (!schools.some((s) => s.school === scope.value)) setScope({ kind: 'all' });
+  }, [schools, scope, setScope]);
 
   const scopeValue = scope.kind === 'school' ? `school:${scope.value}` : 'all';
   const scopeOptions = [

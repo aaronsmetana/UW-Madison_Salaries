@@ -107,3 +107,8 @@ export function scopeLabel(scope: Scope): string {
   if (scope.kind === 'department') return scope.value;
   return 'All UW';
 }
+
+/** Stable string key for the active scope (for query caching). */
+export function scopeKey(scope: Scope): string {
+  return scope.kind === 'all' ? 'all' : `${scope.kind}:${scope.value}`;
+}
