@@ -1,9 +1,9 @@
 import { useState, useMemo, useId, useEffect, type KeyboardEvent } from 'react';
-import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip } from '@mantine/core';
+import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip, Badge } from '@mantine/core';
 import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
-import { useSql } from '../lib/hooks';
+import { useSql, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { fullName } from '../lib/format';
 
@@ -14,6 +14,7 @@ interface Hit {
   school: string | null;
   title: string | null;
   max_appts: number;
+  last_date: string | null;
 }
 
 export function SearchBox({
@@ -51,13 +52,19 @@ export function SearchBox({
         arg_max(last_name, snapshot_date)  AS ln,
         arg_max(school, snapshot_date)     AS school,
         arg_max(title, snapshot_date)      AS title,
-        max(per_snap)                      AS max_appts
+        max(per_snap)                      AS max_appts,
+        max(snapshot_date)                 AS last_date
      FROM m
      GROUP BY person_key
      ORDER BY ln, fn
      LIMIT 25`,
     enabled
   );
+
+  // Latest campus snapshot date — anyone whose last record predates it is no longer in the data
+  // (likely departed). Mirrors the PersonDashboard "departed" check.
+  const { data: summary } = useSummary();
+  const campusLatestDate = summary?.snapshots?.[summary.snapshots.length - 1]?.date ?? null;
 
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
@@ -147,9 +154,8 @@ export function SearchBox({
             {data.map((h, i) => {
               const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
               const multiAppt = (h.max_appts ?? 0) > 1;
-              const flags: string[] = [];
-              if (sharedName) flags.push('Multiple people share this name — double-check this is the right person.');
-              if (multiAppt) flags.push('Has multiple appointment entries in a snapshot (e.g., split or joint roles).');
+              const inactive = campusLatestDate != null && h.last_date != null && String(h.last_date) < String(campusLatestDate);
+              const dim = inactive ? 0.55 : 1; // heavily grey out departed employees' text
               return (
                 <UnstyledButton
                   key={h.person_key}
@@ -165,18 +171,32 @@ export function SearchBox({
                     background: i === active ? 'var(--mantine-color-default-hover)' : undefined,
                   }}
                 >
-                  <Group wrap="nowrap" gap="sm">
-                    <Text size="md" fw={500} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  <Group wrap="nowrap" gap="xs">
+                    <Text size="md" fw={500} c={inactive ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap', flexShrink: 0, opacity: dim }}>
                       {fullName(h.fn, h.ln)}
                     </Text>
-                    {flags.length > 0 && (
-                      <Tooltip label={flags.join(' ')} multiline w={260} withArrow position="top">
+                    {inactive && (
+                      <Tooltip label="Not in the latest snapshot — may no longer be employed." withArrow position="top">
+                        <Badge size="xs" radius="sm" variant="light" color="gray" tt="none" style={{ flexShrink: 0, cursor: 'pointer' }}>
+                          Former
+                        </Badge>
+                      </Tooltip>
+                    )}
+                    {multiAppt && (
+                      <Tooltip label="Has multiple appointments in a snapshot (e.g., split or joint roles)." withArrow position="top">
+                        <Badge size="xs" radius="sm" variant="default" tt="none" fw={500} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                          Multiple roles
+                        </Badge>
+                      </Tooltip>
+                    )}
+                    {sharedName && (
+                      <Tooltip label="Multiple people share this name — double-check this is the right person." multiline w={260} withArrow position="top">
                         <span style={{ display: 'inline-flex', flexShrink: 0 }}>
                           <IconAlertTriangle size={14} color="var(--mantine-color-yellow-6)" />
                         </span>
                       </Tooltip>
                     )}
-                    <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0 }}>
+                    <Text size="sm" c="dimmed" lineClamp={1} style={{ minWidth: 0, opacity: dim }}>
                       {[h.title, h.school].filter(Boolean).join(' · ')}
                     </Text>
                   </Group>
