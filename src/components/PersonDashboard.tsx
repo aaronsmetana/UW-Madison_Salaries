@@ -50,11 +50,12 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <Paper withBorder radius="md" p="sm">
       <Text size="xs" c="dimmed">{label}</Text>
       <Text fw={700} fz="lg">{value}</Text>
+      {sub && <Text size="xs" c="dimmed">{sub}</Text>}
     </Paper>
   );
 }
@@ -154,6 +155,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const lastSalary = trend[trend.length - 1]?.salary ?? null;
   const lastRate = trend[trend.length - 1]?.rate ?? null; // full-time rate, for the pay-band placement
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
+  // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
+  const firstDate = trend[0]?.date ?? null;
+  const lastDate = trend[trend.length - 1]?.date ?? null;
+  const spanYears = firstDate && lastDate ? (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
+  const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
+  const oldestAgeYears = firstDate ? (Date.now() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
 
   const careerLine = useMemo(() => {
     if (!trend.length) return null;
@@ -161,14 +168,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     const lastTitle = trend[trend.length - 1].title;
     const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
     const hireYear = hire ? String(hire).slice(0, 4) : null;
-    const growth = totalChange != null ? ` (${totalChange > 0 ? '+' : ''}${pct(totalChange)} over ${num(trend.length)} salary snapshots)` : '';
+    const span = spanYears != null && spanYears >= 0.1 ? `${spanYears.toFixed(1)} years of salary data` : null;
+    const growth = totalChange != null && span ? ` (${totalChange > 0 ? '+' : ''}${pct(totalChange)} over ${span})` : '';
     if (firstTitle && lastTitle && firstTitle !== lastTitle) {
       return `${hireYear ? `Joined ${hireYear} as ${firstTitle}` : `Started as ${firstTitle}`}; now ${lastTitle}${growth}.`;
     }
     const t = lastTitle ?? firstTitle;
     if (!t) return null;
     return `${t}${hireYear ? ` since ${hireYear}` : ''}${growth}.`;
-  }, [trend, rows, totalChange]);
+  }, [trend, rows, totalChange, spanYears]);
 
   const band = useMemo(() => {
     if (!latest || latest.grade_number == null || !grades) return null;
@@ -245,7 +253,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Stat label="Current salary" value={usd(lastSalary)} />
         <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
         <Stat label="Total growth (first→latest)" value={totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`} />
-        <Stat label="Salary snapshots on record" value={num(trend.length)} />
+        <Stat
+          label="Salary snapshots on record"
+          value={num(trend.length)}
+          sub={oldestLabel ? `oldest ${oldestLabel}${oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}` : undefined}
+        />
         <Stat label="Among title peers" value={peerPct != null ? `top ${100 - peerPct}%` : '—'} />
         <Stat label="All-UW standing" value={standing ? `more than ${standing.uw}%` : '—'} />
         {standing?.sch != null && <Stat label={`Within ${latest?.school ?? 'school'}`} value={`more than ${standing.sch}%`} />}

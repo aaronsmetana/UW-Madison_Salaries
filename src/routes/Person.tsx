@@ -163,6 +163,12 @@ export default function Person() {
   const firstSalary = trend[0]?.salary ?? null; // actual paid
   const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
+  // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
+  const firstDate = trend[0]?.date ?? null;
+  const lastDate = trend[trend.length - 1]?.date ?? null;
+  const spanYears = firstDate && lastDate ? (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
+  const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
+  const oldestAgeYears = firstDate ? (Date.now() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
   // Full-time rate (and its growth) — shown alongside actual pay where they diverge (FTE changes).
   const firstRate = trend[0]?.rate ?? null;
   const lastRate = trend[trend.length - 1]?.rate ?? null;
@@ -182,12 +188,12 @@ export default function Person() {
     const chg = totalChange == null ? null
       : chgDiffer && rateChange != null ? `actual ${p0(totalChange)} · rate ${p0(rateChange)}`
       : p0(totalChange);
-    const span = `${num(trend.length)} salary snapshots`;
+    const span = spanYears != null && spanYears >= 0.1 ? `${spanYears.toFixed(1)} years of salary data` : null;
     if (firstTitle && firstTitle !== latestTitle) {
-      return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}${chg ? ` (${chg} over ${span})` : ''}.`;
+      return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}${chg && span ? ` (${chg} over ${span})` : ''}.`;
     }
-    return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}${chg ? ` — ${chg} over ${span}` : ''}.`;
-  }, [trend, latest, rows, totalChange, rateChange, chgDiffer]);
+    return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}${chg && span ? ` — ${chg} over ${span}` : ''}.`;
+  }, [trend, latest, rows, totalChange, rateChange, chgDiffer, spanYears]);
 
   const band = useMemo(() => {
     if (!latest || latest.grade_number == null || !grades) return null;
@@ -337,6 +343,11 @@ export default function Person() {
               <Card withBorder padding="md">
                 <Text size="xs" c="dimmed">Salary snapshots on record</Text>
                 <Text fw={600}>{num(trend.length)}</Text>
+                {oldestLabel && (
+                  <Text size="xs" c="dimmed">
+                    oldest {oldestLabel}{oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}
+                  </Text>
+                )}
               </Card>
             </SimpleGrid>
 
