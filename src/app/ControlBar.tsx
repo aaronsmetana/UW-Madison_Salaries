@@ -4,7 +4,7 @@ import { IconBuildingBank, IconCalendar, IconInfoCircle } from '@tabler/icons-re
 import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { FilterControls } from '../components/FilterControls';
+import { FilterControls, ActiveFilters } from '../components/FilterControls';
 import { optionDropdownProps } from '../lib/selectProps';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
@@ -119,27 +119,29 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     </>
   );
 
-  const actions = (
-    <>
-      <FilterControls />
-      <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
-        {({ copied, copy }) => (
-          <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>
-            {copied ? 'Copied!' : 'Copy link'}
-          </Button>
-        )}
-      </CopyButton>
-    </>
+  const copyLink = (
+    <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
+      {({ copied, copy }) => (
+        <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>
+          {copied ? 'Copied!' : 'Copy link'}
+        </Button>
+      )}
+    </CopyButton>
   );
 
-  // Inline: an in-content panel (used on Compare) sharing the page background, controls left / actions right.
+  // Inline: an in-content panel (used on Compare/Explore) sharing the page background. Controls left,
+  // actions right — and the Filters button stays put: active-filter chips flow into their own row below.
   if (inline) {
     return (
       <Paper withBorder radius="md" px="sm" py="xs">
         <Group justify="space-between" gap="md" wrap="wrap">
           <Group gap="md" wrap="wrap" align="center">{lens}</Group>
-          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>{actions}</Group>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <FilterControls />
+            {copyLink}
+          </Group>
         </Group>
+        <ActiveFilters standalone />
       </Paper>
     );
   }
@@ -155,7 +157,9 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     >
       {lens}
       <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>
-        {actions}
+        <FilterControls />
+        <ActiveFilters />
+        {copyLink}
         <Badge variant="light" color="indigo">
           {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
         </Badge>

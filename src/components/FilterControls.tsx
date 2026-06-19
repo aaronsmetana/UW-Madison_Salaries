@@ -54,28 +54,27 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
 }
 
 export function FilterControls() {
-  const { filters, setFilter, clearFilters } = useControls();
+  const { filters, clearFilters } = useControls();
   const count = Object.values(filters).reduce((a, v) => a + v.length, 0);
   // Track the popover's open state so the button can show a clear "toggled on" look.
   const [opened, setOpened] = useState(false);
   const active = opened || count > 0;
 
   return (
-    <Group gap="xs" wrap="nowrap">
-      <Popover
-        position="bottom-start"
-        withArrow
-        arrowSize={12}
-        arrowOffset={16}
-        arrowPosition="side"
-        shadow="xl"
-        radius="md"
-        trapFocus
-        keepMounted
-        onOpen={() => setOpened(true)}
-        onClose={() => setOpened(false)}
-      >
-        <Popover.Target>
+    <Popover
+      position="bottom-start"
+      withArrow
+      arrowSize={12}
+      arrowOffset={16}
+      arrowPosition="side"
+      shadow="xl"
+      radius="md"
+      trapFocus
+      keepMounted
+      onOpen={() => setOpened(true)}
+      onClose={() => setOpened(false)}
+    >
+      <Popover.Target>
           {/* Notification badge with the applied-filter count, attached to the button. */}
           <Indicator
             label={count}
@@ -127,18 +126,52 @@ export function FilterControls() {
             </Stack>
           </Stack>
         </Popover.Dropdown>
-      </Popover>
-      {Object.entries(filters).flatMap(([field, vals]) =>
-        vals.map((v) => (
-          <Pill
-            key={`${field}:${v}`}
-            withRemoveButton
-            onRemove={() => setFilter(field, (filters[field] ?? []).filter((x) => x !== v))}
-          >
-            {v}
-          </Pill>
-        ))
+    </Popover>
+  );
+}
+
+/**
+ * The applied filters as removable chips with a trailing "Clear all". Rendered separately from the
+ * Filters button so chips never shove the button around. `standalone` wraps them in a labeled,
+ * divided row — the dedicated "Active filters" area below the control bar.
+ */
+export function ActiveFilters({ standalone = false }: { standalone?: boolean }) {
+  const { filters, setFilter, clearFilters } = useControls();
+  const chips = Object.entries(filters).flatMap(([field, vals]) => vals.map((v) => ({ field, v })));
+  if (chips.length === 0) return null;
+
+  const body = (
+    <Group gap="xs" wrap="wrap" align="center">
+      {standalone && (
+        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>
+          Active filters
+        </Text>
       )}
+      {chips.map(({ field, v }) => (
+        <Pill
+          key={`${field}:${v}`}
+          withRemoveButton
+          onRemove={() => setFilter(field, (filters[field] ?? []).filter((x) => x !== v))}
+        >
+          {v}
+        </Pill>
+      ))}
+      <Button size="compact-xs" variant="subtle" color="gray" onClick={clearFilters}>
+        Clear all
+      </Button>
     </Group>
+  );
+
+  if (!standalone) return body;
+  return (
+    <div
+      style={{
+        marginTop: 'var(--mantine-spacing-xs)',
+        paddingTop: 'var(--mantine-spacing-xs)',
+        borderTop: '1px solid var(--mantine-color-default-border)',
+      }}
+    >
+      {body}
+    </div>
   );
 }
