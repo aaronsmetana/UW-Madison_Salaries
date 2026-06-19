@@ -57,7 +57,7 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
 }
 
 /** Custom legend below the trend chart, explaining the title-era demarcations. */
-function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
+function TrendLegend({ hasTitleChange, showFte }: { hasTitleChange: boolean; showFte: boolean }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
       {swatch}
@@ -73,6 +73,10 @@ function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
       {item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="5 3" /></svg>,
         'Title median — resets at each title change',
+      )}
+      {showFte && item(
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-teal-6)" strokeWidth={2} strokeDasharray="4 2" /></svg>,
+        'Appointment (FTE) — right axis',
       )}
       {hasTitleChange && item(
         <svg width={14} height={14} aria-hidden><path d="M7,1 L13,7 L7,13 L1,7 Z" fill="var(--mantine-color-indigo-7)" /></svg>,
@@ -200,6 +204,11 @@ export default function Person() {
     () => trendData.filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
     [trendData],
   );
+
+  // FTE (appointment level) only matters when it deviates from full-time at some point — otherwise a
+  // flat 100% line is just noise. Show a right-axis FTE line for anyone with a non-full snapshot.
+  const showFte = useMemo(() => trendData.some((t) => Math.abs((t.fte ?? 1) - 1) > 0.005), [trendData]);
+  const fteMax = useMemo(() => Math.max(1, ...trendData.map((t) => t.fte ?? 1)), [trendData]);
 
   // Appointment count per snapshot (for the "split" flag in the history table).
   const apptCounts = useMemo(() => {
@@ -594,12 +603,24 @@ export default function Person() {
           <LineChart data={trendData} margin={{ left: 12, right: 12, top: 18 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+            <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+            {showFte && (
+              <YAxis
+                yAxisId="fte"
+                orientation="right"
+                domain={[0, fteMax]}
+                width={56}
+                tick={{ fontSize: 12 }}
+                tickFormatter={(v) => `${Math.round(v * 100)}%`}
+                label={{ value: 'FTE', angle: 90, position: 'insideRight', style: { fill: 'var(--mantine-color-teal-7)', fontSize: 12, textAnchor: 'middle' } }}
+              />
+            )}
             <Tooltip content={<TrendTooltip />} />
             {/* Faint divider + new-title label at each title change, segmenting the chart into title eras. */}
             {titleChanges.map((t) => (
               <ReferenceLine
                 key={`div-${t.id}`}
+                yAxisId="pay"
                 x={t.label}
                 stroke="var(--mantine-color-gray-4)"
                 strokeWidth={1}
@@ -611,6 +632,7 @@ export default function Person() {
             {eras.map((e) => (
               <Line
                 key={`med-${e}`}
+                yAxisId="pay"
                 type="monotone"
                 dataKey={(d) => (d.era === e ? d.med : null)}
                 name="Title median"
@@ -623,15 +645,19 @@ export default function Person() {
                 isAnimationActive={false}
               />
             ))}
-            <Line type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Line yAxisId="pay" type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            {/* Appointment level (FTE) on a right 0–100% axis — only when the person is ever non-full-time. */}
+            {showFte && (
+              <Line yAxisId="fte" type="monotone" dataKey="fte" name="Appointment (FTE)" stroke="var(--mantine-color-teal-6)" strokeWidth={2} strokeDasharray="4 2" dot connectNulls isAnimationActive={false} legendType="none" />
+            )}
             {titleChanges.map((t) =>
               t.salary != null ? (
-                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} shape={<TitleChangeDot />} />
+                <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={t.label} y={t.salary} shape={<TitleChangeDot />} />
               ) : null,
             )}
           </LineChart>
         </ResponsiveContainer>
-        <TrendLegend hasTitleChange={titleChanges.length > 0} />
+        <TrendLegend hasTitleChange={titleChanges.length > 0} showFte={showFte} />
         <ChartData caption="Salary over time" columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])} />
       </Card>
         </Tabs.Panel>
