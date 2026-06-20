@@ -207,7 +207,7 @@ export function SearchBox({
                 >
                   {/* Top line: name (bold) + status badges. */}
                   <Group wrap="nowrap" gap="xs" align="center" style={{ minWidth: 0 }}>
-                    <Text size="md" fw={600} c={inactive ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap', flexShrink: 0, opacity: dim }}>
+                    <Text fz={20} fw={600} c={inactive ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap', flexShrink: 0, opacity: dim }}>
                       {fullName(h.fn, h.ln)}
                     </Text>
                     {inactive && (
