@@ -134,8 +134,9 @@ export function AppShellLayout() {
         </AppShell.Main>
       </AppShell>
 
-      {/* Floating "cart"-style selection tray — hidden on /compare (its selections are shown in-page). */}
-      {!loc.pathname.startsWith('/compare') && <SelectionTray />}
+      {/* Floating "cart"-style selection tray — hidden on /compare (selections shown in-page) and on
+          /reports (it's a tool, not part of the formal negotiation document). */}
+      {!loc.pathname.startsWith('/compare') && !loc.pathname.startsWith('/reports') && <SelectionTray />}
     </>
   );
 }

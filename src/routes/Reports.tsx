@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
-  Checkbox, NumberInput, TextInput, Alert, Accordion, ThemeIcon, Drawer,
+  Checkbox, NumberInput, TextInput, Alert, ThemeIcon, Drawer, Badge, Progress,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, IconAdjustments } from '@tabler/icons-react';
@@ -13,7 +13,7 @@ import { dropdownProps } from '../lib/selectProps';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
-import { SalaryLine } from '../components/SalaryLine';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, Cell } from 'recharts';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { SearchBox } from '../components/SearchBox';
 
@@ -29,7 +29,6 @@ interface TrayPerson { person_key: string; fn: string; ln: string; title: string
 const SECTIONS = [
   { value: 'highlights', label: 'Headline cards' },
   { value: 'peers', label: 'Peer comparison' },
-  { value: 'tenure', label: 'Tenure & growth (appendix)' },
 ];
 
 function ordinal(n: number): string {
@@ -87,6 +86,7 @@ export default function Reports() {
   const [superviseOn, setSuperviseOn] = useState(false);
   const [superviseCount, setSuperviseCount] = useState<number | ''>(0);
   const [superviseNote, setSuperviseNote] = useState('');
+  const [peersSupervise, setPeersSupervise] = useState(false); // assert the compared peers also supervise
   const supN = typeof superviseCount === 'number' ? superviseCount : 0;
   const supervises = superviseOn && supN > 0;
 
@@ -124,18 +124,19 @@ export default function Reports() {
     cmpReady && !!jobCode
   );
 
-  const { data: subjHistory } = useSql<{ label: string; date: string; pay: number }>(
-    ['rpt-subj-hist', subjectKey, metric],
-    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date, ${personPay(metric)} pay
-     FROM salaries WHERE person_key = ${sqlStr(subjectKey ?? '')} GROUP BY snapshot_id ORDER BY date`,
-    cmpReady
-  );
-
   const { data: trayPeople } = useSql<TrayPerson>(
     ['rpt-tray', personIds, snap ?? '', metric],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, ${personPay(metric)} pay
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
     type === 'comparison' && persons.length > 0 && !!snap
+  );
+
+  // Full pay history for everyone in the tray — powers the peer-vs-subject progression comparison.
+  const { data: peerHist } = useSql<{ person_key: string; date: string; pay: number }>(
+    ['rpt-peer-hist', personIds, metric],
+    `SELECT person_key, any_value(snapshot_date) date, ${personPay(metric)} pay
+     FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key, snapshot_id ORDER BY date`,
+    type === 'comparison' && persons.length > 0
   );
 
   const { data: cmpSchools } = useSql<SchoolCard>(
@@ -166,19 +167,6 @@ export default function Reports() {
     return cohort.length >= 5 ? median(cohort) : null;
   }, [peerListRows, tenureYears]);
 
-  const growth = useMemo(() => {
-    const hist = (subjHistory ?? []).filter((h) => h.pay > 0);
-    if (!hist.length) return null;
-    let raises = 0, sum = 0, streak = 0, longest = 0;
-    for (let i = 1; i < hist.length; i++) {
-      const d = hist[i].pay - hist[i - 1].pay;
-      if (d > 0) { raises++; sum += d / hist[i - 1].pay; streak = 0; }
-      else { streak++; longest = Math.max(longest, streak); }
-    }
-    const first = hist[0].pay, last = hist[hist.length - 1].pay;
-    return { totalPct: first ? (last - first) / first : null, raises, periods: Math.max(0, hist.length - 1), avgPct: raises ? sum / raises : null, longest };
-  }, [subjHistory]);
-
   const med = peer?.med ?? null; // market parity (title median) — shown as a secondary reference
 
   const otherPeers = useMemo(
@@ -194,18 +182,69 @@ export default function Reports() {
   const belowTarget = subjectPay != null && primaryTarget != null && subjectPay < primaryTarget;
   const targetDelta = belowTarget && primaryTarget != null && subjectPay != null ? primaryTarget - subjectPay : 0;
   const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
+  // Plain-language reason the target number was chosen (shown under the hero figure).
+  const targetBasis = expMedian != null
+    ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of tenure`
+    : peer?.p75 != null ? 'the 75th-percentile pay for this title' : 'the median pay for this title';
 
-  // ── Three fixed headline cards: percentile, salary gap, peers compared ──
+  // Largest gap to a single higher-paid peer (otherPeers is sorted highest-first).
+  const topPeer = otherPeers[0] ?? null;
+  const topPeerGap = topPeer && subjectPay != null ? topPeer.pay - subjectPay : 0;
+  // Deficit to the title median — the "basic correction to market baseline" framing.
+  const medianDeficit = med != null && subjectPay != null && subjectPay < med ? med - subjectPay : 0;
+
+  // Peer-vs-subject career progression (total growth + raise count) from full histories.
+  const progression = useMemo(() => {
+    const byPerson = new Map<string, number[]>();
+    for (const r of peerHist ?? []) {
+      if (r.pay == null || r.pay <= 0) continue;
+      const arr = byPerson.get(r.person_key) ?? [];
+      arr.push(r.pay);
+      byPerson.set(r.person_key, arr);
+    }
+    const calc = (a: number[]) => {
+      let raises = 0;
+      for (let i = 1; i < a.length; i++) if (a[i] > a[i - 1]) raises++;
+      const total = a.length >= 2 && a[0] ? (a[a.length - 1] - a[0]) / a[0] : null;
+      return { total, raises };
+    };
+    const peers = [...byPerson.entries()].filter(([k]) => k !== subjectKey).map(([, a]) => calc(a));
+    const subjArr = subjectKey ? byPerson.get(subjectKey) : undefined;
+    const subjC = subjArr ? calc(subjArr) : null;
+    const totals = peers.map((p) => p.total).filter((v): v is number => v != null);
+    return {
+      avgGrowth: totals.length ? totals.reduce((s, v) => s + v, 0) / totals.length : null,
+      avgRaises: peers.length ? peers.reduce((s, p) => s + p.raises, 0) / peers.length : null,
+      subjGrowth: subjC?.total ?? null,
+      subjRaises: subjC?.raises ?? null,
+    };
+  }, [peerHist, subjectKey]);
+
+  // Unified peer table + bar-chart rows — subject and peers together, highest-paid first.
+  const tableRows = useMemo(() => {
+    const rows: { key: string; name: string; title: string | null; pay: number; isSubject: boolean }[] = [];
+    if (subjectPay != null) rows.push({ key: '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, isSubject: true });
+    for (const p of otherPeers) rows.push({ key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, pay: p.pay, isSubject: false });
+    return rows.sort((a, b) => b.pay - a.pay);
+  }, [otherPeers, subjectPay, subjectName, subj]);
+
+  // Scales for the progression comparison bars.
+  const gMax = Math.max(progression.avgGrowth ?? 0, progression.subjGrowth ?? 0, 0.0001);
+  const rMax = Math.max(progression.avgRaises ?? 0, progression.subjRaises ?? 0, 1);
+
+  // ── Three fixed headline cards: percentile, largest peer gap, peers compared ──
   const cards = subjectPay == null ? [] : [
     {
       icon: <IconChartBar size={20} />, color: 'orange',
-      value: percentile != null ? `${ordinal(percentile)} pctile` : '—',
+      value: percentile != null ? `${ordinal(percentile)} percentile` : '—',
       label: peer?.n ? `among ${num(peer.n)} same-title peers` : 'of same-title peers',
     },
     {
-      icon: <IconUsers size={20} />, color: belowTarget ? 'red' : 'teal',
-      value: belowTarget ? `−${usd(targetDelta)}` : 'At parity',
-      label: belowTarget ? 'below the experience-adjusted parity target' : 'vs same-title peers',
+      icon: <IconUsers size={20} />, color: topPeerGap > 0 ? 'red' : 'teal',
+      value: topPeerGap > 0 ? `−${usd(topPeerGap)}` : belowTarget ? `−${usd(targetDelta)}` : 'At parity',
+      label: topPeerGap > 0 && topPeer
+        ? `vs ${fullName(topPeer.fn, topPeer.ln)}, the top-paid peer`
+        : belowTarget ? 'below the parity target' : 'vs same-title peers',
     },
     {
       icon: <IconUsersGroup size={20} />, color: 'indigo',
@@ -334,6 +373,12 @@ export default function Reports() {
                     onChange={(e) => setSuperviseNote(e.currentTarget.value)}
                     disabled={!superviseOn}
                   />
+                  <Checkbox
+                    label="The compared peers are also supervisors (comparable scope)"
+                    checked={peersSupervise}
+                    onChange={(e) => setPeersSupervise(e.currentTarget.checked)}
+                    disabled={!superviseOn}
+                  />
                 </Stack>
               </Drawer>
 
@@ -368,6 +413,9 @@ export default function Reports() {
                     </Text>
                     <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                       {usd(primaryTarget)}
+                    </Text>
+                    <Text size="sm" c="dimmed" mt={6}>
+                      Why this number: {usd(primaryTarget)} is {targetBasis} — i.e. parity for equal work and experience, not a premium.
                     </Text>
                     <Group gap="xl" mt="md" wrap="wrap">
                       <div>
@@ -408,48 +456,101 @@ export default function Reports() {
                   </SimpleGrid>
                 )}
 
-                {/* One simple scale: current · median · target (replaces the dense bullet charts) */}
-                {subjectPay != null && (med != null || primaryTarget != null) && (
+                {/* Deficit to median — frame the ask as a baseline correction, not a premium */}
+                {medianDeficit > 0 && (
+                  <Text size="sm" mb="lg">
+                    Even against the plain title median ({usd(med)}), {subjectFirst} sits{' '}
+                    <Text span fw={700} c="red.7">{usd(medianDeficit)}</Text> short — this request is a correction to the
+                    market baseline, not a premium.
+                  </Text>
+                )}
+
+                {/* Historical Investment & Progression Gap — peers' raises vs the subject's */}
+                {(progression.avgGrowth != null || progression.subjGrowth != null || progression.avgRaises != null) && (
+                  <Card withBorder radius="md" padding="lg" mb="lg" bg="var(--mantine-color-orange-light)">
+                    <Text size="sm" fw={700}>Historical Investment &amp; Progression Gap</Text>
+                    <Text size="xs" c="dimmed" mb="md">
+                      {subjectFirst}'s pay has grown far less than the peers now out-earning them — wage compression that compounds every year it goes uncorrected.
+                    </Text>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl">
+                      <div>
+                        <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.05em' }}>Total pay growth on record</Text>
+                        <ProgRow label="Peers (avg)" value={progression.avgGrowth} display={progression.avgGrowth != null ? pct(progression.avgGrowth) : '—'} max={gMax} color="gray.5" />
+                        <ProgRow label={subjectFirst} value={progression.subjGrowth} display={progression.subjGrowth != null ? pct(progression.subjGrowth) : '—'} max={gMax} color="red.6" emphasize />
+                      </div>
+                      <div>
+                        <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.05em' }}>Raises on record</Text>
+                        <ProgRow label="Peers (avg)" value={progression.avgRaises} display={progression.avgRaises != null ? progression.avgRaises.toFixed(1) : '—'} max={rMax} color="gray.5" />
+                        <ProgRow label={subjectFirst} value={progression.subjRaises} display={progression.subjRaises != null ? String(progression.subjRaises) : '—'} max={rMax} color="red.6" emphasize />
+                      </div>
+                    </SimpleGrid>
+                  </Card>
+                )}
+
+                {/* Salary gap vs direct peers — a simple, zero-based bar chart (replaces the dot scale) */}
+                {tableRows.length > 1 && (
                   <>
-                    <Text size="sm" fw={600} mb="xs">Where {subjectFirst} sits</Text>
-                    <SalaryLine current={subjectPay} median={med} target={primaryTarget} />
-                    <div style={{ height: 18 }} />
+                    <Text size="sm" fw={600} mb="xs">Salary Gap Compared to Direct Peers</Text>
+                    <ResponsiveContainer width="100%" height={Math.max(150, tableRows.length * 40)}>
+                      <BarChart data={tableRows} layout="vertical" margin={{ left: 8, right: 16, top: 6, bottom: 4 }}>
+                        <XAxis type="number" tickFormatter={(v) => usd(v)} tick={{ fontSize: 11 }} domain={[0, 'dataMax']} />
+                        <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12 }} />
+                        <Tooltip formatter={(v: number) => usd(v)} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
+                        {primaryTarget != null && (
+                          <ReferenceLine x={primaryTarget} stroke="var(--mantine-color-green-6)" strokeDasharray="4 3"
+                            label={{ value: 'Target', position: 'top', fontSize: 11, fill: 'var(--mantine-color-green-7)' }} />
+                        )}
+                        <Bar dataKey="pay" radius={[0, 4, 4, 0]} isAnimationActive={false}>
+                          {tableRows.map((r) => (
+                            <Cell key={r.key} fill={r.isSubject ? 'var(--mantine-color-indigo-6)' : 'var(--mantine-color-gray-5)'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div style={{ height: 10 }} />
                   </>
                 )}
 
-                {/* Peer comparison — the subject is the baseline first row; higher-paid peers below it */}
+                {/* Peer comparison — highest-paid first; the candidate is the highlighted anchor */}
                 {has('peers') && (
                   <>
                     <Text size="sm" fw={600} mb="xs">Peer comparison</Text>
                     {otherPeers.length > 0 ? (
-                      <Table striped highlightOnHover style={{ maxWidth: 820 }} mb="lg">
+                      <Table striped highlightOnHover style={{ maxWidth: 880 }} mb="lg">
                         <Table.Thead>
                           <Table.Tr>
                             <Table.Th>Name</Table.Th>
                             <Table.Th>Title</Table.Th>
+                            {superviseOn && <Table.Th>Staff managed</Table.Th>}
                             <Table.Th ta="right">Salary</Table.Th>
                             <Table.Th ta="right">vs {subjectFirst}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
-                          {/* Baseline row — the subject, softly highlighted */}
-                          <Table.Tr style={{ background: 'var(--mantine-color-indigo-light)' }}>
-                            <Table.Td><b>{subjectName}</b> <Text span size="xs" c="dimmed">(subject)</Text></Table.Td>
-                            <Table.Td>{subj?.title ?? '—'}</Table.Td>
-                            <Table.Td ta="right"><b>{usd(subjectPay)}</b></Table.Td>
-                            <Table.Td ta="right"><Text span size="xs" c="dimmed">baseline</Text></Table.Td>
-                          </Table.Tr>
-                          {otherPeers.map((p) => {
-                            const gap = p.pay - (subjectPay ?? 0); // how much more (or less) the peer earns
+                          {tableRows.map((r) => {
+                            const gap = r.pay - (subjectPay ?? 0); // how much more (or less) the peer earns
                             return (
-                              <Table.Tr key={p.person_key}>
-                                <Table.Td>{fullName(p.fn, p.ln)}</Table.Td>
-                                <Table.Td>{p.title ?? '—'}</Table.Td>
-                                <Table.Td ta="right">{usd(p.pay)}</Table.Td>
+                              <Table.Tr key={r.key} style={r.isSubject ? { background: 'var(--mantine-color-indigo-light)' } : undefined}>
+                                <Table.Td>
+                                  {r.isSubject
+                                    ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="indigo" tt="none" ml={4}>Parity Candidate</Badge></>
+                                    : r.name}
+                                </Table.Td>
+                                <Table.Td>{r.title ?? '—'}</Table.Td>
+                                {superviseOn && (
+                                  <Table.Td>
+                                    {r.isSubject ? `${supN} ${supN === 1 ? 'report' : 'reports'}` : peersSupervise ? 'Supervisor' : '—'}
+                                  </Table.Td>
+                                )}
+                                <Table.Td ta="right">{r.isSubject ? <b>{usd(r.pay)}</b> : usd(r.pay)}</Table.Td>
                                 <Table.Td ta="right">
-                                  <Text span fw={700} fz="sm" c={gap > 0 ? 'red.7' : gap < 0 ? 'teal.7' : 'dimmed'}>
-                                    {gap > 0 ? '+' : gap < 0 ? '−' : ''}{usd(Math.abs(gap))}
-                                  </Text>
+                                  {r.isSubject ? (
+                                    <Text span size="xs" c="dimmed">baseline</Text>
+                                  ) : (
+                                    <Text span fw={gap > 0 ? 800 : 700} fz={gap > 0 ? 'md' : 'sm'} c={gap > 0 ? 'red.7' : gap < 0 ? 'teal.7' : 'dimmed'}>
+                                      {gap > 0 ? '+' : gap < 0 ? '−' : ''}{usd(Math.abs(gap))}
+                                    </Text>
+                                  )}
                                 </Table.Td>
                               </Table.Tr>
                             );
@@ -460,6 +561,22 @@ export default function Reports() {
                       <Text size="sm" c="dimmed" mb="lg">Add more people to the tray to compare {subjectFirst} against direct peers.</Text>
                     )}
                   </>
+                )}
+
+                {/* Retention vs. replacement cost — the business case for saying yes */}
+                {subjectPay != null && (
+                  <Paper withBorder radius="md" p="md" mb="lg">
+                    <Text size="sm" fw={700} mb={4}>Retention vs. Replacement Cost</Text>
+                    <Text size="sm">
+                      {belowTarget ? `Granting this ${usd(targetDelta)} parity adjustment` : `Retaining ${subjectFirst}`} costs a fraction of turnover:
+                      replacing {subjectFirst} is widely estimated at <b>{usd(subjectPay * 0.5)}–{usd(subjectPay * 2)}</b> (roughly
+                      0.5×–2× annual salary in recruiting, lost productivity, and 6–12 months of ramp-up at 2026 market rates). Keeping
+                      proven institutional knowledge is the lower-cost, lower-risk choice.
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={6}>
+                      Replacement-cost range is an industry estimate — replace with your unit's actual recruiting/onboarding figures.
+                    </Text>
+                  </Paper>
                 )}
 
                 {/* Supervision callout — a real argument, kept in the printed document */}
@@ -479,34 +596,16 @@ export default function Reports() {
                 <div className="no-print">
                   <Divider my="lg" label="Appendix — supporting detail" labelPosition="center" />
 
-                  {has('tenure') && (
+                  {/* Market baseline — emphasize the correction to median, not the top of market */}
+                  {(tenureYears != null || med != null) && (
                     <>
-                      <Text size="sm" fw={600} mb="xs">Tenure &amp; growth</Text>
-                      <SimpleGrid cols={{ base: 2, sm: 2 }} mb="lg">
+                      <Text size="sm" fw={600} mb="xs">Market baseline</Text>
+                      <SimpleGrid cols={{ base: 2, sm: 3 }} mb="lg">
                         <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
-                        <Stat label="Longest no-raise streak" value={growth ? `${growth.longest} period${growth.longest === 1 ? '' : 's'}` : '—'} />
+                        {med != null && <Stat label="Title median" value={usd(med)} />}
+                        {med != null && <Stat label="Deficit to median" value={medianDeficit > 0 ? `−${usd(medianDeficit)}` : 'At/above median'} />}
                       </SimpleGrid>
                     </>
-                  )}
-
-                  {(peer || growth) && (
-                    <Accordion variant="contained" mb="lg">
-                      <Accordion.Item value="deep">
-                        <Accordion.Control>Deep statistical breakdown</Accordion.Control>
-                        <Accordion.Panel>
-                          <SimpleGrid cols={{ base: 2, sm: 4 }}>
-                            {peer?.p25 != null && <Stat label="25th pctile" value={usd(peer.p25)} />}
-                            {peer?.med != null && <Stat label="Median" value={usd(peer.med)} />}
-                            {peer?.p75 != null && <Stat label="75th pctile" value={usd(peer.p75)} />}
-                            {peer?.p90 != null && <Stat label="90th pctile" value={usd(peer.p90)} />}
-                            {peer?.lo != null && peer?.hi != null && <Stat label="Range" value={`${usd(peer.lo)} – ${usd(peer.hi)}`} />}
-                            {growth?.totalPct != null && <Stat label="Total growth" value={pct(growth.totalPct)} />}
-                            {growth && <Stat label="Raises" value={`${growth.raises} / ${growth.periods}`} />}
-                            {growth?.avgPct != null && <Stat label="Avg raise" value={pct(growth.avgPct)} />}
-                          </SimpleGrid>
-                        </Accordion.Panel>
-                      </Accordion.Item>
-                    </Accordion>
                   )}
 
                   {schools.length > 0 && (
@@ -549,6 +648,22 @@ export default function Reports() {
         </>
       )}
     </Stack>
+  );
+}
+
+/** One labelled comparison bar (peer vs subject) for the progression section. */
+function ProgRow({ label, value, display, max, color, emphasize }: {
+  label: string; value: number | null; display: string; max: number; color: string; emphasize?: boolean;
+}) {
+  const filled = value != null && max > 0 ? Math.max(3, Math.min(100, (value / max) * 100)) : 0;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <Group justify="space-between" gap="xs" mb={3}>
+        <Text size="sm" fw={emphasize ? 700 : 500}>{label}</Text>
+        <Text size="sm" fw={700} c={emphasize ? 'red.7' : undefined}>{display}</Text>
+      </Group>
+      <Progress value={filled} color={color} size="lg" radius="sm" />
+    </div>
   );
 }
 
