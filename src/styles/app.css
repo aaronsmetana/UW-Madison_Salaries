@@ -59,6 +59,20 @@ textarea:focus-visible,
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
 }
 
+/* Scope/division searchable picker: inset rounded "island" options. The hovered / keyboard-active /
+   selected division reads as a soft-gray floating chip (not a full-width filled bar). */
+:root .scope-option {
+  border-radius: 6px;
+}
+:root[data-mantine-color-scheme='light'] .scope-option:where(:hover, [data-combobox-active], [data-combobox-selected]) {
+  background-color: var(--mantine-color-gray-1);
+  color: inherit;
+}
+:root[data-mantine-color-scheme='dark'] .scope-option:where(:hover, [data-combobox-active], [data-combobox-selected]) {
+  background-color: var(--mantine-color-dark-5);
+  color: inherit;
+}
+
 /* Non-blocking global loading bar: a thin indeterminate strip pinned to the top. */
 .global-loading-bar {
   position: fixed;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
-import { IconBuildingBank, IconCalendar, IconInfoCircle } from '@tabler/icons-react';
+import { IconBuildingBank, IconCalendar, IconInfoCircle, IconSearch } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -36,19 +36,26 @@ function ScopeMenu({ scope, setScope, options }: {
   return (
     <Combobox
       store={combobox}
-      width={340}
+      width={380}
+      size="sm"
       position="bottom-start"
       shadow="md"
       withinPortal
+      classNames={{ option: 'scope-option' }}
       onOptionSubmit={(val) => {
         setScope(val.startsWith('school:') ? { kind: 'school', value: val.slice(7) } : { kind: 'all' });
         combobox.closeDropdown();
       }}
       styles={{
-        // Tight line-height keeps a wrapped name's two lines together; the option's vertical padding is
-        // the larger gap, so each division reads as one distinct block.
+        // No outer padding so the search header + list manage their own; 380px fits long names on one line.
+        dropdown: { padding: 0, maxWidth: '92vw' },
+        // Embedded search header: borderless input with a divider separating it from the list below.
+        search: { border: 'none', borderRadius: 0, borderBottom: '1px solid var(--mantine-color-default-border)' },
+        // Inset "island": 6px around the list so each option highlight floats as a rounded chip.
+        options: { padding: 6 },
+        // Tight line-height keeps a wrapped name's two lines together; the vertical padding is the larger
+        // gap, so each division reads as one distinct block.
         option: { lineHeight: 1.25, paddingTop: 8, paddingBottom: 8 },
-        dropdown: { maxWidth: '92vw' },
       }}
     >
       <Combobox.Target>
@@ -73,11 +80,12 @@ function ScopeMenu({ scope, setScope, options }: {
           value={search}
           onChange={(e) => setSearch(e.currentTarget.value)}
           placeholder="Filter divisions…"
+          leftSection={<IconSearch size={14} />}
         />
         <Combobox.Options mah={320} style={{ overflowY: 'auto' }}>
           {filtered.length > 0 ? (
             filtered.map((o) => (
-              <Combobox.Option value={o.value} key={o.value} active={o.value === scopeValue}>
+              <Combobox.Option value={o.value} key={o.value} selected={o.value === scopeValue}>
                 {o.label}
               </Combobox.Option>
             ))
