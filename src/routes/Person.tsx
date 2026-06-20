@@ -223,6 +223,23 @@ export default function Person() {
     );
   }, [rows]);
 
+  // Per-snapshot job-code summary so the history badges/Δ compare the SAME title across snapshots
+  // (not the adjacent row, which interleaves concurrent appointments and yields bogus "New title"/−100%).
+  const snapHistory = useMemo(() => {
+    const order: string[] = [];
+    const index = new Map<string, number>();
+    const bySnap = new Map<string, { date: string; jobs: Map<string, number> }>();
+    for (const r of historyRows) {
+      let s = bySnap.get(r.snapshot_id);
+      if (!s) { s = { date: String(r.snapshot_date), jobs: new Map() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
+      if (r.job_code != null) {
+        const actual = r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1);
+        s.jobs.set(r.job_code, (s.jobs.get(r.job_code) ?? 0) + actual);
+      }
+    }
+    return { order, index, bySnap };
+  }, [historyRows]);
+
   const tenureYears = useMemo(() => {
     const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
     if (!hire) return null;
@@ -707,12 +724,15 @@ export default function Person() {
           </Table.Thead>
           <Table.Tbody>
             {historyRows.map((r, i) => {
-              const prior = i > 0 ? historyRows[i - 1] : null;
-              const jobChanged = !!prior && r.job_code !== prior.job_code;
-              const sameDate = !!prior && String(r.snapshot_date) === String(prior.snapshot_date);
-              const ttcReclass = jobChanged && sameDate && (r.salary ?? 0) === (prior?.salary ?? 0);
+              // Compare to the SAME job code in the prior snapshot (not the adjacent interleaved row).
+              const pos = snapHistory.index.get(r.snapshot_id) ?? 0;
+              const priorId = pos > 0 ? snapHistory.order[pos - 1] : null;
+              const priorSnap = priorId ? snapHistory.bySnap.get(priorId) : null;
+              const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
+              const isNew = !!priorSnap && !!r.job_code && !inPrior;
+              const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
               const actual = r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1);
-              const priorActual = prior ? (prior.salary_fte_adjusted ?? (prior.salary ?? 0) * (prior.fte ?? 1)) : null;
+              const priorActual = inPrior ? priorSnap!.jobs.get(r.job_code!)! : null;
               const deltaPct = priorActual ? (actual - priorActual) / priorActual : null;
               return (
                 <Table.Tr key={`${r.snapshot_id}-${i}`}>
@@ -724,7 +744,7 @@ export default function Person() {
                   </Table.Td>
                   <Table.Td>
                     {r.title ?? '—'}
-                    {jobChanged && (
+                    {isNew && (
                       <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'indigo'}>
                         {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
                       </Badge>
