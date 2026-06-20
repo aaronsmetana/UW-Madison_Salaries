@@ -41,17 +41,16 @@ function ScopeMenu({ scope, setScope, options }: {
       position="bottom-start"
       shadow="md"
       withinPortal
-      classNames={{ option: 'scope-option' }}
+      classNames={{ option: 'scope-option', search: 'scope-search-pill' }}
       onOptionSubmit={(val) => {
         setScope(val.startsWith('school:') ? { kind: 'school', value: val.slice(7) } : { kind: 'all' });
         combobox.closeDropdown();
       }}
       styles={{
-        // No outer padding so the search header + list manage their own; 380px fits long names on one line.
+        // No outer padding so the sticky header + scroll area span the full width.
         dropdown: { padding: 0, maxWidth: '92vw' },
-        // Embedded search header: borderless input with a divider separating it from the list below.
-        search: { border: 'none', borderRadius: 0, borderBottom: '1px solid var(--mantine-color-default-border)' },
-        // Inset "island": 6px around the list so each option highlight floats as a rounded chip.
+        // Inset "island": 6px around the list so each option highlight floats as a rounded chip, clear of
+        // the scrollbar (which lives on the wrapping scroll container, not this padded list).
         options: { padding: 6 },
         // Tight line-height keeps a wrapped name's two lines together; the vertical padding is the larger
         // gap, so each division reads as one distinct block.
@@ -76,23 +75,31 @@ function ScopeMenu({ scope, setScope, options }: {
         </InputBase>
       </Combobox.Target>
       <Combobox.Dropdown>
-        <Combobox.Search
-          value={search}
-          onChange={(e) => setSearch(e.currentTarget.value)}
-          placeholder="Filter divisions…"
-          leftSection={<IconSearch size={14} />}
-        />
-        <Combobox.Options mah={320} style={{ overflowY: 'auto' }}>
-          {filtered.length > 0 ? (
-            filtered.map((o) => (
-              <Combobox.Option value={o.value} key={o.value} selected={o.value === scopeValue}>
-                {o.label}
-              </Combobox.Option>
-            ))
-          ) : (
-            <Combobox.Empty>No matching division</Combobox.Empty>
-          )}
-        </Combobox.Options>
+        {/* Sticky header: a contained, muted "pill" search field with breathing room from the walls,
+            and a divider beneath it cleanly separating the search zone from the list. */}
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--mantine-color-default-border)' }}>
+          <Combobox.Search
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            placeholder="Filter divisions…"
+            leftSection={<IconSearch size={14} />}
+          />
+        </div>
+        {/* Scroll on this wrapper (not the padded list), so the scrollbar sits outside the 6px island
+            gutter and never collides with an option's rounded highlight. */}
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          <Combobox.Options>
+            {filtered.length > 0 ? (
+              filtered.map((o) => (
+                <Combobox.Option value={o.value} key={o.value} selected={o.value === scopeValue}>
+                  {o.label}
+                </Combobox.Option>
+              ))
+            ) : (
+              <Combobox.Empty>No matching division</Combobox.Empty>
+            )}
+          </Combobox.Options>
+        </div>
       </Combobox.Dropdown>
     </Combobox>
   );
