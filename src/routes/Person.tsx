@@ -603,7 +603,9 @@ export default function Person() {
         <ResponsiveContainer width="100%" height={244}>
           <LineChart data={trendData} syncId="person-trend" margin={{ left: 12, right: 12, top: 18, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" hide />
+            {/* No date labels here (they live under the FTE chart), but keep a subtle baseline to "close"
+                the salary zone at its bottom edge. */}
+            <XAxis dataKey="label" tick={false} tickLine={false} height={8} axisLine={{ stroke: 'var(--mantine-color-default-border)' }} />
             <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
             <Tooltip content={<TrendTooltip />} />
             {/* Faint divider + new-title label at each title change, segmenting the chart into title eras. */}
@@ -644,13 +646,16 @@ export default function Person() {
           </LineChart>
         </ResponsiveContainer>
 
-        {/* Subtle whitespace separating the two data zones. */}
-        <div style={{ height: 12 }} />
+        {/* Distinct empty gap between the salary $0 baseline and the FTE 100% line; the vertical
+            gridlines break here because the two charts are separate containers. */}
+        <div style={{ height: 36 }} />
 
-        <ResponsiveContainer width="100%" height={96}>
+        <ResponsiveContainer width="100%" height={108}>
           <AreaChart data={trendData} syncId="person-trend" margin={{ left: 12, right: 12, top: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            {/* Shared date labels live only here; push them clear below the area fill. */}
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} tickMargin={10} height={34} />
+            {/* No rotated axis label — the % ticks sit flush under the salary chart's dollar figures. */}
             <YAxis
               yAxisId="fte"
               domain={[0, 1]}
@@ -658,7 +663,6 @@ export default function Person() {
               width={80}
               tick={{ fontSize: 12 }}
               tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              label={{ value: 'FTE', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-teal-7)', fontSize: 12, textAnchor: 'middle' } }}
             />
             {/* Cursor only — the single unified tooltip lives on the salary chart above (synced by syncId). */}
             <Tooltip content={() => null} />
