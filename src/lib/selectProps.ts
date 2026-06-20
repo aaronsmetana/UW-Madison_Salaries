@@ -17,15 +17,21 @@ const dropdownStyle: CSSProperties = {
   borderColor: CARD_BORDER,
   boxShadow: CARD_SHADOW,
 };
-const optionStyle: CSSProperties = { paddingTop: 9, paddingBottom: 9 };
+// Shared list-item tokens (identical to the Scope/Division picker): 14px text, tight line-height, 6px/8px
+// padding, and a 6px "island" buffer so the rounded soft-gray highlight (.app-dropdown-option) floats
+// inside the menu. `withCheckIcon: false` drops the checkmark — selection is shown by the chip instead.
+const optionsStyle: CSSProperties = { padding: 6 };
+const optionStyle: CSSProperties = { fontSize: 14, lineHeight: 1.25, padding: '6px 8px' };
+const dropdownClassNames = { input: 'merge-select-input', option: 'app-dropdown-option' };
 
 /** Drop in to any `Select`/`MultiSelect` for the merged-card dropdown look. Leaves the closed control
  *  height untouched — safe on compact (xs/sm) controls. */
 export const optionDropdownProps = {
   comboboxProps,
   maxDropdownHeight: 360,
-  classNames: { input: 'merge-select-input' },
-  styles: { dropdown: dropdownStyle, option: optionStyle },
+  withCheckIcon: false,
+  classNames: dropdownClassNames,
+  styles: { dropdown: dropdownStyle, options: optionsStyle, option: optionStyle },
 };
 
 /** Height of the prominent list pickers (Search Title Salaries, Compare add
@@ -37,6 +43,7 @@ const inputStyle: CSSProperties = { minHeight: PICKER_HEIGHT, height: PICKER_HEI
 export const bigPickerProps = {
   comboboxProps,
   maxDropdownHeight: 360,
-  classNames: { input: 'merge-select-input' },
-  styles: { dropdown: dropdownStyle, option: optionStyle, input: inputStyle },
+  withCheckIcon: false,
+  classNames: dropdownClassNames,
+  styles: { dropdown: dropdownStyle, options: optionsStyle, option: optionStyle, input: inputStyle },
 };

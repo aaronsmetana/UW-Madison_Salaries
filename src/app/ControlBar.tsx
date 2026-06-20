@@ -41,7 +41,7 @@ function ScopeMenu({ scope, setScope, options }: {
       position="bottom-start"
       shadow="md"
       withinPortal
-      classNames={{ option: 'scope-option', search: 'scope-search-pill' }}
+      classNames={{ option: 'app-dropdown-option', search: 'scope-search-pill' }}
       onOptionSubmit={(val) => {
         setScope(val.startsWith('school:') ? { kind: 'school', value: val.slice(7) } : { kind: 'all' });
         combobox.closeDropdown();
@@ -52,9 +52,8 @@ function ScopeMenu({ scope, setScope, options }: {
         // Inset "island": 6px around the list so each option highlight floats as a rounded chip, clear of
         // the scrollbar (which lives on the wrapping scroll container, not this padded list).
         options: { padding: 6 },
-        // Tight line-height keeps a wrapped name's two lines together; the vertical padding is the larger
-        // gap, so each division reads as one distinct block.
-        option: { lineHeight: 1.25, paddingTop: 8, paddingBottom: 8 },
+        // Same list-item tokens as every other dropdown (14px text, tight line-height, 6px/8px padding).
+        option: { fontSize: 14, lineHeight: 1.25, padding: '6px 8px' },
       }}
     >
       <Combobox.Target>
