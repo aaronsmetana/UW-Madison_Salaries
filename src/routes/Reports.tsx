@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
-  Checkbox, NumberInput, TextInput, Alert, Accordion, ThemeIcon,
+  Checkbox, NumberInput, TextInput, Alert, Accordion, ThemeIcon, Drawer,
 } from '@mantine/core';
-import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, IconClock } from '@tabler/icons-react';
+import { useDisclosure } from '@mantine/hooks';
+import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, IconAdjustments } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
-import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { dropdownProps } from '../lib/selectProps';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
-import { PeerRangeBar } from '../components/PeerRangeBar';
-import { PayBandBar } from '../components/PayBandBar';
+import { SalaryLine } from '../components/SalaryLine';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { SearchBox } from '../components/SearchBox';
 
@@ -27,11 +27,9 @@ interface PeerStat { n: number; lo: number | null; p25: number | null; med: numb
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; pay: number }
 
 const SECTIONS = [
-  { value: 'highlights', label: 'Highlights' },
-  { value: 'peers', label: 'Direct peers' },
-  { value: 'benchmark', label: 'Title benchmark' },
-  { value: 'band', label: 'Pay band' },
-  { value: 'tenure', label: 'Tenure & growth' },
+  { value: 'highlights', label: 'Headline cards' },
+  { value: 'peers', label: 'Peer comparison' },
+  { value: 'tenure', label: 'Tenure & growth (appendix)' },
 ];
 
 function ordinal(n: number): string {
@@ -51,8 +49,8 @@ export default function Reports() {
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
-  const { data: grades } = useGrades();
   const { items } = useTray();
+  const [settingsOpen, { open: openSettings, close: closeSettings }] = useDisclosure(false);
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = new Date().toISOString().slice(0, 10);
 
@@ -105,7 +103,6 @@ export default function Reports() {
   );
   const subj = subjRows?.[0];
   const subjectPay = subj?.pay ?? null;
-  const subjectRate = subj?.rate ?? null; // full-time rate, for the grade-band marker
   const jobCode = subj?.job_code ?? null;
 
   const { data: peerStatRows } = useSql<PeerStat>(
@@ -182,11 +179,6 @@ export default function Reports() {
     return { totalPct: first ? (last - first) / first : null, raises, periods: Math.max(0, hist.length - 1), avgPct: raises ? sum / raises : null, longest };
   }, [subjHistory]);
 
-  const band = useMemo(() => {
-    if (!subj || subj.grade_number == null || !grades) return null;
-    return grades.find((g) => g.grade === subj.grade_number && g.basis === subj.grade_basis) ?? null;
-  }, [subj, grades]);
-
   const med = peer?.med ?? null; // market parity (title median) — shown as a secondary reference
 
   const otherPeers = useMemo(
@@ -196,62 +188,31 @@ export default function Reports() {
       .sort((a, b) => b.pay - a.pay),
     [trayPeople, subjectKey, subjectPay]
   );
-  const topPaidPeer = otherPeers.filter((p) => p.pay > (subjectPay ?? 0)).sort((a, b) => b.pay - a.pay)[0];
 
   // ── Targets: experience/scope-adjusted is primary; market median is secondary ──
   const primaryTarget = expMedian ?? peer?.p75 ?? med ?? null;
   const belowTarget = subjectPay != null && primaryTarget != null && subjectPay < primaryTarget;
   const targetDelta = belowTarget && primaryTarget != null && subjectPay != null ? primaryTarget - subjectPay : 0;
   const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
-  const topPeerGap = topPaidPeer && subjectPay != null ? topPaidPeer.pay - subjectPay : null;
 
-  // ── Highlight reel: three punchy cards (only what sells the increase) ──
-  const highlights = useMemo(() => {
-    const cards: { icon: ReactNode; color: string; value: string; label: string }[] = [];
-    if (subjectPay == null) return cards;
-    if (percentile != null) {
-      cards.push({
-        icon: <IconChartBar size={20} />, color: 'orange',
-        value: `${ordinal(percentile)} percentile`,
-        label: tenureYears != null
-          ? `despite ${tenureYears.toFixed(1)} years of tenure`
-          : `among ${num(peer?.n)} ${subj?.title ?? 'peers'} at UW`,
-      });
-    }
-    if (topPeerGap != null && topPeerGap > 0 && topPaidPeer) {
-      cards.push({
-        icon: <IconUsers size={20} />, color: 'red',
-        value: `−${usd(topPeerGap)}`,
-        label: `vs ${fullName(topPaidPeer.fn, topPaidPeer.ln)} in a comparable role`,
-      });
-    } else if (belowTarget) {
-      cards.push({
-        icon: <IconUsers size={20} />, color: 'red',
-        value: `−${usd(targetDelta)}`,
-        label: 'below your experience-adjusted target',
-      });
-    }
-    if (supervises) {
-      cards.push({
-        icon: <IconUsersGroup size={20} />, color: 'indigo',
-        value: `${supN} ${supN === 1 ? 'report' : 'staff'}`,
-        label: `supervised beyond base title${superviseNote ? ` (${superviseNote})` : ''}`,
-      });
-    } else if (band && subjectPay < band.max) {
-      cards.push({
-        icon: <IconUsersGroup size={20} />, color: 'indigo',
-        value: `−${usd(band.max - subjectPay)}`,
-        label: `below grade ${subj?.grade_number} band maximum`,
-      });
-    } else if (tenureYears != null) {
-      cards.push({
-        icon: <IconClock size={20} />, color: 'indigo',
-        value: `${tenureYears.toFixed(1)} yrs`,
-        label: 'of experience to recognize',
-      });
-    }
-    return cards;
-  }, [subjectPay, percentile, tenureYears, peer, subj, topPeerGap, topPaidPeer, belowTarget, targetDelta, supervises, supN, superviseNote, band]);
+  // ── Three fixed headline cards: percentile, salary gap, peers compared ──
+  const cards = subjectPay == null ? [] : [
+    {
+      icon: <IconChartBar size={20} />, color: 'orange',
+      value: percentile != null ? `${ordinal(percentile)} pctile` : '—',
+      label: peer?.n ? `among ${num(peer.n)} same-title peers` : 'of same-title peers',
+    },
+    {
+      icon: <IconUsers size={20} />, color: belowTarget ? 'red' : 'teal',
+      value: belowTarget ? `−${usd(targetDelta)}` : 'At parity',
+      label: belowTarget ? 'below the experience-adjusted parity target' : 'vs same-title peers',
+    },
+    {
+      icon: <IconUsersGroup size={20} />, color: 'indigo',
+      value: num(peer?.n ?? 0),
+      label: 'same-title peers compared',
+    },
+  ];
 
   const benchmarkCsv = () => {
     const rows = (peerListRows ?? []).map((p) => ({ pay: p.pay, tenure_years: p.tenure?.toFixed?.(1) ?? '' }));
@@ -273,6 +234,11 @@ export default function Reports() {
             ]}
           />
           <Button.Group>
+            {type === 'comparison' && persons.length > 0 && (
+              <Button variant="default" leftSection={<IconAdjustments size={16} />} onClick={openSettings}>
+                Customize
+              </Button>
+            )}
             <Button
               variant="default"
               leftSection={<IconDownload size={16} />}
@@ -325,29 +291,29 @@ export default function Reports() {
             </Card>
           ) : (
             <>
-              {/* Controls (not printed) */}
-              <Card withBorder padding="lg" className="no-print">
-                <Group align="flex-end" wrap="wrap" gap="lg">
+              {/* Build controls live in a side panel so they don't clutter the document. */}
+              <Drawer opened={settingsOpen} onClose={closeSettings} position="right" size="sm" title="Customize report" className="no-print">
+                <Stack gap="md">
                   <Select
                     {...dropdownProps('md')}
                     label="Subject (raise case)"
                     data={persons.map((p) => ({ value: p.id, label: p.label }))}
                     value={subjectKey}
                     onChange={setSubjectKey}
-                    w={260}
                   />
-                </Group>
-                <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="md" mb={6} style={{ letterSpacing: '0.05em' }}>
-                  Include in report
-                </Text>
-                <Checkbox.Group value={sections} onChange={setSections}>
-                  <Group gap="lg">
-                    {SECTIONS.map((s) => (
-                      <Checkbox key={s.value} value={s.value} label={s.label} />
-                    ))}
-                  </Group>
-                </Checkbox.Group>
-                <Group align="flex-end" wrap="wrap" gap="md" mt="md">
+                  <div>
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.05em' }}>
+                      Include in report
+                    </Text>
+                    <Checkbox.Group value={sections} onChange={setSections}>
+                      <Stack gap="xs">
+                        {SECTIONS.map((s) => (
+                          <Checkbox key={s.value} value={s.value} label={s.label} />
+                        ))}
+                      </Stack>
+                    </Checkbox.Group>
+                  </div>
+                  <Divider />
                   <Checkbox
                     label="I also supervise, not as a responsibility of title"
                     checked={superviseOn}
@@ -358,7 +324,7 @@ export default function Reports() {
                     value={superviseCount}
                     onChange={(v) => setSuperviseCount(typeof v === 'number' ? v : 0)}
                     min={0}
-                    w={120}
+                    w={140}
                     disabled={!superviseOn}
                   />
                   <TextInput
@@ -366,70 +332,73 @@ export default function Reports() {
                     placeholder="e.g. a team of 8 / 4 direct reports"
                     value={superviseNote}
                     onChange={(e) => setSuperviseNote(e.currentTarget.value)}
-                    w={300}
                     disabled={!superviseOn}
                   />
-                </Group>
-              </Card>
+                </Stack>
+              </Drawer>
 
               {/* The report */}
               <Card withBorder padding="xl" className="print-area">
-                <Title order={3}>Salary Adjustment Justification — {subjectName}</Title>
-                <Text c="dimmed">
-                  {[subj?.title, subj?.grade_number != null ? `grade ${subj.grade_number}` : null, subj?.school]
-                    .filter(Boolean)
-                    .join(' · ')}
-                  {subj?.title ? ' · ' : ''}{snapLabel} · {METRIC_LABEL[metric]} · generated {generated}
+                <Title order={3}>Salary Adjustment Justification</Title>
+                <Text c="dimmed" mt={2}>
+                  Prepared for <Text span fw={600} c="bright">{subjectName}</Text>
+                  {` · ${[subj?.title, subj?.grade_number != null ? `grade ${subj.grade_number}` : null, subj?.school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ')}`}
                 </Text>
                 <Divider my="md" />
 
-                {/* Recommendation callout — the experience/scope-adjusted target is the hero number */}
-                <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="lg">
+                {/* The Ask — one persuasive sentence */}
+                <Text fz="lg" mb="lg">
                   {belowTarget && primaryTarget != null ? (
                     <>
-                      <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>
-                        Target salary — experience &amp; scope adjusted
-                      </Text>
-                      <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
-                        {usd(primaryTarget)}
-                      </Text>
-                      <Group gap="xl" mt="md" wrap="wrap">
-                        <div>
-                          <Text size="xs" c="dimmed">Current ({METRIC_LABEL[metric]})</Text>
-                          <Text fw={600} fz="lg">{usd(subjectPay)}</Text>
-                        </div>
-                        <div>
-                          <Text size="xs" c="dimmed">Suggested adjustment</Text>
-                          <Text fw={700} fz="lg" c="green.7">+{usd(targetDelta)} ({pct(targetPct)})</Text>
-                        </div>
-                        {med != null && (
-                          <div>
-                            <Text size="xs" c="dimmed">Title median (parity)</Text>
-                            <Text fw={500} fz="sm" c="dimmed">{usd(med)}</Text>
-                          </div>
-                        )}
-                      </Group>
+                      Requesting an adjustment from <b>{usd(subjectPay)}</b> to <b>{usd(primaryTarget)}</b>{' '}
+                      (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>) to reach parity with same-title peers.
                     </>
+                  ) : subjectPay != null ? (
+                    <>{subjectFirst} is at or above the parity target{primaryTarget != null ? ` (${usd(primaryTarget)})` : ''} — recommend maintaining current pay.</>
                   ) : (
-                    <Text fw={600}>
-                      {subjectPay != null
-                        ? `Current salary ${usd(subjectPay)}${primaryTarget != null ? ` is at or above the experience-adjusted target (${usd(primaryTarget)})` : ''}.`
-                        : 'No salary on record for the subject in this snapshot.'}
+                    'No salary on record for the subject in this snapshot.'
+                  )}
+                </Text>
+
+                {/* Hero target number — the experience/scope-adjusted target, only when below it */}
+                {belowTarget && primaryTarget != null && (
+                  <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="md">
+                    <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>
+                      Target salary — experience &amp; scope adjusted
                     </Text>
-                  )}
-                  {supervises && (
-                    <Text size="xs" c="dimmed" mt="sm">Plus supervisory scope ({supN} {supN === 1 ? 'report' : 'staff'}) beyond title.</Text>
-                  )}
-                </Paper>
+                    <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
+                      {usd(primaryTarget)}
+                    </Text>
+                    <Group gap="xl" mt="md" wrap="wrap">
+                      <div>
+                        <Text size="xs" c="dimmed">Current ({METRIC_LABEL[metric]})</Text>
+                        <Text fw={600} fz="lg">{usd(subjectPay)}</Text>
+                      </div>
+                      <div>
+                        <Text size="xs" c="dimmed">Suggested adjustment</Text>
+                        <Text fw={700} fz="lg" c="green.7">+{usd(targetDelta)} ({pct(targetPct)})</Text>
+                      </div>
+                      {med != null && (
+                        <div>
+                          <Text size="xs" c="dimmed">Title median (parity)</Text>
+                          <Text fw={500} fz="sm" c="dimmed">{usd(med)}</Text>
+                        </div>
+                      )}
+                    </Group>
+                    {supervises && (
+                      <Text size="xs" c="dimmed" mt="sm">Plus supervisory scope ({supN} {supN === 1 ? 'report' : 'staff'}) beyond title.</Text>
+                    )}
+                  </Paper>
+                )}
 
                 {!jobCode && (
                   <Alert color="gray" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is unavailable.</Alert>
                 )}
 
-                {/* Highlight reel — three punchy cards */}
-                {has('highlights') && highlights.length > 0 && (
+                {/* Three headline cards: percentile · salary gap · peers compared */}
+                {has('highlights') && cards.length > 0 && (
                   <SimpleGrid cols={{ base: 1, sm: 3 }} mb="lg">
-                    {highlights.map((h, i) => (
+                    {cards.map((h, i) => (
                       <Card key={i} withBorder radius="md" padding="lg">
                         <ThemeIcon variant="light" color={h.color} size={38} radius="md">{h.icon}</ThemeIcon>
                         <Text fw={800} fz={26} mt="sm" lh={1.1}>{h.value}</Text>
@@ -439,10 +408,19 @@ export default function Reports() {
                   </SimpleGrid>
                 )}
 
-                {/* Direct peers — the most persuasive evidence, up top */}
+                {/* One simple scale: current · median · target (replaces the dense bullet charts) */}
+                {subjectPay != null && (med != null || primaryTarget != null) && (
+                  <>
+                    <Text size="sm" fw={600} mb="xs">Where {subjectFirst} sits</Text>
+                    <SalaryLine current={subjectPay} median={med} target={primaryTarget} />
+                    <div style={{ height: 18 }} />
+                  </>
+                )}
+
+                {/* Peer comparison — the subject is the baseline first row; higher-paid peers below it */}
                 {has('peers') && (
                   <>
-                    <Text size="sm" fw={600} mb="xs">Direct peer comparison</Text>
+                    <Text size="sm" fw={600} mb="xs">Peer comparison</Text>
                     {otherPeers.length > 0 ? (
                       <Table striped highlightOnHover style={{ maxWidth: 820 }} mb="lg">
                         <Table.Thead>
@@ -450,22 +428,32 @@ export default function Reports() {
                             <Table.Th>Name</Table.Th>
                             <Table.Th>Title</Table.Th>
                             <Table.Th ta="right">Salary</Table.Th>
-                            <Table.Th ta="right">Δ vs {subjectFirst}</Table.Th>
+                            <Table.Th ta="right">vs {subjectFirst}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
-                          {otherPeers.map((p) => (
-                            <Table.Tr key={p.person_key}>
-                              <Table.Td>{fullName(p.fn, p.ln)}</Table.Td>
-                              <Table.Td>{p.title ?? '—'}</Table.Td>
-                              <Table.Td ta="right">{usd(p.pay)}</Table.Td>
-                              <Table.Td ta="right">
-                                <Text span fw={700} fz="sm" c={p.delta < 0 ? 'red.7' : 'teal.7'}>
-                                  {p.delta < 0 ? '−' : '+'}{usd(Math.abs(p.delta))}
-                                </Text>
-                              </Table.Td>
-                            </Table.Tr>
-                          ))}
+                          {/* Baseline row — the subject, softly highlighted */}
+                          <Table.Tr style={{ background: 'var(--mantine-color-indigo-light)' }}>
+                            <Table.Td><b>{subjectName}</b> <Text span size="xs" c="dimmed">(subject)</Text></Table.Td>
+                            <Table.Td>{subj?.title ?? '—'}</Table.Td>
+                            <Table.Td ta="right"><b>{usd(subjectPay)}</b></Table.Td>
+                            <Table.Td ta="right"><Text span size="xs" c="dimmed">baseline</Text></Table.Td>
+                          </Table.Tr>
+                          {otherPeers.map((p) => {
+                            const gap = p.pay - (subjectPay ?? 0); // how much more (or less) the peer earns
+                            return (
+                              <Table.Tr key={p.person_key}>
+                                <Table.Td>{fullName(p.fn, p.ln)}</Table.Td>
+                                <Table.Td>{p.title ?? '—'}</Table.Td>
+                                <Table.Td ta="right">{usd(p.pay)}</Table.Td>
+                                <Table.Td ta="right">
+                                  <Text span fw={700} fz="sm" c={gap > 0 ? 'red.7' : gap < 0 ? 'teal.7' : 'dimmed'}>
+                                    {gap > 0 ? '+' : gap < 0 ? '−' : ''}{usd(Math.abs(gap))}
+                                  </Text>
+                                </Table.Td>
+                              </Table.Tr>
+                            );
+                          })}
                         </Table.Tbody>
                       </Table>
                     ) : (
@@ -474,63 +462,7 @@ export default function Reports() {
                   </>
                 )}
 
-                {/* Title benchmark */}
-                {has('benchmark') && peer && peer.n > 0 && subjectPay != null &&
-                  peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Title-market benchmark — {subj?.title}</Text>
-                    <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={subjectPay} target={primaryTarget} />
-                    <SimpleGrid cols={{ base: 2, sm: 4 }} mt="md" mb="lg">
-                      <Stat label="Percentile" value={percentile != null ? ordinal(percentile) : '—'} />
-                      <Stat label="Target (exp-adjusted)" value={primaryTarget != null ? usd(primaryTarget) : '—'} />
-                      <Stat label="Gap to target" value={belowTarget ? `−${usd(targetDelta)}` : '—'} />
-                      <Stat label="Peers in title" value={num(peer.n)} />
-                    </SimpleGrid>
-                  </>
-                )}
-
-                {/* Pay band — full-time grade scale, so the marker is the rate (not prorated actual) */}
-                {has('band') && band && subjectRate != null && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Pay-band position — grade {subj?.grade_number} (full-time rate)</Text>
-                    <PayBandBar min={band.min} max={band.max} value={subjectRate} target={primaryTarget} />
-                    <div style={{ height: 16 }} />
-                  </>
-                )}
-
-                {/* Tenure & experience (lean — supports the case only) */}
-                {has('tenure') && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Tenure &amp; experience</Text>
-                    <SimpleGrid cols={{ base: 2, sm: 2 }} mb="lg">
-                      <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
-                      <Stat label="Longest no-raise streak" value={growth ? `${growth.longest} period${growth.longest === 1 ? '' : 's'}` : '—'} />
-                    </SimpleGrid>
-                  </>
-                )}
-
-                {/* Deep stats tucked away (screen-only drill-down) */}
-                {(peer || growth) && (
-                  <Accordion variant="contained" mb="lg" className="no-print">
-                    <Accordion.Item value="deep">
-                      <Accordion.Control>View deep statistical breakdown</Accordion.Control>
-                      <Accordion.Panel>
-                        <SimpleGrid cols={{ base: 2, sm: 4 }}>
-                          {peer?.p25 != null && <Stat label="25th pctile" value={usd(peer.p25)} />}
-                          {peer?.med != null && <Stat label="Median" value={usd(peer.med)} />}
-                          {peer?.p75 != null && <Stat label="75th pctile" value={usd(peer.p75)} />}
-                          {peer?.p90 != null && <Stat label="90th pctile" value={usd(peer.p90)} />}
-                          {peer?.lo != null && peer?.hi != null && <Stat label="Range" value={`${usd(peer.lo)} – ${usd(peer.hi)}`} />}
-                          {growth?.totalPct != null && <Stat label="Total growth" value={pct(growth.totalPct)} />}
-                          {growth && <Stat label="Raises" value={`${growth.raises} / ${growth.periods}`} />}
-                          {growth?.avgPct != null && <Stat label="Avg raise" value={pct(growth.avgPct)} />}
-                        </SimpleGrid>
-                      </Accordion.Panel>
-                    </Accordion.Item>
-                  </Accordion>
-                )}
-
-                {/* Supervision callout */}
+                {/* Supervision callout — a real argument, kept in the printed document */}
                 {supervises && (
                   <Paper withBorder radius="md" p="md" mb="lg">
                     <Text size="sm" fw={600}>Added responsibilities</Text>
@@ -541,42 +473,76 @@ export default function Reports() {
                   </Paper>
                 )}
 
-                {/* Schools (secondary context) */}
-                {schools.length > 0 && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Schools (context)</Text>
-                    <Table mb="lg">
-                      <Table.Thead>
-                        <Table.Tr>
-                          <Table.Th>School</Table.Th>
-                          <Table.Th ta="right">Headcount</Table.Th>
-                          <Table.Th ta="right">Median</Table.Th>
-                          <Table.Th ta="right">90th pctile</Table.Th>
-                          <Table.Th ta="right">Total payroll</Table.Th>
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {(cmpSchools ?? []).map((s) => (
-                          <Table.Tr key={s.school}>
-                            <Table.Td>{s.school}</Table.Td>
-                            <Table.Td ta="right">{num(s.headcount)}</Table.Td>
-                            <Table.Td ta="right">{usd(s.med)}</Table.Td>
-                            <Table.Td ta="right">{usd(s.p90)}</Table.Td>
-                            <Table.Td ta="right">{usd(s.payroll)}</Table.Td>
-                          </Table.Tr>
-                        ))}
-                      </Table.Tbody>
-                    </Table>
-                  </>
-                )}
-
-                <Text size="xs" c="dimmed" mt="md">
-                  Methodology: "parity" = the median pay of everyone sharing the subject's job code at this snapshot;
-                  the experience-adjusted figure is the median for same-title peers with at least the subject's tenure.
-                  Supervisory scope is self-reported (not in the salary dataset). Pay-band ranges are best-effort and
-                  only partially seeded.
-                </Text>
                 <Footer />
+
+                {/* Appendix — supporting detail, screen-only so the printed PDF stays tight */}
+                <div className="no-print">
+                  <Divider my="lg" label="Appendix — supporting detail" labelPosition="center" />
+
+                  {has('tenure') && (
+                    <>
+                      <Text size="sm" fw={600} mb="xs">Tenure &amp; growth</Text>
+                      <SimpleGrid cols={{ base: 2, sm: 2 }} mb="lg">
+                        <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
+                        <Stat label="Longest no-raise streak" value={growth ? `${growth.longest} period${growth.longest === 1 ? '' : 's'}` : '—'} />
+                      </SimpleGrid>
+                    </>
+                  )}
+
+                  {(peer || growth) && (
+                    <Accordion variant="contained" mb="lg">
+                      <Accordion.Item value="deep">
+                        <Accordion.Control>Deep statistical breakdown</Accordion.Control>
+                        <Accordion.Panel>
+                          <SimpleGrid cols={{ base: 2, sm: 4 }}>
+                            {peer?.p25 != null && <Stat label="25th pctile" value={usd(peer.p25)} />}
+                            {peer?.med != null && <Stat label="Median" value={usd(peer.med)} />}
+                            {peer?.p75 != null && <Stat label="75th pctile" value={usd(peer.p75)} />}
+                            {peer?.p90 != null && <Stat label="90th pctile" value={usd(peer.p90)} />}
+                            {peer?.lo != null && peer?.hi != null && <Stat label="Range" value={`${usd(peer.lo)} – ${usd(peer.hi)}`} />}
+                            {growth?.totalPct != null && <Stat label="Total growth" value={pct(growth.totalPct)} />}
+                            {growth && <Stat label="Raises" value={`${growth.raises} / ${growth.periods}`} />}
+                            {growth?.avgPct != null && <Stat label="Avg raise" value={pct(growth.avgPct)} />}
+                          </SimpleGrid>
+                        </Accordion.Panel>
+                      </Accordion.Item>
+                    </Accordion>
+                  )}
+
+                  {schools.length > 0 && (
+                    <>
+                      <Text size="sm" fw={600} mb="xs">Schools (context)</Text>
+                      <Table mb="lg">
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th>School</Table.Th>
+                            <Table.Th ta="right">Headcount</Table.Th>
+                            <Table.Th ta="right">Median</Table.Th>
+                            <Table.Th ta="right">90th pctile</Table.Th>
+                            <Table.Th ta="right">Total payroll</Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {(cmpSchools ?? []).map((s) => (
+                            <Table.Tr key={s.school}>
+                              <Table.Td>{s.school}</Table.Td>
+                              <Table.Td ta="right">{num(s.headcount)}</Table.Td>
+                              <Table.Td ta="right">{usd(s.med)}</Table.Td>
+                              <Table.Td ta="right">{usd(s.p90)}</Table.Td>
+                              <Table.Td ta="right">{usd(s.payroll)}</Table.Td>
+                            </Table.Tr>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    </>
+                  )}
+
+                  <Text size="xs" c="dimmed">
+                    Methodology: "parity" = the median pay of everyone sharing the subject's job code at this snapshot;
+                    the experience-adjusted figure is the median for same-title peers with at least the subject's tenure.
+                    Supervisory scope is self-reported (not in the salary dataset).
+                  </Text>
+                </div>
               </Card>
             </>
           )}
