@@ -48,6 +48,17 @@ textarea:focus-visible,
   box-shadow: 0 0 0 3px var(--mantine-color-indigo-light), 0 6px 18px rgba(0, 0, 0, 0.14);
 }
 
+/* Select/MultiSelect "merged card": while the dropdown is open (data-expanded), flatten the input's
+   bottom so it meets the flush dropdown below as one bordered, shadowed card — matching the search bar.
+   Paired with the dropdown styling in src/lib/selectProps.ts. */
+:root .merge-select-input[data-expanded] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-width: 0;
+  border-color: var(--mantine-color-default-border);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
+}
+
 /* Non-blocking global loading bar: a thin indeterminate strip pinned to the top. */
 .global-loading-bar {
   position: fixed;
