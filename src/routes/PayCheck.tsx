@@ -7,7 +7,7 @@ import { useControls } from '../state/controls';
 import { paidHeadcount } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { num } from '../lib/format';
-import { bigPickerProps, PICKER_HEIGHT } from '../lib/selectProps';
+import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
 
 export default function PayCheck() {
@@ -110,8 +110,7 @@ export default function PayCheck() {
       <Card padding="lg">
         <Group align="flex-end" wrap="wrap" gap="xl">
           <Select
-            {...bigPickerProps}
-            size="md"
+            {...dropdownProps('md')}
             label="Title"
             placeholder="Search titles…"
             data={titleData}
@@ -123,8 +122,7 @@ export default function PayCheck() {
             rightSection={<IconChevronDown size={18} stroke={2} />}
           />
           <Select
-            {...bigPickerProps}
-            size="md"
+            {...dropdownProps('md')}
             label="School (optional filter)"
             placeholder="All UW"
             data={schoolData}
@@ -145,7 +143,6 @@ export default function PayCheck() {
             thousandSeparator=","
             prefix="$"
             w={200}
-            styles={{ input: { minHeight: PICKER_HEIGHT, height: PICKER_HEIGHT } }}
           />
         </Group>
         <Text size="xs" c="dimmed" mt="xs">Private — any salary you enter is never uploaded or stored.</Text>

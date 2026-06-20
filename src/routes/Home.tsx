@@ -72,7 +72,7 @@ export default function Home() {
 
         {/* Hero search + empty-state content share one centered width. */}
         <Stack gap="lg" maw={760} mx="auto" w="100%">
-          <SearchBox prominent autoFocus placeholder="Search for an employee by name…" />
+          <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
 
           {/* System-wide stats (as of the latest snapshot) */}
           <Paper withBorder radius="lg" px="lg" pt="xl" pb="lg" w="100%" style={{ position: 'relative', overflow: 'visible' }}>

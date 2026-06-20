@@ -14,7 +14,7 @@ import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
-import { bigPickerProps, PICKER_HEIGHT } from '../lib/selectProps';
+import { dropdownProps } from '../lib/selectProps';
 
 const PALETTE = [
   'var(--mantine-color-indigo-6)', 'var(--mantine-color-teal-6)', 'var(--mantine-color-orange-6)',
@@ -206,13 +206,12 @@ export default function Compare() {
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
           <Paper p="sm" radius="md" withBorder shadow="xs">
             <Group gap={6} mb={8}><IconUser size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add person</Text></Group>
-            <SearchBox placeholder="Search a person by name…" inputHeight={PICKER_HEIGHT} onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
+            <SearchBox placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Paper>
           <Paper p="sm" radius="md" withBorder shadow="xs">
             <Group gap={6} mb={8}><IconBriefcase size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add title</Text></Group>
             <Select
-              {...bigPickerProps}
-              size="md"
+              {...dropdownProps('md')}
               placeholder="Search a title…"
               data={titleSelectData}
               value={null}
@@ -228,8 +227,7 @@ export default function Compare() {
           <Paper p="sm" radius="md" withBorder shadow="xs">
             <Group gap={6} mb={8}><IconBuildingBank size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add school / division</Text></Group>
             <Select
-              {...bigPickerProps}
-              size="md"
+              {...dropdownProps('md')}
               placeholder="Search a school…"
               data={(schoolOpts ?? []).map((s) => s.school)}
               value={null}

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSql, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { fullName } from '../lib/format';
+import { DROPDOWN_TIERS, type DropdownSize } from '../lib/selectProps';
 
 interface Hit {
   person_key: string;
@@ -17,23 +18,26 @@ interface Hit {
   last_date: string | null;
 }
 
+const CARD_BORDER = 'var(--mantine-color-default-border)';
+const CARD_SHADOW = '0 8px 24px -4px rgba(0, 0, 0, 0.18)';
+
 export function SearchBox({
   placeholder = 'Search a person…',
   autoFocus = false,
   onSelect,
   onPick,
-  prominent = false,
-  inputHeight,
+  size = 'md',
 }: {
   placeholder?: string;
   autoFocus?: boolean;
   onSelect?: () => void;
   /** When set, picking a result calls this (and clears the input) instead of navigating to the profile. */
   onPick?: (hit: { person_key: string; name: string }) => void;
-  prominent?: boolean;
-  /** Taller closed control (px) so this matches sibling pickers (e.g. the Compare add blocks). */
-  inputHeight?: number;
+  /** One of the three standard sizes — the menu scales to match (lg = the centered landing box). */
+  size?: DropdownSize;
 }) {
+  const t = DROPDOWN_TIERS[size];
+  const large = size === 'lg';
   const [term, setTerm] = useState('');
   const [debounced] = useDebouncedValue(term, 200);
   const q = debounced.trim().toLowerCase();
@@ -105,19 +109,13 @@ export function SearchBox({
     else if (e.key === 'Enter') { e.preventDefault(); const h = results[active]; if (h) select(h); }
   };
 
-  // Combined-card styling: while open, the input's flat bottom meets the dropdown's flat top so the two
-  // read as one bordered, shadowed card — rounded at the top (input) and the bottom (dropdown list).
-  const radiusToken = prominent ? 'xl' : 'md';
-  const CARD_BORDER = 'var(--mantine-color-default-border)';
-  const CARD_SHADOW = '0 8px 24px -4px rgba(0, 0, 0, 0.18)';
-
   return (
     <Popover
       opened={!!opened}
       width="target"
       position="bottom-start"
       offset={0}
-      radius={radiusToken}
+      radius={t.radius}
       withinPortal
       trapFocus={false}
       returnFocus={false}
@@ -125,12 +123,12 @@ export function SearchBox({
       closeOnEscape
     >
       <Popover.Target>
-        <div style={{ width: '100%', maxWidth: prominent ? '100%' : 720, margin: prominent ? '0 auto' : undefined }}>
+        <div style={{ width: '100%', maxWidth: large ? '100%' : 720, margin: large ? '0 auto' : undefined }}>
           <TextInput
-            size={prominent ? 'xl' : 'md'}
-            radius={prominent ? 'xl' : 'md'}
-            leftSection={<IconSearch size={prominent ? 28 : 18} />}
-            leftSectionWidth={prominent ? 60 : undefined}
+            size={t.mantineSize}
+            radius={t.radius}
+            leftSection={<IconSearch size={t.icon} />}
+            leftSectionWidth={large ? 56 : undefined}
             placeholder={placeholder}
             value={term}
             onChange={(e) => setTerm(e.currentTarget.value)}
@@ -144,14 +142,11 @@ export function SearchBox({
             aria-activedescendant={opened && results.length ? optId(active) : undefined}
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
-            classNames={prominent ? { input: 'hero-search-input' } : undefined}
+            classNames={large ? { input: 'hero-search-input' } : undefined}
             styles={{
               input: {
-                ...(prominent
-                  ? { minHeight: 72, height: 72, fontSize: '1.4rem' }
-                  : inputHeight
-                    ? { minHeight: inputHeight, height: inputHeight }
-                    : {}),
+                fontSize: t.inputFont,
+                ...(large ? { fontWeight: 500 } : {}),
                 // While results show, flatten the bottom and merge into one card with the dropdown.
                 ...(opened
                   ? {
@@ -170,18 +165,21 @@ export function SearchBox({
       <Popover.Dropdown
         p={0}
         style={{
-          maxHeight: 460,
+          maxHeight: t.maxDropdown,
           overflowY: 'auto',
-          // Flat top flush against the input; rounded bottom + continuous border/shadow = one card.
+          // Flat top flush against the input; bottom radius pairs with the input; one continuous card.
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           borderTopWidth: 0,
+          borderBottomLeftRadius: t.radius,
+          borderBottomRightRadius: t.radius,
           borderColor: CARD_BORDER,
           boxShadow: CARD_SHADOW,
         }}
       >
         {data && data.length > 0 ? (
-          <Stack gap={0} role="listbox" id={listId}>
+          // Island buffer; rows are rounded chips inset from the walls + clear of the scrollbar.
+          <Stack gap={1} p={t.island} role="listbox" id={listId}>
             {data.map((h, i) => {
               const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
               const multiAppt = (h.latest_appts ?? 0) > 1; // only flag roles held in the latest snapshot
@@ -194,20 +192,20 @@ export function SearchBox({
                   role="option"
                   aria-selected={i === active}
                   onMouseEnter={() => setActive(i)}
-                  px="md"
-                  py={10}
+                  px={10}
+                  py={t.rowPad}
                   onClick={() => select(h)}
                   style={{
                     display: 'block',
                     width: '100%',
                     textAlign: 'left',
-                    borderBottom: '1px solid var(--mantine-color-default-border)',
+                    borderRadius: 6,
                     background: i === active ? 'var(--mantine-color-default-hover)' : undefined,
                   }}
                 >
                   {/* Top line: name (bold) + status badges. */}
                   <Group wrap="nowrap" gap="xs" align="center" style={{ minWidth: 0 }}>
-                    <Text fz={20} fw={600} c={inactive ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap', flexShrink: 0, opacity: dim }}>
+                    <Text fz={t.nameFont} fw={600} c={inactive ? 'dimmed' : undefined} style={{ whiteSpace: 'nowrap', flexShrink: 0, opacity: dim }}>
                       {fullName(h.fn, h.ln)}
                     </Text>
                     {inactive && (
@@ -234,7 +232,7 @@ export function SearchBox({
                   </Group>
                   {/* Bottom line: title · school (smaller, muted) for a clear visual hierarchy. */}
                   {(h.title || h.school) && (
-                    <Text size="xs" c="dimmed" lineClamp={1} mt={1} style={{ opacity: dim }}>
+                    <Text fz={t.subFont} c="dimmed" lineClamp={1} mt={1} style={{ opacity: dim }}>
                       {[h.title, h.school].filter(Boolean).join(' · ')}
                     </Text>
                   )}
@@ -244,7 +242,7 @@ export function SearchBox({
           </Stack>
         ) : (
           !isFetching && (
-            <Text size="sm" c="dimmed" px="sm" py={8}>
+            <Text size="sm" c="dimmed" px="md" py={10}>
               No matches for “{debounced}”.
             </Text>
           )

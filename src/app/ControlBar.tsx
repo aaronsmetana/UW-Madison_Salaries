@@ -5,7 +5,7 @@ import { useControls, METRIC_LABEL, scopeLabel, type Metric, type Scope } from '
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { FilterControls, ActiveFilters } from '../components/FilterControls';
-import { optionDropdownProps } from '../lib/selectProps';
+import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
 const METRIC_HELP: Record<Metric, string> = {
@@ -37,7 +37,8 @@ function ScopeMenu({ scope, setScope, options }: {
     <Combobox
       store={combobox}
       width={380}
-      size="sm"
+      size="xs"
+      radius={DROPDOWN_TIERS.sm.radius}
       position="bottom-start"
       shadow="md"
       withinPortal
@@ -49,11 +50,11 @@ function ScopeMenu({ scope, setScope, options }: {
       styles={{
         // No outer padding so the sticky header + scroll area span the full width.
         dropdown: { padding: 0, maxWidth: '92vw' },
-        // Inset "island": 6px around the list so each option highlight floats as a rounded chip, clear of
-        // the scrollbar (which lives on the wrapping scroll container, not this padded list).
-        options: { padding: 6 },
-        // Same list-item tokens as every other dropdown (14px text, tight line-height, 6px/8px padding).
-        option: { fontSize: 14, lineHeight: 1.25, padding: '6px 8px' },
+        // Inset "island": the small-tier buffer so each option highlight floats as a rounded chip, clear
+        // of the scrollbar (which lives on the wrapping scroll container, not this padded list).
+        options: { padding: DROPDOWN_TIERS.sm.island },
+        // Small-tier list-item tokens — identical to every other small dropdown.
+        option: { fontSize: DROPDOWN_TIERS.sm.optionFont, lineHeight: 1.25, padding: DROPDOWN_TIERS.sm.optionPad },
       }}
     >
       <Combobox.Target>
@@ -62,6 +63,7 @@ function ScopeMenu({ scope, setScope, options }: {
           type="button"
           pointer
           size="xs"
+          radius={DROPDOWN_TIERS.sm.radius}
           w={180}
           aria-label="Scope"
           leftSection={<IconBuildingBank size={15} />}
@@ -152,8 +154,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
       <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
         <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} />
         <Select
-          {...optionDropdownProps}
-          size="xs"
+          {...dropdownProps('sm')}
           w={180}
           aria-label="Snapshot"
           leftSection={<IconCalendar size={15} />}

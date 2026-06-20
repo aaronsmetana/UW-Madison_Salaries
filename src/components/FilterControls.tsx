@@ -5,7 +5,7 @@ import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { FACETS, whereAll, snapWhere, filterKey } from '../lib/queries';
 import { scopeKey } from '../state/controls';
-import { optionDropdownProps } from '../lib/selectProps';
+import { dropdownProps } from '../lib/selectProps';
 
 function FacetMultiSelect({ field, label, searchable }: { field: string; label: string; searchable?: boolean }) {
   const { scope, filters, setFilter } = useControls();
@@ -40,7 +40,7 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
 
   return (
     <MultiSelect
-      {...optionDropdownProps}
+      {...dropdownProps('sm')}
       size="xs"
       label={label}
       placeholder="Any"

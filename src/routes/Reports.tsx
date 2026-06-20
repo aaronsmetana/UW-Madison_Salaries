@@ -8,7 +8,7 @@ import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
-import { optionDropdownProps } from '../lib/selectProps';
+import { dropdownProps } from '../lib/selectProps';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -329,7 +329,7 @@ export default function Reports() {
               <Card withBorder padding="lg" className="no-print">
                 <Group align="flex-end" wrap="wrap" gap="lg">
                   <Select
-                    {...optionDropdownProps}
+                    {...dropdownProps('md')}
                     label="Subject (raise case)"
                     data={persons.map((p) => ({ value: p.id, label: p.label }))}
                     value={subjectKey}
