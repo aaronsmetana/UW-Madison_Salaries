@@ -356,7 +356,7 @@ export default function Compare() {
             <LineChart data={standingSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis domain={[0, 100]} width={48} tick={{ fontSize: 12 }} unit="%" />
+              <YAxis domain={[0, 100]} width={48} tick={{ fontSize: 12 }} unit="%" padding={{ top: 6, bottom: 6 }} />
               <Tooltip formatter={(v: number, key) => [`${v}th pctile`, labelMap.get(String(key)) ?? key]} />
               {persons.map((p, i) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />

@@ -655,7 +655,9 @@ export default function Person() {
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             {/* Shared date labels live only here; push them clear below the area fill. */}
             <XAxis dataKey="label" tick={{ fontSize: 12 }} tickMargin={10} height={34} />
-            {/* No rotated axis label — the % ticks sit flush under the salary chart's dollar figures. */}
+            {/* No rotated axis label — the % ticks sit flush under the salary chart's dollar figures.
+                `padding` insets the scale a few px so a 100% (or 0%) value isn't drawn on the clip edge
+                and cut in half. */}
             <YAxis
               yAxisId="fte"
               domain={[0, 1]}
@@ -663,6 +665,7 @@ export default function Person() {
               width={80}
               tick={{ fontSize: 12 }}
               tickFormatter={(v) => `${Math.round(v * 100)}%`}
+              padding={{ top: 8, bottom: 4 }}
             />
             {/* Cursor only — the single unified tooltip lives on the salary chart above (synced by syncId). */}
             <Tooltip content={() => null} />
