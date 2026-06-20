@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
-import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconInfoCircle } from '@tabler/icons-react';
-import { useControls, METRIC_LABEL, scopeLabel, type Metric } from '../state/controls';
+import { useControls, METRIC_LABEL, scopeLabel, type Metric, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { FilterControls, ActiveFilters } from '../components/FilterControls';
@@ -13,6 +13,82 @@ const METRIC_HELP: Record<Metric, string> = {
   fte: "Annual salary scaled to the person's FTE — closest to what they were actually paid.",
   base: 'Base salary as reported (may exclude supplemental or overload pay).',
 };
+
+/**
+ * Scope / division picker. A Combobox (not a plain Select) so the floating menu can open wider than the
+ * compact trigger and carry its own sticky filter — division names are long and otherwise wrap badly
+ * inside a trigger-width menu.
+ */
+function ScopeMenu({ scope, setScope, options }: {
+  scope: Scope;
+  setScope: (s: Scope) => void;
+  options: { value: string; label: string }[];
+}) {
+  const [search, setSearch] = useState('');
+  const combobox = useCombobox({
+    onDropdownOpen: () => combobox.focusSearchInput(),
+    onDropdownClose: () => { combobox.resetSelectedOption(); setSearch(''); },
+  });
+  const scopeValue = scope.kind === 'school' ? `school:${scope.value}` : 'all';
+  const q = search.trim().toLowerCase();
+  const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+
+  return (
+    <Combobox
+      store={combobox}
+      width={340}
+      position="bottom-start"
+      shadow="md"
+      withinPortal
+      onOptionSubmit={(val) => {
+        setScope(val.startsWith('school:') ? { kind: 'school', value: val.slice(7) } : { kind: 'all' });
+        combobox.closeDropdown();
+      }}
+      styles={{
+        // Tight line-height keeps a wrapped name's two lines together; the option's vertical padding is
+        // the larger gap, so each division reads as one distinct block.
+        option: { lineHeight: 1.25, paddingTop: 8, paddingBottom: 8 },
+        dropdown: { maxWidth: '92vw' },
+      }}
+    >
+      <Combobox.Target>
+        <InputBase
+          component="button"
+          type="button"
+          pointer
+          size="xs"
+          w={180}
+          aria-label="Scope"
+          leftSection={<IconBuildingBank size={15} />}
+          leftSectionWidth={30}
+          rightSection={<Combobox.Chevron />}
+          rightSectionPointerEvents="none"
+          onClick={() => combobox.toggleDropdown()}
+        >
+          <Text span size="xs" truncate>{scopeLabel(scope)}</Text>
+        </InputBase>
+      </Combobox.Target>
+      <Combobox.Dropdown>
+        <Combobox.Search
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+          placeholder="Filter divisions…"
+        />
+        <Combobox.Options mah={320} style={{ overflowY: 'auto' }}>
+          {filtered.length > 0 ? (
+            filtered.map((o) => (
+              <Combobox.Option value={o.value} key={o.value} active={o.value === scopeValue}>
+                {o.label}
+              </Combobox.Option>
+            ))
+          ) : (
+            <Combobox.Empty>No matching division</Combobox.Empty>
+          )}
+        </Combobox.Options>
+      </Combobox.Dropdown>
+    </Combobox>
+  );
+}
 
 /**
  * Scope + snapshot are the lens the whole app responds to, plus the salary metric (defaulting to actual,
@@ -39,7 +115,6 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     if (!schools.some((s) => s.school === scope.value)) setScope({ kind: 'all' });
   }, [schools, scope, setScope]);
 
-  const scopeValue = scope.kind === 'school' ? `school:${scope.value}` : 'all';
   const scopeOptions = [
     { value: 'all', label: 'All UW' },
     ...(schools ?? []).map((s) => ({ value: `school:${s.school}`, label: s.school })),
@@ -61,21 +136,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         Showing
       </Text>
       <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-        <Select
-          {...optionDropdownProps}
-          size="xs"
-          w={180}
-          aria-label="Scope"
-          leftSection={<IconBuildingBank size={15} />}
-          leftSectionWidth={30}
-          data={scopeOptions}
-          value={scopeValue}
-          onChange={(v) =>
-            setScope(v && v.startsWith('school:') ? { kind: 'school', value: v.slice(7) } : { kind: 'all' })
-          }
-          allowDeselect={false}
-          searchable
-        />
+        <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} />
         <Select
           {...optionDropdownProps}
           size="xs"
