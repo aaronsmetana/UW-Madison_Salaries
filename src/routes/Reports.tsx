@@ -5,13 +5,12 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
-  IconDownload, IconPrinter, IconChartBar, IconScale, IconTrendingUp, IconCheck, IconHistory,
-  IconAdjustments,
+  IconDownload, IconPrinter, IconChartBar, IconScale, IconCheck, IconHistory, IconAdjustments,
 } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
+import { salaryExpr, personPay } from '../lib/queries';
 import { dropdownProps } from '../lib/selectProps';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
@@ -19,7 +18,6 @@ import { downloadCSV } from '../lib/csv';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { SearchBox } from '../components/SearchBox';
 
-interface SchoolCard { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
 interface Subject {
   pay: number | null; rate: number | null; title: string | null; job_code: string | null;
   grade_number: number | null; grade_basis: string | null;
@@ -73,8 +71,6 @@ export default function Reports() {
 
   // ── Justification report (tray) ─────────────────────────────────────────
   const persons = items.filter((i) => i.type === 'person');
-  const schools = items.filter((i) => i.type === 'school');
-  const schoolNames = schools.map((s) => sqlStr(s.id)).join(',');
   const personIds = persons.map((p) => sqlStr(p.id)).join(',');
 
   const [subjectKey, setSubjectKey] = useState<string | null>(null);
@@ -164,16 +160,6 @@ export default function Reports() {
     type === 'comparison' && persons.length > 0
   );
 
-  const { data: cmpSchools } = useSql<SchoolCard>(
-    ['rpt-cmp-schools', schoolNames, snap ?? '', metric],
-    `SELECT school, ${paidHeadcount(metric)} headcount,
-        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IN (${schoolNames}) GROUP BY school`,
-    type === 'comparison' && schools.length > 0 && !!snap
-  );
-
   // ── Derived stats ───────────────────────────────────────────────────────
   const tenureYears = useMemo(() => {
     if (!subj?.date_of_hire) return null;
@@ -217,35 +203,31 @@ export default function Reports() {
       ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of UW–Madison tenure`
       : peer?.p75 != null ? 'the 75th-percentile pay for this title' : 'the median pay for this title';
 
-  // Standing vs the market midpoint — compa-ratio < 1.0 is the standard HR trigger for an adjustment.
-  const compaRatio = med != null && med > 0 && subjectPay != null ? subjectPay / med : null;
-
-  // Highest-paid single peer (otherPeers is sorted highest-first) — the ladder's ceiling rung.
-  const topPeer = otherPeers[0] ?? null;
   // Deficit to the title median — the "basic correction to market baseline" framing.
   const medianDeficit = med != null && subjectPay != null && subjectPay < med ? med - subjectPay : 0;
 
-  // Equal tenure, unequal pay — same-title peers with ≤ the subject's UW–Madison tenure who still earn more.
-  // The hardest-to-rebut argument; computed across the full UW peer population (works with an empty tray).
-  const equalExp = useMemo(() => {
+  // Tenure inversion — same-title peers with STRICTLY LESS UW–Madison tenure than the subject who are
+  // nonetheless paid more. The hardest-to-rebut argument; computed across the full UW peer population.
+  const tenureInversion = useMemo(() => {
     if (!peerListRows || tenureYears == null || subjectPay == null) return null;
-    const lower = peerListRows.filter((p) => p.tenure != null && p.tenure <= tenureYears && p.pay > subjectPay);
+    const lower = peerListRows.filter((p) => p.tenure != null && p.tenure < tenureYears && p.pay > subjectPay);
     const maxGap = lower.length ? Math.max(...lower.map((p) => p.pay - subjectPay)) : 0;
     return { count: lower.length, maxGap, total: peerListRows.length };
   }, [peerListRows, tenureYears, subjectPay]);
 
-  // Below the title median over time — chronic vs one-off underpayment.
+  // Below the title median over time. `streakYears` = distinct calendar years in the most-recent
+  // unbroken run of below-median snapshots — the honest "consecutive years in market deficit" figure.
   const longevity = useMemo(() => {
     const rows = (medHist ?? []).filter((r) => r.pay != null && r.pay > 0 && r.med != null);
     if (!rows.length) return null;
     const below = rows.filter((r) => (r.pay as number) < (r.med as number));
-    let years: number | null = null;
-    if (below.length) {
-      const first = new Date(below[0].date).getTime();
-      const last = new Date(rows[rows.length - 1].date).getTime();
-      years = Math.max(0, (last - first) / (365.25 * 864e5));
+    const streakDates: string[] = [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if ((rows[i].pay as number) < (rows[i].med as number)) streakDates.push(rows[i].date);
+      else break;
     }
-    return { belowCount: below.length, total: rows.length, years };
+    const streakYears = new Set(streakDates.map((d) => new Date(d).getFullYear())).size;
+    return { belowCount: below.length, total: rows.length, streak: streakDates.length, streakYears };
   }, [medHist]);
 
   // Peer-vs-subject career progression (total growth + raise count) from full histories.
@@ -288,18 +270,20 @@ export default function Reports() {
   const aMax = Math.max(progression.avgAbs ?? 0, progression.subjAbs ?? 0, 1);
   const showDivergence = progression.subjAbs != null && progression.avgAbs != null && progression.subjAbs < progression.avgAbs;
 
-  // Adjustment ladder — anchors the modest recommended ask between a floor (median) and the headroom
-  // to senior / top-paid peers, so the request reads as conservative rather than arbitrary.
-  const ladder = useMemo(() => {
-    if (subjectPay == null) return [] as { label: string; target: number; delta: number; recommended?: boolean }[];
-    const rungs: { label: string; target: number; delta: number; recommended?: boolean }[] = [];
-    if (med != null && med > subjectPay) rungs.push({ label: 'Minimum — title median', target: med, delta: med - subjectPay });
-    if (primaryTarget != null && primaryTarget > subjectPay) rungs.push({ label: aboveMedian ? 'Recommended — above-median (justified)' : 'Recommended — tenure-adjusted median', target: primaryTarget, delta: primaryTarget - subjectPay, recommended: true });
-    if (peer?.p75 != null && peer.p75 > subjectPay) rungs.push({ label: 'Full parity — senior peers (75th pct)', target: peer.p75, delta: peer.p75 - subjectPay });
-    if (topPeer && topPeer.pay > subjectPay) rungs.push({ label: `Ceiling — top-paid peer (${fullName(topPeer.fn, topPeer.ln)})`, target: topPeer.pay, delta: topPeer.pay - subjectPay });
-    const seen = new Set<number>();
-    return rungs.filter((r) => { const k = Math.round(r.target); if (seen.has(k)) return false; seen.add(k); return true; });
-  }, [subjectPay, med, primaryTarget, peer, topPeer, aboveMedian]);
+  // Equity anomaly — the single most damning tray peer: less UW tenure than the subject, biggest pay
+  // surplus. Surfaced as the "smoking gun" callout on its row in the peer table.
+  const anomalyKey = useMemo(() => {
+    if (subjectPay == null || tenureYears == null) return null;
+    let best: { key: string; gap: number } | null = null;
+    for (const r of tableRows) {
+      if (r.isSubject || r.tenure == null) continue;
+      if (r.tenure < tenureYears && r.pay > subjectPay) {
+        const gap = r.pay - subjectPay;
+        if (!best || gap > best.gap) best = { key: r.key, gap };
+      }
+    }
+    return best?.key ?? null;
+  }, [tableRows, subjectPay, tenureYears]);
 
   // Operational-risk math: a conservative 50%-of-salary turnover cost vs the one-time parity raise.
   const replacementBaseline = subjectPay != null ? subjectPay * 0.5 : 0;
@@ -311,22 +295,22 @@ export default function Reports() {
     ...(percentile != null ? [{
       icon: <IconChartBar size={22} />,
       value: `${ordinal(percentile)} percentile`,
-      label: compaRatio != null ? `compa-ratio ${compaRatio.toFixed(2)}` : 'of same-title peers',
-      detail: medianDeficit > 0 ? `below the title median by ${usd(medianDeficit)}` : 'at or above the title median',
+      label: medianDeficit > 0 ? 'Current pay sits below the strict title median.' : 'Current pay is at or above the title median.',
+      detail: '',
     }] : []),
-    // 2. Equal tenure, unequal pay
-    ...(equalExp && equalExp.count > 0 ? [{
+    // 2. Tenure inversion — phrased so it can't read as a rank
+    ...(tenureInversion && tenureInversion.count > 0 ? [{
       icon: <IconScale size={22} />,
-      value: `${num(equalExp.count)} of ${num(equalExp.total)}`,
-      label: 'peers paid more with ≤ your UW tenure',
-      detail: `up to +${usd(equalExp.maxGap)} — tenure doesn't explain it`,
+      value: `${num(tenureInversion.count)} peers`,
+      label: 'tenure inversions — less UW tenure, higher pay',
+      detail: `paid up to +${usd(tenureInversion.maxGap)} more with fewer years at UW`,
     }] : []),
-    // 3. Sustained
-    ...(longevity && longevity.total > 1 && longevity.belowCount > 0 ? [{
+    // 3. Sustained — consecutive years in market deficit
+    ...(longevity && longevity.streak > 0 ? [{
       icon: <IconHistory size={22} />,
-      value: `${longevity.belowCount} of ${longevity.total}`,
-      label: 'snapshots below the median',
-      detail: longevity.years != null && longevity.years >= 1 ? `≈ ${longevity.years.toFixed(0)} yrs — chronic, not a one-off` : 'chronic, not a one-off',
+      value: `${longevity.streakYears} ${longevity.streakYears === 1 ? 'year' : 'years'}`,
+      label: 'consecutive years in market deficit',
+      detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median',
     }] : []),
   ];
 
@@ -568,7 +552,7 @@ export default function Reports() {
                           <ThemeIcon variant="light" color="indigo" size={38} radius="md">{p.icon}</ThemeIcon>
                           <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
                           <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
-                          <Text size="xs" c="dimmed" mt={6}>{p.detail}</Text>
+                          {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}</Text>}
                         </Card>
                       ))}
                     </SimpleGrid>
@@ -603,38 +587,7 @@ export default function Reports() {
                 <div className="no-print">
                   <Divider my="lg" label="Supporting detail" labelPosition="center" />
                   <Accordion variant="separated" multiple>
-                    {/* Adjustment ladder — floor / recommended / headroom */}
-                    {ladder.length > 1 && (
-                      <Accordion.Item value="ladder">
-                        <Accordion.Control icon={<IconTrendingUp size={18} />}>Adjustment ladder</Accordion.Control>
-                        <Accordion.Panel>
-                          <Stack gap={6}>
-                            {ladder.map((r) => (
-                              <Group
-                                key={r.label}
-                                justify="space-between"
-                                wrap="nowrap"
-                                style={r.recommended ? { background: 'var(--mantine-color-indigo-light)', borderRadius: 6, padding: '6px 10px', margin: '0 -10px' } : undefined}
-                              >
-                                <Group gap="xs" wrap="nowrap">
-                                  {r.recommended && <Badge size="xs" variant="filled" color="indigo" tt="none">Recommended</Badge>}
-                                  <Text size="sm" fw={r.recommended ? 700 : 500}>{r.label}</Text>
-                                </Group>
-                                <Group gap="lg" wrap="nowrap">
-                                  <Text size="sm" c="dimmed">{usd(r.target)}</Text>
-                                  <Text size="sm" fw={700} c="green.7" style={{ minWidth: 72, textAlign: 'right' }}>+{usd(r.delta)}</Text>
-                                </Group>
-                              </Group>
-                            ))}
-                          </Stack>
-                          <Text size="xs" c="dimmed" mt="sm">
-                            The recommended figure is the conservative ask; the higher rungs show the headroom to senior and top-paid peers.
-                          </Text>
-                        </Accordion.Panel>
-                      </Accordion.Item>
-                    )}
-
-                    {/* Peer comparison — the named-peer matrix with tenure + inline salary bars */}
+                    {/* Peer comparison — the named-peer matrix; the equity anomaly is the smoking gun */}
                     {has('peers') && otherPeers.length > 0 && (
                       <Accordion.Item value="peers">
                         <Accordion.Control icon={<IconScale size={18} />}>Peer comparison ({otherPeers.length} named {otherPeers.length === 1 ? 'peer' : 'peers'})</Accordion.Control>
@@ -653,13 +606,25 @@ export default function Reports() {
                             <Table.Tbody>
                               {tableRows.map((r) => {
                                 const gap = r.pay - (subjectPay ?? 0); // how much more the peer earns
-                                const lessExp = !r.isSubject && r.tenure != null && tenureYears != null && r.tenure <= tenureYears && gap > 0;
+                                const lessExp = !r.isSubject && r.tenure != null && tenureYears != null && r.tenure < tenureYears && gap > 0;
+                                const isAnomaly = r.key === anomalyKey;
                                 return (
-                                  <Table.Tr key={r.key} style={r.isSubject ? { background: 'var(--mantine-color-indigo-light)' } : undefined}>
+                                  <Table.Tr
+                                    key={r.key}
+                                    style={
+                                      r.isSubject
+                                        ? { background: 'var(--mantine-color-indigo-light)' }
+                                        : isAnomaly
+                                          ? { background: 'var(--mantine-color-indigo-0)', boxShadow: 'inset 4px 0 0 var(--mantine-color-indigo-6)' }
+                                          : undefined
+                                    }
+                                  >
                                     <Table.Td>
                                       {r.isSubject
                                         ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="indigo" tt="none" ml={4}>Review Subject</Badge></>
-                                        : <>{r.name}{lessExp && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less tenure</Badge>}</>}
+                                        : <>{r.name}{isAnomaly
+                                            ? <Badge size="xs" variant="filled" color="indigo" tt="none" ml={6}>Equity Anomaly</Badge>
+                                            : lessExp && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less tenure</Badge>}</>}
                                     </Table.Td>
                                     <Table.Td>{r.title ?? '—'}</Table.Td>
                                     {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
@@ -668,17 +633,22 @@ export default function Reports() {
                                         {r.isSubject ? `${supN} ${supN === 1 ? 'report' : 'reports'}` : peersSupervise ? 'Supervisor' : '—'}
                                       </Table.Td>
                                     )}
-                                    <Table.Td style={{ minWidth: 180 }}>
+                                    {/* Salary on a shared zero-based scale; the slate marker sits at the subject's
+                                        pay, so each peer bar's overflow past it equals the true dollar gap. */}
+                                    <Table.Td style={{ minWidth: 200 }}>
                                       <Text size="sm" fw={r.isSubject ? 700 : 500}>{usd(r.pay)}</Text>
-                                      <div style={{ marginTop: 3, height: 6, borderRadius: 3, background: 'var(--mantine-color-gray-2)' }}>
+                                      <div style={{ position: 'relative', marginTop: 3, height: 6, borderRadius: 3, background: 'var(--mantine-color-gray-2)' }}>
                                         <div style={{ width: `${(r.pay / maxPay) * 100}%`, height: '100%', borderRadius: 3, background: r.isSubject ? CAND : PEER }} />
+                                        {!r.isSubject && subjectPay != null && (
+                                          <div style={{ position: 'absolute', top: -2, bottom: -2, left: `${(subjectPay / maxPay) * 100}%`, width: 2, background: CAND }} />
+                                        )}
                                       </div>
                                     </Table.Td>
                                     <Table.Td ta="right">
                                       {r.isSubject ? (
                                         <Text span size="xs" c="dimmed">baseline</Text>
                                       ) : (
-                                        <Text span fw={gap > 0 ? 800 : 700} fz={gap > 0 ? 'md' : 'sm'} c="dimmed">
+                                        <Text span fw={gap > 0 ? 800 : 700} fz={gap > 0 ? 'md' : 'sm'} c={isAnomaly ? 'indigo.7' : 'dimmed'}>
                                           {gap > 0 ? '+' : gap < 0 ? '−' : ''}{usd(Math.abs(gap))}
                                         </Text>
                                       )}
@@ -688,6 +658,11 @@ export default function Reports() {
                               })}
                             </Table.Tbody>
                           </Table>
+                          {anomalyKey && (
+                            <Text size="xs" c="dimmed" mt="sm">
+                              <b>Equity Anomaly</b> flags the peer with less UW tenure than {subjectFirst} but the largest pay surplus — the clearest sign the gap isn't explained by experience.
+                            </Text>
+                          )}
                         </Accordion.Panel>
                       </Accordion.Item>
                     )}
@@ -711,49 +686,6 @@ export default function Reports() {
                       </Accordion.Item>
                     )}
 
-                    {/* Market baseline & methodology */}
-                    <Accordion.Item value="method">
-                      <Accordion.Control icon={<IconChartBar size={18} />}>Market baseline &amp; methodology</Accordion.Control>
-                      <Accordion.Panel>
-                        {(tenureYears != null || med != null) && (
-                          <SimpleGrid cols={{ base: 2, sm: 3 }} mb="md">
-                            <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
-                            {med != null && <Stat label="Title median" value={usd(med)} />}
-                            {med != null && <Stat label="Deficit to median" value={medianDeficit > 0 ? `−${usd(medianDeficit)}` : 'At/above median'} />}
-                          </SimpleGrid>
-                        )}
-                        {schools.length > 0 && (
-                          <Table mb="md">
-                            <Table.Thead>
-                              <Table.Tr>
-                                <Table.Th>School</Table.Th>
-                                <Table.Th ta="right">Headcount</Table.Th>
-                                <Table.Th ta="right">Median</Table.Th>
-                                <Table.Th ta="right">90th pctile</Table.Th>
-                                <Table.Th ta="right">Total payroll</Table.Th>
-                              </Table.Tr>
-                            </Table.Thead>
-                            <Table.Tbody>
-                              {(cmpSchools ?? []).map((s) => (
-                                <Table.Tr key={s.school}>
-                                  <Table.Td>{s.school}</Table.Td>
-                                  <Table.Td ta="right">{num(s.headcount)}</Table.Td>
-                                  <Table.Td ta="right">{usd(s.med)}</Table.Td>
-                                  <Table.Td ta="right">{usd(s.p90)}</Table.Td>
-                                  <Table.Td ta="right">{usd(s.payroll)}</Table.Td>
-                                </Table.Tr>
-                              ))}
-                            </Table.Tbody>
-                          </Table>
-                        )}
-                        <Text size="xs" c="dimmed">
-                          Methodology: "parity" = the median pay of everyone sharing the subject's job code at this snapshot;
-                          the tenure-adjusted figure is the median for same-title peers with at least the subject's tenure.
-                          "Tenure" = years since the UW–Madison date of hire (not total career experience).
-                          Supervisory scope is self-reported (not in the salary dataset).
-                        </Text>
-                      </Accordion.Panel>
-                    </Accordion.Item>
                   </Accordion>
                 </div>
               </Card>
@@ -781,18 +713,12 @@ function ProgRow({ label, value, display, max, color, emphasize }: {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Paper withBorder radius="md" p="sm">
-      <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={700} fz="lg">{value}</Text>
-    </Paper>
-  );
-}
-
 function Footer() {
   return (
     <Text size="xs" c="dimmed" mt="xl">
+      Methodology: the title median is the median pay of everyone sharing the subject's job code at this snapshot;
+      the tenure-adjusted target is the median for same-title peers with at least the subject's tenure.
+      "Tenure" = years since the UW–Madison date of hire (not total career experience); supervisory scope is self-reported.
       Source: UW–Madison salary data (Wisconsin public record). Salaries shown are the full annual rate unless
       the FTE-adjusted or base-pay metric is selected. Zero/unreported salaries are excluded from statistics.
       Person identity is matched on name + date of hire and is best-effort.

@@ -1,5 +1,12 @@
-/* Print only the .print-area (the report); hide the app shell and controls. */
+/* Print only the .print-area (the report); hide the app shell and controls so the PDF reads as a
+   formal, centered, standalone white-paper. */
 @media print {
+  @page {
+    margin: 0.6in;
+  }
+  body {
+    background: #fff !important;
+  }
   body * {
     visibility: hidden !important;
   }
@@ -10,11 +17,20 @@
   .print-area {
     position: absolute;
     left: 0;
+    right: 0;
     top: 0;
+    margin: 0 auto;
     width: 100%;
-    padding: 0 8px;
+    max-width: 7.5in;
+    padding: 0;
   }
   .no-print {
+    display: none !important;
+  }
+  /* Explicitly collapse the app chrome (left nav + top header) so it never reserves layout space
+     or bleeds into the printed output. */
+  .mantine-AppShell-navbar,
+  .mantine-AppShell-header {
     display: none !important;
   }
   a[href] {
