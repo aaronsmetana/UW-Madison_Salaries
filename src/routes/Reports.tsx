@@ -202,9 +202,9 @@ export default function Reports() {
     [trayPeople, subjectKey, subjectPay]
   );
 
-  // ── Targets: experience-adjusted median by default; an above-median (75th-pctile) target when the
-  //    user asserts supplemental qualifications justify it. ──
-  const baseTarget = expMedian ?? med ?? null; // experience-adjusted parity (falls back to title median)
+  // ── Targets: tenure-adjusted median by default (tenure = years since UW–Madison date of hire);
+  //    an above-median (75th-pctile) target when the user asserts supplemental qualifications justify it. ──
+  const baseTarget = expMedian ?? med ?? null; // tenure-adjusted parity (falls back to title median)
   const elevatedTarget = peer?.p75 ?? baseTarget; // above-median, justified by added qualifications
   const primaryTarget = (aboveMedian ? elevatedTarget : baseTarget) ?? null;
   const belowTarget = subjectPay != null && primaryTarget != null && subjectPay < primaryTarget;
@@ -214,7 +214,7 @@ export default function Reports() {
   const targetBasis = aboveMedian
     ? `the 75th-percentile pay for this title — an above-median target justified by ${[certs.trim() && 'added certifications', education.trim() && 'further education/training', supervises && 'expanded supervisory scope'].filter(Boolean).join(', ') || 'added qualifications'}`
     : expMedian != null
-      ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of tenure`
+      ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of UW–Madison tenure`
       : peer?.p75 != null ? 'the 75th-percentile pay for this title' : 'the median pay for this title';
 
   // Standing vs the market midpoint — compa-ratio < 1.0 is the standard HR trigger for an adjustment.
@@ -225,7 +225,7 @@ export default function Reports() {
   // Deficit to the title median — the "basic correction to market baseline" framing.
   const medianDeficit = med != null && subjectPay != null && subjectPay < med ? med - subjectPay : 0;
 
-  // Equal experience, unequal pay — same-title peers with ≤ the subject's tenure who still earn more.
+  // Equal tenure, unequal pay — same-title peers with ≤ the subject's UW–Madison tenure who still earn more.
   // The hardest-to-rebut argument; computed across the full UW peer population (works with an empty tray).
   const equalExp = useMemo(() => {
     if (!peerListRows || tenureYears == null || subjectPay == null) return null;
@@ -294,7 +294,7 @@ export default function Reports() {
     if (subjectPay == null) return [] as { label: string; target: number; delta: number; recommended?: boolean }[];
     const rungs: { label: string; target: number; delta: number; recommended?: boolean }[] = [];
     if (med != null && med > subjectPay) rungs.push({ label: 'Minimum — title median', target: med, delta: med - subjectPay });
-    if (primaryTarget != null && primaryTarget > subjectPay) rungs.push({ label: aboveMedian ? 'Recommended — above-median (justified)' : 'Recommended — experience-adjusted median', target: primaryTarget, delta: primaryTarget - subjectPay, recommended: true });
+    if (primaryTarget != null && primaryTarget > subjectPay) rungs.push({ label: aboveMedian ? 'Recommended — above-median (justified)' : 'Recommended — tenure-adjusted median', target: primaryTarget, delta: primaryTarget - subjectPay, recommended: true });
     if (peer?.p75 != null && peer.p75 > subjectPay) rungs.push({ label: 'Full parity — senior peers (75th pct)', target: peer.p75, delta: peer.p75 - subjectPay });
     if (topPeer && topPeer.pay > subjectPay) rungs.push({ label: `Ceiling — top-paid peer (${fullName(topPeer.fn, topPeer.ln)})`, target: topPeer.pay, delta: topPeer.pay - subjectPay });
     const seen = new Set<number>();
@@ -314,12 +314,12 @@ export default function Reports() {
       label: compaRatio != null ? `compa-ratio ${compaRatio.toFixed(2)}` : 'of same-title peers',
       detail: medianDeficit > 0 ? `below the title median by ${usd(medianDeficit)}` : 'at or above the title median',
     }] : []),
-    // 2. Equal experience, unequal pay
+    // 2. Equal tenure, unequal pay
     ...(equalExp && equalExp.count > 0 ? [{
       icon: <IconScale size={22} />,
       value: `${num(equalExp.count)} of ${num(equalExp.total)}`,
-      label: 'peers paid more with ≤ your experience',
-      detail: `up to +${usd(equalExp.maxGap)} — experience doesn't explain it`,
+      label: 'peers paid more with ≤ your UW tenure',
+      detail: `up to +${usd(equalExp.maxGap)} — tenure doesn't explain it`,
     }] : []),
     // 3. Sustained
     ...(longevity && longevity.total > 1 && longevity.belowCount > 0 ? [{
@@ -503,10 +503,10 @@ export default function Reports() {
                     <Text mt={8}>
                       Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(primaryTarget)}</b>{' '}
                       (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){' '}
-                      {aboveMedian ? 'to an above-median level justified by added qualifications.' : 'to reach the experience-adjusted median for same-title peers.'}
+                      {aboveMedian ? 'to an above-median level justified by added qualifications.' : 'to reach the tenure-adjusted median for same-title peers.'}
                     </Text>
                     <Text size="sm" c="dimmed" mt={6}>
-                      Why this number: {usd(primaryTarget)} is {targetBasis} — i.e. parity for equal work and experience, not a premium.
+                      Why this number: {usd(primaryTarget)} is {targetBasis} — i.e. parity for equal work and UW–Madison tenure, not a premium.
                     </Text>
                     {supervises && (
                       <Text size="xs" c="dimmed" mt="sm">Plus supervisory scope ({supN} {supN === 1 ? 'report' : 'staff'}) beyond title.</Text>
@@ -659,7 +659,7 @@ export default function Reports() {
                                     <Table.Td>
                                       {r.isSubject
                                         ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="indigo" tt="none" ml={4}>Review Subject</Badge></>
-                                        : <>{r.name}{lessExp && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less experience</Badge>}</>}
+                                        : <>{r.name}{lessExp && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less tenure</Badge>}</>}
                                     </Table.Td>
                                     <Table.Td>{r.title ?? '—'}</Table.Td>
                                     {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
@@ -748,7 +748,8 @@ export default function Reports() {
                         )}
                         <Text size="xs" c="dimmed">
                           Methodology: "parity" = the median pay of everyone sharing the subject's job code at this snapshot;
-                          the experience-adjusted figure is the median for same-title peers with at least the subject's tenure.
+                          the tenure-adjusted figure is the median for same-title peers with at least the subject's tenure.
+                          "Tenure" = years since the UW–Madison date of hire (not total career experience).
                           Supervisory scope is self-reported (not in the salary dataset).
                         </Text>
                       </Accordion.Panel>
