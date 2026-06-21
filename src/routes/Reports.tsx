@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
-  Checkbox, NumberInput, TextInput, Alert, ThemeIcon, Drawer, Badge, Progress,
+  Checkbox, NumberInput, TextInput, Alert, ThemeIcon, Drawer, Badge, Progress, Switch,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDownload, IconPrinter, IconChartBar, IconUsers, IconUsersGroup, IconAdjustments } from '@tabler/icons-react';
+import {
+  IconDownload, IconPrinter, IconChartBar, IconScale, IconTrendingUp, IconCheck, IconArrowDownRight,
+  IconAdjustments,
+} from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -23,11 +26,11 @@ interface Subject {
   school: string | null; department: string | null; date_of_hire: string | null;
 }
 interface PeerStat { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; p90: number | null; hi: number | null }
-interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; pay: number }
+interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; pay: number; tenure: number | null }
 
 const SECTIONS = [
-  { value: 'highlights', label: 'Headline cards' },
-  { value: 'peers', label: 'Peer comparison' },
+  { value: 'highlights', label: 'Evidence & headline cards' },
+  { value: 'peers', label: 'Peer Parity Matrix' },
 ];
 
 function ordinal(n: number): string {
@@ -94,6 +97,11 @@ export default function Reports() {
   const supN = typeof superviseCount === 'number' ? superviseCount : 0;
   const supervises = superviseOn && supN > 0;
 
+  // Supplemental justification: optionally aim above the median when added qualifications support it.
+  const [aboveMedian, setAboveMedian] = useState(false);
+  const [certs, setCerts] = useState('');
+  const [education, setEducation] = useState('');
+
   const cmpReady = type === 'comparison' && !!snap && !!subjectKey;
 
   const { data: subjRows } = useSql<Subject>(
@@ -130,9 +138,22 @@ export default function Reports() {
 
   const { data: trayPeople } = useSql<TrayPerson>(
     ['rpt-tray', personIds, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, ${personPay(metric)} pay
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, ${personPay(metric)} pay,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
     type === 'comparison' && persons.length > 0 && !!snap
+  );
+
+  // Title median per snapshot vs the subject's pay — powers the "below the median over time" longevity stat.
+  const { data: medHist } = useSql<{ date: string; med: number | null; pay: number | null }>(
+    ['rpt-med-hist', jobCode ?? '', subjectKey ?? '', metric],
+    `WITH per_snap AS (
+        SELECT snapshot_id, any_value(snapshot_date) date, person_key, ${personPay(metric)} pay
+        FROM salaries WHERE job_code = ${sqlStr(jobCode ?? '')} GROUP BY snapshot_id, person_key),
+      m AS (SELECT snapshot_id, any_value(date) date, median(pay) FILTER (WHERE pay > 0) med FROM per_snap GROUP BY snapshot_id),
+      s AS (SELECT snapshot_id, pay FROM per_snap WHERE person_key = ${sqlStr(subjectKey ?? '')})
+     SELECT m.date date, m.med med, s.pay pay FROM m JOIN s USING (snapshot_id) ORDER BY date`,
+    cmpReady && !!jobCode
   );
 
   // Full pay history for everyone in the tray — powers the peer-vs-subject progression comparison.
@@ -181,21 +202,51 @@ export default function Reports() {
     [trayPeople, subjectKey, subjectPay]
   );
 
-  // ── Targets: experience/scope-adjusted is primary; market median is secondary ──
-  const primaryTarget = expMedian ?? peer?.p75 ?? med ?? null;
+  // ── Targets: experience-adjusted median by default; an above-median (75th-pctile) target when the
+  //    user asserts supplemental qualifications justify it. ──
+  const baseTarget = expMedian ?? med ?? null; // experience-adjusted parity (falls back to title median)
+  const elevatedTarget = peer?.p75 ?? baseTarget; // above-median, justified by added qualifications
+  const primaryTarget = (aboveMedian ? elevatedTarget : baseTarget) ?? null;
   const belowTarget = subjectPay != null && primaryTarget != null && subjectPay < primaryTarget;
   const targetDelta = belowTarget && primaryTarget != null && subjectPay != null ? primaryTarget - subjectPay : 0;
   const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
   // Plain-language reason the target number was chosen (shown under the hero figure).
-  const targetBasis = expMedian != null
-    ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of tenure`
-    : peer?.p75 != null ? 'the 75th-percentile pay for this title' : 'the median pay for this title';
+  const targetBasis = aboveMedian
+    ? `the 75th-percentile pay for this title — an above-median target justified by ${[certs.trim() && 'added certifications', education.trim() && 'further education/training', supervises && 'expanded supervisory scope'].filter(Boolean).join(', ') || 'added qualifications'}`
+    : expMedian != null
+      ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of tenure`
+      : peer?.p75 != null ? 'the 75th-percentile pay for this title' : 'the median pay for this title';
 
-  // Largest gap to a single higher-paid peer (otherPeers is sorted highest-first).
+  // Standing vs the market midpoint — compa-ratio < 1.0 is the standard HR trigger for an adjustment.
+  const compaRatio = med != null && med > 0 && subjectPay != null ? subjectPay / med : null;
+
+  // Highest-paid single peer (otherPeers is sorted highest-first) — the ladder's ceiling rung.
   const topPeer = otherPeers[0] ?? null;
-  const topPeerGap = topPeer && subjectPay != null ? topPeer.pay - subjectPay : 0;
   // Deficit to the title median — the "basic correction to market baseline" framing.
   const medianDeficit = med != null && subjectPay != null && subjectPay < med ? med - subjectPay : 0;
+
+  // Equal experience, unequal pay — same-title peers with ≤ the subject's tenure who still earn more.
+  // The hardest-to-rebut argument; computed across the full UW peer population (works with an empty tray).
+  const equalExp = useMemo(() => {
+    if (!peerListRows || tenureYears == null || subjectPay == null) return null;
+    const lower = peerListRows.filter((p) => p.tenure != null && p.tenure <= tenureYears && p.pay > subjectPay);
+    const maxGap = lower.length ? Math.max(...lower.map((p) => p.pay - subjectPay)) : 0;
+    return { count: lower.length, maxGap, total: peerListRows.length };
+  }, [peerListRows, tenureYears, subjectPay]);
+
+  // Below the title median over time — chronic vs one-off underpayment.
+  const longevity = useMemo(() => {
+    const rows = (medHist ?? []).filter((r) => r.pay != null && r.pay > 0 && r.med != null);
+    if (!rows.length) return null;
+    const below = rows.filter((r) => (r.pay as number) < (r.med as number));
+    let years: number | null = null;
+    if (below.length) {
+      const first = new Date(below[0].date).getTime();
+      const last = new Date(rows[rows.length - 1].date).getTime();
+      years = Math.max(0, (last - first) / (365.25 * 864e5));
+    }
+    return { belowCount: below.length, total: rows.length, years };
+  }, [medHist]);
 
   // Peer-vs-subject career progression (total growth + raise count) from full histories.
   const progression = useMemo(() => {
@@ -209,62 +260,77 @@ export default function Reports() {
     const calc = (a: number[]) => {
       let raises = 0;
       for (let i = 1; i < a.length; i++) if (a[i] > a[i - 1]) raises++;
-      const total = a.length >= 2 && a[0] ? (a[a.length - 1] - a[0]) / a[0] : null;
-      return { total, raises };
+      const abs = a.length >= 2 ? a[a.length - 1] - a[0] : null; // absolute dollars gained
+      return { abs, raises };
     };
     const peers = [...byPerson.entries()].filter(([k]) => k !== subjectKey).map(([, a]) => calc(a));
     const subjArr = subjectKey ? byPerson.get(subjectKey) : undefined;
     const subjC = subjArr ? calc(subjArr) : null;
-    const totals = peers.map((p) => p.total).filter((v): v is number => v != null);
+    const absVals = peers.map((p) => p.abs).filter((v): v is number => v != null);
     return {
-      avgGrowth: totals.length ? totals.reduce((s, v) => s + v, 0) / totals.length : null,
-      avgRaises: peers.length ? peers.reduce((s, p) => s + p.raises, 0) / peers.length : null,
-      subjGrowth: subjC?.total ?? null,
-      subjRaises: subjC?.raises ?? null,
+      avgAbs: absVals.length ? absVals.reduce((s, v) => s + v, 0) / absVals.length : null,
+      subjAbs: subjC?.abs ?? null,
     };
   }, [peerHist, subjectKey]);
 
   // Peer Parity Matrix rows — the candidate is pinned to the top as a permanent baseline, then peers
   // sorted highest-paid first (otherPeers is already sorted desc).
   const tableRows = useMemo(() => {
-    const rows: { key: string; name: string; title: string | null; pay: number; isSubject: boolean }[] =
-      otherPeers.map((p) => ({ key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, pay: p.pay, isSubject: false }));
-    if (subjectPay != null) rows.unshift({ key: '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, isSubject: true });
+    const rows: { key: string; name: string; title: string | null; pay: number; tenure: number | null; isSubject: boolean }[] =
+      otherPeers.map((p) => ({ key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, pay: p.pay, tenure: p.tenure ?? null, isSubject: false }));
+    if (subjectPay != null) rows.unshift({ key: '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, tenure: tenureYears, isSubject: true });
     return rows;
-  }, [otherPeers, subjectPay, subjectName, subj]);
+  }, [otherPeers, subjectPay, subjectName, subj, tenureYears]);
   const maxPay = Math.max(1, ...tableRows.map((r) => r.pay));
+  const showTenure = tableRows.some((r) => r.tenure != null);
 
-  // Scales for the progression comparison bars.
-  const gMax = Math.max(progression.avgGrowth ?? 0, progression.subjGrowth ?? 0, 0.0001);
-  const rMax = Math.max(progression.avgRaises ?? 0, progression.subjRaises ?? 0, 1);
+  // Scale for the absolute-dollar divergence bars, and whether to show them (subject gained fewer $).
+  const aMax = Math.max(progression.avgAbs ?? 0, progression.subjAbs ?? 0, 1);
+  const showDivergence = progression.subjAbs != null && progression.avgAbs != null && progression.subjAbs < progression.avgAbs;
 
-  // Smart progression display: only show the growth gap when the candidate is genuinely BEHIND on
-  // total growth; otherwise a high % is just a low-base artifact — show that framing instead.
-  const showProgression = progression.subjGrowth != null && progression.avgGrowth != null && progression.subjGrowth < progression.avgGrowth;
-  const showBaseDisadvantage = progression.subjGrowth != null && progression.avgGrowth != null && progression.subjGrowth >= progression.avgGrowth;
+  // Adjustment ladder — anchors the modest recommended ask between a floor (median) and the headroom
+  // to senior / top-paid peers, so the request reads as conservative rather than arbitrary.
+  const ladder = useMemo(() => {
+    if (subjectPay == null) return [] as { label: string; target: number; delta: number; recommended?: boolean }[];
+    const rungs: { label: string; target: number; delta: number; recommended?: boolean }[] = [];
+    if (med != null && med > subjectPay) rungs.push({ label: 'Minimum — title median', target: med, delta: med - subjectPay });
+    if (primaryTarget != null && primaryTarget > subjectPay) rungs.push({ label: aboveMedian ? 'Recommended — above-median (justified)' : 'Recommended — experience-adjusted median', target: primaryTarget, delta: primaryTarget - subjectPay, recommended: true });
+    if (peer?.p75 != null && peer.p75 > subjectPay) rungs.push({ label: 'Full parity — senior peers (75th pct)', target: peer.p75, delta: peer.p75 - subjectPay });
+    if (topPeer && topPeer.pay > subjectPay) rungs.push({ label: `Ceiling — top-paid peer (${fullName(topPeer.fn, topPeer.ln)})`, target: topPeer.pay, delta: topPeer.pay - subjectPay });
+    const seen = new Set<number>();
+    return rungs.filter((r) => { const k = Math.round(r.target); if (seen.has(k)) return false; seen.add(k); return true; });
+  }, [subjectPay, med, primaryTarget, peer, topPeer, aboveMedian]);
+
+  // Objective "below-market" equity tests — scannable, policy-style evidence.
+  const equityTests = subjectPay == null ? [] : [
+    { label: 'Below the title median', fail: medianDeficit > 0, detail: medianDeficit > 0 ? `−${usd(medianDeficit)}${compaRatio != null ? ` · compa-ratio ${compaRatio.toFixed(2)}` : ''}` : 'at or above median' },
+    { label: 'Below the experience-adjusted median', fail: belowTarget, detail: belowTarget ? `−${usd(targetDelta)}` : 'at or above target' },
+    ...(equalExp ? [{ label: 'Paid less than peers with equal or less experience', fail: equalExp.count > 0, detail: equalExp.count > 0 ? `${equalExp.count} peer${equalExp.count === 1 ? '' : 's'}` : 'none' }] : []),
+    ...(longevity && longevity.total > 1 ? [{ label: 'Below the median over time', fail: longevity.belowCount > 0, detail: `${longevity.belowCount} of ${longevity.total} snapshots` }] : []),
+  ];
 
   // Operational-risk math: a conservative 50%-of-salary turnover cost vs the one-time parity raise.
   const replacementBaseline = subjectPay != null ? subjectPay * 0.5 : 0;
   const netSavings = replacementBaseline - targetDelta;
 
-  // ── Three fixed headline cards: percentile, largest peer gap, peers compared ──
+  // ── Three headline cards aligned to the story: standing · the ask · the inequity ──
   const cards = subjectPay == null ? [] : [
     {
-      icon: <IconChartBar size={20} />, color: 'indigo', // candidate standing — slate blue
+      icon: <IconChartBar size={20} />, color: 'indigo', valueColor: undefined as string | undefined, // standing
       value: percentile != null ? `${ordinal(percentile)} percentile` : '—',
-      label: peer?.n ? `among ${num(peer.n)} same-title peers` : 'of same-title peers',
+      label: compaRatio != null
+        ? `compa-ratio ${compaRatio.toFixed(2)}${peer?.n ? ` · ${num(peer.n)} peers` : ''}`
+        : peer?.n ? `among ${num(peer.n)} same-title peers` : 'of same-title peers',
     },
     {
-      icon: <IconUsers size={20} />, color: 'gray', // peer comparison — neutral
-      value: topPeerGap > 0 ? `−${usd(topPeerGap)}` : belowTarget ? `−${usd(targetDelta)}` : 'At parity',
-      label: topPeerGap > 0 && topPeer
-        ? `vs ${fullName(topPeer.fn, topPeer.ln)}, the top-paid peer`
-        : belowTarget ? 'below the parity target' : 'vs same-title peers',
+      icon: <IconTrendingUp size={20} />, color: 'green', valueColor: belowTarget ? 'green.7' : undefined, // the ask
+      value: belowTarget ? `+${usd(targetDelta)}` : 'At parity',
+      label: belowTarget ? `recommended adjustment (${pct(targetPct)})` : 'at or above the parity target',
     },
     {
-      icon: <IconUsersGroup size={20} />, color: 'gray', // peers — neutral
-      value: num(peer?.n ?? 0),
-      label: 'same-title peers compared',
+      icon: <IconScale size={20} />, color: 'indigo', valueColor: undefined, // the inequity
+      value: equalExp ? num(equalExp.count) : num(peer?.n ?? 0),
+      label: equalExp ? 'peers earn more with ≤ your experience' : 'same-title peers compared',
     },
   ];
 
@@ -394,6 +460,29 @@ export default function Reports() {
                     onChange={(e) => setPeersSupervise(e.currentTarget.checked)}
                     disabled={!superviseOn}
                   />
+                  <Divider />
+                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.05em' }}>
+                    Supplemental justification
+                  </Text>
+                  <Switch
+                    label="Target above the median (justified by added qualifications)"
+                    checked={aboveMedian}
+                    onChange={(e) => setAboveMedian(e.currentTarget.checked)}
+                  />
+                  <TextInput
+                    label="Certifications"
+                    placeholder="e.g. PMP, CISSP, AWS Solutions Architect"
+                    value={certs}
+                    onChange={(e) => setCerts(e.currentTarget.value)}
+                    disabled={!aboveMedian}
+                  />
+                  <TextInput
+                    label="Education / training completed"
+                    placeholder="e.g. M.S. completed 2024"
+                    value={education}
+                    onChange={(e) => setEducation(e.currentTarget.value)}
+                    disabled={!aboveMedian}
+                  />
                 </Stack>
               </Drawer>
 
@@ -411,7 +500,8 @@ export default function Reports() {
                   {belowTarget && primaryTarget != null ? (
                     <>
                       Requesting an adjustment from <b>{usd(subjectPay)}</b> to <b>{usd(primaryTarget)}</b>{' '}
-                      (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>) to reach parity with same-title peers.
+                      (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){' '}
+                      {aboveMedian ? 'to an above-median level justified by added qualifications.' : 'to reach parity with same-title peers.'}
                     </>
                   ) : subjectPay != null ? (
                     <>{subjectFirst} is at or above the parity target{primaryTarget != null ? ` (${usd(primaryTarget)})` : ''} — recommend maintaining current pay.</>
@@ -420,11 +510,11 @@ export default function Reports() {
                   )}
                 </Text>
 
-                {/* Hero target number — the experience/scope-adjusted target, only when below it */}
+                {/* Hero target number — the recommended target, only when below it */}
                 {belowTarget && primaryTarget != null && (
                   <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="md">
                     <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>
-                      Target salary — experience &amp; scope adjusted
+                      Target salary — {aboveMedian ? 'above-median (justified)' : 'experience & scope adjusted'}
                     </Text>
                     <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                       {usd(primaryTarget)}
@@ -454,63 +544,147 @@ export default function Reports() {
                   </Paper>
                 )}
 
+                {/* Adjustment ladder — the recommended ask anchored against floor and headroom */}
+                {ladder.length > 1 && (
+                  <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                    <Text size="sm" fw={600} mb="xs">Adjustment ladder</Text>
+                    <Stack gap={6}>
+                      {ladder.map((r) => (
+                        <Group
+                          key={r.label}
+                          justify="space-between"
+                          wrap="nowrap"
+                          style={r.recommended ? { background: 'var(--mantine-color-indigo-light)', borderRadius: 6, padding: '6px 10px', margin: '0 -10px' } : { padding: '0 0' }}
+                        >
+                          <Group gap="xs" wrap="nowrap">
+                            {r.recommended && <Badge size="xs" variant="filled" color="indigo" tt="none">Recommended</Badge>}
+                            <Text size="sm" fw={r.recommended ? 700 : 500}>{r.label}</Text>
+                          </Group>
+                          <Group gap="lg" wrap="nowrap">
+                            <Text size="sm" c="dimmed">{usd(r.target)}</Text>
+                            <Text size="sm" fw={700} c="green.7" style={{ minWidth: 72, textAlign: 'right' }}>+{usd(r.delta)}</Text>
+                          </Group>
+                        </Group>
+                      ))}
+                    </Stack>
+                    <Text size="xs" c="dimmed" mt="sm">
+                      The recommended figure is the conservative ask; the higher rungs show the headroom to senior and top-paid peers.
+                    </Text>
+                  </Card>
+                )}
+
+                {/* Basis for an above-median target — only when the user asserts added qualifications */}
+                {aboveMedian && (
+                  <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                    <Text size="sm" fw={700} mb={4}>Basis for an above-median target</Text>
+                    <Text size="xs" c="dimmed" mb="sm">{subjectFirst} brings qualifications beyond the title baseline that justify pay above the median:</Text>
+                    <Stack gap={6}>
+                      {certs.trim() && (
+                        <Group gap="xs" wrap="nowrap" align="flex-start">
+                          <ThemeIcon size={18} radius="xl" variant="light" color="indigo"><IconCheck size={12} /></ThemeIcon>
+                          <Text size="sm"><b>Certifications:</b> {certs}</Text>
+                        </Group>
+                      )}
+                      {education.trim() && (
+                        <Group gap="xs" wrap="nowrap" align="flex-start">
+                          <ThemeIcon size={18} radius="xl" variant="light" color="indigo"><IconCheck size={12} /></ThemeIcon>
+                          <Text size="sm"><b>Education / training:</b> {education}</Text>
+                        </Group>
+                      )}
+                      {supervises && (
+                        <Group gap="xs" wrap="nowrap" align="flex-start">
+                          <ThemeIcon size={18} radius="xl" variant="light" color="indigo"><IconCheck size={12} /></ThemeIcon>
+                          <Text size="sm"><b>Supervisory scope:</b> {supN} {supN === 1 ? 'report' : 'reports'}{superviseNote ? ` (${superviseNote})` : ''}</Text>
+                        </Group>
+                      )}
+                      {!certs.trim() && !education.trim() && !supervises && (
+                        <Text size="sm" c="dimmed">Add certifications, education, or supervisory scope in Customize to document the basis.</Text>
+                      )}
+                    </Stack>
+                  </Card>
+                )}
+
                 {!jobCode && (
                   <Alert color="gray" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is unavailable.</Alert>
                 )}
 
-                {/* Three headline cards: percentile · salary gap · peers compared */}
-                {has('highlights') && cards.length > 0 && (
-                  <SimpleGrid cols={{ base: 1, sm: 3 }} mb="lg">
-                    {cards.map((h, i) => (
-                      <Card key={i} withBorder radius="md" shadow="sm" padding="lg">
-                        <ThemeIcon variant="light" color={h.color} size={38} radius="md">{h.icon}</ThemeIcon>
-                        <Text fw={800} fz={26} mt="sm" lh={1.1}>{h.value}</Text>
-                        <Text size="sm" c="dimmed" mt={4}>{h.label}</Text>
+                {has('highlights') && (
+                  <>
+                    {/* Lead argument — equal experience, unequal pay (hardest to rebut) */}
+                    {equalExp && equalExp.count > 0 && (
+                      <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                        <Group gap="sm" mb={6} wrap="nowrap">
+                          <ThemeIcon variant="light" color="indigo" size={34} radius="md"><IconScale size={19} /></ThemeIcon>
+                          <Text fw={700}>Equal experience, unequal pay</Text>
+                        </Group>
+                        <Text>
+                          <Text span fw={800} fz="xl">{equalExp.count}</Text> of {num(equalExp.total)} same-title peers have{' '}
+                          <b>equal or less experience</b> than {subjectFirst}
+                          {tenureYears != null ? ` (≤ ${tenureYears.toFixed(1)} yrs)` : ''} yet are paid more — up to{' '}
+                          <Text span fw={800} c="green.7">+{usd(equalExp.maxGap)}</Text>. Experience doesn't explain the gap.
+                        </Text>
                       </Card>
-                    ))}
-                  </SimpleGrid>
+                    )}
+
+                    {/* Objective equity tests — scannable, policy-style evidence */}
+                    {equityTests.some((t) => t.fail) && (
+                      <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                        <Text size="sm" fw={600} mb="sm">Equity tests</Text>
+                        <Stack gap={8}>
+                          {equityTests.map((t) => (
+                            <Group key={t.label} justify="space-between" wrap="nowrap">
+                              <Group gap="xs" wrap="nowrap">
+                                <ThemeIcon size={20} radius="xl" variant="light" color={t.fail ? 'indigo' : 'green'}>
+                                  {t.fail ? <IconArrowDownRight size={13} /> : <IconCheck size={13} />}
+                                </ThemeIcon>
+                                <Text size="sm" fw={t.fail ? 600 : 400}>{t.label}</Text>
+                              </Group>
+                              <Text size="sm" fw={700} c={t.fail ? undefined : 'dimmed'}>{t.detail}</Text>
+                            </Group>
+                          ))}
+                        </Stack>
+                      </Card>
+                    )}
+
+                    {/* Three headline cards: standing · the ask · the inequity */}
+                    {cards.length > 0 && (
+                      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="lg">
+                        {cards.map((h, i) => (
+                          <Card key={i} withBorder radius="md" shadow="sm" padding="lg">
+                            <ThemeIcon variant="light" color={h.color} size={38} radius="md">{h.icon}</ThemeIcon>
+                            <Text fw={800} fz={26} mt="sm" lh={1.1} c={h.valueColor}>{h.value}</Text>
+                            <Text size="sm" c="dimmed" mt={4}>{h.label}</Text>
+                          </Card>
+                        ))}
+                      </SimpleGrid>
+                    )}
+                  </>
                 )}
 
-                {/* Deficit to median — frame the ask as a baseline correction, not a premium */}
-                {medianDeficit > 0 && (
-                  <Text size="sm" mb="lg">
-                    Even against the plain title median ({usd(med)}), {subjectFirst} sits{' '}
-                    <Text span fw={700}>{usd(medianDeficit)}</Text> short — this request is a correction to the
-                    market baseline, not a premium.
-                  </Text>
-                )}
-
-                {/* Historical Investment & Progression Gap — only when the candidate is genuinely behind */}
-                {showProgression && (
+                {/* Raise divergence in absolute dollars — honest framing that a low base can't flatter */}
+                {showDivergence && (
                   <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
-                    <Text size="sm" fw={700}>Historical Investment &amp; Progression Gap</Text>
+                    <Text size="sm" fw={700}>Raise divergence (absolute dollars)</Text>
                     <Text size="xs" c="dimmed" mb="md">
-                      {subjectFirst}'s pay has grown far less than the peers now out-earning them — wage compression that compounds every year it goes uncorrected.
+                      Percentage growth flatters a low starting salary. In raw dollars, {subjectFirst}'s raises have lagged — and the gap compounds every year.
                     </Text>
-                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xl">
-                      <div>
-                        <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.05em' }}>Total pay growth on record</Text>
-                        <ProgRow label="Peers (avg)" value={progression.avgGrowth} display={progression.avgGrowth != null ? pct(progression.avgGrowth) : '—'} max={gMax} color="gray.5" />
-                        <ProgRow label={subjectFirst} value={progression.subjGrowth} display={progression.subjGrowth != null ? pct(progression.subjGrowth) : '—'} max={gMax} color="indigo.6" emphasize />
-                      </div>
-                      <div>
-                        <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="xs" style={{ letterSpacing: '0.05em' }}>Raises on record</Text>
-                        <ProgRow label="Peers (avg)" value={progression.avgRaises} display={progression.avgRaises != null ? progression.avgRaises.toFixed(1) : '—'} max={rMax} color="gray.5" />
-                        <ProgRow label={subjectFirst} value={progression.subjRaises} display={progression.subjRaises != null ? String(progression.subjRaises) : '—'} max={rMax} color="indigo.6" emphasize />
-                      </div>
-                    </SimpleGrid>
+                    <ProgRow label="Peers (avg gained)" value={progression.avgAbs} display={progression.avgAbs != null ? `+${usd(progression.avgAbs)}` : '—'} max={aMax} color="gray.5" />
+                    <ProgRow label={`${subjectFirst} (gained)`} value={progression.subjAbs} display={progression.subjAbs != null ? `+${usd(progression.subjAbs)}` : '—'} max={aMax} color="indigo.6" emphasize />
+                    {progression.avgAbs != null && progression.subjAbs != null && (
+                      <Text size="sm" mt="xs">
+                        {subjectFirst} has gained <Text span fw={800}>{usd(progression.avgAbs - progression.subjAbs)}</Text> less in raises than the typical peer over the same period.
+                      </Text>
+                    )}
                   </Card>
                 )}
 
-                {/* Fallback when the candidate's % growth isn't lower — a high % off a depressed base. */}
-                {showBaseDisadvantage && (
-                  <Card withBorder radius="md" shadow="sm" padding="md" mb="lg">
-                    <Text size="sm" fw={700} mb={4}>Historical Base Disadvantage</Text>
-                    <Text size="sm">
-                      {subjectFirst}'s higher percentage pay growth is a mathematical byproduct of a severely depressed
-                      starting salary — a low base inflates the percentage while absolute pay stays below the market rate.
-                    </Text>
-                  </Card>
+                {/* Sustained underpayment — chronic, not a one-off */}
+                {longevity && longevity.belowCount > 0 && longevity.total > 1 && (
+                  <Text size="sm" mb="lg">
+                    <b>Sustained underpayment:</b> {subjectFirst} has been paid below the title median in{' '}
+                    <Text span fw={700}>{longevity.belowCount} of the last {longevity.total}</Text> snapshots
+                    {longevity.years != null && longevity.years >= 1 ? ` (≈ ${longevity.years.toFixed(0)} years)` : ''} — this is chronic, not a one-off.
+                  </Text>
                 )}
 
                 {/* Peer Parity Matrix — chart + table merged: inline salary bars right in the table */}
@@ -524,6 +698,7 @@ export default function Reports() {
                             <Table.Tr>
                               <Table.Th>Name</Table.Th>
                               <Table.Th>Title</Table.Th>
+                              {showTenure && <Table.Th ta="right">Tenure</Table.Th>}
                               {superviseOn && <Table.Th>Staff managed</Table.Th>}
                               <Table.Th>Salary</Table.Th>
                               <Table.Th ta="right">vs {subjectFirst}</Table.Th>
@@ -532,14 +707,16 @@ export default function Reports() {
                           <Table.Tbody>
                             {tableRows.map((r) => {
                               const gap = r.pay - (subjectPay ?? 0); // how much more the peer earns
+                              const lessExp = !r.isSubject && r.tenure != null && tenureYears != null && r.tenure <= tenureYears && gap > 0;
                               return (
                                 <Table.Tr key={r.key} style={r.isSubject ? { background: 'var(--mantine-color-indigo-light)' } : undefined}>
                                   <Table.Td>
                                     {r.isSubject
                                       ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="indigo" tt="none" ml={4}>Review Subject</Badge></>
-                                      : r.name}
+                                      : <>{r.name}{lessExp && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less experience</Badge>}</>}
                                   </Table.Td>
                                   <Table.Td>{r.title ?? '—'}</Table.Td>
+                                  {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
                                   {superviseOn && (
                                     <Table.Td>
                                       {r.isSubject ? `${supN} ${supN === 1 ? 'report' : 'reports'}` : peersSupervise ? 'Supervisor' : '—'}
