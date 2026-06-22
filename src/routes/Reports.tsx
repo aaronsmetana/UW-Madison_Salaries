@@ -16,7 +16,7 @@ import { ReportBrief } from '../components/report/ReportBrief';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
   ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow, type ProofModel,
-  type ReceiptLine, type BriefModel,
+  type ReceiptLine, type BriefModel, type BadgeTone,
 } from '../components/report/model';
 
 interface Subject {
@@ -313,7 +313,20 @@ export default function Reports() {
     .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey)
     .slice(0, 3)
     .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
-  const cohortBadges = Object.fromEntries(ALL_MODES.map((m) => [m, cohortAvailable[m] ? deficitBadge(statsByMode[m].gapToMed) : null])) as Record<CohortMode, ReturnType<typeof deficitBadge>>;
+  // Semantic scenting: highlight the single biggest-deficit lens as the strongest ("best") case.
+  let bestMode: CohortMode | null = null;
+  let bestGap = 0;
+  for (const m of ALL_MODES) {
+    if (!cohortAvailable[m]) continue;
+    const g = statsByMode[m].gapToMed ?? 0;
+    if (g > bestGap) { bestGap = g; bestMode = m; }
+  }
+  const cohortBadges = Object.fromEntries(ALL_MODES.map((m) => {
+    if (!cohortAvailable[m]) return [m, null];
+    const b = deficitBadge(statsByMode[m].gapToMed);
+    if (b && b.tone === 'deficit' && m === bestMode) return [m, { text: b.text, tone: 'best' as BadgeTone }];
+    return [m, b];
+  })) as Record<CohortMode, { text: string; tone: BadgeTone } | null>;
 
   const loading = cmpReady && (!subjRows || !trayPeople || (!!jobCode && !peerListRows));
 

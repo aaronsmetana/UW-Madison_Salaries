@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress } from '@mantine/core';
+import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box } from '@mantine/core';
 import { useReducedMotion } from '@mantine/hooks';
 import { IconChartBar, IconScale, IconHistory } from '@tabler/icons-react';
 import { usd, pct } from '../../lib/format';
@@ -63,7 +63,7 @@ export function ReportBrief({ model, hovered, onHover }: {
         <Text c="dimmed">Pick a subject and add comparators on the left to build the review.</Text>
       ) : (
         <>
-          {/* Recommendation hero */}
+          {/* Recommendation hero — with the itemized "receipt" docked directly under the number */}
           {belowTarget && recommended != null ? (
             <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="lg">
               <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>Recommendation</Text>
@@ -72,8 +72,45 @@ export function ReportBrief({ model, hovered, onHover }: {
               </Text>
               <Text mt={8}>
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>) — {basisLabel}.
+                (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}
               </Text>
+
+              {showReceipt && (
+                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-indigo-2)' }}>
+                  <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb={6} style={{ letterSpacing: '0.05em' }}>How this figure is built</Text>
+                  <Stack gap={4}>
+                    {receipt.map((line) => {
+                      const lit = line.kind === 'addon' && hovered === `factor:${line.id}`;
+                      return (
+                        <Group
+                          key={line.id}
+                          justify="space-between"
+                          wrap="nowrap"
+                          px={6}
+                          style={{ borderRadius: 6, background: lit ? 'rgba(255,255,255,0.6)' : undefined, transition: 'background 150ms' }}
+                        >
+                          <Text size="sm" c={line.kind === 'base' ? undefined : 'dimmed'} fw={line.kind === 'base' ? 600 : 400}>
+                            {line.kind === 'addon' ? '+ ' : ''}{line.label}
+                          </Text>
+                          <Text size="sm" fw={line.kind === 'base' ? 600 : 400} c={line.kind === 'negotiated' ? 'dimmed' : undefined}>
+                            {line.kind !== 'base' && line.amount >= 0 ? '+' : ''}{usd(line.amount)}
+                          </Text>
+                        </Group>
+                      );
+                    })}
+                    <Divider my={4} />
+                    <Group justify="space-between" wrap="nowrap" px={6}>
+                      <Text size="sm" fw={800}>Total parity recommendation</Text>
+                      <Text size="sm" fw={800} c="green.7">{usd(recommended)}</Text>
+                    </Group>
+                  </Stack>
+                  {activeFactors.some((f) => f.amount == null && f.note) && (
+                    <Text size="xs" c="dimmed" mt="sm">
+                      Also supporting (not costed): {activeFactors.filter((f) => f.amount == null && f.note).map((f) => f.label.toLowerCase()).join(', ')}.
+                    </Text>
+                  )}
+                </Box>
+              )}
             </Paper>
           ) : (
             <Paper withBorder radius="md" p="lg" mb="lg">
@@ -82,44 +119,6 @@ export function ReportBrief({ model, hovered, onHover }: {
                 {subjectFirst} is at or above the parity target{recommended != null ? ` (${usd(recommended)})` : ''} — maintain current pay.
               </Text>
             </Paper>
-          )}
-
-          {/* Itemized receipt — transparent base + value-adds = total */}
-          {showReceipt && (
-            <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
-              <Text size="sm" fw={700} mb="sm">How this figure is built</Text>
-              <Stack gap={4}>
-                {receipt.map((line) => {
-                  const lit = line.kind === 'addon' && hovered === `factor:${line.id}`;
-                  return (
-                    <Group
-                      key={line.id}
-                      justify="space-between"
-                      wrap="nowrap"
-                      px={6}
-                      style={{ borderRadius: 6, background: lit ? 'var(--mantine-color-indigo-light)' : undefined, transition: 'background 150ms' }}
-                    >
-                      <Text size="sm" c={line.kind === 'base' ? undefined : 'dimmed'} fw={line.kind === 'base' ? 600 : 400}>
-                        {line.kind === 'addon' ? '+ ' : ''}{line.label}
-                      </Text>
-                      <Text size="sm" fw={line.kind === 'base' ? 600 : 400} c={line.kind === 'negotiated' ? 'dimmed' : undefined}>
-                        {line.kind !== 'base' && line.amount >= 0 ? '+' : ''}{usd(line.amount)}
-                      </Text>
-                    </Group>
-                  );
-                })}
-                <Divider my={4} />
-                <Group justify="space-between" wrap="nowrap" px={6}>
-                  <Text size="sm" fw={800}>Total requested</Text>
-                  <Text size="sm" fw={800} c="green.7">{usd(recommended ?? 0)}</Text>
-                </Group>
-              </Stack>
-              {activeFactors.some((f) => f.amount == null && f.note) && (
-                <Text size="xs" c="dimmed" mt="sm">
-                  Also supporting (not costed): {activeFactors.filter((f) => f.amount == null && f.note).map((f) => f.label.toLowerCase()).join(', ')}.
-                </Text>
-              )}
-            </Card>
           )}
 
           {!jobCode && (

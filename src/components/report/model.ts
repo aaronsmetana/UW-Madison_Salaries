@@ -22,7 +22,12 @@ export const FACTOR_DEFS = [
   { key: 'scope', label: 'Expanded scope / out-of-class', placeholder: 'e.g. acting lead; duties above grade' },
   { key: 'market', label: 'Market & retention', placeholder: 'e.g. competing offer; actively recruited' },
   { key: 'performance', label: 'Performance & impact', placeholder: 'e.g. "Exceeds"; secured $1.2M grant' },
-  { key: 'skills', label: 'Specialized skills & experience', placeholder: 'e.g. sole owner of system X; 6 yrs prior experience' },
+  { key: 'skills', label: 'Specialized skills & experience', placeholder: 'e.g. 6 yrs relevant prior experience' },
+  // Research-university leverage (School of Medicine & Public Health and similar units)
+  { key: 'grants', label: 'Sponsored research / grant infrastructure', placeholder: 'e.g. maintains data-compliance systems for a $4.2M NIH R01' },
+  { key: 'spof', label: 'Sole system owner (single point of failure)', placeholder: 'e.g. only admin of the Epic interface — no internal backup' },
+  { key: 'escalation', label: 'De-facto onboarding / Tier-III escalation', placeholder: 'e.g. senior code review + escalation for 6 Grade-25 staff' },
+  { key: 'vendor', label: 'External vendor management', placeholder: 'e.g. owns the AWS / Microsoft / Epic technical contract' },
 ] as const;
 export type FactorKey = (typeof FACTOR_DEFS)[number]['key'];
 
@@ -113,12 +118,13 @@ export function cohortStats(rows: CohortRow[], subjectPay: number | null, tenure
   return { n, med, p75, expMed, percentile, gapToMed, invCount, invMaxGap };
 }
 
-/** Short deficit/surplus badge for a cohort radio label. */
-export function deficitBadge(gapToMed: number | null): { text: string; deficit: boolean } | null {
+/** Short deficit/surplus badge for a cohort radio label (tone drives semantic-scenting color). */
+export type BadgeTone = 'best' | 'deficit' | 'surplus' | 'neutral';
+export function deficitBadge(gapToMed: number | null): { text: string; tone: BadgeTone } | null {
   if (gapToMed == null) return null;
-  if (gapToMed > 0) return { text: `−${usd(gapToMed)} deficit`, deficit: true };
-  if (gapToMed < 0) return { text: `+${usd(-gapToMed)} surplus — weak case`, deficit: false };
-  return { text: 'at the median', deficit: false };
+  if (gapToMed > 0) return { text: `−${usd(gapToMed)} deficit`, tone: 'deficit' };
+  if (gapToMed < 0) return { text: `+${usd(-gapToMed)} — weak case`, tone: 'surplus' };
+  return { text: 'at the median', tone: 'neutral' };
 }
 
 // ── Receipt (itemized "base parity + value-adds = total") ──
@@ -126,9 +132,9 @@ export interface ReceiptLine { id: string; label: string; amount: number; kind: 
 
 // ── Case-strength meter ──
 export interface CaseStrength {
-  score: number; // 0–100
+  score: number; // 0–100 (= sum of part contributions)
   label: 'Strong' | 'Moderate' | 'Developing';
-  parts: { label: string; value: number }[]; // each 0–100
+  parts: { label: string; value: number; max: number }[]; // value = weighted contribution; max = its cap
 }
 export function caseStrength(opts: {
   gapToMed: number | null; med: number | null; invCount: number; streakYears: number; activeFactors: number;
@@ -138,13 +144,15 @@ export function caseStrength(opts: {
   const inv = Math.min(1, invCount / 3);
   const sustained = Math.min(1, streakYears / 5);
   const support = Math.min(1, activeFactors / 3);
+  // Each bar is that signal's weighted CONTRIBUTION to the total (so the four bars sum to the score).
+  const W = { below: 35, inv: 30, sustained: 20, support: 15 };
   const parts = [
-    { label: 'Market deficit', value: Math.round(below * 100) },
-    { label: 'Tenure inversion', value: Math.round(inv * 100) },
-    { label: 'Sustained deficit', value: Math.round(sustained * 100) },
-    { label: 'Added value', value: Math.round(support * 100) },
+    { label: 'Market deficit', value: Math.round(below * W.below), max: W.below },
+    { label: 'Tenure inversion', value: Math.round(inv * W.inv), max: W.inv },
+    { label: 'Sustained deficit', value: Math.round(sustained * W.sustained), max: W.sustained },
+    { label: 'Added value', value: Math.round(support * W.support), max: W.support },
   ];
-  const score = Math.round((below * 0.35 + inv * 0.3 + sustained * 0.2 + support * 0.15) * 100);
+  const score = parts.reduce((s, p) => s + p.value, 0);
   const label = score >= 67 ? 'Strong' : score >= 34 ? 'Moderate' : 'Developing';
   return { score, label, parts };
 }
