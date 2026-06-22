@@ -81,6 +81,8 @@ export function ReportBrief({ model, hovered, onHover }: {
                   <Stack gap={4}>
                     {receipt.map((line) => {
                       const lit = line.kind === 'addon' && hovered === `factor:${line.id}`;
+                      // Each value-add also shown as a % of current pay (ties back to the +1% / +2.5% pills).
+                      const linePct = line.kind !== 'base' && subjectPay ? line.amount / subjectPay : null;
                       return (
                         <Group
                           key={line.id}
@@ -94,6 +96,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                           </Text>
                           <Text size="sm" fw={line.kind === 'base' ? 600 : 400} c={line.kind === 'negotiated' ? 'dimmed' : undefined}>
                             {line.kind !== 'base' && line.amount >= 0 ? '+' : ''}{usd(line.amount)}
+                            {linePct != null && <Text span c="dimmed" fw={400}> ({linePct >= 0 ? '+' : ''}{pct(linePct)})</Text>}
                           </Text>
                         </Group>
                       );
@@ -101,7 +104,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                     <Divider my={4} />
                     <Group justify="space-between" wrap="nowrap" px={6}>
                       <Text size="sm" fw={800}>Total parity recommendation</Text>
-                      <Text size="sm" fw={800} c="green.7">{usd(recommended)}</Text>
+                      <Text size="sm" fw={800} c="green.7">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
                     </Group>
                   </Stack>
                   {activeFactors.some((f) => f.amount == null && f.note) && (
