@@ -23,7 +23,7 @@ interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
   grade_number: number | null; school: string | null; date_of_hire: string | null;
 }
-interface PeerRow { pay: number; tenure: number | null; school: string | null }
+interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
 
 const ALL_MODES: CohortMode[] = ['all', 'school', 'tenure', 'grade', 'curated'];
@@ -84,16 +84,16 @@ export default function Reports() {
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
         FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT pay, tenure, school FROM pp WHERE pay > 0`,
+     SELECT person_key, pay, tenure, school FROM pp WHERE pay > 0`,
     cmpReady && !!jobCode
   );
 
-  const { data: gradeListRows } = useSql<{ pay: number; tenure: number | null }>(
+  const { data: gradeListRows } = useSql<{ person_key: string; pay: number; tenure: number | null }>(
     ['rpt-gradelist', grade ?? -1, snap ?? '', metric],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
         FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND grade_number = ${grade ?? -1} GROUP BY person_key)
-     SELECT pay, tenure FROM pp WHERE pay > 0`,
+     SELECT person_key, pay, tenure FROM pp WHERE pay > 0`,
     cmpReady && grade != null
   );
 
@@ -138,19 +138,22 @@ export default function Reports() {
     return Math.max(0, (Date.now() - new Date(subj.date_of_hire).getTime()) / (365.25 * 864e5));
   }, [subj]);
 
+  // Each cohort is the set of PEERS the subject is measured against — the subject is never part of
+  // their own benchmark (critical for the small curated set, where including them halves the gap).
   const cohortRowsFor = useMemo(() => {
-    const all: CohortRow[] = (peerListRows ?? []).map((r) => ({ pay: r.pay, tenure: r.tenure }));
-    const tray: CohortRow[] = (trayPeople ?? []).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+    const peers = (peerListRows ?? []).filter((r) => r.person_key !== subjectKey);
+    const grades = (gradeListRows ?? []).filter((r) => r.person_key !== subjectKey);
+    const curated = (trayPeople ?? []).filter((r) => r.person_key !== subjectKey).map((r) => ({ pay: r.pay, tenure: r.tenure }));
     return (mode: CohortMode): CohortRow[] => {
       switch (mode) {
-        case 'all': return all;
-        case 'school': return (peerListRows ?? []).filter((r) => school != null && r.school === school).map((r) => ({ pay: r.pay, tenure: r.tenure }));
-        case 'tenure': return tenureYears == null ? [] : (peerListRows ?? []).filter((r) => r.tenure != null && Math.abs(r.tenure - tenureYears) <= config.tenureBand).map((r) => ({ pay: r.pay, tenure: r.tenure }));
-        case 'grade': return (gradeListRows ?? []).map((r) => ({ pay: r.pay, tenure: r.tenure }));
-        case 'curated': return tray;
+        case 'all': return peers.map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'school': return peers.filter((r) => school != null && r.school === school).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'tenure': return tenureYears == null ? [] : peers.filter((r) => r.tenure != null && Math.abs(r.tenure - tenureYears) <= config.tenureBand).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'grade': return grades.map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'curated': return curated;
       }
     };
-  }, [peerListRows, trayPeople, gradeListRows, school, tenureYears, config.tenureBand]);
+  }, [peerListRows, trayPeople, gradeListRows, school, tenureYears, config.tenureBand, subjectKey]);
 
   const statsByMode = useMemo(() => {
     const out = {} as Record<CohortMode, ReturnType<typeof cohortStats>>;
@@ -159,7 +162,7 @@ export default function Reports() {
   }, [cohortRowsFor, subjectPay, tenureYears]);
 
   const cohortAvailable = useMemo(() => {
-    const minN = (m: CohortMode) => (m === 'curated' ? 2 : 3);
+    const minN = (m: CohortMode) => (m === 'curated' ? 1 : 3); // 1 named peer is a valid curated benchmark
     return Object.fromEntries(ALL_MODES.map((m) => {
       let ok = statsByMode[m].n >= minN(m);
       if (m === 'school' && school == null) ok = false;
@@ -172,6 +175,7 @@ export default function Reports() {
   const selectedMode: CohortMode = cohortAvailable[config.cohort] ? config.cohort : 'all';
   const stats = statsByMode[selectedMode];
   const med = stats.med;
+  const cohortLabel = COHORT_DEFS.find((c) => c.value === selectedMode)?.label ?? '';
 
   // Longevity (consecutive years below the title median)
   const longevity = useMemo(() => {
@@ -233,9 +237,10 @@ export default function Reports() {
   const targetPerson = (trayPeople ?? []).find((p) => p.person_key === config.targetKey) ?? null;
   const targetPay = targetPerson?.pay ?? null;
   const baseParity = targetPay ?? stats.expMed ?? med ?? null;
+  const medianKind = stats.expMed != null ? 'tenure-adjusted median' : 'median';
   const baseLabel = targetPerson
     ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
-    : stats.expMed != null ? 'tenure-adjusted median' : 'title median';
+    : `${medianKind} · ${cohortLabel}`;
 
   const activeFactors = FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => {
     const a = config.factors[f.key].amount;
@@ -263,15 +268,14 @@ export default function Reports() {
   const proofs: ProofModel[] = useMemo(() => {
     if (subjectPay == null) return [];
     const out: ProofModel[] = [];
-    if (stats.percentile != null) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? 'Current pay sits below the strict title median.' : 'Current pay is at or above the title median.', detail: '' });
+    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${cohortLabel.toLowerCase()} median.` : `Current pay is at or above the ${cohortLabel.toLowerCase()} median.`, detail: '' });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: `${num(stats.invCount)} peers`, label: 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
     if (longevity.streak > 0) out.push({ kind: 'sustained', value: `${longevity.streakYears} ${longevity.streakYears === 1 ? 'year' : 'years'}`, label: 'consecutive years in market deficit', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
     return out;
-  }, [subjectPay, stats, longevity]);
+  }, [subjectPay, stats, longevity, cohortLabel]);
 
   // ── Case strength + talking points (left pane only) ──
   const strength = useMemo(() => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length }), [stats, med, longevity, activeFactors.length]);
-  const cohortLabel = COHORT_DEFS.find((c) => c.value === selectedMode)?.label ?? '';
   const talkingPoints = useMemo(() => buildTalkingPoints({
     subjectName, current: subjectPay, recommended, delta: targetDelta, pct: targetPct, cohortLabel,
     percentile: stats.percentile, invCount: stats.invCount, invMaxGap: stats.invMaxGap, streakYears: longevity.streakYears,
@@ -281,7 +285,9 @@ export default function Reports() {
   const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ');
 
   const basisLabel = belowTarget
-    ? (targetPerson ? `to match ${baseLabel}${addOnSum > 0 ? ', plus documented value-adds' : ''}` : `to reach the ${baseLabel} for ${cohortLabel.toLowerCase()}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
+    ? (targetPerson
+        ? `to match ${fullName(targetPerson.fn, targetPerson.ln)}'s salary${addOnSum > 0 ? ', plus documented value-adds' : ''}`
+        : `to reach the ${medianKind} of ${cohortLabel.toLowerCase()}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
     : '';
 
   const model: BriefModel = {

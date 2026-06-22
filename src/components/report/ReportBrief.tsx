@@ -41,7 +41,7 @@ export function ReportBrief({ model, hovered, onHover }: {
 }) {
   const {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
-    basisLabel, receipt, proofs, rows, maxPay, showTenure, cohortLabel, netSavings, divergence, format,
+    basisLabel, receipt, proofs, rows, maxPay, showTenure, netSavings, divergence, format,
     sections, jobCode, activeFactors,
   } = model;
 
@@ -146,7 +146,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {/* Peer comparison matrix */}
           {has('peers') && rows.length > 1 && (
             <>
-              <Text size="sm" fw={600} mb="xs">Peer comparison <Text span c="dimmed" size="xs">· {cohortLabel}</Text></Text>
+              <Text size="sm" fw={600} mb="xs">Peer comparison <Text span c="dimmed" size="xs">· your named comparators</Text></Text>
               <Card withBorder radius="md" shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table striped highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
