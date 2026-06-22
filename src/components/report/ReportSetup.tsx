@@ -10,7 +10,7 @@ import { usd } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import {
   COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, type ReportConfig, type CohortMode, type FactorKey,
-  type CaseStrength, type BadgeTone,
+  type CaseStrength, type BadgeTone, type StrengthKey,
 } from './model';
 
 export interface SetupComparator { key: string; name: string; title: string | null; school: string | null; tenure: number | null; pay: number | null; isSubject: boolean }
@@ -22,7 +22,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, onAddPerson, onRemovePerson,
-  cohortBadges, cohortAvailable, targetOptions, caseStrength, talkingPoints, onReset, onHover,
+  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, onReset, onHover,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -37,6 +37,7 @@ export function ReportSetup({
   cohortAvailable: Record<CohortMode, boolean>;
   targetOptions: { value: string; label: string }[];
   caseStrength: CaseStrength | null;
+  strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>>;
   talkingPoints: string;
   onReset: () => void;
   onHover: (id: string | null) => void;
@@ -273,18 +274,30 @@ export function ReportSetup({
                 {caseStrength.label} · {caseStrength.score}
               </Badge>
             </Group>
-            <Stack gap={6}>
-              {caseStrength.parts.map((p) => (
-                <div key={p.label}>
-                  <Group justify="space-between" gap={4} mb={2}>
-                    <Text size="xs" c="dimmed">{p.label}</Text>
-                    <Text size="xs" c="dimmed" fw={600}>{p.value}<Text span c="dimmed" fw={400}> / {p.max}</Text></Text>
-                  </Group>
-                  <Progress value={p.value} color={p.value > 0 ? 'indigo' : 'gray'} size="sm" radius="sm" />
-                </div>
-              ))}
+            <Stack gap={8}>
+              {caseStrength.parts.map((p) => {
+                const maxed = p.value >= p.max;
+                const hint = strengthHints[p.key];
+                return (
+                  <div key={p.key}>
+                    <Group justify="space-between" gap={4} mb={2}>
+                      <Text size="xs" c="dimmed">{p.label}</Text>
+                      <Group gap={3} wrap="nowrap">
+                        {maxed && <IconCheck size={12} color="var(--mantine-color-teal-6)" />}
+                        <Text size="xs" c="dimmed" fw={600}>{p.value}<Text span c="dimmed" fw={400}> / {p.max}</Text></Text>
+                      </Group>
+                    </Group>
+                    <Progress value={p.value} color={p.value > 0 ? 'indigo' : 'gray'} size="sm" radius="sm" />
+                    {!maxed && hint && (
+                      <Text size="xs" mt={3} c={hint.tone === 'action' ? 'indigo.7' : 'dimmed'}>
+                        {hint.tone === 'action' ? '↳ ' : ''}{hint.text}
+                      </Text>
+                    )}
+                  </div>
+                );
+              })}
             </Stack>
-            <Text size="xs" c="dimmed" mt={6}>Bars show each signal's contribution to the {caseStrength.score}-point score.</Text>
+            <Text size="xs" c="dimmed" mt={8}>Bars show each signal's contribution to the {caseStrength.score}-point score.</Text>
           </Box>
         )}
 

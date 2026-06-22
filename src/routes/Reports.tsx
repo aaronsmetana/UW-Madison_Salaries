@@ -16,7 +16,7 @@ import { ReportBrief } from '../components/report/ReportBrief';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
   ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow, type ProofModel,
-  type ReceiptLine, type BriefModel, type BadgeTone,
+  type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
 
 interface Subject {
@@ -328,6 +328,30 @@ export default function Reports() {
     return [m, b];
   })) as Record<CohortMode, { text: string; tone: BadgeTone } | null>;
 
+  // Per-signal coaching: for any case-strength bar that isn't maxed, the concrete lever to lift it.
+  const bestLabel = COHORT_DEFS.find((c) => c.value === bestMode)?.label ?? '';
+  const strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>> = {};
+  for (const p of strength.parts) {
+    if (p.value >= p.max) continue;
+    const head = p.max - p.value;
+    if (p.key === 'market') {
+      if (bestMode && bestMode !== selectedMode && bestGap > (stats.gapToMed ?? 0)) {
+        strengthHints.market = { text: `up to +${head} pts · switch to “${bestLabel}” (−${usd(bestGap)})`, tone: 'action' };
+      } else if (stats.gapToMed != null && stats.gapToMed > 0 && med) {
+        strengthHints.market = { text: `the largest gap available — ${pct(stats.gapToMed / med)} below this cohort’s median`, tone: 'fixed' };
+      } else {
+        strengthHints.market = { text: 'at or above this cohort’s median', tone: 'fixed' };
+      }
+    } else if (p.key === 'inversion') {
+      strengthHints.inversion = { text: `up to +${head} pts · add comparators with less UW tenure who out-earn ${subjectFirst}`, tone: 'action' };
+    } else if (p.key === 'added') {
+      const need = Math.max(1, 3 - activeFactors.length);
+      strengthHints.added = { text: `up to +${head} pts · document ${need} more justification factor${need === 1 ? '' : 's'}`, tone: 'action' };
+    } else if (p.key === 'sustained') {
+      strengthHints.sustained = { text: `fixed · ${longevity.streakYears} yr${longevity.streakYears === 1 ? '' : 's'} below median on record`, tone: 'fixed' };
+    }
+  }
+
   const loading = cmpReady && (!subjRows || !trayPeople || (!!jobCode && !peerListRows));
 
   // ── Render ──
@@ -347,6 +371,7 @@ export default function Reports() {
         cohortAvailable={cohortAvailable}
         targetOptions={targetOptions}
         caseStrength={strength}
+        strengthHints={strengthHints}
         talkingPoints={talkingPoints}
         onReset={() => setConfig(defaultConfig())}
         onHover={setHovered}

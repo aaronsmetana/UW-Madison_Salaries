@@ -131,10 +131,11 @@ export function deficitBadge(gapToMed: number | null): { text: string; tone: Bad
 export interface ReceiptLine { id: string; label: string; amount: number; kind: 'base' | 'addon' | 'negotiated' }
 
 // ── Case-strength meter ──
+export type StrengthKey = 'market' | 'inversion' | 'sustained' | 'added';
 export interface CaseStrength {
   score: number; // 0–100 (= sum of part contributions)
   label: 'Strong' | 'Moderate' | 'Developing';
-  parts: { label: string; value: number; max: number }[]; // value = weighted contribution; max = its cap
+  parts: { key: StrengthKey; label: string; value: number; max: number }[]; // value = weighted contribution; max = its cap
 }
 export function caseStrength(opts: {
   gapToMed: number | null; med: number | null; invCount: number; streakYears: number; activeFactors: number;
@@ -147,10 +148,10 @@ export function caseStrength(opts: {
   // Each bar is that signal's weighted CONTRIBUTION to the total (so the four bars sum to the score).
   const W = { below: 35, inv: 30, sustained: 20, support: 15 };
   const parts = [
-    { label: 'Market deficit', value: Math.round(below * W.below), max: W.below },
-    { label: 'Tenure inversion', value: Math.round(inv * W.inv), max: W.inv },
-    { label: 'Sustained deficit', value: Math.round(sustained * W.sustained), max: W.sustained },
-    { label: 'Added value', value: Math.round(support * W.support), max: W.support },
+    { key: 'market' as StrengthKey, label: 'Market deficit', value: Math.round(below * W.below), max: W.below },
+    { key: 'inversion' as StrengthKey, label: 'Tenure inversion', value: Math.round(inv * W.inv), max: W.inv },
+    { key: 'sustained' as StrengthKey, label: 'Sustained deficit', value: Math.round(sustained * W.sustained), max: W.sustained },
+    { key: 'added' as StrengthKey, label: 'Added value', value: Math.round(support * W.support), max: W.support },
   ];
   const score = parts.reduce((s, p) => s + p.value, 0);
   const label = score >= 67 ? 'Strong' : score >= 34 ? 'Moderate' : 'Developing';
