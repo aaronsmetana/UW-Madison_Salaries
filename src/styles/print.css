@@ -27,6 +27,14 @@
   .no-print {
     display: none !important;
   }
+  /* The interactive setup pane (the "Kitchen") never prints; the brief always does, full width. */
+  .setup-panel {
+    display: none !important;
+  }
+  .report-brief {
+    display: block !important;
+    width: 100% !important;
+  }
   /* Explicitly collapse the app chrome (left nav + top header) so it never reserves layout space
      or bleeds into the printed output. */
   .mantine-AppShell-navbar,

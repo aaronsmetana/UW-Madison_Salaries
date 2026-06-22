@@ -1,66 +1,49 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  Stack, Title, Text, Group, Button, Select, SegmentedControl, Card, Table, SimpleGrid, Divider, Paper,
-  Checkbox, NumberInput, TextInput, Alert, ThemeIcon, Drawer, Badge, Progress, Switch, Accordion,
-} from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import {
-  IconDownload, IconPrinter, IconChartBar, IconScale, IconCheck, IconHistory, IconAdjustments,
-} from '@tabler/icons-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Stack, Title, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
+import { IconDownload, IconPrinter } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay } from '../lib/queries';
-import { dropdownProps } from '../lib/selectProps';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { SearchBox } from '../components/SearchBox';
+import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
+import { ReportBrief } from '../components/report/ReportBrief';
+import {
+  COHORT_DEFS, FACTOR_DEFS, defaultConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
+  ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow, type ProofModel,
+  type ReceiptLine, type BriefModel,
+} from '../components/report/model';
 
 interface Subject {
-  pay: number | null; rate: number | null; title: string | null; job_code: string | null;
-  grade_number: number | null; grade_basis: string | null;
-  school: string | null; department: string | null; date_of_hire: string | null;
+  pay: number | null; title: string | null; job_code: string | null;
+  grade_number: number | null; school: string | null; date_of_hire: string | null;
 }
-interface PeerStat { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; p90: number | null; hi: number | null }
-interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; pay: number; tenure: number | null }
+interface PeerRow { pay: number; tenure: number | null; school: string | null }
+interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
 
-const SECTIONS = [
-  { value: 'highlights', label: 'Evidence (3 proofs)' },
-  { value: 'peers', label: 'Peer comparison' },
-];
-
-function ordinal(n: number): string {
-  const v = n % 100;
-  const s = ['th', 'st', 'nd', 'rd'];
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
-function median(nums: number[]): number | null {
-  const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
-  if (!a.length) return null;
-  const m = Math.floor(a.length / 2);
-  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-}
-
-// Strict three-color palette for the whole report: candidate = slate blue, peers = neutral gray,
-// target / positive raise = emerald green. (No alarm colors — this is a calm, premium HR document.)
-const CAND = 'var(--mantine-color-indigo-6)';
-const PEER = 'var(--mantine-color-gray-5)';
+const ALL_MODES: CohortMode[] = ['all', 'school', 'tenure', 'grade', 'curated'];
 
 export default function Reports() {
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
-  const { items } = useTray();
-  const [settingsOpen, { open: openSettings, close: closeSettings }] = useDisclosure(false);
+  const { items, add, remove } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = new Date().toISOString().slice(0, 10);
+  const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
 
   const [type, setType] = useState('person');
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
+  const [config, setConfig] = useState<ReportConfig>(defaultConfig);
 
-  // ── Report on person: pick any employee; history rows power the CSV export ──
+  // ── Report on person ──
   const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(null);
   const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
     ['rpt-person-hist', selPerson?.key ?? '', metric],
@@ -69,78 +52,60 @@ export default function Reports() {
     type === 'person' && !!selPerson
   );
 
-  // ── Justification report (tray) ─────────────────────────────────────────
+  // ── Comparison studio (tray) ──
   const persons = items.filter((i) => i.type === 'person');
   const personIds = persons.map((p) => sqlStr(p.id)).join(',');
 
   const [subjectKey, setSubjectKey] = useState<string | null>(null);
   useEffect(() => {
-    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) {
-      setSubjectKey(persons[0].id);
-    }
+    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) setSubjectKey(persons[0].id);
     if (!persons.length && subjectKey) setSubjectKey(null);
   }, [persons, subjectKey]);
   const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
   const subjectFirst = subjectName.split(' ')[0] || 'They';
 
-  const [sections, setSections] = useState<string[]>(SECTIONS.map((s) => s.value));
-  const has = (s: string) => sections.includes(s);
-
-  const [superviseOn, setSuperviseOn] = useState(false);
-  const [superviseCount, setSuperviseCount] = useState<number | ''>(0);
-  const [superviseNote, setSuperviseNote] = useState('');
-  const [peersSupervise, setPeersSupervise] = useState(false); // assert the compared peers also supervise
-  const supN = typeof superviseCount === 'number' ? superviseCount : 0;
-  const supervises = superviseOn && supN > 0;
-
-  // Supplemental justification: optionally aim above the median when added qualifications support it.
-  const [aboveMedian, setAboveMedian] = useState(false);
-  const [certs, setCerts] = useState('');
-  const [education, setEducation] = useState('');
-
   const cmpReady = type === 'comparison' && !!snap && !!subjectKey;
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
-    `SELECT ${personPay(metric)} pay, ${personPay('full')} rate,
-        arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
-        arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
-        any_value(school) school, any_value(department) department, min(date_of_hire) date_of_hire
+    `SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
+        arg_max(grade_number, ${expr}) grade_number, any_value(school) school, min(date_of_hire) date_of_hire
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')}`,
     cmpReady
   );
   const subj = subjRows?.[0];
   const subjectPay = subj?.pay ?? null;
   const jobCode = subj?.job_code ?? null;
+  const grade = subj?.grade_number ?? null;
+  const school = subj?.school ?? null;
 
-  const { data: peerStatRows } = useSql<PeerStat>(
-    ['rpt-peerstat', jobCode ?? '', snap ?? '', metric],
-    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
-        WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
-        quantile_cont(pay, 0.75) p75, quantile_cont(pay, 0.90) p90, max(pay) hi FROM pp WHERE pay > 0`,
-    cmpReady && !!jobCode
-  );
-  const peer = peerStatRows?.[0];
-
-  const { data: peerListRows } = useSql<{ pay: number; tenure: number | null }>(
+  const { data: peerListRows } = useSql<PeerRow>(
     ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
-    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay,
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
         FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT pay, tenure FROM pp WHERE pay > 0`,
+     SELECT pay, tenure, school FROM pp WHERE pay > 0`,
     cmpReady && !!jobCode
+  );
+
+  const { data: gradeListRows } = useSql<{ pay: number; tenure: number | null }>(
+    ['rpt-gradelist', grade ?? -1, snap ?? '', metric],
+    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
+        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND grade_number = ${grade ?? -1} GROUP BY person_key)
+     SELECT pay, tenure FROM pp WHERE pay > 0`,
+    cmpReady && grade != null
   );
 
   const { data: trayPeople } = useSql<TrayPerson>(
     ['rpt-tray', personIds, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title, ${personPay(metric)} pay,
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
+        any_value(school) school, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
     type === 'comparison' && persons.length > 0 && !!snap
   );
 
-  // Title median per snapshot vs the subject's pay — powers the "below the median over time" longevity stat.
   const { data: medHist } = useSql<{ date: string; med: number | null; pay: number | null }>(
     ['rpt-med-hist', jobCode ?? '', subjectKey ?? '', metric],
     `WITH per_snap AS (
@@ -152,7 +117,6 @@ export default function Reports() {
     cmpReady && !!jobCode
   );
 
-  // Full pay history for everyone in the tray — powers the peer-vs-subject progression comparison.
   const { data: peerHist } = useSql<{ person_key: string; date: string; pay: number }>(
     ['rpt-peer-hist', personIds, metric],
     `SELECT person_key, any_value(snapshot_date) date, ${personPay(metric)} pay
@@ -160,164 +124,220 @@ export default function Reports() {
     type === 'comparison' && persons.length > 0
   );
 
-  // ── Derived stats ───────────────────────────────────────────────────────
+  const { data: suggestRows } = useSql<{ person_key: string; fn: string; ln: string; pay: number }>(
+    ['rpt-suggest', jobCode ?? '', snap ?? '', metric],
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay(metric)} pay
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')}
+     GROUP BY person_key ORDER BY pay DESC LIMIT 10`,
+    cmpReady && !!jobCode
+  );
+
+  // ── Derivation ──
   const tenureYears = useMemo(() => {
     if (!subj?.date_of_hire) return null;
     return Math.max(0, (Date.now() - new Date(subj.date_of_hire).getTime()) / (365.25 * 864e5));
   }, [subj]);
 
-  const percentile = useMemo(() => {
-    if (!peerListRows?.length || subjectPay == null) return null;
-    const below = peerListRows.filter((p) => p.pay <= subjectPay).length;
-    return Math.round((100 * below) / peerListRows.length);
-  }, [peerListRows, subjectPay]);
+  const cohortRowsFor = useMemo(() => {
+    const all: CohortRow[] = (peerListRows ?? []).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+    const tray: CohortRow[] = (trayPeople ?? []).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+    return (mode: CohortMode): CohortRow[] => {
+      switch (mode) {
+        case 'all': return all;
+        case 'school': return (peerListRows ?? []).filter((r) => school != null && r.school === school).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'tenure': return tenureYears == null ? [] : (peerListRows ?? []).filter((r) => r.tenure != null && Math.abs(r.tenure - tenureYears) <= config.tenureBand).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'grade': return (gradeListRows ?? []).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+        case 'curated': return tray;
+      }
+    };
+  }, [peerListRows, trayPeople, gradeListRows, school, tenureYears, config.tenureBand]);
 
-  const expMedian = useMemo(() => {
-    if (!peerListRows || tenureYears == null) return null;
-    const cohort = peerListRows.filter((p) => p.tenure != null && p.tenure >= tenureYears - 1).map((p) => p.pay);
-    return cohort.length >= 5 ? median(cohort) : null;
-  }, [peerListRows, tenureYears]);
+  const statsByMode = useMemo(() => {
+    const out = {} as Record<CohortMode, ReturnType<typeof cohortStats>>;
+    for (const m of ALL_MODES) out[m] = cohortStats(cohortRowsFor(m), subjectPay, tenureYears);
+    return out;
+  }, [cohortRowsFor, subjectPay, tenureYears]);
 
-  const med = peer?.med ?? null; // market parity (title median) — shown as a secondary reference
+  const cohortAvailable = useMemo(() => {
+    const minN = (m: CohortMode) => (m === 'curated' ? 2 : 3);
+    return Object.fromEntries(ALL_MODES.map((m) => {
+      let ok = statsByMode[m].n >= minN(m);
+      if (m === 'school' && school == null) ok = false;
+      if (m === 'tenure' && tenureYears == null) ok = false;
+      if (m === 'grade' && grade == null) ok = false;
+      return [m, ok];
+    })) as Record<CohortMode, boolean>;
+  }, [statsByMode, school, tenureYears, grade]);
 
-  const otherPeers = useMemo(
-    () => (trayPeople ?? [])
-      .filter((p) => p.person_key !== subjectKey)
-      .map((p) => ({ ...p, delta: (subjectPay ?? 0) - p.pay }))
-      .sort((a, b) => b.pay - a.pay),
-    [trayPeople, subjectKey, subjectPay]
-  );
+  const selectedMode: CohortMode = cohortAvailable[config.cohort] ? config.cohort : 'all';
+  const stats = statsByMode[selectedMode];
+  const med = stats.med;
 
-  // ── Targets: tenure-adjusted median by default (tenure = years since UW–Madison date of hire);
-  //    an above-median (75th-pctile) target when the user asserts supplemental qualifications justify it. ──
-  const baseTarget = expMedian ?? med ?? null; // tenure-adjusted parity (falls back to title median)
-  const elevatedTarget = peer?.p75 ?? baseTarget; // above-median, justified by added qualifications
-  const primaryTarget = (aboveMedian ? elevatedTarget : baseTarget) ?? null;
-  const belowTarget = subjectPay != null && primaryTarget != null && subjectPay < primaryTarget;
-  const targetDelta = belowTarget && primaryTarget != null && subjectPay != null ? primaryTarget - subjectPay : 0;
-  const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
-  // Plain-language reason the target number was chosen (shown under the hero figure).
-  const targetBasis = aboveMedian
-    ? `the 75th-percentile pay for this title — an above-median target justified by ${[certs.trim() && 'added certifications', education.trim() && 'further education/training', supervises && 'expanded supervisory scope'].filter(Boolean).join(', ') || 'added qualifications'}`
-    : expMedian != null
-      ? `the median pay of same-title peers with at least ${tenureYears != null ? `${tenureYears.toFixed(0)} years` : 'the same'} of UW–Madison tenure`
-      : peer?.p75 != null ? 'the 75th-percentile pay for this title' : 'the median pay for this title';
-
-  // Deficit to the title median — the "basic correction to market baseline" framing.
-  const medianDeficit = med != null && subjectPay != null && subjectPay < med ? med - subjectPay : 0;
-
-  // Tenure inversion — same-title peers with STRICTLY LESS UW–Madison tenure than the subject who are
-  // nonetheless paid more. The hardest-to-rebut argument; computed across the full UW peer population.
-  const tenureInversion = useMemo(() => {
-    if (!peerListRows || tenureYears == null || subjectPay == null) return null;
-    const lower = peerListRows.filter((p) => p.tenure != null && p.tenure < tenureYears && p.pay > subjectPay);
-    const maxGap = lower.length ? Math.max(...lower.map((p) => p.pay - subjectPay)) : 0;
-    return { count: lower.length, maxGap, total: peerListRows.length };
-  }, [peerListRows, tenureYears, subjectPay]);
-
-  // Below the title median over time. `streakYears` = distinct calendar years in the most-recent
-  // unbroken run of below-median snapshots — the honest "consecutive years in market deficit" figure.
+  // Longevity (consecutive years below the title median)
   const longevity = useMemo(() => {
     const rows = (medHist ?? []).filter((r) => r.pay != null && r.pay > 0 && r.med != null);
-    if (!rows.length) return null;
+    if (!rows.length) return { belowCount: 0, total: 0, streak: 0, streakYears: 0 };
     const below = rows.filter((r) => (r.pay as number) < (r.med as number));
     const streakDates: string[] = [];
     for (let i = rows.length - 1; i >= 0; i--) {
       if ((rows[i].pay as number) < (rows[i].med as number)) streakDates.push(rows[i].date);
       else break;
     }
-    const streakYears = new Set(streakDates.map((d) => new Date(d).getFullYear())).size;
-    return { belowCount: below.length, total: rows.length, streak: streakDates.length, streakYears };
+    return { belowCount: below.length, total: rows.length, streak: streakDates.length, streakYears: new Set(streakDates.map((d) => new Date(d).getFullYear())).size };
   }, [medHist]);
 
-  // Peer-vs-subject career progression (total growth + raise count) from full histories.
+  // Absolute-dollar raise divergence
   const progression = useMemo(() => {
     const byPerson = new Map<string, number[]>();
     for (const r of peerHist ?? []) {
       if (r.pay == null || r.pay <= 0) continue;
-      const arr = byPerson.get(r.person_key) ?? [];
-      arr.push(r.pay);
-      byPerson.set(r.person_key, arr);
+      (byPerson.get(r.person_key) ?? byPerson.set(r.person_key, []).get(r.person_key)!).push(r.pay);
     }
-    const calc = (a: number[]) => {
-      let raises = 0;
-      for (let i = 1; i < a.length; i++) if (a[i] > a[i - 1]) raises++;
-      const abs = a.length >= 2 ? a[a.length - 1] - a[0] : null; // absolute dollars gained
-      return { abs, raises };
-    };
-    const peers = [...byPerson.entries()].filter(([k]) => k !== subjectKey).map(([, a]) => calc(a));
-    const subjArr = subjectKey ? byPerson.get(subjectKey) : undefined;
-    const subjC = subjArr ? calc(subjArr) : null;
-    const absVals = peers.map((p) => p.abs).filter((v): v is number => v != null);
-    return {
-      avgAbs: absVals.length ? absVals.reduce((s, v) => s + v, 0) / absVals.length : null,
-      subjAbs: subjC?.abs ?? null,
-    };
+    const abs = (a: number[]) => (a.length >= 2 ? a[a.length - 1] - a[0] : null);
+    const peers = [...byPerson.entries()].filter(([k]) => k !== subjectKey).map(([, a]) => abs(a)).filter((v): v is number => v != null);
+    const subjAbs = subjectKey ? abs(byPerson.get(subjectKey) ?? []) : null;
+    return { avgAbs: peers.length ? peers.reduce((s, v) => s + v, 0) / peers.length : null, subjAbs };
   }, [peerHist, subjectKey]);
 
-  // Peer Parity Matrix rows — the candidate is pinned to the top as a permanent baseline, then peers
-  // sorted highest-paid first (otherPeers is already sorted desc).
-  const tableRows = useMemo(() => {
-    const rows: { key: string; name: string; title: string | null; pay: number; tenure: number | null; isSubject: boolean }[] =
-      otherPeers.map((p) => ({ key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, pay: p.pay, tenure: p.tenure ?? null, isSubject: false }));
-    if (subjectPay != null) rows.unshift({ key: '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, tenure: tenureYears, isSubject: true });
-    return rows;
-  }, [otherPeers, subjectPay, subjectName, subj, tenureYears]);
-  const maxPay = Math.max(1, ...tableRows.map((r) => r.pay));
-  const showTenure = tableRows.some((r) => r.tenure != null);
-
-  // Scale for the absolute-dollar divergence bars, and whether to show them (subject gained fewer $).
-  const aMax = Math.max(progression.avgAbs ?? 0, progression.subjAbs ?? 0, 1);
-  const showDivergence = progression.subjAbs != null && progression.avgAbs != null && progression.subjAbs < progression.avgAbs;
-
-  // Equity anomaly — the single most damning tray peer: less UW tenure than the subject, biggest pay
-  // surplus. Surfaced as the "smoking gun" callout on its row in the peer table.
+  // Comparator rows for the matrix (+ equity anomaly)
+  const otherPeers = useMemo(
+    () => (trayPeople ?? []).filter((p) => p.person_key !== subjectKey).sort((a, b) => b.pay - a.pay),
+    [trayPeople, subjectKey]
+  );
   const anomalyKey = useMemo(() => {
     if (subjectPay == null || tenureYears == null) return null;
     let best: { key: string; gap: number } | null = null;
-    for (const r of tableRows) {
-      if (r.isSubject || r.tenure == null) continue;
-      if (r.tenure < tenureYears && r.pay > subjectPay) {
-        const gap = r.pay - subjectPay;
-        if (!best || gap > best.gap) best = { key: r.key, gap };
+    for (const p of otherPeers) {
+      if (p.tenure != null && p.tenure < tenureYears && p.pay > subjectPay) {
+        const gap = p.pay - subjectPay;
+        if (!best || gap > best.gap) best = { key: p.person_key, gap };
       }
     }
     return best?.key ?? null;
-  }, [tableRows, subjectPay, tenureYears]);
+  }, [otherPeers, subjectPay, tenureYears]);
 
-  // Operational-risk math: a conservative 50%-of-salary turnover cost vs the one-time parity raise.
-  const replacementBaseline = subjectPay != null ? subjectPay * 0.5 : 0;
-  const netSavings = replacementBaseline - targetDelta;
+  const rows: ComparatorRow[] = useMemo(() => {
+    const list: ComparatorRow[] = otherPeers.map((p) => ({
+      key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, pay: p.pay, tenure: p.tenure ?? null,
+      isSubject: false, isAnomaly: p.person_key === anomalyKey,
+      lessTenure: p.tenure != null && tenureYears != null && p.tenure < tenureYears && p.pay > (subjectPay ?? 0),
+      gap: p.pay - (subjectPay ?? 0),
+    }));
+    if (subjectPay != null) list.unshift({ key: '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, tenure: tenureYears, isSubject: true, isAnomaly: false, lessTenure: false, gap: 0 });
+    return list;
+  }, [otherPeers, anomalyKey, subjectPay, tenureYears, subjectName, subj]);
+  const maxPay = Math.max(1, ...rows.map((r) => r.pay));
+  const showTenure = rows.some((r) => r.tenure != null);
 
-  // ── Why — the three distinct proofs, each shown exactly once. Any with missing data drops out. ──
-  const proofs: { icon: ReactNode; value: string; label: string; detail: string }[] = subjectPay == null ? [] : [
-    // 1. Below market
-    ...(percentile != null ? [{
-      icon: <IconChartBar size={22} />,
-      value: `${ordinal(percentile)} percentile`,
-      label: medianDeficit > 0 ? 'Current pay sits below the strict title median.' : 'Current pay is at or above the title median.',
-      detail: '',
-    }] : []),
-    // 2. Tenure inversion — phrased so it can't read as a rank
-    ...(tenureInversion && tenureInversion.count > 0 ? [{
-      icon: <IconScale size={22} />,
-      value: `${num(tenureInversion.count)} peers`,
-      label: 'tenure inversions — less UW tenure, higher pay',
-      detail: `paid up to +${usd(tenureInversion.maxGap)} more with fewer years at UW`,
-    }] : []),
-    // 3. Sustained — consecutive years in market deficit
-    ...(longevity && longevity.streak > 0 ? [{
-      icon: <IconHistory size={22} />,
-      value: `${longevity.streakYears} ${longevity.streakYears === 1 ? 'year' : 'years'}`,
-      label: 'consecutive years in market deficit',
-      detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median',
-    }] : []),
-  ];
+  // ── Target + receipt math ──
+  const targetPerson = (trayPeople ?? []).find((p) => p.person_key === config.targetKey) ?? null;
+  const targetPay = targetPerson?.pay ?? null;
+  const baseParity = targetPay ?? stats.expMed ?? med ?? null;
+  const baseLabel = targetPerson
+    ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
+    : stats.expMed != null ? 'tenure-adjusted median' : 'title median';
 
-  const benchmarkCsv = () => {
-    const rows = (peerListRows ?? []).map((p) => ({ pay: p.pay, tenure_years: p.tenure?.toFixed?.(1) ?? '' }));
-    downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, rows as unknown as Record<string, unknown>[]);
+  const activeFactors = FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => {
+    const a = config.factors[f.key].amount;
+    return { key: f.key, label: f.label, note: config.factors[f.key].note.trim(), amount: typeof a === 'number' && a > 0 ? a : null };
+  });
+  const addOnSum = activeFactors.reduce((s, f) => s + (f.amount ?? 0), 0);
+  const computed = baseParity != null ? baseParity + addOnSum : null;
+  const override = typeof config.override === 'number' && config.override > 0 ? config.override : null;
+  const recommended = override ?? computed;
+  const belowTarget = subjectPay != null && recommended != null && recommended > subjectPay;
+  const targetDelta = belowTarget && recommended != null && subjectPay != null ? recommended - subjectPay : 0;
+  const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
+
+  const receipt: ReceiptLine[] = useMemo(() => {
+    if (baseParity == null) return [];
+    const out: ReceiptLine[] = [{ id: 'base', label: `Base parity — ${baseLabel}`, amount: baseParity, kind: 'base' }];
+    for (const f of activeFactors) if (f.amount != null) out.push({ id: f.key, label: `${f.label}${f.note ? ` (${f.note})` : ''}`, amount: f.amount, kind: 'addon' });
+    if (override != null && computed != null && Math.round(override) !== Math.round(computed)) {
+      out.push({ id: 'negotiated', label: 'Negotiated adjustment', amount: override - computed, kind: 'negotiated' });
+    }
+    return out;
+  }, [baseParity, baseLabel, activeFactors, override, computed]);
+
+  // ── Proofs ──
+  const proofs: ProofModel[] = useMemo(() => {
+    if (subjectPay == null) return [];
+    const out: ProofModel[] = [];
+    if (stats.percentile != null) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? 'Current pay sits below the strict title median.' : 'Current pay is at or above the title median.', detail: '' });
+    if (stats.invCount > 0) out.push({ kind: 'inversion', value: `${num(stats.invCount)} peers`, label: 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
+    if (longevity.streak > 0) out.push({ kind: 'sustained', value: `${longevity.streakYears} ${longevity.streakYears === 1 ? 'year' : 'years'}`, label: 'consecutive years in market deficit', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
+    return out;
+  }, [subjectPay, stats, longevity]);
+
+  // ── Case strength + talking points (left pane only) ──
+  const strength = useMemo(() => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length }), [stats, med, longevity, activeFactors.length]);
+  const cohortLabel = COHORT_DEFS.find((c) => c.value === selectedMode)?.label ?? '';
+  const talkingPoints = useMemo(() => buildTalkingPoints({
+    subjectName, current: subjectPay, recommended, delta: targetDelta, pct: targetPct, cohortLabel,
+    percentile: stats.percentile, invCount: stats.invCount, invMaxGap: stats.invMaxGap, streakYears: longevity.streakYears,
+    factors: activeFactors,
+  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, cohortLabel, stats, longevity, activeFactors]);
+
+  const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ');
+
+  const basisLabel = belowTarget
+    ? (targetPerson ? `to match ${baseLabel}${addOnSum > 0 ? ', plus documented value-adds' : ''}` : `to reach the ${baseLabel} for ${cohortLabel.toLowerCase()}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
+    : '';
+
+  const model: BriefModel = {
+    subjectName, subjectFirst, subjectPay, headerMeta,
+    recommended, belowTarget, targetDelta, targetPct,
+    basisLabel: config.headline.trim() || basisLabel,
+    receipt, activeFactors, proofs, rows, maxPay, showTenure, cohortLabel,
+    netSavings: subjectPay != null ? subjectPay * 0.5 - targetDelta : 0,
+    divergence: progression.avgAbs != null && progression.subjAbs != null && progression.subjAbs < progression.avgAbs ? { avgAbs: progression.avgAbs, subjAbs: progression.subjAbs } : null,
+    format: config.format, sections: config.sections, jobCode,
   };
+
+  // ── Setup-pane data ──
+  const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({
+    key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, school: p.school ?? null,
+    tenure: p.tenure ?? null, pay: p.pay, isSubject: p.person_key === subjectKey,
+  })).sort((a, b) => (a.isSubject ? -1 : b.isSubject ? 1 : b.pay - a.pay));
+  // Fall back to tray labels before trayPeople resolves, so the subject is always selectable.
+  const comparatorOptions = comparators.length ? comparators : persons.map((p) => ({ key: p.id, name: p.label, title: null, school: null, tenure: null, pay: null, isSubject: p.id === subjectKey }));
+  const targetOptions = comparators.filter((c) => !c.isSubject).map((c) => ({ value: c.key, label: c.name }));
+  const trayIds = new Set(persons.map((p) => p.id));
+  const suggestions: SuggestPerson[] = persons.length >= 5 ? [] : (suggestRows ?? [])
+    .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey)
+    .slice(0, 3)
+    .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
+  const cohortBadges = Object.fromEntries(ALL_MODES.map((m) => [m, cohortAvailable[m] ? deficitBadge(statsByMode[m].gapToMed) : null])) as Record<CohortMode, ReturnType<typeof deficitBadge>>;
+
+  const loading = cmpReady && (!subjRows || !trayPeople || (!!jobCode && !peerListRows));
+
+  // ── Render ──
+  const setupPane = (
+    <Box className="setup-panel">
+      <ReportSetup
+        config={config}
+        onChange={setConfig}
+        comparators={comparatorOptions}
+        subjectKey={subjectKey}
+        onSubject={setSubjectKey}
+        basePay={subjectPay}
+        suggestions={suggestions}
+        onAddPerson={(p) => add({ type: 'person', id: p.key, label: p.name })}
+        onRemovePerson={(key) => remove(key)}
+        cohortBadges={cohortBadges}
+        cohortAvailable={cohortAvailable}
+        targetOptions={targetOptions}
+        caseStrength={strength}
+        talkingPoints={talkingPoints}
+        onReset={() => setConfig(defaultConfig())}
+        onHover={setHovered}
+      />
+    </Box>
+  );
+
+  const briefPane = loading
+    ? <Card withBorder padding="xl" className="report-brief"><Skeleton h={40} mb="lg" /><Skeleton h={120} mb="lg" /><Skeleton h={80} mb="lg" /><Skeleton h={160} /></Card>
+    : <ReportBrief model={model} hovered={hovered} onHover={setHovered} />;
 
   return (
     <Stack gap="lg">
@@ -334,11 +354,6 @@ export default function Reports() {
             ]}
           />
           <Button.Group>
-            {type === 'comparison' && persons.length > 0 && (
-              <Button variant="default" leftSection={<IconAdjustments size={16} />} onClick={openSettings}>
-                Customize
-              </Button>
-            )}
             <Button
               variant="default"
               leftSection={<IconDownload size={16} />}
@@ -346,7 +361,7 @@ export default function Reports() {
               onClick={() =>
                 type === 'person'
                   ? downloadCSV(`${selPerson?.name ?? 'employee'}-history.csv`, (personHistory ?? []) as unknown as Record<string, unknown>[])
-                  : benchmarkCsv()
+                  : downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, (peerListRows ?? []) as unknown as Record<string, unknown>[])
               }
             >
               Download CSV
@@ -361,367 +376,55 @@ export default function Reports() {
       {type === 'person' && (
         <>
           <Card withBorder padding="lg" className="no-print">
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.05em' }}>
-              Report on
-            </Text>
-            <SearchBox
-              placeholder="Search an employee by name…"
-              onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })}
-            />
+            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.05em' }}>Report on</Text>
+            <SearchBox placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
             {selPerson && <Text size="sm" mt="sm">Showing report for <b>{selPerson.name}</b>.</Text>}
           </Card>
-
           {selPerson ? (
-            <div className="print-area">
-              <PersonDashboard personKey={selPerson.key} metric={metric} />
-            </div>
+            <div className="print-area"><PersonDashboard personKey={selPerson.key} metric={metric} /></div>
           ) : (
-            <Card withBorder padding="xl">
-              <Text c="dimmed">Search and pick an employee above to generate a single-page report on their pay, title history, and how they compare to others in their title.</Text>
-            </Card>
+            <Card withBorder padding="xl"><Text c="dimmed">Search and pick an employee above to generate a single-page report on their pay, title history, and how they compare to others in their title.</Text></Card>
           )}
         </>
       )}
 
       {type === 'comparison' && (
-        <>
-          {persons.length === 0 ? (
-            <Card withBorder padding="xl">
-              <Text c="dimmed">Add people to the tray (the search/＋ Compare buttons around the app), then pick a subject to build a salary-adjustment justification.</Text>
-            </Card>
-          ) : (
-            <>
-              {/* Build controls live in a side panel so they don't clutter the document. */}
-              <Drawer opened={settingsOpen} onClose={closeSettings} position="right" size="sm" title="Customize report" className="no-print">
-                <Stack gap="md">
-                  <Select
-                    {...dropdownProps('md')}
-                    label="Subject (raise case)"
-                    data={persons.map((p) => ({ value: p.id, label: p.label }))}
-                    value={subjectKey}
-                    onChange={setSubjectKey}
-                  />
-                  <div>
-                    <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.05em' }}>
-                      Include in report
-                    </Text>
-                    <Checkbox.Group value={sections} onChange={setSections}>
-                      <Stack gap="xs">
-                        {SECTIONS.map((s) => (
-                          <Checkbox key={s.value} value={s.value} label={s.label} />
-                        ))}
-                      </Stack>
-                    </Checkbox.Group>
-                  </div>
-                  <Divider />
-                  <Checkbox
-                    label="I also supervise, not as a responsibility of title"
-                    checked={superviseOn}
-                    onChange={(e) => setSuperviseOn(e.currentTarget.checked)}
-                  />
-                  <NumberInput
-                    label="# of people"
-                    value={superviseCount}
-                    onChange={(v) => setSuperviseCount(typeof v === 'number' ? v : 0)}
-                    min={0}
-                    w={140}
-                    disabled={!superviseOn}
-                  />
-                  <TextInput
-                    label="Note (optional)"
-                    placeholder="e.g. a team of 8 / 4 direct reports"
-                    value={superviseNote}
-                    onChange={(e) => setSuperviseNote(e.currentTarget.value)}
-                    disabled={!superviseOn}
-                  />
-                  <Checkbox
-                    label="The compared peers are also supervisors (comparable scope)"
-                    checked={peersSupervise}
-                    onChange={(e) => setPeersSupervise(e.currentTarget.checked)}
-                    disabled={!superviseOn}
-                  />
-                  <Divider />
-                  <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.05em' }}>
-                    Supplemental justification
-                  </Text>
-                  <Switch
-                    label="Target above the median (justified by added qualifications)"
-                    checked={aboveMedian}
-                    onChange={(e) => setAboveMedian(e.currentTarget.checked)}
-                  />
-                  <TextInput
-                    label="Certifications"
-                    placeholder="e.g. PMP, CISSP, AWS Solutions Architect"
-                    value={certs}
-                    onChange={(e) => setCerts(e.currentTarget.value)}
-                    disabled={!aboveMedian}
-                  />
-                  <TextInput
-                    label="Education / training completed"
-                    placeholder="e.g. M.S. completed 2024"
-                    value={education}
-                    onChange={(e) => setEducation(e.currentTarget.value)}
-                    disabled={!aboveMedian}
-                  />
-                </Stack>
-              </Drawer>
-
-              {/* The report */}
-              <Card withBorder padding="xl" className="print-area">
-                <Title order={3}>Internal Equity &amp; Parity Review</Title>
-                <Text c="dimmed" mt={2}>
-                  Prepared for <Text span fw={600} c="bright">{subjectName}</Text>
-                  {` · ${[subj?.title, subj?.grade_number != null ? `grade ${subj.grade_number}` : null, subj?.school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ')}`}
+        persons.length === 0 ? (
+          <Card withBorder padding="xl" className="no-print">
+            <Text fw={600} mb={4}>Start your equity review</Text>
+            <Text c="dimmed" size="sm" mb="md">Add yourself (the subject), then add the peers you want to be compared against.</Text>
+            <SearchBox placeholder="Search yourself by name to begin…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
+          </Card>
+        ) : isDesktop ? (
+          <div style={{ display: 'flex', gap: 'var(--mantine-spacing-lg)', alignItems: 'flex-start' }}>
+            <div style={{ width: '40%', maxWidth: 460, position: 'sticky', top: 16, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
+              {setupPane}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>{briefPane}</div>
+          </div>
+        ) : (
+          <>
+            {/* Sticky ledger so the math is always visible while editing on mobile */}
+            <Paper className="no-print" withBorder radius="md" p="xs" style={{ position: 'sticky', top: 8, zIndex: 5 }}>
+              <Group justify="space-between" wrap="nowrap">
+                <Text size="sm" c="dimmed">Current {subjectPay != null ? usd(subjectPay) : '—'}</Text>
+                <Text size="sm" fw={800} c={belowTarget ? 'green.7' : undefined}>
+                  → {recommended != null ? usd(recommended) : '—'}{belowTarget ? ` (+${pct(targetPct)})` : ''}
                 </Text>
-                <Divider my="md" />
-
-                {/* Recommendation — the single ask: target number, sentence, why, current → adjustment */}
-                {belowTarget && primaryTarget != null ? (
-                  <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="lg">
-                    <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>
-                      Recommendation
-                    </Text>
-                    <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
-                      {usd(primaryTarget)}
-                    </Text>
-                    <Text mt={8}>
-                      Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(primaryTarget)}</b>{' '}
-                      (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){' '}
-                      {aboveMedian ? 'to an above-median level justified by added qualifications.' : 'to reach the tenure-adjusted median for same-title peers.'}
-                    </Text>
-                    <Text size="sm" c="dimmed" mt={6}>
-                      Why this number: {usd(primaryTarget)} is {targetBasis} — i.e. parity for equal work and UW–Madison tenure, not a premium.
-                    </Text>
-                    {supervises && (
-                      <Text size="xs" c="dimmed" mt="sm">Plus supervisory scope ({supN} {supN === 1 ? 'report' : 'staff'}) beyond title.</Text>
-                    )}
-                  </Paper>
-                ) : subjectPay != null ? (
-                  <Paper withBorder radius="md" p="lg" mb="lg">
-                    <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>Recommendation</Text>
-                    <Text fw={700} fz="lg" mt={4}>
-                      {subjectFirst} is at or above the parity target{primaryTarget != null ? ` (${usd(primaryTarget)})` : ''} — maintain current pay.
-                    </Text>
-                  </Paper>
-                ) : (
-                  <Text fz="lg" mb="lg">No salary on record for the subject in this snapshot.</Text>
-                )}
-
-                {/* Basis for an above-median target — only when the user asserts added qualifications */}
-                {aboveMedian && (
-                  <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
-                    <Text size="sm" fw={700} mb={4}>Basis for an above-median target</Text>
-                    <Text size="xs" c="dimmed" mb="sm">{subjectFirst} brings qualifications beyond the title baseline that justify pay above the median:</Text>
-                    <Stack gap={6}>
-                      {certs.trim() && (
-                        <Group gap="xs" wrap="nowrap" align="flex-start">
-                          <ThemeIcon size={18} radius="xl" variant="light" color="indigo"><IconCheck size={12} /></ThemeIcon>
-                          <Text size="sm"><b>Certifications:</b> {certs}</Text>
-                        </Group>
-                      )}
-                      {education.trim() && (
-                        <Group gap="xs" wrap="nowrap" align="flex-start">
-                          <ThemeIcon size={18} radius="xl" variant="light" color="indigo"><IconCheck size={12} /></ThemeIcon>
-                          <Text size="sm"><b>Education / training:</b> {education}</Text>
-                        </Group>
-                      )}
-                      {supervises && (
-                        <Group gap="xs" wrap="nowrap" align="flex-start">
-                          <ThemeIcon size={18} radius="xl" variant="light" color="indigo"><IconCheck size={12} /></ThemeIcon>
-                          <Text size="sm"><b>Supervisory scope:</b> {supN} {supN === 1 ? 'report' : 'reports'}{superviseNote ? ` (${superviseNote})` : ''}</Text>
-                        </Group>
-                      )}
-                      {!certs.trim() && !education.trim() && !supervises && (
-                        <Text size="sm" c="dimmed">Add certifications, education, or supervisory scope in Customize to document the basis.</Text>
-                      )}
-                    </Stack>
-                  </Card>
-                )}
-
-                {!jobCode && (
-                  <Alert color="gray" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is unavailable.</Alert>
-                )}
-
-                {/* Why — the three distinct proofs, each shown exactly once */}
-                {has('highlights') && proofs.length > 0 && (
-                  <>
-                    <Text size="sm" fw={600} mb="xs">Why this is an equity correction</Text>
-                    <SimpleGrid cols={{ base: 1, sm: Math.min(3, proofs.length) }} mb="lg">
-                      {proofs.map((p, i) => (
-                        <Card key={i} withBorder radius="md" shadow="sm" padding="lg">
-                          <ThemeIcon variant="light" color="indigo" size={38} radius="md">{p.icon}</ThemeIcon>
-                          <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
-                          <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
-                          {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}</Text>}
-                        </Card>
-                      ))}
-                    </SimpleGrid>
-                  </>
-                )}
-
-                {/* Operational risk & replacement analysis — the business case for saying yes */}
-                {subjectPay != null && (
-                  <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
-                    <Text size="sm" fw={700} mb={4}>Operational Risk &amp; Replacement Analysis</Text>
-                    {belowTarget && netSavings > 0 && (
-                      <Text size="sm" mb={6}>
-                        Granting this parity adjustment saves the department an estimated{' '}
-                        <Text span fw={800} c="green.7">{usd(netSavings)}</Text> versus the baseline cost of replacing this role on the open market.
-                      </Text>
-                    )}
-                    <Text size="sm">
-                      {belowTarget ? `The one-time ${usd(targetDelta)} adjustment` : `Retaining ${subjectFirst}`} is a fraction of turnover cost:
-                      replacing {subjectFirst} is widely estimated at <b>{usd(subjectPay * 0.5)}–{usd(subjectPay * 2)}</b> (roughly
-                      0.5×–2× annual salary in recruiting, lost productivity, and 6–12 months of ramp-up at 2026 market rates). Keeping
-                      proven institutional knowledge is the lower-cost, lower-risk choice.
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={6}>
-                      Net-savings figure uses a conservative 50%-of-salary replacement estimate — replace with your unit's actual recruiting/onboarding figures.
-                    </Text>
-                  </Paper>
-                )}
-
-                <Footer />
-
-                {/* Supporting detail — collapsible, screen-only so the printed PDF stays a 1-page summary */}
-                <div className="no-print">
-                  <Divider my="lg" label="Supporting detail" labelPosition="center" />
-                  <Accordion variant="separated" multiple>
-                    {/* Peer comparison — the named-peer matrix; the equity anomaly is the smoking gun */}
-                    {has('peers') && otherPeers.length > 0 && (
-                      <Accordion.Item value="peers">
-                        <Accordion.Control icon={<IconScale size={18} />}>Peer comparison ({otherPeers.length} named {otherPeers.length === 1 ? 'peer' : 'peers'})</Accordion.Control>
-                        <Accordion.Panel>
-                          <Table striped highlightOnHover verticalSpacing="sm">
-                            <Table.Thead>
-                              <Table.Tr>
-                                <Table.Th>Name</Table.Th>
-                                <Table.Th>Title</Table.Th>
-                                {showTenure && <Table.Th ta="right">Tenure</Table.Th>}
-                                {superviseOn && <Table.Th>Staff managed</Table.Th>}
-                                <Table.Th>Salary</Table.Th>
-                                <Table.Th ta="right">vs {subjectFirst}</Table.Th>
-                              </Table.Tr>
-                            </Table.Thead>
-                            <Table.Tbody>
-                              {tableRows.map((r) => {
-                                const gap = r.pay - (subjectPay ?? 0); // how much more the peer earns
-                                const lessExp = !r.isSubject && r.tenure != null && tenureYears != null && r.tenure < tenureYears && gap > 0;
-                                const isAnomaly = r.key === anomalyKey;
-                                return (
-                                  <Table.Tr
-                                    key={r.key}
-                                    style={
-                                      r.isSubject
-                                        ? { background: 'var(--mantine-color-indigo-light)' }
-                                        : isAnomaly
-                                          ? { background: 'var(--mantine-color-indigo-0)', boxShadow: 'inset 4px 0 0 var(--mantine-color-indigo-6)' }
-                                          : undefined
-                                    }
-                                  >
-                                    <Table.Td>
-                                      {r.isSubject
-                                        ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="indigo" tt="none" ml={4}>Review Subject</Badge></>
-                                        : <>{r.name}{isAnomaly
-                                            ? <Badge size="xs" variant="filled" color="indigo" tt="none" ml={6}>Equity Anomaly</Badge>
-                                            : lessExp && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less tenure</Badge>}</>}
-                                    </Table.Td>
-                                    <Table.Td>{r.title ?? '—'}</Table.Td>
-                                    {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
-                                    {superviseOn && (
-                                      <Table.Td>
-                                        {r.isSubject ? `${supN} ${supN === 1 ? 'report' : 'reports'}` : peersSupervise ? 'Supervisor' : '—'}
-                                      </Table.Td>
-                                    )}
-                                    {/* Salary on a shared zero-based scale; the slate marker sits at the subject's
-                                        pay, so each peer bar's overflow past it equals the true dollar gap. */}
-                                    <Table.Td style={{ minWidth: 200 }}>
-                                      <Text size="sm" fw={r.isSubject ? 700 : 500}>{usd(r.pay)}</Text>
-                                      <div style={{ position: 'relative', marginTop: 3, height: 6, borderRadius: 3, background: 'var(--mantine-color-gray-2)' }}>
-                                        <div style={{ width: `${(r.pay / maxPay) * 100}%`, height: '100%', borderRadius: 3, background: r.isSubject ? CAND : PEER }} />
-                                        {!r.isSubject && subjectPay != null && (
-                                          <div style={{ position: 'absolute', top: -2, bottom: -2, left: `${(subjectPay / maxPay) * 100}%`, width: 2, background: CAND }} />
-                                        )}
-                                      </div>
-                                    </Table.Td>
-                                    <Table.Td ta="right">
-                                      {r.isSubject ? (
-                                        <Text span size="xs" c="dimmed">baseline</Text>
-                                      ) : (
-                                        <Text span fw={gap > 0 ? 800 : 700} fz={gap > 0 ? 'md' : 'sm'} c={isAnomaly ? 'indigo.7' : 'dimmed'}>
-                                          {gap > 0 ? '+' : gap < 0 ? '−' : ''}{usd(Math.abs(gap))}
-                                        </Text>
-                                      )}
-                                    </Table.Td>
-                                  </Table.Tr>
-                                );
-                              })}
-                            </Table.Tbody>
-                          </Table>
-                          {anomalyKey && (
-                            <Text size="xs" c="dimmed" mt="sm">
-                              <b>Equity Anomaly</b> flags the peer with less UW tenure than {subjectFirst} but the largest pay surplus — the clearest sign the gap isn't explained by experience.
-                            </Text>
-                          )}
-                        </Accordion.Panel>
-                      </Accordion.Item>
-                    )}
-
-                    {/* Pay history — absolute-dollar raise divergence */}
-                    {showDivergence && (
-                      <Accordion.Item value="history">
-                        <Accordion.Control icon={<IconHistory size={18} />}>Pay history — raise divergence</Accordion.Control>
-                        <Accordion.Panel>
-                          <Text size="xs" c="dimmed" mb="md">
-                            Percentage growth flatters a low starting salary. In raw dollars, {subjectFirst}'s raises have lagged — and the gap compounds every year.
-                          </Text>
-                          <ProgRow label="Peers (avg gained)" value={progression.avgAbs} display={progression.avgAbs != null ? `+${usd(progression.avgAbs)}` : '—'} max={aMax} color="gray.5" />
-                          <ProgRow label={`${subjectFirst} (gained)`} value={progression.subjAbs} display={progression.subjAbs != null ? `+${usd(progression.subjAbs)}` : '—'} max={aMax} color="indigo.6" emphasize />
-                          {progression.avgAbs != null && progression.subjAbs != null && (
-                            <Text size="sm" mt="xs">
-                              {subjectFirst} has gained <Text span fw={800}>{usd(progression.avgAbs - progression.subjAbs)}</Text> less in raises than the typical peer over the same period.
-                            </Text>
-                          )}
-                        </Accordion.Panel>
-                      </Accordion.Item>
-                    )}
-
-                  </Accordion>
-                </div>
-              </Card>
-            </>
-          )}
-        </>
+              </Group>
+            </Paper>
+            <SegmentedControl
+              className="no-print"
+              fullWidth
+              value={mobileTab}
+              onChange={(v) => setMobileTab(v as 'setup' | 'preview')}
+              data={[{ value: 'setup', label: 'Setup' }, { value: 'preview', label: 'Preview' }]}
+            />
+            <div style={{ display: mobileTab === 'setup' ? undefined : 'none' }}>{setupPane}</div>
+            <div style={{ display: mobileTab === 'preview' ? undefined : 'none' }}>{briefPane}</div>
+          </>
+        )
       )}
     </Stack>
-  );
-}
-
-/** One labelled comparison bar (peer vs subject) for the progression section. */
-function ProgRow({ label, value, display, max, color, emphasize }: {
-  label: string; value: number | null; display: string; max: number; color: string; emphasize?: boolean;
-}) {
-  const filled = value != null && max > 0 ? Math.max(3, Math.min(100, (value / max) * 100)) : 0;
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <Group justify="space-between" gap="xs" mb={3}>
-        <Text size="sm" fw={emphasize ? 700 : 500}>{label}</Text>
-        <Text size="sm" fw={700} c={emphasize ? 'indigo.7' : undefined}>{display}</Text>
-      </Group>
-      <Progress value={filled} color={color} size="lg" radius="sm" />
-    </div>
-  );
-}
-
-function Footer() {
-  return (
-    <Text size="xs" c="dimmed" mt="xl">
-      Methodology: the title median is the median pay of everyone sharing the subject's job code at this snapshot;
-      the tenure-adjusted target is the median for same-title peers with at least the subject's tenure.
-      "Tenure" = years since the UW–Madison date of hire (not total career experience); supervisory scope is self-reported.
-      Source: UW–Madison salary data (Wisconsin public record). Salaries shown are the full annual rate unless
-      the FTE-adjusted or base-pay metric is selected. Zero/unreported salaries are excluded from statistics.
-      Person identity is matched on name + date of hire and is best-effort.
-    </Text>
   );
 }
