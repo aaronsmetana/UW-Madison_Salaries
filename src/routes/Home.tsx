@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, Divider, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
-import { IconCoin, IconReportMoney, IconUsers } from '@tabler/icons-react';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
+import { IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
@@ -36,6 +36,15 @@ export default function Home() {
     !!snap
   );
   const payroll = payrollRows?.[0]?.total ?? null;
+
+  const { data: dimRows } = useSql<{ schools: number; titles: number }>(
+    ['home-dims', snap ?? ''],
+    `SELECT count(DISTINCT school) schools, count(DISTINCT job_code) titles
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')}`,
+    !!snap
+  );
+  const dims = dimRows?.[0];
+
   const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
   const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
   const latestLabel = summary?.latest?.label;
@@ -74,25 +83,28 @@ export default function Home() {
         <Stack gap="lg" maw={760} mx="auto" w="100%">
           <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
 
-          {/* System-wide stats (as of the latest snapshot) */}
-          <Paper withBorder radius="lg" px="lg" pt="xl" pb="lg" w="100%" style={{ position: 'relative', overflow: 'visible' }}>
-            {/* Centered title chip straddling the top border. */}
-            <Badge
-              variant="default"
-              radius="sm"
-              size="sm"
-              style={{ position: 'absolute', top: 0, left: '50%', transform: 'translate(-50%, -50%)' }}
-            >
-              System-Wide
-            </Badge>
-            <Group gap="md" align="stretch" wrap="nowrap">
-              <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="pos" />
-              <Divider orientation="vertical" />
-              <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={16} />} color="accent" />
-              <Divider orientation="vertical" />
-              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={16} />} color="accent" />
-            </Group>
-          </Paper>
+          {/* System-wide stats (as of the latest snapshot) — the whole card links to General Comparisons. */}
+          <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
+            <Paper withBorder radius="lg" px="lg" pt="xl" pb="lg" w="100%" style={{ position: 'relative', overflow: 'visible' }}>
+              {/* Centered title chip straddling the top border. */}
+              <Badge
+                variant="default"
+                radius="sm"
+                size="sm"
+                style={{ position: 'absolute', top: 0, left: '50%', transform: 'translate(-50%, -50%)' }}
+              >
+                System-Wide
+              </Badge>
+              <SimpleGrid cols={{ base: 2, xs: 3, sm: 5 }} spacing="md" verticalSpacing="lg">
+                <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="pos" />
+                <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={16} />} color="accent" />
+                <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={16} />} color="accent" />
+                <Kpi label="Schools" value={num(dims?.schools)} icon={<IconBuildingBank size={16} />} color="accent" />
+                <Kpi label="Titles" value={num(dims?.titles)} icon={<IconBriefcase size={16} />} color="accent" />
+              </SimpleGrid>
+              <Text size="xs" c="accent.7" fw={600} ta="center" mt="md">Browse schools &amp; titles in General Comparisons →</Text>
+            </Paper>
+          </Anchor>
 
           {summary?.snapshot_count != null && firstSnap && latestLabel && (
             <Text size="xs" c="dimmed" ta="center">
@@ -101,6 +113,13 @@ export default function Home() {
               </Anchor>
             </Text>
           )}
+
+          {/* Snapshot/FTE disclaimer — a quiet caption, not an alert. */}
+          <Text size="xs" c="dimmed" ta="center" fs="italic" maw={640} mx="auto" mt={-8}>
+            Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between
+            snapshots, so actual pay earned may be higher or lower than the amounts shown.{' '}
+            <Anchor component={Link} to="/data" c="dimmed" underline="always" fs="normal">How this data works →</Anchor>
+          </Text>
         </Stack>
       </Stack>
     </Box>

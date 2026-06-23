@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Group, Button, Text, Paper, ThemeIcon, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden } from '@mantine/core';
+import { Group, Button, Text, Paper, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden } from '@mantine/core';
 import { useReducedMotion } from '@mantine/hooks';
 import {
-  IconArrowsDiff, IconArrowRight, IconUser, IconBriefcase, IconBuildingBank, IconX, IconReportAnalytics,
+  IconArrowsLeftRight, IconUser, IconBriefcase, IconBuildingBank, IconX, IconReportAnalytics,
   IconChevronDown, IconChevronUp,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
@@ -38,12 +38,12 @@ function Chip({ item, onRemove }: { item: TrayItem; onRemove: () => void }) {
       py={3}
       style={{ flexShrink: 0, borderRadius: 'var(--mantine-radius-xl)', background: 'var(--mantine-color-default-hover)', maxWidth: 220 }}
     >
-      <Icon size={13} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
+      <Icon size={15} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
       <Anchor component={Link} to={href(item.id)} c="inherit" underline="hover" fz="sm" lineClamp={1} title={item.label}>
         {item.label}
       </Anchor>
-      <ActionIcon size={17} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
-        <IconX size={12} />
+      <ActionIcon size={19} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
+        <IconX size={14} />
       </ActionIcon>
     </Group>
   );
@@ -106,7 +106,6 @@ export function SelectionTray() {
     return (
       <Paper className="no-print" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
         <Group gap="sm" wrap="nowrap">
-          <ThemeIcon variant="light" radius="xl" size="md"><IconArrowsDiff size={16} /></ThemeIcon>
           <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
             Compare set <Text span c="dimmed" fw={500}>· {summarize(items)}</Text>
           </Text>
@@ -124,7 +123,7 @@ export function SelectionTray() {
               variant="subtle"
               color="gray"
               onClick={() => setExpanded((v) => !v)}
-              rightSection={expanded ? <IconChevronDown size={13} /> : <IconChevronUp size={13} />}
+              rightSection={expanded ? <IconChevronDown size={15} /> : <IconChevronUp size={15} />}
               style={{ flexShrink: 0 }}
             >
               {expanded ? 'Hide' : 'Show all'}
@@ -133,21 +132,6 @@ export function SelectionTray() {
 
           <Button size="xs" variant="outline" color="gray" onClick={onClear} style={{ flexShrink: 0 }}>Clear</Button>
 
-          <Tooltip label="Add at least one person to build a report" disabled={hasPerson} withArrow>
-            <Button
-              size="xs"
-              variant="default"
-              component={Link}
-              to="/reports?mode=compare"
-              data-disabled={!hasPerson || undefined}
-              onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
-              leftSection={<IconReportAnalytics size={14} />}
-              style={{ flexShrink: 0 }}
-            >
-              Report
-            </Button>
-          </Tooltip>
-
           <Tooltip label="Add one more to compare" disabled={canCompare} withArrow>
             <Button
               size="xs"
@@ -155,11 +139,26 @@ export function SelectionTray() {
               to="/compare"
               data-disabled={!canCompare || undefined}
               onClick={(e) => { if (!canCompare) e.preventDefault(); }}
-              rightSection={<IconArrowRight size={14} />}
+              leftSection={<IconArrowsLeftRight size={16} />}
               style={{ flexShrink: 0 }}
             >
               Compare
             </Button>
+          </Tooltip>
+
+          <Tooltip label={hasPerson ? 'Build a report' : 'Add at least one person to build a report'} withArrow>
+            <ActionIcon
+              size="lg"
+              variant="default"
+              component={Link}
+              to="/reports?mode=compare"
+              data-disabled={!hasPerson || undefined}
+              onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
+              aria-label="Build a report"
+              style={{ flexShrink: 0 }}
+            >
+              <IconReportAnalytics size={18} />
+            </ActionIcon>
           </Tooltip>
         </Group>
         {items.length >= 8 && (
