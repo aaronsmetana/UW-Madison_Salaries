@@ -104,7 +104,7 @@ export function AppShellLayout() {
                   {/* Two-tone wordmark + small uppercase eyebrow for a masthead feel. */}
                   <Stack gap={0} style={{ lineHeight: 1.05 }}>
                     <Text style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em' }} tt="uppercase" c="dimmed" visibleFrom="xs">
-                      Public salary explorer
+                      Open record salary data
                     </Text>
                     <Text component="span" style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
                       <Text span inherit c="bright">UW–Madison </Text>
