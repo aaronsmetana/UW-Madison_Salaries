@@ -1,16 +1,23 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, SimpleGrid, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
 import { IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { usd, num } from '../lib/format';
+import { usd, usdCompact, num } from '../lib/format';
 import { SearchBox } from '../components/SearchBox';
 
+interface KpiData { icon: ReactNode; label: string; value: string; color: string; hint?: string }
+
 /** One system-wide stat: centered icon+label over its value — a tight, symmetrical column. */
-function Kpi({ icon, label, value, color }: { icon: ReactNode; label: string; value: string; color: string }) {
+function Kpi({ icon, label, value, color, hint }: KpiData) {
+  const valueNode = (
+    <Text fw={700} fz={22} ta="center" style={{ letterSpacing: '-0.01em' }}>
+      {value}
+    </Text>
+  );
   return (
-    <Stack gap={2} align="center" style={{ flex: 1, minWidth: 0 }}>
+    <Stack gap={2} align="center" style={{ flex: 1, minWidth: 0, paddingInline: 8 }}>
       <Group gap={6} justify="center" wrap="nowrap">
         <ThemeIcon size={22} radius="md" variant="light" color={color}>
           {icon}
@@ -19,9 +26,7 @@ function Kpi({ icon, label, value, color }: { icon: ReactNode; label: string; va
           {label}
         </Text>
       </Group>
-      <Text fw={700} fz={22} ta="center" style={{ letterSpacing: '-0.01em' }}>
-        {value}
-      </Text>
+      {hint ? <Tooltip label={hint} withArrow>{valueNode}</Tooltip> : valueNode}
     </Stack>
   );
 }
@@ -48,6 +53,14 @@ export default function Home() {
   const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
   const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
   const latestLabel = summary?.latest?.label;
+
+  const kpis: KpiData[] = [
+    { label: 'Median salary', value: usd(summary?.latest?.median), icon: <IconCoin size={16} />, color: 'pos' },
+    { label: 'Employees', value: num(summary?.latest?.headcount), icon: <IconUsers size={16} />, color: 'accent' },
+    { label: 'Total payroll', value: usdCompact(payroll), hint: payroll != null ? usd(payroll) : undefined, icon: <IconReportMoney size={16} />, color: 'accent' },
+    { label: 'Schools', value: num(dims?.schools), icon: <IconBuildingBank size={16} />, color: 'accent' },
+    { label: 'Titles', value: num(dims?.titles), icon: <IconBriefcase size={16} />, color: 'accent' },
+  ];
 
   return (
     <Box style={{ minHeight: 'calc(100dvh - 200px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -95,12 +108,18 @@ export default function Home() {
               >
                 System-Wide
               </Badge>
-              <SimpleGrid cols={{ base: 2, xs: 3, sm: 5 }} spacing="md" verticalSpacing="lg">
-                <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="pos" />
-                <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={16} />} color="accent" />
-                <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={16} />} color="accent" />
-                <Kpi label="Schools" value={num(dims?.schools)} icon={<IconBuildingBank size={16} />} color="accent" />
-                <Kpi label="Titles" value={num(dims?.titles)} icon={<IconBriefcase size={16} />} color="accent" />
+              {/* Desktop: one even row of five, split by faint vertical dividers. */}
+              <Group gap={0} wrap="nowrap" align="stretch" visibleFrom="sm">
+                {kpis.map((k, i) => (
+                  <Fragment key={k.label}>
+                    {i > 0 && <Divider orientation="vertical" />}
+                    <Kpi {...k} />
+                  </Fragment>
+                ))}
+              </Group>
+              {/* Narrow: wrap into a grid (no vertical dividers — spacing separates them). */}
+              <SimpleGrid cols={{ base: 2, xs: 3 }} spacing="md" verticalSpacing="lg" hiddenFrom="sm">
+                {kpis.map((k) => <Kpi key={k.label} {...k} />)}
               </SimpleGrid>
               <Text size="xs" c="accent.7" fw={600} ta="center" mt="md">Browse schools &amp; titles in General Comparisons →</Text>
             </Paper>

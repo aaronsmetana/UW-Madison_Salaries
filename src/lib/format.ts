@@ -7,6 +7,17 @@ export function usd(n: number | null | undefined): string {
   });
 }
 
+/** Abbreviated currency for large headline figures (e.g. 1_967_752_095 → "$1.97B"). */
+export function usdCompact(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 2,
+  });
+}
+
 export function num(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
   return Number(n).toLocaleString('en-US');
