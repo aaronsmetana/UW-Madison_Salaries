@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AppShell, Group, Title, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
+import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
@@ -80,16 +80,37 @@ export function AppShellLayout() {
               {/* Mobile-only burger opens the nav drawer; desktop collapse lives at the bottom of the sidebar. */}
               <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
               <Anchor component={Link} to="/" underline="never" c="inherit">
-                <Group gap={10} wrap="nowrap">
-                  {/* Logo tile: accent-gradient square with a white $ glyph. */}
+                <Group gap={11} wrap="nowrap" align="center">
+                  {/* Logo mark: ascending bars (salary distribution) on the accent-gradient tile. */}
                   <Box
-                    w={30}
-                    h={30}
-                    style={{ borderRadius: 9, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    w={34}
+                    h={34}
+                    style={{
+                      borderRadius: 10,
+                      background: 'var(--accent-grad)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      boxShadow: '0 4px 12px rgba(14,110,131,.34)',
+                    }}
                   >
-                    <Text fw={800} c="white" fz={16} lh={1}>$</Text>
+                    <svg width={19} height={19} viewBox="0 0 18 18" aria-hidden role="img">
+                      <rect x={1.5} y={10} width={3.4} height={6.5} rx={1.2} fill="white" fillOpacity={0.72} />
+                      <rect x={7.3} y={6} width={3.4} height={10.5} rx={1.2} fill="white" fillOpacity={0.88} />
+                      <rect x={13.1} y={2} width={3.4} height={14.5} rx={1.2} fill="white" />
+                    </svg>
                   </Box>
-                  <Title order={4} style={{ fontWeight: 800, letterSpacing: '-0.015em' }}>UW–Madison Salaries</Title>
+                  {/* Two-tone wordmark + small uppercase eyebrow for a masthead feel. */}
+                  <Stack gap={0} style={{ lineHeight: 1.05 }}>
+                    <Text style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em' }} tt="uppercase" c="dimmed" visibleFrom="xs">
+                      Public salary explorer
+                    </Text>
+                    <Text component="span" style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                      <Text span inherit c="bright">UW–Madison </Text>
+                      <Text span inherit c="accent.7">Salaries</Text>
+                    </Text>
+                  </Stack>
                 </Group>
               </Anchor>
             </Group>
