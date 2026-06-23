@@ -3,7 +3,7 @@ import { Group, Button, Text, Paper, Transition, Tooltip, ActionIcon, Anchor, Vi
 import { useReducedMotion } from '@mantine/hooks';
 import {
   IconArrowsLeftRight, IconUser, IconBriefcase, IconBuildingBank, IconX, IconReportAnalytics,
-  IconChevronDown, IconChevronUp,
+  IconChevronDown, IconChevronUp, IconStar, IconStarFilled,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useTray, type TrayItem } from '../state/tray';
@@ -26,20 +26,45 @@ function summarize(items: TrayItem[]): string {
   return parts.length ? parts.join(' · ') : `${items.length} selected`;
 }
 
-/** One removable, clickable chip for a tray item. */
-function Chip({ item, onRemove }: { item: TrayItem; onRemove: () => void }) {
+/** One removable, clickable chip. People carry a star to set/show the Equity-Report subject. */
+function Chip({ item, isPrimary, onPrimary, onRemove }: {
+  item: TrayItem; isPrimary?: boolean; onPrimary?: () => void; onRemove: () => void;
+}) {
   const { icon: Icon, href } = TYPE_META[item.type];
+  const isPerson = item.type === 'person';
   return (
     <Group
       gap={6}
       wrap="nowrap"
-      pl={8}
+      pl={isPerson ? 4 : 8}
       pr={4}
       py={3}
-      style={{ flexShrink: 0, borderRadius: 'var(--mantine-radius-xl)', background: 'var(--mantine-color-default-hover)', maxWidth: 220 }}
+      style={{
+        flexShrink: 0,
+        borderRadius: 'var(--mantine-radius-xl)',
+        background: isPrimary ? 'var(--mantine-color-accent-light)' : 'var(--mantine-color-default-hover)',
+        maxWidth: 240,
+      }}
     >
-      <Icon size={15} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
-      <Anchor component={Link} to={href(item.id)} c="inherit" underline="hover" fz="sm" lineClamp={1} title={item.label}>
+      {isPerson ? (
+        <Tooltip label={isPrimary ? 'Report subject' : 'Set as report subject'} withArrow>
+          <ActionIcon
+            size={20}
+            radius="xl"
+            variant="subtle"
+            color={isPrimary ? 'accent' : 'gray'}
+            aria-label={isPrimary ? `${item.label} is the report subject` : `Set ${item.label} as report subject`}
+            aria-pressed={isPrimary}
+            onClick={onPrimary}
+            style={{ flexShrink: 0 }}
+          >
+            {isPrimary ? <IconStarFilled size={14} /> : <IconStar size={14} />}
+          </ActionIcon>
+        </Tooltip>
+      ) : (
+        <Icon size={15} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
+      )}
+      <Anchor component={Link} to={href(item.id)} c={isPrimary ? 'accent.7' : 'inherit'} fw={isPrimary ? 600 : undefined} underline="hover" fz="sm" lineClamp={1} title={item.label}>
         {item.label}
       </Anchor>
       <ActionIcon size={19} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
@@ -54,7 +79,7 @@ function Chip({ item, onRemove }: { item: TrayItem; onRemove: () => void }) {
  * Appears only when something is selected; hidden in print.
  */
 export function SelectionTray() {
-  const { items, remove, clear, add } = useTray();
+  const { items, remove, clear, add, primaryId, setPrimary } = useTray();
   const reduce = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
   const [undoable, setUndoable] = useState<TrayItem[] | null>(null);
@@ -112,8 +137,19 @@ export function SelectionTray() {
 
           {!collapsed && (
             <Group gap={6} wrap="nowrap" style={{ overflowX: 'auto', maxWidth: 'min(46vw, 520px)' }}>
-              {TYPE_ORDER.flatMap((t) => items.filter((i) => i.type === t)).map((i) => (
-                <Chip key={`${i.type}:${i.id}`} item={i} onRemove={() => remove(i.id)} />
+              {TYPE_ORDER.flatMap((t) => {
+                const group = items.filter((i) => i.type === t);
+                // Pin the subject to the front of the people so the "primary" slot is visibly first.
+                if (t === 'person') group.sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0));
+                return group;
+              }).map((i) => (
+                <Chip
+                  key={`${i.type}:${i.id}`}
+                  item={i}
+                  isPrimary={i.type === 'person' && i.id === primaryId}
+                  onPrimary={() => setPrimary(i.id)}
+                  onRemove={() => remove(i.id)}
+                />
               ))}
             </Group>
           )}
@@ -146,19 +182,18 @@ export function SelectionTray() {
             </Button>
           </Tooltip>
 
-          <Tooltip label={hasPerson ? 'Build a report' : 'Add at least one person to build a report'} withArrow>
-            <ActionIcon
-              size="lg"
-              variant="default"
+          <Tooltip label={hasPerson ? 'Build the equity report' : 'Add at least one person to build a report'} withArrow>
+            <Button
+              size="xs"
               component={Link}
               to="/reports?mode=compare"
               data-disabled={!hasPerson || undefined}
               onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
-              aria-label="Build a report"
+              leftSection={<IconReportAnalytics size={16} />}
               style={{ flexShrink: 0 }}
             >
-              <IconReportAnalytics size={18} />
-            </ActionIcon>
+              Equity Report
+            </Button>
           </Tooltip>
         </Group>
         {items.length >= 8 && (

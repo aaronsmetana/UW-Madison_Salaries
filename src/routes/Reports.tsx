@@ -34,7 +34,7 @@ export default function Reports() {
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
-  const { items, add, remove } = useTray();
+  const { items, add, remove, primaryId } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = new Date().toISOString().slice(0, 10);
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
@@ -61,9 +61,14 @@ export default function Reports() {
 
   const [subjectKey, setSubjectKey] = useState<string | null>(null);
   useEffect(() => {
-    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) setSubjectKey(persons[0].id);
+    // Seed the subject from the tray's chosen "Subject" (primaryId) when none/invalid; the in-report
+    // Select still overrides afterward.
+    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) {
+      const seed = primaryId && persons.some((p) => p.id === primaryId) ? primaryId : persons[0].id;
+      setSubjectKey(seed);
+    }
     if (!persons.length && subjectKey) setSubjectKey(null);
-  }, [persons, subjectKey]);
+  }, [persons, subjectKey, primaryId]);
   const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
   const subjectFirst = subjectName.split(' ')[0] || 'They';
 
