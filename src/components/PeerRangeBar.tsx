@@ -5,7 +5,7 @@ import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 /**
  * Responsive horizontal range bar for a peer group: spans min→max, shades the
  * interquartile (p25→p75) range, lightly ticks the median, and marks `value`
- * (current salary) as a blue dot — with an optional bright-green `target` line so
+ * (current salary) as a teal dot — with an optional bright-green `target` line so
  * the distance to close reads at a glance. Div/percentage based and dark-mode safe.
  */
 export function PeerRangeBar({
@@ -78,7 +78,7 @@ export function PeerRangeBar({
             }}
           />
         )}
-        {/* current marker — blue dot */}
+        {/* current marker — teal dot */}
         <div
           style={{
             position: 'absolute',

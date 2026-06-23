@@ -2,7 +2,7 @@ import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
 import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 
-/** Horizontal pay-band bar: blue dot at `value` (current, optional), optional green `target` line. */
+/** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line. */
 export function PayBandBar({ min, max, value = null, target = null }: { min: number; max: number; value?: number | null; target?: number | null }) {
   const span = max - min;
   const raw = value != null && span > 0 ? (value - min) / span : 0;

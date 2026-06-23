@@ -2,7 +2,7 @@
 import { usd, num } from '../../lib/format';
 
 // ── Palette (mirrors the brief's strict three-color rule) ──
-export const CAND = 'var(--mantine-color-accent-6)'; // candidate / subject — slate blue
+export const CAND = 'var(--mantine-color-accent-6)'; // candidate / subject — teal accent
 export const PEER = 'var(--mantine-color-gray-5)'; //  peers — neutral gray
 
 // ── Cohort lenses ──

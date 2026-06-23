@@ -4,7 +4,7 @@ import { Group, Text } from '@mantine/core';
 export const MARK_CURRENT = 'var(--mantine-color-accent-7)'; // current salary — teal dot
 export const MARK_TARGET = 'var(--mantine-color-pos-6)'; // target salary — bright green line
 
-/** Compact legend: a blue dot / green swatch + label, used under the bullet charts. */
+/** Compact legend: a teal dot / green swatch + label, used under the bullet charts. */
 export function MarkerLegend({ items }: { items: { color: string; label: string; round?: boolean }[] }) {
   return (
     <Group justify="center" gap="lg" mt="xs">
