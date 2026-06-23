@@ -159,6 +159,22 @@ textarea:focus-visible,
   .global-loading-bar::after { animation: none; width: 100%; opacity: 0.6; }
 }
 
+/* Person stat row: a dominant "Actual pay" lead cell + three quieter supporting cells.
+   Reflows to a 2×2 grid on narrow viewports, the lead cell spanning both columns. */
+.stat-cells {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .stat-cells {
+    grid-template-columns: 1fr 1fr;
+  }
+  .stat-cells > .stat-lead {
+    grid-column: span 2;
+  }
+}
+
 /* Peer table: the "Add to tray" button stays muted until its row is hovered/focused,
    so a long list isn't a wall of repeated buttons (it pops accent on hover). */
 .peer-row .peer-add { opacity: 0.28; transition: opacity 120ms ease; }

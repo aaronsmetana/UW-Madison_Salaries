@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, SimpleGrid, Anchor, NumberInput, Tabs, Paper, ScrollArea,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine,
@@ -255,6 +255,7 @@ export default function Person() {
   const spanYears = firstDate && lastDate ? (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
   const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
   const oldestAgeYears = firstDate ? (Date.now() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
+  const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4) ?? null;
   // Full-time rate (and its growth) — shown alongside actual pay where they diverge (FTE changes).
   const firstRate = trend[0]?.rate ?? null;
   const lastRate = trend[trend.length - 1]?.rate ?? null;
@@ -405,37 +406,53 @@ export default function Person() {
 
         <Tabs.Panel value="overview" pt="md">
           <Stack gap="lg">
-            <Card withBorder padding="lg">
-              <Text size="sm" c="dimmed">Actual pay{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}</Text>
-              <Title order={1} style={{ fontSize: '2.5rem', lineHeight: 1.1 }}>{usd(lastSalary)}</Title>
-              {latest?.title && <Text size="sm" c="dimmed" mt={4}>{latest.title}</Text>}
-              {partTime && (
-                <Text size="xs" c="dimmed" mt={2}>
-                  {lastFte != null ? `${+lastFte.toFixed(2)} FTE · ` : ''}full-time rate {usd(lastRate)}
+            {/* Lead + supporting stat row: Actual pay dominates; Change · Tenure · Snapshots are quieter. */}
+            <div className="stat-cells">
+              {/* Lead — Actual pay */}
+              <Card withBorder radius="sm" p="lg" className="stat-lead" bg="var(--mantine-color-default-hover)">
+                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
+                  Actual pay{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}
                 </Text>
-              )}
-            </Card>
+                <Text fw={700} mt={6} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(lastSalary)}</Text>
+                {latest?.title && <Text size="sm" c="dimmed" mt={4}>{latest.title}</Text>}
+                {partTime && (
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {lastFte != null ? `${+lastFte.toFixed(2)} FTE · ` : ''}full-time rate {usd(lastRate)}
+                  </Text>
+                )}
+              </Card>
 
-            <SimpleGrid cols={{ base: 3, sm: 3 }}>
-              <Card withBorder padding="md">
-                <Text size="xs" c="dimmed">Change (first→latest)</Text>
-                <Text fw={600}>{sgnPct(totalChange)}</Text>
-                {chgDiffer && <Text size="xs" c="dimmed">rate {sgnPct(rateChange)}</Text>}
+              {/* Change */}
+              <Card withBorder radius="sm" p="lg">
+                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Change</Text>
+                <Text fw={700} mt={6} c={totalChange != null && totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
+                  {sgnPct(totalChange)}
+                </Text>
+                <Text size="xs" c="dimmed" mt={2}>first → latest{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}</Text>
               </Card>
-              <Card withBorder padding="md">
-                <Text size="xs" c="dimmed">Tenure</Text>
-                <Text fw={600}>{tenureYears == null ? '—' : `${tenureYears.toFixed(1)} yrs`}</Text>
+
+              {/* Tenure */}
+              <Card withBorder radius="sm" p="lg">
+                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Tenure</Text>
+                <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>
+                  {tenureYears == null ? '—' : (
+                    <>{tenureYears.toFixed(1)}<Text span fw={500} c="dimmed" style={{ fontSize: 14 }}> yrs</Text></>
+                  )}
+                </Text>
+                {hireYear && <Text size="xs" c="dimmed" mt={2}>since {hireYear}</Text>}
               </Card>
-              <Card withBorder padding="md">
-                <Text size="xs" c="dimmed">Salary snapshots on record</Text>
-                <Text fw={600}>{num(trend.length)}</Text>
+
+              {/* Snapshots */}
+              <Card withBorder radius="sm" p="lg">
+                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Snapshots</Text>
+                <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>{num(trend.length)}</Text>
                 {oldestLabel && (
-                  <Text size="xs" c="dimmed">
+                  <Text size="xs" c="dimmed" mt={2}>
                     oldest {oldestLabel}{oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}
                   </Text>
                 )}
               </Card>
-            </SimpleGrid>
+            </div>
 
             {peer && peer.n === 1 && jobCode && (
               <Card withBorder padding="lg">
