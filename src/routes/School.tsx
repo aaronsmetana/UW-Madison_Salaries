@@ -217,7 +217,7 @@ export default function School() {
           <LineChart data={trend ?? []} margin={{ left: 12, right: 12 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
             <Tooltip formatter={(v: number) => usd(v)} />
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
           </LineChart>

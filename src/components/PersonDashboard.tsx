@@ -284,7 +284,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
             <Tooltip content={<TrendTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />

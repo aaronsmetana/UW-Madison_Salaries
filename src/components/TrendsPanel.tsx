@@ -32,9 +32,9 @@ export function TrendsPanel() {
         <LineChart data={data ?? []} margin={{ left: 12, right: 12 }}>
           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
           <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-          <YAxis yAxisId="med" tickFormatter={(v) => usd(v)} width={92} tick={{ fontSize: 12 }}
+          <YAxis yAxisId="med" tickFormatter={(v) => usd(v)} width={92} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }}
             label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
-          <YAxis yAxisId="hc" orientation="right" width={72} tick={{ fontSize: 12 }}
+          <YAxis yAxisId="hc" orientation="right" width={72} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }}
             label={{ value: 'Headcount', angle: 90, position: 'insideRight', style: { fill: 'var(--mantine-color-pos-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip formatter={(v: number, key) => (key === 'med' ? usd(v) : num(v))} />
           <Legend />

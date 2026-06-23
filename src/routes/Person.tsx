@@ -623,7 +623,7 @@ export default function Person() {
             {/* No date labels here (they live under the FTE chart), but keep a subtle baseline to "close"
                 the salary zone at its bottom edge. */}
             <XAxis dataKey="label" tick={false} tickLine={false} height={8} axisLine={{ stroke: 'var(--mantine-color-default-border)' }} />
-            <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+            <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 0 }} />
             <Tooltip content={<TrendTooltip />} />
             {/* Faint divider + new-title label at each title change, segmenting the chart into title eras. */}
             {titleChanges.map((t) => (
