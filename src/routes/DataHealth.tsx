@@ -31,9 +31,7 @@ export default function DataHealth() {
         <Title order={2}>Data · About</Title>
         <Text c="dimmed">
           Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a
-          Wisconsin public record; the periodic salary report files are obtained through the work of{' '}
-          <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer">UFAS Local 223</Anchor>.
-          Person matching (name + hire date) is best-effort.
+          Wisconsin public record. Person matching (name + hire date) is best-effort.
         </Text>
       </div>
 
