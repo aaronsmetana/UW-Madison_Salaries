@@ -42,14 +42,14 @@ export function AppShellLayout() {
         leftSection={<Icon size={20} stroke={1.7} />}
         active={active}
         variant="light"
-        color={active ? 'blue' : undefined}
+        color={active ? 'accent' : undefined}
         c={dimmed && !active ? 'dimmed' : undefined}
         styles={{
           root: {
-            borderRadius: 'var(--mantine-radius-md)',
+            borderRadius: 'var(--mantine-radius-sm)',
             marginBottom: 2,
-            // Thick, bright-blue accent bar on the left of the active item.
-            borderLeft: `4px solid ${active ? 'var(--mantine-color-blue-6)' : 'transparent'}`,
+            // Teal left rail on the active item (matches the spec's inset accent bar).
+            boxShadow: active ? 'inset 3px 0 0 0 var(--mantine-color-accent-7), inset 0 0 0 1px rgba(14,110,131,.10)' : undefined,
           },
           label: { fontWeight: active ? 700 : 500 },
           section: collapsed ? { marginInlineEnd: 0 } : undefined,
@@ -70,17 +70,27 @@ export function AppShellLayout() {
     <>
       <GlobalLoadingBar />
       <AppShell
-        header={{ height: showControl ? 96 : 56 }}
+        header={{ height: showControl ? 104 : 64 }}
         navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
         padding="md"
       >
         <AppShell.Header>
-          <Group h={56} px="md" justify="space-between" wrap="nowrap">
+          <Group h={64} px="md" justify="space-between" wrap="nowrap">
             <Group gap="sm" wrap="nowrap">
               {/* Mobile-only burger opens the nav drawer; desktop collapse lives at the bottom of the sidebar. */}
               <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
               <Anchor component={Link} to="/" underline="never" c="inherit">
-                <Title order={4}>UW–Madison Salaries</Title>
+                <Group gap={10} wrap="nowrap">
+                  {/* Logo tile: accent-gradient square with a white $ glyph. */}
+                  <Box
+                    w={30}
+                    h={30}
+                    style={{ borderRadius: 9, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  >
+                    <Text fw={800} c="white" fz={16} lh={1}>$</Text>
+                  </Box>
+                  <Title order={4} style={{ fontWeight: 800, letterSpacing: '-0.015em' }}>UW–Madison Salaries</Title>
+                </Group>
               </Anchor>
             </Group>
             <Group gap="md" wrap="nowrap">
@@ -89,7 +99,7 @@ export function AppShellLayout() {
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
                 <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
                   Salary report files sourced from the work of{' '}
-                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="blue.5" underline="hover" inherit>
+                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="hover" inherit>
                     UFAS Local 223
                   </Anchor>
                 </Text>
