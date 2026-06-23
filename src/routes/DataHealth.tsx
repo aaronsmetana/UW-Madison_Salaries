@@ -38,10 +38,12 @@ export default function DataHealth() {
       <Card withBorder padding="lg">
         <Title order={4} mb="xs">Data source &amp; acknowledgment</Title>
         <Text size="sm">
-          UW–Madison salary figures are public records under Wisconsin's open-records law. The periodic salary
-          report files presented here were obtained through open-records requests filed by{' '}
-          <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>UFAS Local 223</Anchor>
-          {' '}— their work is what makes this transparency possible.
+          The UW–Madison salary report files presented here are public records, obtained through Wisconsin
+          open-records requests filed by{' '}
+          <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>United Faculty &amp; Academic Staff (UFAS)</Anchor>
+          {' '}— <b>AFT Local 223, AFL-CIO</b>, the union representing UW–Madison faculty and academic staff.
+          UFAS advocates for the pay, working conditions, and rights of campus faculty and academic staff;
+          their open-records work is what makes this transparency possible.
         </Text>
         <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" size="sm" fw={600} mt="sm" display="inline-block">
           Visit UFAS Local 223 →
