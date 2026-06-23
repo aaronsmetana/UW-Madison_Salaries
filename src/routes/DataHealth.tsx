@@ -31,11 +31,22 @@ export default function DataHealth() {
         <Title order={2}>Data · About</Title>
         <Text c="dimmed">
           Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a
-          Wisconsin public record; the periodic salary report files are obtained through the work of{' '}
-          <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer">UFAS Local 223</Anchor>.
-          Person matching (name + hire date) is best-effort.
+          Wisconsin public record. Person matching (name + hire date) is best-effort.
         </Text>
       </div>
+
+      <Card withBorder padding="lg">
+        <Title order={4} mb="xs">Data source &amp; acknowledgment</Title>
+        <Text size="sm">
+          UW–Madison salary figures are public records under Wisconsin's open-records law. The periodic salary
+          report files presented here were obtained through open-records requests filed by{' '}
+          <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>UFAS Local 223</Anchor>
+          {' '}— their work is what makes this transparency possible.
+        </Text>
+        <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" size="sm" fw={600} mt="sm" display="inline-block">
+          Visit UFAS Local 223 →
+        </Anchor>
+      </Card>
 
       <Card withBorder padding="lg" id="how-it-works">
         <Title order={4} mb="xs">How these figures are calculated</Title>

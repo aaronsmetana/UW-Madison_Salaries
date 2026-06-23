@@ -119,7 +119,7 @@ export function AppShellLayout() {
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
                 <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
-                  Salary report files sourced from the work of{' '}
+                  Public salary records obtained via open-records requests by{' '}
                   <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="hover" inherit>
                     UFAS Local 223
                   </Anchor>
