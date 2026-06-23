@@ -37,6 +37,51 @@ export default function DataHealth() {
         </Text>
       </div>
 
+      <Card withBorder padding="lg" id="how-it-works">
+        <Title order={4} mb="xs">How these figures are calculated</Title>
+        <Stack gap="sm">
+          <Text size="sm">
+            Each source row is one <b>appointment</b>, carrying a full-time annual <b>rate</b> and an{' '}
+            <b>FTE</b> (appointment percentage — e.g. 0.5 = half-time). The "Pay" control switches between three views:
+          </Text>
+          <Stack gap={4} pl="md">
+            <Text size="sm"><b>Actual pay</b> — rate × FTE (the reported FTE-adjusted salary); closest to what the person was actually paid.</Text>
+            <Text size="sm"><b>Full-time rate</b> — the listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</Text>
+            <Text size="sm"><b>Base pay</b> — base salary as reported; may exclude supplemental or overload pay.</Text>
+          </Stack>
+          <Text size="sm">
+            A person holding <b>more than one paid appointment</b> is combined by summing each appointment's
+            actual (rate × FTE) earnings, so split roles aren't double-counted. Unpaid <b>$0</b> affiliate
+            appointments are excluded from headcount, medians, and totals.
+          </Text>
+
+          <Text size="sm" fw={700} mt="xs">A snapshot in time</Text>
+          <Text size="sm">
+            Every figure reflects a single periodic report. Pay, FTE, title, and grade change between
+            snapshots, and raises or appointment changes that happen between reports aren't captured — so a
+            person's true earnings can be higher or lower than any single number shown here. Amounts are gross
+            annualized figures (not take-home) and exclude benefits.
+          </Text>
+
+          <Text size="sm" fw={700} mt="xs">Best-effort accuracy &amp; limitations</Text>
+          <Text size="sm">
+            Figures are transcribed and column-mapped from the published UW salary reports on a best-effort
+            basis. Automatic column mapping, name formatting, and identity matching (name + hire date) can
+            introduce errors or occasionally merge or split people (see "Possible duplicate identities" below).
+            Structural events are flagged per snapshot — e.g. the Nov 2021 TTC reclassification was a mass
+            title/grade change, not promotions, and the Oct 2023 report changed scope (students/trainees excluded).
+          </Text>
+
+          <Text size="sm" fw={700} mt="xs">Disclaimer</Text>
+          <Text size="sm" c="dimmed">
+            Salary data is a Wisconsin public record. This is an independent, best-effort presentation and is
+            <b> not affiliated with or endorsed by UW–Madison</b>. The information is provided "as is," may be
+            inaccurate or incomplete, and carries <b>no warranty and no liability</b> — verify against official
+            UW–Madison or State of Wisconsin sources before relying on it for any decision.
+          </Text>
+        </Stack>
+      </Card>
+
       <Group gap="xl">
         <Text size="sm"><b>{num(manifest?.total_rows)}</b> records</Text>
         <Text size="sm"><b>{num(snaps.length)}</b> snapshots</Text>

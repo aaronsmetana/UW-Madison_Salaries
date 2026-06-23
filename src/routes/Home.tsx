@@ -57,9 +57,9 @@ export default function Home() {
   const kpis: KpiData[] = [
     { label: 'Median salary', value: usd(summary?.latest?.median), icon: <IconCoin size={16} />, color: 'pos' },
     { label: 'Employees', value: num(summary?.latest?.headcount), icon: <IconUsers size={16} />, color: 'accent' },
-    { label: 'Total payroll', value: usdCompact(payroll), hint: payroll != null ? usd(payroll) : undefined, icon: <IconReportMoney size={16} />, color: 'accent' },
+    { label: 'Total Payroll', value: usdCompact(payroll), hint: payroll != null ? usd(payroll) : undefined, icon: <IconReportMoney size={16} />, color: 'accent' },
     { label: 'Schools/Divisions', value: num(dims?.schools), icon: <IconBuildingBank size={16} />, color: 'accent' },
-    { label: 'Titles', value: num(dims?.titles), icon: <IconBriefcase size={16} />, color: 'accent' },
+    { label: 'Unique Titles', value: num(dims?.titles), icon: <IconBriefcase size={16} />, color: 'accent' },
   ];
 
   return (
