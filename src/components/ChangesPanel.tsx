@@ -179,7 +179,7 @@ export function ChangesPanel() {
           <Text size="xs" c="dimmed">{m.title}</Text>
         </Table.Td>
         <Table.Td ta="right">{usd(m.a_pay)} → {usd(m.b_pay)}</Table.Td>
-        <Table.Td ta="right" c={m.delta >= 0 ? 'teal' : 'red'}>{m.delta >= 0 ? '+' : ''}{usd(m.delta)}</Table.Td>
+        <Table.Td ta="right" c={m.delta >= 0 ? 'pos' : 'red'}>{m.delta >= 0 ? '+' : ''}{usd(m.delta)}</Table.Td>
         <Table.Td ta="right">{pct(m.pct)}</Table.Td>
       </Table.Tr>
     ));
@@ -217,7 +217,7 @@ export function ChangesPanel() {
       )}
 
       {isTTC && (
-        <Alert color="blue" title="TTC reclassification boundary">
+        <Alert color="accent" title="TTC reclassification boundary">
           This pair spans the Nov-2021 Title &amp; Total Compensation restructure — nearly everyone's title/job
           code changed at once. Treat "title changes" here as a structural reclassification, not promotions.
         </Alert>
@@ -256,7 +256,7 @@ export function ChangesPanel() {
             <XAxis dataKey="label" tick={{ fontSize: 11 }} />
             <YAxis width={48} tick={{ fontSize: 12 }} />
             <Tooltip formatter={(v: number) => [num(v), 'People']} />
-            <Bar dataKey="n" name="People" fill="var(--mantine-color-indigo-5)" />
+            <Bar dataKey="n" name="People" fill="var(--bar)" />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Raise distribution (% change)" columns={['% bin', 'People']} rows={(raiseDist ?? []).map((r) => [`${r.pct_bucket}%`, r.n])} />
@@ -293,7 +293,7 @@ export function ChangesPanel() {
                 <Table.Td>
                   <Text size="sm">{p.a_title ?? '—'} → {p.b_title ?? '—'}</Text>
                 </Table.Td>
-                <Table.Td ta="right" c={(p.delta ?? 0) >= 0 ? 'teal' : 'red'}>
+                <Table.Td ta="right" c={(p.delta ?? 0) >= 0 ? 'pos' : 'red'}>
                   {p.delta == null ? '—' : `${p.delta >= 0 ? '+' : ''}${usd(p.delta)}`}
                 </Table.Td>
               </Table.Tr>
@@ -318,7 +318,7 @@ export function ChangesPanel() {
                 <Table.Tr key={i}>
                   <Table.Td><Text size="sm">{f.a_title ?? '—'} → {f.b_title ?? '—'}</Text></Table.Td>
                   <Table.Td ta="right">{num(f.n)}</Table.Td>
-                  <Table.Td ta="right" c={(f.med_delta ?? 0) >= 0 ? 'teal' : 'red'}>
+                  <Table.Td ta="right" c={(f.med_delta ?? 0) >= 0 ? 'pos' : 'red'}>
                     {f.med_delta == null ? '—' : `${f.med_delta >= 0 ? '+' : ''}${usd(f.med_delta)}`}
                   </Table.Td>
                 </Table.Tr>
@@ -347,7 +347,7 @@ export function ChangesPanel() {
                     <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{fullName(m.fn, m.ln)}</Anchor>
                   </Table.Td>
                   <Table.Td><Text size="sm">{m.a_school ?? '—'} → {m.b_school ?? '—'}</Text></Table.Td>
-                  <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'teal' : 'red'}>
+                  <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'pos' : 'red'}>
                     {m.delta == null ? '—' : `${m.delta >= 0 ? '+' : ''}${usd(m.delta)}`}
                   </Table.Td>
                 </Table.Tr>

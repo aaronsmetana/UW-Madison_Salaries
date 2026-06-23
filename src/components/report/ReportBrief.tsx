@@ -65,7 +65,7 @@ export function ReportBrief({ model, hovered, onHover }: {
         <>
           {/* Recommendation hero — with the itemized "receipt" docked directly under the number */}
           {belowTarget && recommended != null ? (
-            <Paper radius="md" p="xl" bg="var(--mantine-color-indigo-light)" mb="lg">
+            <Paper radius="md" p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
               <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>Recommendation</Text>
               <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                 {usd(Math.round(animated))}
@@ -76,7 +76,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               </Text>
 
               {showReceipt && (
-                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-indigo-2)' }}>
+                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-accent-2)' }}>
                   <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb={6} style={{ letterSpacing: '0.05em' }}>How this figure is built</Text>
                   <Stack gap={4}>
                     {receipt.map((line) => {
@@ -135,7 +135,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               <SimpleGrid cols={{ base: 1, sm: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
                   <Card key={p.kind} withBorder radius="md" shadow="sm" padding="lg">
-                    <ThemeIcon variant="light" color="indigo" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
+                    <ThemeIcon variant="light" color="accent" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
                     <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
                     <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
                     {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}</Text>}
@@ -164,23 +164,23 @@ export function ReportBrief({ model, hovered, onHover }: {
                     {rows.map((r) => {
                       const lit = hovered === `peer:${r.key}`;
                       const bg = r.isSubject
-                        ? 'var(--mantine-color-indigo-light)'
+                        ? 'var(--mantine-color-accent-light)'
                         : r.isAnomaly
-                          ? 'var(--mantine-color-indigo-0)'
+                          ? 'var(--mantine-color-accent-0)'
                           : lit ? 'var(--mantine-color-default-hover)' : undefined;
                       return (
                         <Table.Tr
                           key={r.key}
                           onMouseEnter={() => onHover(`peer:${r.key}`)}
                           onMouseLeave={() => onHover(null)}
-                          style={{ background: bg, boxShadow: r.isAnomaly && !r.isSubject ? 'inset 4px 0 0 var(--mantine-color-indigo-6)' : undefined, transition: 'background 150ms' }}
+                          style={{ background: bg, boxShadow: r.isAnomaly && !r.isSubject ? 'inset 4px 0 0 var(--mantine-color-accent-6)' : undefined, transition: 'background 150ms' }}
                         >
                           <Table.Td>
                             {r.isSubject
-                              ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="indigo" tt="none" ml={4}>Review Subject</Badge></>
+                              ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="accent" tt="none" ml={4}>Review Subject</Badge></>
                               : <>{r.name}{r.isAnomaly
-                                  ? <Badge size="xs" variant="filled" color="indigo" tt="none" ml={6}>Equity Anomaly</Badge>
-                                  : r.lessTenure && <Badge size="xs" variant="light" color="indigo" tt="none" ml={6}>less tenure</Badge>}</>}
+                                  ? <Badge size="xs" variant="filled" color="accent" tt="none" ml={6}>Equity Anomaly</Badge>
+                                  : r.lessTenure && <Badge size="xs" variant="light" color="accent" tt="none" ml={6}>less tenure</Badge>}</>}
                           </Table.Td>
                           <Table.Td>{r.title ?? '—'}</Table.Td>
                           {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
@@ -197,7 +197,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                             {r.isSubject ? (
                               <Text span size="xs" c="dimmed">baseline</Text>
                             ) : (
-                              <Text span fw={r.gap > 0 ? 800 : 700} fz={r.gap > 0 ? 'md' : 'sm'} c={r.isAnomaly ? 'indigo.7' : 'dimmed'}>
+                              <Text span fw={r.gap > 0 ? 800 : 700} fz={r.gap > 0 ? 'md' : 'sm'} c={r.isAnomaly ? 'accent.7' : 'dimmed'}>
                                 {r.gap > 0 ? '+' : r.gap < 0 ? '−' : ''}{usd(Math.abs(r.gap))}
                               </Text>
                             )}
@@ -219,7 +219,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                 Percentage growth flatters a low starting salary. In raw dollars, {subjectFirst}'s raises have lagged — and the gap compounds.
               </Text>
               <DivBar label="Peers (avg gained)" value={divergence.avgAbs} max={aMax} color="gray.5" />
-              <DivBar label={`${subjectFirst} (gained)`} value={divergence.subjAbs} max={aMax} color="indigo.6" emphasize />
+              <DivBar label={`${subjectFirst} (gained)`} value={divergence.subjAbs} max={aMax} color="accent.6" emphasize />
               <Text size="sm" mt="xs">
                 {subjectFirst} has gained <Text span fw={800}>{usd(divergence.avgAbs - divergence.subjAbs)}</Text> less in raises than the typical peer over the same period.
               </Text>
@@ -261,7 +261,7 @@ function DivBar({ label, value, max, color, emphasize }: { label: string; value:
     <div style={{ marginBottom: 10 }}>
       <Group justify="space-between" gap="xs" mb={3}>
         <Text size="sm" fw={emphasize ? 700 : 500}>{label}</Text>
-        <Text size="sm" fw={700} c={emphasize ? 'indigo.7' : undefined}>+{usd(value)}</Text>
+        <Text size="sm" fw={700} c={emphasize ? 'accent.7' : undefined}>+{usd(value)}</Text>
       </Group>
       <Progress value={filled} color={color} size="lg" radius="sm" />
     </div>

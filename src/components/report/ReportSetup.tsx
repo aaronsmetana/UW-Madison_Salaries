@@ -52,8 +52,8 @@ export function ReportSetup({
   // Semantic scenting: the strongest (biggest-deficit) lens is the magnet; a surplus is a warning.
   const badgeStyle = (tone: BadgeTone): { variant: string; color: string } => {
     switch (tone) {
-      case 'best': return { variant: 'filled', color: 'indigo' };
-      case 'deficit': return { variant: 'light', color: 'blue' };
+      case 'best': return { variant: 'filled', color: 'accent' };
+      case 'deficit': return { variant: 'light', color: 'accent' };
       case 'surplus': return { variant: 'light', color: 'orange' };
       default: return { variant: 'light', color: 'gray' };
     }
@@ -115,7 +115,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Suggested equity benchmarks (top earners in this title):</Text>
             <Group gap={6}>
               {suggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="indigo" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -258,7 +258,7 @@ export function ReportSetup({
           <Button
             variant="subtle"
             size="compact-xs"
-            color={clip.copied ? 'teal' : 'gray'}
+            color={clip.copied ? 'pos' : 'gray'}
             leftSection={clip.copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
             onClick={() => clip.copy(talkingPoints)}
           >
@@ -270,7 +270,7 @@ export function ReportSetup({
           <Box mt={8}>
             <Group justify="space-between" mb={6}>
               <Text size="sm" fw={600}>Case strength</Text>
-              <Badge variant="light" color={caseStrength.label === 'Strong' ? 'green' : caseStrength.label === 'Moderate' ? 'indigo' : 'gray'}>
+              <Badge variant="light" color={caseStrength.label === 'Strong' ? 'green' : caseStrength.label === 'Moderate' ? 'accent' : 'gray'}>
                 {caseStrength.label} · {caseStrength.score}
               </Badge>
             </Group>
@@ -283,13 +283,13 @@ export function ReportSetup({
                     <Group justify="space-between" gap={4} mb={2}>
                       <Text size="xs" c="dimmed">{p.label}</Text>
                       <Group gap={3} wrap="nowrap">
-                        {maxed && <IconCheck size={12} color="var(--mantine-color-teal-6)" />}
+                        {maxed && <IconCheck size={12} color="var(--mantine-color-pos-6)" />}
                         <Text size="xs" c="dimmed" fw={600}>{p.value}<Text span c="dimmed" fw={400}> / {p.max}</Text></Text>
                       </Group>
                     </Group>
-                    <Progress value={p.value} color={p.value > 0 ? 'indigo' : 'gray'} size="sm" radius="sm" />
+                    <Progress value={p.value} color={p.value > 0 ? 'accent' : 'gray'} size="sm" radius="sm" />
                     {!maxed && hint && (
-                      <Text size="xs" mt={3} c={hint.tone === 'action' ? 'indigo.7' : 'dimmed'}>
+                      <Text size="xs" mt={3} c={hint.tone === 'action' ? 'accent.7' : 'dimmed'}>
                         {hint.tone === 'action' ? '↳ ' : ''}{hint.text}
                       </Text>
                     )}

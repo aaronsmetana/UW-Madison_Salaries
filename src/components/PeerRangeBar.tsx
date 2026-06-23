@@ -47,7 +47,7 @@ export function PeerRangeBar({
             width: `${Math.max(0, at(p75) - at(p25))}%`,
             top: 0,
             bottom: 0,
-            background: 'var(--mantine-color-indigo-3)',
+            background: 'var(--mantine-color-accent-3)',
             opacity: 0.5,
           }}
         />

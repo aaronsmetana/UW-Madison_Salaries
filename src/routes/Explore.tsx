@@ -19,7 +19,7 @@ import { ControlBar } from '../app/ControlBar';
 function Kpi({ label, value, to }: { label: string; value: string; to?: string }) {
   const card = (
     <Card withBorder padding="lg" style={to ? { cursor: 'pointer', height: '100%' } : undefined}>
-      <Text size="sm" c="dimmed">{label}{to && <Text span size="xs" c="indigo"> →</Text>}</Text>
+      <Text size="sm" c="dimmed">{label}{to && <Text span size="xs" c="accent"> →</Text>}</Text>
       <Title order={3}>{value}</Title>
     </Card>
   );

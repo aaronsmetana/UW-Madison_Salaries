@@ -97,7 +97,7 @@ export default function PayCheck() {
 
   return (
     <Stack gap="lg">
-      <Box pl="md" style={{ borderLeft: '3px solid var(--mantine-color-indigo-5)' }}>
+      <Box pl="md" style={{ borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
         <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>
           Search title salaries
         </Title>

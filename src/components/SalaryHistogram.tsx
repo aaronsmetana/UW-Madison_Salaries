@@ -113,7 +113,7 @@ export function SalaryHistogram({
               {data.map((_, i) => (
                 <Cell
                   key={i}
-                  fill={i === markerBin ? 'var(--mantine-color-blue-7)' : 'var(--mantine-color-indigo-5)'}
+                  fill={i === markerBin ? 'var(--bar-active)' : 'var(--bar)'}
                 />
               ))}
             </Bar>
@@ -129,7 +129,7 @@ export function SalaryHistogram({
               left: `calc(${PLOT_LEFT}px + ${markerFraction} * (100% - ${PLOT_LEFT + PLOT_RIGHT}px))`,
               width: 2,
               marginLeft: -1,
-              background: 'var(--mantine-color-blue-6)',
+              background: 'var(--bar-active)',
               // White casing so the line stays legible over a colored (highlighted) bar.
               boxShadow: '0 0 0 1.5px var(--mantine-color-body)',
               pointerEvents: 'none',
@@ -146,7 +146,7 @@ export function SalaryHistogram({
                 height: 0,
                 borderLeft: '5px solid transparent',
                 borderRight: '5px solid transparent',
-                borderTop: '8px solid var(--mantine-color-blue-6)',
+                borderTop: '8px solid var(--bar-active)',
               }}
             />
             <Text
@@ -159,7 +159,7 @@ export function SalaryHistogram({
                 whiteSpace: 'nowrap',
                 fontSize: 11,
                 lineHeight: 1,
-                color: 'var(--mantine-color-blue-6)',
+                color: 'var(--bar-active)',
               }}
             >
               {markerLabel}

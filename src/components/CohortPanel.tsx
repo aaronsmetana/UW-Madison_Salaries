@@ -87,13 +87,13 @@ export function CohortPanel() {
             <YAxis width={48} tick={{ fontSize: 12 }} unit="%" domain={[0, 100]} />
             <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Legend />
-            <Bar dataKey="retention" name="Retained" stackId="r" fill="var(--mantine-color-teal-6)" />
+            <Bar dataKey="retention" name="Retained" stackId="r" fill="var(--mantine-color-pos-6)" />
             <Bar dataKey="lost" name="Left" stackId="r" fill="var(--mantine-color-gray-4)" />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Retention by hire year" columns={['Hire year', 'Retained %', 'Left %']} rows={chart.map((c) => [c.year, c.retention, c.lost])} />
         <Text size="xs" c="dimmed">
-          Each bar is one hire-year cohort: teal = share still present in the latest snapshot ({latest?.label}),
+          Each bar is one hire-year cohort: green = share still present in the latest snapshot ({latest?.label}),
           grey = share since gone. Snapshots begin in 2021, so earlier cohorts reflect survivors already employed by then.
         </Text>
       </Card>
@@ -111,7 +111,7 @@ export function CohortPanel() {
                 <YAxis width={56} tick={{ fontSize: 12 }} />
                 <Tooltip formatter={(v: number, key) => [num(v), key === 'joined' ? 'Joined' : 'Left']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
                 <Legend />
-                <Bar dataKey="joined" name="Joined" fill="var(--mantine-color-teal-6)" />
+                <Bar dataKey="joined" name="Joined" fill="var(--mantine-color-pos-6)" />
                 <Bar dataKey="departed" name="Left" fill="var(--mantine-color-red-6)" />
               </BarChart>
             </ResponsiveContainer>

@@ -90,7 +90,7 @@ export default function DataHealth() {
                   <Text size="xs" c="dimmed" mt={2}>unmapped: {s.unmapped_headers.join(', ')}</Text>
                 )}
                 {s.note && (
-                  <Text size="xs" fs="italic" c="blue" mt={2}>{s.note}</Text>
+                  <Text size="xs" fs="italic" c="accent" mt={2}>{s.note}</Text>
                 )}
               </Table.Td>
             </Table.Tr>

@@ -17,7 +17,7 @@ import { ControlBar } from '../app/ControlBar';
 import { dropdownProps } from '../lib/selectProps';
 
 const PALETTE = [
-  'var(--mantine-color-indigo-6)', 'var(--mantine-color-teal-6)', 'var(--mantine-color-orange-6)',
+  'var(--mantine-color-accent-6)', 'var(--mantine-color-pos-6)', 'var(--mantine-color-orange-6)',
   'var(--mantine-color-grape-6)', 'var(--mantine-color-cyan-7)', 'var(--mantine-color-red-6)',
   'var(--mantine-color-lime-7)', 'var(--mantine-color-pink-6)',
 ];
@@ -256,7 +256,7 @@ export default function Compare() {
       {items.length === 0 && (
         <Card withBorder padding="xl">
           <Stack align="center" gap="sm" py={48}>
-            <ThemeIcon size={64} radius="xl" variant="light" color="indigo">
+            <ThemeIcon size={64} radius="xl" variant="light" color="accent">
               <IconArrowsDiff size={32} />
             </ThemeIcon>
             <Title order={3} ta="center">Build a side-by-side comparison</Title>

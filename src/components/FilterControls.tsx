@@ -79,7 +79,7 @@ export function FilterControls() {
           <Indicator
             label={count}
             size={16}
-            color="blue"
+            color="accent"
             offset={4}
             withBorder
             disabled={count === 0}
@@ -88,7 +88,7 @@ export function FilterControls() {
             <Button
               size="xs"
               variant={active ? 'light' : 'default'}
-              color={active ? 'blue' : 'gray'}
+              color={active ? 'accent' : 'gray'}
               aria-expanded={opened}
               leftSection={
                 active ? <IconFilterFilled size={14} /> : <IconFilter size={14} stroke={1.8} />

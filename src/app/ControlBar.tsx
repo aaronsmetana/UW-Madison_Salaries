@@ -172,7 +172,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         <SegmentedControl
           size="xs"
           radius="xl"
-          color="indigo"
+          color="accent"
           value={metric}
           onChange={(v) => setMetric(v as Metric)}
           data={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ value: m, label: METRIC_LABEL[m] }))}
@@ -198,7 +198,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   const copyLink = (
     <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
       {({ copied, copy }) => (
-        <Button size="xs" variant="default" color={copied ? 'teal' : undefined} onClick={copy}>
+        <Button size="xs" variant="default" color={copied ? 'pos' : undefined} onClick={copy}>
           {copied ? 'Copied!' : 'Copy link'}
         </Button>
       )}
@@ -236,7 +236,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         <FilterControls />
         <ActiveFilters />
         {copyLink}
-        <Badge variant="light" color="indigo">
+        <Badge variant="light" color="accent">
           {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
         </Badge>
       </Group>

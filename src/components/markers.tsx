@@ -1,8 +1,8 @@
 import { Group, Text } from '@mantine/core';
 
 /** Shared marker colors so "current" and "target" read the same across every chart. */
-export const MARK_CURRENT = 'var(--mantine-color-blue-6)'; // current salary — blue dot
-export const MARK_TARGET = 'var(--mantine-color-green-6)'; // target salary — bright green line
+export const MARK_CURRENT = 'var(--mantine-color-accent-7)'; // current salary — teal dot
+export const MARK_TARGET = 'var(--mantine-color-pos-6)'; // target salary — bright green line
 
 /** Compact legend: a blue dot / green swatch + label, used under the bullet charts. */
 export function MarkerLegend({ items }: { items: { color: string; label: string; round?: boolean }[] }) {

@@ -8,7 +8,7 @@ export function PayBandBar({ min, max, value = null, target = null }: { min: num
   const raw = value != null && span > 0 ? (value - min) / span : 0;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
   const status = value == null ? null : value < min ? 'below min' : value > max ? 'over max' : `${Math.round(raw * 100)}% through band`;
-  const color = value == null ? 'gray' : value < min ? 'yellow' : value > max ? 'red' : 'teal';
+  const color = value == null ? 'gray' : value < min ? 'yellow' : value > max ? 'red' : 'pos';
   const H = 22;
 
   return (

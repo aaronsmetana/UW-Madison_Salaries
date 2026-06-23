@@ -54,7 +54,7 @@ export default function Home() {
               transform: 'translate(-50%, -50%)',
               width: 'min(680px, 90%)',
               height: 220,
-              background: 'radial-gradient(60% 60% at 50% 50%, var(--mantine-color-indigo-light) 0%, transparent 70%)',
+              background: 'radial-gradient(60% 60% at 50% 50%, var(--mantine-color-accent-light) 0%, transparent 70%)',
               opacity: 0.6,
               pointerEvents: 'none',
               filter: 'blur(8px)',
@@ -86,11 +86,11 @@ export default function Home() {
               System-Wide
             </Badge>
             <Group gap="md" align="stretch" wrap="nowrap">
-              <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="teal" />
+              <Kpi label="Median salary" value={usd(summary?.latest?.median)} icon={<IconCoin size={16} />} color="pos" />
               <Divider orientation="vertical" />
-              <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={16} />} color="blue" />
+              <Kpi label="Employees" value={num(summary?.latest?.headcount)} icon={<IconUsers size={16} />} color="accent" />
               <Divider orientation="vertical" />
-              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={16} />} color="indigo" />
+              <Kpi label="Total payroll" value={usd(payroll)} icon={<IconReportMoney size={16} />} color="accent" />
             </Group>
           </Paper>
 

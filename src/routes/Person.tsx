@@ -44,10 +44,10 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
   const s = 6;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={11} fill="var(--mantine-color-indigo-6)" opacity={0.15} />
+      <circle cx={cx} cy={cy} r={11} fill="var(--mantine-color-accent-6)" opacity={0.15} />
       <path
         d={`M${cx},${cy - s} L${cx + s},${cy} L${cx},${cy + s} L${cx - s},${cy} Z`}
-        fill="var(--mantine-color-indigo-7)"
+        fill="var(--mantine-color-accent-7)"
         stroke="var(--mantine-color-body)"
         strokeWidth={1.5}
       />
@@ -66,7 +66,7 @@ function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
   return (
     <Group gap="lg" mt="xs" wrap="wrap">
       {item(
-        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-indigo-6)" strokeWidth={2} /></svg>,
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-accent-6)" strokeWidth={2} /></svg>,
         'Actual pay',
       )}
       {item(
@@ -75,13 +75,13 @@ function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
       )}
       {item(
         <svg width={22} height={12} aria-hidden>
-          <rect x={1} y={4} width={20} height={7} fill="var(--mantine-color-teal-6)" fillOpacity={0.18} />
-          <line x1={1} y1={4} x2={21} y2={4} stroke="var(--mantine-color-teal-6)" strokeWidth={2} />
+          <rect x={1} y={4} width={20} height={7} fill="var(--mantine-color-pos-6)" fillOpacity={0.18} />
+          <line x1={1} y1={4} x2={21} y2={4} stroke="var(--mantine-color-pos-6)" strokeWidth={2} />
         </svg>,
         'Appointment (FTE) — lower chart',
       )}
       {hasTitleChange && item(
-        <svg width={14} height={14} aria-hidden><path d="M7,1 L13,7 L7,13 L1,7 Z" fill="var(--mantine-color-indigo-7)" /></svg>,
+        <svg width={14} height={14} aria-hidden><path d="M7,1 L13,7 L7,13 L1,7 Z" fill="var(--mantine-color-accent-7)" /></svg>,
         'Title change',
       )}
       {hasTitleChange && item(
@@ -515,11 +515,11 @@ export default function Person() {
                                 nav(`/person/${encodeURIComponent(p.person_key)}`);
                               }
                             }}
-                            style={{ cursor: isYou ? 'default' : 'pointer', background: isYou ? 'var(--mantine-color-indigo-light)' : undefined }}
+                            style={{ cursor: isYou ? 'default' : 'pointer', background: isYou ? 'var(--mantine-color-accent-light)' : undefined }}
                           >
                             <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
                             <Table.Td>
-                              <Text span size="sm" c={isYou ? undefined : 'indigo'} fw={isYou ? 700 : undefined}>
+                              <Text span size="sm" c={isYou ? undefined : 'accent'} fw={isYou ? 700 : undefined}>
                                 {fullName(p.fn, p.ln) || '—'}
                               </Text>
                               {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
@@ -535,7 +535,7 @@ export default function Person() {
                                 className="peer-add"
                                 size="compact-xs"
                                 variant={inTray ? 'light' : 'filled'}
-                                color={inTray ? 'gray' : 'indigo'}
+                                color={inTray ? 'gray' : 'accent'}
                                 radius="xl"
                                 leftSection={inTray ? undefined : <IconPlus size={12} />}
                                 disabled={inTray}
@@ -554,7 +554,7 @@ export default function Person() {
                   </Table>
                 </ScrollArea.Autosize>
                 {latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) && (
-                  <Text size="xs" c="dimmed" mt="xs">Rows shaded teal share {name}'s school ({latest.school}).</Text>
+                  <Text size="xs" c="dimmed" mt="xs">Rows shaded green share {name}'s school ({latest.school}).</Text>
                 )}
               </Card>
             )}
@@ -654,7 +654,7 @@ export default function Person() {
                 isAnimationActive={false}
               />
             ))}
-            <Line yAxisId="pay" type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Line yAxisId="pay" type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
             {titleChanges.map((t) =>
               t.salary != null ? (
                 <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={t.label} y={t.salary} shape={<TitleChangeDot />} />
@@ -691,9 +691,9 @@ export default function Person() {
               type="monotone"
               dataKey="fte"
               name="Appointment (FTE)"
-              stroke="var(--mantine-color-teal-6)"
+              stroke="var(--mantine-color-pos-6)"
               strokeWidth={2}
-              fill="var(--mantine-color-teal-6)"
+              fill="var(--mantine-color-pos-6)"
               fillOpacity={0.18}
               dot
               connectNulls
@@ -745,7 +745,7 @@ export default function Person() {
                   <Table.Td>
                     {r.title ?? '—'}
                     {isNew && (
-                      <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'indigo'}>
+                      <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'accent'}>
                         {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
                       </Badge>
                     )}
@@ -759,7 +759,7 @@ export default function Person() {
                   <Table.Td ta="right">
                     {usd(actual)}
                     {deltaPct != null && deltaPct !== 0 && (
-                      <Text size="xs" c={deltaPct > 0 ? 'teal' : 'red'}>
+                      <Text size="xs" c={deltaPct > 0 ? 'pos' : 'red'}>
                         {deltaPct > 0 ? '+' : ''}{pct(deltaPct)}
                       </Text>
                     )}

@@ -195,7 +195,7 @@ export default function School() {
             <Tooltip content={<TenureTip />} cursor={{ strokeDasharray: '3 3' }} />
             <Scatter
               data={tenurePay ?? []}
-              fill="var(--mantine-color-indigo-5)"
+              fill="var(--bar)"
               fillOpacity={0.5}
               cursor="pointer"
               onClick={(pt: { person_key?: string; payload?: { person_key?: string } }) => {
@@ -219,7 +219,7 @@ export default function School() {
             <XAxis dataKey="label" tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
             <Tooltip formatter={(v: number) => usd(v)} />
-            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
         <ChartData caption="Median salary over time" columns={['Snapshot', 'Median', 'Headcount']} rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])} />
@@ -247,7 +247,7 @@ export default function School() {
               allowDataOverflow={distScale === 'log'}
             />
             <Tooltip formatter={(v: number) => [num(v), 'People']} />
-            <Bar dataKey="n" name="People" fill="var(--mantine-color-indigo-5)" />
+            <Bar dataKey="n" name="People" fill="var(--bar)" />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />

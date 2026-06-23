@@ -288,10 +288,10 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <Tooltip content={<TrendTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />
-            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-indigo-6)" strokeWidth={2} dot />
+            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
             {trendData.map((t, i) =>
               i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
-                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-indigo-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
+                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
               ) : null
             )}
           </LineChart>
@@ -337,7 +337,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 <Table.Td>
                   <Text size="sm">{r.title ?? '—'}</Text>
                   {isNew && (
-                    <Badge variant="light" color={ttcReclass ? 'gray' : 'indigo'} size="xs" mt={2}>
+                    <Badge variant="light" color={ttcReclass ? 'gray' : 'accent'} size="xs" mt={2}>
                       {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
                     </Badge>
                   )}
@@ -350,7 +350,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 <Table.Td ta="right">
                   {usd(r.pay)}
                   {deltaPct != null && deltaPct !== 0 && (
-                    <Text size="xs" c={deltaPct > 0 ? 'teal' : 'red'}>{deltaPct > 0 ? '+' : ''}{pct(deltaPct)}</Text>
+                    <Text size="xs" c={deltaPct > 0 ? 'pos' : 'red'}>{deltaPct > 0 ? '+' : ''}{pct(deltaPct)}</Text>
                   )}
                 </Table.Td>
                 <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
