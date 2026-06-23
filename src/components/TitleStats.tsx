@@ -3,7 +3,7 @@ import {
   Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Button, Alert, Loader,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconPlus, IconSearch } from '@tabler/icons-react';
+import { IconPlus, IconSearch, IconCheck } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
@@ -13,6 +13,7 @@ import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
+import { StatHero } from './StatHero';
 
 function ordinal(p: number): string {
   const r = Math.round(p);
@@ -135,15 +136,17 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   return (
     <Stack gap="lg">
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
-        <Stat label="People" value={num(s.n)} />
-        <Stat label="Median" value={usd(s.med)} />
-        <Stat label="Lowest" value={usd(s.lo)} />
-        <Stat label="Highest" value={usd(s.hi)} />
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+        <StatHero
+          label={`Median salary · this title${scopeLabel}`}
+          value={usd(s.med)}
+          sub={`${num(s.n)} ${s.n === 1 ? 'person' : 'people'} · job code ${jobCode}`}
+        />
+        <SimpleGrid cols={2} spacing="lg">
+          <Stat label="Range (p25–p75)" value={`${usd(s.p25)} – ${usd(s.p75)}`} />
+          <Stat label="Spread (min–max)" value={`${usd(s.lo)} – ${usd(s.hi)}`} />
+        </SimpleGrid>
       </SimpleGrid>
-      {!pinned && (
-        <Text size="xs" c="dimmed" mt={-8}>p25 {usd(s.p25)} · median {usd(s.med)} · p75 {usd(s.p75)}{scopeLabel}</Text>
-      )}
 
       {pinned && s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && (
         <Card withBorder padding="lg">
@@ -229,10 +232,10 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                       <Button
                         className="peer-add"
                         size="compact-xs"
-                        variant={inTray ? 'light' : 'filled'}
-                        color={inTray ? 'gray' : 'indigo'}
+                        variant={inTray ? 'light' : 'outline'}
+                        color={inTray ? 'pos' : 'accent'}
                         radius="xl"
-                        leftSection={inTray ? undefined : <IconPlus size={12} />}
+                        leftSection={inTray ? <IconCheck size={12} /> : <IconPlus size={12} />}
                         disabled={inTray}
                         onClick={(e) => { e.stopPropagation(); add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) }); }}
                       >
@@ -260,7 +263,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           </Table.Thead>
           <Table.Tbody>
             {(bySchool ?? []).map((r) => (
-              <Table.Tr key={r.school} style={{ background: school === r.school ? 'var(--mantine-color-indigo-light)' : undefined }}>
+              <Table.Tr key={r.school} style={{ background: school === r.school ? 'var(--mantine-color-accent-light)' : undefined }}>
                 <Table.Td>
                   <Group gap={6} wrap="nowrap">
                     <Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor>
