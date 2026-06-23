@@ -118,7 +118,12 @@ export function AppShellLayout() {
               <CommandSearch />
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
-                <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>Wisconsin public salary records</Text>
+                <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
+                  Salary report files sourced from the work of{' '}
+                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="hover" inherit>
+                    UFAS Local 223
+                  </Anchor>
+                </Text>
                 <Text c="dimmed" ta="center" w="100%" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
               </Stack>
             </Group>
