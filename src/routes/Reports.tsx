@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Stack, Title, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconDownload, IconPrinter } from '@tabler/icons-react';
@@ -38,7 +39,9 @@ export default function Reports() {
   const generated = new Date().toISOString().slice(0, 10);
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
 
-  const [type, setType] = useState('person');
+  // The tray's "Report →" shortcut deep-links here with ?mode=compare to open the comparison studio.
+  const [params] = useSearchParams();
+  const [type, setType] = useState(params.get('mode') === 'compare' ? 'comparison' : 'person');
   const [hovered, setHovered] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig);
