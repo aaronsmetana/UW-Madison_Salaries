@@ -1,14 +1,33 @@
 /* App-wide UI polish that's easier to express in CSS than per-component props. */
 
+/* ── Bespoke theme tokens the Mantine palette can't express (accent gradient, chart bars, canvas). ── */
+:root {
+  --accent-grad: linear-gradient(135deg, #15839b, #0e6e83);
+  --bar: #9cc6d0; /* non-highlighted histogram bars */
+  --bar-active: #0e6e83; /* the highlighted bar / "this" */
+  --page-bg: #f2f4f6; /* app canvas behind cards (light) */
+  --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
+}
+
+/* Marine-teal + cool-grey canvas in light mode; cards stay white (Mantine surface var unchanged). */
+:root[data-mantine-color-scheme='light'] body {
+  background: var(--page-bg);
+}
+
+/* Tabular, lining numerals everywhere so columns of money/counts align. */
+body {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 /* Brighten/darken low-contrast secondary ("dimmed") text for readability/accessibility. */
 :root[data-mantine-color-scheme='dark'] {
   --mantine-color-dimmed: #c1c2c5;
 }
 :root[data-mantine-color-scheme='light'] {
-  --mantine-color-dimmed: #495057;
+  --mantine-color-dimmed: #586273;
 }
 
-/* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker underline. */
+/* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker accent underline. */
 .mantine-Tabs-tab {
   color: var(--mantine-color-dimmed);
   font-weight: 500;
@@ -16,7 +35,7 @@
 .mantine-Tabs-tab[data-active] {
   color: var(--mantine-color-text);
   font-weight: 700;
-  box-shadow: inset 0 -3px 0 0 var(--mantine-color-indigo-6);
+  box-shadow: inset 0 -3px 0 0 var(--mantine-color-accent-7);
 }
 
 /* Obvious, consistent keyboard focus on every interactive element. */
@@ -27,12 +46,37 @@ select:focus-visible,
 textarea:focus-visible,
 [role='button']:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-6);
+  outline: 2px solid var(--mantine-color-accent-7);
   outline-offset: 2px;
 }
 .mantine-Table-tr:focus-visible {
-  outline: 2px solid var(--mantine-color-indigo-6);
+  outline: 2px solid var(--mantine-color-accent-7);
   outline-offset: -2px;
+}
+
+/* Shared table style: muted uppercase header + tabular numerals (one look for every table). */
+.mantine-Table-thead .mantine-Table-th {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--mantine-color-dimmed);
+}
+
+/* Highlight rows: the searched "this" row (accent) and related-match rows (same school → green). */
+.mantine-Table-tr.row-this td {
+  background-color: var(--mantine-color-accent-light);
+}
+.mantine-Table-tr.row-this td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--mantine-color-accent-7);
+}
+.mantine-Table-tr.row-related td,
+.peer-same-school td {
+  background-color: var(--pos-row-bg);
+}
+.mantine-Table-tr.row-related td:first-child,
+.peer-same-school td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--mantine-color-pos-6);
 }
 
 /* Hero search input: resting elevation, deeper border in light mode, and a clear focus ring. */
@@ -44,13 +88,12 @@ textarea:focus-visible,
   border-color: var(--mantine-color-gray-4);
 }
 :root .hero-search-input:focus {
-  border-color: var(--mantine-color-indigo-6);
-  box-shadow: 0 0 0 3px var(--mantine-color-indigo-light), 0 6px 18px rgba(0, 0, 0, 0.14);
+  border-color: var(--mantine-color-accent-7);
+  box-shadow: 0 0 0 3px var(--mantine-color-accent-light), 0 6px 18px rgba(0, 0, 0, 0.14);
 }
 
 /* Select/MultiSelect "merged card": while the dropdown is open (data-expanded), flatten the input's
-   bottom so it meets the flush dropdown below as one bordered, shadowed card — matching the search bar.
-   Paired with the dropdown styling in src/lib/selectProps.ts. */
+   bottom so it meets the flush dropdown below as one bordered, shadowed card — matching the search bar. */
 :root .merge-select-input[data-expanded] {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
@@ -88,13 +131,13 @@ textarea:focus-visible,
   color: inherit;
 }
 
-/* Non-blocking global loading bar: a thin indeterminate strip pinned to the top. */
+/* Non-blocking global loading bar: a thin indeterminate accent strip pinned to the top. */
 .global-loading-bar {
   position: fixed;
   inset: 0 0 auto 0;
   height: 3px;
   z-index: 1100;
-  background: var(--mantine-color-blue-1);
+  background: var(--mantine-color-accent-1);
   overflow: hidden;
   pointer-events: none;
 }
@@ -104,7 +147,7 @@ textarea:focus-visible,
   top: 0;
   bottom: 0;
   width: 40%;
-  background: var(--mantine-color-blue-6);
+  background: var(--mantine-color-accent-7);
   border-radius: 0 2px 2px 0;
   animation: global-loading-slide 1.1s ease-in-out infinite;
 }
@@ -117,12 +160,7 @@ textarea:focus-visible,
 }
 
 /* Peer table: the "Add to tray" button stays muted until its row is hovered/focused,
-   so a long list isn't a wall of repeated blue buttons (it pops blue on hover). */
+   so a long list isn't a wall of repeated buttons (it pops accent on hover). */
 .peer-row .peer-add { opacity: 0.28; transition: opacity 120ms ease; }
 .peer-row:hover .peer-add,
 .peer-row:focus-within .peer-add { opacity: 1; }
-
-/* Same-school peers: tint the whole row + a teal left-edge accent so they're obvious at a skim
-   (replaces the old badge that truncated at narrow widths). */
-.peer-same-school td { background-color: var(--mantine-color-teal-light); }
-.peer-same-school td:first-child { box-shadow: inset 3px 0 0 0 var(--mantine-color-teal-6); }
