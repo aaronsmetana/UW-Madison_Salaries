@@ -13,7 +13,7 @@ import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
-import { StatHero } from './StatHero';
+import { StatCard } from './StatCard';
 
 function ordinal(p: number): string {
   const r = Math.round(p);
@@ -23,12 +23,7 @@ function ordinal(p: number): string {
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card withBorder padding="md">
-      <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={600} fz="lg">{value}</Text>
-    </Card>
-  );
+  return <StatCard size="sm" label={label} value={value} />;
 }
 
 interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
@@ -138,7 +133,9 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   return (
     <Stack gap="lg">
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-        <StatHero
+        <StatCard
+          size="hero"
+          lead
           label={`Median salary · this title${scopeLabel}`}
           value={usd(s.med)}
           sub={`${num(s.n)} ${s.n === 1 ? 'person' : 'people'} · job code ${jobCode}`}

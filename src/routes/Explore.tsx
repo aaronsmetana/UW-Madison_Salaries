@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
-  Stack, Title, Text, Card, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput,
+  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput,
 } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
+import { StatCard } from '../components/StatCard';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
@@ -18,13 +19,7 @@ import { usd, num, fullName } from '../lib/format';
 import { ControlBar } from '../app/ControlBar';
 
 function Kpi({ label, value, to }: { label: string; value: string; to?: string }) {
-  const card = (
-    <Card withBorder padding="lg" style={to ? { cursor: 'pointer', height: '100%' } : undefined}>
-      <Text size="sm" c="dimmed">{label}{to && <Text span size="xs" c="accent"> →</Text>}</Text>
-      <Title order={3}>{value}</Title>
-    </Card>
-  );
-  return to ? <Anchor component={Link} to={to} underline="never" c="inherit">{card}</Anchor> : card;
+  return <StatCard size="md" label={label} value={value} to={to} />;
 }
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null }

@@ -22,7 +22,7 @@ function Kpi({ icon, label, value, color, hint }: KpiData) {
         <ThemeIcon size={22} radius="md" variant="light" color={color}>
           {icon}
         </ThemeIcon>
-        <Text size="xs" c="dimmed" lh={1.2} ta="center" lineClamp={1}>
+        <Text c="dimmed" lh={1.2} ta="center" lineClamp={1} tt="uppercase" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
           {label}
         </Text>
       </Group>

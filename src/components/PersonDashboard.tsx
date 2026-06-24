@@ -11,6 +11,7 @@ import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
+import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
 
 interface Row {
@@ -51,13 +52,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <Paper withBorder radius="md" p="sm">
-      <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={700} fz="lg">{value}</Text>
-      {sub && <Text size="xs" c="dimmed">{sub}</Text>}
-    </Paper>
-  );
+  return <StatCard size="sm" label={label} value={value} sub={sub} />;
 }
 
 /**

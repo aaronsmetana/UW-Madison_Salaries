@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
+import { StatCard } from '../components/StatCard';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -38,12 +39,7 @@ interface Score {
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card withBorder padding="md">
-      <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={600}>{value}</Text>
-    </Card>
-  );
+  return <StatCard size="sm" label={label} value={value} />;
 }
 
 export default function School() {

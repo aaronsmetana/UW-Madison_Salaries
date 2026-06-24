@@ -9,18 +9,14 @@ import { personPay, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct, fullName } from '../lib/format';
 import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
+import { StatCard } from './StatCard';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
 interface SummaryRow { stayers: number; joiners: number; leavers: number; title_changes: number; median_raise: number | null }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card withBorder padding="md">
-      <Text size="xs" c="dimmed">{label}</Text>
-      <Text fw={600}>{value}</Text>
-    </Card>
-  );
+  return <StatCard size="sm" label={label} value={value} />;
 }
 
 export function ChangesPanel() {
