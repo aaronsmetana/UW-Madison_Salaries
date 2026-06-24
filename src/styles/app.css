@@ -205,19 +205,19 @@ textarea:focus-visible,
   border-left-color: var(--mantine-color-orange-4) !important;
 }
 
-/* Overview sections fade + rise once on mount — a single gentle stagger, not a per-card cascade. */
+/* Tab sections fade + rise once on mount (Overview + Pay & standing) — a single gentle stagger, not a cascade. */
 @keyframes section-rise {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.overview-rise > * { animation: section-rise 420ms ease-out both; }
-.overview-rise > *:nth-child(2) { animation-delay: 60ms; }
-.overview-rise > *:nth-child(3) { animation-delay: 120ms; }
-.overview-rise > *:nth-child(n + 4) { animation-delay: 160ms; }
+.tab-rise > * { animation: section-rise 420ms ease-out both; }
+.tab-rise > *:nth-child(2) { animation-delay: 60ms; }
+.tab-rise > *:nth-child(3) { animation-delay: 120ms; }
+.tab-rise > *:nth-child(n + 4) { animation-delay: 160ms; }
 
 /* Honor the OS "reduce motion" preference: no section rise, no dot-hover tween. (The bar grow-ins and
    count-up are JS-gated to render in their final state; the scatter pulse is gated in TenurePayScatter.) */
 @media (prefers-reduced-motion: reduce) {
-  .overview-rise > * { animation: none; }
+  .tab-rise > * { animation: none; }
   .scatter-dot { transition: none; }
 }

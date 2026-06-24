@@ -121,21 +121,29 @@ function MetaPill({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** One horizontal percentile bar for the "Standing" small-multiples: label + pool size on the left, a
- *  track with a fill to p% and an accent marker tick, and the percentile on the right. */
-function PercentileBar({ label, n, pct }: { label: string; n: number; pct: number }) {
+/** One horizontal percentile bar for the "Standing" small-multiples: label + rank on the left, a track
+ *  with a fill to p% (green above the pool median, neutral below), a 50th-percentile reference line and a
+ *  marker tick, and the percentile on the right. The fill + marker sweep in left→right on mount (staggered
+ *  by `delay`). */
+function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: number; below: number; pct: number; delay?: number }) {
   const mounted = useMounted();
+  const above = pct >= 50;
+  const fill = above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-gray-5)';
+  const tick = above ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-gray-6)';
+  const sweep = `600ms ease-out ${delay}ms`;
   return (
     <Group wrap="nowrap" gap="md" align="center">
-      <div style={{ width: 190, flexShrink: 0 }}>
-        <Text size="sm" fw={500} lineClamp={1}>{label}</Text>
-        <Text size="xs" c="dimmed">{num(n)} people</Text>
+      <div style={{ width: 210, flexShrink: 0 }}>
+        <Text size="sm" fw={500} lineClamp={2} title={label}>{label}</Text>
+        <Text size="xs" c="dimmed">#{num(n - below)} of {num(n)}</Text>
       </div>
       <div style={{ flex: 1, position: 'relative', height: 10, background: 'var(--mantine-color-default-hover)', borderRadius: 6 }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${mounted ? pct : 0}%`, background: 'var(--mantine-color-accent-light)', borderRadius: 6, transition: 'width 600ms ease-out' }} />
-        <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: 'var(--mantine-color-accent-7)', transform: 'translateX(-50%)', transition: 'left 600ms ease-out' }} />
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${mounted ? pct : 0}%`, background: fill, opacity: 0.5, borderRadius: 6, transition: `width ${sweep}` }} />
+        {/* pool median (50th) reference */}
+        <div style={{ position: 'absolute', left: '50%', top: -2, bottom: -2, width: 1, background: 'var(--mantine-color-default-border)', transform: 'translateX(-50%)' }} />
+        <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
       </div>
-      <Text size="sm" fw={700} c="accent.7" style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
+      <Text size="sm" fw={700} c={above ? 'pos.7' : 'dimmed'} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
         {pct}th <Text span size="xs" fw={500} c="dimmed">pctile</Text>
       </Text>
     </Group>
@@ -385,7 +393,7 @@ export default function Person() {
     ];
     return raw
       .filter((x) => x.ok && x.n >= 2)
-      .map((x) => ({ label: x.label, n: x.n, pct: pctOf(x.below, x.n)! }));
+      .map((x) => ({ label: x.label, n: x.n, below: x.below, pct: pctOf(x.below, x.n)! }));
   }, [standingRows, latest]);
 
   // Same-title peers = everyone sharing this person's job_code at the latest snapshot.
@@ -491,6 +499,13 @@ export default function Person() {
   const titleGrowthPct = medRateSeries.length >= 2 ? cagr(medRateSeries[0], medRateSeries[medRateSeries.length - 1]) : null;
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const projectedRate = lastRate != null ? lastRate * Math.pow(1 + pctRaise / 100, years) : null;
+  // Quick-target presets: the annualized %/yr needed to reach a target rate over the current `years`.
+  const targetRaisePct = (t: number | null | undefined) =>
+    lastRate != null && lastRate > 0 && years > 0 && t != null && t > lastRate
+      ? r1((Math.pow(t / lastRate, 1 / years) - 1) * 100)
+      : null;
+  const medTargetPct = targetRaisePct(peer?.med_rate);
+  const maxTargetPct = band ? targetRaisePct(band.max) : null;
 
   if (isLoading) return <LoadingState label="Loading person…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
@@ -553,7 +568,7 @@ export default function Person() {
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
-          <Stack gap="lg" className="overview-rise">
+          <Stack gap="lg" className="tab-rise">
             {/* Lead + supporting stat row: Actual pay dominates; Salary growth · Tenure are quieter. */}
             <div className="stat-cells">
               {/* Lead — Actual pay: signature accent rail + a date chip top-right; the value counts up on mount. */}
@@ -796,35 +811,42 @@ export default function Person() {
         </Tabs.Panel>
 
         <Tabs.Panel value="pay" pt="md">
-          <Stack gap="lg">
+          <Stack gap="lg" className="tab-rise">
       {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
       {standingPools.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Standing — where this pay ranks in each pool (latest snapshot)</Text>
+          <Text size="sm" fw={600} mb={2}>Standing — where this pay ranks in each pool (latest snapshot)</Text>
+          <Text size="xs" c="dimmed" mb="md">Rank and percentile across each pool this person belongs to.</Text>
           <Stack gap="sm">
-            {standingPools.map((p) => (
-              <PercentileBar key={p.label} label={p.label} n={p.n} pct={p.pct} />
+            {standingPools.map((p, i) => (
+              <PercentileBar key={p.label} label={p.label} n={p.n} below={p.below} pct={p.pct} delay={i * 90} />
             ))}
           </Stack>
-          <Text size="xs" c="dimmed" mt="md">Percentile = share of the pool this person out-earns. Pools with only one person are omitted.</Text>
+          <Text size="xs" c="dimmed" mt="md">Percentile = share of the pool this person out-earns; the centre line marks the pool median (50th). Green = above median. Pools with only one person are omitted.</Text>
         </Card>
       )}
 
-      {/* 4b — Pay band: full-time rate vs the official grade range, with title median/p75 benchmark ticks. */}
+      {/* 4b — Pay band: full-time rate within the OFFICIAL grade range + headroom. (Title median/p75 live on
+              the Overview title bar, so this card is purely the HR grade-structure lens.) */}
       {band && lastRate != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">
-            Pay band — grade {latest?.grade_number} (full-time rate vs the official range)
+          <Text size="sm" fw={600} mb={2}>
+            Pay band — grade {latest?.grade_number} · official HR range
           </Text>
-          <PayBandBar
-            min={band.min}
-            max={band.max}
-            value={lastRate}
-            benchmarks={[
-              peer?.med_rate != null ? { value: peer.med_rate, label: 'Title median' } : null,
-              peer?.p75_rate != null ? { value: peer.p75_rate, label: 'Title p75' } : null,
-            ].filter((b): b is { value: number; label: string } => b != null)}
-          />
+          <Text size="xs" c="dimmed" mb="md">
+            Where the full-time rate sits in grade {latest?.grade_number}'s official min–max, and the room to the top.
+          </Text>
+          <PayBandBar min={band.min} max={band.max} value={lastRate} quartiles />
+          {lastRate >= band.max ? (
+            <Text size="sm" mt="md">
+              At or above the top of grade {latest?.grade_number}'s band (max {usd(band.max)}) — effectively maxed out.
+            </Text>
+          ) : (
+            <Text size="sm" mt="md">
+              <Text span fw={700} c="pos.7">{usd(band.max - lastRate)}</Text> of headroom to the top of grade {latest?.grade_number}'s band
+              <Text span c="dimmed"> (grade max {usd(band.max)}).</Text>
+            </Text>
+          )}
         </Card>
       )}
 
@@ -838,6 +860,8 @@ export default function Person() {
               { label: 'Flat 2%', val: 2 },
               ...(recentAvgPct != null && recentAvgPct > 0 ? [{ label: `My recent avg ≈${r1(recentAvgPct)}%`, val: r1(recentAvgPct) }] : []),
               ...(titleGrowthPct != null && titleGrowthPct > 0 ? [{ label: `Title median growth ≈${r1(titleGrowthPct)}%`, val: r1(titleGrowthPct) }] : []),
+              ...(medTargetPct != null ? [{ label: `Reach title median (${medTargetPct}%/yr)`, val: medTargetPct }] : []),
+              ...(maxTargetPct != null ? [{ label: `Reach band max (${maxTargetPct}%/yr)`, val: maxTargetPct }] : []),
             ].map((c) => {
               const sel = Math.abs(pctRaise - c.val) < 0.05;
               return (
@@ -853,6 +877,12 @@ export default function Person() {
             <div>
               <Text size="xs" c="dimmed">Projected full-time rate</Text>
               <Text fw={700} size="xl">{projectedRate != null ? usd(projectedRate) : '—'}</Text>
+              {projectedRate != null && lastRate != null && (
+                <Text size="xs" c="dimmed">
+                  <Text span c="pos.7" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
+                  {lastFte != null && Math.abs(lastFte - 1) > 0.005 ? ` · actual ${usd(projectedRate * lastFte)}` : ''}
+                </Text>
+              )}
             </div>
           </Group>
 
