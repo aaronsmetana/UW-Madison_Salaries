@@ -62,15 +62,23 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
   );
 }
 
-/** Small +X% / −X% label above each trend point — the raise vs the previous snapshot (null on the first). */
-function YoyLabel(props: { x?: number; y?: number; value?: number | null }) {
-  const { x, y, value } = props;
+/** Small +X% / −X% pill above each trend point — the raise vs the previous snapshot (null on the first).
+ *  The pill keeps the number legible over gridlines/markers; on a title-change point (`bumpSet`) it lifts
+ *  higher so it clears the title-change diamond instead of sitting under it. */
+function YoyLabel(props: { x?: number; y?: number; value?: number | null; index?: number; bumpSet?: Set<number> }) {
+  const { x, y, value, index, bumpSet } = props;
   if (x == null || y == null || value == null) return null;
   const up = value >= 0;
+  const txt = `${up ? '+' : ''}${(value * 100).toFixed(1)}%`;
+  const color = up ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-red-7)';
+  const w = txt.length * 6 + 8;
+  const h = 15;
+  const cy = y - (index != null && bumpSet?.has(index) ? 22 : 11);
   return (
-    <text x={x} y={y - 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={up ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-red-6)'}>
-      {up ? '+' : ''}{(value * 100).toFixed(1)}%
-    </text>
+    <g>
+      <rect x={x - w / 2} y={cy - h / 2} width={w} height={h} rx={7} fill="var(--mantine-color-body)" fillOpacity={0.85} stroke={color} strokeOpacity={0.35} strokeWidth={1} />
+      <text x={x} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill={color}>{txt}</text>
+    </g>
   );
 }
 
@@ -302,6 +310,12 @@ export default function Person() {
     () => trendData.filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
     [trendData],
   );
+  // Indices of title-change points, so the YoY pill there lifts clear of the title-change diamond.
+  const titleChangeIdx = useMemo(() => {
+    const s = new Set<number>();
+    trendData.forEach((t, i) => { if (i > 0 && t.era !== trendData[i - 1].era) s.add(i); });
+    return s;
+  }, [trendData]);
   // Plot rows: carry each metric's year-over-year change (vs the previous snapshot) so the line can label
   // every step with its raise %.
   const trendPlot = useMemo(
@@ -1062,7 +1076,7 @@ export default function Person() {
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#trend-line-glow)" />
             {/* Primary line + per-step raise % labels + haloed active dot. */}
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out">
-              <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyLabel />} />
+              <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyLabel bumpSet={titleChangeIdx} />} />
             </Line>
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
