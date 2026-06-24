@@ -194,7 +194,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           onChange={(e) => setQ(e.currentTarget.value)}
         />
         <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present">
-          <Table striped highlightOnHover stickyHeader miw={760}>
+          <Table stickyHeader miw={760}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={48} ta="right">#</Table.Th>
@@ -251,7 +251,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Pay by school (market view)</Text>
-        <Table striped>
+        <Table>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>School</Table.Th>

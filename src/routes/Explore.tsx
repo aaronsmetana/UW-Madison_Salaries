@@ -169,7 +169,7 @@ export default function Explore() {
         </Tabs.List>
 
         <Tabs.Panel value="schools" pt="md">
-          <Table striped highlightOnHover>
+          <Table>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>School / Division</Table.Th>
@@ -202,7 +202,7 @@ export default function Explore() {
         <Tabs.Panel value="earners" pt="md">
           <Text size="xs" c="dimmed" mb="xs">Top {num((earners ?? []).length)} by pay in this scope.</Text>
           <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
-            <Table striped highlightOnHover stickyHeader miw={620}>
+            <Table stickyHeader miw={620}>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th w={48} ta="right">#</Table.Th>
@@ -244,7 +244,7 @@ export default function Explore() {
             <Text size="xs" c="dimmed">{num(titleView.length)} of {num((titles ?? []).length)} titles</Text>
           </Group>
           <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-            <Table striped highlightOnHover stickyHeader miw={720}>
+            <Table stickyHeader miw={720}>
               <Table.Thead>
                 <Table.Tr>
                   {sortTh('title', 'Title')}

@@ -702,7 +702,7 @@ export default function Person() {
                   )}
                 </Group>
                 <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
-                  <Table striped highlightOnHover stickyHeader miw={760}>
+                  <Table stickyHeader miw={760}>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th w={48} ta="right">#</Table.Th>
@@ -975,7 +975,7 @@ export default function Person() {
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title & salary history</Text>
         <Table.ScrollContainer minWidth={880}>
-        <Table striped highlightOnHover>
+        <Table>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Snapshot</Table.Th>

@@ -150,7 +150,7 @@ export function ReportBrief({ model, hovered, onHover }: {
             <>
               <Text size="sm" fw={600} mb="xs">Peer comparison <Text span c="dimmed" size="xs">· your named comparators</Text></Text>
               <Card withBorder radius="md" shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
-                <Table striped highlightOnHover verticalSpacing="sm">
+                <Table>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Name</Table.Th>

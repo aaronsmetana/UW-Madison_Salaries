@@ -33,7 +33,9 @@ export const theme = createTheme({
   // Card / stat radii from the spec (sm 11 · md 16 · lg 18).
   radius: { sm: '11px', md: '16px', lg: '18px' },
   components: {
-    Card: { defaultProps: { radius: 'lg', withBorder: true } },
+    Card: { defaultProps: { radius: 'lg', withBorder: true, padding: 'lg' } },
+    // One table look everywhere: zebra rows, hover highlight, comfortable row spacing.
+    Table: { defaultProps: { striped: true, highlightOnHover: true, verticalSpacing: 'sm' } },
   },
 });
 

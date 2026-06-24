@@ -375,7 +375,7 @@ export default function Compare() {
       {persons.length > 0 && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Raise cadence &amp; stagnation</Text>
-          <Table striped highlightOnHover>
+          <Table>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Person</Table.Th>
@@ -407,7 +407,7 @@ export default function Compare() {
             <Loader />
           ) : (
             <Table.ScrollContainer minWidth={560}>
-            <Table striped>
+            <Table>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Title</Table.Th>
@@ -466,7 +466,7 @@ export default function Compare() {
             <Loader />
           ) : (
             <Table.ScrollContainer minWidth={520}>
-            <Table striped>
+            <Table>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>School</Table.Th>

@@ -106,7 +106,7 @@ export default function DataHealth() {
       </Group>
 
       <Table.ScrollContainer minWidth={760}>
-      <Table striped highlightOnHover verticalSpacing="sm">
+      <Table>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Snapshot</Table.Th>
@@ -167,7 +167,7 @@ export default function DataHealth() {
             Same name resolving to more than one person (different hire dates) in the latest snapshot — usually
             genuinely different people, but worth a glance. Confirm true duplicates via data/corrections.json.
           </Text>
-          <Table striped highlightOnHover withTableBorder verticalSpacing="sm">
+          <Table withTableBorder>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Name</Table.Th>

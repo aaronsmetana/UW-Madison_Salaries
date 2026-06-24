@@ -300,7 +300,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title &amp; salary history</Text>
         <Table.ScrollContainer minWidth={680}>
-        <Table striped highlightOnHover>
+        <Table>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Snapshot</Table.Th>
