@@ -34,6 +34,11 @@ export function PeerRangeBar({
   const H = 26;
   const mounted = useMounted();
 
+  // Current-value pin: the caret sits at the dot's exact x; the label is clamped so it never overruns
+  // the track at the extremes (the lowest / highest-paid person).
+  const pos = at(value);
+  const labelLeft = Math.max(14, Math.min(86, pos));
+
   // Interior tick guides drawn on the bar (p25/median/p75), median a touch stronger.
   const ticks: { x: number; label: string; strong?: boolean }[] = [
     { x: p25, label: 'p25' },
@@ -43,6 +48,42 @@ export function PeerRangeBar({
 
   return (
     <div>
+      {/* current-value pin above the dot — caret points down to it so the value reads as the dot's, not
+          the median's. Both label + caret sweep in with the dot on mount. */}
+      <div style={{ position: 'relative', height: 28 }}>
+        <Text
+          fw={700}
+          style={{
+            position: 'absolute',
+            left: mounted ? `${labelLeft}%` : 0,
+            bottom: 7,
+            transform: 'translateX(-50%)',
+            whiteSpace: 'nowrap',
+            fontSize: 12.5,
+            color: MARK_CURRENT,
+            transition: 'left 600ms ease-out',
+          }}
+        >
+          <Text span c="dimmed" fw={500} style={{ fontSize: 10.5 }}>Current </Text>
+          {usd(value)}
+        </Text>
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: mounted ? `${pos}%` : 0,
+            bottom: 0,
+            transform: 'translateX(-50%)',
+            width: 0,
+            height: 0,
+            borderLeft: '5px solid transparent',
+            borderRight: '5px solid transparent',
+            borderTop: `7px solid ${MARK_CURRENT}`,
+            transition: 'left 600ms ease-out',
+          }}
+        />
+      </div>
+
       <div
         style={{
           position: 'relative',
@@ -138,12 +179,10 @@ export function PeerRangeBar({
         ))}
       </div>
 
-      <MarkerLegend
-        items={[
-          { color: MARK_CURRENT, round: true, label: `Current ${usd(value)}` },
-          ...(target != null ? [{ color: MARK_TARGET, label: `Target ${usd(target)}` }] : []),
-        ]}
-      />
+      {/* Current is now pinned above the dot; only the target (when present) needs a legend. */}
+      {target != null && (
+        <MarkerLegend items={[{ color: MARK_TARGET, label: `Target ${usd(target)}` }]} />
+      )}
     </div>
   );
 }
