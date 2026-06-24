@@ -95,6 +95,28 @@ function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
 /** Short label for the vertical title-era divider so long titles don't overrun the chart. */
 const shortTitle = (s: string | null) => (s && s.length > 16 ? `${s.slice(0, 15)}…` : s ?? '');
 
+/** A metadata pill (label + bold value) surfacing one source column under the name. Renders nothing
+ *  when the value is blank, so pills only appear for fields the data actually has. */
+function MetaPill({ label, value }: { label: string; value: ReactNode }) {
+  if (value == null || value === '') return null;
+  return (
+    <Group
+      gap={5}
+      wrap="nowrap"
+      style={{
+        display: 'inline-flex',
+        background: 'var(--mantine-color-default-hover)',
+        border: '1px solid var(--mantine-color-default-border)',
+        borderRadius: 7,
+        padding: '3px 9px',
+      }}
+    >
+      <Text span c="dimmed" style={{ fontSize: 11.5 }}>{label}</Text>
+      <Text span fw={600} style={{ fontSize: 11.5 }}>{value}</Text>
+    </Group>
+  );
+}
+
 interface Row {
   first_name: string | null;
   last_name: string | null;
@@ -112,6 +134,12 @@ interface Row {
   employee_category: string | null;
   grade_number: number | null;
   grade_basis: string | null;
+  salary_grade_raw: string | null;
+  flsa_status: string | null;
+  comp_basis: string | null;
+  pay_rate_type: string | null;
+  employee_type: string | null;
+  contract_type: string | null;
 }
 
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
@@ -127,7 +155,8 @@ export default function Person() {
     ['person', key],
     `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
             title, job_code, salary, salary_fte_adjusted, fte, date_of_hire, employee_category,
-            grade_number, grade_basis
+            grade_number, grade_basis, salary_grade_raw, flsa_status, comp_basis, pay_rate_type,
+            employee_type, contract_type
      FROM salaries WHERE person_key = ${sqlStr(key)} ORDER BY snapshot_date`,
     !!key
   );
@@ -380,6 +409,16 @@ export default function Person() {
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
           {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
+          {/* Source columns the page otherwise hides, surfaced as a wrapping row of pills (null ones omitted). */}
+          <Group gap={7} wrap="wrap" mt="sm">
+            <MetaPill label="Grade" value={latest?.salary_grade_raw ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
+            <MetaPill label="Job code" value={latest?.job_code} />
+            <MetaPill label="FLSA" value={latest?.flsa_status} />
+            <MetaPill label="Basis" value={latest?.comp_basis} />
+            <MetaPill label="Pay type" value={latest?.pay_rate_type} />
+            <MetaPill label="Category" value={latest?.employee_category} />
+            <MetaPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
+          </Group>
         </div>
         <Button
           variant={has(key) ? 'light' : 'filled'}
@@ -413,12 +452,17 @@ export default function Person() {
                 <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
                   Actual pay{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}
                 </Text>
-                <Text fw={700} mt={6} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(lastSalary)}</Text>
+                <Group gap={8} align="center" wrap="nowrap" mt={6}>
+                  <Text fw={700} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(lastSalary)}</Text>
+                  {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
+                    <Badge variant="light" color="accent" radius="sm" tt="none" style={{ fontWeight: 600 }}>
+                      {+lastFte.toFixed(2)} FTE
+                    </Badge>
+                  )}
+                </Group>
                 {latest?.title && <Text size="sm" c="dimmed" mt={4}>{latest.title}</Text>}
                 {partTime && (
-                  <Text size="xs" c="dimmed" mt={2}>
-                    {lastFte != null ? `${+lastFte.toFixed(2)} FTE · ` : ''}full-time rate {usd(lastRate)}
-                  </Text>
+                  <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>
                 )}
               </Card>
 

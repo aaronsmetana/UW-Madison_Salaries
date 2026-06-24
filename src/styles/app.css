@@ -159,6 +159,12 @@ textarea:focus-visible,
   .global-loading-bar::after { animation: none; width: 100%; opacity: 0.6; }
 }
 
+/* SegmentedToggle: the active option's label reads in accent teal (matches the mock's selected pill).
+   Scoped to .seg-toggle so the app's other SegmentedControls keep their default dark active label. */
+.seg-toggle .mantine-SegmentedControl-label[data-active] {
+  color: var(--mantine-color-accent-7);
+}
+
 /* Person stat row: a dominant "Actual pay" lead cell + three quieter supporting cells.
    Reflows to a 2×2 grid on narrow viewports, the lead cell spanning both columns. */
 .stat-cells {
