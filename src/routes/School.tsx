@@ -9,6 +9,7 @@ import {
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
+import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -187,9 +188,9 @@ export default function School() {
         <Text size="sm" fw={600} mb="md">Tenure vs pay (compression check)</Text>
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis type="number" dataKey="tenure" name="Tenure" unit=" yrs" tick={{ fontSize: 12 }} />
-            <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} />
+            <CartesianGrid {...GRID} />
+            <XAxis type="number" dataKey="tenure" name="Tenure" unit=" yrs" tick={AXIS_TICK} />
+            <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} />
             <Tooltip content={<TenureTip />} cursor={{ strokeDasharray: '3 3' }} />
             <Scatter
               data={tenurePay ?? []}
@@ -213,9 +214,9 @@ export default function School() {
         <Text size="sm" fw={600} mb="md">Median salary over time</Text>
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={trend ?? []} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip formatter={(v: number) => usd(v)} />
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
           </LineChart>
@@ -235,11 +236,11 @@ export default function School() {
         </Group>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={distData} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis
               width={48}
-              tick={{ fontSize: 12 }}
+              tick={AXIS_TICK}
               scale={distScale === 'log' ? 'log' : 'auto'}
               domain={distScale === 'log' ? [0.5, 'auto'] : undefined}
               allowDataOverflow={distScale === 'log'}

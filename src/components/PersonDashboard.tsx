@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert, Paper } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
+import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
@@ -277,9 +278,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Text size="sm" fw={600} mb="md">Salary over time</Text>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />

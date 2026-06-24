@@ -6,6 +6,7 @@ import {
 import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine,
 } from 'recharts';
+import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { IconAlertTriangle, IconPlus } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -882,11 +883,11 @@ export default function Person() {
             single tooltip on the salary chart covers both. The date labels live only on the lower axis. */}
         <ResponsiveContainer width="100%" height={244}>
           <LineChart data={trendData} syncId="person-trend" margin={{ left: 12, right: 12, top: 18, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <CartesianGrid {...GRID} />
             {/* No date labels here (they live under the FTE chart), but keep a subtle baseline to "close"
                 the salary zone at its bottom edge. */}
             <XAxis dataKey="label" tick={false} tickLine={false} height={8} axisLine={{ stroke: 'var(--mantine-color-default-border)' }} />
-            <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 0 }} />
+            <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
             <Tooltip content={<TrendTooltip />} />
             {/* Faint divider + new-title label at each title change, segmenting the chart into title eras. */}
             {titleChanges.map((t) => (
@@ -933,9 +934,9 @@ export default function Person() {
 
         <ResponsiveContainer width="100%" height={108}>
           <AreaChart data={trendData} syncId="person-trend" margin={{ left: 12, right: 12, top: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <CartesianGrid {...GRID} />
             {/* Shared date labels live only here; push them clear below the area fill. */}
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} tickMargin={10} height={34} />
+            <XAxis dataKey="label" tick={AXIS_TICK} tickMargin={10} height={34} />
             {/* No rotated axis label — the % ticks sit flush under the salary chart's dollar figures.
                 `padding` insets the scale a few px so a 100% (or 0%) value isn't drawn on the clip edge
                 and cut in half. */}
@@ -944,7 +945,7 @@ export default function Person() {
               domain={[0, 1]}
               ticks={[0, 0.5, 1]}
               width={80}
-              tick={{ fontSize: 12 }}
+              tick={AXIS_TICK}
               tickFormatter={(v) => `${Math.round(v * 100)}%`}
               padding={{ top: 8, bottom: 4 }}
             />

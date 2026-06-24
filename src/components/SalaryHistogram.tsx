@@ -1,6 +1,7 @@
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
+import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num } from '../lib/format';
@@ -104,9 +105,9 @@ export function SalaryHistogram({
       <div style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={edges} tickFormatter={fmtK} tick={{ fontSize: 11 }} />
-            <YAxis width={48} tick={{ fontSize: 12 }} allowDecimals={false} />
+            <CartesianGrid {...GRID} />
+            <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={edges} tickFormatter={fmtK} tick={AXIS_TICK} />
+            <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} />
             <Tooltip content={<HistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             {guides.map((gx, i) => (
               <ReferenceLine key={`q-${i}`} x={gx} stroke="var(--mantine-color-gray-5)" strokeDasharray="3 3" strokeWidth={1} />

@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
+import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
 import { useTray } from '../state/tray';
 import { useControls } from '../state/controls';
@@ -286,9 +287,9 @@ export default function Compare() {
               <ResponsiveContainer width="100%" height={300}>
                 {xMode === 'date' ? (
                   <LineChart data={series} margin={{ left: 12, right: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
+                    <CartesianGrid {...GRID} />
+                    <XAxis dataKey="label" tick={AXIS_TICK} />
+                    <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
                     <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
                     {persons.map((p, i) => (
                       <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
@@ -296,9 +297,9 @@ export default function Compare() {
                   </LineChart>
                 ) : (
                   <ScatterChart margin={{ left: 12, right: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={{ fontSize: 12 }} />
-                    <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
+                    <CartesianGrid {...GRID} />
+                    <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={AXIS_TICK} />
+                    <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
                     <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} />
                     {persons.map((p, i) => (
                       <Scatter
@@ -330,9 +331,9 @@ export default function Compare() {
           <Text size="sm" fw={600} mb="md">Pay gap to the top earner in this group</Text>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={gapSeries} margin={{ left: 12, right: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" tick={AXIS_TICK} />
+              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
               {persons.map((p, i) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
@@ -353,9 +354,9 @@ export default function Compare() {
           <Text size="sm" fw={600} mb="md">Relative standing within school (percentile over time)</Text>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={standingSeries} margin={{ left: 12, right: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis domain={[0, 100]} width={48} tick={{ fontSize: 12 }} unit="%" padding={{ top: 6, bottom: 6 }} />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" tick={AXIS_TICK} />
+              <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
               <Tooltip formatter={(v: number, key) => [`${v}th pctile`, labelMap.get(String(key)) ?? key]} />
               {persons.map((p, i) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
@@ -440,9 +441,9 @@ export default function Compare() {
           <Text size="sm" fw={600} mb="md">Titles — median salary over time</Text>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={{ fontSize: 12 }} padding={{ top: 6, bottom: 6 }} />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" tick={AXIS_TICK} />
+              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip formatter={(v: number, key) => [usd(v), titleLabelMap.get(String(key)) ?? key]} />
               {titles.map((t, i) => (
                 <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />

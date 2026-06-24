@@ -1,5 +1,6 @@
 import { Stack, Card, Text, Loader, Paper } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -82,9 +83,9 @@ export function CohortPanel() {
         <Text size="sm" fw={600} mb="md">Retention by hire year (share still here)</Text>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chart} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="year" tick={{ fontSize: 10 }} interval={2} />
-            <YAxis width={48} tick={{ fontSize: 12 }} unit="%" domain={[0, 100]} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="year" tick={AXIS_TICK} interval={2} />
+            <YAxis width={48} tick={AXIS_TICK} unit="%" domain={[0, 100]} />
             <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Legend />
             <Bar dataKey="retention" name="Retained" stackId="r" fill="var(--mantine-color-pos-6)" />
@@ -106,9 +107,9 @@ export function CohortPanel() {
           <>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={turnover} margin={{ left: 12, right: 12 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis width={56} tick={{ fontSize: 12 }} />
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" tick={AXIS_TICK} />
+                <YAxis width={56} tick={AXIS_TICK} />
                 <Tooltip formatter={(v: number, key) => [num(v), key === 'joined' ? 'Joined' : 'Left']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
                 <Legend />
                 <Bar dataKey="joined" name="Joined" fill="var(--mantine-color-pos-6)" />

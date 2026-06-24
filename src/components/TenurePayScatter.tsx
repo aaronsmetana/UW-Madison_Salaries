@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
 } from 'recharts';
+import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { Box, Group, Text } from '@mantine/core';
 import { usd } from '../lib/format';
 
@@ -101,14 +102,14 @@ export function TenurePayScatter({
 
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart margin={{ left: 12, right: 16, top: 10, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid {...GRID} />
           <XAxis
             type="number"
             dataKey="tenure"
             name="Tenure"
             domain={[0, xMax]}
             ticks={xTicks}
-            tick={{ fontSize: 12 }}
+            tick={AXIS_TICK}
             tickFormatter={(v) => `${v}y`}
           />
           <YAxis
@@ -116,7 +117,7 @@ export function TenurePayScatter({
             dataKey="pay"
             name="Pay"
             width={56}
-            tick={{ fontSize: 12 }}
+            tick={AXIS_TICK}
             tickFormatter={(v) => `$${Math.round(v / 1000)}k`}
             domain={['auto', 'auto']}
             padding={{ top: 10, bottom: 10 }}

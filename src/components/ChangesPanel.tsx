@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -248,9 +249,9 @@ export function ChangesPanel() {
         <Text size="sm" fw={600} mb="sm">Raise distribution (% change, continuing staff)</Text>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis width={48} tick={{ fontSize: 12 }} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <YAxis width={48} tick={AXIS_TICK} />
             <Tooltip formatter={(v: number) => [num(v), 'People']} />
             <Bar dataKey="n" name="People" fill="var(--bar)" />
           </BarChart>
