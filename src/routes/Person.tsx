@@ -973,7 +973,7 @@ export default function Person() {
         <Tabs.Panel value="history" pt="md">
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Title & salary history</Text>
-        <Table.ScrollContainer minWidth={760}>
+        <Table.ScrollContainer minWidth={880}>
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>
@@ -983,7 +983,9 @@ export default function Person() {
               <Table.Th>School / Dept</Table.Th>
               <Table.Th ta="right">Rate</Table.Th>
               <Table.Th ta="right">Actual pay</Table.Th>
+              <Table.Th ta="right">Raise</Table.Th>
               <Table.Th ta="right">FTE</Table.Th>
+              <Table.Th>Basis</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -998,6 +1000,9 @@ export default function Person() {
               const actual = r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1);
               const priorActual = inPrior ? priorSnap!.jobs.get(r.job_code!)! : null;
               const deltaPct = priorActual ? (actual - priorActual) / priorActual : null;
+              // Org move = Division/Department changed vs the previous displayed row.
+              const prevRow = i > 0 ? historyRows[i - 1] : null;
+              const orgMoved = !!prevRow && ((r.school ?? '') !== (prevRow.school ?? '') || (r.department ?? '') !== (prevRow.department ?? ''));
               return (
                 <Table.Tr key={`${r.snapshot_id}-${i}`}>
                   <Table.Td>
@@ -1017,18 +1022,35 @@ export default function Person() {
                   <Table.Td>{r.job_code ?? '—'}</Table.Td>
                   <Table.Td>
                     <Text size="sm">{r.school ?? '—'}</Text>
-                    <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
+                    <Group gap={6} wrap="nowrap">
+                      {orgMoved && (
+                        <span
+                          title="Division/Department changed from the prior snapshot"
+                          style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
+                        />
+                      )}
+                      <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
+                    </Group>
                   </Table.Td>
                   <Table.Td ta="right">{usd(r.salary)}</Table.Td>
+                  <Table.Td ta="right">{usd(actual)}</Table.Td>
                   <Table.Td ta="right">
-                    {usd(actual)}
-                    {deltaPct != null && deltaPct !== 0 && (
-                      <Text size="xs" c={deltaPct > 0 ? 'pos' : 'red'}>
-                        {deltaPct > 0 ? '+' : ''}{pct(deltaPct)}
-                      </Text>
+                    {deltaPct != null ? (
+                      deltaPct === 0 ? (
+                        <Text size="sm" c="dimmed">0%</Text>
+                      ) : (
+                        <Text size="sm" fw={600} c={deltaPct > 0 ? 'pos' : 'orange'}>
+                          {deltaPct > 0 ? '+' : ''}{pct(deltaPct)}
+                        </Text>
+                      )
+                    ) : isNew && !ttcReclass && pos > 0 ? (
+                      <Badge size="xs" variant="light" color="accent">promotion</Badge>
+                    ) : (
+                      <Text size="sm" c="dimmed">—</Text>
                     )}
                   </Table.Td>
                   <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
+                  <Table.Td><Text size="xs">{r.comp_basis ?? '—'}</Text></Table.Td>
                 </Table.Tr>
               );
             })}
