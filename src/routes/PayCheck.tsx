@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Stack, Text, Card, Group, Select, NumberInput } from '@mantine/core';
+import { Stack, Text, Card, Group, Select, NumberInput, type ComboboxItem } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { useControls } from '../state/controls';
@@ -10,6 +10,22 @@ import { num } from '../lib/format';
 import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
 import { PageHeader } from '../components/PageHeader';
+
+/** A dropdown row: name on the left, the member count right-aligned (dimmed), or a compact "none"
+ *  for options where no one matches the active filter (Mantine greys the disabled row itself). */
+function DropdownCountRow({ option, counts }: { option: ComboboxItem; counts: Map<string, number | null> }) {
+  const n = counts.get(option.value);
+  return (
+    <Group justify="space-between" wrap="nowrap" gap="sm" w="100%">
+      <Text size="sm" lineClamp={1}>{option.label}</Text>
+      {option.disabled ? (
+        <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>none</Text>
+      ) : n != null ? (
+        <Text size="sm" c="dimmed" fw={500} style={{ flexShrink: 0 }}>{num(n)}</Text>
+      ) : null}
+    </Group>
+  );
+}
 
 export default function PayCheck() {
   const [params, setParams] = useSearchParams();
@@ -62,38 +78,37 @@ export default function PayCheck() {
     !!snap && !!school
   );
 
-  const titleData = useMemo(() => {
+  // Titles: label is just the searchable "Title (CODE)"; the count (in-school when a school is filtered,
+  // else the UW headcount) rides along in `counts` for the right-aligned renderOption. Available first.
+  const titleOptions = useMemo(() => {
     const base = titles ?? [];
-    if (!school || !titleCounts) {
-      return base.map((t) => ({ value: t.job_code, label: `${t.title} (${t.job_code} · ${num(t.n)})` }));
-    }
-    const m = new Map(titleCounts.map((r) => [r.job_code, r.n]));
-    return base
+    const inSchool = school && titleCounts ? new Map(titleCounts.map((r) => [r.job_code, r.n])) : null;
+    const rows = base
       .map((t) => {
-        const n = m.get(t.job_code) ?? 0;
-        return {
-          value: t.job_code,
-          label: n > 0 ? `${t.title} (${t.job_code} · ${num(n)})` : `${t.title} (${t.job_code}) · none in ${school}`,
-          disabled: n === 0,
-          _n: n,
-          _uw: t.n,
-        };
+        const n = inSchool ? (inSchool.get(t.job_code) ?? 0) : t.n;
+        return { value: t.job_code, label: `${t.title} (${t.job_code})`, n, disabled: inSchool ? n === 0 : false, _uw: t.n };
       })
-      .sort((a, b) => b._n - a._n || b._uw - a._uw)
-      .map(({ value, label, disabled }) => ({ value, label, disabled }));
+      .sort((a, b) => b.n - a.n || b._uw - a._uw);
+    return {
+      data: rows.map(({ value, label, disabled }) => ({ value, label, disabled })),
+      counts: new Map<string, number | null>(rows.map((r) => [r.value, r.n])),
+    };
   }, [titles, school, titleCounts]);
 
-  const schoolData = useMemo(() => {
+  // Schools: label is the school name; the in-title count rides in `counts` (only when a title is picked).
+  const schoolOptions = useMemo(() => {
     const all = (schools ?? []).map((s) => s.school);
-    if (!code || !schoolCounts) return all.map((s) => ({ value: s, label: s }));
-    const m = new Map(schoolCounts.map((r) => [r.school, r.n]));
-    return all
+    const inTitle = code && schoolCounts ? new Map(schoolCounts.map((r) => [r.school, r.n])) : null;
+    const rows = all
       .map((s) => {
-        const n = m.get(s) ?? 0;
-        return { value: s, label: n > 0 ? `${s} · ${num(n)}` : `${s} · no one with this title`, disabled: n === 0, _n: n };
+        const n = inTitle ? (inTitle.get(s) ?? 0) : null;
+        return { value: s, label: s, n, disabled: inTitle ? n === 0 : false };
       })
-      .sort((a, b) => b._n - a._n || a.value.localeCompare(b.value))
-      .map(({ value, label, disabled }) => ({ value, label, disabled }));
+      .sort((a, b) => (b.n ?? 0) - (a.n ?? 0) || a.value.localeCompare(b.value));
+    return {
+      data: rows.map(({ value, label, disabled }) => ({ value, label, disabled })),
+      counts: new Map<string, number | null>(rows.map((r) => [r.value, r.n])),
+    };
   }, [schools, code, schoolCounts]);
 
   return (
@@ -109,7 +124,8 @@ export default function PayCheck() {
             {...dropdownProps('md')}
             label="Title"
             placeholder="Search titles…"
-            data={titleData}
+            data={titleOptions.data}
+            renderOption={({ option }) => <DropdownCountRow option={option} counts={titleOptions.counts} />}
             value={code}
             onChange={(v) => setP('code', v)}
             searchable
@@ -121,7 +137,8 @@ export default function PayCheck() {
             {...dropdownProps('md')}
             label="School (optional filter)"
             placeholder="All UW"
-            data={schoolData}
+            data={schoolOptions.data}
+            renderOption={({ option }) => <DropdownCountRow option={option} counts={schoolOptions.counts} />}
             value={school}
             onChange={(v) => setP('sch', v)}
             searchable
