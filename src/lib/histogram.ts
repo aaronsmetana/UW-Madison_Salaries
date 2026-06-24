@@ -29,12 +29,15 @@ function niceStep(range: number, targetBins: number): number {
 /**
  * Bin a list of salary values using a nice round, data-scaled step so the shape of
  * the distribution reads clearly regardless of the title's pay level or spread.
+ *
+ * Pass a fixed `domain` ([min, max]) to hold the x-axis steady across cohorts — e.g. so a
+ * "same school" subset visibly thins against the full-title range instead of re-fitting to itself.
  */
-export function binSalaries(values: number[], targetBins = 10): Bin[] {
+export function binSalaries(values: number[], targetBins = 10, domain?: [number, number]): Bin[] {
   const vals = values.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
-  if (vals.length === 0) return [];
-  const min = vals[0];
-  const max = vals[vals.length - 1];
+  const min = domain ? domain[0] : vals[0];
+  const max = domain ? domain[1] : vals[vals.length - 1];
+  if (min == null || max == null) return [];
   if (max === min) return [{ label: k(min), range: k(min), lo: min, hi: max, n: vals.length }];
 
   const step = niceStep(max - min, targetBins);

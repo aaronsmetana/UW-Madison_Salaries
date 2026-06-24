@@ -41,6 +41,7 @@ export function SalaryHistogram({
   minToShow = MIN_FOR_HISTOGRAM,
   tooFewText,
   height = 240,
+  domain,
 }: {
   values: number[];
   markerValue?: number | null;
@@ -48,8 +49,9 @@ export function SalaryHistogram({
   minToShow?: number;
   tooFewText?: string;
   height?: number;
+  domain?: [number, number];
 }) {
-  const bins = binSalaries(values);
+  const bins = binSalaries(values, 10, domain);
   if (values.length < minToShow || bins.length < 2) {
     return (
       <Text size="sm" c="dimmed">

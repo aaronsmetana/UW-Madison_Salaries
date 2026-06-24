@@ -12,6 +12,8 @@ import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
+import { percentile } from '../lib/stats';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
@@ -56,7 +58,7 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
 }
 
 /** Custom legend below the trend chart, explaining the title-era demarcations. */
-function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
+function TrendLegend({ hasTitleChange, mode }: { hasTitleChange: boolean; mode: 'actual' | 'rate' }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
       {swatch}
@@ -67,7 +69,7 @@ function TrendLegend({ hasTitleChange }: { hasTitleChange: boolean }) {
     <Group gap="lg" mt="xs" wrap="wrap">
       {item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-accent-6)" strokeWidth={2} /></svg>,
-        'Actual pay',
+        mode === 'actual' ? 'Actual pay' : 'Salary rate',
       )}
       {item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="5 3" /></svg>,
@@ -209,23 +211,25 @@ export default function Person() {
   }, [rows]);
 
   // Median pay for the title the person held at each snapshot (market context for the trend).
-  const { data: titleMedRows } = useSql<{ snapshot_id: string; med: number | null }>(
+  const { data: titleMedRows } = useSql<{ snapshot_id: string; med: number | null; med_rate: number | null }>(
     ['person-title-med', key],
     `WITH me AS (SELECT snapshot_id, arg_max(job_code, salary) job FROM salaries
         WHERE person_key = ${sqlStr(key)} AND job_code IS NOT NULL GROUP BY snapshot_id),
-      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('fte')} pay
+      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('fte')} pay,
+          sum(s.salary) FILTER (WHERE s.salary > 0) rate
         FROM salaries s JOIN me ON s.snapshot_id = me.snapshot_id AND s.job_code = me.job
         GROUP BY s.snapshot_id, s.person_key)
-     SELECT snapshot_id, median(pay) med FROM pp WHERE pay > 0 GROUP BY snapshot_id`,
+     SELECT snapshot_id, median(pay) med, median(rate) med_rate FROM pp WHERE pay > 0 GROUP BY snapshot_id`,
     !!key
   );
   const trendData = useMemo(() => {
     const med = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med]));
+    const medRate = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med_rate]));
     // `era` increments at each title change so the median can be drawn as disconnected per-title segments.
     let era = 0;
     return trend.map((t, i) => {
       if (i > 0 && t.job_code !== trend[i - 1].job_code) era++;
-      return { ...t, med: med.get(t.id) ?? null, era };
+      return { ...t, med: med.get(t.id) ?? null, medRate: medRate.get(t.id) ?? null, era };
     });
   }, [trend, titleMedRows]);
 
@@ -349,24 +353,40 @@ export default function Person() {
      SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
   );
-  const peerRank = useMemo(() => {
-    const i = (peers ?? []).findIndex((p) => p.person_key === key);
-    return i >= 0 ? i + 1 : null;
-  }, [peers, key]);
-
-  const { data: peerPayRows } = useSql<{ pay: number }>(
-    ['peer-pays', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay FROM salaries
-        WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT pay FROM pp WHERE pay > 0`,
-    !!lastSnap && !!jobCode
+  // ── Cohort (All vs Same-school): every overview stat derives from the SAME filtered peer set. ──
+  const [cohort, setCohort] = useState<'all' | 'school'>('all');
+  const sameSchoolPeers = useMemo(
+    () => (peers ?? []).filter((p) => p.school != null && p.school === latest?.school),
+    [peers, latest],
   );
-  const peerPays = useMemo(() => (peerPayRows ?? []).map((r) => r.pay), [peerPayRows]);
-  const peerPct = useMemo(() => {
-    if (!peerPays.length || lastSalary == null) return null;
-    const below = peerPays.filter((p) => p <= lastSalary).length;
-    return Math.round((100 * below) / peerPays.length);
-  }, [peerPays, lastSalary]);
+  const allCount = peers?.length ?? 0;
+  const schoolCount = sameSchoolPeers.length;
+  const cohortList = useMemo(
+    () => (cohort === 'school' ? sameSchoolPeers : peers ?? []),
+    [cohort, sameSchoolPeers, peers],
+  );
+  const cohortPays = useMemo(() => cohortList.map((p) => p.pay), [cohortList]);
+  // Fixed x-domain for the histogram (full-title range) so the "same school" subset visibly thins.
+  const allPaysDomain = useMemo<[number, number] | undefined>(() => {
+    const a = (peers ?? []).map((p) => p.pay);
+    return a.length ? [Math.min(...a), Math.max(...a)] : undefined;
+  }, [peers]);
+  const cohortStats = useMemo(() => {
+    const s = [...cohortPays].sort((a, b) => a - b);
+    if (!s.length) return null;
+    const q = (p: number) => {
+      const i = (s.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+      return s[lo] + (s[hi] - s[lo]) * (i - lo);
+    };
+    return { n: s.length, lo: s[0], p25: q(0.25), med: q(0.5), p75: q(0.75), hi: s[s.length - 1] };
+  }, [cohortPays]);
+  const cohortRank = useMemo(() => {
+    const i = cohortList.findIndex((p) => p.person_key === key);
+    return i >= 0 ? i + 1 : null;
+  }, [cohortList, key]);
+  const cohortPct = lastSalary != null && cohortPays.length > 1 ? percentile(lastSalary, cohortPays) : null;
+
+  const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
 
   // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
   const peerViewportRef = useRef<HTMLDivElement>(null);
@@ -509,38 +529,62 @@ export default function Person() {
               </Card>
             )}
 
-            {peer && peer.n > 1 && lastSalary != null && jobCode &&
-              peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
+            {peer && peer.n > 1 && lastSalary != null && jobCode && (
               <Card withBorder padding="lg">
-                <Group justify="space-between" mb="md" wrap="nowrap">
+                <Group justify="space-between" mb="xs" wrap="nowrap" align="flex-start">
                   <Text size="sm" fw={600}>How this person compares to others with the same title</Text>
-                  <Anchor component={Link} to={`/title/${encodeURIComponent(jobCode)}`} size="sm">Title page →</Anchor>
+                  <Group gap="sm" wrap="nowrap">
+                    {allCount > schoolCount && (
+                      <SegmentedToggle
+                        value={cohort}
+                        onChange={(v) => setCohort(v as 'all' | 'school')}
+                        options={[
+                          { id: 'all', label: `All ${num(allCount)}` },
+                          { id: 'school', label: `Same school ${num(schoolCount)}` },
+                        ]}
+                      />
+                    )}
+                    <Anchor component={Link} to={`/title/${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
+                  </Group>
                 </Group>
-                <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} />
-                {peerPct != null && (
-                  <Text size="sm" mt="sm">
-                    Paid more than <b>{peerPct}%</b> of people with this title.
+                <Text size="xs" c="dimmed" mb="md">
+                  {cohort === 'school'
+                    ? `Among ${num(cohortStats?.n ?? 0)} ${(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title ${latest?.title} — same title, same school (${latest?.school}).`
+                    : `Among ${num(allCount)} people with the title ${latest?.title} (job code ${jobCode}) in the latest snapshot.`}
+                </Text>
+                {cohortStats && cohortStats.n >= 2 ? (
+                  <>
+                    <PeerRangeBar min={cohortStats.lo} p25={cohortStats.p25} median={cohortStats.med} p75={cohortStats.p75} max={cohortStats.hi} value={lastSalary} />
+                    {cohortPct != null && (
+                      <Text size="sm" mt="sm" mb="md">
+                        Paid more than <b>{cohortPct}%</b> of {cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}.
+                      </Text>
+                    )}
+                    <SalaryHistogram
+                      values={cohortPays}
+                      markerValue={lastSalary}
+                      markerLabel="this person"
+                      domain={allPaysDomain}
+                      tooFewText={`Only ${num(cohortStats.n)} ${cohortStats.n === 1 ? 'person has' : 'people have'} this title here — too few to chart a distribution.`}
+                    />
+                  </>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    {name} is the only person with this title in {latest?.school} — switch to “All {num(allCount)}” to compare against everyone with the title.
                   </Text>
                 )}
-                <Text size="xs" c="dimmed" mt={4} mb="md">
-                  Among {num(peer.n)} people with the title {latest?.title} (job code {jobCode}) in the latest snapshot.
-                </Text>
-                <SalaryHistogram
-                  values={peerPays}
-                  markerValue={lastSalary}
-                  markerLabel="this person"
-                  tooFewText={`Only ${num(peer.n)} ${peer.n === 1 ? 'person has' : 'people have'} this title — too few to chart a distribution.`}
-                />
               </Card>
             )}
 
             {peers && peers.length > 1 && (
               <Card withBorder padding="lg">
                 <Group justify="space-between" mb="md" wrap="nowrap">
-                  <Text size="sm" fw={600}>Others with this title</Text>
-                  {peerRank != null && (
+                  <Text size="sm" fw={600}>
+                    Others with this title{cohort === 'school' ? ` · ${latest?.school}` : ''}
+                  </Text>
+                  {cohortRank != null && (
                     <Text size="sm" c="dimmed">
-                      {name} ranks <b>#{peerRank}</b> of {num(peers.length)} by salary
+                      {name} ranks <b>#{cohortRank}</b> of {num(cohortList.length)} by salary
                     </Text>
                   )}
                 </Group>
@@ -558,7 +602,7 @@ export default function Person() {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {peers.map((p, i) => {
+                      {cohortList.map((p, i) => {
                         const isYou = p.person_key === key;
                         const inTray = has(p.person_key);
                         const sameSchool = !isYou && !!p.school && p.school === latest?.school;
@@ -614,7 +658,7 @@ export default function Person() {
                     </Table.Tbody>
                   </Table>
                 </ScrollArea.Autosize>
-                {latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) && (
+                {cohort === 'all' && latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) && (
                   <Text size="xs" c="dimmed" mt="xs">Rows shaded green share {name}'s school ({latest.school}).</Text>
                 )}
               </Card>
@@ -674,7 +718,17 @@ export default function Person() {
 
         <Tabs.Panel value="trends" pt="md">
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Salary over time</Text>
+        <Group justify="space-between" align="flex-start" mb="md" wrap="nowrap">
+          <div>
+            <Text size="sm" fw={600}>Salary over time</Text>
+            <Text size="xs" c="dimmed">Rate is the full-time salary; Actual pay scales it by FTE.</Text>
+          </div>
+          <SegmentedToggle
+            value={trendMode}
+            onChange={(v) => setTrendMode(v as 'actual' | 'rate')}
+            options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Rate' }]}
+          />
+        </Group>
         {/* Split view: dollars up top (≈¾), the FTE area in its own zone below (≈¼). Both share the same
             data + x scale (matching left-axis width and margins) and a syncId, so the dates line up and a
             single tooltip on the salary chart covers both. The date labels live only on the lower axis. */}
@@ -704,7 +758,7 @@ export default function Person() {
                 key={`med-${e}`}
                 yAxisId="pay"
                 type="monotone"
-                dataKey={(d) => (d.era === e ? d.med : null)}
+                dataKey={(d) => (d.era === e ? (trendMode === 'actual' ? d.med : d.medRate) : null)}
                 name="Title median"
                 stroke="var(--mantine-color-gray-5)"
                 strokeWidth={2}
@@ -715,12 +769,13 @@ export default function Person() {
                 isAnimationActive={false}
               />
             ))}
-            <Line yAxisId="pay" type="monotone" dataKey="salary" name="Actual pay" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
-            {titleChanges.map((t) =>
-              t.salary != null ? (
-                <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={t.label} y={t.salary} shape={<TitleChangeDot />} />
-              ) : null,
-            )}
+            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
+            {titleChanges.map((t) => {
+              const y = trendMode === 'actual' ? t.salary : t.rate;
+              return y != null ? (
+                <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={t.label} y={y} shape={<TitleChangeDot />} />
+              ) : null;
+            })}
           </LineChart>
         </ResponsiveContainer>
 
@@ -762,7 +817,7 @@ export default function Person() {
             />
           </AreaChart>
         </ResponsiveContainer>
-        <TrendLegend hasTitleChange={titleChanges.length > 0} />
+        <TrendLegend hasTitleChange={titleChanges.length > 0} mode={trendMode} />
         <ChartData caption="Salary over time" columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])} />
       </Card>
         </Tabs.Panel>
