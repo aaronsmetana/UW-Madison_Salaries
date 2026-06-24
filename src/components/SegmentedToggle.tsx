@@ -28,6 +28,7 @@ export function SegmentedToggle({
   const control = (
     <SegmentedControl
       className="seg-toggle"
+      color="accent"
       size={size}
       radius="md"
       value={value}

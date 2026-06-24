@@ -312,7 +312,6 @@ export default function Person() {
   const lastDate = trend[trend.length - 1]?.date ?? null;
   const spanYears = firstDate && lastDate ? (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
   const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
-  const oldestAgeYears = firstDate ? (Date.now() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
   const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4) ?? null;
   // Full-time rate (and its growth) — shown alongside actual pay where they diverge (FTE changes).
   const firstRate = trend[0]?.rate ?? null;
@@ -329,16 +328,12 @@ export default function Person() {
     const latestTitle = latest?.title;
     if (!latestTitle || trend.length === 0) return null;
     const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4);
-    const p0 = (x: number) => `${x > 0 ? '+' : ''}${(x * 100).toFixed(0)}%`;
-    const chg = totalChange == null ? null
-      : chgDiffer && rateChange != null ? `actual ${p0(totalChange)} · rate ${p0(rateChange)}`
-      : p0(totalChange);
-    const span = spanYears != null && spanYears >= 0.1 ? `${spanYears.toFixed(1)} years of salary data` : null;
+    // Just the role journey — the growth/span now lives in the "Salary growth" stat cell.
     if (firstTitle && firstTitle !== latestTitle) {
-      return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}${chg && span ? ` (${chg} over ${span})` : ''}.`;
+      return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}.`;
     }
-    return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}${chg && span ? ` — ${chg} over ${span}` : ''}.`;
-  }, [trend, latest, rows, totalChange, rateChange, chgDiffer, spanYears]);
+    return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}.`;
+  }, [trend, latest, rows]);
 
   const band = useMemo(() => {
     if (!latest || latest.grade_number == null || !grades) return null;
@@ -577,13 +572,18 @@ export default function Person() {
                 )}
               </Card>
 
-              {/* Change */}
+              {/* Salary growth — the change %, with the salary-data window and snapshot count for context. */}
               <Card withBorder radius="sm" p="lg">
-                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Change</Text>
-                <Text fw={700} mt={6} c={totalChange != null && totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
+                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Salary growth</Text>
+                <Text fw={700} mt={6} c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
                   {sgnPct(totalChange)}
                 </Text>
-                <Text size="xs" c="dimmed" mt={2}>first → latest{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}</Text>
+                {spanYears != null && spanYears >= 0.1 && (
+                  <Text size="xs" c="dimmed" mt={2}>over {spanYears.toFixed(1)} yrs of data{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}</Text>
+                )}
+                {oldestLabel && (
+                  <Text size="xs" c="dimmed">{num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}</Text>
+                )}
               </Card>
 
               {/* Tenure */}
@@ -595,17 +595,6 @@ export default function Person() {
                   )}
                 </Text>
                 {hireYear && <Text size="xs" c="dimmed" mt={2}>since {hireYear}</Text>}
-              </Card>
-
-              {/* Snapshots */}
-              <Card withBorder radius="sm" p="lg">
-                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Snapshots</Text>
-                <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>{num(trend.length)}</Text>
-                {oldestLabel && (
-                  <Text size="xs" c="dimmed" mt={2}>
-                    oldest {oldestLabel}{oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}
-                  </Text>
-                )}
               </Card>
             </div>
 
