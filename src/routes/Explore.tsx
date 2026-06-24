@@ -5,6 +5,7 @@ import {
 import { Link } from 'react-router-dom';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
+import { PageHeader } from '../components/PageHeader';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
@@ -114,10 +115,10 @@ export default function Explore() {
 
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={2}>General Comparisons</Title>
-        <Text c="dimmed">Browse divisions and schools side by side — headcount, median pay, and top earners — then add any school or title (＋ Compare) to line them up on the Compare page. Or jump straight to a person.</Text>
-      </div>
+      <PageHeader
+        title="General Comparisons"
+        description="Browse divisions and schools side by side — headcount, median pay, and top earners — then add any school or title (＋ Compare) to line them up on the Compare page. Or jump straight to a person."
+      />
 
       <ControlBar inline />
 

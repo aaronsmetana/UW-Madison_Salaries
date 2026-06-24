@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Stack, Title, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
+import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconDownload, IconPrinter } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
@@ -12,6 +12,7 @@ import { usd, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { SearchBox } from '../components/SearchBox';
+import { PageHeader } from '../components/PageHeader';
 import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
 import {
@@ -393,37 +394,41 @@ export default function Reports() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" className="no-print" wrap="wrap" gap="md">
-        <Title order={2}>Reports</Title>
-        <Group gap="md">
-          <SegmentedControl
-            radius="xl"
-            value={type}
-            onChange={setType}
-            data={[
-              { value: 'person', label: 'On a Specified Person' },
-              { value: 'comparison', label: 'Salary Increase Justification (People In Tray)' },
-            ]}
-          />
-          <Button.Group>
-            <Button
-              variant="default"
-              leftSection={<IconDownload size={16} />}
-              disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
-              onClick={() =>
-                type === 'person'
-                  ? downloadCSV(`${selPerson?.name ?? 'employee'}-history.csv`, (personHistory ?? []) as unknown as Record<string, unknown>[])
-                  : downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, (peerListRows ?? []) as unknown as Record<string, unknown>[])
-              }
-            >
-              Download CSV
-            </Button>
-            <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>
-              Print / Save as PDF
-            </Button>
-          </Button.Group>
-        </Group>
-      </Group>
+      <div className="no-print">
+        <PageHeader
+          title="Reports"
+          right={
+            <Group gap="md">
+              <SegmentedControl
+                radius="xl"
+                value={type}
+                onChange={setType}
+                data={[
+                  { value: 'person', label: 'On a Specified Person' },
+                  { value: 'comparison', label: 'Salary Increase Justification (People In Tray)' },
+                ]}
+              />
+              <Button.Group>
+                <Button
+                  variant="default"
+                  leftSection={<IconDownload size={16} />}
+                  disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
+                  onClick={() =>
+                    type === 'person'
+                      ? downloadCSV(`${selPerson?.name ?? 'employee'}-history.csv`, (personHistory ?? []) as unknown as Record<string, unknown>[])
+                      : downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, (peerListRows ?? []) as unknown as Record<string, unknown>[])
+                  }
+                >
+                  Download CSV
+                </Button>
+                <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>
+                  Print / Save as PDF
+                </Button>
+              </Button.Group>
+            </Group>
+          }
+        />
+      </div>
 
       {type === 'person' && (
         <>

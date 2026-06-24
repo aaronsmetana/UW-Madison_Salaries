@@ -2,6 +2,7 @@ import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, C
 import { useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { num, usd } from '../lib/format';
+import { PageHeader } from '../components/PageHeader';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
@@ -27,13 +28,10 @@ export default function DataHealth() {
 
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={2}>Data · About</Title>
-        <Text c="dimmed">
-          Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a
-          Wisconsin public record. Person matching (name + hire date) is best-effort.
-        </Text>
-      </div>
+      <PageHeader
+        title="Data · About"
+        description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record. Person matching (name + hire date) is best-effort."
+      />
 
       <Card withBorder padding="lg">
         <Title order={4} mb="xs">Data source &amp; acknowledgment</Title>

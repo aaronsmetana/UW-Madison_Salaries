@@ -135,8 +135,10 @@ export default function School() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <Title order={2}>{name}</Title>
+      <Group justify="space-between" align="flex-start" wrap="nowrap">
+        <div style={{ paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
+          <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>{name}</Title>
+        </div>
         <Button
           variant={has(name) ? 'light' : 'filled'}
           disabled={has(name)}

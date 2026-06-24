@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
+import { PageHeader } from '../components/PageHeader';
 import { useTray } from '../state/tray';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
@@ -194,10 +195,10 @@ export default function Compare() {
 
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={2}>Compare People, Titles &amp; Schools</Title>
-        <Text c="dimmed">Search and add anyone, any title, or any school, then compare salaries side by side. Selections are saved (your tray) so you can keep building across pages.</Text>
-      </div>
+      <PageHeader
+        title="Compare People, Titles & Schools"
+        description="Search and add anyone, any title, or any school, then compare salaries side by side. Selections are saved (your tray) so you can keep building across pages."
+      />
 
       <ControlBar inline />
 

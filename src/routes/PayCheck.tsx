@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Stack, Title, Text, Card, Group, Select, NumberInput, Box } from '@mantine/core';
+import { Stack, Text, Card, Group, Select, NumberInput } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { useControls } from '../state/controls';
@@ -9,6 +9,7 @@ import { sqlStr } from '../lib/duckdb';
 import { num } from '../lib/format';
 import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
+import { PageHeader } from '../components/PageHeader';
 
 export default function PayCheck() {
   const [params, setParams] = useSearchParams();
@@ -97,15 +98,10 @@ export default function PayCheck() {
 
   return (
     <Stack gap="lg">
-      <Box pl="md" style={{ borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
-        <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>
-          Search title salaries
-        </Title>
-        <Text c="dimmed" maw={680} mt={6} size="lg">
-          Pick a title to see its pay distribution, the people in it, and how it varies by school.
-          Optionally filter to a school or enter a salary to pin where it lands. Any salary you enter stays in your browser.
-        </Text>
-      </Box>
+      <PageHeader
+        title="Search title salaries"
+        description="Pick a title to see its pay distribution, the people in it, and how it varies by school. Optionally filter to a school or enter a salary to pin where it lands. Any salary you enter stays in your browser."
+      />
 
       <Card padding="lg">
         <Group align="flex-end" wrap="wrap" gap="xl">
