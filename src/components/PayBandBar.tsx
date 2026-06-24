@@ -2,8 +2,17 @@ import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
 import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 
-/** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line. */
-export function PayBandBar({ min, max, value = null, target = null }: { min: number; max: number; value?: number | null; target?: number | null }) {
+/** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line,
+ *  and optional gray `benchmarks` ticks (e.g. title median / p75) drawn inside the band. */
+export function PayBandBar({
+  min, max, value = null, target = null, benchmarks = [],
+}: {
+  min: number;
+  max: number;
+  value?: number | null;
+  target?: number | null;
+  benchmarks?: { value: number; label: string }[];
+}) {
   const span = max - min;
   const raw = value != null && span > 0 ? (value - min) / span : 0;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
@@ -35,6 +44,21 @@ export function PayBandBar({ min, max, value = null, target = null }: { min: num
             }}
           />
         )}
+        {benchmarks.map((b) => (
+          <div
+            key={b.label}
+            title={`${b.label} ${usd(b.value)}`}
+            style={{
+              position: 'absolute',
+              left: `${at(b.value)}%`,
+              top: -3,
+              bottom: -3,
+              width: 2,
+              background: 'var(--mantine-color-gray-6)',
+              transform: 'translateX(-50%)',
+            }}
+          />
+        ))}
         {value != null && (
           <div
             style={{
@@ -53,10 +77,15 @@ export function PayBandBar({ min, max, value = null, target = null }: { min: num
         )}
       </div>
       <Group justify="space-between" mt={6}>
-        <Text size="xs" c="dimmed">{usd(min)}</Text>
+        <Text size="xs" c="dimmed">{usd(min)} · min</Text>
         {status && <Badge size="sm" variant="light" color={color}>{status}</Badge>}
-        <Text size="xs" c="dimmed">{usd(max)}</Text>
+        <Text size="xs" c="dimmed">{usd(max)} · max</Text>
       </Group>
+      {benchmarks.length > 0 && (
+        <Text size="xs" c="dimmed" mt={4}>
+          {benchmarks.map((b) => `${b.label} ${usd(b.value)}`).join('  ·  ')} (gray ticks)
+        </Text>
+      )}
       {target != null && (
         <MarkerLegend
           items={[

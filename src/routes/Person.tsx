@@ -120,6 +120,26 @@ function MetaPill({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/** One horizontal percentile bar for the "Standing" small-multiples: label + pool size on the left, a
+ *  track with a fill to p% and an accent marker tick, and the percentile on the right. */
+function PercentileBar({ label, n, pct }: { label: string; n: number; pct: number }) {
+  return (
+    <Group wrap="nowrap" gap="md" align="center">
+      <div style={{ width: 190, flexShrink: 0 }}>
+        <Text size="sm" fw={500} lineClamp={1}>{label}</Text>
+        <Text size="xs" c="dimmed">{num(n)} people</Text>
+      </div>
+      <div style={{ flex: 1, position: 'relative', height: 10, background: 'var(--mantine-color-default-hover)', borderRadius: 6 }}>
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'var(--mantine-color-accent-light)', borderRadius: 6 }} />
+        <div style={{ position: 'absolute', left: `${pct}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: 'var(--mantine-color-accent-7)', transform: 'translateX(-50%)' }} />
+      </div>
+      <Text size="sm" fw={700} c="accent.7" style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
+        {pct}th <Text span size="xs" fw={500} c="dimmed">pctile</Text>
+      </Text>
+    </Group>
+  );
+}
+
 interface Row {
   first_name: string | null;
   last_name: string | null;
@@ -145,7 +165,10 @@ interface Row {
   contract_type: string | null;
 }
 
-interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
+interface PeerStats {
+  n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null;
+  med_rate: number | null; p75_rate: number | null;
+}
 interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
 
 export default function Person() {
@@ -322,24 +345,60 @@ export default function Person() {
   }, [latest, grades]);
 
   const lastSnap = latest?.snapshot_id ?? '';
-  const { data: standingRows } = useSql<{ uw: number; sch: number | null }>(
-    ['standing', key, lastSnap, lastSalary ?? 0],
-    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
-     SELECT round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END), 0) uw,
-            round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END) FILTER (WHERE school = ${sqlStr(latest?.school ?? '')}), 0) sch
-     FROM pp WHERE pay > 0`,
+  // Percentile pools (latest snapshot): per-pool counts of people and how many earn less than the
+  // subject, so each percentile can be computed with the shared (n − 1) definition in JS.
+  const mine = lastSalary ?? 0;
+  const selfSchool = sqlStr(latest?.school ?? '');
+  const selfDept = sqlStr(latest?.department ?? '');
+  const selfJob = sqlStr(latest?.job_code ?? '');
+  const selfGrade = latest?.grade_number ?? -1;
+  const { data: standingRows } = useSql<{
+    n_all: number; b_all: number; n_div: number; b_div: number; n_dept: number; b_dept: number;
+    n_grade: number; b_grade: number; n_title: number; b_title: number;
+  }>(
+    ['standing', key, lastSnap, mine],
+    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay, any_value(school) school,
+        any_value(department) department, any_value(grade_number) grade_number, any_value(job_code) job_code
+      FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
+     SELECT
+       count(*) FILTER (WHERE pay > 0) n_all,
+       count(*) FILTER (WHERE pay > 0 AND pay < ${mine}) b_all,
+       count(*) FILTER (WHERE pay > 0 AND school = ${selfSchool}) n_div,
+       count(*) FILTER (WHERE pay > 0 AND school = ${selfSchool} AND pay < ${mine}) b_div,
+       count(*) FILTER (WHERE pay > 0 AND department = ${selfDept}) n_dept,
+       count(*) FILTER (WHERE pay > 0 AND department = ${selfDept} AND pay < ${mine}) b_dept,
+       count(*) FILTER (WHERE pay > 0 AND grade_number = ${selfGrade}) n_grade,
+       count(*) FILTER (WHERE pay > 0 AND grade_number = ${selfGrade} AND pay < ${mine}) b_grade,
+       count(*) FILTER (WHERE pay > 0 AND job_code = ${selfJob}) n_title,
+       count(*) FILTER (WHERE pay > 0 AND job_code = ${selfJob} AND pay < ${mine}) b_title
+     FROM pp`,
     !!latest && lastSalary != null && lastSalary > 0
   );
-  const standing = standingRows?.[0];
+  const standingPools = useMemo(() => {
+    const r = standingRows?.[0];
+    if (!r) return [];
+    const pctOf = (below: number, n: number) => (n <= 1 ? null : Math.round((below / (n - 1)) * 100));
+    const raw = [
+      { label: 'All UW–Madison', n: r.n_all, below: r.b_all, ok: true },
+      { label: latest?.school ?? 'Division', n: r.n_div, below: r.b_div, ok: !!latest?.school },
+      { label: latest?.department ?? 'Department', n: r.n_dept, below: r.b_dept, ok: !!latest?.department },
+      { label: latest?.grade_number != null ? `Salary grade ${latest.grade_number}` : 'Salary grade', n: r.n_grade, below: r.b_grade, ok: latest?.grade_number != null },
+      { label: latest?.title ?? 'Title', n: r.n_title, below: r.b_title, ok: !!latest?.job_code },
+    ];
+    return raw
+      .filter((x) => x.ok && x.n >= 2)
+      .map((x) => ({ label: x.label, n: x.n, pct: pctOf(x.below, x.n)! }));
+  }, [standingRows, latest]);
 
   // Same-title peers = everyone sharing this person's job_code at the latest snapshot.
   const jobCode = latest?.job_code ?? null;
   const { data: peerStatsRows } = useSql<PeerStats>(
     ['peer-stats', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay FROM salaries
+    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay, sum(salary) FILTER (WHERE salary > 0) rate FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
-            quantile_cont(pay, 0.75) p75, max(pay) hi FROM pp WHERE pay > 0`,
+            quantile_cont(pay, 0.75) p75, max(pay) hi,
+            median(rate) med_rate, quantile_cont(rate, 0.75) p75_rate FROM pp WHERE pay > 0`,
     !!lastSnap && !!jobCode
   );
   const peer = peerStatsRows?.[0];
@@ -421,6 +480,18 @@ export default function Person() {
 
   const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
+
+  // Raise presets: the person's own historical CAGR (rate) and the title-median's CAGR — annualized
+  // over the available span so they read as a sensible "%/yr".
+  const cagr = (first: number | null | undefined, last: number | null | undefined) =>
+    first != null && last != null && first > 0 && spanYears != null && spanYears >= 0.5
+      ? (Math.pow(last / first, 1 / spanYears) - 1) * 100
+      : null;
+  const recentAvgPct = cagr(firstRate, lastRate);
+  const medRateSeries = trendData.map((t) => t.medRate).filter((x): x is number => x != null);
+  const titleGrowthPct = medRateSeries.length >= 2 ? cagr(medRateSeries[0], medRateSeries[medRateSeries.length - 1]) : null;
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const projectedRate = lastRate != null ? lastRate * Math.pow(1 + pctRaise / 100, years) : null;
 
   if (isLoading) return <LoadingState label="Loading person…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
@@ -709,48 +780,84 @@ export default function Person() {
 
         <Tabs.Panel value="pay" pt="md">
           <Stack gap="lg">
-      {standing && (
-        <Card withBorder padding="md">
-          <Text size="sm" fw={600} mb="xs">Standing (latest snapshot)</Text>
-          <Group gap="xl">
-            <Text size="sm">All-UW: paid more than <b>{standing.uw}%</b></Text>
-            {standing.sch != null && (
-              <Text size="sm">Within {latest?.school}: more than <b>{standing.sch}%</b></Text>
-            )}
-          </Group>
+      {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
+      {standingPools.length > 0 && (
+        <Card withBorder padding="lg">
+          <Text size="sm" fw={600} mb="md">Standing — where this pay ranks in each pool (latest snapshot)</Text>
+          <Stack gap="sm">
+            {standingPools.map((p) => (
+              <PercentileBar key={p.label} label={p.label} n={p.n} pct={p.pct} />
+            ))}
+          </Stack>
+          <Text size="xs" c="dimmed" mt="md">Percentile = share of the pool this person out-earns. Pools with only one person are omitted.</Text>
         </Card>
       )}
 
+      {/* 4b — Pay band: full-time rate vs the official grade range, with title median/p75 benchmark ticks. */}
       {band && lastRate != null && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">
             Pay band — grade {latest?.grade_number} (full-time rate vs the official range)
           </Text>
-          <PayBandBar min={band.min} max={band.max} value={lastRate} />
+          <PayBandBar
+            min={band.min}
+            max={band.max}
+            value={lastRate}
+            benchmarks={[
+              peer?.med_rate != null ? { value: peer.med_rate, label: 'Title median' } : null,
+              peer?.p75_rate != null ? { value: peer.p75_rate, label: 'Title p75' } : null,
+            ].filter((b): b is { value: number; label: string } => b != null)}
+          />
         </Card>
       )}
 
+      {/* 4c — Raise / what-if: presets, steppers, the projected rate, and where it lands on the band. */}
       {lastRate != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="sm">Raise / what-if simulator</Text>
+          <Text size="sm" fw={600} mb={4}>Raise / what-if simulator</Text>
           <Text size="xs" c="dimmed" mb="sm">Projects the full-time salary rate; actual pay scales with FTE.</Text>
+          <Group gap="xs" mb="md" wrap="wrap">
+            {[
+              { label: 'Flat 2%', val: 2 },
+              ...(recentAvgPct != null && recentAvgPct > 0 ? [{ label: `My recent avg ≈${r1(recentAvgPct)}%`, val: r1(recentAvgPct) }] : []),
+              ...(titleGrowthPct != null && titleGrowthPct > 0 ? [{ label: `Title median growth ≈${r1(titleGrowthPct)}%`, val: r1(titleGrowthPct) }] : []),
+            ].map((c) => {
+              const sel = Math.abs(pctRaise - c.val) < 0.05;
+              return (
+                <Button key={c.label} size="compact-sm" radius="xl" variant={sel ? 'light' : 'default'} color="accent" onClick={() => setPctRaise(c.val)}>
+                  {c.label}
+                </Button>
+              );
+            })}
+          </Group>
           <Group align="flex-end" wrap="wrap">
-            <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={140} step={0.5} min={0} suffix="%" />
+            <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={150} step={0.5} min={0} suffix="%" />
             <NumberInput label="Years" value={years} onChange={(v) => setYears(typeof v === 'number' ? v : 0)} w={120} min={0} max={40} />
             <div>
               <Text size="xs" c="dimmed">Projected full-time rate</Text>
-              <Text fw={700} size="lg">{usd(lastRate * Math.pow(1 + pctRaise / 100, years))}</Text>
+              <Text fw={700} size="xl">{projectedRate != null ? usd(projectedRate) : '—'}</Text>
             </div>
           </Group>
+
+          {band && projectedRate != null && (
+            <div style={{ marginTop: 'var(--mantine-spacing-md)' }}>
+              <Text size="xs" c="dimmed" mb={6}>Projected position in {years}y (gray tick = today)</Text>
+              <PayBandBar min={band.min} max={band.max} value={projectedRate} benchmarks={[{ value: lastRate, label: 'today' }]} />
+            </div>
+          )}
+
           {band && lastRate >= band.max && (
-            <Text size="xs" c="dimmed" mt="xs">
+            <Text size="xs" c="dimmed" mt="md">
               This rate is already at or above the top of grade {latest?.grade_number}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
             </Text>
           )}
           {band && lastRate < band.max && pctRaise > 0 && (
-            <Text size="xs" c="dimmed" mt="xs">
+            <Text size="xs" c="dimmed" mt="md">
               At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / lastRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
             </Text>
+          )}
+          {pctRaise === 0 && (
+            <Text size="xs" c="dimmed" mt="md">Enter a raise above 0% to project years to the band max.</Text>
           )}
         </Card>
       )}
