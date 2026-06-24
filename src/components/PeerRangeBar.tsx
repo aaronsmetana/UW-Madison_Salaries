@@ -34,10 +34,11 @@ export function PeerRangeBar({
   const H = 26;
   const mounted = useMounted();
 
-  // Current-value pin: the caret sits at the dot's exact x; the label is clamped so it never overruns
-  // the track at the extremes (the lowest / highest-paid person).
+  // Current-value pin: the caret sits at the dot's exact x; the label shares that x but switches its
+  // anchor near the edges (left-hug / right-hug, else centered) so it stays attached to the dot at the
+  // extremes (lowest / highest-paid person) without overrunning the track.
   const pos = at(value);
-  const labelLeft = Math.max(14, Math.min(86, pos));
+  const labelTx = pos < 12 ? '0%' : pos > 88 ? '-100%' : '-50%';
 
   // Interior tick guides drawn on the bar (p25/median/p75), median a touch stronger.
   const ticks: { x: number; label: string; strong?: boolean }[] = [
@@ -55,9 +56,9 @@ export function PeerRangeBar({
           fw={700}
           style={{
             position: 'absolute',
-            left: mounted ? `${labelLeft}%` : 0,
+            left: mounted ? `${pos}%` : 0,
             bottom: 7,
-            transform: 'translateX(-50%)',
+            transform: `translateX(${labelTx})`,
             whiteSpace: 'nowrap',
             fontSize: 12.5,
             color: MARK_CURRENT,
