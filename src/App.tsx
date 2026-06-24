@@ -1,7 +1,7 @@
 import { lazy } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useParams } from 'react-router-dom';
 import { theme } from './theme';
 import { ControlsProvider } from './state/controls';
 import { TrayProvider } from './state/tray';
@@ -16,7 +16,13 @@ const Reports = lazy(() => import('./routes/Reports'));
 const DataHealth = lazy(() => import('./routes/DataHealth'));
 const Person = lazy(() => import('./routes/Person'));
 const School = lazy(() => import('./routes/School'));
-const TitlePage = lazy(() => import('./routes/Title'));
+
+// The old /title/:code page is retired — titles now live at /paycheck?code=. Redirect so any
+// bookmarked or shared /title links still resolve to the canonical Search-Title-Salaries view.
+function TitleRedirect() {
+  const { code } = useParams();
+  return <Navigate to={`/paycheck?code=${encodeURIComponent(code ?? '')}`} replace />;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: Infinity, refetchOnWindowFocus: false, retry: 1 } },
@@ -42,7 +48,7 @@ const router = createBrowserRouter(
         { path: 'data', element: <DataHealth /> },
         { path: 'person/:id', element: <Person /> },
         { path: 'school/:id', element: <School /> },
-        { path: 'title/:code', element: <TitlePage /> },
+        { path: 'title/:code', element: <TitleRedirect /> },
       ],
     },
   ],

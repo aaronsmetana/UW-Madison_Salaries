@@ -37,9 +37,10 @@ interface SchoolRow { school: string; n: number; med: number | null }
 interface PctRow { scope: string; pct: number; n: number }
 
 /**
- * Everything-about-a-title view, shared by the Search-Title-Salaries explorer (`/paycheck`, with a
- * title picker + optional school filter + optional salary pin) and the deep-link `/title/:code` page.
- * Title selection drives the whole view; `pinSalary` only adds the "where it lands" markers/percentile.
+ * Everything-about-a-title view, rendered by the Search-Title-Salaries explorer (`/paycheck`, with a
+ * title picker + optional school filter + optional salary pin). The legacy `/title/:code` URL now
+ * redirects here. Title selection drives the whole view; `pinSalary` only adds the "where it lands"
+ * markers/percentile.
  */
 export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = null }: {
   jobCode: string;

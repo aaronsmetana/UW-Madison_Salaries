@@ -22,7 +22,8 @@ const NAV = [
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
-const CONTROL_PATHS = ['/school', '/title'];
+// (Titles render via /paycheck, which has its own inline pickers — no global control bar.)
+const CONTROL_PATHS = ['/school'];
 
 export function AppShellLayout() {
   const loc = useLocation();

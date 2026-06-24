@@ -504,7 +504,7 @@ export default function Person() {
           <Title order={2}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (
-              <Anchor component={Link} to={`/title/${encodeURIComponent(latest.job_code)}`}>{latest?.title}</Anchor>
+              <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(latest.job_code)}`}>{latest?.title}</Anchor>
             ) : (
               latest?.title
             )}
@@ -614,7 +614,7 @@ export default function Person() {
                   <Text size="sm">
                     {name} is the only employee at UW with the title {latest?.title} (job code {jobCode}) in the latest snapshot — no one else to compare against.
                   </Text>
-                  <Anchor component={Link} to={`/title/${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
+                  <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
                 </Group>
               </Card>
             )}
@@ -634,7 +634,7 @@ export default function Person() {
                         ]}
                       />
                     )}
-                    <Anchor component={Link} to={`/title/${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
+                    <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
                   </Group>
                 </Group>
                 <Text size="xs" c="dimmed" mb="md">

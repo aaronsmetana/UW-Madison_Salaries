@@ -10,7 +10,7 @@ import { useTray, type TrayItem } from '../state/tray';
 
 const TYPE_META: Record<TrayItem['type'], { icon: typeof IconUser; one: string; many: string; href: (id: string) => string }> = {
   person: { icon: IconUser, one: 'person', many: 'people', href: (id) => `/person/${encodeURIComponent(id)}` },
-  title: { icon: IconBriefcase, one: 'title', many: 'titles', href: (id) => `/title/${encodeURIComponent(id)}` },
+  title: { icon: IconBriefcase, one: 'title', many: 'titles', href: (id) => `/paycheck?code=${encodeURIComponent(id)}` },
   school: { icon: IconBuildingBank, one: 'school', many: 'schools', href: (id) => `/school/${encodeURIComponent(id)}` },
 };
 const TYPE_ORDER: TrayItem['type'][] = ['person', 'title', 'school'];

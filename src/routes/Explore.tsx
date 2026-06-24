@@ -263,7 +263,7 @@ export default function Explore() {
                 {titleView.map((t) => (
                   <Table.Tr key={t.job_code}>
                     <Table.Td>
-                      <Anchor component={Link} to={`/title/${encodeURIComponent(t.job_code)}`}>{t.title}</Anchor>
+                      <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(t.job_code)}`}>{t.title}</Anchor>
                     </Table.Td>
                     <Table.Td>{t.job_code}</Table.Td>
                     <Table.Td ta="right">{num(t.n)}</Table.Td>
