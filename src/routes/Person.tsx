@@ -4,9 +4,11 @@ import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea,
 } from '@mantine/core';
 import {
-  ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine,
+  ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  ReferenceDot, ReferenceLine, ReferenceArea, LabelList,
 } from 'recharts';
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { lineGlowDefs } from '../components/chartDefs';
 import { IconAlertTriangle, IconPlus, IconArrowRight } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -60,8 +62,31 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
   );
 }
 
+/** Small +X% / −X% label above each trend point — the raise vs the previous snapshot (null on the first). */
+function YoyLabel(props: { x?: number; y?: number; value?: number | null }) {
+  const { x, y, value } = props;
+  if (x == null || y == null || value == null) return null;
+  const up = value >= 0;
+  return (
+    <text x={x} y={y - 10} textAnchor="middle" fontSize={10} fontWeight={600} fill={up ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-red-6)'}>
+      {up ? '+' : ''}{(value * 100).toFixed(1)}%
+    </text>
+  );
+}
+
+/** Hover marker for the primary line: an accent dot with a soft halo. */
+function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
+  if (cx == null || cy == null) return <g />;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={9} fill="var(--mantine-color-accent-6)" opacity={0.18} />
+      <circle cx={cx} cy={cy} r={5} fill="var(--mantine-color-accent-6)" stroke="var(--mantine-color-body)" strokeWidth={2} />
+    </g>
+  );
+}
+
 /** Custom legend below the trend chart, explaining the title-era demarcations. */
-function TrendLegend({ hasTitleChange, mode }: { hasTitleChange: boolean; mode: 'actual' | 'rate' }) {
+function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleChange: boolean; hasFte: boolean; hasGradeBand: boolean; mode: 'actual' | 'rate' }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
       {swatch}
@@ -78,7 +103,11 @@ function TrendLegend({ hasTitleChange, mode }: { hasTitleChange: boolean; mode: 
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="5 3" /></svg>,
         'Title median — resets at each title change',
       )}
-      {item(
+      {hasGradeBand && item(
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" /></svg>,
+        'Grade band min / max',
+      )}
+      {hasFte && item(
         <svg width={22} height={12} aria-hidden>
           <rect x={1} y={4} width={20} height={7} fill="var(--mantine-color-pos-6)" fillOpacity={0.18} />
           <line x1={1} y1={4} x2={21} y2={4} stroke="var(--mantine-color-pos-6)" strokeWidth={2} />
@@ -273,6 +302,34 @@ export default function Person() {
     () => trendData.filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
     [trendData],
   );
+  // Plot rows: carry each metric's year-over-year change (vs the previous snapshot) so the line can label
+  // every step with its raise %.
+  const trendPlot = useMemo(
+    () => trendData.map((t, i) => {
+      const prev = i > 0 ? trendData[i - 1] : null;
+      return {
+        ...t,
+        yoyActual: prev && prev.salary ? (t.salary - prev.salary) / prev.salary : null,
+        yoyRate: prev && prev.rate ? (t.rate - prev.rate) / prev.rate : null,
+      };
+    }),
+    [trendData],
+  );
+  // Hide the FTE sub-chart entirely when the appointment never changes — a flat 100% line is pure noise.
+  const fteVaries = useMemo(
+    () => new Set(trendData.map((t) => Math.round((t.fte ?? 1) * 100))).size > 1,
+    [trendData],
+  );
+  // First/last x-label of each title era → faint alternating background bands behind the line.
+  const eraSpans = useMemo(() => {
+    const m = new Map<number, { x1: string; x2: string }>();
+    for (const t of trendData) {
+      const cur = m.get(t.era);
+      if (!cur) m.set(t.era, { x1: t.label, x2: t.label });
+      else cur.x2 = t.label;
+    }
+    return [...m.entries()].map(([era, s]) => ({ era, ...s }));
+  }, [trendData]);
 
 
   // Appointment count per snapshot (for the "split" flag in the history table).
@@ -930,18 +987,47 @@ export default function Person() {
             options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Rate' }]}
           />
         </Group>
-        {/* Split view: dollars up top (≈¾), the FTE area in its own zone below (≈¼). Both share the same
-            data + x scale (matching left-axis width and margins) and a syncId, so the dates line up and a
-            single tooltip on the salary chart covers both. The date labels live only on the lower axis. */}
-        <ResponsiveContainer width="100%" height={244}>
-          <LineChart data={trendData} syncId="person-trend" margin={{ left: 12, right: 12, top: 18, bottom: 0 }}>
+        {/* Hero salary chart: a ComposedChart with a gradient area + soft-glow line, faint title-era bands,
+            grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
+            the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
+        <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
+          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 12, top: 22, bottom: 0 }}>
+            <defs>{lineGlowDefs('trend')}</defs>
+            {/* Faint alternating background band per title era. */}
+            {eras.length > 1 && eraSpans.map((s) => (
+              <ReferenceArea
+                key={`era-${s.era}`}
+                yAxisId="pay"
+                x1={s.x1}
+                x2={s.x2}
+                fill={s.era % 2 === 1 ? 'var(--mantine-color-accent-6)' : 'transparent'}
+                fillOpacity={0.05}
+                stroke="none"
+                ifOverflow="extendDomain"
+              />
+            ))}
             <CartesianGrid {...GRID} />
-            {/* No date labels here (they live under the FTE chart), but keep a subtle baseline to "close"
-                the salary zone at its bottom edge. */}
-            <XAxis dataKey="label" tick={false} tickLine={false} height={8} axisLine={{ stroke: 'var(--mantine-color-default-border)' }} />
+            <XAxis
+              dataKey="label"
+              tick={fteVaries ? false : AXIS_TICK}
+              tickLine={false}
+              tickMargin={fteVaries ? undefined : 10}
+              height={fteVaries ? 8 : 34}
+              axisLine={{ stroke: 'var(--mantine-color-default-border)' }}
+            />
             <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
-            <Tooltip content={<TrendTooltip />} />
-            {/* Faint divider + new-title label at each title change, segmenting the chart into title eras. */}
+            <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
+            {/* Official grade pay-band floor / ceiling for context (kept as separate siblings — Recharts does
+                not traverse a Fragment's children). */}
+            {band && (
+              <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
+                label={{ value: `grade min ${usd(band.min)}`, position: 'insideBottomLeft', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+            )}
+            {band && (
+              <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
+                label={{ value: `grade max ${usd(band.max)}`, position: 'insideTopLeft', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+            )}
+            {/* Title-change dividers segment the chart into title eras. */}
             {titleChanges.map((t) => (
               <ReferenceLine
                 key={`div-${t.id}`}
@@ -953,7 +1039,9 @@ export default function Person() {
                 label={{ value: shortTitle(t.title), position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }}
               />
             ))}
-            {/* Title median drawn as one disconnected segment per era — old/new titles are different baselines. */}
+            {/* Gradient area fill under the active metric. */}
+            <Area yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="none" fill="url(#trend-area-grad)" isAnimationActive={false} legendType="none" />
+            {/* Title median, one disconnected dashed segment per era. */}
             {eras.map((e) => (
               <Line
                 key={`med-${e}`}
@@ -970,55 +1058,57 @@ export default function Person() {
                 isAnimationActive={false}
               />
             ))}
-            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
+            {/* Soft glow: a blurred, semi-transparent copy beneath the crisp line. */}
+            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#trend-line-glow)" />
+            {/* Primary line + per-step raise % labels + haloed active dot. */}
+            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out">
+              <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyLabel />} />
+            </Line>
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (
                 <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={t.label} y={y} shape={<TitleChangeDot />} />
               ) : null;
             })}
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
 
-        {/* Distinct empty gap between the salary $0 baseline and the FTE 100% line; the vertical
-            gridlines break here because the two charts are separate containers. */}
-        <div style={{ height: 36 }} />
-
-        <ResponsiveContainer width="100%" height={108}>
-          <AreaChart data={trendData} syncId="person-trend" margin={{ left: 12, right: 12, top: 0, bottom: 0 }}>
-            <CartesianGrid {...GRID} />
-            {/* Shared date labels live only here; push them clear below the area fill. */}
-            <XAxis dataKey="label" tick={AXIS_TICK} tickMargin={10} height={34} />
-            {/* No rotated axis label — the % ticks sit flush under the salary chart's dollar figures.
-                `padding` insets the scale a few px so a 100% (or 0%) value isn't drawn on the clip edge
-                and cut in half. */}
-            <YAxis
-              yAxisId="fte"
-              domain={[0, 1]}
-              ticks={[0, 0.5, 1]}
-              width={80}
-              tick={AXIS_TICK}
-              tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              padding={{ top: 8, bottom: 4 }}
-            />
-            {/* Cursor only — the single unified tooltip lives on the salary chart above (synced by syncId). */}
-            <Tooltip content={() => null} />
-            <Area
-              yAxisId="fte"
-              type="monotone"
-              dataKey="fte"
-              name="Appointment (FTE)"
-              stroke="var(--mantine-color-pos-6)"
-              strokeWidth={2}
-              fill="var(--mantine-color-pos-6)"
-              fillOpacity={0.18}
-              dot
-              connectNulls
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-        <TrendLegend hasTitleChange={titleChanges.length > 0} mode={trendMode} />
+        {fteVaries && (
+          <>
+            {/* Distinct gap between the salary baseline and the FTE chart below. */}
+            <div style={{ height: 36 }} />
+            <ResponsiveContainer width="100%" height={108}>
+              <AreaChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 12, top: 0, bottom: 0 }}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" tick={AXIS_TICK} tickMargin={10} height={34} />
+                <YAxis
+                  yAxisId="fte"
+                  domain={[0, 1]}
+                  ticks={[0, 0.5, 1]}
+                  width={80}
+                  tick={AXIS_TICK}
+                  tickFormatter={(v) => `${Math.round(v * 100)}%`}
+                  padding={{ top: 8, bottom: 4 }}
+                />
+                <Tooltip content={() => null} />
+                <Area
+                  yAxisId="fte"
+                  type="monotone"
+                  dataKey="fte"
+                  name="Appointment (FTE)"
+                  stroke="var(--mantine-color-pos-6)"
+                  strokeWidth={2}
+                  fill="var(--mantine-color-pos-6)"
+                  fillOpacity={0.18}
+                  dot
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </>
+        )}
+        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} hasGradeBand={!!band} mode={trendMode} />
         <ChartData caption="Salary over time" columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])} />
       </Card>
         </Tabs.Panel>
