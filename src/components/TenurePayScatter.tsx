@@ -5,6 +5,7 @@ import {
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { Box, Group, Text } from '@mantine/core';
 import { usd } from '../lib/format';
+import { prefersReducedMotion } from '../lib/motion';
 
 export interface ScatterPoint {
   tenure: number;
@@ -30,10 +31,38 @@ function leastSquares(pts: ScatterPoint[]): { slope: number; intercept: number }
   return { slope, intercept: sBar - slope * tBar };
 }
 
-/** A circle marker; Recharts injects cx/cy when passed as a Scatter `shape`. */
+/** A circle marker; Recharts injects cx/cy when passed as a Scatter `shape`. A wide transparent hit
+ *  circle behind the visible dot gives a "proximity" hover target so you don't have to land on the dot
+ *  exactly; the visible circle grows a touch on hover (see `.scatter-dot` in app.css). */
 function PeerDot({ cx, cy, r = 4.5, fill, stroke }: { cx?: number; cy?: number; r?: number; fill?: string; stroke?: string }) {
   if (cx == null || cy == null) return <g />;
-  return <circle cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.9} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={15} fill="transparent" />
+      <circle className="scatter-dot" cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.9} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />
+    </g>
+  );
+}
+
+/** The "this person" marker: a wide transparent hit area, an expanding/fading pulse ring (static when
+ *  the user prefers reduced motion), and the accent dot. */
+function SelfDot({ cx, cy }: { cx?: number; cy?: number }) {
+  if (cx == null || cy == null) return <g />;
+  const reduce = prefersReducedMotion();
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={16} fill="transparent" />
+      <circle cx={cx} cy={cy} r={9} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={2} opacity={reduce ? 0.45 : 0.9}>
+        {!reduce && (
+          <>
+            <animate attributeName="r" values="9;18;9" dur="1.8s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.9;0;0.9" dur="1.8s" repeatCount="indefinite" />
+          </>
+        )}
+      </circle>
+      <circle cx={cx} cy={cy} r={7.5} fill="var(--mantine-color-accent-6)" stroke="var(--mantine-color-body)" strokeWidth={1.5} />
+    </g>
+  );
 }
 
 function ScatterTip({ active, payload }: { active?: boolean; payload?: { payload: ScatterPoint }[] }) {
@@ -86,6 +115,7 @@ export function TenurePayScatter({
       {expected != null && gap != null && self && (
         <Box
           mb="md"
+          className={above ? undefined : 'tenure-callout'}
           style={{
             borderLeft: `3px solid ${above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-orange-5)'}`,
             background: above ? 'var(--mantine-color-pos-light)' : 'var(--mantine-color-orange-light)',
@@ -134,7 +164,7 @@ export function TenurePayScatter({
           )}
           <Scatter data={others} shape={<PeerDot fill="var(--mantine-color-gray-5)" />} isAnimationActive={false} />
           <Scatter data={schoolPts} shape={<PeerDot fill="var(--mantine-color-pos-6)" />} isAnimationActive={false} />
-          <Scatter data={selfPts} shape={<PeerDot r={7.5} fill="var(--mantine-color-accent-6)" stroke="var(--mantine-color-body)" />} isAnimationActive={false} />
+          <Scatter data={selfPts} shape={<SelfDot />} isAnimationActive={false} />
         </ScatterChart>
       </ResponsiveContainer>
 

@@ -190,3 +190,34 @@ textarea:focus-visible,
 .peer-row .peer-add { opacity: 0.28; transition: opacity 120ms ease; }
 .peer-row:hover .peer-add,
 .peer-row:focus-within .peer-add { opacity: 1; }
+
+/* ── Tasteful motion layer (all reduced-motion guarded at the bottom of this file). ── */
+
+/* Tenure scatter dots grow a touch on direct hover (the wide transparent hit circle behind each one
+   is the real proximity hover target — see TenurePayScatter's PeerDot). Self dot is excluded (it pulses). */
+.scatter-dot { transition: r 120ms ease; }
+.scatter-dot:hover { r: 6.5px; }
+
+/* "Below the tenure curve" callout reads as a muddy brown in dark mode — use a brighter amber tint
+   and a lighter rule so it pops (mirrors the --pos-row-bg dark treatment above). */
+:root[data-mantine-color-scheme='dark'] .tenure-callout {
+  background: rgba(245, 159, 0, 0.16) !important;
+  border-left-color: var(--mantine-color-orange-4) !important;
+}
+
+/* Overview sections fade + rise once on mount — a single gentle stagger, not a per-card cascade. */
+@keyframes section-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.overview-rise > * { animation: section-rise 420ms ease-out both; }
+.overview-rise > *:nth-child(2) { animation-delay: 60ms; }
+.overview-rise > *:nth-child(3) { animation-delay: 120ms; }
+.overview-rise > *:nth-child(n + 4) { animation-delay: 160ms; }
+
+/* Honor the OS "reduce motion" preference: no section rise, no dot-hover tween. (The bar grow-ins and
+   count-up are JS-gated to render in their final state; the scatter pulse is gated in TenurePayScatter.) */
+@media (prefers-reduced-motion: reduce) {
+  .overview-rise > * { animation: none; }
+  .scatter-dot { transition: none; }
+}

@@ -7,13 +7,14 @@ import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine,
 } from 'recharts';
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
-import { IconAlertTriangle, IconPlus } from '@tabler/icons-react';
+import { IconAlertTriangle, IconPlus, IconArrowRight } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { percentile } from '../lib/stats';
+import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
@@ -110,13 +111,12 @@ function MetaPill({ label, value }: { label: string; value: ReactNode }) {
       style={{
         display: 'inline-flex',
         background: 'var(--mantine-color-default-hover)',
-        border: '1px solid var(--mantine-color-default-border)',
-        borderRadius: 7,
-        padding: '3px 9px',
+        borderRadius: 6,
+        padding: '2px 8px',
       }}
     >
-      <Text span c="dimmed" style={{ fontSize: 11.5 }}>{label}</Text>
-      <Text span fw={600} style={{ fontSize: 11.5 }}>{value}</Text>
+      <Text span c="dimmed" style={{ fontSize: 11 }}>{label}</Text>
+      <Text span fw={500} style={{ fontSize: 11 }}>{value}</Text>
     </Group>
   );
 }
@@ -124,6 +124,7 @@ function MetaPill({ label, value }: { label: string; value: ReactNode }) {
 /** One horizontal percentile bar for the "Standing" small-multiples: label + pool size on the left, a
  *  track with a fill to p% and an accent marker tick, and the percentile on the right. */
 function PercentileBar({ label, n, pct }: { label: string; n: number; pct: number }) {
+  const mounted = useMounted();
   return (
     <Group wrap="nowrap" gap="md" align="center">
       <div style={{ width: 190, flexShrink: 0 }}>
@@ -131,8 +132,8 @@ function PercentileBar({ label, n, pct }: { label: string; n: number; pct: numbe
         <Text size="xs" c="dimmed">{num(n)} people</Text>
       </div>
       <div style={{ flex: 1, position: 'relative', height: 10, background: 'var(--mantine-color-default-hover)', borderRadius: 6 }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'var(--mantine-color-accent-light)', borderRadius: 6 }} />
-        <div style={{ position: 'absolute', left: `${pct}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: 'var(--mantine-color-accent-7)', transform: 'translateX(-50%)' }} />
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${mounted ? pct : 0}%`, background: 'var(--mantine-color-accent-light)', borderRadius: 6, transition: 'width 600ms ease-out' }} />
+        <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: 'var(--mantine-color-accent-7)', transform: 'translateX(-50%)', transition: 'left 600ms ease-out' }} />
       </div>
       <Text size="sm" fw={700} c="accent.7" style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
         {pct}th <Text span size="xs" fw={500} c="dimmed">pctile</Text>
@@ -306,6 +307,7 @@ export default function Person() {
 
   const firstSalary = trend[0]?.salary ?? null; // actual paid
   const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
+  const animatedPay = useCountUp(lastSalary); // hero value counts up once on mount (reduced-motion → final)
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
   // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
   const firstDate = trend[0]?.date ?? null;
@@ -461,6 +463,7 @@ export default function Person() {
   }, [cohortList, key]);
 
   const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
+  const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
 
   // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
   const peerViewportRef = useRef<HTMLDivElement>(null);
@@ -550,18 +553,33 @@ export default function Person() {
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
-          <Stack gap="lg">
-            {/* Lead + supporting stat row: Actual pay dominates; Change · Tenure · Snapshots are quieter. */}
+          <Stack gap="lg" className="overview-rise">
+            {/* Lead + supporting stat row: Actual pay dominates; Salary growth · Tenure are quieter. */}
             <div className="stat-cells">
-              {/* Lead — Actual pay */}
-              <Card withBorder radius="sm" p="lg" className="stat-lead" bg="var(--mantine-color-default-hover)">
-                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
-                  Actual pay{latest?.snapshot_label ? ` · ${latest.snapshot_label}` : ''}
-                </Text>
+              {/* Lead — Actual pay: signature accent rail + a date chip top-right; the value counts up on mount. */}
+              <Card
+                withBorder
+                radius="sm"
+                p="lg"
+                className="stat-lead"
+                bg="var(--mantine-color-default-hover)"
+                style={{ position: 'relative', overflow: 'hidden' }}
+              >
+                <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' }} />
+                <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+                  <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
+                    Actual pay
+                  </Text>
+                  {latest?.snapshot_label && (
+                    <Badge variant="light" color="accent" radius="sm" tt="none" style={{ fontWeight: 600, flexShrink: 0 }}>
+                      {latest.snapshot_label}
+                    </Badge>
+                  )}
+                </Group>
                 <Group gap={8} align="center" wrap="nowrap" mt={6}>
-                  <Text fw={700} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(lastSalary)}</Text>
+                  <Text fw={700} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
-                    <Badge variant="light" color="accent" radius="sm" tt="none" style={{ fontWeight: 600 }}>
+                    <Badge variant="light" color="gray" radius="sm" tt="none" style={{ fontWeight: 600 }}>
                       {+lastFte.toFixed(2)} FTE
                     </Badge>
                   )}
@@ -572,17 +590,22 @@ export default function Person() {
                 )}
               </Card>
 
-              {/* Salary growth — the change %, with the salary-data window and snapshot count for context. */}
+              {/* Salary growth — the change %, with the timeframe inline so the window reads as part of the
+                  number; the snapshot count / window-start (and any rate divergence) sit below as context. */}
               <Card withBorder radius="sm" p="lg">
                 <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Salary growth</Text>
-                <Text fw={700} mt={6} c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
-                  {sgnPct(totalChange)}
-                </Text>
-                {spanYears != null && spanYears >= 0.1 && (
-                  <Text size="xs" c="dimmed" mt={2}>over {spanYears.toFixed(1)} yrs of data{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}</Text>
-                )}
+                <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
+                  <Text fw={700} c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
+                    {sgnPct(totalChange)}
+                  </Text>
+                  {spanYears != null && spanYears >= 0.1 && (
+                    <Text size="sm" c="dimmed">over {spanYears.toFixed(1)} yrs</Text>
+                  )}
+                </Group>
                 {oldestLabel && (
-                  <Text size="xs" c="dimmed">{num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>
+                    {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
+                  </Text>
                 )}
               </Card>
 
@@ -600,11 +623,13 @@ export default function Person() {
 
             {peer && peer.n === 1 && jobCode && (
               <Card withBorder padding="lg">
-                <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <Text size="sm">
-                    {name} is the only employee at UW with the title {latest?.title} (job code {jobCode}) in the latest snapshot — no one else to compare against.
-                  </Text>
-                  <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
+                <Text size="sm">
+                  {name} is the only employee at UW with the title {latest?.title} (job code {jobCode}) in the latest snapshot — no one else to compare against.
+                </Text>
+                <Group justify="flex-end" mt="md">
+                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={14} />}>
+                    Go to title page
+                  </Button>
                 </Group>
               </Card>
             )}
@@ -613,19 +638,16 @@ export default function Person() {
               <Card withBorder padding="lg">
                 <Group justify="space-between" mb="xs" wrap="nowrap" align="flex-start">
                   <Text size="sm" fw={600}>How this person compares to others with the same title</Text>
-                  <Group gap="sm" wrap="nowrap">
-                    {allCount > schoolCount && (
-                      <SegmentedToggle
-                        value={cohort}
-                        onChange={(v) => setCohort(v as 'all' | 'school')}
-                        options={[
-                          { id: 'all', label: `All ${num(allCount)}` },
-                          { id: 'school', label: `Same school ${num(schoolCount)}` },
-                        ]}
-                      />
-                    )}
-                    <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} size="sm" style={{ whiteSpace: 'nowrap' }}>Title page →</Anchor>
-                  </Group>
+                  {allCount > schoolCount && (
+                    <SegmentedToggle
+                      value={cohort}
+                      onChange={(v) => setCohort(v as 'all' | 'school')}
+                      options={[
+                        { id: 'all', label: `All ${num(allCount)}` },
+                        { id: 'school', label: `Same school ${num(schoolCount)}` },
+                      ]}
+                    />
+                  )}
                 </Group>
                 <Text size="xs" c="dimmed" mb="md">
                   {cohort === 'school'
@@ -653,6 +675,11 @@ export default function Person() {
                     {name} is the only person with this title in {latest?.school} — switch to “All {num(allCount)}” to compare against everyone with the title.
                   </Text>
                 )}
+                <Group justify="flex-end" mt="md">
+                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={14} />}>
+                    Go to title page
+                  </Button>
+                </Group>
               </Card>
             )}
 
@@ -907,7 +934,7 @@ export default function Person() {
                 isAnimationActive={false}
               />
             ))}
-            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
+            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (
