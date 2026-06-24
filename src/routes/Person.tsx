@@ -14,6 +14,7 @@ import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { percentile } from '../lib/stats';
 import { SegmentedToggle } from '../components/SegmentedToggle';
+import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
@@ -386,6 +387,24 @@ export default function Person() {
   }, [cohortList, key]);
   const cohortPct = lastSalary != null && cohortPays.length > 1 ? percentile(lastSalary, cohortPays) : null;
 
+  // Pay-vs-tenure scatter points for the active cohort (only peers with a known tenure can be plotted).
+  const scatterPoints = useMemo<ScatterPoint[]>(
+    () => cohortList
+      .filter((p) => p.tenure != null && Number.isFinite(p.tenure))
+      .map((p) => ({
+        tenure: Math.max(0, p.tenure as number),
+        pay: p.pay,
+        sameSchool: p.person_key !== key && !!p.school && p.school === latest?.school,
+        isSelf: p.person_key === key,
+        name: fullName(p.fn, p.ln) || '—',
+      })),
+    [cohortList, key, latest],
+  );
+  const selfScatter = useMemo(() => {
+    const s = cohortList.find((p) => p.person_key === key);
+    return s && s.tenure != null && Number.isFinite(s.tenure) ? { tenure: Math.max(0, s.tenure), pay: s.pay } : null;
+  }, [cohortList, key]);
+
   const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
 
   // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
@@ -573,6 +592,28 @@ export default function Person() {
                     {name} is the only person with this title in {latest?.school} — switch to “All {num(allCount)}” to compare against everyone with the title.
                   </Text>
                 )}
+              </Card>
+            )}
+
+            {scatterPoints.length >= 4 && (
+              <Card withBorder padding="lg">
+                <Group justify="space-between" mb="md" wrap="nowrap" align="flex-start">
+                  <div>
+                    <Text size="sm" fw={600}>Pay vs. tenure — same title</Text>
+                    <Text size="xs" c="dimmed">Where this person sits against what tenure alone predicts for {latest?.title}.</Text>
+                  </div>
+                  {allCount > schoolCount && (
+                    <SegmentedToggle
+                      value={cohort}
+                      onChange={(v) => setCohort(v as 'all' | 'school')}
+                      options={[
+                        { id: 'all', label: `All ${num(allCount)}` },
+                        { id: 'school', label: `Same school ${num(schoolCount)}` },
+                      ]}
+                    />
+                  )}
+                </Group>
+                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} />
               </Card>
             )}
 
