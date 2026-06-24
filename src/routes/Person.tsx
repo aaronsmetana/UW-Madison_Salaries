@@ -332,17 +332,23 @@ export default function Person() {
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
   const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
 
-  // One-line career summary under the header.
+  // One-line career summary under the header. The hire year (initial UW employment) and the earliest title
+  // *on record* are two different facts — the salary data often starts years after the hire date — so we
+  // never claim the first observed title was the hire title; we surface the record-start year when it lags.
   const careerLine = useMemo(() => {
     const firstTitle = trend[0]?.title;
     const latestTitle = latest?.title;
     if (!latestTitle || trend.length === 0) return null;
-    const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4);
-    // Just the role journey — the growth/span now lives in the "Salary growth" stat cell.
+    const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? null;
+    const recordYear = trend[0]?.date ? String(trend[0].date).slice(0, 4) : null;
+    const showRecYr = recordYear != null && (hireYear == null || Number(recordYear) - Number(hireYear) > 1);
+    const recTag = showRecYr ? ` (${recordYear})` : '';
+    const at = hireYear ? `At UW since ${hireYear}` : null;
     if (firstTitle && firstTitle !== latestTitle) {
-      return `Joined ${hireYear ?? '—'} as ${firstTitle}; now ${latestTitle}.`;
+      const lead = at ? `${at} · earliest record${recTag}` : `Earliest record${recTag}`;
+      return `${lead}: ${firstTitle}; now ${latestTitle}.`;
     }
-    return `${latestTitle}${hireYear ? ` since ${hireYear}` : ''}.`;
+    return `${[at, latestTitle].filter(Boolean).join(' · ')}.`;
   }, [trend, latest, rows]);
 
   const band = useMemo(() => {
