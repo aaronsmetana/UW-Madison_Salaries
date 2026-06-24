@@ -22,6 +22,9 @@ body {
 /* Brighten/darken low-contrast secondary ("dimmed") text for readability/accessibility. */
 :root[data-mantine-color-scheme='dark'] {
   --mantine-color-dimmed: #c1c2c5;
+  /* Same-school row tint must adapt to dark mode (the light #edf6f1 washed out the text). Use Mantine's
+     scheme-aware green tint — a subtle dark-green on the dark surface, mirroring the accent-light subject row. */
+  --pos-row-bg: var(--mantine-color-pos-light);
 }
 :root[data-mantine-color-scheme='light'] {
   --mantine-color-dimmed: #586273;
