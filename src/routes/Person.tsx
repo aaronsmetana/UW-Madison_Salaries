@@ -427,20 +427,18 @@ export default function Person() {
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
   const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
 
-  // One-line career summary under the header. The hire year (initial UW employment) and the earliest title
-  // *on record* are two different facts — the salary data often starts years after the hire date — so we
-  // never claim the first observed title was the hire title; we surface the record-start year when it lags.
+  // One-line career summary under the header. Only surface a prior title when it's a genuine *pre-TTC* title
+  // (the person's earliest record is the pre-TTC snapshot and the title differs from now) — we can't assume the
+  // hire-era title otherwise, so those people just get "At UW since {year} · {current title}".
   const careerLine = useMemo(() => {
     const firstTitle = trend[0]?.title;
     const latestTitle = latest?.title;
     if (!latestTitle || trend.length === 0) return null;
     const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? null;
-    const recordYear = trend[0]?.date ? String(trend[0].date).slice(0, 4) : null;
-    const showRecYr = recordYear != null && (hireYear == null || Number(recordYear) - Number(hireYear) > 1);
-    const recTag = showRecYr ? ` (${recordYear})` : '';
     const at = hireYear ? `At UW since ${hireYear}` : null;
-    if (firstTitle && firstTitle !== latestTitle) {
-      const lead = at ? `${at} · earliest record${recTag}` : `Earliest record${recTag}`;
+    const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && firstTitle !== latestTitle;
+    if (hasPreTTC) {
+      const lead = at ? `${at} · Title before TTC` : 'Title before TTC';
       return `${lead}: ${firstTitle}; now ${latestTitle}.`;
     }
     return `${[at, latestTitle].filter(Boolean).join(' · ')}.`;

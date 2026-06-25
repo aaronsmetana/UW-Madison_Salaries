@@ -178,16 +178,14 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     const lastTitle = trend[trend.length - 1].title;
     const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
     const hireYear = hire ? String(hire).slice(0, 4) : null;
-    // The hire year (initial UW employment) and the earliest title *on record* are distinct — data often
-    // starts years after hire — so don't claim the first observed title was the hire title.
-    const recordYear = trend[0]?.date ? String(trend[0].date).slice(0, 4) : null;
-    const showRecYr = recordYear != null && (hireYear == null || Number(recordYear) - Number(hireYear) > 1);
-    const recTag = showRecYr ? ` (${recordYear})` : '';
     const at = hireYear ? `At UW since ${hireYear}` : null;
     const span = spanYears != null && spanYears >= 0.1 ? `${spanYears.toFixed(1)} years of salary data` : null;
     const growth = totalChange != null && span ? ` (${totalChange > 0 ? '+' : ''}${pct(totalChange)} over ${span})` : '';
-    if (firstTitle && lastTitle && firstTitle !== lastTitle) {
-      const lead = at ? `${at} · earliest record${recTag}` : `Earliest record${recTag}`;
+    // Only surface a prior title when it's a genuine pre-TTC title (earliest record is the pre-TTC snapshot
+    // and it differs from now); otherwise we can't assume the hire-era title, so just show the current one.
+    const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && firstTitle !== lastTitle;
+    if (hasPreTTC) {
+      const lead = at ? `${at} · Title before TTC` : 'Title before TTC';
       return `${lead}: ${firstTitle}; now ${lastTitle}${growth}.`;
     }
     const t = lastTitle ?? firstTitle;
