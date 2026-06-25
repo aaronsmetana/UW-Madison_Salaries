@@ -1,4 +1,5 @@
-import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card } from '@mantine/core';
+import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { num, usd } from '../lib/format';
@@ -30,7 +31,7 @@ export default function DataHealth() {
     <Stack gap="lg">
       <PageHeader
         title="Data · About"
-        description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record. Person matching (name + hire date) is best-effort."
+        description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
       />
 
       <Card withBorder padding="lg">
@@ -47,6 +48,42 @@ export default function DataHealth() {
           Visit UFAS Local 223 →
         </Anchor>
       </Card>
+
+      <Alert
+        color="orange"
+        variant="light"
+        radius="md"
+        icon={<IconAlertTriangle size={20} />}
+        title="Accuracy & disclaimer — these numbers may not reflect reality"
+        id="disclaimer"
+      >
+        <Stack gap="xs">
+          <Text size="sm" fw={600}>
+            Every figure here is a point-in-time, gross, best-effort transcription of a public spreadsheet —
+            treat all of it as approximate, not as a person's verified pay.
+          </Text>
+          <Text size="sm">A number can be wrong or misleading for many reasons. For example:</Text>
+          <List size="sm" spacing={4}>
+            <List.Item><b>Part-time staff</b> — the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</List.Item>
+            <List.Item><b>Multiple appointments</b> — a person's pay is blended across roles, so a split or joint appointment may not read as you'd expect.</List.Item>
+            <List.Item><b>Bonuses &amp; deferred pay</b> — coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</List.Item>
+            <List.Item><b>Changes between snapshots</b> — raises, promotions, leaves, or appointment changes that happen between two reports aren't captured, so true earnings can be higher or lower than any single number shown.</List.Item>
+            <List.Item><b>Gross, not take-home</b> — amounts are gross annualized figures and exclude benefits, taxes, and retirement.</List.Item>
+            <List.Item><b>Nominal dollars</b> — figures are not inflation-adjusted, so cross-year comparisons overstate real growth.</List.Item>
+            <List.Item><b>Nov 2021 (TTC)</b> — nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</List.Item>
+            <List.Item><b>Oct 2023 scope change</b> — some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</List.Item>
+            <List.Item><b>Column mapping</b> — columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</List.Item>
+            <List.Item><b>Identity matching</b> — people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</List.Item>
+            <List.Item><b>Name formatting &amp; transcription</b> — ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</List.Item>
+          </List>
+          <Text size="sm" c="dimmed" mt={4}>
+            This is an <b>independent, best-effort project</b> and is <b>not affiliated with or endorsed by
+            UW–Madison</b>. Salary data is a Wisconsin public record. The information is provided "as is," may be
+            inaccurate or incomplete, and carries <b>no warranty and no liability</b> — verify against official
+            UW–Madison or State of Wisconsin sources before relying on it for any decision.
+          </Text>
+        </Stack>
+      </Alert>
 
       <Card withBorder padding="lg" id="how-it-works">
         <Title order={4} mb="xs">How these figures are calculated</Title>
@@ -71,24 +108,8 @@ export default function DataHealth() {
             Every figure reflects a single periodic report. Pay, FTE, title, and grade change between
             snapshots, and raises or appointment changes that happen between reports aren't captured — so a
             person's true earnings can be higher or lower than any single number shown here. Amounts are gross
-            annualized figures (not take-home) and exclude benefits.
-          </Text>
-
-          <Text size="sm" fw={700} mt="xs">Best-effort accuracy &amp; limitations</Text>
-          <Text size="sm">
-            Figures are transcribed and column-mapped from the published UW salary reports on a best-effort
-            basis. Automatic column mapping, name formatting, and identity matching (name + hire date) can
-            introduce errors or occasionally merge or split people (see "Possible duplicate identities" below).
-            Structural events are flagged per snapshot — e.g. the Nov 2021 TTC reclassification was a mass
-            title/grade change, not promotions, and the Oct 2023 report changed scope (students/trainees excluded).
-          </Text>
-
-          <Text size="sm" fw={700} mt="xs">Disclaimer</Text>
-          <Text size="sm" c="dimmed">
-            Salary data is a Wisconsin public record. This is an independent, best-effort presentation and is
-            <b> not affiliated with or endorsed by UW–Madison</b>. The information is provided "as is," may be
-            inaccurate or incomplete, and carries <b>no warranty and no liability</b> — verify against official
-            UW–Madison or State of Wisconsin sources before relying on it for any decision.
+            annualized figures (not take-home) and exclude benefits. See the accuracy &amp; disclaimer callout
+            above for the full list of caveats.
           </Text>
         </Stack>
       </Card>
