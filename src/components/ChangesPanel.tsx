@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Paper } from '@mantine/core';
-import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { IconDownload } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
@@ -8,7 +8,7 @@ import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, whereAll, filterKey } from '../lib/queries';
-import { usd, num, pct, fullName } from '../lib/format';
+import { usd, usdCompact, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
@@ -331,11 +331,11 @@ export function ChangesPanel() {
           </Text>
         )}
         {waterfall.length > 0 && (
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={waterfall} margin={{ left: 12, right: 12, top: 8 }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={waterfall} margin={{ left: 12, right: 12, top: 24 }}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="name" tick={AXIS_TICK} />
-              <YAxis width={64} tickFormatter={(v) => usd(v)} tick={AXIS_TICK} />
+              <YAxis width={56} tickFormatter={(v) => usdCompact(v)} tick={AXIS_TICK} />
               <Tooltip
                 cursor={{ fill: 'var(--mantine-color-default-hover)' }}
                 content={({ active, payload }) => {
@@ -353,6 +353,11 @@ export function ChangesPanel() {
               <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
               <Bar dataKey="bar" stackId="w" isAnimationActive={false}>
                 {waterfall.map((w, i) => <Cell key={i} fill={wfColor(w.kind, w.amount)} />)}
+                <LabelList
+                  dataKey="amount" position="top"
+                  formatter={(v: number) => `${v >= 0 ? '+' : '−'}${usdCompact(Math.abs(v))}`}
+                  style={{ fontSize: 10, fontWeight: 700, fill: 'var(--mantine-color-text)' }}
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
