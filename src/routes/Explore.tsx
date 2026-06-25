@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput,
 } from '@mantine/core';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
@@ -38,6 +38,21 @@ export default function Explore() {
   useEffect(() => {
     getDB().catch(() => {});
   }, []);
+
+  // Active tab lives in the URL (?tab=…) so "Copy link" restores the exact view; "schools" is the
+  // implicit default and stays out of the query string.
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') ?? 'schools';
+  const setTab = (v: string | null) =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (!v || v === 'schools') n.delete('tab');
+        else n.set('tab', v);
+        return n;
+      },
+      { replace: true }
+    );
 
   const enabled = !!snap;
   const fk = filterKey(filters);
@@ -158,7 +173,7 @@ export default function Explore() {
         </div>
       )}
 
-      <Tabs defaultValue="schools">
+      <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="schools">Schools</Tabs.Tab>
           <Tabs.Tab value="earners">Top earners</Tabs.Tab>

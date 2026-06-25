@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Group, SegmentedControl, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
-import { IconBuildingBank, IconCalendar, IconInfoCircle, IconSearch } from '@tabler/icons-react';
+import { Group, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
+import { IconBuildingBank, IconCalendar, IconInfoCircle, IconSearch, IconRefresh } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
+import { paidHeadcount } from '../lib/queries';
+import { num } from '../lib/format';
 import { FilterControls, ActiveFilters } from '../components/FilterControls';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
@@ -22,7 +25,7 @@ const METRIC_HELP: Record<Metric, string> = {
 function ScopeMenu({ scope, setScope, options }: {
   scope: Scope;
   setScope: (s: Scope) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; count?: number | null }[];
 }) {
   const [search, setSearch] = useState('');
   const combobox = useCombobox({
@@ -93,7 +96,12 @@ function ScopeMenu({ scope, setScope, options }: {
             {filtered.length > 0 ? (
               filtered.map((o) => (
                 <Combobox.Option value={o.value} key={o.value} selected={o.value === scopeValue}>
-                  {o.label}
+                  <Group justify="space-between" wrap="nowrap" gap="sm">
+                    <Text span size="xs" lineClamp={1}>{o.label}</Text>
+                    {o.count != null && (
+                      <Text span size="xs" c="dimmed" fw={500} style={{ flexShrink: 0 }}>{num(o.count)}</Text>
+                    )}
+                  </Group>
                 </Combobox.Option>
               ))
             ) : (
@@ -112,16 +120,19 @@ function ScopeMenu({ scope, setScope, options }: {
  * pages can drop into their own content (used on Compare) so the controls anchor to the data below.
  */
 export function ControlBar({ inline = false }: { inline?: boolean }) {
-  const { scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot } = useControls();
+  const { scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot, filters, clearFilters } = useControls();
   const { data: summary } = useSummary();
   const snapshots = summary?.snapshots ?? [];
   const latest = snapshots[snapshots.length - 1];
 
-  // School list follows the active snapshot (a school may not exist in every month/year).
+  // School list follows the active snapshot (a school may not exist in every month/year). We also
+  // carry each division's paid headcount so the dropdown can show it (mirrors the Title page's
+  // DropdownCountRow — big units are easy to spot).
   const snapId = activeSnapshot ?? latest?.id;
-  const { data: schools } = useSql<{ school: string }>(
-    ['scope-schools', snapId ?? ''],
-    `SELECT DISTINCT school FROM salaries WHERE school IS NOT NULL AND snapshot_id = ${sqlStr(snapId ?? '')} ORDER BY school`,
+  const { data: schools } = useSql<{ school: string; n: number }>(
+    ['scope-schools', snapId ?? '', metric],
+    `SELECT school, ${paidHeadcount(metric)} n FROM salaries
+     WHERE school IS NOT NULL AND snapshot_id = ${sqlStr(snapId ?? '')} GROUP BY school ORDER BY school`,
     !!snapId
   );
 
@@ -133,7 +144,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
 
   const scopeOptions = [
     { value: 'all', label: 'All UW' },
-    ...(schools ?? []).map((s) => ({ value: `school:${s.school}`, label: s.school })),
+    ...(schools ?? []).map((s) => ({ value: `school:${s.school}`, label: s.school, count: s.n })),
   ];
 
   const snapValue = activeSnapshot ?? 'latest';
@@ -141,9 +152,29 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     { value: 'latest', label: latest ? `Latest (${latest.label})` : 'Latest' },
     ...[...snapshots].reverse().map((s) => ({ value: s.id, label: s.label })),
   ];
+  // Per-snapshot row counts for the picker; the synthetic "latest" borrows the real latest's count.
+  const snapRows = new Map<string, number>(snapshots.map((s) => [s.id, s.rows]));
+  if (latest) snapRows.set('latest', snapRows.get(latest.id) ?? 0);
   const snapLabel = activeSnapshot
     ? snapshots.find((s) => s.id === activeSnapshot)?.label ?? activeSnapshot
     : latest?.label ?? '—';
+
+  // "Reset view": back to the app defaults (All UW · latest · actual pay · no filters).
+  const atDefaults =
+    scope.kind === 'all' && metric === 'fte' && activeSnapshot == null &&
+    Object.values(filters).every((v) => v.length === 0);
+  const resetView = (
+    <Button
+      size="xs"
+      variant="subtle"
+      color="gray"
+      leftSection={<IconRefresh size={14} />}
+      onClick={() => { setScope({ kind: 'all' }); setMetric('fte'); setActiveSnapshot(null); clearFilters(); }}
+      disabled={atDefaults}
+    >
+      Reset
+    </Button>
+  );
 
   // Shared control elements, arranged differently by the header vs inline layouts below.
   const lens = (
@@ -163,19 +194,29 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
           value={snapValue}
           onChange={(v) => setActiveSnapshot(v === 'latest' ? null : v)}
           allowDeselect={false}
+          renderOption={({ option }) => {
+            const rows = snapRows.get(option.value);
+            return (
+              <Group justify="space-between" wrap="nowrap" gap="sm" w="100%">
+                <Group gap={6} wrap="nowrap">
+                  <Text span size="xs" lineClamp={1}>{option.label}</Text>
+                  {option.value === latest?.id && <Badge size="xs" variant="light" color="accent">latest</Badge>}
+                </Group>
+                {rows != null && <Text span size="xs" c="dimmed" style={{ flexShrink: 0 }}>{num(rows)} rows</Text>}
+              </Group>
+            );
+          }}
         />
       </Group>
       <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
         <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>
           Pay
         </Text>
-        <SegmentedControl
+        <SegmentedToggle
           size="xs"
-          radius="xl"
-          color="accent"
           value={metric}
           onChange={(v) => setMetric(v as Metric)}
-          data={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ value: m, label: METRIC_LABEL[m] }))}
+          options={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ id: m, label: METRIC_LABEL[m] }))}
         />
         <HoverCard width={300} shadow="md" position="bottom" withArrow>
           <HoverCard.Target>
@@ -213,7 +254,15 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         <Group justify="space-between" gap="md" wrap="wrap">
           <Group gap="md" wrap="wrap" align="center">{lens}</Group>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            {/* Active-lens summary: only when the view is narrowed from the defaults, so it reads as a
+                "you've focused the data" reminder beside the Reset button rather than restating the toggles. */}
+            {!atDefaults && (
+              <Badge variant="light" color="accent" visibleFrom="md">
+                {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
+              </Badge>
+            )}
             <FilterControls />
+            {resetView}
             {copyLink}
           </Group>
         </Group>
@@ -235,6 +284,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
       <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>
         <FilterControls />
         <ActiveFilters />
+        {resetView}
         {copyLink}
         <Badge variant="light" color="accent">
           {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
