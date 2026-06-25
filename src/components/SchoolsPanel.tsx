@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Card } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconPlus, IconSearch, IconCheck, IconChevronRight } from '@tabler/icons-react';
 import { useControls, type Metric } from '../state/controls';
@@ -123,6 +123,9 @@ export function SchoolsPanel() {
         />
         <Text size="xs" c="dimmed">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
       </Group>
+      {schools && view.length === 0 ? (
+        <Card withBorder padding="xl"><Text c="dimmed" ta="center">No divisions match this scope{q ? ' and search' : ''}.</Text></Card>
+      ) : (
       <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
         <Table stickyHeader miw={680}>
           <Table.Thead>
@@ -188,6 +191,7 @@ export function SchoolsPanel() {
           </Table.Tbody>
         </Table>
       </ScrollArea.Autosize>
+      )}
     </>
   );
 }

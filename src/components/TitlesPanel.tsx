@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, Card } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconPlus, IconSearch, IconCheck } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
@@ -126,6 +126,9 @@ export function TitlesPanel() {
           <Text size="xs" c="dimmed">{num(view.length)} of {num((titles ?? []).length)} titles</Text>
         </Group>
       </Group>
+      {titles && view.length === 0 ? (
+        <Card withBorder padding="xl"><Text c="dimmed" ta="center">No titles match this scope{q || minN ? ' and filters' : ''}.</Text></Card>
+      ) : (
       <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
         <Table stickyHeader miw={820}>
           <Table.Thead>
@@ -195,6 +198,7 @@ export function TitlesPanel() {
           </Table.Tbody>
         </Table>
       </ScrollArea.Autosize>
+      )}
       <Text size="xs" c="dimmed" mt="xs">
         Range shows the middle 50% (p25–p75); the bar is a mini box plot of the full min–max spread with the
         median tick. Hover the bar for the exact five-number summary.

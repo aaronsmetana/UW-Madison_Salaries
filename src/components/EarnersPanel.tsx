@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Card } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconSearch, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
@@ -96,6 +96,9 @@ export function EarnersPanel() {
         </Group>
       </Group>
 
+      {earnersRaw && view.length === 0 ? (
+        <Card withBorder padding="xl"><Text c="dimmed" ta="center">No one matches this scope{q ? ' and search' : ''}.</Text></Card>
+      ) : (
       <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
         <Table stickyHeader miw={760}>
           <Table.Thead>
@@ -138,6 +141,7 @@ export function EarnersPanel() {
           </Table.Tbody>
         </Table>
       </ScrollArea.Autosize>
+      )}
 
       <Stack gap={2} mt="xs">
         <Text size="xs" c="dimmed">

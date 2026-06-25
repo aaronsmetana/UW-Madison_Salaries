@@ -219,14 +219,15 @@ export default function Explore() {
           </SimpleGrid>
           {k && k.all_people > k.headcount && (
             <Text size="xs" c="dimmed" mt="xs">
-              Headcount counts paid employees; {num(k.all_people - k.headcount)} unpaid $0 affiliate appointments excluded.
+              Headcount counts paid employees; {num(k.all_people - k.headcount)} unpaid $0 affiliate appointments
+              excluded (<Anchor component={Link} to="/data" inherit>what's counted →</Anchor>).
             </Text>
           )}
         </div>
       )}
 
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
-        <Tabs.List>
+        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
           <Tabs.Tab value="schools">Schools</Tabs.Tab>
           <Tabs.Tab value="earners">Top earners</Tabs.Tab>
           <Tabs.Tab value="titles">Titles</Tabs.Tab>
@@ -235,30 +236,37 @@ export default function Explore() {
           <Tabs.Tab value="cohorts">Retention</Tabs.Tab>
         </Tabs.List>
 
-        <Tabs.Panel value="schools" pt="md">
+        <Tabs.Panel value="schools" pt="md" className="tab-rise">
           <SchoolsPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="earners" pt="md">
+        <Tabs.Panel value="earners" pt="md" className="tab-rise">
           <EarnersPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="titles" pt="md">
+        <Tabs.Panel value="titles" pt="md" className="tab-rise">
           <TitlesPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="trends" pt="md">
+        <Tabs.Panel value="trends" pt="md" className="tab-rise">
           <TrendsPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="changes" pt="md">
+        <Tabs.Panel value="changes" pt="md" className="tab-rise">
           <ChangesPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="cohorts" pt="md">
+        <Tabs.Panel value="cohorts" pt="md" className="tab-rise">
           <CohortPanel />
         </Tabs.Panel>
       </Tabs>
+
+      {summary?.generated_at && (
+        <Text size="xs" c="dimmed" ta="right">
+          Data generated {new Date(summary.generated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+          {' · '}<Anchor component={Link} to="/data" inherit>data health →</Anchor>
+        </Text>
+      )}
     </Stack>
   );
 }
