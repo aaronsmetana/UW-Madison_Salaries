@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type ReactNode } from 'react';
 import {
-  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput,
+  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput, Skeleton,
 } from '@mantine/core';
 import { Link, useSearchParams } from 'react-router-dom';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
@@ -15,14 +15,53 @@ import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num, fullName } from '../lib/format';
+import { usd, usdCompact, num, pct, fullName } from '../lib/format';
+import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
 
-function Kpi({ label, value, to }: { label: string; value: string; to?: string }) {
-  return <StatCard size="md" label={label} value={value} to={to} />;
+/** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
+function Kpi({ label, value, format, sub, to, loading }: {
+  label: string;
+  value: number | null;
+  format: (n: number) => string;
+  sub?: ReactNode;
+  to?: string;
+  loading?: boolean;
+}) {
+  const animated = useCountUp(value, 900);
+  const display = loading
+    ? <Skeleton height={24} width={96} radius="sm" mt={4} />
+    : animated == null ? '—' : format(Math.round(animated));
+  return <StatCard size="md" label={label} value={display} sub={loading ? undefined : sub} to={to} />;
 }
 
-interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null }
+/** A compact accent line sparkline (median over snapshots) — no axes, just shape. */
+function MiniSparkline({ values, width = 132, height = 26 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const x = (i: number) => (i / (values.length - 1)) * (width - 2) + 1;
+  const y = (v: number) => height - 1 - ((v - min) / span) * (height - 2);
+  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden style={{ display: 'block' }}>
+      <polyline points={pts} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(values.length - 1)} cy={y(values[values.length - 1])} r={2.2} fill="var(--mantine-color-accent-7)" />
+    </svg>
+  );
+}
+
+/** Snapshot-over-snapshot delta chip (▲/▼ %, or "no change"). */
+function Delta({ frac, prevLabel }: { frac: number | null; prevLabel: string | null }) {
+  if (prevLabel == null) return null;
+  if (frac == null || Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">≈ flat vs {prevLabel}</Text>;
+  const up = frac >= 0;
+  return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))} vs {prevLabel}</Text>;
+}
+
+interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
 interface SchoolRow { school: string; headcount: number; med: number | null }
 interface EarnerRow { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number }
 
@@ -62,11 +101,42 @@ export default function Explore() {
     ['kpis', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `SELECT ${paidHeadcount(metric)} headcount, count(DISTINCT person_key) all_people,
         sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med
+        median(${expr}) FILTER (WHERE ${expr} > 0) med,
+        quantile_cont(${expr}, 0.9) FILTER (WHERE ${expr} > 0) p90
      FROM salaries WHERE ${where}`,
     enabled
   );
   const k = kpis?.[0];
+
+  // Deltas vs the previous distinct-date snapshot (skips the Nov-2021 TTC same-date twin).
+  const snapsAsc = useMemo(() => summary?.snapshots ?? [], [summary]);
+  const curSnapMeta = snapsAsc.find((s) => s.id === snap);
+  const prevSnapMeta = curSnapMeta ? [...snapsAsc].filter((s) => s.date < curSnapMeta.date).at(-1) : undefined;
+  const { data: kprevRows } = useSql<{ headcount: number; total_payroll: number | null; med: number | null }>(
+    ['kpis-prev', prevSnapMeta?.id ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
+    `SELECT ${paidHeadcount(metric)} headcount,
+        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
+        median(${expr}) FILTER (WHERE ${expr} > 0) med
+     FROM salaries WHERE ${snapWhere(prevSnapMeta?.id ?? '')} AND ${whereAll(scope, filters)}`,
+    enabled && !!prevSnapMeta
+  );
+  const kp = kprevRows?.[0];
+  const prevLabel = prevSnapMeta?.label ?? null;
+  const frac = (cur?: number | null, prev?: number | null) =>
+    cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
+
+  // Median-over-time series for the KPI sparkline (one point per real snapshot; pre-TTC twin dropped).
+  const { data: sparkRows } = useSql<{ med: number | null }>(
+    ['kpi-spark', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
+    `SELECT median(${expr}) FILTER (WHERE ${expr} > 0) med
+     FROM salaries WHERE ${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'
+     GROUP BY snapshot_id, snapshot_date ORDER BY snapshot_date`,
+    enabled
+  );
+  const sparkMeds = useMemo(
+    () => (sparkRows ?? []).map((r) => r.med).filter((v): v is number => v != null),
+    [sparkRows]
+  );
 
   const { data: schools } = useSql<SchoolRow>(
     ['browse-schools', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
@@ -160,10 +230,47 @@ export default function Explore() {
       ) : (
         <div>
           <SimpleGrid cols={{ base: 1, sm: 4 }}>
-            <Kpi label="Headcount" value={num(k?.headcount)} />
-            <Kpi label="Median salary" value={usd(k?.med)} />
-            <Kpi label="Total payroll" value={usd(k?.total_payroll)} />
-            <Kpi label="Snapshots" value={num(summary?.snapshot_count)} to="/data" />
+            <Kpi
+              label="Headcount"
+              value={k?.headcount ?? null}
+              format={num}
+              loading={enabled && !k}
+              sub={<Delta frac={frac(k?.headcount, kp?.headcount)} prevLabel={prevLabel} />}
+            />
+            <Kpi
+              label="Median salary"
+              value={k?.med ?? null}
+              format={usd}
+              loading={enabled && !k}
+              sub={
+                <Stack gap={4}>
+                  {sparkMeds.length > 1 && <MiniSparkline values={sparkMeds} />}
+                  <Group gap={8} wrap="wrap">
+                    {k?.p90 != null && <Text span size="xs" c="dimmed">top 10% ≥ {usd(k.p90)}</Text>}
+                    <Delta frac={frac(k?.med, kp?.med)} prevLabel={prevLabel} />
+                  </Group>
+                </Stack>
+              }
+            />
+            <Kpi
+              label="Total payroll"
+              value={k?.total_payroll ?? null}
+              format={usdCompact}
+              loading={enabled && !k}
+              sub={
+                <Stack gap={2}>
+                  <Text span size="xs" c="dimmed">{usd(k?.total_payroll)} · annualized FTE earnings</Text>
+                  <Delta frac={frac(k?.total_payroll, kp?.total_payroll)} prevLabel={prevLabel} />
+                </Stack>
+              }
+            />
+            <Kpi
+              label="Snapshots"
+              value={summary?.snapshot_count ?? null}
+              format={num}
+              to="/data"
+              sub={<Text span size="xs" c="dimmed">{num(summary?.total_rows)} rows · {snapsAsc[0]?.label} → {curSnapMeta?.label ?? snapsAsc.at(-1)?.label}</Text>}
+            />
           </SimpleGrid>
           {k && k.all_people > k.headcount && (
             <Text size="xs" c="dimmed" mt="xs">
