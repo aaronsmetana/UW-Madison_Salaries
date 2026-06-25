@@ -221,3 +221,74 @@ textarea:focus-visible,
   .tab-rise > * { animation: none; }
   .scatter-dot { transition: none; }
 }
+
+/* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */
+
+/* Staggered fade-rise reveal for the hero groups (reuses the section-rise keyframes). */
+.hero-rise > * { animation: section-rise 520ms ease-out both; }
+.hero-rise > *:nth-child(2) { animation-delay: 90ms; }
+.hero-rise > *:nth-child(3) { animation-delay: 170ms; }
+.hero-rise > *:nth-child(4) { animation-delay: 240ms; }
+.hero-rise > *:nth-child(n + 5) { animation-delay: 300ms; }
+
+/* Title: a subtle teal-tinted gradient (mostly text colour, so it stays legible) + a one-time sheen sweep. */
+.hero-title { position: relative; display: inline-block; overflow: hidden; }
+.hero-title-text {
+  background: linear-gradient(100deg, var(--mantine-color-text) 55%, var(--mantine-color-accent-5) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.hero-title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 42%, var(--mantine-color-accent-3) 50%, transparent 58%);
+  opacity: 0.6;
+  transform: translateX(-130%);
+  animation: hero-sheen 1.5s ease-out 0.35s 1 both;
+}
+@keyframes hero-sheen { to { transform: translateX(130%); } }
+
+/* The accent glow behind the title breathes slowly. */
+.hero-aurora { animation: aurora-breathe 9s ease-in-out infinite; }
+@keyframes aurora-breathe {
+  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 0.72; transform: translate(-50%, -50%) scale(1.08); }
+}
+
+/* A faint dot-grid behind the hero, masked to fade out toward the edges. */
+.hero-dotgrid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--mantine-color-default-border) 1px, transparent 1.5px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 55% 45% at 50% 42%, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse 55% 45% at 50% 42%, #000 0%, transparent 72%);
+  opacity: 0.6;
+}
+
+/* The big search box has a slow resting glow that invites typing; cancelled on focus. */
+.hero-search-input { animation: search-breathe 3.6s ease-in-out infinite; }
+.hero-search-input:focus { animation: none; }
+@keyframes search-breathe {
+  0%, 100% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 0 transparent; }
+  50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 4px var(--mantine-color-accent-light); }
+}
+
+/* System-Wide stats card lifts on hover; its "Browse" arrow nudges right. */
+.home-stats { transition: transform 160ms ease, box-shadow 160ms ease; }
+.home-stats:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.28); }
+.browse-arrow { display: inline-block; transition: transform 160ms ease; }
+.home-stats:hover .browse-arrow { transform: translateX(3px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-rise > * { animation: none; }
+  .hero-title::after { animation: none; opacity: 0; }
+  .hero-aurora { animation: none; }
+  .hero-search-input { animation: none; }
+}
