@@ -27,7 +27,7 @@ function YoyLabel(props: { x?: number; y?: number; value?: number | null }) {
   const cy = y > 40 ? y - 20 : y + 20;
   return (
     <g>
-      <rect x={x - w / 2} y={cy - 7.5} width={w} height={15} rx={7} fill="var(--mantine-color-body)" fillOpacity={0.85} stroke={color} strokeOpacity={0.35} strokeWidth={1} />
+      <rect x={x - w / 2} y={cy - 7.5} width={w} height={15} rx={7} fill="var(--mantine-color-body)" stroke={color} strokeOpacity={0.45} strokeWidth={1} />
       <text x={x} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill={color}>{txt}</text>
     </g>
   );
@@ -132,15 +132,18 @@ export function TrendsPanel() {
               label={{ value: 'coverage change', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
           )}
 
-          {/* Median: gradient area + soft-glow underlay + primary line with YoY pills. */}
+          {/* Median: gradient area + soft-glow underlay + primary line. */}
           <Area yAxisId="med" type="monotone" dataKey="med" stroke="none" fill="url(#expltrend-area-grad)" isAnimationActive={false} legendType="none" />
           <Line yAxisId="med" type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#expltrend-line-glow)" />
-          <Line yAxisId="med" type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out">
-            <LabelList dataKey="yoy" content={<YoyLabel />} />
-          </Line>
+          <Line yAxisId="med" type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
 
           <Line yAxisId="hc" type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-pos-6)" strokeWidth={2} dot strokeDasharray="4 2" isAnimationActive={!reduce} />
           <Line yAxisId="hc" type="monotone" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--mantine-color-orange-6)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
+
+          {/* YoY % pills, drawn last so they sit above the headcount dashed line (legend-less duplicate). */}
+          <Line yAxisId="med" type="monotone" dataKey="med" stroke="none" dot={false} legendType="none" isAnimationActive={false}>
+            <LabelList dataKey="yoy" content={<YoyLabel />} />
+          </Line>
         </ComposedChart>
       </ResponsiveContainer>
       <Text size="xs" c="dimmed" mt={4}>
