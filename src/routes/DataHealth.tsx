@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
+const REPO_URL = 'https://github.com/aaronsmetana/UW-Madison_Salaries';
 
 export default function DataHealth() {
   const { data: manifest, isLoading, error } = useManifest();
@@ -34,19 +35,35 @@ export default function DataHealth() {
         description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
       />
 
-      <Card withBorder padding="lg">
+      <Card withBorder padding="lg" id="source">
         <Title order={4} mb="xs">Data source &amp; acknowledgment</Title>
-        <Text size="sm">
-          The UW–Madison salary report files presented here are public records, obtained through Wisconsin
-          open-records requests filed by{' '}
-          <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>United Faculty &amp; Academic Staff (UFAS)</Anchor>
-          {' '}— <b>AFT Local 223, AFL-CIO</b>, the union representing UW–Madison faculty and academic staff.
-          UFAS advocates for the pay, working conditions, and rights of campus faculty and academic staff;
-          their open-records work is what makes this transparency possible.
-        </Text>
-        <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" size="sm" fw={600} mt="sm" display="inline-block">
-          Visit UFAS Local 223 →
-        </Anchor>
+        <Stack gap="sm">
+          <Text size="sm">
+            The UW–Madison salary report files presented here are <b>public records</b>, obtained through
+            Wisconsin open-records requests (Wisconsin Public Records Law, Wis. Stat. §§ 19.31–19.39) filed by{' '}
+            <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>United Faculty &amp; Academic Staff (UFAS)</Anchor>
+            {' '}— <b>AFT Local 223, AFL-CIO</b>, the union representing UW–Madison faculty and academic staff.
+            UFAS advocates for the pay, working conditions, and rights of campus faculty and academic staff;
+            <b> their open-records work is what makes this transparency possible, and the credit for these records
+            belongs to them.</b>
+          </Text>
+          <Text size="sm" c="dimmed">
+            This site is an independent project built by Aaron Smetana to make those public records easier to
+            explore. It is <b>not affiliated with, operated by, or endorsed by UFAS or UW–Madison</b> — any
+            errors or interpretations here are the project's alone, not theirs.
+          </Text>
+          <Group gap="lg">
+            <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" size="sm" fw={600}>
+              Visit UFAS Local 223 →
+            </Anchor>
+            <Anchor href="https://docs.legis.wisconsin.gov/statutes/statutes/19/ii" target="_blank" rel="noopener noreferrer" size="sm">
+              Wisconsin Public Records Law →
+            </Anchor>
+            <Anchor href="https://www.doj.state.wi.us/office-open-government/office-open-government" target="_blank" rel="noopener noreferrer" size="sm">
+              File your own records request →
+            </Anchor>
+          </Group>
+        </Stack>
       </Card>
 
       <Alert
@@ -84,6 +101,36 @@ export default function DataHealth() {
           </Text>
         </Stack>
       </Alert>
+
+      <Card withBorder padding="lg" id="privacy">
+        <Title order={4} mb="xs">Privacy &amp; responsible use</Title>
+        <Stack gap="sm">
+          <Text size="sm">
+            These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
+            public record, but "public" is not a license to harass, dox, shame, or target anyone. Please use this
+            site to understand pay structures, ranges, and equity — not to make judgments about individuals.
+          </Text>
+          <Text size="sm">
+            Only the fields released in the public salary reports are shown — name, title, department, school,
+            pay, FTE, and hire date. <b>No</b> home addresses, contact details, ID numbers, demographic data, or
+            anything beyond the released report is collected or displayed.
+          </Text>
+          <Text size="sm">
+            A salary here is gross annualized pay for a role at a point in time — <b>not</b> a person's total
+            compensation, their take-home, or their worth. And because people are matched by name + hire date
+            with no employee ID, the most consequential possible error is a salary attributed to the{' '}
+            <b>wrong named person</b> (two people merged, or one split in two).
+          </Text>
+          <Text size="sm" fw={600} mt="xs">Is this you — and is something wrong?</Text>
+          <Text size="sm">
+            If you find your own record and it's inaccurate — wrong pay, merged with someone else, or split into
+            two — you can flag it for correction. Open an issue or propose a fix at{' '}
+            <Anchor href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer" fw={600}>the project's GitHub repository</Anchor>;
+            confirmed corrections live in <Code>data/corrections.json</Code> and are applied on the next data
+            build.
+          </Text>
+        </Stack>
+      </Card>
 
       <Card withBorder padding="lg" id="how-it-works">
         <Title order={4} mb="xs">How these figures are calculated</Title>
