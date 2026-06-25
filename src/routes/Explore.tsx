@@ -54,12 +54,13 @@ function MiniSparkline({ values, width = 132, height = 26 }: { values: number[];
   );
 }
 
-/** Snapshot-over-snapshot delta chip (▲/▼ %, or "no change"). */
-function Delta({ frac, prevLabel }: { frac: number | null; prevLabel: string | null }) {
+/** Snapshot-over-snapshot delta chip (▲/▼ %, or "flat") over the full from→to window. */
+function Delta({ frac, prevLabel, curLabel }: { frac: number | null; prevLabel: string | null; curLabel?: string | null }) {
   if (prevLabel == null) return null;
-  if (frac == null || Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">≈ flat vs {prevLabel}</Text>;
+  const range = curLabel ? `${prevLabel} → ${curLabel}` : `vs ${prevLabel}`;
+  if (frac == null || Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">≈ flat · {range}</Text>;
   const up = frac >= 0;
-  return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))} vs {prevLabel}</Text>;
+  return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))} · {range}</Text>;
 }
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
@@ -180,7 +181,7 @@ export default function Explore() {
               value={k?.headcount ?? null}
               format={num}
               loading={enabled && !k}
-              sub={<Delta frac={frac(k?.headcount, kp?.headcount)} prevLabel={prevLabel} />}
+              sub={<Delta frac={frac(k?.headcount, kp?.headcount)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />}
             />
             <Kpi
               label="Median salary"
@@ -192,7 +193,7 @@ export default function Explore() {
                   {sparkMeds.length > 1 && <MiniSparkline values={sparkMeds} />}
                   <Group gap={8} wrap="wrap">
                     {k?.p90 != null && <Text span size="xs" c="dimmed">top 10% ≥ {usd(k.p90)}</Text>}
-                    <Delta frac={frac(k?.med, kp?.med)} prevLabel={prevLabel} />
+                    <Delta frac={frac(k?.med, kp?.med)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />
                   </Group>
                 </Stack>
               }
@@ -205,7 +206,7 @@ export default function Explore() {
               sub={
                 <Stack gap={2}>
                   <Text span size="xs" c="dimmed">{usd(k?.total_payroll)} · annualized FTE earnings</Text>
-                  <Delta frac={frac(k?.total_payroll, kp?.total_payroll)} prevLabel={prevLabel} />
+                  <Delta frac={frac(k?.total_payroll, kp?.total_payroll)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />
                 </Stack>
               }
             />
