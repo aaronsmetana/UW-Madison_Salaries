@@ -134,8 +134,38 @@ function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleC
   );
 }
 
-/** Short label for the vertical title-era divider so long titles don't overrun the chart. */
-const shortTitle = (s: string | null) => (s && s.length > 16 ? `${s.slice(0, 15)}…` : s ?? '');
+/** Wrap a title-era divider label onto at most two balanced lines (≤26 chars each) so the full title
+ *  shows without truncation and without overrunning the chart. Short titles stay on one line. */
+function wrapTitle(s: string): string[] {
+  const words = s.split(/\s+/);
+  if (s.length <= 20 || words.length === 1) return [s];
+  let best: string[] = [s];
+  let bestDiff = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(' ');
+    const b = words.slice(i).join(' ');
+    if (Math.max(a.length, b.length) <= 26 && Math.abs(a.length - b.length) < bestDiff) {
+      best = [a, b];
+      bestDiff = Math.abs(a.length - b.length);
+    }
+  }
+  return best;
+}
+
+/** Custom label for a title-change divider: the full (wrapped) new title, stacked just above the plot.
+ *  Recharts injects `viewBox` ({ x, y }) for the vertical reference line. */
+function TitleChangeLabel({ viewBox, title }: { viewBox?: { x?: number; y?: number }; title?: string | null }) {
+  if (!viewBox || viewBox.x == null || viewBox.y == null || !title) return null;
+  const lines = wrapTitle(title);
+  const { x, y } = viewBox;
+  return (
+    <text textAnchor="middle" fontSize={10} fill="var(--mantine-color-dimmed)">
+      {lines.map((ln, i) => (
+        <tspan key={i} x={x} y={y - 5 - (lines.length - 1 - i) * 11}>{ln}</tspan>
+      ))}
+    </text>
+  );
+}
 
 /** A metadata pill (label + bold value) surfacing one source column under the name. Renders nothing
  *  when the value is blank, so pills only appear for fields the data actually has. */
@@ -999,7 +1029,7 @@ export default function Person() {
             grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
             the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 12, top: 22, bottom: 0 }}>
+          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 12, top: titleChanges.length ? 40 : 22, bottom: 0 }}>
             <defs>{lineGlowDefs('trend')}</defs>
             {/* Faint alternating background band per title era. */}
             {eras.length > 1 && eraSpans.map((s) => (
@@ -1044,7 +1074,7 @@ export default function Person() {
                 stroke="var(--mantine-color-gray-4)"
                 strokeWidth={1}
                 strokeDasharray="2 4"
-                label={{ value: shortTitle(t.title), position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }}
+                label={<TitleChangeLabel title={t.title} />}
               />
             ))}
             {/* Gradient area fill under the active metric. */}
