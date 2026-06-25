@@ -1,4 +1,4 @@
-import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List } from '@mantine/core';
+import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List, Accordion } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -27,6 +27,9 @@ export default function DataHealth() {
   const dict = (manifest?.snapshots ?? []).find((s) => 'data_dictionary_url' in (s as object)) as
     | (SnapshotInfo & { data_dictionary_url?: string })
     | undefined;
+  const latestSnap = snaps.length
+    ? [...snaps].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date)).at(-1)
+    : undefined;
 
   return (
     <Stack gap="lg">
@@ -158,6 +161,70 @@ export default function DataHealth() {
             annualized figures (not take-home) and exclude benefits. See the accuracy &amp; disclaimer callout
             above for the full list of caveats.
           </Text>
+        </Stack>
+      </Card>
+
+      <Card withBorder padding="lg" id="methodology">
+        <Title order={4} mb="xs">Methodology, reproducibility &amp; downloads</Title>
+        <Stack gap="sm">
+          <Text size="sm">
+            This project is open source. The ingestion code, column-detection logic, and applied corrections are
+            all public, so you can audit exactly how each published spreadsheet becomes the data shown here — or
+            reproduce it from the raw records yourself.
+          </Text>
+          <Group gap="lg">
+            <Anchor href={REPO_URL} target="_blank" rel="noopener noreferrer" size="sm" fw={600}>Source code &amp; ingestion →</Anchor>
+            <Anchor href={`${import.meta.env.BASE_URL}data/salaries.parquet`} size="sm">Download dataset (Parquet) →</Anchor>
+            <Anchor href={`${import.meta.env.BASE_URL}data/manifest.json`} target="_blank" rel="noopener noreferrer" size="sm">Ingestion manifest (JSON) →</Anchor>
+            {dict?.data_dictionary_url && (
+              <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" size="sm">Source data dictionary →</Anchor>
+            )}
+          </Group>
+
+          <Text size="sm" fw={700} mt="xs">What's in a record</Text>
+          <Text size="sm" c="dimmed">
+            Each appointment row carries: name (first &amp; last), title &amp; job code, school &amp; department,
+            grade &amp; basis, salary / FTE-adjusted salary / base pay, FTE, pay-rate type, FLSA status, employee
+            category &amp; type, and hire date — tagged with the snapshot it came from. The three "Pay" views are
+            derived from those columns; nothing else about a person is stored.
+          </Text>
+
+          {latestSnap && Object.keys(latestSnap.detected_mapping).length > 0 && (
+            <Accordion variant="contained" mt="xs">
+              <Accordion.Item value="mapping">
+                <Accordion.Control>
+                  <Text size="sm" fw={600}>Detected column mappings — {latestSnap.snapshot_label}</Text>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <Text size="xs" c="dimmed" mb="sm">
+                    How each column in the source spreadsheet was auto-mapped to a field in this app (detection
+                    runs per snapshot; this is the latest). A mis-detection here is one way a value can be mislabeled.
+                  </Text>
+                  <Table withTableBorder>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Field (in this app)</Table.Th>
+                        <Table.Th>Source column (in the spreadsheet)</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {Object.entries(latestSnap.detected_mapping).map(([field, col]) => (
+                        <Table.Tr key={field}>
+                          <Table.Td><Code>{field}</Code></Table.Td>
+                          <Table.Td>{col}</Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                  {latestSnap.unmapped_headers.length > 0 && (
+                    <Text size="xs" c="dimmed" mt="sm">
+                      Unmapped (ignored) source columns: {latestSnap.unmapped_headers.join(', ')}.
+                    </Text>
+                  )}
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          )}
         </Stack>
       </Card>
 
