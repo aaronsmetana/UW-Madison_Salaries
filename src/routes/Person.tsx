@@ -1056,13 +1056,15 @@ export default function Person() {
             <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
             {/* Official grade pay-band floor / ceiling for context (kept as separate siblings — Recharts does
                 not traverse a Fragment's children). */}
+            {/* Grade pay-band floor/ceiling, labelled on the RIGHT — next to the current (latest) salary,
+                the band that's actually in effect today (the band can shift as the grade changes over time). */}
             {band && (
               <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
-                label={{ value: `grade min ${usd(band.min)}`, position: 'insideBottomLeft', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+                label={{ value: `grade min ${usd(band.min)}`, position: 'insideBottomRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
             )}
             {band && (
               <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
-                label={{ value: `grade max ${usd(band.max)}`, position: 'insideTopLeft', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+                label={{ value: `grade max ${usd(band.max)}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
             )}
             {/* Label the leftmost title era too (e.g. a pre-TTC title) — it begins at the chart's left edge
                 and so has no divider; left-anchored so it isn't clipped. */}
