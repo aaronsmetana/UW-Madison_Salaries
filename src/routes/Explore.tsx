@@ -1,14 +1,14 @@
-import { useEffect, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import {
-  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Table, Button, Anchor, ScrollArea, TextInput, Skeleton,
+  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Anchor, Skeleton,
 } from '@mantine/core';
 import { Link, useSearchParams } from 'react-router-dom';
-import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { SchoolsPanel } from '../components/SchoolsPanel';
 import { EarnersPanel } from '../components/EarnersPanel';
+import { TitlesPanel } from '../components/TitlesPanel';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
@@ -16,7 +16,6 @@ import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatu
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
-import { useTray } from '../state/tray';
 import { usd, usdCompact, num, pct } from '../lib/format';
 import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
@@ -72,7 +71,6 @@ export default function Explore() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
-  const { add } = useTray();
 
   useEffect(() => {
     getDB().catch(() => {});
@@ -136,41 +134,6 @@ export default function Explore() {
   const sparkMeds = useMemo(
     () => (sparkRows ?? []).map((r) => r.med).filter((v): v is number => v != null),
     [sparkRows]
-  );
-
-  const { data: titles } = useSql<{ job_code: string; title: string; n: number; med: number | null; lo: number | null; hi: number | null }>(
-    ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        min(${expr}) FILTER (WHERE ${expr} > 0) lo, max(${expr}) FILTER (WHERE ${expr} > 0) hi
-     FROM salaries WHERE ${where} AND job_code IS NOT NULL GROUP BY job_code ORDER BY n DESC`,
-    enabled
-  );
-
-  // Titles tab: client-side search + sort over all titles.
-  const [titleQ, setTitleQ] = useState('');
-  const [titleSort, setTitleSort] = useState<{ key: 'title' | 'job_code' | 'n' | 'med'; dir: 'asc' | 'desc' }>({ key: 'n', dir: 'desc' });
-  const titleView = useMemo(() => {
-    const q = titleQ.trim().toLowerCase();
-    let rows = titles ?? [];
-    if (q) rows = rows.filter((t) => t.title.toLowerCase().includes(q) || t.job_code.toLowerCase().includes(q));
-    const { key, dir } = titleSort;
-    const sorted = [...rows].sort((a, b) => {
-      const cmp = key === 'title' || key === 'job_code'
-        ? String(a[key]).localeCompare(String(b[key]))
-        : (Number(a[key] ?? 0) - Number(b[key] ?? 0));
-      return dir === 'asc' ? cmp : -cmp;
-    });
-    return sorted;
-  }, [titles, titleQ, titleSort]);
-  const sortTh = (key: 'title' | 'job_code' | 'n' | 'med', label: string, align?: 'right') => (
-    <Table.Th
-      ta={align}
-      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
-      onClick={() => setTitleSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))}
-    >
-      {label}{titleSort.key === key ? (titleSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
-    </Table.Th>
   );
 
   const flagged = manifest?.snapshots.filter((s) => s.status === 'warning' || s.status === 'error') ?? [];
@@ -281,49 +244,7 @@ export default function Explore() {
         </Tabs.Panel>
 
         <Tabs.Panel value="titles" pt="md">
-          <Group justify="space-between" mb="sm" wrap="nowrap">
-            <TextInput
-              size="md"
-              w={360}
-              placeholder="Search titles or job codes…"
-              leftSection={<IconSearch size={16} />}
-              value={titleQ}
-              onChange={(e) => setTitleQ(e.currentTarget.value)}
-            />
-            <Text size="xs" c="dimmed">{num(titleView.length)} of {num((titles ?? []).length)} titles</Text>
-          </Group>
-          <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-            <Table stickyHeader miw={720}>
-              <Table.Thead>
-                <Table.Tr>
-                  {sortTh('title', 'Title')}
-                  {sortTh('job_code', 'Job code')}
-                  {sortTh('n', 'People', 'right')}
-                  {sortTh('med', 'Median', 'right')}
-                  <Table.Th ta="right">Range</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {titleView.map((t) => (
-                  <Table.Tr key={t.job_code}>
-                    <Table.Td>
-                      <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(t.job_code)}`}>{t.title}</Anchor>
-                    </Table.Td>
-                    <Table.Td>{t.job_code}</Table.Td>
-                    <Table.Td ta="right">{num(t.n)}</Table.Td>
-                    <Table.Td ta="right">{usd(t.med)}</Table.Td>
-                    <Table.Td ta="right" c="dimmed">{t.lo != null && t.hi != null ? `${usd(t.lo)}–${usd(t.hi)}` : '—'}</Table.Td>
-                    <Table.Td ta="right">
-                      <Button size="compact-xs" variant="light" radius="xl" leftSection={<IconPlus size={12} />} onClick={() => add({ type: 'title', id: t.job_code, label: t.title })}>
-                        Compare
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea.Autosize>
+          <TitlesPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="trends" pt="md">
