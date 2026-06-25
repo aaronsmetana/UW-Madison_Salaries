@@ -8,15 +8,16 @@ import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { SchoolsPanel } from '../components/SchoolsPanel';
+import { EarnersPanel } from '../components/EarnersPanel';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, personPay, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, usdCompact, num, pct, fullName } from '../lib/format';
+import { usd, usdCompact, num, pct } from '../lib/format';
 import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
 
@@ -63,7 +64,6 @@ function Delta({ frac, prevLabel }: { frac: number | null; prevLabel: string | n
 }
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
-interface EarnerRow { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number }
 
 export default function Explore() {
   const { data: summary, isLoading } = useSummary();
@@ -136,15 +136,6 @@ export default function Explore() {
   const sparkMeds = useMemo(
     () => (sparkRows ?? []).map((r) => r.med).filter((v): v is number => v != null),
     [sparkRows]
-  );
-
-  const { data: earners } = useSql<EarnerRow>(
-    ['top-earners', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
-        any_value(title) title, any_value(school) school, ${personPay(metric)} pay
-     FROM salaries WHERE ${where} AND ${expr} > 0
-     GROUP BY person_key ORDER BY pay DESC LIMIT 100`,
-    enabled
   );
 
   const { data: titles } = useSql<{ job_code: string; title: string; n: number; med: number | null; lo: number | null; hi: number | null }>(
@@ -286,35 +277,7 @@ export default function Explore() {
         </Tabs.Panel>
 
         <Tabs.Panel value="earners" pt="md">
-          <Text size="xs" c="dimmed" mb="xs">Top {num((earners ?? []).length)} by pay in this scope.</Text>
-          <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
-            <Table stickyHeader miw={620}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th w={48} ta="right">#</Table.Th>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Title</Table.Th>
-                  <Table.Th>School</Table.Th>
-                  <Table.Th ta="right">Pay</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {(earners ?? []).map((e, i) => (
-                  <Table.Tr key={e.person_key}>
-                    <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
-                    <Table.Td>
-                      <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>
-                        {fullName(e.fn, e.ln)}
-                      </Anchor>
-                    </Table.Td>
-                    <Table.Td>{e.title ?? '—'}</Table.Td>
-                    <Table.Td>{e.school ?? '—'}</Table.Td>
-                    <Table.Td ta="right">{usd(e.pay)}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea.Autosize>
+          <EarnersPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="titles" pt="md">
