@@ -1029,7 +1029,7 @@ export default function Person() {
             grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
             the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 12, top: titleChanges.length ? 40 : 22, bottom: 0 }}>
+          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: titleChanges.length ? 40 : 22, bottom: 0 }}>
             <defs>{lineGlowDefs('trend')}</defs>
             {/* Faint alternating background band per title era. */}
             {eras.length > 1 && eraSpans.map((s) => (
@@ -1116,7 +1116,7 @@ export default function Person() {
             {/* Distinct gap between the salary baseline and the FTE chart below. */}
             <div style={{ height: 36 }} />
             <ResponsiveContainer width="100%" height={108}>
-              <AreaChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 12, top: 0, bottom: 0 }}>
+              <AreaChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: 0, bottom: 0 }}>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" tick={AXIS_TICK} tickMargin={10} height={34} />
                 <YAxis
