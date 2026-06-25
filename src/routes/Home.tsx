@@ -101,7 +101,7 @@ function RotatingFact({ facts }: { facts: string[] }) {
     const id = setInterval(() => {
       setShow(false);
       setTimeout(() => { setI((p) => (p + 1) % facts.length); setShow(true); }, 350);
-    }, 4500);
+    }, 6000);
     return () => clearInterval(id);
   }, [facts.length]);
   if (!facts.length) return null;
