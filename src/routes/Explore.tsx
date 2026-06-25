@@ -1,6 +1,6 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Anchor, Skeleton,
+  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Anchor, Skeleton, Card, Select,
 } from '@mantine/core';
 import { Link, useSearchParams } from 'react-router-dom';
 import { SearchBox } from '../components/SearchBox';
@@ -17,6 +17,7 @@ import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { usd, usdCompact, num, pct } from '../lib/format';
+import { dropdownProps } from '../lib/selectProps';
 import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
 
@@ -61,6 +62,61 @@ function Delta({ frac, prevLabel, curLabel }: { frac: number | null; prevLabel: 
   if (frac == null || Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">≈ flat · {range}</Text>;
   const up = frac >= 0;
   return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))} · {range}</Text>;
+}
+
+interface SnapMed { id: string; label: string; med: number }
+
+/** Combined median + snapshots tile: the median's growth over a selectable snapshot range (defaulting to
+ *  the widest span), with the current median, a sparkline of the chosen slice, and the top-10% threshold. */
+function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: number | null; loading: boolean }) {
+  const [fromId, setFromId] = useState<string | null>(null);
+  const [toId, setToId] = useState<string | null>(null);
+  const railStyle = { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' } as const;
+  const labelStyle = { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' } as const;
+
+  if (loading || series.length < 2) {
+    return (
+      <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
+        <div aria-hidden style={railStyle} />
+        <Text tt="uppercase" c="dimmed" style={labelStyle}>Median pay growth</Text>
+        <Skeleton height={24} width={120} radius="sm" mt={8} />
+      </Card>
+    );
+  }
+
+  // Resolve the picked range, defaulting to widest (first → last) and keeping `from` strictly before `to`.
+  const fIdx = Math.min(Math.max(0, series.findIndex((s) => s.id === fromId)), series.length - 2);
+  const tRaw = series.findIndex((s) => s.id === toId);
+  const tIdx = Math.max(fIdx + 1, tRaw < 0 ? series.length - 1 : tRaw);
+  const from = series[fIdx];
+  const to = series[tIdx];
+  const growth = from.med ? (to.med - from.med) / from.med : null;
+  const slice = series.slice(fIdx, tIdx + 1).map((s) => s.med);
+  const up = (growth ?? 0) >= 0;
+  const fromOpts = series.slice(0, tIdx).map((s) => ({ value: s.id, label: s.label }));
+  const toOpts = series.slice(fIdx + 1).map((s) => ({ value: s.id, label: s.label }));
+
+  return (
+    <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
+      <div aria-hidden style={railStyle} />
+      <Text tt="uppercase" c="dimmed" style={labelStyle}>Median pay growth</Text>
+      <Group align="baseline" gap={8} mt={6} wrap="nowrap">
+        <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'pos' : 'red'}>
+          {growth == null ? '—' : `${up ? '+' : ''}${(growth * 100).toFixed(1)}%`}
+        </Text>
+        <Text size="sm" c="dimmed">{usd(from.med)} → {usd(to.med)}</Text>
+      </Group>
+      {slice.length > 1 && <div style={{ marginTop: 6 }}><MiniSparkline values={slice} width={150} /></div>}
+      <Group gap={6} mt={8} wrap="nowrap" align="center">
+        <Select {...dropdownProps('sm')} w={118} aria-label="From snapshot" data={fromOpts} value={from.id}
+          onChange={setFromId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
+        <Text size="xs" c="dimmed">→</Text>
+        <Select {...dropdownProps('sm')} w={118} aria-label="To snapshot" data={toOpts} value={to.id}
+          onChange={setToId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
+      </Group>
+      {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}</Text>}
+    </Card>
+  );
 }
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
@@ -125,15 +181,15 @@ export default function Explore() {
     cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
 
   // Median-over-time series for the KPI sparkline (one point per real snapshot; pre-TTC twin dropped).
-  const { data: sparkRows } = useSql<{ med: number | null }>(
+  const { data: sparkRows } = useSql<{ id: string; label: string; med: number | null }>(
     ['kpi-spark', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT median(${expr}) FILTER (WHERE ${expr} > 0) med
+    `SELECT snapshot_id id, any_value(snapshot_label) label, median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'
      GROUP BY snapshot_id, snapshot_date ORDER BY snapshot_date`,
     enabled
   );
-  const sparkMeds = useMemo(
-    () => (sparkRows ?? []).map((r) => r.med).filter((v): v is number => v != null),
+  const series = useMemo<SnapMed[]>(
+    () => (sparkRows ?? []).filter((r) => r.med != null).map((r) => ({ id: r.id, label: r.label, med: r.med as number })),
     [sparkRows]
   );
 
@@ -175,7 +231,7 @@ export default function Explore() {
         <Loader />
       ) : (
         <div>
-          <SimpleGrid cols={{ base: 1, sm: 4 }}>
+          <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <Kpi
               label="Headcount"
               value={k?.headcount ?? null}
@@ -183,21 +239,7 @@ export default function Explore() {
               loading={enabled && !k}
               sub={<Delta frac={frac(k?.headcount, kp?.headcount)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />}
             />
-            <Kpi
-              label="Median salary"
-              value={k?.med ?? null}
-              format={usd}
-              loading={enabled && !k}
-              sub={
-                <Stack gap={4}>
-                  {sparkMeds.length > 1 && <MiniSparkline values={sparkMeds} />}
-                  <Group gap={8} wrap="wrap">
-                    {k?.p90 != null && <Text span size="xs" c="dimmed">top 10% ≥ {usd(k.p90)}</Text>}
-                    <Delta frac={frac(k?.med, kp?.med)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />
-                  </Group>
-                </Stack>
-              }
-            />
+            <MedianGrowthCard series={series} p90={k?.p90 ?? null} loading={series.length < 2} />
             <Kpi
               label="Total payroll"
               value={k?.total_payroll ?? null}
@@ -209,13 +251,6 @@ export default function Explore() {
                   <Delta frac={frac(k?.total_payroll, kp?.total_payroll)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />
                 </Stack>
               }
-            />
-            <Kpi
-              label="Snapshots"
-              value={summary?.snapshot_count ?? null}
-              format={num}
-              to="/data"
-              sub={<Text span size="xs" c="dimmed">{num(summary?.total_rows)} rows · {snapsAsc[0]?.label} → {curSnapMeta?.label ?? snapsAsc.at(-1)?.label}</Text>}
             />
           </SimpleGrid>
           {k && k.all_people > k.headcount && (
@@ -262,9 +297,10 @@ export default function Explore() {
         </Tabs.Panel>
       </Tabs>
 
-      {summary?.generated_at && (
+      {summary && (
         <Text size="xs" c="dimmed" ta="right">
-          Data generated {new Date(summary.generated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+          {num(summary.snapshot_count)} snapshots · {num(summary.total_rows)} rows · {snapsAsc[0]?.label} → {snapsAsc.at(-1)?.label}
+          {summary.generated_at ? ` · data generated ${new Date(summary.generated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}` : ''}
           {' · '}<Anchor component={Link} to="/data" inherit>data health →</Anchor>
         </Text>
       )}
