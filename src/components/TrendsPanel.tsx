@@ -125,11 +125,11 @@ export function TrendsPanel() {
 
           {ttcLabel && (
             <ReferenceLine yAxisId="med" x={ttcLabel} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
-              label={{ value: 'TTC reclassification', position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
+              label={{ value: 'TTC reclassification', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
           )}
           {coverageLabel && (
             <ReferenceLine yAxisId="hc" x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
-              label={{ value: 'coverage change', position: 'insideTopLeft', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+              label={{ value: 'coverage change', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
           )}
 
           {/* Median: gradient area + soft-glow underlay + primary line with YoY pills. */}
