@@ -231,8 +231,8 @@ textarea:focus-visible,
 .hero-rise > *:nth-child(4) { animation-delay: 240ms; }
 .hero-rise > *:nth-child(n + 5) { animation-delay: 300ms; }
 
-/* Title: a subtle teal-tinted gradient (mostly text colour, so it stays legible) + a one-time sheen sweep. */
-.hero-title { position: relative; display: inline-block; overflow: hidden; }
+/* Title: a subtle teal-tinted gradient (mostly text colour, so it stays legible). */
+.hero-title { display: inline-block; }
 .hero-title-text {
   background: linear-gradient(100deg, var(--mantine-color-text) 55%, var(--mantine-color-accent-5) 100%);
   -webkit-background-clip: text;
@@ -240,17 +240,6 @@ textarea:focus-visible,
   -webkit-text-fill-color: transparent;
   color: transparent;
 }
-.hero-title::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(105deg, transparent 42%, var(--mantine-color-accent-3) 50%, transparent 58%);
-  opacity: 0.6;
-  transform: translateX(-130%);
-  animation: hero-sheen 1.5s ease-out 0.35s 1 both;
-}
-@keyframes hero-sheen { to { transform: translateX(130%); } }
 
 /* The accent glow behind the title breathes slowly. */
 .hero-aurora { animation: aurora-breathe 9s ease-in-out infinite; }
@@ -288,7 +277,6 @@ textarea:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .hero-rise > * { animation: none; }
-  .hero-title::after { animation: none; opacity: 0; }
   .hero-aurora { animation: none; }
   .hero-search-input { animation: none; }
 }
