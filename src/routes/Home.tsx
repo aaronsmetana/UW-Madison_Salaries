@@ -15,7 +15,7 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
   const animated = useCountUp(value, 1000);
   const valueNode = (
     <Text fw={700} fz={22} ta="center" style={{ letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
-      {animated == null ? '—' : format(animated)}
+      {animated == null ? '—' : format(Math.round(animated))}
     </Text>
   );
   return (
