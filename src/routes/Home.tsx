@@ -80,7 +80,12 @@ function Sparkline({ bins, median }: { bins: { bucket: number; n: number }[]; me
           )}
         </svg>
       </div>
-      <Text size="xs" c="dimmed" ta="center" mt={4}>
+      {/* $ scale so the curve reads as a real distribution (compact $Xk at each end). */}
+      <Group justify="space-between" gap={0} mt={2}>
+        <Text size="xs" c="dimmed">{`$${Math.round(lo / 1000)}k`}</Text>
+        <Text size="xs" c="dimmed">{`$${Math.round(hi / 1000)}k+`}</Text>
+      </Group>
+      <Text size="xs" c="dimmed" ta="center" mt={2}>
         System-wide pay distribution{median != null ? ` · median ${usd(median)}` : ''}
       </Text>
     </div>
@@ -131,7 +136,7 @@ export default function Home() {
   const { data: binRows } = useSql<{ bucket: number; n: number }>(
     ['home-bins', snap ?? ''],
     `SELECT floor(salary / 10000) * 10000 AS bucket, count(*) AS n FROM salaries
-     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 AND salary < 400000
+     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 AND salary < 250000
      GROUP BY bucket ORDER BY bucket`,
     !!snap
   );
@@ -147,14 +152,48 @@ export default function Home() {
     `SELECT school, count(*) n FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL GROUP BY school ORDER BY n DESC LIMIT 1`,
     !!snap
   );
+  // p90 (top-10% line) + median tenure, deduped per person.
+  const { data: factStats } = useSql<{ p90: number | null; tenure: number | null }>(
+    ['home-facts', snap ?? ''],
+    `WITH p AS (
+        SELECT person_key, sum(salary) FILTER (WHERE salary > 0) AS pay,
+               any_value(date_of_hire) AS doh, any_value(snapshot_date) AS sd
+        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} GROUP BY person_key)
+     SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) p90,
+            median(date_diff('day', CAST(doh AS DATE), CAST(sd AS DATE)) / 365.25) FILTER (WHERE doh IS NOT NULL) tenure
+     FROM p`,
+    !!snap
+  );
+  const { data: byCat } = useSql<{ cat: string; med: number }>(
+    ['home-bycat', snap ?? ''],
+    `SELECT employee_category cat, median(salary) FILTER (WHERE salary > 0) med, count(*) n
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND employee_category IS NOT NULL
+     GROUP BY employee_category ORDER BY n DESC LIMIT 3`,
+    !!snap
+  );
 
+  // All facts are computed at runtime from summary.json + per-snapshot SQL, so they auto-update on data import
+  // (no hardcoded values — nothing to maintain when the salary data is refreshed).
   const facts = useMemo(() => {
     const f: string[] = [];
+    const first = summary?.snapshots?.[0];
+    const med0 = first?.median ?? null;
+    const medNow = summary?.latest?.median ?? null;
+    if (med0 != null && medNow != null && med0 > 0) {
+      const up = Math.round(((medNow - med0) / med0) * 100);
+      const yr = first?.date?.slice(0, 4);
+      f.push(`Median pay rose from ${usd(med0)}${yr ? ` (${yr})` : ''} to ${usd(medNow)} — up ~${up}%`);
+    }
     if (titleTop?.[0]?.title) f.push(`Most common title: ${titleTop[0].title} (${num(titleTop[0].n)} people)`);
     if (divTop?.[0]?.school) f.push(`Largest division: ${divTop[0].school} (${num(divTop[0].n)} people)`);
+    const p90 = factStats?.[0]?.p90;
+    if (p90 != null) f.push(`The top 10% earn more than ${usd(p90)}`);
     if (dims?.lo != null && dims?.hi != null) f.push(`Pay ranges from ${usd(dims.lo)} to ${usd(dims.hi)}`);
+    const tenure = factStats?.[0]?.tenure;
+    if (tenure != null) f.push(`Median tenure is ${tenure.toFixed(1)} years`);
+    if (byCat && byCat.length) f.push(`Median pay by group — ${byCat.map((c) => `${c.cat} ${usd(c.med)}`).join(' · ')}`);
     return f;
-  }, [titleTop, divTop, dims]);
+  }, [summary, titleTop, divTop, dims, factStats, byCat]);
 
   const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
   const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
@@ -191,11 +230,10 @@ export default function Home() {
             }}
           />
           <Stack gap={6} align="center" className="hero-rise" style={{ position: 'relative' }}>
-            <div className="hero-title">
-              <Title order={1} ta="center" className="hero-title-text" style={{ letterSpacing: '-0.02em', fontSize: 'clamp(2rem, 4vw, 3rem)' }}>
-                UW–Madison Salaries
-              </Title>
-            </div>
+            <Title order={1} ta="center" style={{ letterSpacing: '-0.02em', fontSize: 'clamp(2rem, 4vw, 3rem)' }}>
+              <Text span inherit c="bright">UW–Madison </Text>
+              <Text span inherit c="accent.7">Salaries</Text>
+            </Title>
             <Text c="dimmed" ta="center" maw={580} size="lg">
               Search anyone by name to see their salary, how it changed over the years, and how they stack up against everyone with the same title.
             </Text>

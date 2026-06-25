@@ -231,16 +231,6 @@ textarea:focus-visible,
 .hero-rise > *:nth-child(4) { animation-delay: 240ms; }
 .hero-rise > *:nth-child(n + 5) { animation-delay: 300ms; }
 
-/* Title: a subtle teal-tinted gradient (mostly text colour, so it stays legible). */
-.hero-title { display: inline-block; }
-.hero-title-text {
-  background: linear-gradient(100deg, var(--mantine-color-text) 55%, var(--mantine-color-accent-5) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
-
 /* The accent glow behind the title breathes slowly. */
 .hero-aurora { animation: aurora-breathe 9s ease-in-out infinite; }
 @keyframes aurora-breathe {
