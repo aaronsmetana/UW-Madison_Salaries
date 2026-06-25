@@ -152,14 +152,15 @@ function wrapTitle(s: string): string[] {
   return best;
 }
 
-/** Custom label for a title-change divider: the full (wrapped) new title, stacked just above the plot.
- *  Recharts injects `viewBox` ({ x, y }) for the vertical reference line. */
-function TitleChangeLabel({ viewBox, title }: { viewBox?: { x?: number; y?: number }; title?: string | null }) {
+/** Custom label for a title era: the full (wrapped) title, stacked just above the plot. Recharts injects
+ *  `viewBox` ({ x, y }) for the vertical reference line. `anchor='start'` left-aligns it — used for the
+ *  leftmost era (e.g. a pre-TTC title), which sits at the chart's left edge and has no divider. */
+function TitleChangeLabel({ viewBox, title, anchor = 'middle' }: { viewBox?: { x?: number; y?: number }; title?: string | null; anchor?: 'middle' | 'start' }) {
   if (!viewBox || viewBox.x == null || viewBox.y == null || !title) return null;
   const lines = wrapTitle(title);
   const { x, y } = viewBox;
   return (
-    <text textAnchor="middle" fontSize={10} fill="var(--mantine-color-dimmed)">
+    <text textAnchor={anchor} fontSize={10} fill="var(--mantine-color-dimmed)">
       {lines.map((ln, i) => (
         <tspan key={i} x={x} y={y - 5 - (lines.length - 1 - i) * 11}>{ln}</tspan>
       ))}
@@ -1062,6 +1063,16 @@ export default function Person() {
             {band && (
               <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
                 label={{ value: `grade max ${usd(band.max)}`, position: 'insideTopLeft', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+            )}
+            {/* Label the leftmost title era too (e.g. a pre-TTC title) — it begins at the chart's left edge
+                and so has no divider; left-anchored so it isn't clipped. */}
+            {eras.length > 1 && trendData[0]?.title && (
+              <ReferenceLine
+                yAxisId="pay"
+                x={trendData[0].label}
+                stroke="none"
+                label={<TitleChangeLabel title={trendData[0].title} anchor="start" />}
+              />
             )}
             {/* Title-change dividers segment the chart into title eras. */}
             {titleChanges.map((t) => (
