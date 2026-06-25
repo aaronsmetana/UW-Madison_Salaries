@@ -7,6 +7,7 @@ import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
+import { SchoolsPanel } from '../components/SchoolsPanel';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
@@ -62,7 +63,6 @@ function Delta({ frac, prevLabel }: { frac: number | null; prevLabel: string | n
 }
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
-interface SchoolRow { school: string; headcount: number; med: number | null }
 interface EarnerRow { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number }
 
 export default function Explore() {
@@ -136,15 +136,6 @@ export default function Explore() {
   const sparkMeds = useMemo(
     () => (sparkRows ?? []).map((r) => r.med).filter((v): v is number => v != null),
     [sparkRows]
-  );
-
-  const { data: schools } = useSql<SchoolRow>(
-    ['browse-schools', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT school, ${paidHeadcount(metric)} headcount,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med
-     FROM salaries WHERE ${where} AND school IS NOT NULL
-     GROUP BY school ORDER BY headcount DESC`,
-    enabled
   );
 
   const { data: earners } = useSql<EarnerRow>(
@@ -291,34 +282,7 @@ export default function Explore() {
         </Tabs.List>
 
         <Tabs.Panel value="schools" pt="md">
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>School / Division</Table.Th>
-                <Table.Th ta="right">Headcount</Table.Th>
-                <Table.Th ta="right">Median</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {(schools ?? []).map((s) => (
-                <Table.Tr key={s.school}>
-                  <Table.Td>
-                    <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500}>
-                      {s.school}
-                    </Anchor>
-                  </Table.Td>
-                  <Table.Td ta="right">{num(s.headcount)}</Table.Td>
-                  <Table.Td ta="right">{usd(s.med)}</Table.Td>
-                  <Table.Td ta="right">
-                    <Button size="compact-xs" variant="light" radius="xl" leftSection={<IconPlus size={12} />} onClick={() => add({ type: 'school', id: s.school, label: s.school })}>
-                      Compare
-                    </Button>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+          <SchoolsPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="earners" pt="md">
