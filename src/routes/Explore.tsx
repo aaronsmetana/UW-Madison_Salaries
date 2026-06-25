@@ -183,9 +183,9 @@ export default function Explore() {
   // Median-over-time series for the KPI sparkline (one point per real snapshot; pre-TTC twin dropped).
   const { data: sparkRows } = useSql<{ id: string; label: string; med: number | null }>(
     ['kpi-spark', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT snapshot_id id, any_value(snapshot_label) label, median(${expr}) FILTER (WHERE ${expr} > 0) med
+    `SELECT snapshot_id id, any_value(snapshot_label) AS "label", median(${expr}) FILTER (WHERE ${expr} > 0) med
      FROM salaries WHERE ${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'
-     GROUP BY snapshot_id, snapshot_date ORDER BY snapshot_date`,
+     GROUP BY snapshot_id ORDER BY any_value(snapshot_date)`,
     enabled
   );
   const series = useMemo<SnapMed[]>(
