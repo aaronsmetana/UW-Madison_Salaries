@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List, Accordion, Tooltip } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
-import { useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
-import { sqlStr } from '../lib/duckdb';
+import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd, pct } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
+import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
@@ -33,24 +33,6 @@ function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'ri
 export default function DataHealth() {
   const { data: manifest, isLoading, error } = useManifest();
   const snapId = useActiveSnapshotId();
-  const { data: dups } = useSql<{ first_name: string; last_name: string; keys: number }>(
-    ['id-review', snapId ?? ''],
-    `SELECT first_name, last_name, count(DISTINCT person_key) keys
-     FROM salaries WHERE snapshot_id = ${sqlStr(snapId ?? '')} AND first_name IS NOT NULL AND last_name IS NOT NULL
-     GROUP BY first_name, last_name HAVING count(DISTINCT person_key) > 1 ORDER BY keys DESC, last_name LIMIT 30`,
-    !!snapId
-  );
-  const { data: dupStats } = useSql<{ dup_names: number; total_people: number }>(
-    ['id-review-count', snapId ?? ''],
-    `SELECT
-        (SELECT count(*) FROM (SELECT first_name, last_name FROM salaries WHERE snapshot_id = ${sqlStr(snapId ?? '')}
-            AND first_name IS NOT NULL AND last_name IS NOT NULL
-            GROUP BY first_name, last_name HAVING count(DISTINCT person_key) > 1)) dup_names,
-        count(DISTINCT person_key) total_people
-     FROM salaries WHERE snapshot_id = ${sqlStr(snapId ?? '')}`,
-    !!snapId
-  );
-  const ds = dupStats?.[0];
 
   if (isLoading) return <Loader />;
   if (error) return <Alert color="red">Failed to load manifest: {(error as Error).message}</Alert>;
@@ -77,7 +59,7 @@ export default function DataHealth() {
     ['#how-it-works', 'How figures work'],
     ['#methodology', 'Methodology'],
     ['#snapshots', 'Snapshots'],
-    ...((dups ?? []).length > 0 ? ([['#duplicates', 'Duplicates']] as [string, string][]) : []),
+    ['#duplicates', 'Duplicates'],
   ];
 
   return (
@@ -350,42 +332,7 @@ export default function DataHealth() {
         </Text>
       </Card>
 
-      {(dups ?? []).length > 0 && (
-        <Card withBorder padding="lg" id="duplicates">
-          <Title order={4} mb="xs">Possible duplicate identities (review)</Title>
-          <Text size="sm" mb="xs">
-            People are matched across snapshots by <b>name + hire date</b> (no employee ID exists in the source).
-            That can fail two ways: one name can <b>split</b> into two records (shown below), or — harder to spot —
-            two different people can be <b>merged</b> into one. Below are names resolving to more than one person
-            in the latest snapshot; usually these are genuinely different people who share a name, but each is
-            worth a glance.
-          </Text>
-          {ds && (
-            <Text size="xs" c="dimmed" mb="sm">
-              {num(ds.dup_names)} shared-name groups across {num(ds.total_people)} people
-              {ds.total_people ? ` (~${pct(ds.dup_names / ds.total_people)})` : ''}; showing the top {num((dups ?? []).length)}.
-            </Text>
-          )}
-          <Table withTableBorder>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th ta="right">Distinct identities</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {(dups ?? []).map((d) => (
-                <Table.Tr key={`${d.first_name} ${d.last_name}`}>
-                  <Table.Td fw={500}>{d.first_name} {d.last_name}</Table.Td>
-                  <Table.Td ta="right">
-                    <Badge variant="light" color="yellow" radius="sm">{d.keys}</Badge>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Card>
-      )}
+      <DuplicateIdentities snap={snapId} />
     </Stack>
   );
 }
