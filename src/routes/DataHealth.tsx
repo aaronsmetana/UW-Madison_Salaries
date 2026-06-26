@@ -106,11 +106,10 @@ export default function DataHealth() {
             <b> their open-records work is what makes this transparency possible, and the credit for these records
             belongs to them.</b>
           </Text>
-          <Text size="sm" c="dimmed">
+          <Text size="sm">
             This site is an independent project built by Aaron Smetana to make those public records easier to
             explore. It is <b>not affiliated with, operated by, or endorsed by UFAS or UW–Madison</b> — any
-            errors or interpretations here are the project's alone, not theirs.
-          </Text>
+            errors or interpretations here are the project's alone, not theirs.</Text>
           <Group gap="lg">
             <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" size="sm" fw={600}>
               Visit UFAS Local 223 →
@@ -132,6 +131,7 @@ export default function DataHealth() {
         icon={<IconAlertTriangle size={20} />}
         title="Accuracy & disclaimer — these numbers may not reflect reality"
         id="disclaimer"
+        styles={{ title: { fontSize: 'var(--mantine-h4-font-size)', fontWeight: 700 } }}
       >
         <Stack gap="xs">
           <Text size="sm" fw={600}>
@@ -152,7 +152,7 @@ export default function DataHealth() {
             <List.Item><b>Identity matching</b> — people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</List.Item>
             <List.Item><b>Name formatting &amp; transcription</b> — ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</List.Item>
           </List>
-          <Text size="sm" c="dimmed" mt={4}>
+          <Text size="sm" mt={4}>
             This is an <b>independent, best-effort project</b> and is <b>not affiliated with or endorsed by
             UW–Madison</b>. Salary data is a Wisconsin public record. The information is provided "as is," may be
             inaccurate or incomplete, and carries <b>no warranty and no liability</b> — verify against official
@@ -230,7 +230,7 @@ export default function DataHealth() {
           </Group>
 
           <Text size="sm" fw={700} mt="xs">What's in a record</Text>
-          <Text size="sm" c="dimmed">
+          <Text size="sm">
             Each appointment row carries: name (first &amp; last), title &amp; job code, school &amp; department,
             grade &amp; basis, salary / FTE-adjusted salary / base pay, FTE, pay-rate type, FLSA status, employee
             category &amp; type, and hire date — tagged with the snapshot it came from. The three "Pay" views are
@@ -276,19 +276,16 @@ export default function DataHealth() {
         </Stack>
       </Card>
 
-      <Group gap="xl" id="snapshots">
-        <Text size="sm"><b>{num(manifest?.total_rows)}</b> records</Text>
-        <Text size="sm"><b>{num(snaps.length)}</b> snapshots</Text>
-        <Text size="sm">schema v{manifest?.schema_version}</Text>
-        <Text size="sm">Last built <b>{manifest?.generated_at?.slice(0, 16).replace('T', ' ')}</b></Text>
-        {dict?.data_dictionary_url && (
-          <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" size="sm">
-            Source data dictionary →
-          </Anchor>
-        )}
-      </Group>
-
-      <Table.ScrollContainer minWidth={920}>
+      <Card withBorder padding="lg" id="snapshots">
+        <Title order={4} mb="xs">Per-snapshot ingestion</Title>
+        <Text size="xs" c="dimmed" mb="md">
+          <b>{num(manifest?.total_rows)}</b> records · <b>{num(snaps.length)}</b> snapshots ·
+          schema v{manifest?.schema_version} · last built {manifest?.generated_at?.slice(0, 16).replace('T', ' ')}
+          {dict?.data_dictionary_url && (
+            <> · <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" inherit>data dictionary →</Anchor></>
+          )}
+        </Text>
+        <Table.ScrollContainer minWidth={920}>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -343,19 +340,20 @@ export default function DataHealth() {
           })}
         </Table.Tbody>
       </Table>
-      </Table.ScrollContainer>
-      <Text size="xs" c="dimmed">
-        <b>People</b> = distinct identities in the dump. <b>Paid</b> = people with at least one paid appointment —
-        the "headcount" used across the site. <b>Unpaid $0</b> = appointments with no salary (affiliates given
-        campus access), excluded from headcount and salary stats. A <b>shaded row</b> carries a note worth reading
-        (e.g. the Nov-2021 TTC relabel or the Oct-2023 scope change). <b>Status</b>: OK = ingested cleanly;
-        INFO/WARNING = a flagged note; ERROR = a problem in that dump.
-      </Text>
+        </Table.ScrollContainer>
+        <Text size="xs" c="dimmed" mt="sm">
+          <b>People</b> = distinct identities in the dump. <b>Paid</b> = people with at least one paid appointment —
+          the "headcount" used across the site. <b>Unpaid $0</b> = appointments with no salary (affiliates given
+          campus access), excluded from headcount and salary stats. A <b>shaded row</b> carries a note worth reading
+          (e.g. the Nov-2021 TTC relabel or the Oct-2023 scope change). <b>Status</b>: OK = ingested cleanly;
+          INFO/WARNING = a flagged note; ERROR = a problem in that dump.
+        </Text>
+      </Card>
 
       {(dups ?? []).length > 0 && (
         <Card withBorder padding="lg" id="duplicates">
-          <Text size="sm" fw={600} mb="xs">Possible duplicate identities (review)</Text>
-          <Text size="xs" c="dimmed" mb="xs">
+          <Title order={4} mb="xs">Possible duplicate identities (review)</Title>
+          <Text size="sm" mb="xs">
             People are matched across snapshots by <b>name + hire date</b> (no employee ID exists in the source).
             That can fail two ways: one name can <b>split</b> into two records (shown below), or — harder to spot —
             two different people can be <b>merged</b> into one. Below are names resolving to more than one person
