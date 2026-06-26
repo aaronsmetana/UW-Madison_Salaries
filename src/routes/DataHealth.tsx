@@ -1,13 +1,34 @@
-import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List, Accordion } from '@mantine/core';
+import type { ReactNode } from 'react';
+import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List, Accordion, Tooltip } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { num, usd } from '../lib/format';
+import { num, usd, pct } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
 const REPO_URL = 'https://github.com/aaronsmetana/UW-Madison_Salaries';
+
+/** Snapshot-over-snapshot delta chip for the ingestion table. */
+function Delta({ frac }: { frac: number | null }) {
+  if (frac == null) return <Text span size="xs" c="dimmed">—</Text>;
+  if (Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">0.0%</Text>;
+  const up = frac >= 0;
+  return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))}</Text>;
+}
+
+/** Table header with an optional explanatory tooltip (dotted "help" underline). */
+function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'right' }) {
+  if (!tip) return <Table.Th ta={ta}>{children}</Table.Th>;
+  return (
+    <Table.Th ta={ta}>
+      <Tooltip label={tip} multiline w={250} withArrow>
+        <span style={{ borderBottom: '1px dotted var(--mantine-color-dimmed)', cursor: 'help' }}>{children}</span>
+      </Tooltip>
+    </Table.Th>
+  );
+}
 
 export default function DataHealth() {
   const { data: manifest, isLoading, error } = useManifest();
@@ -19,6 +40,17 @@ export default function DataHealth() {
      GROUP BY first_name, last_name HAVING count(DISTINCT person_key) > 1 ORDER BY keys DESC, last_name LIMIT 30`,
     !!snapId
   );
+  const { data: dupStats } = useSql<{ dup_names: number; total_people: number }>(
+    ['id-review-count', snapId ?? ''],
+    `SELECT
+        (SELECT count(*) FROM (SELECT first_name, last_name FROM salaries WHERE snapshot_id = ${sqlStr(snapId ?? '')}
+            AND first_name IS NOT NULL AND last_name IS NOT NULL
+            GROUP BY first_name, last_name HAVING count(DISTINCT person_key) > 1)) dup_names,
+        count(DISTINCT person_key) total_people
+     FROM salaries WHERE snapshot_id = ${sqlStr(snapId ?? '')}`,
+    !!snapId
+  );
+  const ds = dupStats?.[0];
 
   if (isLoading) return <Loader />;
   if (error) return <Alert color="red">Failed to load manifest: {(error as Error).message}</Alert>;
@@ -30,13 +62,37 @@ export default function DataHealth() {
   const latestSnap = snaps.length
     ? [...snaps].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date)).at(-1)
     : undefined;
+  // Chronological order, with Pre-TTC before Post-TTC for the shared Nov-2021 date.
+  const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : 1);
+  const orderedSnaps = [...snaps].sort(
+    (a, b) => a.snapshot_date.localeCompare(b.snapshot_date) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)
+  );
+  const dpct = (cur?: number | null, prev?: number | null) =>
+    cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
+
+  const toc: [string, string][] = [
+    ['#source', 'Source'],
+    ['#disclaimer', 'Disclaimer'],
+    ['#privacy', 'Privacy'],
+    ['#how-it-works', 'How figures work'],
+    ['#methodology', 'Methodology'],
+    ['#snapshots', 'Snapshots'],
+    ...((dups ?? []).length > 0 ? ([['#duplicates', 'Duplicates']] as [string, string][]) : []),
+  ];
 
   return (
-    <Stack gap="lg">
+    <Stack gap="lg" className="tab-rise">
       <PageHeader
         title="Data · About"
         description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
       />
+
+      <Group gap="sm" wrap="wrap">
+        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }}>Jump to</Text>
+        {toc.map(([href, label]) => (
+          <Anchor key={href} href={href} size="xs">{label}</Anchor>
+        ))}
+      </Group>
 
       <Card withBorder padding="lg" id="source">
         <Title order={4} mb="xs">Data source &amp; acknowledgment</Title>
@@ -228,11 +284,11 @@ export default function DataHealth() {
         </Stack>
       </Card>
 
-      <Group gap="xl">
+      <Group gap="xl" id="snapshots">
         <Text size="sm"><b>{num(manifest?.total_rows)}</b> records</Text>
         <Text size="sm"><b>{num(snaps.length)}</b> snapshots</Text>
         <Text size="sm">schema v{manifest?.schema_version}</Text>
-        <Text size="sm" c="dimmed">built {manifest?.generated_at?.slice(0, 16).replace('T', ' ')}</Text>
+        <Text size="sm">Last built <b>{manifest?.generated_at?.slice(0, 16).replace('T', ' ')}</b></Text>
         {dict?.data_dictionary_url && (
           <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" size="sm">
             Source data dictionary →
@@ -240,23 +296,27 @@ export default function DataHealth() {
         )}
       </Group>
 
-      <Table.ScrollContainer minWidth={760}>
+      <Table.ScrollContainer minWidth={920}>
       <Table>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Snapshot</Table.Th>
-            <Table.Th>Source (file · sheet)</Table.Th>
-            <Table.Th ta="right">Rows</Table.Th>
-            <Table.Th ta="right">People</Table.Th>
-            <Table.Th ta="right">Paid</Table.Th>
-            <Table.Th ta="right">Unpaid $0</Table.Th>
-            <Table.Th ta="right">Median</Table.Th>
-            <Table.Th>Status</Table.Th>
+            <Th>Snapshot</Th>
+            <Th>Source (file · sheet)</Th>
+            <Th ta="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several).">Rows</Th>
+            <Th ta="right" tip="Distinct identities in the dump (name + hire date).">People</Th>
+            <Th ta="right" tip="People with at least one paid appointment — the headcount used across the site.">Paid</Th>
+            <Th ta="right" tip="Change in paid headcount vs the previous snapshot.">Δ paid</Th>
+            <Th ta="right" tip="Appointments with no salary (affiliates given campus access), excluded from headcount and salary stats.">Unpaid $0</Th>
+            <Th ta="right" tip="Median paid salary (full-time rate as reported in the source).">Median</Th>
+            <Th ta="right" tip="Change in median vs the previous snapshot.">Δ median</Th>
+            <Th>Status</Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {snaps.map((s) => (
-            <Table.Tr key={s.snapshot_id}>
+          {orderedSnaps.map((s, i) => {
+            const prev = orderedSnaps[i - 1];
+            return (
+            <Table.Tr key={s.snapshot_id} style={{ background: s.note ? 'var(--mantine-color-default-hover)' : undefined }}>
               <Table.Td>
                 <Text size="sm" fw={500}>{s.snapshot_label}</Text>
                 <Code>{s.snapshot_id}</Code>
@@ -268,8 +328,10 @@ export default function DataHealth() {
               <Table.Td ta="right">{num(s.row_count)}</Table.Td>
               <Table.Td ta="right">{num(s.distinct_people)}</Table.Td>
               <Table.Td ta="right">{s.distinct_people_paid != null ? num(s.distinct_people_paid) : '—'}</Table.Td>
+              <Table.Td ta="right">{i > 0 ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} /> : '—'}</Table.Td>
               <Table.Td ta="right">{num(s.zero_or_null_salary)}</Table.Td>
               <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
+              <Table.Td ta="right">{i > 0 ? <Delta frac={dpct(s.salary_median, prev?.salary_median)} /> : '—'}</Table.Td>
               <Table.Td>
                 <Badge color={STATUS_COLOR[s.status] ?? 'gray'} variant="filled" radius="sm">
                   {s.status.toUpperCase()}
@@ -285,23 +347,38 @@ export default function DataHealth() {
                 )}
               </Table.Td>
             </Table.Tr>
-          ))}
+            );
+          })}
         </Table.Tbody>
       </Table>
       </Table.ScrollContainer>
       <Text size="xs" c="dimmed">
         <b>People</b> = distinct identities in the dump. <b>Paid</b> = people with at least one paid appointment —
         the "headcount" used across the site. <b>Unpaid $0</b> = appointments with no salary (affiliates given
-        campus access), excluded from headcount and salary stats.
+        campus access), excluded from headcount and salary stats. A <b>shaded row</b> carries a note worth reading
+        (e.g. the Nov-2021 TTC relabel or the Oct-2023 scope change). <b>Status</b>: OK = ingested cleanly;
+        INFO/WARNING = a flagged note; ERROR = a problem in that dump.
       </Text>
 
       {(dups ?? []).length > 0 && (
-        <Card withBorder padding="lg">
+        <Card withBorder padding="lg" id="duplicates">
           <Text size="sm" fw={600} mb="xs">Possible duplicate identities (review)</Text>
-          <Text size="xs" c="dimmed" mb="sm">
-            Same name resolving to more than one person (different hire dates) in the latest snapshot — usually
-            genuinely different people, but worth a glance. Confirm true duplicates via data/corrections.json.
+          <Text size="xs" c="dimmed" mb="xs">
+            People are matched across snapshots by <b>name + hire date</b> (no employee ID exists in the source).
+            That can fail two ways: one name can <b>split</b> into two records (shown below), or — harder to spot —
+            two different people can be <b>merged</b> into one. Below are names resolving to more than one person
+            in the latest snapshot; usually these are genuinely different people who share a name, but each is
+            worth a glance.
           </Text>
+          {ds && (
+            <Text size="xs" c="dimmed" mb="sm">
+              {num(ds.dup_names)} shared-name groups across {num(ds.total_people)} people
+              {ds.total_people ? ` (~${pct(ds.dup_names / ds.total_people)})` : ''}; showing the top {num((dups ?? []).length)}.
+              If one of these is your record and it's wrong, flag it via{' '}
+              <Anchor href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer">the GitHub repo</Anchor>{' '}
+              (confirmed fixes live in <Code>data/corrections.json</Code>).
+            </Text>
+          )}
           <Table withTableBorder>
             <Table.Thead>
               <Table.Tr>
