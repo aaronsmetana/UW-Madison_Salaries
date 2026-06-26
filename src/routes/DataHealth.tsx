@@ -180,14 +180,6 @@ export default function DataHealth() {
             with no employee ID, the most consequential possible error is a salary attributed to the{' '}
             <b>wrong named person</b> (two people merged, or one split in two).
           </Text>
-          <Text size="sm" fw={600} mt="xs">Is this you — and is something wrong?</Text>
-          <Text size="sm">
-            If you find your own record and it's inaccurate — wrong pay, merged with someone else, or split into
-            two — you can flag it for correction. Open an issue or propose a fix at{' '}
-            <Anchor href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer" fw={600}>the project's GitHub repository</Anchor>;
-            confirmed corrections live in <Code>data/corrections.json</Code> and are applied on the next data
-            build.
-          </Text>
         </Stack>
       </Card>
 
