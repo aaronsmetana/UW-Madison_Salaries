@@ -366,9 +366,6 @@ export default function DataHealth() {
             <Text size="xs" c="dimmed" mb="sm">
               {num(ds.dup_names)} shared-name groups across {num(ds.total_people)} people
               {ds.total_people ? ` (~${pct(ds.dup_names / ds.total_people)})` : ''}; showing the top {num((dups ?? []).length)}.
-              If one of these is your record and it's wrong, flag it via{' '}
-              <Anchor href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer">the GitHub repo</Anchor>{' '}
-              (confirmed fixes live in <Code>data/corrections.json</Code>).
             </Text>
           )}
           <Table withTableBorder>
