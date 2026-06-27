@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
-import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box } from '@mantine/core';
-import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2 } from '@tabler/icons-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, CopyButton, Switch, ThemeIcon } from '@mantine/core';
+import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconLink, IconCheck, IconCash, IconClock, IconStack2, IconArrowUp } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd, pct } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
+import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import type { SnapshotInfo } from '../lib/manifest';
 
@@ -40,11 +41,100 @@ function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'ri
   );
 }
 
+/** A section header with a copy-anchor affordance: a chain icon that fades in on hover and copies a
+ *  deep link (e.g. …/data#methodology) to the clipboard. */
+function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
+  const url = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}#${id}` : `#${id}`;
+  return (
+    <Group gap={6} wrap="nowrap" className="section-head">
+      <Title order={4}>{children}</Title>
+      <CopyButton value={url} timeout={1400}>
+        {({ copied, copy }) => (
+          <Tooltip label={copied ? 'Link copied' : 'Copy link to this section'} withArrow>
+            <ActionIcon className="copy-anchor" variant="subtle" color="gray" size="sm" aria-label="Copy link to this section" onClick={copy}>
+              {copied ? <IconCheck size={15} /> : <IconLink size={15} />}
+            </ActionIcon>
+          </Tooltip>
+        )}
+      </CopyButton>
+    </Group>
+  );
+}
+
+/** One "Pay" definition: an accent icon anchor + bold term + description, in a small bordered card. */
+function DefCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <Paper withBorder radius="md" p="sm">
+      <Group gap={8} mb={4} wrap="nowrap">
+        <ThemeIcon variant="light" color="accent" size="md" radius="md">{icon}</ThemeIcon>
+        <Text size="sm" fw={700}>{title}</Text>
+      </Group>
+      <Text size="sm">{children}</Text>
+    </Paper>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+}
+
+/** Resolve a static asset's size via a HEAD request (so a download button can show its payload up front). */
+function useFileSize(url: string): string | null {
+  const [size, setSize] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(url, { method: 'HEAD' })
+      .then((r) => {
+        const len = r.headers.get('content-length');
+        if (!cancelled && len) setSize(formatBytes(Number(len)));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [url]);
+  return size;
+}
+
+/** A floating "back to top" button that slides into view once the reader scrolls past one viewport. */
+function BackToTop() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > window.innerHeight);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return (
+    <ActionIcon
+      className="back-to-top" data-show={show || undefined}
+      variant="filled" color="accent" size="xl" radius="xl" aria-label="Back to top"
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+    >
+      <IconArrowUp size={20} />
+    </ActionIcon>
+  );
+}
+
 export default function DataHealth() {
   const { data: manifest, isLoading, error } = useManifest();
   const snapId = useActiveSnapshotId();
+  const [compact, setCompact] = useState(false);
+  const parquetUrl = `${import.meta.env.BASE_URL}data/salaries.parquet`;
+  const manifestUrl = `${import.meta.env.BASE_URL}data/manifest.json`;
+  const parquetSize = useFileSize(parquetUrl);
+  const manifestSize = useFileSize(manifestUrl);
 
-  if (isLoading) return <Loader />;
+  // Shimmer skeleton while the static manifest payload is fetched, so the page never flashes empty.
+  if (isLoading)
+    return (
+      <Stack gap="lg" className="data-about">
+        <Skeleton height={56} width="45%" radius="md" />
+        <Skeleton height={120} radius="lg" />
+        <Skeleton height={220} radius="lg" />
+        <Skeleton height={260} radius="lg" />
+      </Stack>
+    );
   if (error) return <Alert color="red">Failed to load manifest: {(error as Error).message}</Alert>;
 
   const snaps = (manifest?.snapshots ?? []).filter((s) => s.row_count) as SnapshotInfo[];
@@ -59,6 +149,7 @@ export default function DataHealth() {
   const orderedSnaps = [...snaps].sort(
     (a, b) => a.snapshot_date.localeCompare(b.snapshot_date) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)
   );
+  const maxRows = Math.max(1, ...orderedSnaps.map((s) => s.row_count || 0));
   const dpct = (cur?: number | null, prev?: number | null) =>
     cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
 
@@ -73,7 +164,15 @@ export default function DataHealth() {
   ];
 
   return (
+    <>
     <Stack gap="lg" className="tab-rise data-about">
+      <Group gap={8} wrap="nowrap">
+        <span className="live-dot" aria-hidden />
+        <Text size="xs" c="dimmed">
+          <b>Live</b> · data current as of {latestSnap?.snapshot_label ?? '—'}
+          {manifest?.generated_at ? ` · site last built ${manifest.generated_at.slice(0, 10)}` : ''}
+        </Text>
+      </Group>
       <PageHeader
         title="Data · About"
         description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
@@ -87,7 +186,7 @@ export default function DataHealth() {
       </Group>
 
       <Card withBorder padding="lg" id="source">
-        <Title order={4} mb="xs">Data source &amp; acknowledgment</Title>
+        <SectionTitle id="source">Data source &amp; acknowledgment</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             The UW–Madison salary report files presented here are <b>public records</b>, obtained through
@@ -126,11 +225,14 @@ export default function DataHealth() {
         id="disclaimer"
         styles={{ title: { fontSize: 'var(--mantine-h4-font-size)', fontWeight: 700 } }}
       >
-        <Stack gap="sm">
-          <Text size="sm" fw={600}>
-            Every figure here is a point-in-time, gross, best-effort transcription of a public spreadsheet —
-            treat all of it as approximate, not as a person's verified pay.
-          </Text>
+        <details className="disc-details" open>
+          <summary className="disc-summary">
+            <Text span size="sm" fw={600}>
+              Every figure here is a point-in-time, gross, best-effort transcription of a public spreadsheet —
+              treat all of it as approximate, not as a person's verified pay.
+            </Text>
+          </summary>
+          <Stack gap="sm" mt="sm">
           <Text size="sm">A number can be wrong or misleading for many reasons. For example:</Text>
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" verticalSpacing="xs">
             <DItem lead="Part-time staff">the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</DItem>
@@ -151,11 +253,12 @@ export default function DataHealth() {
             inaccurate or incomplete, and carries <b>no warranty and no liability</b> — verify against official
             UW–Madison or State of Wisconsin sources before relying on it for any decision.
           </Text>
-        </Stack>
+          </Stack>
+        </details>
       </Alert>
 
       <Card withBorder padding="lg" id="privacy">
-        <Title order={4} mb="xs">Privacy &amp; responsible use</Title>
+        <SectionTitle id="privacy">Privacy &amp; responsible use</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
@@ -177,25 +280,16 @@ export default function DataHealth() {
       </Card>
 
       <Card withBorder padding="lg" id="how-it-works">
-        <Title order={4} mb="xs">How these figures are calculated</Title>
+        <SectionTitle id="how-it-works">How these figures are calculated</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             Each source row is one <b>appointment</b>, carrying a full-time annual <b>rate</b> and an{' '}
             <b>FTE</b> (appointment percentage — e.g. 0.5 = half-time). The "Pay" control switches between three views:
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-            <Paper withBorder radius="md" p="sm">
-              <Text size="sm" fw={700} mb={4}>Actual pay</Text>
-              <Text size="sm">Rate × FTE (the reported FTE-adjusted salary) — closest to what the person was actually paid.</Text>
-            </Paper>
-            <Paper withBorder radius="md" p="sm">
-              <Text size="sm" fw={700} mb={4}>Full-time rate</Text>
-              <Text size="sm">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</Text>
-            </Paper>
-            <Paper withBorder radius="md" p="sm">
-              <Text size="sm" fw={700} mb={4}>Base pay</Text>
-              <Text size="sm">Base salary as reported; may exclude supplemental or overload pay.</Text>
-            </Paper>
+            <DefCard icon={<IconCash size={16} />} title="Actual pay">Rate × FTE (the reported FTE-adjusted salary) — closest to what the person was actually paid.</DefCard>
+            <DefCard icon={<IconClock size={16} />} title="Full-time rate">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</DefCard>
+            <DefCard icon={<IconStack2 size={16} />} title="Base pay">Base salary as reported; may exclude supplemental or overload pay.</DefCard>
           </SimpleGrid>
           <Text size="sm">
             A person holding <b>more than one paid appointment</b> is combined by summing each appointment's
@@ -215,7 +309,7 @@ export default function DataHealth() {
       </Card>
 
       <Card withBorder padding="lg" id="methodology">
-        <Title order={4} mb="xs">Methodology, reproducibility &amp; downloads</Title>
+        <SectionTitle id="methodology">Methodology, reproducibility &amp; downloads</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             This project is open source. The ingestion code, column-detection logic, and applied corrections are
@@ -223,11 +317,11 @@ export default function DataHealth() {
             reproduce it from the raw records yourself.
           </Text>
           <Group gap="sm" wrap="wrap">
-            <Button component="a" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBrandGithub size={15} />}>Source code &amp; ingestion</Button>
-            <Button component="a" href={`${import.meta.env.BASE_URL}data/salaries.parquet`} download variant="default" size="xs" radius="md" leftSection={<IconDownload size={15} />}>Dataset (Parquet)</Button>
-            <Button component="a" href={`${import.meta.env.BASE_URL}data/manifest.json`} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBraces size={15} />}>Manifest (JSON)</Button>
+            <Button component="a" className="data-dl-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBrandGithub size={15} />}>Source code &amp; ingestion</Button>
+            <Button component="a" className="data-dl-btn" href={parquetUrl} download variant="default" size="xs" radius="md" leftSection={<IconDownload size={15} />}>Dataset (Parquet){parquetSize ? ` · ${parquetSize}` : ''}</Button>
+            <Button component="a" className="data-dl-btn" href={manifestUrl} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBraces size={15} />}>Manifest (JSON){manifestSize ? ` · ${manifestSize}` : ''}</Button>
             {dict?.data_dictionary_url && (
-              <Button component="a" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBook2 size={15} />}>Data dictionary</Button>
+              <Button component="a" className="data-dl-btn" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBook2 size={15} />}>Data dictionary</Button>
             )}
           </Group>
 
@@ -251,22 +345,15 @@ export default function DataHealth() {
                     How each column in the source spreadsheet was auto-mapped to a field in this app (detection
                     runs per snapshot; this is the latest). A mis-detection here is one way a value can be mislabeled.
                   </Text>
-                  <Table withTableBorder>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>Field (in this app)</Table.Th>
-                        <Table.Th>Source column (in the spreadsheet)</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {Object.entries(latestSnap.detected_mapping).map(([field, col]) => (
-                        <Table.Tr key={field}>
-                          <Table.Td><Code>{field}</Code></Table.Td>
-                          <Table.Td>{col}</Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6} verticalSpacing={6}>
+                    {Object.entries(latestSnap.detected_mapping).map(([field, col]) => (
+                      <Group key={field} gap={6} wrap="nowrap">
+                        <Code>{field}</Code>
+                        <Text span size="xs" c="dimmed">→</Text>
+                        <Text span size="sm" lineClamp={1} title={col}>{col}</Text>
+                      </Group>
+                    ))}
+                  </SimpleGrid>
                   {latestSnap.unmapped_headers.length > 0 && (
                     <Text size="xs" c="dimmed" mt="sm">
                       Unmapped (ignored) source columns: {latestSnap.unmapped_headers.join(', ')}.
@@ -280,7 +367,10 @@ export default function DataHealth() {
       </Card>
 
       <Card withBorder padding="lg" id="snapshots">
-        <Title order={4} mb="xs">Per-snapshot ingestion</Title>
+        <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
+          <SectionTitle id="snapshots">Per-snapshot ingestion</SectionTitle>
+          <Switch size="xs" label="Hide technical details" checked={compact} onChange={(e) => setCompact(e.currentTarget.checked)} />
+        </Group>
         <Text size="xs" c="dimmed" mb="md">
           <b>{num(manifest?.total_rows)}</b> records · <b>{num(snaps.length)}</b> snapshots ·
           schema v{manifest?.schema_version} · last built {manifest?.generated_at?.slice(0, 16).replace('T', ' ')}
@@ -288,12 +378,12 @@ export default function DataHealth() {
             <> · <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" inherit>data dictionary →</Anchor></>
           )}
         </Text>
-        <Table.ScrollContainer minWidth={920}>
-      <Table stickyHeader stickyHeaderOffset={64}>
+        <Table.ScrollContainer minWidth={compact ? 680 : 920}>
+      <Table stickyHeader stickyHeaderOffset={64} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>
             <Th>Snapshot</Th>
-            <Th>Source (file · sheet)</Th>
+            {!compact && <Th>Source (file · sheet)</Th>}
             <Th ta="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several).">Rows</Th>
             <Th ta="right" tip="Distinct identities in the dump (name + hire date).">People</Th>
             <Th ta="right" tip="People with at least one paid appointment — the headcount used across the site.">Paid</Th>
@@ -311,13 +401,18 @@ export default function DataHealth() {
             <Table.Tr key={s.snapshot_id} style={{ background: s.note ? 'var(--mantine-color-default-hover)' : undefined }}>
               <Table.Td>
                 <Text size="sm" fw={500}>{s.snapshot_label}</Text>
-                <Code>{s.snapshot_id}</Code>
+                {!compact && <Code>{s.snapshot_id}</Code>}
               </Table.Td>
-              <Table.Td>
-                <Text size="xs">{s.source_file}</Text>
-                <Text size="xs" c="dimmed">{s.source_sheet}</Text>
+              {!compact && (
+                <Table.Td>
+                  <Text size="xs">{s.source_file}</Text>
+                  <Text size="xs" c="dimmed">{s.source_sheet}</Text>
+                </Table.Td>
+              )}
+              <Table.Td ta="right">
+                {num(s.row_count)}
+                <MiniBar frac={(s.row_count || 0) / maxRows} />
               </Table.Td>
-              <Table.Td ta="right">{num(s.row_count)}</Table.Td>
               <Table.Td ta="right">{num(s.distinct_people)}</Table.Td>
               <Table.Td ta="right">{s.distinct_people_paid != null ? num(s.distinct_people_paid) : '—'}</Table.Td>
               <Table.Td ta="right">{i > 0 ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} /> : '—'}</Table.Td>
@@ -332,10 +427,10 @@ export default function DataHealth() {
                 >
                   {s.status.toUpperCase()}
                 </Badge>
-                {s.messages.length > 0 && (
+                {!compact && s.messages.length > 0 && (
                   <Text size="xs" c="dimmed" mt={2}>{s.messages.join('; ')}</Text>
                 )}
-                {s.unmapped_headers.length > 0 && (
+                {!compact && s.unmapped_headers.length > 0 && (
                   <Text size="xs" c="dimmed" mt={2}>unmapped: {s.unmapped_headers.join(', ')}</Text>
                 )}
                 {s.note && (
@@ -359,5 +454,7 @@ export default function DataHealth() {
 
       <DuplicateIdentities snap={snapId} />
     </Stack>
+    <BackToTop />
+    </>
   );
 }

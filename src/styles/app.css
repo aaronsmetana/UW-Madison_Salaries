@@ -44,6 +44,7 @@ body {
 /* Obvious, consistent keyboard focus on every interactive element. */
 a:focus-visible,
 button:focus-visible,
+summary:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
@@ -299,3 +300,80 @@ textarea:focus-visible,
 :root[data-mantine-color-scheme='dark'] .data-disclaimer { border-left-color: var(--mantine-color-orange-4); }
 :root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-title,
 :root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
+
+/* Collapsible disclaimer body (<details>/<summary>): drop the native marker, add our own rotating chevron
+   so returning readers can fold the heavy text away. */
+.disc-details > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.disc-details > summary::-webkit-details-marker { display: none; }
+.disc-details > summary::before {
+  content: '▸';
+  color: var(--mantine-color-orange-6);
+  display: inline-block;
+  margin-top: 1px;
+  transition: transform 150ms ease;
+}
+.disc-details[open] > summary::before { transform: rotate(90deg); }
+
+/* "Live" freshness dot: the project's positive green with a slow expanding-ring pulse. */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--mantine-color-pos-6);
+  animation: live-pulse 2.4s ease-out infinite;
+}
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mantine-color-pos-6) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Copy-anchor on each section header: the chain icon stays invisible until the header is hovered/focused. */
+.section-head .copy-anchor { opacity: 0; transition: opacity 120ms ease; }
+.section-head:hover .copy-anchor,
+.section-head:focus-within .copy-anchor { opacity: 1; }
+
+/* Glassmorphism sticky header for the long ingestion table: a semi-transparent surface (built from the
+   theme's body color) that blurs the rows scrolling beneath it. */
+.data-snap-table thead th {
+  background-color: color-mix(in srgb, var(--mantine-color-body) 80%, transparent) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Methodology download buttons: a tactile lift on hover (uses the theme's md shadow). */
+.data-dl-btn { transition: transform 120ms ease, box-shadow 120ms ease; }
+.data-dl-btn:hover { transform: translateY(-1px); box-shadow: var(--mantine-shadow-md); }
+
+/* Floating back-to-top: hidden until the reader scrolls past one viewport, then slides in (bottom-right;
+   clear of the bottom-center selection tray). */
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 250;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  box-shadow: var(--mantine-shadow-md);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.back-to-top[data-show] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+  .disc-details > summary::before,
+  .data-dl-btn,
+  .back-to-top { transition: none; }
+}
