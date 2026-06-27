@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, List, Accordion, Tooltip } from '@mantine/core';
-import { IconAlertTriangle } from '@tabler/icons-react';
+import { Stack, Title, Text, Table, Badge, Loader, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box } from '@mantine/core';
+import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2 } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd, pct } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
@@ -16,6 +16,16 @@ function Delta({ frac }: { frac: number | null }) {
   if (Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">0.0%</Text>;
   const up = frac >= 0;
   return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))}</Text>;
+}
+
+/** One disclaimer caveat: a small amber marker + a bold lead phrase + the rest — laid out in a 2-col grid. */
+function DItem({ lead, children }: { lead: string; children: ReactNode }) {
+  return (
+    <Group wrap="nowrap" gap={8} align="flex-start">
+      <Box mt={8} style={{ width: 5, height: 5, borderRadius: 999, flexShrink: 0, background: 'var(--mantine-color-orange-5)' }} />
+      <Text size="sm"><b>{lead}</b> — {children}</Text>
+    </Group>
+  );
 }
 
 /** Table header with an optional explanatory tooltip (dotted "help" underline). */
@@ -63,7 +73,7 @@ export default function DataHealth() {
   ];
 
   return (
-    <Stack gap="lg" className="tab-rise">
+    <Stack gap="lg" className="tab-rise data-about">
       <PageHeader
         title="Data · About"
         description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
@@ -72,7 +82,7 @@ export default function DataHealth() {
       <Group gap="sm" wrap="wrap">
         <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }}>Jump to</Text>
         {toc.map(([href, label]) => (
-          <Anchor key={href} href={href} size="xs">{label}</Anchor>
+          <Anchor key={href} href={href} size="xs" underline="never" className="data-jump-chip">{label}</Anchor>
         ))}
       </Group>
 
@@ -107,33 +117,34 @@ export default function DataHealth() {
       </Card>
 
       <Alert
-        color="orange"
+        color="gray"
         variant="light"
         radius="md"
-        icon={<IconAlertTriangle size={20} />}
+        className="data-disclaimer"
+        icon={<IconAlertTriangle size={22} />}
         title="Accuracy & disclaimer — these numbers may not reflect reality"
         id="disclaimer"
         styles={{ title: { fontSize: 'var(--mantine-h4-font-size)', fontWeight: 700 } }}
       >
-        <Stack gap="xs">
+        <Stack gap="sm">
           <Text size="sm" fw={600}>
             Every figure here is a point-in-time, gross, best-effort transcription of a public spreadsheet —
             treat all of it as approximate, not as a person's verified pay.
           </Text>
           <Text size="sm">A number can be wrong or misleading for many reasons. For example:</Text>
-          <List size="sm" spacing={4}>
-            <List.Item><b>Part-time staff</b> — the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</List.Item>
-            <List.Item><b>Multiple appointments</b> — a person's pay is blended across roles, so a split or joint appointment may not read as you'd expect.</List.Item>
-            <List.Item><b>Bonuses &amp; deferred pay</b> — coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</List.Item>
-            <List.Item><b>Changes between snapshots</b> — raises, promotions, leaves, or appointment changes that happen between two reports aren't captured, so true earnings can be higher or lower than any single number shown.</List.Item>
-            <List.Item><b>Gross, not take-home</b> — amounts are gross annualized figures and exclude benefits, taxes, and retirement.</List.Item>
-            <List.Item><b>Nominal dollars</b> — figures are not inflation-adjusted, so cross-year comparisons overstate real growth.</List.Item>
-            <List.Item><b>Nov 2021 (TTC)</b> — nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</List.Item>
-            <List.Item><b>Oct 2023 scope change</b> — some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</List.Item>
-            <List.Item><b>Column mapping</b> — columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</List.Item>
-            <List.Item><b>Identity matching</b> — people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</List.Item>
-            <List.Item><b>Name formatting &amp; transcription</b> — ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</List.Item>
-          </List>
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" verticalSpacing="xs">
+            <DItem lead="Part-time staff">the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</DItem>
+            <DItem lead="Multiple appointments">a person's pay is blended across roles, so a split or joint appointment may not read as you'd expect.</DItem>
+            <DItem lead="Bonuses & deferred pay">coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</DItem>
+            <DItem lead="Changes between snapshots">raises, promotions, leaves, or appointment changes that happen between two reports aren't captured, so true earnings can be higher or lower than any single number shown.</DItem>
+            <DItem lead="Gross, not take-home">amounts are gross annualized figures and exclude benefits, taxes, and retirement.</DItem>
+            <DItem lead="Nominal dollars">figures are not inflation-adjusted, so cross-year comparisons overstate real growth.</DItem>
+            <DItem lead="Nov 2021 (TTC)">nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</DItem>
+            <DItem lead="Oct 2023 scope change">some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</DItem>
+            <DItem lead="Column mapping">columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</DItem>
+            <DItem lead="Identity matching">people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
+            <DItem lead="Name formatting & transcription">ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</DItem>
+          </SimpleGrid>
           <Text size="sm" mt={4}>
             This is an <b>independent, best-effort project</b> and is <b>not affiliated with or endorsed by
             UW–Madison</b>. Salary data is a Wisconsin public record. The information is provided "as is," may be
@@ -172,18 +183,27 @@ export default function DataHealth() {
             Each source row is one <b>appointment</b>, carrying a full-time annual <b>rate</b> and an{' '}
             <b>FTE</b> (appointment percentage — e.g. 0.5 = half-time). The "Pay" control switches between three views:
           </Text>
-          <Stack gap={4} pl="md">
-            <Text size="sm"><b>Actual pay</b> — rate × FTE (the reported FTE-adjusted salary); closest to what the person was actually paid.</Text>
-            <Text size="sm"><b>Full-time rate</b> — the listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</Text>
-            <Text size="sm"><b>Base pay</b> — base salary as reported; may exclude supplemental or overload pay.</Text>
-          </Stack>
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+            <Paper withBorder radius="md" p="sm">
+              <Text size="sm" fw={700} mb={4}>Actual pay</Text>
+              <Text size="sm">Rate × FTE (the reported FTE-adjusted salary) — closest to what the person was actually paid.</Text>
+            </Paper>
+            <Paper withBorder radius="md" p="sm">
+              <Text size="sm" fw={700} mb={4}>Full-time rate</Text>
+              <Text size="sm">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</Text>
+            </Paper>
+            <Paper withBorder radius="md" p="sm">
+              <Text size="sm" fw={700} mb={4}>Base pay</Text>
+              <Text size="sm">Base salary as reported; may exclude supplemental or overload pay.</Text>
+            </Paper>
+          </SimpleGrid>
           <Text size="sm">
             A person holding <b>more than one paid appointment</b> is combined by summing each appointment's
             actual (rate × FTE) earnings, so split roles aren't double-counted. Unpaid <b>$0</b> affiliate
             appointments are excluded from headcount, medians, and totals.
           </Text>
 
-          <Text size="sm" fw={700} mt="xs">A snapshot in time</Text>
+          <Text size="sm" fw={700} mt="lg">A snapshot in time</Text>
           <Text size="sm">
             Every figure reflects a single periodic report. Pay, FTE, title, and grade change between
             snapshots, and raises or appointment changes that happen between reports aren't captured — so a
@@ -202,22 +222,23 @@ export default function DataHealth() {
             all public, so you can audit exactly how each published spreadsheet becomes the data shown here — or
             reproduce it from the raw records yourself.
           </Text>
-          <Group gap="lg">
-            <Anchor href={REPO_URL} target="_blank" rel="noopener noreferrer" size="sm" fw={600}>Source code &amp; ingestion →</Anchor>
-            <Anchor href={`${import.meta.env.BASE_URL}data/salaries.parquet`} size="sm">Download dataset (Parquet) →</Anchor>
-            <Anchor href={`${import.meta.env.BASE_URL}data/manifest.json`} target="_blank" rel="noopener noreferrer" size="sm">Ingestion manifest (JSON) →</Anchor>
+          <Group gap="sm" wrap="wrap">
+            <Button component="a" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBrandGithub size={15} />}>Source code &amp; ingestion</Button>
+            <Button component="a" href={`${import.meta.env.BASE_URL}data/salaries.parquet`} download variant="default" size="xs" radius="md" leftSection={<IconDownload size={15} />}>Dataset (Parquet)</Button>
+            <Button component="a" href={`${import.meta.env.BASE_URL}data/manifest.json`} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBraces size={15} />}>Manifest (JSON)</Button>
             {dict?.data_dictionary_url && (
-              <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" size="sm">Source data dictionary →</Anchor>
+              <Button component="a" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBook2 size={15} />}>Data dictionary</Button>
             )}
           </Group>
 
-          <Text size="sm" fw={700} mt="xs">What's in a record</Text>
-          <Text size="sm">
-            Each appointment row carries: name (first &amp; last), title &amp; job code, school &amp; department,
-            grade &amp; basis, salary / FTE-adjusted salary / base pay, FTE, pay-rate type, FLSA status, employee
-            category &amp; type, and hire date — tagged with the snapshot it came from. The three "Pay" views are
-            derived from those columns; nothing else about a person is stored.
-          </Text>
+          <Text size="sm" fw={700} mt="lg">What's in a record</Text>
+          <Text size="sm">Each appointment row carries these fields, tagged with the snapshot it came from:</Text>
+          <Group gap={6} wrap="wrap">
+            {['name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary', 'FTE-adjusted salary', 'base pay', 'FTE', 'pay-rate type', 'FLSA status', 'employee category', 'employee type', 'hire date'].map((f) => (
+              <Code key={f}>{f}</Code>
+            ))}
+          </Group>
+          <Text size="sm">The three &ldquo;Pay&rdquo; views are derived from those columns; nothing else about a person is stored.</Text>
 
           {latestSnap && Object.keys(latestSnap.detected_mapping).length > 0 && (
             <Accordion variant="contained" mt="xs">
@@ -268,7 +289,7 @@ export default function DataHealth() {
           )}
         </Text>
         <Table.ScrollContainer minWidth={920}>
-      <Table>
+      <Table stickyHeader stickyHeaderOffset={64}>
         <Table.Thead>
           <Table.Tr>
             <Th>Snapshot</Th>
@@ -304,7 +325,11 @@ export default function DataHealth() {
               <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
               <Table.Td ta="right">{i > 0 ? <Delta frac={dpct(s.salary_median, prev?.salary_median)} /> : '—'}</Table.Td>
               <Table.Td>
-                <Badge color={STATUS_COLOR[s.status] ?? 'gray'} variant="filled" radius="sm">
+                <Badge
+                  color={STATUS_COLOR[s.status] ?? 'gray'}
+                  variant={s.status === 'ok' || s.status === 'info' ? 'light' : 'filled'}
+                  radius="sm"
+                >
                   {s.status.toUpperCase()}
                 </Badge>
                 {s.messages.length > 0 && (

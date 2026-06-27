@@ -270,3 +270,32 @@ textarea:focus-visible,
   .hero-aurora { animation: none; }
   .hero-search-input { animation: none; }
 }
+
+/* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the
+   global tokens above, so the page still reads as the same app — just calmer for a long, prose-heavy page. ── */
+
+/* A touch more leading on this page's prose (it's denser and longer than the rest of the app). */
+.data-about .mantine-Text-root { line-height: 1.65; }
+
+/* "Jump to" links become subtle pill chips (mirrors the .scope-search-pill / .app-dropdown-option neutrals). */
+.data-jump-chip {
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-weight: 600;
+  border: 1px solid var(--mantine-color-default-border);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+:root[data-mantine-color-scheme='light'] .data-jump-chip { background-color: var(--mantine-color-gray-1); }
+:root[data-mantine-color-scheme='dark'] .data-jump-chip { background-color: var(--mantine-color-dark-6); }
+.data-jump-chip:hover { border-color: var(--mantine-color-accent-5); }
+:root[data-mantine-color-scheme='light'] .data-jump-chip:hover { background-color: var(--mantine-color-accent-1); }
+:root[data-mantine-color-scheme='dark'] .data-jump-chip:hover { background-color: var(--mantine-color-dark-5); }
+
+/* Accuracy disclaimer: a subtle neutral surface (the gray "light" Alert) with a bold amber left rule and
+   amber icon + title — the warning semantic without the muddy orange fill. Mirrors the .tenure-callout pattern. */
+.data-disclaimer { border-left: 4px solid var(--mantine-color-orange-6); }
+.data-disclaimer .mantine-Alert-title,
+.data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-7); }
+:root[data-mantine-color-scheme='dark'] .data-disclaimer { border-left-color: var(--mantine-color-orange-4); }
+:root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-title,
+:root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
