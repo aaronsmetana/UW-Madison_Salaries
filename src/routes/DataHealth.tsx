@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, CopyButton, Switch, ThemeIcon } from '@mantine/core';
-import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconLink, IconCheck, IconCash, IconClock, IconStack2, IconArrowUp } from '@tabler/icons-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, CopyButton, Switch, ThemeIcon, Select, UnstyledButton, VisuallyHidden } from '@mantine/core';
+import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconLink, IconCheck, IconCash, IconClock, IconStack2, IconArrowUp, IconChevronUp, IconChevronDown, IconSelector, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd, pct } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
@@ -43,7 +43,7 @@ function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'ri
 
 /** A section header with a copy-anchor affordance: a chain icon that fades in on hover and copies a
  *  deep link (e.g. …/data#methodology) to the clipboard. */
-function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
+function SectionTitle({ id, children, onCopy }: { id: string; children: ReactNode; onCopy?: () => void }) {
   const url = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}#${id}` : `#${id}`;
   return (
     <Group gap={6} wrap="nowrap" className="section-head">
@@ -51,7 +51,7 @@ function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
       <CopyButton value={url} timeout={1400}>
         {({ copied, copy }) => (
           <Tooltip label={copied ? 'Link copied' : 'Copy link to this section'} withArrow>
-            <ActionIcon className="copy-anchor" variant="subtle" color="gray" size="sm" aria-label="Copy link to this section" onClick={copy}>
+            <ActionIcon className="copy-anchor" variant="subtle" color="gray" size="sm" aria-label="Copy link to this section" onClick={() => { copy(); onCopy?.(); }}>
               {copied ? <IconCheck size={15} /> : <IconLink size={15} />}
             </ActionIcon>
           </Tooltip>
@@ -116,14 +116,80 @@ function BackToTop() {
   );
 }
 
+type SortKey = 'date' | 'rows';
+
+/** A clickable, sortable table header: toggles asc/desc and shows a chevron for the active direction. */
+function SortTh({ label, sortKey, active, dir, onSort, ta, tip }: {
+  label: string; sortKey: SortKey; active: boolean; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void;
+  ta?: 'right'; tip?: string;
+}) {
+  return (
+    <Table.Th ta={ta}>
+      <UnstyledButton className="sort-th" onClick={() => onSort(sortKey)} title={tip} aria-label={`Sort by ${label}`}>
+        <Group gap={4} wrap="nowrap" justify={ta === 'right' ? 'flex-end' : 'flex-start'}>
+          <span>{label}</span>
+          {active
+            ? (dir === 'asc' ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />)
+            : <IconSelector size={13} style={{ opacity: 0.35 }} />}
+        </Group>
+      </UnstyledButton>
+    </Table.Th>
+  );
+}
+
+/** Sticky "Jump to" nav with a scrollspy highlight — an IntersectionObserver lights up the chip whose
+ *  section is currently in view. */
+function JumpNav({ items }: { items: [string, string][] }) {
+  const [active, setActive] = useState(items[0]?.[0] ?? '');
+  useEffect(() => {
+    const ids = items.map(([h]) => h.slice(1));
+    const els = ids.map((id) => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
+    if (!els.length) return;
+    const seen = new Map<string, boolean>();
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) seen.set(e.target.id, e.isIntersecting);
+        const current = ids.find((id) => seen.get(id));
+        if (current) setActive(`#${current}`);
+      },
+      { rootMargin: '-112px 0px -75% 0px', threshold: 0 }
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [items]);
+  return (
+    <Group gap="sm" wrap="wrap" className="data-jumpnav">
+      <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }}>Jump to</Text>
+      {items.map(([href, label]) => (
+        <Anchor key={href} href={href} size="xs" underline="never" className={`data-jump-chip${active === href ? ' active' : ''}`}>
+          {label}
+        </Anchor>
+      ))}
+    </Group>
+  );
+}
+
 export default function DataHealth() {
-  const { data: manifest, isLoading, error } = useManifest();
+  const { data: manifest, isLoading, error, refetch } = useManifest();
   const snapId = useActiveSnapshotId();
   const [compact, setCompact] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'desc' });
+  const [year, setYear] = useState('all');
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
   const parquetUrl = `${import.meta.env.BASE_URL}data/salaries.parquet`;
   const manifestUrl = `${import.meta.env.BASE_URL}data/manifest.json`;
   const parquetSize = useFileSize(parquetUrl);
   const manifestSize = useFileSize(manifestUrl);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
+  };
+  const onCopied = () => showToast('Link copied to clipboard!');
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
 
   // Shimmer skeleton while the static manifest payload is fetched, so the page never flashes empty.
   if (isLoading)
@@ -135,7 +201,18 @@ export default function DataHealth() {
         <Skeleton height={260} radius="lg" />
       </Stack>
     );
-  if (error) return <Alert color="red">Failed to load manifest: {(error as Error).message}</Alert>;
+  if (error)
+    return (
+      <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={20} />} title="Couldn't load the data manifest">
+        <Stack gap="sm" align="flex-start">
+          <Text size="sm">
+            The ingestion manifest failed to load ({(error as Error).message}). This is usually a temporary
+            network hiccup fetching the static data file.
+          </Text>
+          <Button size="xs" variant="default" leftSection={<IconReload size={15} />} onClick={() => refetch()}>Retry</Button>
+        </Stack>
+      </Alert>
+    );
 
   const snaps = (manifest?.snapshots ?? []).filter((s) => s.row_count) as SnapshotInfo[];
   const dict = (manifest?.snapshots ?? []).find((s) => 'data_dictionary_url' in (s as object)) as
@@ -152,6 +229,26 @@ export default function DataHealth() {
   const maxRows = Math.max(1, ...orderedSnaps.map((s) => s.row_count || 0));
   const dpct = (cur?: number | null, prev?: number | null) =>
     cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
+
+  // Snapshot-over-snapshot deltas are always measured against the *chronological* predecessor, so they stay
+  // correct no matter how the reader sorts or filters the rows below.
+  const prevMap = new Map<string, SnapshotInfo>();
+  orderedSnaps.forEach((s, i) => { if (i > 0) prevMap.set(s.snapshot_id, orderedSnaps[i - 1]); });
+
+  const years = [...new Set(snaps.map((s) => s.snapshot_year))].sort((a, b) => b - a);
+  const yearOptions = [{ value: 'all', label: 'All years' }, ...years.map((y) => ({ value: String(y), label: String(y) }))];
+
+  let displaySnaps = orderedSnaps;
+  if (year !== 'all') displaySnaps = displaySnaps.filter((s) => String(s.snapshot_year) === year);
+  if (sort.key) {
+    const mul = sort.dir === 'asc' ? 1 : -1;
+    const cmp =
+      sort.key === 'rows'
+        ? (a: SnapshotInfo, b: SnapshotInfo) => ((a.row_count || 0) - (b.row_count || 0)) * mul
+        : (a: SnapshotInfo, b: SnapshotInfo) =>
+            (a.snapshot_date.localeCompare(b.snapshot_date) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)) * mul;
+    displaySnaps = [...displaySnaps].sort(cmp);
+  }
 
   const toc: [string, string][] = [
     ['#source', 'Source'],
@@ -178,15 +275,10 @@ export default function DataHealth() {
         description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
       />
 
-      <Group gap="sm" wrap="wrap">
-        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }}>Jump to</Text>
-        {toc.map(([href, label]) => (
-          <Anchor key={href} href={href} size="xs" underline="never" className="data-jump-chip">{label}</Anchor>
-        ))}
-      </Group>
+      <JumpNav items={toc} />
 
       <Card withBorder padding="lg" id="source">
-        <SectionTitle id="source">Data source &amp; acknowledgment</SectionTitle>
+        <SectionTitle id="source" onCopy={onCopied}>Data source &amp; acknowledgment</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             The UW–Madison salary report files presented here are <b>public records</b>, obtained through
@@ -258,7 +350,7 @@ export default function DataHealth() {
       </Alert>
 
       <Card withBorder padding="lg" id="privacy">
-        <SectionTitle id="privacy">Privacy &amp; responsible use</SectionTitle>
+        <SectionTitle id="privacy" onCopy={onCopied}>Privacy &amp; responsible use</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
@@ -280,7 +372,7 @@ export default function DataHealth() {
       </Card>
 
       <Card withBorder padding="lg" id="how-it-works">
-        <SectionTitle id="how-it-works">How these figures are calculated</SectionTitle>
+        <SectionTitle id="how-it-works" onCopy={onCopied}>How these figures are calculated</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             Each source row is one <b>appointment</b>, carrying a full-time annual <b>rate</b> and an{' '}
@@ -309,7 +401,7 @@ export default function DataHealth() {
       </Card>
 
       <Card withBorder padding="lg" id="methodology">
-        <SectionTitle id="methodology">Methodology, reproducibility &amp; downloads</SectionTitle>
+        <SectionTitle id="methodology" onCopy={onCopied}>Methodology, reproducibility &amp; downloads</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             This project is open source. The ingestion code, column-detection logic, and applied corrections are
@@ -329,7 +421,7 @@ export default function DataHealth() {
           <Text size="sm">Each appointment row carries these fields, tagged with the snapshot it came from:</Text>
           <Group gap={6} wrap="wrap">
             {['name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary', 'FTE-adjusted salary', 'base pay', 'FTE', 'pay-rate type', 'FLSA status', 'employee category', 'employee type', 'hire date'].map((f) => (
-              <Code key={f}>{f}</Code>
+              <Code key={f} className="kbd-chip">{f}</Code>
             ))}
           </Group>
           <Text size="sm">The three &ldquo;Pay&rdquo; views are derived from those columns; nothing else about a person is stored.</Text>
@@ -348,7 +440,7 @@ export default function DataHealth() {
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6} verticalSpacing={6}>
                     {Object.entries(latestSnap.detected_mapping).map(([field, col]) => (
                       <Group key={field} gap={6} wrap="nowrap">
-                        <Code>{field}</Code>
+                        <Code className="kbd-chip">{field}</Code>
                         <Text span size="xs" c="dimmed">→</Text>
                         <Text span size="sm" lineClamp={1} title={col}>{col}</Text>
                       </Group>
@@ -368,8 +460,14 @@ export default function DataHealth() {
 
       <Card withBorder padding="lg" id="snapshots">
         <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
-          <SectionTitle id="snapshots">Per-snapshot ingestion</SectionTitle>
-          <Switch size="xs" label="Hide technical details" checked={compact} onChange={(e) => setCompact(e.currentTarget.checked)} />
+          <SectionTitle id="snapshots" onCopy={onCopied}>Per-snapshot ingestion</SectionTitle>
+          <Group gap="sm" wrap="wrap">
+            <Select
+              size="xs" w={120} aria-label="Filter snapshots by year" data={yearOptions}
+              value={year} onChange={(v) => setYear(v ?? 'all')} allowDeselect={false}
+            />
+            <Switch size="xs" label="Hide technical details" checked={compact} onChange={(e) => setCompact(e.currentTarget.checked)} />
+          </Group>
         </Group>
         <Text size="xs" c="dimmed" mb="md">
           <b>{num(manifest?.total_rows)}</b> records · <b>{num(snaps.length)}</b> snapshots ·
@@ -378,13 +476,14 @@ export default function DataHealth() {
             <> · <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" inherit>data dictionary →</Anchor></>
           )}
         </Text>
-        <Table.ScrollContainer minWidth={compact ? 680 : 920}>
-      <Table stickyHeader stickyHeaderOffset={64} className="data-snap-table">
+        <Box role="region" aria-label="Per-snapshot ingestion table" tabIndex={0} className="data-snap-region">
+        <Table.ScrollContainer minWidth={compact ? 680 : 920} className="data-snap-scroll">
+      <Table stickyHeader stickyHeaderOffset={108} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>
-            <Th>Snapshot</Th>
+            <SortTh label="Snapshot" sortKey="date" active={sort.key === 'date'} dir={sort.dir} onSort={toggleSort} />
             {!compact && <Th>Source (file · sheet)</Th>}
-            <Th ta="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several).">Rows</Th>
+            <SortTh label="Rows" sortKey="rows" active={sort.key === 'rows'} dir={sort.dir} onSort={toggleSort} ta="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several)." />
             <Th ta="right" tip="Distinct identities in the dump (name + hire date).">People</Th>
             <Th ta="right" tip="People with at least one paid appointment — the headcount used across the site.">Paid</Th>
             <Th ta="right" tip="Change in paid headcount vs the previous snapshot.">Δ paid</Th>
@@ -395,8 +494,8 @@ export default function DataHealth() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {orderedSnaps.map((s, i) => {
-            const prev = orderedSnaps[i - 1];
+          {displaySnaps.map((s) => {
+            const prev = prevMap.get(s.snapshot_id);
             return (
             <Table.Tr key={s.snapshot_id} style={{ background: s.note ? 'var(--mantine-color-default-hover)' : undefined }}>
               <Table.Td>
@@ -415,17 +514,17 @@ export default function DataHealth() {
               </Table.Td>
               <Table.Td ta="right">{num(s.distinct_people)}</Table.Td>
               <Table.Td ta="right">{s.distinct_people_paid != null ? num(s.distinct_people_paid) : '—'}</Table.Td>
-              <Table.Td ta="right">{i > 0 ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} /> : '—'}</Table.Td>
+              <Table.Td ta="right">{prev ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} /> : '—'}</Table.Td>
               <Table.Td ta="right">{num(s.zero_or_null_salary)}</Table.Td>
               <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
-              <Table.Td ta="right">{i > 0 ? <Delta frac={dpct(s.salary_median, prev?.salary_median)} /> : '—'}</Table.Td>
+              <Table.Td ta="right">{prev ? <Delta frac={dpct(s.salary_median, prev?.salary_median)} /> : '—'}</Table.Td>
               <Table.Td>
                 <Badge
                   color={STATUS_COLOR[s.status] ?? 'gray'}
                   variant={s.status === 'ok' || s.status === 'info' ? 'light' : 'filled'}
                   radius="sm"
                 >
-                  {s.status.toUpperCase()}
+                  <VisuallyHidden>System status: </VisuallyHidden>{s.status.toUpperCase()}
                 </Badge>
                 {!compact && s.messages.length > 0 && (
                   <Text size="xs" c="dimmed" mt={2}>{s.messages.join('; ')}</Text>
@@ -440,9 +539,17 @@ export default function DataHealth() {
             </Table.Tr>
             );
           })}
+          {displaySnaps.length === 0 && (
+            <Table.Tr>
+              <Table.Td colSpan={compact ? 9 : 10}>
+                <Text size="sm" c="dimmed" ta="center" py="md">No snapshots match this filter.</Text>
+              </Table.Td>
+            </Table.Tr>
+          )}
         </Table.Tbody>
       </Table>
         </Table.ScrollContainer>
+        </Box>
         <Text size="xs" c="dimmed" mt="sm">
           <b>People</b> = distinct identities in the dump. <b>Paid</b> = people with at least one paid appointment —
           the "headcount" used across the site. <b>Unpaid $0</b> = appointments with no salary (affiliates given
@@ -455,6 +562,9 @@ export default function DataHealth() {
       <DuplicateIdentities snap={snapId} />
     </Stack>
     <BackToTop />
+    <div className="data-toast" data-show={toast ? true : undefined} role="status" aria-live="polite">
+      {toast && (<><IconCheck size={16} /><span>{toast}</span></>)}
+    </div>
     </>
   );
 }
