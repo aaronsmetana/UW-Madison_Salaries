@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { query, getDB } from './duckdb';
-import { fetchData, type Manifest, type Summary } from './manifest';
+import { fetchData, type HomeStats, type Manifest, type Summary } from './manifest';
 import { useControls } from '../state/controls';
 
 /** Resolves once DuckDB-WASM + the Parquet have loaded; errors if the dataset can't be loaded. */
@@ -15,6 +15,15 @@ export function useSummary() {
 
 export function useManifest() {
   return useQuery({ queryKey: ['manifest'], queryFn: () => fetchData<Manifest>('manifest.json') });
+}
+
+/**
+ * Precomputed landing-page stats (see scripts/build-data.mjs). Lets Home render without booting
+ * DuckDB-WASM. `retry: false` so a missing artifact (e.g. local dev before `npm run data`) fails
+ * fast and Home can fall back to live SQL instead of retrying a 404.
+ */
+export function useHomeStats() {
+  return useQuery({ queryKey: ['home-stats'], queryFn: () => fetchData<HomeStats>('home-stats.json'), retry: false });
 }
 
 export interface GradeRange {

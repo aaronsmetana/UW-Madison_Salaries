@@ -36,6 +36,22 @@ export interface Summary {
   latest: { id: string; label: string; headcount: number; median: number | null } | null;
 }
 
+/** Precomputed landing-page stats for the latest snapshot (see scripts/build-data.mjs). */
+export interface HomeStats {
+  snapshot_id: string;
+  payroll_total: number | null;
+  schools: number | null;
+  titles: number | null;
+  salary_lo: number | null;
+  salary_hi: number | null;
+  bins: { bucket: number; n: number }[];
+  top_title: { title: string; n: number } | null;
+  top_division: { school: string; n: number } | null;
+  p90: number | null;
+  median_tenure_years: number | null;
+  category_medians: { category: string; median: number }[];
+}
+
 export async function fetchData<T>(file: string): Promise<T> {
   const resp = await fetch(`${import.meta.env.BASE_URL}data/${file}`);
   if (!resp.ok) throw new Error(`Failed to load ${file} (HTTP ${resp.status})`);

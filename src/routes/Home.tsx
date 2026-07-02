@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
 import { IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase } from '@tabler/icons-react';
-import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { usd, usdCompact, num } from '../lib/format';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
@@ -116,21 +116,33 @@ export default function Home() {
   const { data: summary } = useSummary();
   const snap = useActiveSnapshotId();
 
+  // The precomputed artifact only covers the latest snapshot. It's usable once loaded, as long as
+  // the page isn't pinned to some other (older) snapshot — in which case we fall back to live SQL.
+  const { data: homeStats, isError: homeStatsFailed } = useHomeStats();
+  const artifactUsable = !!homeStats && (snap == null || snap === homeStats.snapshot_id);
+  const needsSql = !!snap && (homeStatsFailed || (!!homeStats && !artifactUsable));
+
   const { data: payrollRows } = useSql<{ total: number | null }>(
     ['home-payroll', snap ?? ''],
     `SELECT sum(salary * COALESCE(fte, 1)) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
-    !!snap
+    needsSql
   );
-  const payroll = payrollRows?.[0]?.total ?? null;
+  const payroll = artifactUsable ? homeStats.payroll_total : (payrollRows?.[0]?.total ?? null);
 
   const { data: dimRows } = useSql<{ schools: number; titles: number; lo: number | null; hi: number | null }>(
     ['home-dims', snap ?? ''],
     `SELECT count(DISTINCT school) schools, count(DISTINCT job_code) titles,
             min(salary) FILTER (WHERE salary > 0) lo, max(salary) FILTER (WHERE salary > 0) hi
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')}`,
-    !!snap
+    needsSql
   );
-  const dims = dimRows?.[0];
+  const dims = useMemo(
+    () =>
+      artifactUsable
+        ? { schools: homeStats.schools, titles: homeStats.titles, lo: homeStats.salary_lo, hi: homeStats.salary_hi }
+        : dimRows?.[0],
+    [artifactUsable, homeStats, dimRows]
+  );
 
   // Distribution sparkline + rotating facts (lightweight aggregates over the latest snapshot).
   const { data: binRows } = useSql<{ bucket: number; n: number }>(
@@ -138,20 +150,22 @@ export default function Home() {
     `SELECT floor(salary / 10000) * 10000 AS bucket, count(*) AS n FROM salaries
      WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 AND salary < 250000
      GROUP BY bucket ORDER BY bucket`,
-    !!snap
+    needsSql
   );
-  const bins = binRows ?? [];
+  const bins = artifactUsable ? homeStats.bins : (binRows ?? []);
 
-  const { data: titleTop } = useSql<{ title: string; n: number }>(
+  const { data: titleTopRows } = useSql<{ title: string; n: number }>(
     ['home-toptitle', snap ?? ''],
     `SELECT title, count(*) n FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND title IS NOT NULL GROUP BY title ORDER BY n DESC LIMIT 1`,
-    !!snap
+    needsSql
   );
-  const { data: divTop } = useSql<{ school: string; n: number }>(
+  const topTitle = artifactUsable ? homeStats.top_title : (titleTopRows?.[0] ?? null);
+  const { data: divTopRows } = useSql<{ school: string; n: number }>(
     ['home-topdiv', snap ?? ''],
     `SELECT school, count(*) n FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL GROUP BY school ORDER BY n DESC LIMIT 1`,
-    !!snap
+    needsSql
   );
+  const topDivision = artifactUsable ? homeStats.top_division : (divTopRows?.[0] ?? null);
   // p90 (top-10% line) + median tenure, deduped per person.
   const { data: factStats } = useSql<{ p90: number | null; tenure: number | null }>(
     ['home-facts', snap ?? ''],
@@ -162,18 +176,23 @@ export default function Home() {
      SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) p90,
             median(date_diff('day', CAST(doh AS DATE), CAST(sd AS DATE)) / 365.25) FILTER (WHERE doh IS NOT NULL) tenure
      FROM p`,
-    !!snap
+    needsSql
   );
+  const p90 = artifactUsable ? homeStats.p90 : (factStats?.[0]?.p90 ?? null);
+  const tenure = artifactUsable ? homeStats.median_tenure_years : (factStats?.[0]?.tenure ?? null);
   const { data: byCat } = useSql<{ cat: string; med: number }>(
     ['home-bycat', snap ?? ''],
     `SELECT employee_category cat, median(salary) FILTER (WHERE salary > 0) med, count(*) n
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND employee_category IS NOT NULL
      GROUP BY employee_category ORDER BY n DESC LIMIT 3`,
-    !!snap
+    needsSql
   );
+  const categoryMedians = artifactUsable
+    ? homeStats.category_medians
+    : (byCat ?? []).map((c) => ({ category: c.cat, median: c.med }));
 
-  // All facts are computed at runtime from summary.json + per-snapshot SQL, so they auto-update on data import
-  // (no hardcoded values — nothing to maintain when the salary data is refreshed).
+  // All facts are computed at runtime from summary.json + home-stats.json (or live SQL), so they
+  // auto-update on data import — no hardcoded values to maintain when the salary data refreshes.
   const facts = useMemo(() => {
     const f: string[] = [];
     const first = summary?.snapshots?.[0];
@@ -184,16 +203,14 @@ export default function Home() {
       const yr = first?.date?.slice(0, 4);
       f.push(`Median pay rose from ${usd(med0)}${yr ? ` (${yr})` : ''} to ${usd(medNow)} — up ~${up}%`);
     }
-    if (titleTop?.[0]?.title) f.push(`Most common title: ${titleTop[0].title} (${num(titleTop[0].n)} people)`);
-    if (divTop?.[0]?.school) f.push(`Largest division: ${divTop[0].school} (${num(divTop[0].n)} people)`);
-    const p90 = factStats?.[0]?.p90;
+    if (topTitle?.title) f.push(`Most common title: ${topTitle.title} (${num(topTitle.n)} people)`);
+    if (topDivision?.school) f.push(`Largest division: ${topDivision.school} (${num(topDivision.n)} people)`);
     if (p90 != null) f.push(`The top 10% earn more than ${usd(p90)}`);
     if (dims?.lo != null && dims?.hi != null) f.push(`Pay ranges from ${usd(dims.lo)} to ${usd(dims.hi)}`);
-    const tenure = factStats?.[0]?.tenure;
     if (tenure != null) f.push(`Median tenure is ${tenure.toFixed(1)} years`);
-    if (byCat && byCat.length) f.push(`Median pay by group — ${byCat.map((c) => `${c.cat} ${usd(c.med)}`).join(' · ')}`);
+    if (categoryMedians.length) f.push(`Median pay by group — ${categoryMedians.map((c) => `${c.category} ${usd(c.median)}`).join(' · ')}`);
     return f;
-  }, [summary, titleTop, divTop, dims, factStats, byCat]);
+  }, [summary, topTitle, topDivision, p90, dims, tenure, categoryMedians]);
 
   const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
   const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);

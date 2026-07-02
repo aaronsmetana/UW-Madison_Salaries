@@ -573,6 +573,14 @@ export default function Person() {
   const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
   const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
 
+  // Long titles (e.g. "Professor") can have 1000+ peers — page the table instead of rendering
+  // every row. Auto-expand if the subject would otherwise be scrolled off the first page.
+  const [showAllPeers, setShowAllPeers] = useState(false);
+  useEffect(() => {
+    if (cohortRank != null && cohortRank > 25) setShowAllPeers(true);
+  }, [cohortRank]);
+  const visiblePeers = showAllPeers ? cohortList : cohortList.slice(0, 25);
+
   // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
   const peerViewportRef = useRef<HTMLDivElement>(null);
   const subjectRowRef = useRef<HTMLTableRowElement>(null);
@@ -583,7 +591,7 @@ export default function Person() {
     const vpRect = vp.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
     vp.scrollTop += rowRect.top - vpRect.top - vp.clientHeight / 2 + rowRect.height / 2;
-  }, [peers]);
+  }, [peers, showAllPeers]);
 
   const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
@@ -846,7 +854,7 @@ export default function Person() {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {cohortList.map((p, i) => {
+                      {visiblePeers.map((p, i) => {
                         const isYou = p.person_key === key;
                         const inTray = has(p.person_key);
                         const sameSchool = !isYou && !!p.school && p.school === latest?.school;
@@ -902,6 +910,13 @@ export default function Person() {
                     </Table.Tbody>
                   </Table>
                 </ScrollArea.Autosize>
+                {cohortList.length > 25 && (
+                  <Group justify="center" mt="sm">
+                    <Button variant="subtle" size="xs" onClick={() => setShowAllPeers((v) => !v)}>
+                      {showAllPeers ? 'Show top 25 only' : `Show all ${num(cohortList.length)}`}
+                    </Button>
+                  </Group>
+                )}
                 {cohort === 'all' && latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) && (
                   <Text size="xs" c="dimmed" mt="xs">Rows shaded green share {name}'s school ({latest.school}).</Text>
                 )}
