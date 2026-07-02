@@ -31,8 +31,34 @@ function RetentionTip({ active, payload, label }: {
   );
 }
 
-/** Red→green by retention % (a quick magnitude read when the bars are sorted by value). */
-const retColor = (r: number) => `hsl(${Math.round(Math.max(0, Math.min(100, r)) * 1.2)}, 55%, 42%)`;
+/** Retention % is a magnitude (share retained), not a polarity — a sequential single-hue ramp reads it
+ *  correctly, where a red→green diverging scale would misuse the reserved status colors and be a
+ *  classic CVD-confusable pair. Five steps, light→dark, off the accent ramp. */
+const RETENTION_RAMP = [
+  'var(--mantine-color-accent-2)', 'var(--mantine-color-accent-4)', 'var(--mantine-color-accent-6)',
+  'var(--mantine-color-accent-7)', 'var(--mantine-color-accent-9)',
+];
+const retColor = (r: number) => {
+  const pct = Math.max(0, Math.min(100, r));
+  const idx = Math.min(RETENTION_RAMP.length - 1, Math.floor(pct / (100 / RETENTION_RAMP.length)));
+  return RETENTION_RAMP[idx];
+};
+
+/** Backing pill for a text label that sits over chart marks (a body-colored rounded rect behind the
+ *  text) so it stays legible instead of colliding illegibly with whatever bars/lines are underneath. */
+function PillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; width?: number }; text: string }) {
+  if (!viewBox || viewBox.x == null || viewBox.y == null) return null;
+  const w = text.length * 5.5 + 12;
+  const h = 16;
+  const cx = viewBox.x + (viewBox.width ?? 0) / 2;
+  const cy = viewBox.y + 12;
+  return (
+    <g>
+      <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={8} fill="var(--mantine-color-body)" fillOpacity={0.85} />
+      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={10} fill="var(--mantine-color-dimmed)">{text}</text>
+    </g>
+  );
+}
 
 export function CohortPanel() {
   const { scope, filters } = useControls();
@@ -135,9 +161,9 @@ export function CohortPanel() {
             {/* Pre-2021 cohorts are left-censored: we only see those who survived to the first snapshot. */}
             {sortMode === 'year' && (
               <ReferenceArea x1="1990" x2="2021" fill="var(--mantine-color-default-border)" fillOpacity={0.35}
-                label={{ value: 'survivors only', position: 'insideTop', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+                label={<PillLabel text="pre-2021 hires: survivors only" />} />
             )}
-            <Bar dataKey="retention" name="Retained" stackId="r">
+            <Bar dataKey="retention" name="Retained" fill="var(--mantine-color-pos-6)" stackId="r">
               {chart.map((c, i) => <Cell key={i} fill={sortMode === 'retention' ? retColor(c.retention) : 'var(--mantine-color-pos-6)'} />)}
             </Bar>
             <Bar dataKey="lost" name="Left" stackId="r" fill="var(--mantine-color-gray-4)" />

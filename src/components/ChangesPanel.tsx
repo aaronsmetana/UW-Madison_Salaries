@@ -367,7 +367,7 @@ export function ChangesPanel() {
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="sm">Raise distribution (% change, continuing staff)</Text>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12, top: 8 }}>
+          <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12, top: 24 }}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} />

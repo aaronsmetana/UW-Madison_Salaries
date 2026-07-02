@@ -10,7 +10,8 @@ import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
 import { useTray } from '../state/tray';
 import { useControls } from '../state/controls';
-import { useSql, useActiveSnapshotId } from '../lib/hooks';
+import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
+import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
@@ -39,6 +40,11 @@ export default function Compare() {
   const expr = salaryExpr(metric);
   const [xMode, setXMode] = useState<'date' | 'tenure'>('date');
   const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+  // Canonical snapshot order (from summary.json) so every pivoted series here sorts identically —
+  // otherwise the two same-dated Nov 2021 (Pre/Post-TTC) snapshots can land in a different order per
+  // chart, since each chart's own SQL query breaks that date tie in its own row order.
+  const { data: summary } = useSummary();
+  const cmpSnap = useMemo(() => makeSnapshotComparator(summary?.snapshots), [summary]);
 
   // Shareable comparisons: a `?sel=` link hydrates the tray on first load (replacing whatever's
   // there — the recipient should see exactly what was shared), then every tray change keeps `?sel=`
@@ -148,8 +154,8 @@ export default function Compare() {
       row[r.person_key] = r.pctile;
       byLabel.set(r.label, row);
     }
-    return [...byLabel.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [standingData]);
+    return [...byLabel.values()].sort(cmpSnap);
+  }, [standingData, cmpSnap]);
 
   const perPerson = useMemo(() => {
     const m = new Map<string, { label: string; date: string; pay: number; tenure: number | null }[]>();
@@ -158,9 +164,9 @@ export default function Compare() {
       arr.push({ label: r.label, date: r.date, pay: r.pay, tenure: r.tenure });
       m.set(r.person_key, arr);
     }
-    for (const arr of m.values()) arr.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    for (const arr of m.values()) arr.sort(cmpSnap);
     return m;
-  }, [pdata]);
+  }, [pdata, cmpSnap]);
 
   const { series, latest } = useMemo(() => {
     const byLabel = new Map<string, Record<string, string | number>>();
@@ -171,9 +177,9 @@ export default function Compare() {
       byLabel.set(r.label, row);
       latestByPerson.set(r.person_key, r.pay);
     }
-    const series = [...byLabel.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const series = [...byLabel.values()].sort(cmpSnap);
     return { series, latest: latestByPerson };
-  }, [pdata]);
+  }, [pdata, cmpSnap]);
 
   // Real-dollar view of the trajectory chart only (gap/standing/cadence stay nominal — those are
   // separate cards without their own toggle). Each point converts using its own snapshot year.
@@ -206,8 +212,8 @@ export default function Compare() {
       row[r.job_code] = r.med;
       byLabel.set(r.label, row);
     }
-    return [...byLabel.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [ttrend]);
+    return [...byLabel.values()].sort(cmpSnap);
+  }, [ttrend, cmpSnap]);
 
   // gap to the top earner in the group, per snapshot
   const gapSeries = useMemo(

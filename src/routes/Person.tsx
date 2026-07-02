@@ -8,6 +8,8 @@ import {
   ReferenceDot, ReferenceLine, ReferenceArea, LabelList,
 } from 'recharts';
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { wrapChartTitle } from '../lib/chartText';
+import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
 import { IconAlertTriangle, IconPlus, IconArrowRight } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
@@ -136,35 +138,21 @@ function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleC
   );
 }
 
-/** Wrap a title-era divider label onto at most two balanced lines (≤26 chars each) so the full title
- *  shows without truncation and without overrunning the chart. Short titles stay on one line. */
-function wrapTitle(s: string): string[] {
-  const words = s.split(/\s+/);
-  if (s.length <= 20 || words.length === 1) return [s];
-  let best: string[] = [s];
-  let bestDiff = Infinity;
-  for (let i = 1; i < words.length; i++) {
-    const a = words.slice(0, i).join(' ');
-    const b = words.slice(i).join(' ');
-    if (Math.max(a.length, b.length) <= 26 && Math.abs(a.length - b.length) < bestDiff) {
-      best = [a, b];
-      bestDiff = Math.abs(a.length - b.length);
-    }
-  }
-  return best;
-}
-
 /** Custom label for a title era: the full (wrapped) title, stacked just above the plot. Recharts injects
- *  `viewBox` ({ x, y }) for the vertical reference line. `anchor='start'` left-aligns it — used for the
- *  leftmost era (e.g. a pre-TTC title), which sits at the chart's left edge and has no divider. */
-function TitleChangeLabel({ viewBox, title, anchor = 'middle' }: { viewBox?: { x?: number; y?: number }; title?: string | null; anchor?: 'middle' | 'start' }) {
+ *  `viewBox` ({ x, y }) for the vertical reference line. `anchor='start'`/`'end'` edge-align it — used for
+ *  the leftmost/rightmost era, which sit at the chart's edges and have no divider on that side. `row=1`
+ *  drops the label a further 24px so two eras whose dividers land close together don't overlap. */
+function TitleChangeLabel({
+  viewBox, title, anchor = 'middle', row = 0,
+}: { viewBox?: { x?: number; y?: number }; title?: string | null; anchor?: 'middle' | 'start' | 'end'; row?: 0 | 1 }) {
   if (!viewBox || viewBox.x == null || viewBox.y == null || !title) return null;
-  const lines = wrapTitle(title);
+  const lines = wrapChartTitle(title);
   const { x, y } = viewBox;
+  const rowOffset = row === 1 ? 24 : 0;
   return (
     <text textAnchor={anchor} fontSize={10} fill="var(--mantine-color-dimmed)">
       {lines.map((ln, i) => (
-        <tspan key={i} x={x} y={y - 5 - (lines.length - 1 - i) * 11}>{ln}</tspan>
+        <tspan key={i} x={x} y={y - 5 - rowOffset - (lines.length - 1 - i) * 11}>{ln}</tspan>
       ))}
     </text>
   );
@@ -300,7 +288,6 @@ export default function Person() {
       }
       cur.rows.push(r);
     }
-    const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
     return [...by.values()]
       .map((g) => {
         const appts = g.rows.length;
@@ -354,10 +341,27 @@ export default function Person() {
 
   // Distinct title eras (for disconnected median segments) and the points where the title changes.
   const eras = useMemo(() => [...new Set(trendData.map((t) => t.era))], [trendData]);
-  const titleChanges = useMemo(
-    () => trendData.filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
-    [trendData],
-  );
+  // Each title-change divider label, staggered onto a second row when it lands close (in x-category
+  // index) to the previous labeled boundary — otherwise adjacent short eras' labels overlap. Also
+  // edge-anchors a divider that falls at (or one shy of) the last category, so it doesn't clip the
+  // right margin.
+  const titleChanges = useMemo(() => {
+    const N = trendData.length;
+    const hasLeftLabel = eras.length > 1 && !!trendData[0]?.title;
+    const list = trendData
+      .map((t, idx) => ({ ...t, idx }))
+      .filter((t, i) => i > 0 && t.era !== trendData[i - 1].era);
+    const minGap = list.length > 0 ? Math.ceil(N / (list.length + (hasLeftLabel ? 1 : 0) + 1)) : Infinity;
+    let prevIdx = hasLeftLabel ? 0 : -Infinity;
+    let prevRow: 0 | 1 = 0;
+    return list.map((t) => {
+      const row: 0 | 1 = t.idx - prevIdx < minGap ? (prevRow === 0 ? 1 : 0) : 0;
+      prevIdx = t.idx;
+      prevRow = row;
+      const anchor: 'middle' | 'end' = N - 1 - t.idx <= 1 ? 'end' : 'middle';
+      return { ...t, row, anchor };
+    });
+  }, [trendData, eras.length]);
   // Plot rows: carry each metric's year-over-year change (vs the previous snapshot) so the line can label
   // every step with its raise %.
   const trendPlot = useMemo(
@@ -397,7 +401,6 @@ export default function Person() {
 
   // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair.
   const historyRows = useMemo(() => {
-    const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
     return [...rows].sort(
       (a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date)) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)
     );
@@ -660,7 +663,7 @@ export default function Person() {
           {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
           {/* Source columns the page otherwise hides, surfaced as a wrapping row of pills (null ones omitted). */}
           <Group gap={7} wrap="wrap" mt="sm">
-            <MetaPill label="Grade" value={latest?.salary_grade_raw ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
+            <MetaPill label="Grade" value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
             <MetaPill label="Job code" value={latest?.job_code} />
             <MetaPill label="FLSA" value={latest?.flsa_status} />
             <MetaPill label="Basis" value={latest?.comp_basis} />
@@ -1089,7 +1092,7 @@ export default function Person() {
             grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
             the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: titleChanges.length ? 40 : 22, bottom: 0 }}>
+          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: titleChanges.length ? 48 : 22, bottom: 0 }}>
             <defs>{lineGlowDefs('trend')}</defs>
             {/* Faint alternating background band per title era. */}
             {eras.length > 1 && eraSpans.map((s) => (
@@ -1146,7 +1149,7 @@ export default function Person() {
                 stroke="var(--mantine-color-gray-4)"
                 strokeWidth={1}
                 strokeDasharray="2 4"
-                label={<TitleChangeLabel title={t.title} />}
+                label={<TitleChangeLabel title={t.title} row={t.row} anchor={t.anchor} />}
               />
             ))}
             {/* Gradient area fill under the active metric. */}
