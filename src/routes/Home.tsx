@@ -1,56 +1,15 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, Paper, ThemeIcon, Anchor, Badge, ActionIcon } from '@mantine/core';
-import { IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconX } from '@tabler/icons-react';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, Paper, ThemeIcon, Anchor, Badge } from '@mantine/core';
+import { IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { usd, usdCompact, num } from '../lib/format';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox } from '../components/SearchBox';
-import { getRecent, removeRecent, type RecentPerson } from '../lib/recent';
 import { useDocTitle } from '../lib/useDocTitle';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
-
-/** One dismissible "recently viewed" chip: navigable name + a small remove (x). */
-function RecentChip({ person, onRemove }: { person: RecentPerson; onRemove: () => void }) {
-  return (
-    <Group
-      gap={2}
-      wrap="nowrap"
-      style={{ background: 'var(--mantine-color-default-hover)', borderRadius: 999, paddingInlineStart: 10, paddingInlineEnd: 2, paddingBlock: 2 }}
-    >
-      <Anchor component={Link} to={`/person/${encodeURIComponent(person.id)}`} size="xs" underline="hover" c="inherit" fw={500}>
-        {person.label}
-      </Anchor>
-      <ActionIcon size={16} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${person.label} from recently viewed`} onClick={onRemove}>
-        <IconX size={11} />
-      </ActionIcon>
-    </Group>
-  );
-}
-
-/** Quick re-entry into recent lookups (this audience's core loop) — reads once on mount since this
- *  is a client-only SPA, no hydration mismatch to worry about. */
-function RecentPeople() {
-  const [recent, setRecent] = useState<RecentPerson[]>(() => getRecent());
-  if (!recent.length) return null;
-  return (
-    <Group gap={6} wrap="wrap" justify="center">
-      <Text size="xs" c="dimmed">Recently viewed:</Text>
-      {recent.map((p) => (
-        <RecentChip
-          key={p.id}
-          person={p}
-          onRemove={() => {
-            removeRecent(p.id);
-            setRecent((prev) => prev.filter((x) => x.id !== p.id));
-          }}
-        />
-      ))}
-    </Group>
-  );
-}
 
 /** One system-wide stat: centered icon+label over its value, which counts up from 0 as the data loads. */
 function Kpi({ icon, label, value, format, color, hint }: KpiData) {
@@ -303,7 +262,6 @@ export default function Home() {
         {/* Hero search + empty-state content share one centered width and reveal in a gentle cascade. */}
         <Stack gap="lg" maw={760} mx="auto" w="100%" className="hero-rise">
           <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
-          <RecentPeople />
 
           {/* System-wide stats (as of the latest snapshot) — the whole card links to General Comparisons. */}
           <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>

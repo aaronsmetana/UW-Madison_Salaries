@@ -20,7 +20,6 @@ import { personPay } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis } from '../lib/format';
-import { pushRecent } from '../lib/recent';
 import { usePref } from '../lib/prefs';
 import { percentile } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
@@ -266,12 +265,6 @@ export default function Person() {
   const latest = rows[rows.length - 1];
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
   useDocTitle(latest ? name : "Search Person's Salary");
-
-  // Track this visit for the "recently viewed" list surfaced on Home — only once real data has loaded
-  // (so a bad/missing key doesn't get remembered as a blank entry).
-  useEffect(() => {
-    if (latest && name) pushRecent({ id: key, label: name });
-  }, [key, latest, name]);
 
   // Flag people who aren't in the most recent snapshot (likely no longer employed).
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
