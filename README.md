@@ -4,6 +4,12 @@ A static, client-side dashboard for exploring UW–Madison salary snapshots (pub
 React + Vite + Mantine front end; all querying runs in the browser via **DuckDB-WASM** over a
 **Parquet** file built from the spreadsheets in `data/raw/`. Hosted free on GitHub Pages.
 
+Registers a service worker (PWA) so a repeat visit loads instantly from cache — the app shell,
+DuckDB-WASM bundle, and the Parquet/manifest data all serve from disk first and refresh in the
+background, instead of re-downloading everything on every visit. The landing page never touches
+DuckDB at all: it renders from a small precomputed `home-stats.json` (see below), falling back to
+live queries only if that artifact is missing or a past snapshot is selected.
+
 ## Maintainer runbook (no local setup needed)
 
 Everything is driven by the files in **`data/raw/`**, edited right on github.com:
@@ -42,18 +48,28 @@ Node 20+ required.
 
 ```bash
 npm install
-npm run data     # ETL: data/raw/* → public/data/{salaries.parquet,manifest.json,summary.json}
+npm run data     # ETL: data/raw/* → public/data/{salaries.parquet,manifest.json,summary.json,home-stats.json}
 npm run dev      # http://localhost:5173/UW-Madison_Salaries/
 npm run build    # typecheck + production build
+npm run test     # vitest — pure-function + ETL unit tests
+npm run lint     # eslint
 ```
+
+`npm run data` fails the process (non-zero exit) if the newest snapshot's paid headcount swings
+more than 40% versus its predecessor — a likely mapping break rather than real attrition/hiring —
+so a bad upload can't silently go live; CI just keeps serving the last good deploy. Historical,
+already-documented anomalies (the Nov 2021 TTC relabel, the Oct 2023 scope change) are unaffected,
+since only the newest pair is checked.
 
 ## Layout
 
 - `data/raw/` — source-of-truth salary dumps (committed).
 - `data/column-map.json`, `data/value-map.json` — ingestion config.
-- `scripts/build-data.mjs` — the ETL (XLSX via SheetJS → Parquet via DuckDB).
+- `scripts/build-data.mjs` — the ETL (XLSX via SheetJS → Parquet via DuckDB); `scripts/lib/` holds
+  its normalization and `home-stats.json` helpers.
 - `src/` — the app (`lib/duckdb.ts` data layer, `lib/queries.ts`, `routes/`, `app/` shell).
-- `public/data/` — generated artifacts (git-ignored; built in CI).
+- `public/data/` — generated artifacts, incl. `home-stats.json` (landing-page stats, precomputed so
+  Home never boots DuckDB) — git-ignored; built in CI.
 
 Data is a Wisconsin public record. Person identity is best-effort (name + hire date); see the
 Data · About page for methodology and known caveats.

@@ -22,6 +22,7 @@ import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
   snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median,
 } from './lib/normalize.mjs';
+import { computeHomeStats } from './lib/home-stats.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RAW_DIR = path.join(ROOT, 'data', 'raw');
@@ -323,6 +324,43 @@ async function main() {
     }
   }
 
+  // Hard gate — the NEWEST snapshot only. A >40% paid-headcount swing vs its immediate predecessor is
+  // far outside anything seen in this dataset's history and more likely a mapping/ingestion break than
+  // a real staffing change. This fails the CI job (site keeps serving the last good deploy) instead of
+  // silently publishing bad data. Only the latest pair is checked, so documented historical anomalies
+  // (the Nov 2021 TTC relabel, the Oct 2023 scope change) can never retroactively break the build.
+  let hardFail = false;
+  if (dataSnaps.length >= 2) {
+    const cur = dataSnaps[dataSnaps.length - 1];
+    const prev = dataSnaps[dataSnaps.length - 2];
+    if (prev.distinct_people_paid && cur.distinct_people_paid) {
+      const change = Math.abs((cur.distinct_people_paid - prev.distinct_people_paid) / prev.distinct_people_paid);
+      if (change > 0.4) {
+        cur.status = 'error';
+        cur.messages.push(`BLOCKING: paid headcount changed ${(change * 100).toFixed(0)}% vs ${prev.snapshot_id} — over the 40% safety threshold. If this swing is expected, investigate and adjust before re-running.`);
+        hardFail = true;
+      }
+    }
+  }
+
+  // Files where every sheet failed the required-columns check are otherwise invisible (silently
+  // dropped) — surface them as a manifest error so a bad upload doesn't go unnoticed.
+  const filesInManifest = new Set(manifest.map((m) => m.source_file));
+  for (const f of files) {
+    if (!filesInManifest.has(f)) {
+      manifest.push({
+        snapshot_id: null, source_file: f, status: 'error',
+        messages: ['no sheet in this file could be mapped to the required columns — check data/column-map.json'],
+      });
+    }
+  }
+
+  if (hardFail) {
+    console.error('\nBLOCKING data-health error — aborting before writing output.');
+    for (const m of manifest.filter((x) => x.status === 'error')) console.error(`  [error] ${m.snapshot_id || m.source_file}: ${(m.messages || []).join('; ')}`);
+    process.exit(1);
+  }
+
   // write NDJSON -> Parquet via DuckDB
   const ndjson = path.join(OUT_DIR, '_rows.ndjson');
   fs.writeFileSync(ndjson, allRows.map((r) => JSON.stringify(r)).join('\n'));
@@ -380,75 +418,6 @@ async function main() {
     console.log('\nHealth flags:');
     for (const w of warnings) console.log(`  [${w.status}] ${w.snapshot_id || w.source_file}: ${w.messages.join('; ')}`);
   }
-}
-
-// Mirrors the six useSql queries in src/routes/Home.tsx so the landing page can render from a
-// ~2KB static JSON instead of booting DuckDB-WASM + downloading the full parquet.
-function computeHomeStats(parquetPath, latestSnapshotId) {
-  return new Promise((resolve, reject) => {
-    const db = new duckdb.Database(':memory:');
-    const con = db.connect();
-    const esc = (s) => String(s).replace(/'/g, "''");
-    const src = `read_parquet('${esc(parquetPath)}')`;
-    const snap = esc(latestSnapshotId);
-    const run = (sql) => new Promise((res, rej) => con.all(sql, (err, rows) => (err ? rej(err) : res(rows))));
-    const toNum = (v) => (v == null ? null : Number(v));
-
-    (async () => {
-      const [payrollRow] = await run(
-        `SELECT sum(salary * COALESCE(fte, 1)) AS total FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0`
-      );
-      const [dimsRow] = await run(
-        `SELECT count(DISTINCT school) AS schools, count(DISTINCT job_code) AS titles,
-                min(salary) FILTER (WHERE salary > 0) AS lo, max(salary) FILTER (WHERE salary > 0) AS hi
-         FROM ${src} WHERE snapshot_id = '${snap}'`
-      );
-      const bins = await run(
-        `SELECT floor(salary / 10000) * 10000 AS bucket, count(*) AS n FROM ${src}
-         WHERE snapshot_id = '${snap}' AND salary > 0 AND salary < 250000 GROUP BY bucket ORDER BY bucket`
-      );
-      const [titleTop] = await run(
-        `SELECT title, count(*) AS n FROM ${src} WHERE snapshot_id = '${snap}' AND title IS NOT NULL
-         GROUP BY title ORDER BY n DESC LIMIT 1`
-      );
-      const [divTop] = await run(
-        `SELECT school, count(*) AS n FROM ${src} WHERE snapshot_id = '${snap}' AND school IS NOT NULL
-         GROUP BY school ORDER BY n DESC LIMIT 1`
-      );
-      const [factRow] = await run(
-        `WITH p AS (
-            SELECT person_key, sum(salary) FILTER (WHERE salary > 0) AS pay,
-                   any_value(date_of_hire) AS doh, any_value(snapshot_date) AS sd
-            FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)
-         SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) AS p90,
-                median(date_diff('day', CAST(doh AS DATE), CAST(sd AS DATE)) / 365.25) FILTER (WHERE doh IS NOT NULL) AS tenure
-         FROM p`
-      );
-      const byCat = await run(
-        `SELECT employee_category AS cat, median(salary) FILTER (WHERE salary > 0) AS med, count(*) AS n
-         FROM ${src} WHERE snapshot_id = '${snap}' AND employee_category IS NOT NULL
-         GROUP BY employee_category ORDER BY n DESC LIMIT 3`
-      );
-
-      con.close();
-      db.close(() => {
-        resolve({
-          snapshot_id: latestSnapshotId,
-          payroll_total: toNum(payrollRow?.total),
-          schools: toNum(dimsRow?.schools),
-          titles: toNum(dimsRow?.titles),
-          salary_lo: toNum(dimsRow?.lo),
-          salary_hi: toNum(dimsRow?.hi),
-          bins: bins.map((b) => ({ bucket: toNum(b.bucket), n: toNum(b.n) })),
-          top_title: titleTop ? { title: titleTop.title, n: toNum(titleTop.n) } : null,
-          top_division: divTop ? { school: divTop.school, n: toNum(divTop.n) } : null,
-          p90: toNum(factRow?.p90),
-          median_tenure_years: toNum(factRow?.tenure),
-          category_medians: byCat.map((c) => ({ category: c.cat, median: toNum(c.med) })),
-        });
-      });
-    })().catch(reject);
-  });
 }
 
 function writeParquet(ndjsonPath, parquetPath) {
