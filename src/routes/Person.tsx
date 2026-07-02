@@ -434,10 +434,13 @@ export default function Person() {
     return { order, index, bySnap };
   }, [historyRows]);
 
+  // As-of the latest snapshot (not today) — matches the peer SQL's tenure basis (Person.tsx peer
+  // queries use snapshot_date), so this card, the tenure-curve callout, and the peer table all agree.
   const tenureYears = useMemo(() => {
     const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
-    if (!hire) return null;
-    return Math.max(0, (Date.now() - new Date(hire).getTime()) / (365.25 * 864e5));
+    const asOf = rows[rows.length - 1]?.snapshot_date;
+    if (!hire || !asOf) return null;
+    return Math.max(0, (new Date(asOf).getTime() - new Date(hire).getTime()) / (365.25 * 864e5));
   }, [rows]);
 
   const firstSalary = trend[0]?.salary ?? null; // actual paid
@@ -810,7 +813,11 @@ export default function Person() {
                     <>{tenureYears.toFixed(1)}<Text span fw={500} c="dimmed" style={{ fontSize: 14 }}> yrs</Text></>
                   )}
                 </Text>
-                {hireYear && <Text size="xs" c="dimmed" mt={2}>since {hireYear}</Text>}
+                {hireYear && (
+                  <Text size="xs" c="dimmed" mt={2}>
+                    since {hireYear}{latest?.snapshot_label ? ` · as of ${latest.snapshot_label}` : ''}
+                  </Text>
+                )}
               </Card>
             </div>
 

@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
 import { Box, Group, Text } from '@mantine/core';
-import { usd } from '../lib/format';
+import { usd, pct } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 
 export interface ScatterPoint {
@@ -115,24 +115,37 @@ export function TenurePayScatter({
 
   const expected = reg && self ? reg.intercept + reg.slope * self.tenure : null;
   const gap = expected != null && self ? self.pay - expected : null;
+  const gapPct = gap != null && expected ? gap / expected : null;
+  // Gaps under 2% are noise-level (rounding, mid-cycle timing) — call those "in line" rather than
+  // flagging a direction that isn't really meaningful.
+  const neutral = gapPct != null && Math.abs(gapPct) < 0.02;
   const above = gap != null && gap >= 0;
 
   return (
     <div>
-      {expected != null && gap != null && self && (
+      {expected != null && gap != null && gapPct != null && self && (
         <Box
           mb="md"
-          className={above ? undefined : 'tenure-callout'}
+          className={!neutral && !above ? 'tenure-callout' : undefined}
           style={{
-            borderLeft: `3px solid ${above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-orange-5)'}`,
-            background: above ? 'var(--mantine-color-pos-light)' : 'var(--mantine-color-orange-light)',
+            borderLeft: `3px solid ${neutral ? 'var(--mantine-color-default-border)' : above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-orange-5)'}`,
+            background: neutral ? 'var(--mantine-color-default-hover)' : above ? 'var(--mantine-color-pos-light)' : 'var(--mantine-color-orange-light)',
             borderRadius: 8,
             padding: '10px 12px',
           }}
         >
           <Text size="sm">
-            <b>{above ? 'Above' : 'Below'} the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically
-            pays {usd(expected)}. This person earns <b>{usd(Math.abs(gap))}</b> {above ? 'more' : 'less'} than tenure alone predicts.
+            {neutral ? (
+              <>
+                <b>In line with the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically pays{' '}
+                {usd(expected)} — this person is within {pct(Math.abs(gapPct))} of that ({usd(Math.abs(gap))} {above ? 'more' : 'less'}).
+              </>
+            ) : (
+              <>
+                <b>{above ? 'Above' : 'Below'} the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically
+                pays {usd(expected)}. This person earns <b>{usd(Math.abs(gap))} ({pct(Math.abs(gapPct))})</b> {above ? 'more' : 'less'} than tenure alone predicts.
+              </>
+            )}
           </Text>
         </Box>
       )}
