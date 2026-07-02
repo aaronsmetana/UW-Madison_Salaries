@@ -9,7 +9,6 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
 import { Footer } from './Footer';
-import { CommandSearch } from '../components/CommandSearch';
 import { ColorSchemeToggle } from '../components/ColorSchemeToggle';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
@@ -119,7 +118,6 @@ export function AppShellLayout() {
               </Anchor>
             </Group>
             <Group gap="md" wrap="nowrap">
-              <CommandSearch />
               <ColorSchemeToggle />
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>

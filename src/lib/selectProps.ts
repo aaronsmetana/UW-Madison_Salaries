@@ -13,7 +13,7 @@ const CARD_SHADOW = '0 8px 24px -4px rgba(0, 0, 0, 0.18)';
  * tokens too, so the custom person search and the Mantine Selects stay perfectly in step.
  *
  *  - sm: slim header/inline controls (scope, snapshot, filters).
- *  - md: standard page pickers (title/school, compare add blocks, report subject, ⌘K).
+ *  - md: standard page pickers (title/school, compare add blocks, report subject).
  *  - lg: the big, centered landing search box.
  */
 export const DROPDOWN_TIERS = {
