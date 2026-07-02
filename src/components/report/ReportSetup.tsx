@@ -9,7 +9,7 @@ import { SearchBox } from '../SearchBox';
 import { usd } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import {
-  COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, type ReportConfig, type CohortMode, type FactorKey,
+  COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, newCustomFactor, type ReportConfig, type CohortMode, type FactorKey,
   type CaseStrength, type BadgeTone, type StrengthKey,
 } from './model';
 
@@ -226,6 +226,77 @@ export function ReportSetup({
             );
           })}
         </Stack>
+
+        {/* Custom (user-typed) factors — same shape as the built-ins, but open-ended. */}
+        {config.customFactors.length > 0 && (
+          <Stack gap="sm" mt="md">
+            {config.customFactors.map((c) => (
+              <Box key={c.id}>
+                <Group gap={6} wrap="nowrap" align="center">
+                  <TextInput
+                    size="xs"
+                    style={{ flex: 1 }}
+                    placeholder="Custom factor (e.g. bilingual — client-facing role)"
+                    value={c.label}
+                    onChange={(e) =>
+                      set({ customFactors: config.customFactors.map((x) => (x.id === c.id ? { ...x, label: e.currentTarget.value } : x)) })
+                    }
+                  />
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size="sm"
+                    aria-label="Remove custom factor"
+                    onClick={() => set({ customFactors: config.customFactors.filter((x) => x.id !== c.id) })}
+                  >
+                    <IconX size={14} />
+                  </ActionIcon>
+                </Group>
+                <Group gap={6} wrap="wrap" align="center" mt={6} ml={0}>
+                  <NumberInput
+                    size="xs"
+                    w={130}
+                    placeholder="+$ (optional)"
+                    prefix="$"
+                    thousandSeparator=","
+                    value={c.amount}
+                    onChange={(v) =>
+                      set({ customFactors: config.customFactors.map((x) => (x.id === c.id ? { ...x, amount: typeof v === 'number' ? v : '' } : x)) })
+                    }
+                    min={0}
+                  />
+                  {basePay != null && (
+                    <>
+                      <Button
+                        size="compact-xs"
+                        variant="default"
+                        onClick={() => set({ customFactors: config.customFactors.map((x) => (x.id === c.id ? { ...x, amount: pill(basePay * 0.01) } : x)) })}
+                      >
+                        +1% ({usd(pill(basePay * 0.01))})
+                      </Button>
+                      <Button
+                        size="compact-xs"
+                        variant="default"
+                        onClick={() => set({ customFactors: config.customFactors.map((x) => (x.id === c.id ? { ...x, amount: pill(basePay * 0.025) } : x)) })}
+                      >
+                        +2.5% ({usd(pill(basePay * 0.025))})
+                      </Button>
+                    </>
+                  )}
+                </Group>
+              </Box>
+            ))}
+          </Stack>
+        )}
+        <Button
+          size="xs"
+          variant="subtle"
+          mt="sm"
+          leftSection={<IconPlus size={14} />}
+          onClick={() => set({ customFactors: [...config.customFactors, newCustomFactor()] })}
+        >
+          Add custom factor
+        </Button>
       </Card>
 
       {/* Outcome override */}

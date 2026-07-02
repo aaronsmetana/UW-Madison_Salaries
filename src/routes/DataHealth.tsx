@@ -6,6 +6,7 @@ import { num, usd, pct } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
 import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
+import { REAL_BASE_YEAR } from '../lib/cpi';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
@@ -332,7 +333,7 @@ export default function DataHealth() {
             <DItem lead="Bonuses & deferred pay">coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</DItem>
             <DItem lead="Changes between snapshots">raises, promotions, leaves, or appointment changes that happen between two reports aren't captured, so true earnings can be higher or lower than any single number shown.</DItem>
             <DItem lead="Gross, not take-home">amounts are gross annualized figures and exclude benefits, taxes, and retirement.</DItem>
-            <DItem lead="Nominal dollars">figures are not inflation-adjusted, so cross-year comparisons overstate real growth.</DItem>
+            <DItem lead="Nominal dollars">figures are as-reported (not inflation-adjusted) by default. A few charts (Person's Salary Trend, General Comparisons, Compare) offer a "{REAL_BASE_YEAR} $" toggle that approximates real purchasing power using published CPI-U annual averages — treat it as a rough guide, not an official inflation calculation, since the most recent year or two are estimated from partial-year data.</DItem>
             <DItem lead="Nov 2021 (TTC)">nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</DItem>
             <DItem lead="Oct 2023 scope change">some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</DItem>
             <DItem lead="Column mapping">columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</DItem>

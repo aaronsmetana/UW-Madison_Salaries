@@ -1,13 +1,14 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Card } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { IconPlus, IconSearch, IconCheck, IconChevronRight } from '@tabler/icons-react';
+import { IconPlus, IconSearch, IconCheck, IconChevronRight, IconDownload } from '@tabler/icons-react';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
+import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
 
 interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null }
@@ -99,6 +100,18 @@ export function SchoolsPanel() {
   const medFrac = (m: number | null) =>
     m == null ? 0 : medExtent.max === medExtent.min ? 1 : (m - medExtent.min) / (medExtent.max - medExtent.min);
 
+  const exportCsv = () =>
+    downloadCSV(
+      `uw-schools-${snap ?? 'latest'}.csv`,
+      (schools ?? []).map((s) => ({
+        school: s.school,
+        headcount: s.headcount,
+        median: s.med != null ? Math.round(s.med) : '',
+        p25: s.p25 != null ? Math.round(s.p25) : '',
+        p75: s.p75 != null ? Math.round(s.p75) : '',
+      }))
+    );
+
   const sortTh = (key: SortKey, label: string, align?: 'right') => (
     <Table.Th
       ta={align}
@@ -112,7 +125,7 @@ export function SchoolsPanel() {
 
   return (
     <>
-      <Group justify="space-between" mb="sm" wrap="nowrap">
+      <Group justify="space-between" mb="sm" wrap="wrap" gap="sm">
         <TextInput
           size="md"
           w={320}
@@ -121,7 +134,12 @@ export function SchoolsPanel() {
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
         />
-        <Text size="xs" c="dimmed">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
+        <Group gap="sm" wrap="nowrap">
+          <Text size="xs" c="dimmed">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
+          <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportCsv} disabled={!schools?.length}>
+            CSV
+          </Button>
+        </Group>
       </Group>
       {schools && view.length === 0 ? (
         <Card withBorder padding="xl"><Text c="dimmed" ta="center">No divisions match this scope{q ? ' and search' : ''}.</Text></Card>

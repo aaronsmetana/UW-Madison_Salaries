@@ -1,12 +1,13 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, Card } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { IconPlus, IconSearch, IconCheck } from '@tabler/icons-react';
+import { IconPlus, IconSearch, IconCheck, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
+import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
 
 interface TitleRow {
@@ -95,6 +96,21 @@ export function TitlesPanel() {
 
   const maxN = useMemo(() => Math.max(1, ...(titles ?? []).map((t) => t.n)), [titles]);
 
+  const exportCsv = () =>
+    downloadCSV(
+      `uw-titles-${snap ?? 'latest'}.csv`,
+      (titles ?? []).map((t) => ({
+        title: t.title,
+        job_code: t.job_code,
+        people: t.n,
+        median: t.med != null ? Math.round(t.med) : '',
+        p25: t.p25 != null ? Math.round(t.p25) : '',
+        p75: t.p75 != null ? Math.round(t.p75) : '',
+        min: t.lo != null ? Math.round(t.lo) : '',
+        max: t.hi != null ? Math.round(t.hi) : '',
+      }))
+    );
+
   const sortTh = (key: SortKey, label: string, align?: 'right') => (
     <Table.Th
       ta={align}
@@ -124,6 +140,9 @@ export function TitlesPanel() {
             </Button.Group>
           </Group>
           <Text size="xs" c="dimmed">{num(view.length)} of {num((titles ?? []).length)} titles</Text>
+          <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportCsv} disabled={!titles?.length}>
+            CSV
+          </Button>
         </Group>
       </Group>
       {titles && view.length === 0 ? (

@@ -14,6 +14,7 @@ interface Hit {
   ln: string;
   school: string | null;
   title: string | null;
+  hire_year: number | null;
   latest_appts: number;
   last_date: string | null;
 }
@@ -43,10 +44,10 @@ export function SearchBox({
   const q = debounced.trim().toLowerCase();
   const enabled = q.length >= 2;
 
-  const { data, isFetching } = useSql<Hit>(
+  const { data: primaryHits, isFetching: primaryFetching } = useSql<Hit>(
     ['search', q],
     `WITH m AS (
-        SELECT person_key, first_name, last_name, school, title, snapshot_date,
+        SELECT person_key, first_name, last_name, school, title, hire_year, snapshot_date,
                count(*) OVER (PARTITION BY person_key, snapshot_id) per_snap
         FROM salaries
         WHERE lower(first_name || ' ' || last_name) LIKE ${sqlStr(`%${q}%`)}
@@ -56,6 +57,7 @@ export function SearchBox({
         arg_max(last_name, snapshot_date)  AS ln,
         arg_max(school, snapshot_date)     AS school,
         arg_max(title, snapshot_date)      AS title,
+        arg_max(hire_year, snapshot_date)  AS hire_year,
         arg_max(per_snap, snapshot_date)   AS latest_appts,
         max(snapshot_date)                 AS last_date
      FROM m
@@ -65,30 +67,62 @@ export function SearchBox({
     enabled
   );
 
+  // Typo fallback: only runs once the exact-match query has settled with zero hits. Uses DuckDB's
+  // built-in Jaro-Winkler similarity against the full display name; > 0.86 keeps it to near-misses
+  // (transposed/missing letters) rather than surfacing unrelated names.
+  const fuzzyEnabled = enabled && !primaryFetching && (primaryHits?.length ?? 0) === 0 && q.length >= 3;
+  const { data: fuzzyHits, isFetching: fuzzyFetching } = useSql<Hit>(
+    ['search-fuzzy', q],
+    `WITH m AS (
+        SELECT person_key, first_name, last_name, school, title, hire_year, snapshot_date,
+               jaro_winkler_similarity(lower(first_name || ' ' || last_name), ${sqlStr(q)}) AS sim
+        FROM salaries
+     )
+     SELECT person_key,
+        arg_max(first_name, snapshot_date) AS fn,
+        arg_max(last_name, snapshot_date)  AS ln,
+        arg_max(school, snapshot_date)     AS school,
+        arg_max(title, snapshot_date)      AS title,
+        arg_max(hire_year, snapshot_date)  AS hire_year,
+        1                                  AS latest_appts,
+        max(snapshot_date)                 AS last_date,
+        max(sim)                           AS sim
+     FROM m
+     GROUP BY person_key
+     HAVING max(sim) > 0.86
+     ORDER BY sim DESC
+     LIMIT 8`,
+    fuzzyEnabled
+  );
+
+  const usingFuzzy = (primaryHits?.length ?? 0) === 0 && (fuzzyHits?.length ?? 0) > 0;
+  const isFetching = primaryFetching || (fuzzyEnabled && fuzzyFetching);
+
   // Latest campus snapshot date — anyone whose last record predates it is no longer in the data
   // (likely departed). Mirrors the PersonDashboard "departed" check.
   const { data: summary } = useSummary();
   const campusLatestDate = summary?.snapshots?.[summary.snapshots.length - 1]?.date ?? null;
 
+  const nav = useNavigate();
+
+  // Keyboard navigation for the autocomplete (combobox semantics). A single flat array — whichever
+  // pool is currently shown (exact matches, or the "Did you mean" fallback).
+  const results = useMemo(() => (usingFuzzy ? (fuzzyHits ?? []) : (primaryHits ?? [])), [usingFuzzy, fuzzyHits, primaryHits]);
+  const opened = enabled && (isFetching || results.length >= 0);
+
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const h of data ?? []) {
+    for (const h of results) {
       const k = `${h.fn} ${h.ln}`.trim().toLowerCase();
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     return m;
-  }, [data]);
-
-  const nav = useNavigate();
-  const opened = enabled && (isFetching || (data?.length ?? 0) >= 0);
-
-  // Keyboard navigation for the autocomplete (combobox semantics).
-  const results = data ?? [];
+  }, [results]);
   const listId = useId();
   const optId = (i: number) => `${listId}-opt-${i}`;
   const [active, setActive] = useState(0);
-  useEffect(() => { setActive(0); }, [data]);
+  useEffect(() => { setActive(0); }, [results]);
   useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, listId]);
 
   const select = (h: Hit) => {
@@ -177,10 +211,15 @@ export function SearchBox({
           boxShadow: CARD_SHADOW,
         }}
       >
-        {data && data.length > 0 ? (
+        {results.length > 0 ? (
           // Island buffer; rows are rounded chips inset from the walls + clear of the scrollbar.
           <Stack gap={1} p={t.island} role="listbox" id={listId}>
-            {data.map((h, i) => {
+            {usingFuzzy && (
+              <Text size="xs" c="dimmed" fs="italic" px={10} pt={6} pb={2}>
+                No exact match — did you mean:
+              </Text>
+            )}
+            {results.map((h, i) => {
               const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
               const multiAppt = (h.latest_appts ?? 0) > 1; // only flag roles held in the latest snapshot
               const inactive = campusLatestDate != null && h.last_date != null && String(h.last_date) < String(campusLatestDate);
@@ -230,10 +269,11 @@ export function SearchBox({
                       </Tooltip>
                     )}
                   </Group>
-                  {/* Bottom line: title · school (smaller, muted) for a clear visual hierarchy. */}
-                  {(h.title || h.school) && (
+                  {/* Bottom line: title · school · hire year (smaller, muted) — the hire year is the
+                      main way to tell two same-named people apart in the dropdown. */}
+                  {(h.title || h.school || h.hire_year) && (
                     <Text fz={t.subFont} c="dimmed" lineClamp={1} mt={1} style={{ opacity: dim }}>
-                      {[h.title, h.school].filter(Boolean).join(' · ')}
+                      {[h.title, h.school, h.hire_year ? `Hired ${h.hire_year}` : null].filter(Boolean).join(' · ')}
                     </Text>
                   )}
                 </UnstyledButton>

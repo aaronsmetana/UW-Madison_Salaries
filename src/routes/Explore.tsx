@@ -20,6 +20,8 @@ import { usd, usdCompact, num, pct } from '../lib/format';
 import { dropdownProps } from '../lib/selectProps';
 import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
+import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 
 /** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
 function Kpi({ label, value, format, sub, to, loading }: {
@@ -71,6 +73,7 @@ interface SnapMed { id: string; label: string; med: number }
 function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: number | null; loading: boolean }) {
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
+  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
   const railStyle = { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' } as const;
   const labelStyle = { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' } as const;
 
@@ -84,22 +87,36 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
     );
   }
 
+  // Real mode: convert every point to REAL_BASE_YEAR dollars using its own snapshot year (the id's
+  // leading YYYY) before computing growth — so growth reflects real purchasing power, not inflation.
+  const displaySeries = dollarMode === 'real'
+    ? series.map((s) => ({ ...s, med: toReal(s.med, Number(s.id.slice(0, 4)) || REAL_BASE_YEAR) }))
+    : series;
+
   // Resolve the picked range, defaulting to widest (first → last) and keeping `from` strictly before `to`.
-  const fIdx = Math.min(Math.max(0, series.findIndex((s) => s.id === fromId)), series.length - 2);
-  const tRaw = series.findIndex((s) => s.id === toId);
-  const tIdx = Math.max(fIdx + 1, tRaw < 0 ? series.length - 1 : tRaw);
-  const from = series[fIdx];
-  const to = series[tIdx];
+  const fIdx = Math.min(Math.max(0, displaySeries.findIndex((s) => s.id === fromId)), displaySeries.length - 2);
+  const tRaw = displaySeries.findIndex((s) => s.id === toId);
+  const tIdx = Math.max(fIdx + 1, tRaw < 0 ? displaySeries.length - 1 : tRaw);
+  const from = displaySeries[fIdx];
+  const to = displaySeries[tIdx];
   const growth = from.med ? (to.med - from.med) / from.med : null;
-  const slice = series.slice(fIdx, tIdx + 1).map((s) => s.med);
+  const slice = displaySeries.slice(fIdx, tIdx + 1).map((s) => s.med);
   const up = (growth ?? 0) >= 0;
-  const fromOpts = series.slice(0, tIdx).map((s) => ({ value: s.id, label: s.label }));
-  const toOpts = series.slice(fIdx + 1).map((s) => ({ value: s.id, label: s.label }));
+  const fromOpts = displaySeries.slice(0, tIdx).map((s) => ({ value: s.id, label: s.label }));
+  const toOpts = displaySeries.slice(fIdx + 1).map((s) => ({ value: s.id, label: s.label }));
 
   return (
     <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
       <div aria-hidden style={railStyle} />
-      <Text tt="uppercase" c="dimmed" style={labelStyle}>Median pay growth</Text>
+      <Group justify="space-between" align="center" wrap="nowrap">
+        <Text tt="uppercase" c="dimmed" style={labelStyle}>Median pay growth</Text>
+        <SegmentedToggle
+          size="xs"
+          value={dollarMode}
+          onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
+          options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
+        />
+      </Group>
       <Group align="baseline" gap={8} mt={6} wrap="nowrap">
         <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'pos' : 'red'}>
           {growth == null ? '—' : `${up ? '+' : ''}${(growth * 100).toFixed(1)}%`}
@@ -114,7 +131,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
         <Select {...dropdownProps('sm')} w={118} aria-label="To snapshot" data={toOpts} value={to.id}
           onChange={setToId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
       </Group>
-      {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}</Text>}
+      {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}{dollarMode === 'real' ? ' (nominal)' : ''}</Text>}
     </Card>
   );
 }

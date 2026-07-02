@@ -251,10 +251,19 @@ export default function Reports() {
     ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
     : `${medianKind} · ${cohortLabel}`;
 
-  const activeFactors = FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => {
-    const a = config.factors[f.key].amount;
-    return { key: f.key, label: f.label, note: config.factors[f.key].note.trim(), amount: typeof a === 'number' && a > 0 ? a : null };
-  });
+  const activeFactors = useMemo(
+    () => [
+      ...FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => {
+        const a = config.factors[f.key].amount;
+        return { key: f.key, label: f.label, note: config.factors[f.key].note.trim(), amount: typeof a === 'number' && a > 0 ? a : null };
+      }),
+      // Custom (user-typed) factors: active once given a label, regardless of whether a $ amount is set.
+      ...config.customFactors
+        .filter((c) => c.label.trim())
+        .map((c) => ({ key: c.id, label: c.label.trim(), note: c.note.trim(), amount: typeof c.amount === 'number' && c.amount > 0 ? c.amount : null })),
+    ],
+    [config.factors, config.customFactors]
+  );
   const addOnSum = activeFactors.reduce((s, f) => s + (f.amount ?? 0), 0);
   const computed = baseParity != null ? baseParity + addOnSum : null;
   const override = typeof config.override === 'number' && config.override > 0 ? config.override : null;

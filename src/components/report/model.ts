@@ -33,6 +33,12 @@ export type FactorKey = (typeof FACTOR_DEFS)[number]['key'];
 
 export interface FactorState { on: boolean; amount: number | ''; note: string }
 
+// ── Custom (user-typed) factors — an open-ended list alongside the fixed FACTOR_DEFS checklist. ──
+export interface CustomFactor { id: string; label: string; amount: number | ''; note: string }
+export function newCustomFactor(): CustomFactor {
+  return { id: `custom-${Math.random().toString(36).slice(2, 10)}`, label: '', amount: '', note: '' };
+}
+
 export const SECTION_DEFS = [
   { value: 'highlights', label: 'Evidence (3 proofs)' },
   { value: 'peers', label: 'Peer comparison' },
@@ -44,6 +50,7 @@ export interface ReportConfig {
   tenureBand: number; // ± years
   targetKey: string | null; // a curated peer whose pay becomes the base parity
   factors: Record<FactorKey, FactorState>;
+  customFactors: CustomFactor[]; // open-ended, user-typed justifications (label + optional +$)
   override: number | ''; // manual final-salary override
   headline: string; // optional manual headline override
   format: 'brief' | 'detailed';
@@ -56,6 +63,7 @@ export function defaultConfig(): ReportConfig {
     tenureBand: 3,
     targetKey: null,
     factors: Object.fromEntries(FACTOR_DEFS.map((f) => [f.key, { on: false, amount: '', note: '' }])) as Record<FactorKey, FactorState>,
+    customFactors: [],
     override: '',
     headline: '',
     format: 'brief',

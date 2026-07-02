@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Card, Text, Loader, Paper } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { Card, Text, Loader, Paper, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceLine, LabelList,
@@ -12,6 +12,8 @@ import { salaryExpr, paidHeadcount, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { ChartData } from './ChartData';
+import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
+import { SegmentedToggle } from './SegmentedToggle';
 
 interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
 interface Plot extends Row { yoy: number | null }
@@ -67,6 +69,8 @@ export function TrendsPanel() {
   const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const reduce = prefersReducedMotion();
+  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+  const [hcScale, setHcScale] = useState<'linear' | 'log'>('linear');
   const { data, isFetching } = useSql<Row>(
     ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
     // `renew` = paid employees on a renewable ("Regular") appointment — excludes Terminal and Temporary.
@@ -81,14 +85,18 @@ export function TrendsPanel() {
 
   const plot = useMemo<Plot[]>(() => {
     const rows = data ?? [];
-    return rows.map((r, i) => {
-      const prev = rows[i - 1];
+    return rows.map((r) => {
+      if (dollarMode !== 'real' || r.med == null) return r;
+      const year = Number(String(r.date).slice(0, 4)) || REAL_BASE_YEAR;
+      return { ...r, med: toReal(r.med, year) };
+    }).map((r, i, real) => {
+      const prev = real[i - 1];
       const yoy = prev && prev.date !== r.date && prev.med != null && r.med != null && prev.med !== 0
         ? (r.med - prev.med) / prev.med
         : null;
       return { ...r, yoy };
     });
-  }, [data]);
+  }, [data, dollarMode]);
 
   // The TTC reclassification boundary (the post-TTC Nov-2021 snapshot) and the snapshot with the largest
   // headcount drop (a data-coverage change, not mass departures) — annotated so neither is misread.
@@ -110,7 +118,21 @@ export function TrendsPanel() {
 
   return (
     <Card withBorder padding="lg">
-      <Text size="sm" fw={600} mb="md">Median salary &amp; headcount over time</Text>
+      <Group justify="space-between" align="center" mb="md" wrap="wrap">
+        <Text size="sm" fw={600}>Median salary &amp; headcount over time</Text>
+        <Group gap="sm" wrap="wrap">
+          <SegmentedToggle
+            value={dollarMode}
+            onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
+            options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
+          />
+          <SegmentedToggle
+            value={hcScale}
+            onChange={(v) => setHcScale(v as 'linear' | 'log')}
+            options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
+          />
+        </Group>
+      </Group>
       <ResponsiveContainer width="100%" height={340}>
         <ComposedChart data={plot} margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
           <defs>{lineGlowDefs('expltrend')}</defs>
@@ -119,6 +141,9 @@ export function TrendsPanel() {
           <YAxis yAxisId="med" tickFormatter={(v) => usd(v)} width={92} tick={AXIS_TICK} padding={Y_PAD}
             label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <YAxis yAxisId="hc" orientation="right" width={72} tick={AXIS_TICK} padding={Y_PAD}
+            scale={hcScale === 'log' ? 'log' : 'auto'}
+            domain={hcScale === 'log' ? [0.5, 'auto'] : undefined}
+            allowDataOverflow={hcScale === 'log'}
             label={{ value: 'Headcount', angle: 90, position: 'insideRight', style: { fill: 'var(--mantine-color-pos-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip content={<TrendTip />} />
           <Legend />
@@ -147,13 +172,20 @@ export function TrendsPanel() {
         </ComposedChart>
       </ResponsiveContainer>
       <Text size="xs" c="dimmed" mt={4}>
-        Nominal dollars (not inflation-adjusted). Headcount = people with a paid appointment; unpaid $0 affiliate
+        {dollarMode === 'real'
+          ? `Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).`
+          : 'Nominal dollars (not inflation-adjusted).'}{' '}
+        Headcount = people with a paid appointment; unpaid $0 affiliate
         appointments are excluded. <b>Ongoing (renewable)</b> = staff on a continuing (&ldquo;Regular&rdquo;)
         appointment — excludes terminal and temporary ones; appointment type is only recorded from Sep 2025 on,
         so that line starts there. The dashed <b>coverage change</b> marker flags a snapshot whose source covered
         fewer staff, not a real headcount cliff.
       </Text>
-      <ChartData caption="Median salary, headcount & renewable staff over time" columns={['Snapshot', 'Median', 'YoY %', 'Headcount', 'Renewable']} rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])} />
+      <ChartData
+        caption={dollarMode === 'real' ? `Median salary, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : 'Median salary, headcount & renewable staff over time'}
+        columns={['Snapshot', 'Median', 'YoY %', 'Headcount', 'Renewable']}
+        rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])}
+      />
     </Card>
   );
 }

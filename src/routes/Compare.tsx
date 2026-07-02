@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
 import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
 import {
@@ -17,6 +18,8 @@ import { ChartData } from '../components/ChartData';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
 import { dropdownProps } from '../lib/selectProps';
+import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
+import { encodeSel, decodeSel } from '../lib/share';
 
 const PALETTE = [
   'var(--mantine-color-accent-6)', 'var(--mantine-color-pos-6)', 'var(--mantine-color-orange-6)',
@@ -35,6 +38,34 @@ export default function Compare() {
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const [xMode, setXMode] = useState<'date' | 'tenure'>('date');
+  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+
+  // Shareable comparisons: a `?sel=` link hydrates the tray on first load (replacing whatever's
+  // there — the recipient should see exactly what was shared), then every tray change keeps `?sel=`
+  // in sync so the page's existing "Copy link" button (ControlBar) always captures the current set.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const hydratedFromUrl = useRef(false);
+  useEffect(() => {
+    if (hydratedFromUrl.current) return;
+    hydratedFromUrl.current = true;
+    const decoded = decodeSel(searchParams.get('sel'));
+    if (!decoded?.length) return;
+    clear();
+    decoded.forEach((i) => add(i));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (items.length) next.set('sel', encodeSel(items));
+        else next.delete('sel');
+        return next;
+      },
+      { replace: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
 
   const persons = items.filter((i) => i.type === 'person');
   const schools = items.filter((i) => i.type === 'school');
@@ -143,6 +174,29 @@ export default function Compare() {
     const series = [...byLabel.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     return { series, latest: latestByPerson };
   }, [pdata]);
+
+  // Real-dollar view of the trajectory chart only (gap/standing/cadence stay nominal — those are
+  // separate cards without their own toggle). Each point converts using its own snapshot year.
+  const trajectorySeries = useMemo(() => {
+    if (dollarMode !== 'real') return series;
+    return series.map((row) => {
+      const year = Number(String(row.date).slice(0, 4)) || REAL_BASE_YEAR;
+      const out: Record<string, string | number> = { label: row.label, date: row.date };
+      for (const p of persons) {
+        const v = row[p.id];
+        if (typeof v === 'number') out[p.id] = toReal(v, year);
+      }
+      return out;
+    });
+  }, [series, dollarMode, persons]);
+  const perPersonDisplay = useMemo(() => {
+    if (dollarMode !== 'real') return perPerson;
+    const m = new Map<string, { label: string; date: string; pay: number; tenure: number | null }[]>();
+    for (const [id, arr] of perPerson) {
+      m.set(id, arr.map((x) => ({ ...x, pay: x.pay > 0 ? toReal(x.pay, Number(String(x.date).slice(0, 4)) || REAL_BASE_YEAR) : x.pay })));
+    }
+    return m;
+  }, [perPerson, dollarMode]);
 
   // Title median-over-time pivot: { label, date, [job_code]: med }.
   const titleSeries = useMemo(() => {
@@ -271,14 +325,22 @@ export default function Compare() {
 
       {persons.length > 0 && (
         <Card withBorder padding="lg">
-          <Group justify="space-between" mb="md">
+          <Group justify="space-between" mb="md" wrap="wrap">
             <Text size="sm" fw={600}>People — salary trajectory</Text>
-            <SegmentedControl
-              size="xs"
-              value={xMode}
-              onChange={(v) => setXMode(v as 'date' | 'tenure')}
-              data={[{ value: 'date', label: 'By date' }, { value: 'tenure', label: 'By tenure' }]}
-            />
+            <Group gap="sm" wrap="wrap">
+              <SegmentedControl
+                size="xs"
+                value={dollarMode}
+                onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
+                data={[{ value: 'nominal', label: 'Nominal' }, { value: 'real', label: `${REAL_BASE_YEAR} $` }]}
+              />
+              <SegmentedControl
+                size="xs"
+                value={xMode}
+                onChange={(v) => setXMode(v as 'date' | 'tenure')}
+                data={[{ value: 'date', label: 'By date' }, { value: 'tenure', label: 'By tenure' }]}
+              />
+            </Group>
           </Group>
           {pLoading ? (
             <Loader />
@@ -286,7 +348,7 @@ export default function Compare() {
             <>
               <ResponsiveContainer width="100%" height={300}>
                 {xMode === 'date' ? (
-                  <LineChart data={series} margin={{ left: 12, right: 12 }}>
+                  <LineChart data={trajectorySeries} margin={{ left: 12, right: 12 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis dataKey="label" tick={AXIS_TICK} />
                     <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -305,7 +367,7 @@ export default function Compare() {
                       <Scatter
                         key={p.id}
                         name={p.label}
-                        data={(perPerson.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
+                        data={(perPersonDisplay.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
                         line
                         fill={PALETTE[i % PALETTE.length]}
                       />
@@ -314,12 +376,13 @@ export default function Compare() {
                 )}
               </ResponsiveContainer>
               <ChartData
-                caption="Salary by snapshot"
+                caption={dollarMode === 'real' ? `Salary by snapshot (in ${REAL_BASE_YEAR} dollars)` : 'Salary by snapshot'}
                 columns={['Snapshot', ...persons.map((p) => p.label)]}
-                rows={series.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+                rows={trajectorySeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
               />
               <Text size="xs" c="dimmed" mt={4}>
                 {xMode === 'tenure' ? 'Aligned by years since hire — compares people at the same career stage.' : 'By calendar snapshot.'}
+                {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
               </Text>
             </>
           )}

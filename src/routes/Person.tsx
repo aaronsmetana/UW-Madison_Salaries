@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea, Popover,
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -13,6 +13,7 @@ import { IconAlertTriangle, IconPlus, IconArrowRight } from '@tabler/icons-react
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
+import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName } from '../lib/format';
 import { percentile } from '../lib/stats';
@@ -24,6 +25,7 @@ import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
+import { SearchBox } from '../components/SearchBox';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
@@ -276,6 +278,9 @@ export default function Person() {
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
   const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));
 
+  // Nominal (as-reported) vs real (inflation-adjusted to REAL_BASE_YEAR dollars) for the trend chart.
+  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+
   // Salary trend: one point per snapshot. `salary` (the plotted line) is ACTUAL pay — the reported
   // FTE-adjusted figure (Σ salary_fte_adjusted, falling back to rate × FTE), summed across concurrent
   // appointments. We also carry the full-time `rate` (Σ salary) and total `fte` for the breakdown.
@@ -331,9 +336,21 @@ export default function Person() {
     let era = 0;
     return trend.map((t, i) => {
       if (i > 0 && t.job_code !== trend[i - 1].job_code) era++;
-      return { ...t, med: med.get(t.id) ?? null, medRate: medRate.get(t.id) ?? null, era };
+      const medRaw = med.get(t.id) ?? null;
+      const medRateRaw = medRate.get(t.id) ?? null;
+      if (dollarMode !== 'real') return { ...t, med: medRaw, medRate: medRateRaw, era };
+      // Real mode: convert every dollar figure to REAL_BASE_YEAR purchasing power using this snapshot's year.
+      const year = Number(String(t.date).slice(0, 4)) || REAL_BASE_YEAR;
+      return {
+        ...t,
+        salary: toReal(t.salary, year),
+        rate: toReal(t.rate, year),
+        med: medRaw != null ? toReal(medRaw, year) : null,
+        medRate: medRateRaw != null ? toReal(medRateRaw, year) : null,
+        era,
+      };
     });
-  }, [trend, titleMedRows]);
+  }, [trend, titleMedRows, dollarMode]);
 
   // Distinct title eras (for disconnected median segments) and the points where the title changes.
   const eras = useMemo(() => [...new Set(trendData.map((t) => t.era))], [trendData]);
@@ -652,13 +669,32 @@ export default function Person() {
             <MetaPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
           </Group>
         </div>
-        <Button
-          variant={has(key) ? 'light' : 'filled'}
-          onClick={() => add({ type: 'person', id: key, label: name })}
-          disabled={has(key)}
-        >
-          {has(key) ? 'In tray' : '+ Add to tray'}
-        </Button>
+        <Group gap="sm" wrap="nowrap">
+          <Popover width={320} position="bottom-end" shadow="md" withArrow trapFocus>
+            <Popover.Target>
+              <Button variant="default">Compare with…</Button>
+            </Popover.Target>
+            <Popover.Dropdown>
+              <SearchBox
+                placeholder="Search a person to compare…"
+                size="sm"
+                autoFocus
+                onPick={(h) => {
+                  add({ type: 'person', id: key, label: name });
+                  add({ type: 'person', id: h.person_key, label: h.name });
+                  nav('/compare');
+                }}
+              />
+            </Popover.Dropdown>
+          </Popover>
+          <Button
+            variant={has(key) ? 'light' : 'filled'}
+            onClick={() => add({ type: 'person', id: key, label: name })}
+            disabled={has(key)}
+          >
+            {has(key) ? 'In tray' : '+ Add to tray'}
+          </Button>
+        </Group>
       </Group>
 
       {departed && (
@@ -1031,13 +1067,23 @@ export default function Person() {
         <Group justify="space-between" align="flex-start" mb="md" wrap="nowrap">
           <div>
             <Text size="sm" fw={600}>Salary over time</Text>
-            <Text size="xs" c="dimmed">Rate is the full-time salary; Actual pay scales it by FTE.</Text>
+            <Text size="xs" c="dimmed">
+              Rate is the full-time salary; Actual pay scales it by FTE.
+              {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
+            </Text>
           </div>
-          <SegmentedToggle
-            value={trendMode}
-            onChange={(v) => setTrendMode(v as 'actual' | 'rate')}
-            options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Rate' }]}
-          />
+          <Group gap="sm" wrap="wrap">
+            <SegmentedToggle
+              value={dollarMode}
+              onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
+              options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
+            />
+            <SegmentedToggle
+              value={trendMode}
+              onChange={(v) => setTrendMode(v as 'actual' | 'rate')}
+              options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Rate' }]}
+            />
+          </Group>
         </Group>
         {/* Hero salary chart: a ComposedChart with a gradient area + soft-glow line, faint title-era bands,
             grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
@@ -1173,7 +1219,11 @@ export default function Person() {
           </>
         )}
         <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} hasGradeBand={!!band} mode={trendMode} />
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])} />
+        <ChartData
+          caption={dollarMode === 'real' ? `Salary over time (in ${REAL_BASE_YEAR} dollars)` : 'Salary over time'}
+          columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}
+          rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])}
+        />
       </Card>
         </Tabs.Panel>
 

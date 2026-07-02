@@ -4,6 +4,7 @@ import {
   Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
+import { IconDownload } from '@tabler/icons-react';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
@@ -16,7 +17,9 @@ import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, fullName } from '../lib/format';
+import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
+import { MiniBar } from '../components/MiniBar';
 
 interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
 
@@ -127,6 +130,48 @@ export default function School() {
     enabled
   );
 
+  const { data: depts } = useSql<{ department: string; headcount: number; med: number | null; payroll: number | null }>(
+    ['school-depts-full', name, snap ?? '', metric, fk],
+    `SELECT department, ${paidHeadcount(metric)} headcount,
+        median(${expr}) FILTER (WHERE ${expr} > 0) med,
+        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll
+     FROM salaries WHERE ${base} AND department IS NOT NULL
+     GROUP BY department ORDER BY headcount DESC`,
+    enabled
+  );
+  type DeptSortKey = 'department' | 'headcount' | 'med' | 'payroll';
+  const [deptSort, setDeptSort] = useState<{ key: DeptSortKey; dir: 'asc' | 'desc' }>({ key: 'headcount', dir: 'desc' });
+  const deptView = useMemo(() => {
+    const rows = depts ?? [];
+    const { key, dir } = deptSort;
+    const sorted = [...rows].sort((a, b) => {
+      const cmp = key === 'department' ? a.department.localeCompare(b.department) : Number(a[key] ?? 0) - Number(b[key] ?? 0);
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [depts, deptSort]);
+  const maxDeptHc = useMemo(() => Math.max(1, ...(depts ?? []).map((d) => d.headcount)), [depts]);
+  const deptSortTh = (key: DeptSortKey, label: string, align?: 'right') => (
+    <Table.Th
+      ta={align}
+      aria-sort={deptSort.key === key ? (deptSort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+      onClick={() => setDeptSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))}
+    >
+      {label}{deptSort.key === key ? (deptSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+    </Table.Th>
+  );
+  const exportDeptsCsv = () =>
+    downloadCSV(
+      `uw-${name}-departments-${snap ?? 'latest'}.csv`,
+      (depts ?? []).map((d) => ({
+        department: d.department,
+        headcount: d.headcount,
+        median: d.med != null ? Math.round(d.med) : '',
+        total_payroll: d.payroll != null ? Math.round(d.payroll) : '',
+      }))
+    );
+
   if (isLoading) return <Loader />;
   if (s && s.headcount === 0) return <Alert color="gray">No records for {name} in this snapshot.</Alert>;
 
@@ -150,6 +195,7 @@ export default function School() {
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
           <Tabs.Tab value="dist">Trends &amp; distribution</Tabs.Tab>
           <Tabs.Tab value="people">People</Tabs.Tab>
+          <Tabs.Tab value="departments">Departments</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
@@ -289,6 +335,61 @@ export default function School() {
           </Table>
         </Card>
       </SimpleGrid>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="departments" pt="md">
+          <Card withBorder padding="lg">
+            <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
+              <Text size="sm" fw={600}>Departments in {name}</Text>
+              <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportDeptsCsv} disabled={!depts?.length}>
+                CSV
+              </Button>
+            </Group>
+            {depts && depts.length === 0 ? (
+              <Text c="dimmed" ta="center" py="xl">No departments recorded for this school.</Text>
+            ) : (
+              <Table stickyHeader miw={560}>
+                <Table.Thead>
+                  <Table.Tr>
+                    {deptSortTh('department', 'Department')}
+                    {deptSortTh('headcount', 'Headcount', 'right')}
+                    {deptSortTh('med', 'Median', 'right')}
+                    {deptSortTh('payroll', 'Total payroll', 'right')}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {deptView.map((d) => (
+                    <Table.Tr
+                      key={d.department}
+                      className="peer-row"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => nav(`/explore?dept=${encodeURIComponent(d.department)}`)}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/explore?dept=${encodeURIComponent(d.department)}`); }
+                      }}
+                    >
+                      <Table.Td>
+                        <Anchor component={Link} to={`/explore?dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>
+                          {d.department}
+                        </Anchor>
+                      </Table.Td>
+                      <Table.Td ta="right">
+                        {num(d.headcount)}
+                        <MiniBar frac={d.headcount / maxDeptHc} />
+                      </Table.Td>
+                      <Table.Td ta="right">{usd(d.med)}</Table.Td>
+                      <Table.Td ta="right">{usd(d.payroll)}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
+            <Text size="xs" c="dimmed" mt="sm">
+              Click a department to see it isolated in General Comparisons.
+            </Text>
+          </Card>
         </Tabs.Panel>
       </Tabs>
     </Stack>
