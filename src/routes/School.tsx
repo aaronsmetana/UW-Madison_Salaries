@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
 } from '@mantine/core';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconDownload } from '@tabler/icons-react';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -54,6 +54,20 @@ export default function School() {
   const expr = salaryExpr(metric);
   const { add, has } = useTray();
   const nav = useNavigate();
+  // Active tab lives in the URL (?tab=…), same convention as Explore/Person, so a shared link opens on
+  // the same tab; "overview" is the implicit default and stays out of the query string.
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') ?? 'overview';
+  const setTab = (v: string | null) =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (!v || v === 'overview') n.delete('tab');
+        else n.set('tab', v);
+        return n;
+      },
+      { replace: true }
+    );
   const [distScale, setDistScale] = useState<'linear' | 'log'>('linear');
   const enabled = !!snap;
   const fk = filterKey(filters);
@@ -190,7 +204,7 @@ export default function School() {
         </Button>
       </Group>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
           <Tabs.Tab value="dist">Trends &amp; distribution</Tabs.Tab>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea, Popover,
   Tooltip as MantineTooltip,
@@ -20,6 +20,7 @@ import { personPay } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis } from '../lib/format';
+import { pushRecent } from '../lib/recent';
 import { percentile } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -31,6 +32,8 @@ import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { TrayButton } from '../components/TrayButton';
+import { SortableTh, type SortState } from '../components/SortableTh';
+import { GlossaryTerm } from '../components/GlossaryTerm';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
@@ -143,7 +146,7 @@ function TitleChangeLabel({
 
 /** A metadata pill (label + bold value) surfacing one source column under the name. Renders nothing
  *  when the value is blank, so pills only appear for fields the data actually has. */
-function MetaPill({ label, value }: { label: string; value: ReactNode }) {
+function MetaPill({ label, value }: { label: ReactNode; value: ReactNode }) {
   if (value == null || value === '') return null;
   return (
     <Group
@@ -221,12 +224,28 @@ interface PeerStats {
   med_rate: number | null; p75_rate: number | null;
 }
 interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
+type PeerSortKey = 'name' | 'school' | 'department' | 'tenure' | 'salary';
 
 export default function Person() {
   const { id } = useParams();
   const key = decodeURIComponent(id ?? '');
   const nav = useNavigate();
   const { add, has } = useTray();
+
+  // Active tab lives in the URL (?tab=…), same convention as Explore, so a shared/bookmarked link
+  // opens on the same tab; "overview" is the implicit default and stays out of the query string.
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') ?? 'overview';
+  const setTab = (v: string | null) =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        if (!v || v === 'overview') n.delete('tab');
+        else n.set('tab', v);
+        return n;
+      },
+      { replace: true }
+    );
 
   const { data, isLoading, error } = useSql<Row>(
     ['person', key],
@@ -244,6 +263,12 @@ export default function Person() {
   const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
+
+  // Track this visit for the "recently viewed" list surfaced on Home — only once real data has loaded
+  // (so a bad/missing key doesn't get remembered as a blank entry).
+  useEffect(() => {
+    if (latest && name) pushRecent({ id: key, label: name });
+  }, [key, latest, name]);
 
   // Flag people who aren't in the most recent snapshot (likely no longer employed).
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
@@ -565,6 +590,7 @@ export default function Person() {
         sameSchool: p.person_key !== key && !!p.school && p.school === latest?.school,
         isSelf: p.person_key === key,
         name: fullName(p.fn, p.ln) || '—',
+        personKey: p.person_key,
       })),
     [cohortList, key, latest],
   );
@@ -579,10 +605,29 @@ export default function Person() {
   // Long titles (e.g. "Professor") can have 1000+ peers — page the table instead of rendering
   // every row. Auto-expand if the subject would otherwise be scrolled off the first page.
   const [showAllPeers, setShowAllPeers] = useState(false);
+  const [peerSort, setPeerSort] = useState<SortState<PeerSortKey>>({ key: 'salary', dir: 'desc' });
+  // The table's own display order (independent of cohortRank, which stays a fixed pay-rank stat for
+  // the "#N of M" caption above regardless of how the table below is currently sorted).
+  const sortedCohort = useMemo(() => {
+    const arr = [...cohortList];
+    arr.sort((a, b) => {
+      let cmp: number;
+      switch (peerSort.key) {
+        case 'name': cmp = fullName(a.fn, a.ln).localeCompare(fullName(b.fn, b.ln)); break;
+        case 'school': cmp = (a.school ?? '').localeCompare(b.school ?? ''); break;
+        case 'department': cmp = (a.department ?? '').localeCompare(b.department ?? ''); break;
+        case 'tenure': cmp = (a.tenure ?? 0) - (b.tenure ?? 0); break;
+        default: cmp = a.pay - b.pay;
+      }
+      return peerSort.dir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [cohortList, peerSort]);
+  const subjectIndexInSort = useMemo(() => sortedCohort.findIndex((p) => p.person_key === key), [sortedCohort, key]);
   useEffect(() => {
-    if (cohortRank != null && cohortRank > 25) setShowAllPeers(true);
-  }, [cohortRank]);
-  const visiblePeers = showAllPeers ? cohortList : cohortList.slice(0, 25);
+    if (subjectIndexInSort >= 25) setShowAllPeers(true);
+  }, [subjectIndexInSort]);
+  const visiblePeers = showAllPeers ? sortedCohort : sortedCohort.slice(0, 25);
 
   // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
   const peerViewportRef = useRef<HTMLDivElement>(null);
@@ -646,10 +691,10 @@ export default function Person() {
           {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
           {/* Source columns the page otherwise hides, surfaced as a wrapping row of pills (null ones omitted). */}
           <Group gap={7} wrap="wrap" mt="sm">
-            <MetaPill label="Grade" value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
+            <MetaPill label={<GlossaryTerm term="grade">Grade</GlossaryTerm>} value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
             <MetaPill label="Job code" value={latest?.job_code} />
-            <MetaPill label="FLSA" value={latest?.flsa_status} />
-            <MetaPill label="Basis" value={latest?.comp_basis ? fmtBasis(latest.comp_basis) : null} />
+            <MetaPill label={<GlossaryTerm term="flsa">FLSA</GlossaryTerm>} value={latest?.flsa_status} />
+            <MetaPill label={<GlossaryTerm term="basis">Basis</GlossaryTerm>} value={latest?.comp_basis ? fmtBasis(latest.comp_basis) : null} />
             <MetaPill label="Pay type" value={latest?.pay_rate_type} />
             <MetaPill label="Category" value={latest?.employee_category} />
             <MetaPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
@@ -689,7 +734,7 @@ export default function Person() {
         </Alert>
       )}
 
-      <Tabs defaultValue="overview">
+      <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
           <Tabs.Tab value="pay">Pay &amp; standing</Tabs.Tab>
@@ -867,11 +912,11 @@ export default function Person() {
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th w={48} ta="right">#</Table.Th>
-                        <Table.Th>Name</Table.Th>
-                        <Table.Th>School</Table.Th>
-                        <Table.Th>Department</Table.Th>
-                        <Table.Th ta="right">Tenure</Table.Th>
-                        <Table.Th ta="right">Salary</Table.Th>
+                        <SortableTh sortKey="name" label="Name" sort={peerSort} onSort={setPeerSort} />
+                        <SortableTh sortKey="school" label="School" sort={peerSort} onSort={setPeerSort} />
+                        <SortableTh sortKey="department" label="Department" sort={peerSort} onSort={setPeerSort} />
+                        <SortableTh sortKey="tenure" label={<GlossaryTerm term="tenure">Tenure</GlossaryTerm>} sort={peerSort} onSort={setPeerSort} align="right" />
+                        <SortableTh sortKey="salary" label="Salary" sort={peerSort} onSort={setPeerSort} align="right" />
                         <Table.Th w={132} />
                       </Table.Tr>
                     </Table.Thead>

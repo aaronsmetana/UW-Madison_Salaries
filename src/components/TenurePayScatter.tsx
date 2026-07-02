@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
 } from 'recharts';
@@ -13,6 +14,7 @@ export interface ScatterPoint {
   sameSchool: boolean;
   isSelf: boolean;
   name: string;
+  personKey: string;
 }
 
 /** Least-squares fit of pay on tenure over the current cohort. */
@@ -96,6 +98,11 @@ export function TenurePayScatter({
   self: { tenure: number; pay: number } | null;
   titleLabel: string;
 }) {
+  const nav = useNavigate();
+  const goToPeer = (pt: { personKey?: string; payload?: { personKey?: string } }) => {
+    const k = pt?.personKey ?? pt?.payload?.personKey;
+    if (k) nav(`/person/${encodeURIComponent(k)}`);
+  };
   const reg = leastSquares(points);
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   const xMax = Math.ceil(tMax / 10) * 10;
@@ -162,8 +169,8 @@ export function TenurePayScatter({
               segment={[{ x: 0, y: reg.intercept }, { x: xMax, y: reg.intercept + reg.slope * xMax }]}
             />
           )}
-          <Scatter data={others} shape={<PeerDot fill="var(--mantine-color-gray-5)" />} isAnimationActive={false} />
-          <Scatter data={schoolPts} shape={<PeerDot fill="var(--mantine-color-pos-6)" />} isAnimationActive={false} />
+          <Scatter data={others} shape={<PeerDot fill="var(--mantine-color-gray-5)" />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={schoolPts} shape={<PeerDot fill="var(--mantine-color-pos-6)" />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
           <Scatter data={selfPts} shape={<SelfDot />} isAnimationActive={false} />
         </ScatterChart>
       </ResponsiveContainer>

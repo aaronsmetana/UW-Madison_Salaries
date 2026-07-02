@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader, Group, Text, Transition, Alert, Button } from '@mantine/core';
-import { IconAlertTriangle } from '@tabler/icons-react';
+import { IconAlertTriangle, IconWifiOff } from '@tabler/icons-react';
 import { useIsFetching } from '@tanstack/react-query';
 import { useDbReady, useSummary } from '../lib/hooks';
 
@@ -43,6 +43,28 @@ export function DataErrorBanner() {
           Reload
         </Button>
       </Group>
+    </Alert>
+  );
+}
+
+/** Quiet banner shown while the browser is offline — the PWA's cached shell/data still work, so this
+ *  is reassurance rather than an error. */
+export function OfflineBanner() {
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  if (online) return null;
+  return (
+    <Alert color="gray" variant="light" icon={<IconWifiOff size={16} />} mb="md">
+      <Text size="sm">Offline — showing cached data. Some pages or snapshots may be unavailable until you're back online.</Text>
     </Alert>
   );
 }

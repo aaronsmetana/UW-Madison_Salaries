@@ -10,11 +10,15 @@ import { downloadCSV } from '../lib/csv';
 import { SegmentedToggle } from './SegmentedToggle';
 import { MiniBar } from './MiniBar';
 import { RankDeltaChip } from './Delta';
+import { SortableTh, type SortState } from './SortableTh';
+import { GlossaryTerm } from './GlossaryTerm';
 
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
   school: string | null; department: string | null; fte: number | null; pay: number;
 }
+
+type SortKey = 'name' | 'title' | 'school' | 'fte' | 'pay';
 
 export function EarnersPanel() {
   const { scope, metric, filters } = useControls();
@@ -27,6 +31,7 @@ export function EarnersPanel() {
 
   const [limit, setLimit] = useState(100);
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState<SortState<SortKey>>({ key: 'pay', dir: 'desc' });
 
   const { data: earnersRaw } = useSql<EarnerRow>(
     ['top-earners', snap ?? '', scope.kind, scopeVal, metric, fk, limit],
@@ -53,11 +58,28 @@ export function EarnersPanel() {
   );
   const prevRankMap = useMemo(() => new Map((prevRanks ?? []).map((r) => [r.person_key, r.rnk])), [prevRanks]);
 
+  // Pay rank is anchored to the underlying pay-desc query order, independent of the table's current
+  // display sort — "#12" always means "12th highest pay in this scope," not "12th row shown."
+  const payRank = useMemo(() => new Map(earners.map((e, i) => [e.person_key, i + 1])), [earners]);
+
   const view = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return earners;
-    return earners.filter((e) => fullName(e.fn, e.ln).toLowerCase().includes(t) || (e.title ?? '').toLowerCase().includes(t));
-  }, [earners, q]);
+    const filtered = t
+      ? earners.filter((e) => fullName(e.fn, e.ln).toLowerCase().includes(t) || (e.title ?? '').toLowerCase().includes(t))
+      : earners;
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp: number;
+      switch (sort.key) {
+        case 'name': cmp = fullName(a.fn, a.ln).localeCompare(fullName(b.fn, b.ln)); break;
+        case 'title': cmp = (a.title ?? '').localeCompare(b.title ?? ''); break;
+        case 'school': cmp = (a.school ?? '').localeCompare(b.school ?? ''); break;
+        case 'fte': cmp = (a.fte ?? 0) - (b.fte ?? 0); break;
+        default: cmp = a.pay - b.pay;
+      }
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [earners, q, sort]);
 
   const maxPay = earners[0]?.pay ?? 1;
 
@@ -96,16 +118,16 @@ export function EarnersPanel() {
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={56} ta="right">#</Table.Th>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Title</Table.Th>
-              <Table.Th>School</Table.Th>
-              <Table.Th ta="right">FTE</Table.Th>
-              <Table.Th ta="right">Pay</Table.Th>
+              <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
+              <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
+              <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
+              <SortableTh sortKey="fte" label={<GlossaryTerm term="fte">FTE</GlossaryTerm>} sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {view.map((e) => {
-              const realRank = earners.indexOf(e) + 1;
+              const realRank = payRank.get(e.person_key) ?? 0;
               return (
                 <Table.Tr key={e.person_key}>
                   <Table.Td ta="right">

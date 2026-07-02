@@ -43,6 +43,7 @@ export function SalaryHistogram({
   tooFewText,
   height = 240,
   domain,
+  onBinClick,
 }: {
   values: number[];
   markerValue?: number | null;
@@ -51,6 +52,8 @@ export function SalaryHistogram({
   tooFewText?: string;
   height?: number;
   domain?: [number, number];
+  /** Optional: clicking a bar reports that bin's [lo, hi) salary range (e.g. to filter a people list). */
+  onBinClick?: (range: { lo: number; hi: number }) => void;
 }) {
   const bins = binSalaries(values, 10, domain);
   if (values.length < minToShow || bins.length < 2) {
@@ -66,7 +69,7 @@ export function SalaryHistogram({
   const hi = bins[bins.length - 1].hi;
   // Plot bars on a real value (number) axis with ticks at the bin EDGES, so the axis reads as a true
   // salary scale: each bar is centered in its bin and the edge ticks line up with the bar edges.
-  const data = bins.map((b) => ({ x: (b.lo + b.hi) / 2, label: b.label, range: b.range, n: b.n }));
+  const data = bins.map((b) => ({ x: (b.lo + b.hi) / 2, label: b.label, range: b.range, n: b.n, lo: b.lo, hi: b.hi }));
   const edges = [...bins.map((b) => b.lo), hi];
 
   // Quartiles from the raw values → faint reference guides for market context. Only the median gets
@@ -123,7 +126,12 @@ export function SalaryHistogram({
                 label={g.isMedian ? { value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' } : undefined}
               />
             ))}
-            <Bar dataKey="n" radius={BAR_RADIUS}>
+            <Bar
+              dataKey="n"
+              radius={BAR_RADIUS}
+              onClick={onBinClick ? (d: { lo: number; hi: number }) => onBinClick({ lo: d.lo, hi: d.hi }) : undefined}
+              cursor={onBinClick ? 'pointer' : undefined}
+            >
               {data.map((_, i) => (
                 <Cell
                   key={i}

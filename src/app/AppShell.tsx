@@ -11,7 +11,7 @@ import { SelectionTray } from './SelectionTray';
 import { Footer } from './Footer';
 import { CommandSearch } from '../components/CommandSearch';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { GlobalLoadingBar, LoadingState, DataErrorBanner } from '../components/Loading';
+import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
 
 const NAV = [
   { label: "Search Person's Salary", to: '/', icon: IconUserSearch },
@@ -159,6 +159,7 @@ export function AppShellLayout() {
         </AppShell.Navbar>
 
         <AppShell.Main style={{ paddingBottom: 'calc(var(--app-shell-footer-offset, 0rem) + 96px)' }}>
+          <OfflineBanner />
           <DataErrorBanner />
           <ErrorBoundary key={loc.pathname}>
             <Suspense fallback={<LoadingState label="Loading…" />}>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
 import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
 import {
@@ -59,12 +59,29 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
 }
 
 export default function Compare() {
+  const nav = useNavigate();
   const { items, add, remove, clear } = useTray();
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const [xMode, setXMode] = useState<'date' | 'tenure'>('date');
   const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+  // Legend mute/solo: a click dims one series (state only — the tray itself is untouched); shift-click
+  // solos it (mutes everyone else), or un-solos back to "all visible" if it's already the lone survivor.
+  const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
+  const toggleMute = (id: string, allIds: string[], solo: boolean) => {
+    setMutedIds((prev) => {
+      if (solo) {
+        const others = allIds.filter((x) => x !== id);
+        const alreadySolo = others.length > 0 && others.every((x) => prev.has(x)) && !prev.has(id);
+        return alreadySolo ? new Set() : new Set(others);
+      }
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   // Canonical snapshot order (from summary.json) so every pivoted series here sorts identically —
   // otherwise the two same-dated Nov 2021 (Pre/Post-TTC) snapshots can land in a different order per
   // chart, since each chart's own SQL query breaks that date tie in its own row order.
@@ -334,11 +351,11 @@ export default function Compare() {
 
         {items.length > 0 && (
           <>
-            <SelectedRow label="People" items={persons} onRemove={remove} colored />
-            <SelectedRow label="Titles" items={titles} onRemove={remove} colored />
+            <SelectedRow label="People" items={persons} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} />
+            <SelectedRow label="Titles" items={titles} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} />
             <SelectedRow label="Schools" items={schools} onRemove={remove} />
             {(persons.length > 0 || titles.length > 0) && (
-              <Text size="xs" c="dimmed" mt={6}>The colored dots are the key for the charts below.</Text>
+              <Text size="xs" c="dimmed" mt={6}>The colored dots are the key for the charts below — click one to hide that series, shift-click to show only it.</Text>
             )}
             <Group justify="flex-end" mt="sm">
               <Button size="xs" variant="subtle" color="gray" onClick={clear}>Clear all</Button>
@@ -386,16 +403,19 @@ export default function Compare() {
             <>
               <ResponsiveContainer width="100%" height={300}>
                 {xMode === 'date' ? (
-                  <LineChart data={trajectorySeries} margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
+                  <LineChart data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
                     <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
                     <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
                     {persons.map((p) => {
                       const color = CHART_SERIES[p.colorIdx % CHART_SERIES.length];
+                      const muted = mutedIds.has(p.id);
                       return (
-                        <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={2} dot connectNulls
-                          label={persons.length <= 4 ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
+                        <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={2} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
+                          label={persons.length <= 4 && !muted ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
+                          onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
+                          style={{ cursor: 'pointer' }}
                         />
                       );
                     })}
@@ -413,6 +433,9 @@ export default function Compare() {
                         data={(perPersonDisplay.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
                         line
                         fill={CHART_SERIES[p.colorIdx % CHART_SERIES.length]}
+                        fillOpacity={mutedIds.has(p.id) ? 0.15 : 1}
+                        onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
+                        cursor="pointer"
                       />
                     ))}
                   </ScatterChart>
@@ -436,7 +459,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Pay gap to the top earner in this group</Text>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={gapSeries} margin={{ left: 12, right: 12 }}>
+            <LineChart data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
               <YAxis
@@ -448,7 +471,7 @@ export default function Compare() {
               />
               <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} dot connectNulls />
+                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -465,13 +488,13 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Relative standing within school (percentile over time)</Text>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={standingSeries} margin={{ left: 12, right: 12 }}>
+            <LineChart data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
               <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, (v) => `${v}th pctile`)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} dot connectNulls />
+                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -558,7 +581,7 @@ export default function Compare() {
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
               {titles.map((t) => (
-                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} dot connectNulls />
+                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -614,29 +637,50 @@ export default function Compare() {
  * not its position — a color follows its item even if others are removed) so the
  * tags double as the charts' legend.
  */
-function SelectedRow({ label, items, onRemove, colored = false }: { label: string; items: TrayItem[]; onRemove: (id: string) => void; colored?: boolean }) {
+function SelectedRow({
+  label, items, onRemove, colored = false, mutedIds, onToggleMute,
+}: {
+  label: string;
+  items: TrayItem[];
+  onRemove: (id: string) => void;
+  colored?: boolean;
+  mutedIds?: Set<string>;
+  onToggleMute?: (id: string, allIds: string[], solo: boolean) => void;
+}) {
   if (items.length === 0) return null;
+  const allIds = items.map((i) => i.id);
   return (
     <Group gap="xs" mt="sm" wrap="wrap">
       <Text size="xs" c="dimmed" w={56}>{label}</Text>
-      {items.map((i) => (
-        <Pill key={`${i.type}:${i.id}`} withRemoveButton onRemove={() => onRemove(i.id)}>
-          {colored && (
-            <span
-              style={{
-                display: 'inline-block',
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: CHART_SERIES[i.colorIdx % CHART_SERIES.length],
-                marginRight: 6,
-                verticalAlign: 'middle',
-              }}
-            />
-          )}
-          {i.label}
-        </Pill>
-      ))}
+      {items.map((i) => {
+        const muted = mutedIds?.has(i.id) ?? false;
+        return (
+          <Pill key={`${i.type}:${i.id}`} withRemoveButton onRemove={() => onRemove(i.id)}>
+            {colored && (
+              <button
+                type="button"
+                aria-label={`${muted ? 'Show' : 'Hide'} ${i.label} on the charts (shift-click to show only this one)`}
+                aria-pressed={!muted}
+                onClick={(e) => onToggleMute?.(i.id, allIds, e.shiftKey)}
+                style={{
+                  display: 'inline-block',
+                  width: 8,
+                  height: 8,
+                  padding: 0,
+                  border: 'none',
+                  borderRadius: '50%',
+                  background: CHART_SERIES[i.colorIdx % CHART_SERIES.length],
+                  opacity: muted ? 0.25 : 1,
+                  marginRight: 6,
+                  verticalAlign: 'middle',
+                  cursor: 'pointer',
+                }}
+              />
+            )}
+            {i.label}
+          </Pill>
+        );
+      })}
     </Group>
   );
 }

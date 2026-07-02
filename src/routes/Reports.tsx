@@ -40,15 +40,43 @@ export default function Reports() {
   const generated = fmtDate(new Date());
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
 
-  // The tray's "Report →" shortcut deep-links here with ?mode=compare to open the comparison studio.
-  const [params] = useSearchParams();
-  const [type, setType] = useState(params.get('mode') === 'compare' ? 'comparison' : 'person');
+  // The tray's "Report →" shortcut deep-links here with ?mode=compare to open the comparison studio
+  // (kept working as a legacy trigger); ?type= is the current, shareable form this page now writes.
+  const [params, setSearchParams] = useSearchParams();
+  const [type, setType] = useState(() => {
+    if (params.get('type') === 'comparison' || params.get('mode') === 'compare') return 'comparison';
+    return 'person';
+  });
   const [hovered, setHovered] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig);
 
-  // ── Report on person ──
-  const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(null);
+  // ── Report on person ── hydrated once from ?person=/?pname= on mount (a finished report is
+  // shareable), then kept in sync (with ?type=) the same way Compare syncs its ?sel= tray link.
+  const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(() => {
+    const key = params.get('person');
+    return key ? { key, name: params.get('pname') || key } : null;
+  });
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        n.delete('mode'); // superseded by ?type=
+        if (type === 'comparison') n.set('type', 'comparison');
+        else n.delete('type');
+        if (type === 'person' && selPerson) {
+          n.set('person', selPerson.key);
+          n.set('pname', selPerson.name);
+        } else {
+          n.delete('person');
+          n.delete('pname');
+        }
+        return n;
+      },
+      { replace: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, selPerson]);
   const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
     ['rpt-person-hist', selPerson?.key ?? '', metric],
     `SELECT snapshot_label AS snapshot, title, job_code, school, ${expr} AS pay, fte

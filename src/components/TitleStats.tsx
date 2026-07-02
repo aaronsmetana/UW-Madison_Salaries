@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
-  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, Loader,
+  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, Loader, ActionIcon,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconSearch } from '@tabler/icons-react';
+import { IconSearch, IconX } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
@@ -13,6 +13,8 @@ import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { TrayButton } from './TrayButton';
+import { SortableTh, type SortState } from './SortableTh';
+import { GlossaryTerm } from './GlossaryTerm';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
 
@@ -29,6 +31,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
 interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
+type PeopleSortKey = 'name' | 'school' | 'department' | 'tenure' | 'salary';
 interface SchoolRow { school: string; n: number; med: number | null }
 interface PctRow { scope: string; pct: number; n: number }
 
@@ -120,11 +123,31 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   }, [pinned, pays, pinSalary]);
 
   const [q, setQ] = useState('');
+  // Clicking a histogram bar filters the list below to that salary range (persists across a title/school
+  // change the same way the name search above already does, since this component isn't remounted then).
+  const [binFilter, setBinFilter] = useState<{ lo: number; hi: number } | null>(null);
+  const [peopleSort, setPeopleSort] = useState<SortState<PeopleSortKey>>({ key: 'salary', dir: 'desc' });
+  // Pay rank is anchored to the underlying pay-desc query order, independent of the table's current
+  // display sort — "#12" always means "12th highest pay for this title," not "12th row shown."
+  const payRank = useMemo(() => new Map(people.map((p, i) => [p.person_key, i + 1])), [people]);
   const filteredPeople = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return people;
-    return people.filter((p) => fullName(p.fn, p.ln).toLowerCase().includes(t));
-  }, [people, q]);
+    const filtered = people
+      .filter((p) => !t || fullName(p.fn, p.ln).toLowerCase().includes(t))
+      .filter((p) => !binFilter || (p.pay >= binFilter.lo && p.pay <= binFilter.hi));
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp: number;
+      switch (peopleSort.key) {
+        case 'name': cmp = fullName(a.fn, a.ln).localeCompare(fullName(b.fn, b.ln)); break;
+        case 'school': cmp = (a.school ?? '').localeCompare(b.school ?? ''); break;
+        case 'department': cmp = (a.department ?? '').localeCompare(b.department ?? ''); break;
+        case 'tenure': cmp = (a.tenure ?? 0) - (b.tenure ?? 0); break;
+        default: cmp = a.pay - b.pay;
+      }
+      return peopleSort.dir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [people, q, binFilter, peopleSort]);
 
   const scopeLabel = school ? ` in ${school}` : '';
 
@@ -169,7 +192,9 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           markerValue={pinned ? pinSalary : null}
           markerLabel="Pinned Salary"
           tooFewText={`Only ${num(s.n)} ${s.n === 1 ? 'person has' : 'people have'} this title${scopeLabel} — too few to chart a meaningful distribution.`}
+          onBinClick={setBinFilter}
         />
+        <Text size="xs" c="dimmed" mt={4}>Click a bar to filter the people list below to that range.</Text>
       </Card>
 
       {band && (
@@ -192,6 +217,20 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
             <Text size="sm" c="dimmed">{usd(pinSalary)} would rank <b>#{rank}</b> of {num(s.n)}</Text>
           )}
         </Group>
+        {binFilter && (
+          <Badge
+            variant="light"
+            color="accent"
+            mb="sm"
+            rightSection={
+              <ActionIcon size={14} radius="xl" variant="transparent" color="accent" aria-label="Clear salary range filter" onClick={() => setBinFilter(null)}>
+                <IconX size={11} />
+              </ActionIcon>
+            }
+          >
+            {usd(binFilter.lo)} – {usd(binFilter.hi)}
+          </Badge>
+        )}
         <TextInput
           size="md"
           mb="sm"
@@ -205,17 +244,17 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={48} ta="right">#</Table.Th>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>School</Table.Th>
-                <Table.Th>Department</Table.Th>
-                <Table.Th ta="right">Tenure</Table.Th>
-                <Table.Th ta="right">Salary</Table.Th>
+                <SortableTh sortKey="name" label="Name" sort={peopleSort} onSort={setPeopleSort} />
+                <SortableTh sortKey="school" label="School" sort={peopleSort} onSort={setPeopleSort} />
+                <SortableTh sortKey="department" label="Department" sort={peopleSort} onSort={setPeopleSort} />
+                <SortableTh sortKey="tenure" label={<GlossaryTerm term="tenure">Tenure</GlossaryTerm>} sort={peopleSort} onSort={setPeopleSort} align="right" />
+                <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <Table.Th w={132} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {filteredPeople.map((p) => {
-                const realRank = people.indexOf(p) + 1;
+                const realRank = payRank.get(p.person_key) ?? 0;
                 const inTray = has(p.person_key);
                 return (
                   <Table.Tr
