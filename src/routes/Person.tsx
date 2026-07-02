@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, LabelList,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtUsd } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { wrapChartTitle } from '../lib/chartText';
 import { YoyPill } from '../components/chart/pills';
 import { ttcRank } from '../lib/snapshotOrder';
@@ -1085,6 +1085,7 @@ export default function Person() {
             <XAxis
               dataKey="label"
               tick={fteVaries ? false : AXIS_TICK}
+              tickFormatter={fmtSnapTick}
               tickLine={false}
               tickMargin={fteVaries ? undefined : 10}
               height={fteVaries ? 8 : 34}
@@ -1167,7 +1168,7 @@ export default function Person() {
             <ResponsiveContainer width="100%" height={108}>
               <AreaChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: 0, bottom: 0 }}>
                 <CartesianGrid {...GRID} />
-                <XAxis dataKey="label" tick={AXIS_TICK} tickMargin={10} height={34} />
+                <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} tickMargin={10} height={34} />
                 <YAxis
                   yAxisId="fte"
                   domain={[0, 1]}

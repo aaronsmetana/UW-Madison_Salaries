@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
 import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
@@ -6,9 +6,9 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtK, niceCurrencyTicks } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, fmtSnapTick } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
-import { useTray } from '../state/tray';
+import { useTray, type TrayItem } from '../state/tray';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
@@ -16,22 +16,47 @@ import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
+import { ChartTooltip } from '../components/chart/ChartTooltip';
+import { SvgPill } from '../components/chart/pills';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
 import { dropdownProps } from '../lib/selectProps';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { encodeSel, decodeSel } from '../lib/share';
 
-const PALETTE = [
-  'var(--mantine-color-accent-6)', 'var(--mantine-color-pos-6)', 'var(--mantine-color-orange-6)',
-  'var(--mantine-color-grape-6)', 'var(--mantine-color-cyan-7)', 'var(--mantine-color-red-6)',
-  'var(--mantine-color-lime-7)', 'var(--mantine-color-pink-6)',
-];
-
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
 interface TStatRow { job_code: string; headcount: number; med: number | null; p25: number | null; p75: number | null; p90: number | null }
 interface TTrendRow { job_code: string; label: string; date: string; med: number }
+
+interface TooltipPayloadItem {
+  color?: string;
+  stroke?: string;
+  dataKey?: string | number;
+  value?: string | number | Array<string | number>;
+}
+
+/** Builds ChartTooltip rows from a Recharts tooltip payload — one series-value line per item, using
+ *  `labels` to resolve each dataKey (a person/title id) back to its display name. Every series here is
+ *  a plain Line (never a range/area value), so `value` is always a scalar at runtime — the array case
+ *  only exists to satisfy Recharts' generic payload type. */
+function seriesRows(payload: TooltipPayloadItem[] | undefined, labels: Map<string, string>, fmt: (v: number) => ReactNode) {
+  return (payload ?? []).map((p) => ({
+    color: p.color ?? p.stroke,
+    name: labels.get(String(p.dataKey)) ?? String(p.dataKey ?? ''),
+    value: fmt(Number(Array.isArray(p.value) ? p.value[0] : p.value)),
+  }));
+}
+
+/** Direct end-of-line label on a person's final point — only the last point renders (recharts calls
+ *  this once per data point via the Line's `label` prop). With this, identity on the trajectory chart
+ *  is never color-alone: the legend chips below already name each color, and now so does the chart. */
+function TrajectoryEndLabel({ x, y, index, count, name, color }: {
+  x?: number; y?: number; index?: number; count: number; name: string; color: string;
+}) {
+  if (x == null || y == null || index !== count - 1) return null;
+  return <SvgPill x={x + 8 + name.length * 3 + 4} y={y} text={name} color={color} fontWeight={600} />;
+}
 
 export default function Compare() {
   const { items, add, remove, clear } = useTray();
@@ -361,14 +386,19 @@ export default function Compare() {
             <>
               <ResponsiveContainer width="100%" height={300}>
                 {xMode === 'date' ? (
-                  <LineChart data={trajectorySeries} margin={{ left: 12, right: 12 }}>
+                  <LineChart data={trajectorySeries} margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
                     <CartesianGrid {...GRID} />
-                    <XAxis dataKey="label" tick={AXIS_TICK} />
+                    <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
                     <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-                    <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
-                    {persons.map((p, i) => (
-                      <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
-                    ))}
+                    <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
+                    {persons.map((p) => {
+                      const color = CHART_SERIES[p.colorIdx % CHART_SERIES.length];
+                      return (
+                        <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={2} dot connectNulls
+                          label={persons.length <= 4 ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
+                        />
+                      );
+                    })}
                   </LineChart>
                 ) : (
                   <ScatterChart margin={{ left: 12, right: 12 }}>
@@ -376,13 +406,13 @@ export default function Compare() {
                     <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={AXIS_TICK} />
                     <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
                     <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} />
-                    {persons.map((p, i) => (
+                    {persons.map((p) => (
                       <Scatter
                         key={p.id}
                         name={p.label}
                         data={(perPersonDisplay.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
                         line
-                        fill={PALETTE[i % PALETTE.length]}
+                        fill={CHART_SERIES[p.colorIdx % CHART_SERIES.length]}
                       />
                     ))}
                   </ScatterChart>
@@ -408,7 +438,7 @@ export default function Compare() {
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={gapSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" tick={AXIS_TICK} />
+              <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
               <YAxis
                 tickFormatter={fmtK}
                 ticks={gapTicks}
@@ -416,9 +446,9 @@ export default function Compare() {
                 width={80}
                 tick={AXIS_TICK}
               />
-              <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
-              {persons.map((p, i) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
+              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
+              {persons.map((p) => (
+                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} dot connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -437,11 +467,11 @@ export default function Compare() {
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={standingSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" tick={AXIS_TICK} />
+              <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
-              <Tooltip formatter={(v: number, key) => [`${v}th pctile`, labelMap.get(String(key)) ?? key]} />
-              {persons.map((p, i) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
+              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, (v) => `${v}th pctile`)} /> : null} />
+              {persons.map((p) => (
+                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} dot connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -524,11 +554,11 @@ export default function Compare() {
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" tick={AXIS_TICK} />
+              <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-              <Tooltip formatter={(v: number, key) => [usd(v), titleLabelMap.get(String(key)) ?? key]} />
-              {titles.map((t, i) => (
-                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
+              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
+              {titles.map((t) => (
+                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} dot connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -580,15 +610,16 @@ export default function Compare() {
 
 /**
  * A removable-pill row for one selection type; renders nothing when empty.
- * When `colored`, each pill shows its persistent chart color (matching the line
- * colors below, by position) so the tags double as the charts' legend.
+ * When `colored`, each pill shows its persistent chart color (its stored colorIdx,
+ * not its position — a color follows its item even if others are removed) so the
+ * tags double as the charts' legend.
  */
-function SelectedRow({ label, items, onRemove, colored = false }: { label: string; items: { type: string; id: string; label: string }[]; onRemove: (id: string) => void; colored?: boolean }) {
+function SelectedRow({ label, items, onRemove, colored = false }: { label: string; items: TrayItem[]; onRemove: (id: string) => void; colored?: boolean }) {
   if (items.length === 0) return null;
   return (
     <Group gap="xs" mt="sm" wrap="wrap">
       <Text size="xs" c="dimmed" w={56}>{label}</Text>
-      {items.map((i, idx) => (
+      {items.map((i) => (
         <Pill key={`${i.type}:${i.id}`} withRemoveButton onRemove={() => onRemove(i.id)}>
           {colored && (
             <span
@@ -597,7 +628,7 @@ function SelectedRow({ label, items, onRemove, colored = false }: { label: strin
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: PALETTE[idx % PALETTE.length],
+                background: CHART_SERIES[i.colorIdx % CHART_SERIES.length],
                 marginRight: 6,
                 verticalAlign: 'middle',
               }}

@@ -10,7 +10,7 @@ import {
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -292,7 +292,7 @@ export default function School() {
               allowDataOverflow={distScale === 'log'}
             />
             <Tooltip formatter={(v: number) => [num(v), 'People']} />
-            <Bar dataKey="n" name="People" fill="var(--bar)" />
+            <Bar dataKey="n" name="People" fill="var(--bar)" radius={BAR_RADIUS} />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />

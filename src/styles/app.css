@@ -7,6 +7,7 @@
   --bar-active: #0e6e83; /* the highlighted bar / "this" */
   --page-bg: #f2f4f6; /* app canvas behind cards (light) */
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
+  --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 }
 
 /* Marine-teal + cool-grey canvas in light mode; cards stay white (Mantine surface var unchanged). */
@@ -25,6 +26,14 @@ body {
   /* Same-school row tint for dark mode: an explicit, readable dark-green band (the light #edf6f1 washed out
      the text). Comparable strength to the subject row's teal accent-light, but a distinct green hue. */
   --pos-row-bg: rgba(21, 163, 107, 0.16);
+  /* Histogram bars in dark mode: the light-mode pair (pale bar / dark ink highlight) inverts on a dark
+     surface — a highlight needs to be LIGHTER than its surroundings to pop, not darker. Chosen from the
+     accent ramp and checked against the card surface (~#1a1b1e) with the dataviz skill's validator:
+     bar-active (accent-5, contrast 4.95:1) reads clearly brighter than bar (accent-7, contrast 2.93:1,
+     relieved by the histogram's tooltip + data table). */
+  --bar: #0e6e83;
+  --bar-active: #4f93a4;
+  --series-accent: #4f93a4;
 }
 :root[data-mantine-color-scheme='light'] {
   --mantine-color-dimmed: #586273;

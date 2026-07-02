@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { encodeSel, decodeSel } from './share';
-import type { TrayItem } from '../state/tray';
+import type { TrayItemInput } from '../state/tray';
 
 describe('share', () => {
   it('round-trips a mixed tray of people, titles, and schools', () => {
-    const items: TrayItem[] = [
+    const items: TrayItemInput[] = [
       { type: 'person', id: 'aaronfield|2001-07-30', label: 'Aaron Field' },
       { type: 'title', id: 'FA020', label: 'Professor' },
       { type: 'school', id: 'School of Medicine and Public Health', label: 'School of Medicine and Public Health' },
@@ -12,7 +12,7 @@ describe('share', () => {
     expect(decodeSel(encodeSel(items))).toEqual(items);
   });
   it('escapes delimiter characters embedded in a label so they cannot corrupt the split', () => {
-    const items: TrayItem[] = [{ type: 'title', id: 'X1', label: 'Assistant Professor, Clinical | Adjunct' }];
+    const items: TrayItemInput[] = [{ type: 'title', id: 'X1', label: 'Assistant Professor, Clinical | Adjunct' }];
     expect(decodeSel(encodeSel(items))).toEqual(items);
   });
   it('returns null for missing, empty, or malformed input', () => {

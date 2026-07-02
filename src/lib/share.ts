@@ -1,7 +1,7 @@
-import type { TrayItem } from '../state/tray';
+import type { TrayItemInput } from '../state/tray';
 
-const TYPE_CODE: Record<TrayItem['type'], string> = { person: 'p', title: 't', school: 's' };
-const CODE_TYPE: Record<string, TrayItem['type']> = { p: 'person', t: 'title', s: 'school' };
+const TYPE_CODE: Record<TrayItemInput['type'], string> = { person: 'p', title: 't', school: 's' };
+const CODE_TYPE: Record<string, TrayItemInput['type']> = { p: 'person', t: 'title', s: 'school' };
 
 // `,` and `|` are both percent-encoded by encodeURIComponent, so once id/label are individually
 // encoded, neither delimiter can collide with content that happens to contain a literal `,` or `|`.
@@ -10,16 +10,17 @@ const ITEM_SEP = '|';
 const MAX_LENGTH = 1600;
 
 /** Serializes tray items into a compact, URL-safe value for a shareable Compare link. */
-export function encodeSel(items: TrayItem[]): string {
+export function encodeSel(items: TrayItemInput[]): string {
   return items
     .map((i) => [TYPE_CODE[i.type], encodeURIComponent(i.id), encodeURIComponent(i.label)].join(FIELD_SEP))
     .join(ITEM_SEP);
 }
 
-/** Parses a `sel` query-param value back into tray items. Returns null if missing or malformed. */
-export function decodeSel(param: string | null | undefined): TrayItem[] | null {
+/** Parses a `sel` query-param value back into tray items (colorIdx is assigned by useTray's `add`,
+ *  not carried over the link). Returns null if missing or malformed. */
+export function decodeSel(param: string | null | undefined): TrayItemInput[] | null {
   if (!param || param.length > MAX_LENGTH) return null;
-  const items: TrayItem[] = [];
+  const items: TrayItemInput[] = [];
   try {
     for (const part of param.split(ITEM_SEP)) {
       if (!part) continue;

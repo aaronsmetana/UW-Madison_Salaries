@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { niceCurrencyTicks } from './chartStyle';
+import { niceCurrencyTicks, fmtSnapTick } from './chartStyle';
 
 describe('niceCurrencyTicks', () => {
   it('picks round ticks for an all-negative range abutting zero', () => {
@@ -21,5 +21,18 @@ describe('niceCurrencyTicks', () => {
     const ticks = niceCurrencyTicks(0, 0);
     expect(ticks.length).toBe(3);
     expect(ticks[1]).toBe(0);
+  });
+});
+
+describe('fmtSnapTick', () => {
+  it('shortens a plain snapshot label to "Mon \'YY"', () => {
+    expect(fmtSnapTick('Mar 2026')).toBe("Mar '26");
+  });
+  it('adds a lowercase pre/post suffix when the label carries a TTC variant', () => {
+    expect(fmtSnapTick('Nov 2021 (Pre-TTC)')).toBe("Nov '21·pre");
+    expect(fmtSnapTick('Nov 2021 (Post-TTC)')).toBe("Nov '21·post");
+  });
+  it('passes an unrecognized label through unchanged', () => {
+    expect(fmtSnapTick('Q1')).toBe('Q1');
   });
 });

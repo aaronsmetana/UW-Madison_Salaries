@@ -1,7 +1,7 @@
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, BAR_RADIUS } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num } from '../lib/format';
@@ -123,7 +123,7 @@ export function SalaryHistogram({
                 label={g.isMedian ? { value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' } : undefined}
               />
             ))}
-            <Bar dataKey="n">
+            <Bar dataKey="n" radius={BAR_RADIUS}>
               {data.map((_, i) => (
                 <Cell
                   key={i}

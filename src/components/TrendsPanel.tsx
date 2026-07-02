@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceLine, LabelList,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { lineGlowDefs } from './chartDefs';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
@@ -117,42 +117,62 @@ export function TrendsPanel() {
           />
         </Group>
       </Group>
-      <ResponsiveContainer width="100%" height={340}>
-        <ComposedChart data={plot} margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
+      {/* Two stacked single-axis panels sharing an x-axis (syncId) instead of one dual-axis chart —
+          a shared plot with two different y-scales makes the point where the lines cross meaningless.
+          The median panel keeps the full rich tooltip (it reads hc/renew off the same `plot` rows even
+          though those lines render below); the headcount panel suppresses its own tooltip and relies on
+          the synced crosshair, matching the same convention as Person's trend+FTE stack. */}
+      <ResponsiveContainer width="100%" height={230}>
+        <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
           <defs>{lineGlowDefs('expltrend')}</defs>
           <CartesianGrid {...GRID} />
-          <XAxis dataKey="label" tick={AXIS_TICK} />
-          <YAxis yAxisId="med" tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
+          <XAxis dataKey="label" tick={false} />
+          <YAxis tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
             label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
-          <YAxis yAxisId="hc" orientation="right" width={72} tick={AXIS_TICK} padding={Y_PAD}
-            scale={hcScale === 'log' ? 'log' : 'auto'}
-            domain={hcScale === 'log' ? [0.5, 'auto'] : undefined}
-            allowDataOverflow={hcScale === 'log'}
-            label={{ value: 'Headcount', angle: 90, position: 'insideRight', style: { fill: 'var(--mantine-color-pos-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip content={<TrendTip />} />
-          <Legend />
 
           {ttcLabel && (
-            <ReferenceLine yAxisId="med" x={ttcLabel} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
+            <ReferenceLine x={ttcLabel} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
               label={{ value: 'TTC reclassification', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
-          )}
-          {coverageLabel && (
-            <ReferenceLine yAxisId="hc" x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
-              label={{ value: 'coverage change', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
           )}
 
           {/* Median: gradient area + soft-glow underlay + primary line. */}
-          <Area yAxisId="med" type="monotone" dataKey="med" stroke="none" fill="url(#expltrend-area-grad)" isAnimationActive={false} legendType="none" />
-          <Line yAxisId="med" type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#expltrend-line-glow)" />
-          <Line yAxisId="med" type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
+          <Area type="monotone" dataKey="med" stroke="none" fill="url(#expltrend-area-grad)" isAnimationActive={false} legendType="none" />
+          <Line type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#expltrend-line-glow)" />
+          <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
 
-          <Line yAxisId="hc" type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-pos-6)" strokeWidth={2} dot strokeDasharray="4 2" isAnimationActive={!reduce} />
-          <Line yAxisId="hc" type="monotone" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--mantine-color-orange-6)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
-
-          {/* YoY % pills, drawn last so they sit above the headcount dashed line (legend-less duplicate). */}
-          <Line yAxisId="med" type="monotone" dataKey="med" stroke="none" dot={false} legendType="none" isAnimationActive={false}>
+          {/* YoY % pills, drawn last so they sit above the area fill (legend-less duplicate). */}
+          <Line type="monotone" dataKey="med" stroke="none" dot={false} legendType="none" isAnimationActive={false}>
             <LabelList dataKey="yoy" content={<YoyPill topThreshold={40} offset={20} count={plot.length} />} />
           </Line>
+        </ComposedChart>
+      </ResponsiveContainer>
+
+      <div style={{ height: 16 }} />
+
+      <ResponsiveContainer width="100%" height={130}>
+        <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 0, bottom: 0 }}>
+          <CartesianGrid {...GRID} />
+          <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} tickMargin={10} height={34} />
+          <YAxis
+            width={92}
+            tick={AXIS_TICK}
+            padding={Y_PAD}
+            scale={hcScale === 'log' ? 'log' : 'auto'}
+            domain={hcScale === 'log' ? [0.5, 'auto'] : undefined}
+            allowDataOverflow={hcScale === 'log'}
+            label={{ value: 'Headcount', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-pos-6)', fontSize: 12, textAnchor: 'middle' } }}
+          />
+          <Tooltip content={() => null} />
+          <Legend />
+
+          {coverageLabel && (
+            <ReferenceLine x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
+              label={{ value: 'coverage change', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+          )}
+
+          <Line type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-pos-6)" strokeWidth={2} dot strokeDasharray="4 2" isAnimationActive={!reduce} />
+          <Line type="monotone" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--mantine-color-orange-6)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
         </ComposedChart>
       </ResponsiveContainer>
       <Text size="xs" c="dimmed" mt={4}>

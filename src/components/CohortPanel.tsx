@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceArea, ReferenceLine,
 } from 'recharts';
-import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, fmtSnapTick } from '../lib/chartStyle';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -157,10 +157,10 @@ export function CohortPanel() {
               <ReferenceArea x1="1990" x2="2021" fill="var(--mantine-color-default-border)" fillOpacity={0.35}
                 label={<AreaPillLabel text="pre-2021 hires: survivors only" />} />
             )}
-            <Bar dataKey="retention" name="Retained" fill="var(--mantine-color-pos-6)" stackId="r">
+            <Bar dataKey="retention" name="Retained" fill="var(--mantine-color-pos-6)" stackId="r" stroke="var(--mantine-color-body)" strokeWidth={2}>
               {chart.map((c, i) => <Cell key={i} fill={sortMode === 'retention' ? retColor(c.retention) : 'var(--mantine-color-pos-6)'} />)}
             </Bar>
-            <Bar dataKey="lost" name="Left" stackId="r" fill="var(--mantine-color-gray-4)" />
+            <Bar dataKey="lost" name="Left" stackId="r" fill="var(--mantine-color-gray-4)" stroke="var(--mantine-color-body)" strokeWidth={2} radius={BAR_RADIUS} />
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Retention by hire year" columns={['Hire year', 'Retained %', 'Left %']} rows={chart.map((c) => [c.year, c.retention, c.lost])} />
@@ -180,7 +180,7 @@ export function CohortPanel() {
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={turnover} margin={{ left: 12, right: 12, top: 8 }}>
                 <CartesianGrid {...GRID} />
-                <XAxis dataKey="label" tick={AXIS_TICK} />
+                <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
                 <YAxis width={56} tick={AXIS_TICK} />
                 <Tooltip
                   formatter={(v: number, key) => [num(v), key === 'joined' ? 'Joined' : key === 'departed' ? 'Left' : 'Net']}
@@ -192,8 +192,8 @@ export function CohortPanel() {
                     label={{ value: 'coverage change', position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
                 )}
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
-                <Bar dataKey="joined" name="Joined" fill="var(--mantine-color-pos-6)" />
-                <Bar dataKey="departed" name="Left" fill="var(--mantine-color-red-6)" />
+                <Bar dataKey="joined" name="Joined" fill="var(--mantine-color-pos-6)" radius={BAR_RADIUS} />
+                <Bar dataKey="departed" name="Left" fill="var(--mantine-color-red-6)" radius={BAR_RADIUS} />
                 <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
               </ComposedChart>
             </ResponsiveContainer>

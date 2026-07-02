@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Paper } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
-import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS } from '../lib/chartStyle';
 import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
@@ -349,7 +349,7 @@ export function ChangesPanel() {
               />
               <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
               <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
-              <Bar dataKey="bar" stackId="w" isAnimationActive={false}>
+              <Bar dataKey="bar" stackId="w" radius={BAR_RADIUS} isAnimationActive={false}>
                 {waterfall.map((w, i) => <Cell key={i} fill={wfColor(w.kind, w.amount)} />)}
                 <LabelList
                   dataKey="amount" position="top"
@@ -374,7 +374,7 @@ export function ChangesPanel() {
               <ReferenceLine x={medBucketLabel} stroke="var(--mantine-color-accent-6)" strokeDasharray="3 3"
                 label={{ value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
             )}
-            <Bar dataKey="n" name="People">
+            <Bar dataKey="n" name="People" radius={BAR_RADIUS}>
               {(raiseDist ?? []).map((r, i) => (
                 <Cell key={i} fill={r.pct_bucket < 0 ? 'var(--mantine-color-red-5)' : r.pct_bucket === 0 ? 'var(--mantine-color-gray-4)' : 'var(--mantine-color-pos-5)'} />
               ))}
