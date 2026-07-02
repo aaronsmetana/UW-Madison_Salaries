@@ -4,13 +4,15 @@ import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleto
 import { useMediaQuery } from '@mantine/hooks';
 import { IconDownload, IconPrinter, IconFileReport } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
-import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtDate } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
+import { toReal } from '../lib/cpi';
+import { readPref, writePref, clearPref } from '../lib/prefs';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { EmptyState } from '../components/EmptyState';
 import { SearchBox } from '../components/SearchBox';
@@ -19,13 +21,13 @@ import { ReportSetup, type SetupComparator, type SuggestPerson } from '../compon
 import { ReportBrief } from '../components/report/ReportBrief';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
-  ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow, type ProofModel,
-  type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
+  cohortDocLabel, ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
+  type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
 
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
-  grade_number: number | null; school: string | null; date_of_hire: string | null;
+  grade_number: number | null; grade_basis: string | null; school: string | null; date_of_hire: string | null;
 }
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
@@ -104,12 +106,23 @@ export default function Reports() {
   const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
   const subjectFirst = subjectName.split(' ')[0] || 'They';
 
+  // Persist the whole setup (cohort, factors, override, sections…) per subject, so switching between
+  // several in-progress equity cases (or a page refresh) doesn't lose the work already done on each.
+  useEffect(() => {
+    setConfig(subjectKey ? readPref(`report.cfg.${subjectKey}`, defaultConfig()) : defaultConfig());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subjectKey]);
+  useEffect(() => {
+    if (subjectKey) writePref(`report.cfg.${subjectKey}`, config);
+  }, [subjectKey, config]);
+
   const cmpReady = type === 'comparison' && !!snap && !!subjectKey;
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
     `SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
-        arg_max(grade_number, ${expr}) grade_number, any_value(school) school, min(date_of_hire) date_of_hire
+        arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
+        any_value(school) school, min(date_of_hire) date_of_hire
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')}`,
     cmpReady
   );
@@ -118,6 +131,11 @@ export default function Reports() {
   const jobCode = subj?.job_code ?? null;
   const grade = subj?.grade_number ?? null;
   const school = subj?.school ?? null;
+  const { data: grades } = useGrades();
+  const band = useMemo(() => {
+    if (!subj || subj.grade_number == null || !grades) return null;
+    return grades.find((g) => g.grade === subj.grade_number && g.basis === subj.grade_basis) ?? null;
+  }, [subj, grades]);
 
   const { data: peerListRows } = useSql<PeerRow>(
     ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
@@ -164,19 +182,25 @@ export default function Reports() {
     type === 'comparison' && persons.length > 0
   );
 
-  const { data: suggestRows } = useSql<{ person_key: string; fn: string; ln: string; pay: number }>(
+  // Also carries tenure (not just top-10-by-pay) so the same rows can surface tenure-inversion
+  // suggestions — peers who out-earn the subject despite less UW tenure — not just top earners.
+  const { data: suggestRows } = useSql<{ person_key: string; fn: string; ln: string; pay: number; tenure: number | null }>(
     ['rpt-suggest', jobCode ?? '', snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay(metric)} pay
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay(metric)} pay,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')}
-     GROUP BY person_key ORDER BY pay DESC LIMIT 10`,
+     GROUP BY person_key ORDER BY pay DESC LIMIT 200`,
     cmpReady && !!jobCode
   );
 
   // ── Derivation ──
+  // As-of the snapshot date (not today) — matches every peer-side tenure calc below (all computed via
+  // date_diff(..., snapshot_date)), so the subject's own tenure agrees with the peer matrix/inversions.
+  const snapDate = summary?.snapshots.find((x) => x.id === snap)?.date ?? null;
   const tenureYears = useMemo(() => {
-    if (!subj?.date_of_hire) return null;
-    return Math.max(0, (Date.now() - new Date(subj.date_of_hire).getTime()) / (365.25 * 864e5));
-  }, [subj]);
+    if (!subj?.date_of_hire || !snapDate) return null;
+    return Math.max(0, (new Date(snapDate).getTime() - new Date(subj.date_of_hire).getTime()) / (365.25 * 864e5));
+  }, [subj, snapDate]);
 
   // Each cohort is the set of PEERS the subject is measured against — the subject is never part of
   // their own benchmark (critical for the small curated set, where including them halves the gap).
@@ -215,7 +239,10 @@ export default function Reports() {
   const selectedMode: CohortMode = cohortAvailable[config.cohort] ? config.cohort : 'all';
   const stats = statsByMode[selectedMode];
   const med = stats.med;
-  const cohortLabel = COHORT_DEFS.find((c) => c.value === selectedMode)?.label ?? '';
+  // Document-facing phrasing for the active cohort — `COHORT_DEFS[].label` (used only in the setup
+  // pane's radio group) is UI-only text like "Only my curated set" or "All same-title at UW" and must
+  // never appear verbatim in a document handed to a supervisor or HR.
+  const docCohortLabel = cohortDocLabel(selectedMode, { school, grade, tenureBand: config.tenureBand });
 
   // Longevity (consecutive years below the title median)
   const longevity = useMemo(() => {
@@ -260,6 +287,38 @@ export default function Reports() {
     return best?.key ?? null;
   }, [otherPeers, subjectPay, tenureYears]);
 
+  // New-hire compression: same-title peers hired within the last 2 years who are already paid at or
+  // above the subject — a distinct proof from tenure inversion (any tenure gap), specifically flagging
+  // that new hires are entering above the incumbent.
+  const compression = useMemo(() => {
+    if (subjectPay == null) return { count: 0, maxGapPay: null as number | null };
+    const cands = (peerListRows ?? []).filter(
+      (r) => r.person_key !== subjectKey && r.tenure != null && r.tenure <= 2 && r.pay >= subjectPay
+    );
+    const maxGapPay = cands.reduce<number | null>((best, r) => (best == null || r.pay > best ? r.pay : best), null);
+    return { count: cands.length, maxGapPay };
+  }, [peerListRows, subjectPay, subjectKey]);
+
+  // Real-dollar (CPI-adjusted) erosion: the subject's own pay history may show nominal growth that's
+  // actually a real-dollar pay cut once inflation is factored in — a distinct, often more persuasive,
+  // framing than the raw percentage.
+  const realErosion = useMemo(() => {
+    if (!subjectKey) return null;
+    const own = (peerHist ?? []).filter((r) => r.person_key === subjectKey && r.pay != null && r.pay > 0);
+    if (own.length < 2) return null;
+    const first = own[0];
+    const last = own[own.length - 1];
+    const firstYear = Number(String(first.date).slice(0, 4));
+    const lastYear = Number(String(last.date).slice(0, 4));
+    if (!firstYear || !lastYear || first.pay === last.pay) return null;
+    const nominalPct = (last.pay - first.pay) / first.pay;
+    const realFirst = toReal(first.pay, firstYear);
+    const realLast = toReal(last.pay, lastYear);
+    const realPct = (realLast - realFirst) / realFirst;
+    if (!(nominalPct > 0 && realPct < 0)) return null;
+    return { firstYear, nominalPct, realPct };
+  }, [peerHist, subjectKey]);
+
   const rows: ComparatorRow[] = useMemo(() => {
     const list: ComparatorRow[] = otherPeers.map((p) => ({
       key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, pay: p.pay, tenure: p.tenure ?? null,
@@ -267,9 +326,9 @@ export default function Reports() {
       lessTenure: p.tenure != null && tenureYears != null && p.tenure < tenureYears && p.pay > (subjectPay ?? 0),
       gap: p.pay - (subjectPay ?? 0),
     }));
-    if (subjectPay != null) list.unshift({ key: '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, tenure: tenureYears, isSubject: true, isAnomaly: false, lessTenure: false, gap: 0 });
+    if (subjectPay != null) list.unshift({ key: subjectKey ?? '__subject__', name: subjectName, title: subj?.title ?? null, pay: subjectPay, tenure: tenureYears, isSubject: true, isAnomaly: false, lessTenure: false, gap: 0 });
     return list;
-  }, [otherPeers, anomalyKey, subjectPay, tenureYears, subjectName, subj]);
+  }, [otherPeers, anomalyKey, subjectPay, tenureYears, subjectName, subj, subjectKey]);
   const maxPay = Math.max(1, ...rows.map((r) => r.pay));
   const showTenure = rows.some((r) => r.tenure != null);
 
@@ -280,7 +339,7 @@ export default function Reports() {
   const medianKind = stats.expMed != null ? 'tenure-adjusted median' : 'median';
   const baseLabel = targetPerson
     ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
-    : `${medianKind} · ${cohortLabel}`;
+    : `${medianKind} of ${docCohortLabel}`;
 
   const activeFactors = useMemo(
     () => [
@@ -317,35 +376,49 @@ export default function Reports() {
   const proofs: ProofModel[] = useMemo(() => {
     if (subjectPay == null) return [];
     const out: ProofModel[] = [];
-    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${cohortLabel.toLowerCase()} median.` : `Current pay is at or above the ${cohortLabel.toLowerCase()} median.`, detail: '' });
+    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: '' });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: `${num(stats.invCount)} peers`, label: 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
-    if (longevity.streak > 0) out.push({ kind: 'sustained', value: `${longevity.streakYears} ${longevity.streakYears === 1 ? 'year' : 'years'}`, label: 'consecutive years in market deficit', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
+    if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
+    if (band && subjectPay != null && band.max > band.min) {
+      const posPct = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
+      if (posPct < 50) out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in grade ${grade}'s official salary range`, detail: `band ${usd(band.min)}–${usd(band.max)}` });
+    }
+    if (compression.count > 0) out.push({ kind: 'compression', value: `${num(compression.count)} recent hire${compression.count === 1 ? '' : 's'}`, label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
     return out;
-  }, [subjectPay, stats, longevity, cohortLabel]);
+  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst]);
+
+  // Time-to-parity: absent an adjustment, how long a standard 2%/yr raise alone would take to reach
+  // today's cohort median — reinforces that "wait and see" isn't a neutral option.
+  const yearsToParity = useMemo(
+    () => (subjectPay != null && med != null && med > subjectPay ? Math.log(med / subjectPay) / Math.log(1.02) : null),
+    [subjectPay, med]
+  );
 
   // ── Case strength + talking points (left pane only) ──
   const strength = useMemo(() => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length }), [stats, med, longevity, activeFactors.length]);
   const talkingPoints = useMemo(() => buildTalkingPoints({
-    subjectName, current: subjectPay, recommended, delta: targetDelta, pct: targetPct, cohortLabel,
+    subjectName, current: subjectPay, recommended, delta: targetDelta, pct: targetPct, cohortLabel: docCohortLabel,
     percentile: stats.percentile, invCount: stats.invCount, invMaxGap: stats.invMaxGap, streakYears: longevity.streakYears,
     factors: activeFactors,
-  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, cohortLabel, stats, longevity, activeFactors]);
+  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, docCohortLabel, stats, longevity, activeFactors]);
 
   const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ');
 
   const basisLabel = belowTarget
     ? (targetPerson
         ? `to match ${fullName(targetPerson.fn, targetPerson.ln)}'s salary${addOnSum > 0 ? ', plus documented value-adds' : ''}`
-        : `to reach the ${medianKind} of ${cohortLabel.toLowerCase()}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
+        : `to reach the ${medianKind} of ${docCohortLabel}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
     : '';
 
   const model: BriefModel = {
     subjectName, subjectFirst, subjectPay, headerMeta,
     recommended, belowTarget, targetDelta, targetPct,
     basisLabel: config.headline.trim() || basisLabel,
-    receipt, activeFactors, proofs, rows, maxPay, showTenure, cohortLabel,
+    receipt, activeFactors, proofs, yearsToParity, realErosion, rows, maxPay, showTenure,
+    anonymize: config.anonymize,
     netSavings: subjectPay != null ? subjectPay * 0.5 - targetDelta : 0,
     divergence: progression.avgAbs != null && progression.subjAbs != null && progression.subjAbs < progression.avgAbs ? { avgAbs: progression.avgAbs, subjAbs: progression.subjAbs } : null,
+    history: medHist ?? [],
     format: config.format, sections: config.sections, jobCode,
   };
 
@@ -360,6 +433,16 @@ export default function Reports() {
   const trayIds = new Set(persons.map((p) => p.id));
   const suggestions: SuggestPerson[] = persons.length >= 5 ? [] : (suggestRows ?? [])
     .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey)
+    .slice(0, 3)
+    .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
+  // Tenure-inversion suggestions — peers with LESS UW tenure who are already paid MORE than the
+  // subject. These are the strongest possible comparators (they make the equity case directly),
+  // distinct from `suggestions` above (which is just top earners in the title).
+  const minTenure = tenureYears;
+  const minPay = subjectPay;
+  const inversionSuggestions: SuggestPerson[] = persons.length >= 5 || minPay == null || minTenure == null ? [] : (suggestRows ?? [])
+    .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey && s.tenure != null && s.tenure < minTenure && s.pay > minPay)
+    .sort((a, b) => b.pay - a.pay)
     .slice(0, 3)
     .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
   // Semantic scenting: highlight the single biggest-deficit lens as the strongest ("best") case.
@@ -385,7 +468,7 @@ export default function Reports() {
     const head = p.max - p.value;
     if (p.key === 'market') {
       if (bestMode && bestMode !== selectedMode && bestGap > (stats.gapToMed ?? 0)) {
-        strengthHints.market = { text: `up to +${head} pts · switch to “${bestLabel}” (−${usd(bestGap)})`, tone: 'action' };
+        strengthHints.market = { text: `up to +${head} pts · strongest available lens: “${bestLabel}” (−${usd(bestGap)})`, tone: 'action' };
       } else if (stats.gapToMed != null && stats.gapToMed > 0 && med) {
         strengthHints.market = { text: `the largest gap available — ${pct(stats.gapToMed / med)} below this cohort’s median`, tone: 'fixed' };
       } else {
@@ -403,6 +486,10 @@ export default function Reports() {
 
   const loading = cmpReady && (!subjRows || !trayPeople || (!!jobCode && !peerListRows));
 
+  // Over-ask credibility guard: warn (private, setup-pane only) when the recommended figure exceeds
+  // this cohort's 75th percentile — an ask that high risks reading as unanchored to the comparators shown.
+  const overAsk = recommended != null && stats.p75 != null && recommended > stats.p75;
+
   // ── Render ──
   const setupPane = (
     <Box className="setup-panel">
@@ -414,6 +501,7 @@ export default function Reports() {
         onSubject={setSubjectKey}
         basePay={subjectPay}
         suggestions={suggestions}
+        inversionSuggestions={inversionSuggestions}
         onAddPerson={(p) => add({ type: 'person', id: p.key, label: p.name })}
         onRemovePerson={(key) => remove(key)}
         cohortBadges={cohortBadges}
@@ -422,7 +510,11 @@ export default function Reports() {
         caseStrength={strength}
         strengthHints={strengthHints}
         talkingPoints={talkingPoints}
-        onReset={() => setConfig(defaultConfig())}
+        overAsk={overAsk}
+        onReset={() => {
+          if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
+          setConfig(defaultConfig());
+        }}
         onHover={setHovered}
       />
     </Box>

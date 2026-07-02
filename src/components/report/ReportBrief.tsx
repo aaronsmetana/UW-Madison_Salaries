@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box } from '@mantine/core';
+import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor } from '@mantine/core';
 import { useReducedMotion } from '@mantine/hooks';
-import { IconChartBar, IconScale, IconHistory } from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
+import {
+  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip,
+} from 'recharts';
+import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus } from '@tabler/icons-react';
 import { usd, pct } from '../../lib/format';
+import { AXIS_TICK, GRID, fmtUsd } from '../../lib/chartStyle';
 import { CAND, PEER, type BriefModel, type ProofKind } from './model';
+
+/** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
+function fmtHistTick(d: string): string {
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const m = Number(d.slice(5, 7));
+  return `${MON[m - 1] ?? ''} '${d.slice(2, 4)}`;
+}
 
 /** Smoothly tween a number toward its target (respects reduced-motion). */
 function useAnimatedNumber(target: number, duration = 500) {
@@ -32,6 +44,8 @@ const PROOF_ICON: Record<ProofKind, ReactNode> = {
   market: <IconChartBar size={22} />,
   inversion: <IconScale size={22} />,
   sustained: <IconHistory size={22} />,
+  gradeband: <IconGauge size={22} />,
+  compression: <IconUserPlus size={22} />,
 };
 
 export function ReportBrief({ model, hovered, onHover }: {
@@ -41,9 +55,14 @@ export function ReportBrief({ model, hovered, onHover }: {
 }) {
   const {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
-    basisLabel, receipt, proofs, rows, maxPay, showTenure, netSavings, divergence, format,
-    sections, jobCode, activeFactors,
+    basisLabel, receipt, proofs, yearsToParity, realErosion, rows, maxPay, showTenure, anonymize,
+    netSavings, divergence, history, format, sections, jobCode, activeFactors,
   } = model;
+  const otherRows = rows.filter((r) => !r.isSubject);
+  const anonName = (key: string) => {
+    const idx = otherRows.findIndex((r) => r.key === key);
+    return idx >= 0 && idx < 26 ? `Peer ${String.fromCharCode(65 + idx)}` : 'Peer';
+  };
 
   const animated = useAnimatedNumber(recommended ?? 0);
   const has = (s: string) => sections.includes(s);
@@ -74,6 +93,11 @@ export function ReportBrief({ model, hovered, onHover }: {
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
                 (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}
               </Text>
+              {yearsToParity != null && yearsToParity >= 0.5 && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  Absent this adjustment, a standard 2%/yr raise alone would take ~{Math.ceil(yearsToParity)} more {Math.ceil(yearsToParity) === 1 ? 'year' : 'years'} to reach today's median.
+                </Text>
+              )}
 
               {showReceipt && (
                 <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-accent-2)' }}>
@@ -89,7 +113,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                           justify="space-between"
                           wrap="nowrap"
                           px={6}
-                          style={{ borderRadius: 6, background: lit ? 'rgba(255,255,255,0.6)' : undefined, transition: 'background 150ms' }}
+                          style={{ borderRadius: 6, background: lit ? 'var(--mantine-color-default-hover)' : undefined, transition: 'background 150ms' }}
                         >
                           <Text size="sm" c={line.kind === 'base' ? undefined : 'dimmed'} fw={line.kind === 'base' ? 600 : 400}>
                             {line.kind === 'addon' ? '+ ' : ''}{line.label}
@@ -107,11 +131,6 @@ export function ReportBrief({ model, hovered, onHover }: {
                       <Text size="sm" fw={800} c="green.7">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
                     </Group>
                   </Stack>
-                  {activeFactors.some((f) => f.amount == null && f.note) && (
-                    <Text size="xs" c="dimmed" mt="sm">
-                      Also supporting (not costed): {activeFactors.filter((f) => f.amount == null && f.note).map((f) => f.label.toLowerCase()).join(', ')}.
-                    </Text>
-                  )}
                 </Box>
               )}
             </Paper>
@@ -132,7 +151,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {has('highlights') && proofs.length > 0 && (
             <>
               <Text size="sm" fw={600} mb="xs">Why this is an equity correction</Text>
-              <SimpleGrid cols={{ base: 1, sm: Math.min(3, proofs.length) }} mb="lg">
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
                   <Card key={p.kind} withBorder radius="md" shadow="sm" padding="lg">
                     <ThemeIcon variant="light" color="accent" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
@@ -142,6 +161,35 @@ export function ReportBrief({ model, hovered, onHover }: {
                   </Card>
                 ))}
               </SimpleGrid>
+            </>
+          )}
+
+          {has('highlights') && realErosion && (
+            <Text size="sm" c="dimmed" mb="lg">
+              Since {realErosion.firstYear}, {subjectFirst}'s pay rose {pct(realErosion.nominalPct)} nominally — a{' '}
+              <Text span fw={600}>{pct(Math.abs(realErosion.realPct))} decline</Text> in real (CPI-adjusted) purchasing power.
+            </Text>
+          )}
+
+          {/* Documented qualifications & responsibilities — the evidence behind any value-add factors */}
+          {has('factors') && activeFactors.length > 0 && (
+            <>
+              <Text size="sm" fw={600} mb="xs">Documented qualifications &amp; responsibilities</Text>
+              <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                <Stack gap={10}>
+                  {activeFactors.map((f) => (
+                    <Group key={f.key} justify="space-between" wrap="nowrap" align="flex-start">
+                      <Box style={{ minWidth: 0 }}>
+                        <Text size="sm" fw={600}>{f.label}</Text>
+                        {f.note && <Text size="xs" c="dimmed">{f.note}</Text>}
+                      </Box>
+                      {f.amount != null && (
+                        <Text size="sm" fw={700} c="green.7" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
+                      )}
+                    </Group>
+                  ))}
+                </Stack>
+              </Card>
             </>
           )}
 
@@ -176,11 +224,22 @@ export function ReportBrief({ model, hovered, onHover }: {
                           style={{ background: bg, boxShadow: r.isAnomaly && !r.isSubject ? 'inset 4px 0 0 var(--mantine-color-accent-6)' : undefined, transition: 'background 150ms' }}
                         >
                           <Table.Td>
-                            {r.isSubject
-                              ? <><b>{r.name}</b> <Badge size="xs" variant="light" color="accent" tt="none" ml={4}>Review Subject</Badge></>
-                              : <>{r.name}{r.isAnomaly
+                            {r.isSubject ? (
+                              <><b>{r.name}</b> <Badge size="xs" variant="light" color="accent" tt="none" ml={4}>Review Subject</Badge></>
+                            ) : (
+                              <>
+                                {anonymize ? (
+                                  <Text span>{anonName(r.key)}</Text>
+                                ) : (
+                                  <Anchor component={Link} to={`/person/${encodeURIComponent(r.key)}`} c="inherit" underline="hover">
+                                    {r.name}
+                                  </Anchor>
+                                )}
+                                {r.isAnomaly
                                   ? <Badge size="xs" variant="filled" color="accent" tt="none" ml={6}>Equity Anomaly</Badge>
-                                  : r.lessTenure && <Badge size="xs" variant="light" color="accent" tt="none" ml={6}>less tenure</Badge>}</>}
+                                  : r.lessTenure && <Badge size="xs" variant="light" color="accent" tt="none" ml={6}>less tenure</Badge>}
+                              </>
+                            )}
                           </Table.Td>
                           <Table.Td>{r.title ?? '—'}</Table.Td>
                           {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
@@ -211,43 +270,73 @@ export function ReportBrief({ model, hovered, onHover }: {
             </>
           )}
 
-          {/* Pay history — raise divergence (detailed format only) */}
-          {format === 'detailed' && has('history') && divergence && (
+          {/* Pay history — subject vs. title median over time, plus (detailed format only) raise divergence */}
+          {has('history') && history.length >= 2 && (
             <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
-              <Text size="sm" fw={700}>Raise divergence (absolute dollars)</Text>
-              <Text size="xs" c="dimmed" mb="md">
-                Percentage growth flatters a low starting salary. In raw dollars, {subjectFirst}'s raises have lagged — and the gap compounds.
-              </Text>
-              <DivBar label="Peers (avg gained)" value={divergence.avgAbs} max={aMax} color="gray.5" />
-              <DivBar label={`${subjectFirst} (gained)`} value={divergence.subjAbs} max={aMax} color="accent.6" emphasize />
-              <Text size="sm" mt="xs">
-                {subjectFirst} has gained <Text span fw={800}>{usd(divergence.avgAbs - divergence.subjAbs)}</Text> less in raises than the typical peer over the same period.
-              </Text>
+              <Text size="sm" fw={700}>Pay vs. title median over time</Text>
+              <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
+              <ResponsiveContainer width="100%" height={180}>
+                <ComposedChart data={history} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
+                  <CartesianGrid {...GRID} />
+                  <XAxis dataKey="date" tickFormatter={fmtHistTick} tick={AXIS_TICK} tickMargin={8} />
+                  <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />
+                  <ChartTooltip formatter={(v: number) => usd(v)} labelFormatter={fmtHistTick} />
+                  <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+              <Group gap="lg" mt="xs">
+                <Group gap={6} wrap="nowrap" align="center">
+                  <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-accent-6)" strokeWidth={2} /></svg>
+                  <Text size="xs" c="dimmed">{subjectFirst}</Text>
+                </Group>
+                <Group gap={6} wrap="nowrap" align="center">
+                  <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" /></svg>
+                  <Text size="xs" c="dimmed">Title median</Text>
+                </Group>
+              </Group>
+
+              {format === 'detailed' && divergence && (
+                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+                  <Text size="sm" fw={700}>Raise divergence (absolute dollars)</Text>
+                  <Text size="xs" c="dimmed" mb="md">
+                    Percentage growth flatters a low starting salary. In raw dollars, {subjectFirst}'s raises have lagged — and the gap compounds.
+                  </Text>
+                  <DivBar label="Peers (avg gained)" value={divergence.avgAbs} max={aMax} color="gray.5" />
+                  <DivBar label={`${subjectFirst} (gained)`} value={divergence.subjAbs} max={aMax} color="accent.6" emphasize />
+                  <Text size="sm" mt="xs">
+                    {subjectFirst} has gained <Text span fw={800}>{usd(divergence.avgAbs - divergence.subjAbs)}</Text> less in raises than the typical peer over the same period.
+                  </Text>
+                </Box>
+              )}
             </Card>
           )}
 
-          {/* Operational risk & replacement */}
-          <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
-            <Text size="sm" fw={700} mb={4}>Operational Risk &amp; Replacement Analysis</Text>
-            {belowTarget && netSavings > 0 && (
-              <Text size="sm" mb={6}>
-                Granting this adjustment saves the department an estimated{' '}
-                <Text span fw={800} c="green.7">{usd(netSavings)}</Text> versus the baseline cost of replacing this role on the open market.
+          {/* Retention & replacement cost */}
+          {has('risk') && (
+            <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
+              <Text size="sm" fw={700} mb={4}>Retention &amp; Replacement Cost</Text>
+              {belowTarget && netSavings > 0 && (
+                <Text size="sm" mb={6}>
+                  Granting this adjustment saves the department an estimated{' '}
+                  <Text span fw={800} c="green.7">{usd(netSavings)}</Text> vs. the low-end (0.5×) replacement estimate below.
+                </Text>
+              )}
+              <Text size="sm">
+                {belowTarget ? `The one-time ${usd(targetDelta)} adjustment` : `Retaining ${subjectFirst}`} is a fraction of turnover cost:
+                industry HR studies (e.g., SHRM cost-per-hire research) estimate replacing {subjectFirst} at <b>{usd(subjectPay * 0.5)}–{usd(subjectPay * 2)}</b> (roughly
+                0.5×–2× annual salary in recruiting, lost productivity, and ramp-up). Keeping proven institutional knowledge is the
+                lower-cost, lower-risk choice.
               </Text>
-            )}
-            <Text size="sm">
-              {belowTarget ? `The one-time ${usd(targetDelta)} adjustment` : `Retaining ${subjectFirst}`} is a fraction of turnover cost:
-              replacing {subjectFirst} is widely estimated at <b>{usd(subjectPay * 0.5)}–{usd(subjectPay * 2)}</b> (roughly
-              0.5×–2× annual salary in recruiting, lost productivity, and ramp-up). Keeping proven institutional knowledge is the
-              lower-cost, lower-risk choice.
-            </Text>
-          </Paper>
+            </Paper>
+          )}
 
           <Text size="xs" c="dimmed" mt="xl">
             Methodology: the title median is the median pay of everyone sharing the subject's job code at this snapshot; the
             tenure-adjusted target is the median for same-title peers with at least the subject's tenure. "Tenure" = years since the
-            UW–Madison date of hire (not total career experience). Value-add adjustments are self-reported. Source: UW–Madison
-            salary data (Wisconsin public record); zero/unreported salaries excluded; identity matched on name + date of hire.
+            UW–Madison date of hire (not total career experience). Value-add adjustments are self-reported. Real-dollar figures use
+            BLS CPI-U annual averages. Source: UW–Madison salary data (Wisconsin public record); zero/unreported salaries excluded;
+            identity matched on name + date of hire.{anonymize ? ' Peer identities anonymized; names available on request.' : ''}
           </Text>
         </>
       )}

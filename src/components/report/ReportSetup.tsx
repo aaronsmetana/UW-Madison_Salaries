@@ -4,7 +4,7 @@ import {
   SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
-import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh } from '@tabler/icons-react';
+import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
 import { usd } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
@@ -21,8 +21,8 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 );
 
 export function ReportSetup({
-  config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, onAddPerson, onRemovePerson,
-  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, onReset, onHover,
+  config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
+  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, onReset, onHover,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -31,6 +31,7 @@ export function ReportSetup({
   onSubject: (key: string | null) => void;
   basePay: number | null;
   suggestions: SuggestPerson[];
+  inversionSuggestions: SuggestPerson[];
   onAddPerson: (p: { key: string; name: string }) => void;
   onRemovePerson: (key: string) => void;
   cohortBadges: Record<CohortMode, { text: string; tone: BadgeTone } | null>;
@@ -39,6 +40,7 @@ export function ReportSetup({
   caseStrength: CaseStrength | null;
   strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>>;
   talkingPoints: string;
+  overAsk: boolean;
   onReset: () => void;
   onHover: (id: string | null) => void;
 }) {
@@ -99,9 +101,21 @@ export function ReportSetup({
                   {[c.title, c.school, c.tenure != null ? `${c.tenure.toFixed(1)} yr` : null, c.pay != null ? usd(c.pay) : null].filter(Boolean).join(' · ')}
                 </Text>
               </Box>
-              <ActionIcon variant="subtle" color="gray" aria-label={`Remove ${c.name}`} onClick={() => onRemovePerson(c.key)}>
-                <IconX size={16} />
-              </ActionIcon>
+              <Group gap={4} wrap="nowrap">
+                <Tooltip label={config.targetKey === c.key ? 'Parity target — click to clear' : 'Set as parity target'} withArrow>
+                  <ActionIcon
+                    variant={config.targetKey === c.key ? 'filled' : 'subtle'}
+                    color={config.targetKey === c.key ? 'accent' : 'gray'}
+                    aria-label={config.targetKey === c.key ? `Clear ${c.name} as parity target` : `Set ${c.name} as parity target`}
+                    onClick={() => set({ targetKey: config.targetKey === c.key ? null : c.key })}
+                  >
+                    <IconTarget size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <ActionIcon variant="subtle" color="gray" aria-label={`Remove ${c.name}`} onClick={() => onRemovePerson(c.key)}>
+                  <IconX size={16} />
+                </ActionIcon>
+              </Group>
             </Group>
           ))}
           {/* Docked input — typing here injects a comparator into the list above. */}
@@ -116,6 +130,19 @@ export function ReportSetup({
             <Group gap={6}>
               {suggestions.map((s) => (
                 <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                  {s.name} ({usd(s.pay)})
+                </Button>
+              ))}
+            </Group>
+          </Box>
+        )}
+
+        {inversionSuggestions.length > 0 && (
+          <Box mt="sm">
+            <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
+            <Group gap={6}>
+              {inversionSuggestions.map((s) => (
+                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -198,6 +225,9 @@ export function ReportSetup({
                       value={st.note}
                       onChange={(e) => setFactor(f.key, { note: e.currentTarget.value })}
                     />
+                    {!st.note.trim() && (
+                      <Text size="xs" c="orange.7">Add a specific example — factors without evidence read as filler.</Text>
+                    )}
                     <Group gap={6} wrap="wrap" align="center">
                       <NumberInput
                         size="xs"
@@ -372,6 +402,15 @@ export function ReportSetup({
           </Box>
         )}
 
+        {overAsk && (
+          <Group gap={6} wrap="nowrap" align="flex-start" mt="md">
+            <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <Text size="xs" c="orange.7">
+              The ask exceeds this cohort's 75th percentile — consider trimming value-adds for credibility.
+            </Text>
+          </Group>
+        )}
+
         <Box mt="md">
           <Text size="sm" fw={600} mb={4}>Document format</Text>
           <SegmentedControl
@@ -382,6 +421,14 @@ export function ReportSetup({
             data={[{ value: 'brief', label: 'Manager/HR brief' }, { value: 'detailed', label: 'Detailed review' }]}
           />
         </Box>
+
+        <Switch
+          mt="md"
+          label="Anonymize peer names in document"
+          description="Renders comparators as “Peer A/B/C…” in the printed brief; this setup pane always shows real names."
+          checked={config.anonymize}
+          onChange={(e) => set({ anonymize: e.currentTarget.checked })}
+        />
       </Card>
 
       {/* Sections + reset */}

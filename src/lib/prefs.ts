@@ -13,6 +13,25 @@ export function readPref<T>(key: string, fallback: T): T {
   }
 }
 
+/** Write half of the persistence contract for callers that manage their own state (e.g. a value
+ *  keyed dynamically per-record, where `usePref`'s mount-once read wouldn't refresh on key change). */
+export function writePref<T>(key: string, value: T): void {
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+  } catch {
+    // private browsing / storage full — the preference just won't stick this session
+  }
+}
+
+/** Removes a persisted value (e.g. a "reset to defaults" action). */
+export function clearPref(key: string): void {
+  try {
+    localStorage.removeItem(PREFIX + key);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * A small view preference that persists across pages and sessions in localStorage (e.g. "show real
  * dollars" or "log scale") — so a choice made on one chart carries to the next instead of resetting

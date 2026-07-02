@@ -1,5 +1,6 @@
 // Shared types + pure helpers for the comparison "equity review studio" (left setup pane + right brief).
 import { usd, num } from '../../lib/format';
+import { percentile as percentileOf } from '../../lib/stats';
 
 // ── Palette (mirrors the brief's strict three-color rule) ──
 export const CAND = 'var(--mantine-color-accent-6)'; // candidate / subject — teal accent
@@ -14,6 +15,20 @@ export const COHORT_DEFS: { value: CohortMode; label: string; help: string }[] =
   { value: 'grade', label: 'Same pay grade', help: 'Internal equity by pay grade, across titles.' },
   { value: 'curated', label: 'Only my curated set', help: 'Just the people you picked — your true comparators (e.g. peers who also supervise).' },
 ];
+
+/** Document-facing phrasing for the active cohort — distinct from `COHORT_DEFS[].label`, which is
+ *  UI-only text for the setup pane's radio group. Internal labels like "Only my curated set" or "All
+ *  same-title at UW" read as first-person notes-to-self and shouldn't appear in a document handed to
+ *  a supervisor or HR — this renders the same cohort as a plain, third-person description instead. */
+export function cohortDocLabel(mode: CohortMode, ctx: { school?: string | null; grade?: number | null; tenureBand?: number }): string {
+  switch (mode) {
+    case 'all': return 'all UW–Madison employees with this title';
+    case 'school': return `same-title peers in ${ctx.school ?? 'this school/division'}`;
+    case 'tenure': return `same-title peers within ±${ctx.tenureBand ?? 3} years of tenure`;
+    case 'grade': return `employees in pay grade ${ctx.grade ?? '—'}`;
+    case 'curated': return 'the peers listed in this comparison';
+  }
+}
 
 // ── Justification factors (each gets an optional +$ add-on) ──
 export const FACTOR_DEFS = [
@@ -40,9 +55,11 @@ export function newCustomFactor(): CustomFactor {
 }
 
 export const SECTION_DEFS = [
-  { value: 'highlights', label: 'Evidence (3 proofs)' },
+  { value: 'highlights', label: 'Evidence & proof points' },
+  { value: 'factors', label: 'Documented qualifications & responsibilities' },
   { value: 'peers', label: 'Peer comparison' },
   { value: 'history', label: 'Pay history' },
+  { value: 'risk', label: 'Retention & replacement cost' },
 ];
 
 export interface ReportConfig {
@@ -55,6 +72,7 @@ export interface ReportConfig {
   headline: string; // optional manual headline override
   format: 'brief' | 'detailed';
   sections: string[];
+  anonymize: boolean; // render peers (not the subject) as "Peer A/B/C…" in the document
 }
 
 export function defaultConfig(): ReportConfig {
@@ -68,6 +86,7 @@ export function defaultConfig(): ReportConfig {
     headline: '',
     format: 'brief',
     sections: SECTION_DEFS.map((s) => s.value),
+    anonymize: false,
   };
 }
 
@@ -111,7 +130,9 @@ export function cohortStats(rows: CohortRow[], subjectPay: number | null, tenure
   const p75 = quantile(pays, 0.75);
   const expRows = tenureYears != null ? rows.filter((r) => r.tenure != null && r.tenure >= tenureYears - 1).map((r) => r.pay) : [];
   const expMed = expRows.length >= 5 ? median(expRows) : null;
-  const percentile = subjectPay != null && n ? Math.round((100 * pays.filter((p) => p <= subjectPay).length) / n) : null;
+  // Same "share strictly below, subject included" definition as the Person page's standing bars
+  // (src/lib/stats.ts) — `pays` here is peers-only, so the subject is appended just for this calc.
+  const percentile = subjectPay != null && n ? percentileOf(subjectPay, [...pays, subjectPay]) : null;
   const gapToMed = med != null && subjectPay != null ? med - subjectPay : null;
   let invCount = 0;
   let invMaxGap = 0;
@@ -171,8 +192,9 @@ export interface ComparatorRow {
   key: string; name: string; title: string | null; pay: number; tenure: number | null;
   isSubject: boolean; isAnomaly: boolean; lessTenure: boolean; gap: number;
 }
-export type ProofKind = 'market' | 'inversion' | 'sustained';
+export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression';
 export interface ProofModel { kind: ProofKind; value: string; label: string; detail: string }
+export interface PayHistoryPoint { date: string; pay: number | null; med: number | null }
 export interface BriefModel {
   subjectName: string; subjectFirst: string; subjectPay: number | null;
   headerMeta: string;
@@ -181,9 +203,13 @@ export interface BriefModel {
   receipt: ReceiptLine[];
   activeFactors: { key: string; label: string; note: string; amount: number | null }[];
   proofs: ProofModel[];
-  rows: ComparatorRow[]; maxPay: number; showTenure: boolean; cohortLabel: string;
+  yearsToParity: number | null;
+  realErosion: { firstYear: number; nominalPct: number; realPct: number } | null;
+  rows: ComparatorRow[]; maxPay: number; showTenure: boolean;
+  anonymize: boolean;
   netSavings: number;
   divergence: { avgAbs: number; subjAbs: number } | null;
+  history: PayHistoryPoint[];
   format: 'brief' | 'detailed'; sections: string[];
   jobCode: string | null;
 }
