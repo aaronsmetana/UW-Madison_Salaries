@@ -220,12 +220,12 @@ export default function Home() {
     { label: 'Median salary', value: summary?.latest?.median ?? null, format: usd, icon: <IconCoin size={16} />, color: 'pos' },
     { label: 'Employees', value: summary?.latest?.headcount ?? null, format: num, icon: <IconUsers size={16} />, color: 'accent' },
     { label: 'Total Payroll', value: payroll, format: usdCompact, hint: payroll != null ? usd(payroll) : undefined, icon: <IconReportMoney size={16} />, color: 'accent' },
-    { label: 'Schools/Divisions', value: dims?.schools ?? null, format: num, icon: <IconBuildingBank size={16} />, color: 'accent' },
+    { label: 'Divisions', value: dims?.schools ?? null, format: num, icon: <IconBuildingBank size={16} />, color: 'accent' },
     { label: 'Unique Titles', value: dims?.titles ?? null, format: num, icon: <IconBriefcase size={16} />, color: 'accent' },
   ];
 
   return (
-    <Box style={{ minHeight: 'calc(100dvh - 200px)', display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'relative' }}>
+    <Box style={{ paddingBlock: 'clamp(24px, 6vh, 64px)', position: 'relative' }}>
       <div className="hero-dotgrid" aria-hidden />
       <Stack gap="xl" w="100%" style={{ position: 'relative', zIndex: 1 }}>
         {/* Hero title with a soft, theme-aware glow that breathes behind it. */}

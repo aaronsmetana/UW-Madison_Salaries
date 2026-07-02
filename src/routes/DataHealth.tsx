@@ -8,10 +8,10 @@ import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
 import { REAL_BASE_YEAR } from '../lib/cpi';
+import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
-const REPO_URL = 'https://github.com/aaronsmetana/UW-Madison_Salaries';
 
 /** Snapshot-over-snapshot delta chip for the ingestion table. `tone="neutral"` for headcount (a
  *  population size, not a status); the median-salary delta keeps `signed` (money). */

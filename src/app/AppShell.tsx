@@ -8,6 +8,7 @@ import {
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
+import { Footer } from './Footer';
 import { CommandSearch } from '../components/CommandSearch';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner } from '../components/Loading';
@@ -73,6 +74,7 @@ export function AppShellLayout() {
       <AppShell
         header={{ height: showControl ? 104 : 64 }}
         navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
+        footer={{ height: 40 }}
         padding="md"
       >
         <AppShell.Header>
@@ -156,7 +158,7 @@ export function AppShellLayout() {
           </Tooltip>
         </AppShell.Navbar>
 
-        <AppShell.Main style={{ paddingBottom: 96 }}>
+        <AppShell.Main style={{ paddingBottom: 'calc(var(--app-shell-footer-offset, 0rem) + 96px)' }}>
           <DataErrorBanner />
           <ErrorBoundary key={loc.pathname}>
             <Suspense fallback={<LoadingState label="Loading…" />}>
@@ -164,6 +166,10 @@ export function AppShellLayout() {
             </Suspense>
           </ErrorBoundary>
         </AppShell.Main>
+
+        <AppShell.Footer>
+          <Footer />
+        </AppShell.Footer>
       </AppShell>
 
       {/* Floating "cart"-style selection tray — hidden on /compare (selections shown in-page) and on
