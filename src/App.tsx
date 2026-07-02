@@ -1,4 +1,3 @@
-import { lazy } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, RouterProvider, Navigate, useParams } from 'react-router-dom';
@@ -6,16 +5,17 @@ import { theme } from './theme';
 import { ControlsProvider } from './state/controls';
 import { TrayProvider } from './state/tray';
 import { AppShellLayout } from './app/AppShell';
+import { lazyWithRetry } from './lib/lazyRetry';
 
 // Lazy-loaded routes → each becomes its own chunk (smaller initial bundle).
-const Home = lazy(() => import('./routes/Home'));
-const PayCheck = lazy(() => import('./routes/PayCheck'));
-const Explore = lazy(() => import('./routes/Explore'));
-const Compare = lazy(() => import('./routes/Compare'));
-const Reports = lazy(() => import('./routes/Reports'));
-const DataHealth = lazy(() => import('./routes/DataHealth'));
-const Person = lazy(() => import('./routes/Person'));
-const School = lazy(() => import('./routes/School'));
+const Home = lazyWithRetry(() => import('./routes/Home'));
+const PayCheck = lazyWithRetry(() => import('./routes/PayCheck'));
+const Explore = lazyWithRetry(() => import('./routes/Explore'));
+const Compare = lazyWithRetry(() => import('./routes/Compare'));
+const Reports = lazyWithRetry(() => import('./routes/Reports'));
+const DataHealth = lazyWithRetry(() => import('./routes/DataHealth'));
+const Person = lazyWithRetry(() => import('./routes/Person'));
+const School = lazyWithRetry(() => import('./routes/School'));
 
 // The old /title/:code page is retired — titles now live at /paycheck?code=. Redirect so any
 // bookmarked or shared /title links still resolve to the canonical Search-Title-Salaries view.

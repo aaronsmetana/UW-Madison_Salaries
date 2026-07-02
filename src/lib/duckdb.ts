@@ -24,7 +24,20 @@ async function initDB(): Promise<AsyncDuckDB> {
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
   const url = `${import.meta.env.BASE_URL}data/salaries.parquet`;
-  const resp = await fetch(url);
+  // 60s timeout: on a stalled connection the fetch would otherwise hang forever with no feedback.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  let resp: Response;
+  try {
+    resp = await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Salary data download timed out — check your connection and try again.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!resp.ok) throw new Error(`Failed to load salary data (HTTP ${resp.status})`);
   const buf = new Uint8Array(await resp.arrayBuffer());
   await db.registerFileBuffer('salaries.parquet', buf);

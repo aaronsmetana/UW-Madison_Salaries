@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aaronsmetana.github.io/UW-Madison_Salaries/sitemap.xml

@@ -57,3 +57,8 @@ npm run build    # typecheck + production build
 
 Data is a Wisconsin public record. Person identity is best-effort (name + hire date); see the
 Data · About page for methodology and known caveats.
+
+## License
+
+Code is [MIT-licensed](LICENSE). The underlying salary data is public record, released under
+Wisconsin's open-records law — it is not covered by the license and is not owned by this project.
