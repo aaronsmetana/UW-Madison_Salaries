@@ -2,15 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconDownload, IconPrinter } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconFileReport } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtDate } from '../lib/format';
+import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { PersonDashboard } from '../components/PersonDashboard';
+import { EmptyState } from '../components/EmptyState';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
@@ -57,6 +59,7 @@ export default function Reports() {
     const key = params.get('person');
     return key ? { key, name: params.get('pname') || key } : null;
   });
+  useDocTitle(type === 'person' && selPerson ? `Report — ${selPerson.name}` : 'Reports');
   useEffect(() => {
     setSearchParams(
       (prev) => {
@@ -477,7 +480,11 @@ export default function Reports() {
           {selPerson ? (
             <div className="print-area"><PersonDashboard personKey={selPerson.key} metric={metric} /></div>
           ) : (
-            <Card withBorder padding="xl"><Text c="dimmed">Search and pick an employee above to generate a single-page report on their pay, title history, and how they compare to others in their title.</Text></Card>
+            <EmptyState
+              icon={<IconFileReport size={22} />}
+              title="No employee selected"
+              hint="Search and pick an employee above to generate a single-page report on their pay, title history, and how they compare to others in their title."
+            />
           )}
         </>
       )}

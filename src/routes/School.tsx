@@ -10,6 +10,8 @@ import {
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
+import { useDocTitle } from '../lib/useDocTitle';
+import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -49,6 +51,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 export default function School() {
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
+  useDocTitle(name);
   const snap = useActiveSnapshotId();
   const { metric, filters } = useControls();
   const expr = salaryExpr(metric);
@@ -68,7 +71,7 @@ export default function School() {
       },
       { replace: true }
     );
-  const [distScale, setDistScale] = useState<'linear' | 'log'>('linear');
+  const [distScale, setDistScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
   const enabled = !!snap;
   const fk = filterKey(filters);
   const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(name)} AND ${filterWhere(filters)}`;

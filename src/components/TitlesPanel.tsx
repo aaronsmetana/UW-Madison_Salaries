@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, Card } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { IconSearch, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -9,6 +9,7 @@ import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
 import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
+import { EmptyState } from './EmptyState';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
 
@@ -138,7 +139,12 @@ export function TitlesPanel() {
         </Group>
       </Group>
       {titles && view.length === 0 ? (
-        <Card withBorder padding="xl"><Text c="dimmed" ta="center">No titles match this scope{q || minN ? ' and filters' : ''}.</Text></Card>
+        <EmptyState
+          size="sm"
+          icon={<IconSearchOff size={18} />}
+          title="No titles match"
+          hint={`Nothing in this scope${q || minN ? ' matches your search/filters' : ''}. Try widening the scope or clearing filters.`}
+        />
       ) : (
       <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
         <Table stickyHeader miw={820}>

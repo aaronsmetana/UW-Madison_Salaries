@@ -230,11 +230,32 @@ textarea:focus-visible,
 .tab-rise > *:nth-child(3) { animation-delay: 120ms; }
 .tab-rise > *:nth-child(n + 4) { animation-delay: 160ms; }
 
-/* Honor the OS "reduce motion" preference: no section rise, no dot-hover tween. (The bar grow-ins and
-   count-up are JS-gated to render in their final state; the scatter pulse is gated in TenurePayScatter.) */
+/* One fade+rise on the whole page when navigating between routes (a single beat, not a stagger —
+   the tab-rise cascade above is for sections within one page). */
+.route-rise { animation: section-rise 200ms ease-out both; }
+
+/* A touch of "press" feedback on buttons/action icons app-wide — cheap, universal, and the kind of
+   micro-interaction that reads as considered rather than flashy. */
+button,
+.mantine-Button-root,
+.mantine-ActionIcon-root {
+  transition: transform 100ms ease;
+}
+button:active,
+.mantine-Button-root:active,
+.mantine-ActionIcon-root:active {
+  transform: scale(0.985);
+}
+
+/* Honor the OS "reduce motion" preference: no section rise, no dot-hover tween, no button press, no
+   route fade. (The bar grow-ins and count-up are JS-gated to render in their final state; the scatter
+   pulse is gated in TenurePayScatter.) */
 @media (prefers-reduced-motion: reduce) {
-  .tab-rise > * { animation: none; }
+  .tab-rise > *, .route-rise { animation: none; }
   .scatter-dot { transition: none; }
+  button:active,
+  .mantine-Button-root:active,
+  .mantine-ActionIcon-root:active { transform: none; }
 }
 
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */

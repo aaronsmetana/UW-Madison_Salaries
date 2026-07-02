@@ -8,6 +8,7 @@ import { usd, usdCompact, num } from '../lib/format';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox } from '../components/SearchBox';
 import { getRecent, removeRecent, type RecentPerson } from '../lib/recent';
+import { useDocTitle } from '../lib/useDocTitle';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
 
@@ -154,6 +155,7 @@ function RotatingFact({ facts }: { facts: string[] }) {
 }
 
 export default function Home() {
+  useDocTitle(null);
   const { data: summary } = useSummary();
   const snap = useActiveSnapshotId();
 

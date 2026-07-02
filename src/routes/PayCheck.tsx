@@ -10,6 +10,7 @@ import { num } from '../lib/format';
 import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
 import { PageHeader } from '../components/PageHeader';
+import { useDocTitle } from '../lib/useDocTitle';
 
 /** A dropdown row: name on the left, the member count right-aligned (dimmed), or a compact "none"
  *  for options where no one matches the active filter (Mantine greys the disabled row itself). */
@@ -28,6 +29,7 @@ function DropdownCountRow({ option, counts }: { option: ComboboxItem; counts: Ma
 }
 
 export default function PayCheck() {
+  useDocTitle('Search Title Salaries');
   const [params, setParams] = useSearchParams();
   const code = params.get('code') || null;
   const school = params.get('sch') || null;

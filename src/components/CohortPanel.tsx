@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Stack, Card, Text, Loader, Paper, SimpleGrid, Group } from '@mantine/core';
+import { Stack, Card, Text, Paper, SimpleGrid, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceArea, ReferenceLine,
@@ -12,6 +12,7 @@ import { whereAll, filterKey } from '../lib/queries';
 import { num, pct } from '../lib/format';
 import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
+import { StatSkeleton, ChartSkeleton } from './Loading';
 import { SegmentedToggle } from './SegmentedToggle';
 import { SvgPill } from './chart/pills';
 
@@ -127,7 +128,19 @@ export function CohortPanel() {
     return lbl;
   }, [turnover]);
 
-  if (isFetching && !data) return <Loader />;
+  if (isFetching && !data) {
+    return (
+      <Stack gap="lg">
+        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <StatSkeleton size="sm" />
+          <StatSkeleton size="sm" />
+          <StatSkeleton size="sm" />
+        </SimpleGrid>
+        <Card withBorder padding="lg"><ChartSkeleton height={300} /></Card>
+        <Card withBorder padding="lg"><ChartSkeleton height={280} /></Card>
+      </Stack>
+    );
+  }
 
   return (
     <Stack gap="lg">
@@ -174,7 +187,7 @@ export function CohortPanel() {
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Workforce turnover — paid staff joining vs leaving</Text>
         {flowFetching && !flow ? (
-          <Loader />
+          <ChartSkeleton height={280} />
         ) : (
           <>
             <ResponsiveContainer width="100%" height={280}>

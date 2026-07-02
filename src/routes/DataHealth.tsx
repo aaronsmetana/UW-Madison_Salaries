@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
+import { useDocTitle } from '../lib/useDocTitle';
 import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
@@ -170,6 +171,7 @@ function JumpNav({ items }: { items: [string, string][] }) {
 }
 
 export default function DataHealth() {
+  useDocTitle('Data · About');
   const { data: manifest, isLoading, error, refetch } = useManifest();
   const snapId = useActiveSnapshotId();
   const [compact, setCompact] = useState(false);

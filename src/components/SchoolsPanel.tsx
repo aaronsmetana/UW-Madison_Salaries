@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Card } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { IconSearch, IconChevronRight, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconSearchOff, IconChevronRight, IconDownload } from '@tabler/icons-react';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -12,6 +12,7 @@ import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
 import { TrayButton } from './TrayButton';
 import { SortableTh } from './SortableTh';
+import { EmptyState } from './EmptyState';
 
 interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null }
 interface DeptRow { department: string; headcount: number; med: number | null }
@@ -133,7 +134,12 @@ export function SchoolsPanel() {
         </Group>
       </Group>
       {schools && view.length === 0 ? (
-        <Card withBorder padding="xl"><Text c="dimmed" ta="center">No divisions match this scope{q ? ' and search' : ''}.</Text></Card>
+        <EmptyState
+          size="sm"
+          icon={<IconSearchOff size={18} />}
+          title="No divisions match"
+          hint={`Nothing in this scope${q ? ' matches your search' : ''}. Try widening the scope or clearing filters.`}
+        />
       ) : (
       <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
         <Table stickyHeader miw={680}>

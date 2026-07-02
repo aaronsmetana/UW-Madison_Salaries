@@ -18,6 +18,8 @@ import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
 import { SvgPill } from '../components/chart/pills';
+import { useDocTitle } from '../lib/useDocTitle';
+import { usePref } from '../lib/prefs';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
 import { dropdownProps } from '../lib/selectProps';
@@ -59,13 +61,14 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
 }
 
 export default function Compare() {
+  useDocTitle('Compare');
   const nav = useNavigate();
   const { items, add, remove, clear } = useTray();
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const [xMode, setXMode] = useState<'date' | 'tenure'>('date');
-  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   // Legend mute/solo: a click dims one series (state only — the tray itself is untouched); shift-click
   // solos it (mutes everyone else), or un-solos back to "all visible" if it's already the lone survivor.
   const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());

@@ -21,6 +21,7 @@ import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis } from '../lib/format';
 import { pushRecent } from '../lib/recent';
+import { usePref } from '../lib/prefs';
 import { percentile } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -34,6 +35,7 @@ import { SearchBox } from '../components/SearchBox';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
+import { useDocTitle } from '../lib/useDocTitle';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
@@ -263,6 +265,7 @@ export default function Person() {
   const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
+  useDocTitle(latest ? name : "Search Person's Salary");
 
   // Track this visit for the "recently viewed" list surfaced on Home — only once real data has loaded
   // (so a bad/missing key doesn't get remembered as a blank entry).
@@ -275,7 +278,7 @@ export default function Person() {
   const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));
 
   // Nominal (as-reported) vs real (inflation-adjusted to REAL_BASE_YEAR dollars) for the trend chart.
-  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
 
   // Salary trend: one point per snapshot. `salary` (the plotted line) is ACTUAL pay — the reported
   // FTE-adjusted figure (Σ salary_fte_adjusted, falling back to rate × FTE), summed across concurrent

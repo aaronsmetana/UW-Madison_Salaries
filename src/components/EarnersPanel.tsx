@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Card, Tooltip } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { IconSearch, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { salaryExpr, personPay, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -12,6 +12,7 @@ import { MiniBar } from './MiniBar';
 import { RankDeltaChip } from './Delta';
 import { SortableTh, type SortState } from './SortableTh';
 import { GlossaryTerm } from './GlossaryTerm';
+import { EmptyState } from './EmptyState';
 
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
@@ -111,7 +112,12 @@ export function EarnersPanel() {
       </Group>
 
       {earnersRaw && view.length === 0 ? (
-        <Card withBorder padding="xl"><Text c="dimmed" ta="center">No one matches this scope{q ? ' and search' : ''}.</Text></Card>
+        <EmptyState
+          size="sm"
+          icon={<IconSearchOff size={18} />}
+          title="No one matches"
+          hint={`Nothing in this scope${q ? ' matches your search' : ''}. Try widening the scope or clearing filters.`}
+        />
       ) : (
       <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
         <Table stickyHeader miw={760}>

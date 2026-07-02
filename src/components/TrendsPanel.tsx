@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Card, Text, Loader, Paper, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -15,6 +15,7 @@ import { ChartData } from './ChartData';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
 import { YoyPill } from './chart/pills';
+import { usePref } from '../lib/prefs';
 
 interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
 interface Plot extends Row { yoy: number | null }
@@ -53,8 +54,8 @@ export function TrendsPanel() {
   const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const reduce = prefersReducedMotion();
-  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
-  const [hcScale, setHcScale] = useState<'linear' | 'log'>('linear');
+  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [hcScale, setHcScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
   const { data, isFetching } = useSql<Row>(
     ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
     // `renew` = paid employees on a renewable ("Regular") appointment — excludes Terminal and Temporary.

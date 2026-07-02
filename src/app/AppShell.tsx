@@ -10,6 +10,7 @@ import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
 import { Footer } from './Footer';
 import { CommandSearch } from '../components/CommandSearch';
+import { ColorSchemeToggle } from '../components/ColorSchemeToggle';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
 
@@ -119,6 +120,7 @@ export function AppShellLayout() {
             </Group>
             <Group gap="md" wrap="nowrap">
               <CommandSearch />
+              <ColorSchemeToggle />
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
                 <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
@@ -161,11 +163,13 @@ export function AppShellLayout() {
         <AppShell.Main style={{ paddingBottom: 'calc(var(--app-shell-footer-offset, 0rem) + 96px)' }}>
           <OfflineBanner />
           <DataErrorBanner />
-          <ErrorBoundary key={loc.pathname}>
-            <Suspense fallback={<LoadingState label="Loading…" />}>
-              <Outlet />
-            </Suspense>
-          </ErrorBoundary>
+          <div key={loc.pathname} className="route-rise">
+            <ErrorBoundary key={loc.pathname}>
+              <Suspense fallback={<LoadingState label="Loading…" />}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
         </AppShell.Main>
 
         <AppShell.Footer>

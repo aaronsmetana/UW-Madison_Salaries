@@ -23,6 +23,8 @@ import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { DeltaChip } from '../components/Delta';
+import { useDocTitle } from '../lib/useDocTitle';
+import { usePref } from '../lib/prefs';
 
 /** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
 function Kpi({ label, value, format, sub, to, loading }: {
@@ -73,7 +75,7 @@ interface SnapMed { id: string; label: string; med: number }
 function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: number | null; loading: boolean }) {
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
-  const [dollarMode, setDollarMode] = useState<'nominal' | 'real'>('nominal');
+  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   const railStyle = { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' } as const;
   const labelStyle = { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' } as const;
 
@@ -139,6 +141,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
 
 export default function Explore() {
+  useDocTitle('General Comparisons');
   const { data: summary, isLoading } = useSummary();
   const { data: manifest } = useManifest();
   const { data: refStatus } = useReferenceStatus();

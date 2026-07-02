@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, Loader, ActionIcon,
+  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, ActionIcon,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
@@ -15,6 +15,7 @@ import { PayBandBar } from './PayBandBar';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
 import { GlossaryTerm } from './GlossaryTerm';
+import { StatSkeleton, ChartSkeleton, TableSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
 
@@ -151,7 +152,21 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const scopeLabel = school ? ` in ${school}` : '';
 
-  if (isLoading) return <Loader />;
+  if (isLoading) {
+    return (
+      <Stack gap="lg">
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+          <StatSkeleton size="hero" />
+          <SimpleGrid cols={2} spacing="lg">
+            <StatSkeleton size="sm" />
+            <StatSkeleton size="sm" />
+          </SimpleGrid>
+        </SimpleGrid>
+        <Card withBorder padding="lg"><ChartSkeleton /></Card>
+        <Card withBorder padding="lg"><TableSkeleton /></Card>
+      </Stack>
+    );
+  }
   if (!s || s.n === 0) return <Alert color="gray">No one with this title{scopeLabel} in this snapshot.</Alert>;
 
   return (
