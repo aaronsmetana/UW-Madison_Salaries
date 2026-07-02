@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Paper } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
 import { AXIS_TICK, GRID } from '../lib/chartStyle';
-import { IconDownload } from '@tabler/icons-react';
+import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -292,12 +292,10 @@ export function ChangesPanel() {
         </Text>
       )}
 
-      <Alert color="gray" title="People are matched by name only">
-        UW's public records carry no employee ID, so a person is tracked across snapshots by first + last name.
-        Anyone who changed their name appears as both a departure and a new hire, and two distinct people who
-        share a name are merged — so joined/left counts are approximate (hence the ≈). A median raise of 0%
-        means the typical continuing employee's pay was unchanged between these two snapshots, not that nobody
-        got a raise.
+      <Alert color="gray" variant="light" icon={<IconInfoCircle size={18} />} title="People are matched by name only">
+        No employee ID exists in the public records, so joined/left counts (the ≈ figures above) are
+        approximate — a name change or a shared name can be miscounted.{' '}
+        <Anchor component={Link} to="/data#identity" inherit>How matching works →</Anchor>
       </Alert>
 
       {isTTC && (

@@ -40,6 +40,23 @@ export function fmtDate(d: string | number | Date | null | undefined): string {
 }
 
 /**
+ * Normalizes `comp_basis` display values. The source data relabeled this column mid-series — 'Annual'
+ * (used through the Apr 2024 snapshot) and '12 Month' (used from Sep 2025 on) never co-occur in the
+ * same snapshot and mean the same thing; likewise 'Academic' → '9 Month'. Everything else passes
+ * through unchanged; blank/missing renders as an em dash like the app's other formatters.
+ */
+const BASIS_ALIASES: Record<string, string> = {
+  annual: '12-month',
+  '12 month': '12-month',
+  academic: '9-month (academic year)',
+  '9 month': '9-month (academic year)',
+};
+export function fmtBasis(s: string | null | undefined): string {
+  if (!s || !s.trim()) return '—';
+  return BASIS_ALIASES[s.trim().toLowerCase()] ?? s;
+}
+
+/**
  * Title-case a name for display. The source data is inconsistent — some records are ALL CAPS
  * (e.g. "AARON ALMEIDA") while others are already cased. Only fully-uppercase words are converted
  * (→ "Aaron Almeida"); mixed-case words are left untouched so we don't mangle e.g. "McIntosh".

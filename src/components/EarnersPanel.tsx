@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Card } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Card, Tooltip } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconSearch, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
@@ -122,7 +122,13 @@ export function EarnersPanel() {
                       : (e.title ?? '—')}
                   </Table.Td>
                   <Table.Td><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>
-                  <Table.Td ta="right" c={e.fte != null && e.fte < 0.95 ? 'orange' : 'dimmed'}>{e.fte != null ? e.fte.toFixed(2) : '—'}</Table.Td>
+                  <Table.Td ta="right" c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
+                    {e.fte == null ? '—' : Math.abs(e.fte - 1) > 0.005 ? (
+                      <Tooltip label={e.fte < 1 ? 'Part-time appointment' : 'Combined FTE across multiple appointments'} withArrow>
+                        <span>{e.fte.toFixed(2)}</span>
+                      </Tooltip>
+                    ) : e.fte.toFixed(2)}
+                  </Table.Td>
                   <Table.Td ta="right">
                     {usd(e.pay)}
                     <MiniBar frac={e.pay / maxPay} />
@@ -139,7 +145,7 @@ export function EarnersPanel() {
         <Text size="xs" c="dimmed">
           Showing the top {num(view.length)}{q ? ` of ${num(earners.length)}` : ''} by pay in this scope. Pay is each
           person's annual rate for the snapshot (FTE-blended actual earnings when someone holds multiple appointments);
-          an FTE below 1.00 (amber) means a partial appointment, so the rate is more than they actually earned.
+          an FTE ≠ 1.00 (amber) means a part-time appointment or a combined FTE across multiple roles.
         </Text>
         <Text size="xs" c="dimmed">
           Coaches and senior leaders may also receive deferred or supplemental compensation not captured here.

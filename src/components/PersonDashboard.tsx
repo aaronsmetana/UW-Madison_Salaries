@@ -273,7 +273,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           value={num(trend.length)}
           sub={oldestLabel ? `oldest ${oldestLabel}${oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}` : undefined}
         />
-        <Stat label="Among title peers" value={peerPct != null ? `top ${100 - peerPct}%` : '—'} />
+        <Stat label="Among title peers" value={peerPct != null ? `more than ${peerPct}%` : '—'} />
         <Stat label="All-UW standing" value={standing ? `more than ${standing.uw}%` : '—'} />
         {standing?.sch != null && <Stat label={`Within ${latest?.school ?? 'school'}`} value={`more than ${standing.sch}%`} />}
       </SimpleGrid>

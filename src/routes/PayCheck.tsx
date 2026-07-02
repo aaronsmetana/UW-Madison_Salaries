@@ -114,7 +114,7 @@ export default function PayCheck() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Search title salaries"
+        title="Search Title Salaries"
         description="Pick a title to see its pay distribution, the people in it, and how it varies by school. Optionally filter to a school or enter a salary to pin where it lands. Any salary you enter stays in your browser."
       />
 

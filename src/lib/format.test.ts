@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, formatName, fullName, fmtDate } from './format';
+import { usd, num, pct, formatName, fullName, fmtDate, fmtBasis } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -38,5 +38,19 @@ describe('format', () => {
     expect(fmtDate(null)).toBe('—');
     expect(fmtDate(undefined)).toBe('—');
     expect(fmtDate('not-a-date')).toBe('—');
+  });
+  it('fmtBasis unifies the pre/post-relabel synonyms (Annual/12 Month, Academic/9 Month)', () => {
+    expect(fmtBasis('Annual')).toBe(fmtBasis('12 Month'));
+    expect(fmtBasis('Academic')).toBe(fmtBasis('9 Month'));
+  });
+  it('fmtBasis passes unrelated values through unchanged', () => {
+    expect(fmtBasis('Hourly')).toBe('Hourly');
+    expect(fmtBasis('Seasonal')).toBe('Seasonal');
+  });
+  it('fmtBasis renders an em dash for blank/missing values', () => {
+    expect(fmtBasis(null)).toBe('—');
+    expect(fmtBasis(undefined)).toBe('—');
+    expect(fmtBasis('')).toBe('—');
+    expect(fmtBasis('   ')).toBe('—');
   });
 });

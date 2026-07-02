@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea, Popover,
+  Tooltip as MantineTooltip,
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -18,7 +19,7 @@ import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
-import { usd, num, pct, fullName } from '../lib/format';
+import { usd, num, pct, fullName, fmtBasis } from '../lib/format';
 import { percentile } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -648,7 +649,7 @@ export default function Person() {
             <MetaPill label="Grade" value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
             <MetaPill label="Job code" value={latest?.job_code} />
             <MetaPill label="FLSA" value={latest?.flsa_status} />
-            <MetaPill label="Basis" value={latest?.comp_basis} />
+            <MetaPill label="Basis" value={latest?.comp_basis ? fmtBasis(latest.comp_basis) : null} />
             <MetaPill label="Pay type" value={latest?.pay_rate_type} />
             <MetaPill label="Category" value={latest?.employee_category} />
             <MetaPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
@@ -1257,10 +1258,11 @@ export default function Person() {
                     <Text size="sm">{r.school ?? '—'}</Text>
                     <Group gap={6} wrap="nowrap">
                       {orgMoved && (
-                        <span
-                          title="Division/Department changed from the prior snapshot"
-                          style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
-                        />
+                        <MantineTooltip label="Division/Department changed from the prior snapshot" withArrow>
+                          <span
+                            style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
+                          />
+                        </MantineTooltip>
                       )}
                       <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
                     </Group>
@@ -1283,13 +1285,20 @@ export default function Person() {
                     )}
                   </Table.Td>
                   <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
-                  <Table.Td><Text size="xs">{r.comp_basis ?? '—'}</Text></Table.Td>
+                  <Table.Td><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
                 </Table.Tr>
               );
             })}
           </Table.Tbody>
         </Table>
         </Table.ScrollContainer>
+        <Group gap={6} mt="sm" wrap="wrap">
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
+          <Text size="xs" c="dimmed">
+            = department changed from the prior snapshot. Orange % = a rate decrease — often a change in
+            FTE or comp basis rather than a pay cut.
+          </Text>
+        </Group>
       </Card>
         </Tabs.Panel>
       </Tabs>

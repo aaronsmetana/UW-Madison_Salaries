@@ -16,7 +16,7 @@ const NAV = [
   { label: "Search Person's Salary", to: '/', icon: IconUserSearch },
   { label: 'Search Title Salaries', to: '/paycheck', icon: IconBriefcase },
   { label: 'General Comparisons', to: '/explore', icon: IconBuildingBank },
-  { label: 'Compare People/Title/Schools', to: '/compare', icon: IconArrowsDiff },
+  { label: 'Compare People, Titles & Schools', to: '/compare', icon: IconArrowsDiff },
   { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
 ];
 

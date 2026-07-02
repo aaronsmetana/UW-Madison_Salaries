@@ -20,9 +20,9 @@ function Delta({ frac, tone = 'signed' }: { frac: number | null; tone?: DeltaTon
 }
 
 /** One disclaimer caveat: a small amber marker + a bold lead phrase + the rest — laid out in a 2-col grid. */
-function DItem({ lead, children }: { lead: string; children: ReactNode }) {
+function DItem({ lead, children, id }: { lead: string; children: ReactNode; id?: string }) {
   return (
-    <Group wrap="nowrap" gap={8} align="flex-start">
+    <Group id={id} wrap="nowrap" gap={8} align="flex-start">
       <Box mt={8} style={{ width: 5, height: 5, borderRadius: 999, flexShrink: 0, background: 'var(--mantine-color-orange-5)' }} />
       <Text size="sm"><b>{lead}</b> — {children}</Text>
     </Group>
@@ -336,7 +336,7 @@ export default function DataHealth() {
             <DItem lead="Nov 2021 (TTC)">nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</DItem>
             <DItem lead="Oct 2023 scope change">some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</DItem>
             <DItem lead="Column mapping">columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</DItem>
-            <DItem lead="Identity matching">people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
+            <DItem id="identity" lead="Identity matching">people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
             <DItem lead="Name formatting & transcription">ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</DItem>
           </SimpleGrid>
           <Text size="sm" mt={4}>
