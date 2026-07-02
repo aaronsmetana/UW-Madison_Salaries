@@ -10,7 +10,7 @@ import {
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
-import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -236,7 +236,7 @@ export default function School() {
           <ScatterChart margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis type="number" dataKey="tenure" name="Tenure" unit=" yrs" tick={AXIS_TICK} />
-            <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} />
+            <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} />
             <Tooltip content={<TenureTip />} cursor={{ strokeDasharray: '3 3' }} />
             <Scatter
               data={tenurePay ?? []}
@@ -262,7 +262,7 @@ export default function School() {
           <LineChart data={trend ?? []} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+            <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip formatter={(v: number) => usd(v)} />
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
           </LineChart>

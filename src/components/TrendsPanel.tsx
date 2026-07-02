@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceLine, LabelList,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { lineGlowDefs } from './chartDefs';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
@@ -14,26 +14,10 @@ import { prefersReducedMotion } from '../lib/motion';
 import { ChartData } from './ChartData';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
+import { YoyPill } from './chart/pills';
 
 interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
 interface Plot extends Row { yoy: number | null }
-
-/** +X% / −X% pill above each median point (the YoY change vs the previous snapshot). */
-function YoyLabel(props: { x?: number; y?: number; value?: number | null }) {
-  const { x, y, value } = props;
-  if (x == null || y == null || value == null) return null;
-  const up = value >= 0;
-  const txt = `${up ? '+' : ''}${(value * 100).toFixed(1)}%`;
-  const color = up ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-red-7)';
-  const w = txt.length * 6 + 8;
-  const cy = y > 40 ? y - 20 : y + 20;
-  return (
-    <g>
-      <rect x={x - w / 2} y={cy - 7.5} width={w} height={15} rx={7} fill="var(--mantine-color-body)" stroke={color} strokeOpacity={0.45} strokeWidth={1} />
-      <text x={x} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill={color}>{txt}</text>
-    </g>
-  );
-}
 
 /** Hover marker for the median line: an accent dot with a soft halo. */
 function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
@@ -138,7 +122,7 @@ export function TrendsPanel() {
           <defs>{lineGlowDefs('expltrend')}</defs>
           <CartesianGrid {...GRID} />
           <XAxis dataKey="label" tick={AXIS_TICK} />
-          <YAxis yAxisId="med" tickFormatter={(v) => usd(v)} width={92} tick={AXIS_TICK} padding={Y_PAD}
+          <YAxis yAxisId="med" tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
             label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <YAxis yAxisId="hc" orientation="right" width={72} tick={AXIS_TICK} padding={Y_PAD}
             scale={hcScale === 'log' ? 'log' : 'auto'}
@@ -167,7 +151,7 @@ export function TrendsPanel() {
 
           {/* YoY % pills, drawn last so they sit above the headcount dashed line (legend-less duplicate). */}
           <Line yAxisId="med" type="monotone" dataKey="med" stroke="none" dot={false} legendType="none" isAnimationActive={false}>
-            <LabelList dataKey="yoy" content={<YoyLabel />} />
+            <LabelList dataKey="yoy" content={<YoyPill topThreshold={40} offset={20} count={plot.length} />} />
           </Line>
         </ComposedChart>
       </ResponsiveContainer>

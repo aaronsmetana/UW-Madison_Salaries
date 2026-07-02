@@ -13,6 +13,7 @@ import { num, pct } from '../lib/format';
 import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
 import { SegmentedToggle } from './SegmentedToggle';
+import { SvgPill } from './chart/pills';
 
 /** Hover card: capitalized "Retention" plus the underlying counts so the % is grounded. */
 function RetentionTip({ active, payload, label }: {
@@ -44,20 +45,13 @@ const retColor = (r: number) => {
   return RETENTION_RAMP[idx];
 };
 
-/** Backing pill for a text label that sits over chart marks (a body-colored rounded rect behind the
- *  text) so it stays legible instead of colliding illegibly with whatever bars/lines are underneath. */
-function PillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; width?: number }; text: string }) {
+/** A ReferenceArea label: resolves Recharts' injected viewBox to a point near the area's top-center,
+ *  then renders it as a legible pill via the shared SvgPill. */
+function AreaPillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; width?: number }; text: string }) {
   if (!viewBox || viewBox.x == null || viewBox.y == null) return null;
-  const w = text.length * 5.5 + 12;
-  const h = 16;
   const cx = viewBox.x + (viewBox.width ?? 0) / 2;
   const cy = viewBox.y + 12;
-  return (
-    <g>
-      <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={8} fill="var(--mantine-color-body)" fillOpacity={0.85} />
-      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={10} fill="var(--mantine-color-dimmed)">{text}</text>
-    </g>
-  );
+  return <SvgPill x={cx} y={cy} text={text} fontWeight={500} />;
 }
 
 export function CohortPanel() {
@@ -161,7 +155,7 @@ export function CohortPanel() {
             {/* Pre-2021 cohorts are left-censored: we only see those who survived to the first snapshot. */}
             {sortMode === 'year' && (
               <ReferenceArea x1="1990" x2="2021" fill="var(--mantine-color-default-border)" fillOpacity={0.35}
-                label={<PillLabel text="pre-2021 hires: survivors only" />} />
+                label={<AreaPillLabel text="pre-2021 hires: survivors only" />} />
             )}
             <Bar dataKey="retention" name="Retained" fill="var(--mantine-color-pos-6)" stackId="r">
               {chart.map((c, i) => <Cell key={i} fill={sortMode === 'retention' ? retColor(c.retention) : 'var(--mantine-color-pos-6)'} />)}

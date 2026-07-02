@@ -16,12 +16,13 @@ import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatu
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
-import { usd, usdCompact, num, pct } from '../lib/format';
+import { usd, usdCompact, num, fmtDate } from '../lib/format';
 import { dropdownProps } from '../lib/selectProps';
 import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from '../components/SegmentedToggle';
+import { DeltaChip } from '../components/Delta';
 
 /** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
 function Kpi({ label, value, format, sub, to, loading }: {
@@ -57,13 +58,12 @@ function MiniSparkline({ values, width = 132, height = 26 }: { values: number[];
   );
 }
 
-/** Snapshot-over-snapshot delta chip (▲/▼ %, or "flat") over the full from→to window. */
+/** Snapshot-over-snapshot delta chip over the full from→to window — headcount/payroll are population
+ *  size, not a status, so this always renders `neutral` (dimmed rather than red/green). */
 function Delta({ frac, prevLabel, curLabel }: { frac: number | null; prevLabel: string | null; curLabel?: string | null }) {
   if (prevLabel == null) return null;
   const range = curLabel ? `${prevLabel} → ${curLabel}` : `vs ${prevLabel}`;
-  if (frac == null || Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">≈ flat · {range}</Text>;
-  const up = frac >= 0;
-  return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))} · {range}</Text>;
+  return <DeltaChip frac={frac} tone="neutral" suffix={` · ${range}`} />;
 }
 
 interface SnapMed { id: string; label: string; med: number }
@@ -317,7 +317,7 @@ export default function Explore() {
       {summary && (
         <Text size="xs" c="dimmed" ta="right">
           {num(summary.snapshot_count)} snapshots · {num(summary.total_rows)} rows · {snapsAsc[0]?.label} → {snapsAsc.at(-1)?.label}
-          {summary.generated_at ? ` · data generated ${new Date(summary.generated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}` : ''}
+          {summary.generated_at ? ` · data generated ${fmtDate(summary.generated_at)}` : ''}
           {' · '}<Anchor component={Link} to="/data" inherit>data health →</Anchor>
         </Text>
       )}

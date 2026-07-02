@@ -2,22 +2,21 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, CopyButton, Switch, ThemeIcon, Select, UnstyledButton, VisuallyHidden } from '@mantine/core';
 import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconLink, IconCheck, IconCash, IconClock, IconStack2, IconArrowUp, IconChevronUp, IconChevronDown, IconSelector, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
-import { num, usd, pct } from '../lib/format';
+import { num, usd } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
 import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
+import { DeltaChip, type DeltaTone } from '../components/Delta';
 import { REAL_BASE_YEAR } from '../lib/cpi';
 import type { SnapshotInfo } from '../lib/manifest';
 
 const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
 const REPO_URL = 'https://github.com/aaronsmetana/UW-Madison_Salaries';
 
-/** Snapshot-over-snapshot delta chip for the ingestion table. */
-function Delta({ frac }: { frac: number | null }) {
-  if (frac == null) return <Text span size="xs" c="dimmed">—</Text>;
-  if (Math.abs(frac) < 0.0005) return <Text span size="xs" c="dimmed">0.0%</Text>;
-  const up = frac >= 0;
-  return <Text span size="xs" c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'} {pct(Math.abs(frac))}</Text>;
+/** Snapshot-over-snapshot delta chip for the ingestion table. `tone="neutral"` for headcount (a
+ *  population size, not a status); the median-salary delta keeps `signed` (money). */
+function Delta({ frac, tone = 'signed' }: { frac: number | null; tone?: DeltaTone }) {
+  return <DeltaChip frac={frac} tone={tone} flatLabel="0.0%" />;
 }
 
 /** One disclaimer caveat: a small amber marker + a bold lead phrase + the rest — laid out in a 2-col grid. */
@@ -515,7 +514,7 @@ export default function DataHealth() {
               </Table.Td>
               <Table.Td ta="right">{num(s.distinct_people)}</Table.Td>
               <Table.Td ta="right">{s.distinct_people_paid != null ? num(s.distinct_people_paid) : '—'}</Table.Td>
-              <Table.Td ta="right">{prev ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} /> : '—'}</Table.Td>
+              <Table.Td ta="right">{prev ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} tone="neutral" /> : '—'}</Table.Td>
               <Table.Td ta="right">{num(s.zero_or_null_salary)}</Table.Td>
               <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
               <Table.Td ta="right">{prev ? <Delta frac={dpct(s.salary_median, prev?.salary_median)} /> : '—'}</Table.Td>

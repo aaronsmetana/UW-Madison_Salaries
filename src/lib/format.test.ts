@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, formatName, fullName } from './format';
+import { usd, num, pct, formatName, fullName, fmtDate } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -28,5 +28,15 @@ describe('format', () => {
   it('fullName joins and formats first + last', () => {
     expect(fullName('AARON', 'BACH')).toBe('Aaron Bach');
     expect(fullName('Aaron', null)).toBe('Aaron');
+  });
+  it('fmtDate renders one long-form date for ISO strings, Date objects, and timestamps', () => {
+    expect(fmtDate('2026-07-02')).toBe('Jul 2, 2026');
+    expect(fmtDate(new Date(Date.UTC(2026, 6, 2)))).toBe('Jul 2, 2026');
+    expect(fmtDate('2026-07-02T00:00:00Z')).toBe('Jul 2, 2026');
+  });
+  it('fmtDate falls back to an em dash for null, undefined, or unparsable input', () => {
+    expect(fmtDate(null)).toBe('—');
+    expect(fmtDate(undefined)).toBe('—');
+    expect(fmtDate('not-a-date')).toBe('—');
   });
 });

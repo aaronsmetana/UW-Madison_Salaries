@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, Card } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { IconPlus, IconSearch, IconCheck, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -9,6 +9,8 @@ import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
 import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
+import { TrayButton } from './TrayButton';
+import { SortableTh, type SortState } from './SortableTh';
 
 interface TitleRow {
   job_code: string; title: string; n: number; med: number | null;
@@ -68,13 +70,12 @@ export function TitlesPanel() {
   const [params, setParams] = useSearchParams();
   const sortKey = (params.get('tsort') as SortKey) || 'n';
   const sortDir = (params.get('tdir') as 'asc' | 'desc') || 'desc';
-  const setSort = (key: SortKey) =>
+  const setSort = (next: SortState<SortKey>) =>
     setParams(
       (prev) => {
         const n = new URLSearchParams(prev);
-        const dir = sortKey === key && sortDir === 'desc' ? 'asc' : 'desc';
-        n.set('tsort', key);
-        n.set('tdir', dir);
+        n.set('tsort', next.key);
+        n.set('tdir', next.dir);
         return n;
       },
       { replace: true }
@@ -111,16 +112,7 @@ export function TitlesPanel() {
       }))
     );
 
-  const sortTh = (key: SortKey, label: string, align?: 'right') => (
-    <Table.Th
-      ta={align}
-      aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
-      onClick={() => setSort(key)}
-    >
-      {label}{sortKey === key ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
-    </Table.Th>
-  );
+  const sort: SortState<SortKey> = { key: sortKey, dir: sortDir };
 
   return (
     <>
@@ -152,10 +144,10 @@ export function TitlesPanel() {
         <Table stickyHeader miw={820}>
           <Table.Thead>
             <Table.Tr>
-              {sortTh('title', 'Title')}
-              {sortTh('job_code', 'Job code')}
-              {sortTh('n', 'People', 'right')}
-              {sortTh('med', 'Median', 'right')}
+              <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
+              <SortableTh sortKey="job_code" label="Job code" sort={sort} onSort={setSort} />
+              <SortableTh sortKey="n" label="People" sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
               <Table.Th ta="right">Range (p25–p75)</Table.Th>
               <Table.Th />
             </Table.Tr>
@@ -197,18 +189,11 @@ export function TitlesPanel() {
                       )}
                     </Table.Td>
                     <Table.Td ta="right">
-                      <Button
-                        className="peer-add"
-                        size="compact-xs"
-                        variant={inTray ? 'light' : 'outline'}
-                        color={inTray ? 'pos' : 'accent'}
-                        radius="xl"
-                        leftSection={inTray ? <IconCheck size={12} /> : <IconPlus size={12} />}
-                        disabled={inTray}
-                        onClick={(e) => { e.stopPropagation(); add({ type: 'title', id: t.job_code, label: t.title }); }}
-                      >
-                        {inTray ? 'In tray' : 'Compare'}
-                      </Button>
+                      <TrayButton
+                        inTray={inTray}
+                        stopPropagation
+                        onAdd={() => add({ type: 'title', id: t.job_code, label: t.title })}
+                      />
                     </Table.Td>
                   </Table.Tr>
                 </Fragment>

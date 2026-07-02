@@ -9,19 +9,11 @@ import { usd, num, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { SegmentedToggle } from './SegmentedToggle';
 import { MiniBar } from './MiniBar';
+import { RankDeltaChip } from './Delta';
 
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
   school: string | null; department: string | null; fte: number | null; pay: number;
-}
-
-/** ▲/▼ movement vs the previous snapshot's pay rank (or "new" to the top ranks). */
-function RankDelta({ prev, cur }: { prev?: number; cur: number }) {
-  if (prev == null) return <Text span style={{ fontSize: 10 }} c="accent.6">new</Text>;
-  const d = prev - cur;
-  if (d === 0) return <Text span style={{ fontSize: 10 }} c="dimmed">—</Text>;
-  const up = d > 0;
-  return <Text span style={{ fontSize: 10 }} c={up ? 'pos' : 'red'}>{up ? '▲' : '▼'}{Math.abs(d)}</Text>;
 }
 
 export function EarnersPanel() {
@@ -118,7 +110,7 @@ export function EarnersPanel() {
                 <Table.Tr key={e.person_key}>
                   <Table.Td ta="right">
                     <Text span c="dimmed">{realRank}</Text>
-                    {prevSnap && <div style={{ lineHeight: 1.1 }}><RankDelta prev={prevRankMap.get(e.person_key)} cur={realRank} /></div>}
+                    {prevSnap && <div style={{ lineHeight: 1.1 }}><RankDeltaChip prev={prevRankMap.get(e.person_key)} cur={realRank} /></div>}
                   </Table.Td>
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>{fullName(e.fn, e.ln)}</Anchor>

@@ -28,6 +28,17 @@ export function pct(n: number | null | undefined, digits = 1): string {
   return `${(Number(n) * 100).toFixed(digits)}%`;
 }
 
+/** One date format everywhere ("Jul 2, 2026") instead of each call site picking its own — an ISO
+ *  slice reads as a bug next to a long-form date rendered elsewhere in the app. Renders in UTC: these
+ *  are calendar/build dates (snapshot dates, generated-at timestamps), not viewer-local wall-clock
+ *  times, so the date shown shouldn't shift depending on the reader's timezone. */
+export function fmtDate(d: string | number | Date | null | undefined): string {
+  if (d == null) return '—';
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return '—';
+  return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 /**
  * Title-case a name for display. The source data is inconsistent — some records are ALL CAPS
  * (e.g. "AARON ALMEIDA") while others are already cased. Only fully-uppercase words are converted

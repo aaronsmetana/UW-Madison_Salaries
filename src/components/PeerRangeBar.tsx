@@ -1,10 +1,8 @@
 import { Text } from '@mantine/core';
 import { usd } from '../lib/format';
+import { fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
-
-/** Compact $Xk for the interior tick labels (the exact min/max sit at the ends in full dollars). */
-const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
 
 /**
  * Responsive horizontal range bar for a peer group: spans min→max, shades the interquartile (p25→p75)

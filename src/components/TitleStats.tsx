@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
-  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Button, Alert, Loader,
+  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, Loader,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconPlus, IconSearch, IconCheck } from '@tabler/icons-react';
+import { IconSearch } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
@@ -12,6 +12,7 @@ import type { Metric } from '../state/controls';
 import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
+import { TrayButton } from './TrayButton';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
 
@@ -174,7 +175,13 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       {band && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Official pay band — grade {g?.grade_number}</Text>
-          <PayBandBar min={band.min} max={band.max} value={pinned ? pinSalary : null} />
+          <PayBandBar
+            min={band.min}
+            max={band.max}
+            value={pinned ? pinSalary : null}
+            quartiles
+            benchmarks={s.med != null ? [{ value: s.med, label: 'title median' }] : []}
+          />
         </Card>
       )}
 
@@ -227,18 +234,12 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                     <Table.Td ta="right">{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                     <Table.Td ta="right">{usd(p.pay)}</Table.Td>
                     <Table.Td ta="right">
-                      <Button
-                        className="peer-add"
-                        size="compact-xs"
-                        variant={inTray ? 'light' : 'outline'}
-                        color={inTray ? 'pos' : 'accent'}
-                        radius="xl"
-                        leftSection={inTray ? <IconCheck size={12} /> : <IconPlus size={12} />}
-                        disabled={inTray}
-                        onClick={(e) => { e.stopPropagation(); add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) }); }}
-                      >
-                        {inTray ? 'In tray' : 'Add to tray'}
-                      </Button>
+                      <TrayButton
+                        inTray={inTray}
+                        addLabel="Add to tray"
+                        stopPropagation
+                        onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
+                      />
                     </Table.Td>
                   </Table.Tr>
                 );

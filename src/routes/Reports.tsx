@@ -8,7 +8,7 @@ import { useSummary, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num, pct, fullName } from '../lib/format';
+import { usd, num, pct, fullName, fmtDate } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { SearchBox } from '../components/SearchBox';
@@ -37,7 +37,7 @@ export default function Reports() {
   const { data: summary } = useSummary();
   const { items, add, remove, primaryId } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
-  const generated = new Date().toISOString().slice(0, 10);
+  const generated = fmtDate(new Date());
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
 
   // The tray's "Report →" shortcut deep-links here with ?mode=compare to open the comparison studio.

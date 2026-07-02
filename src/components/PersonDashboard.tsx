@@ -2,12 +2,12 @@ import { useMemo } from 'react';
 import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert, Paper } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName } from '../lib/format';
+import { usd, num, pct, fullName, fmtDate } from '../lib/format';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
@@ -63,7 +63,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
  */
 export function PersonDashboard({ personKey, metric }: { personKey: string; metric: Metric }) {
   const expr = salaryExpr(metric);
-  const generated = new Date().toISOString().slice(0, 10);
+  const generated = fmtDate(new Date());
 
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],
@@ -285,7 +285,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
-            <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+            <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />

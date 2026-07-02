@@ -1,9 +1,7 @@
 import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
+import { fmtK } from '../lib/chartStyle';
 import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
-
-/** Compact $Xk for the band quartile caption. */
-const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
 
 /** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line,
  *  optional gray `benchmarks` ticks (e.g. title median / p75), and optional `quartiles` (¼/½/¾ of the

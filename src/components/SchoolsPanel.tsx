@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Card } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { IconPlus, IconSearch, IconCheck, IconChevronRight, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconChevronRight, IconDownload } from '@tabler/icons-react';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -10,6 +10,8 @@ import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
 import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
+import { TrayButton } from './TrayButton';
+import { SortableTh } from './SortableTh';
 
 interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null }
 interface DeptRow { department: string; headcount: number; med: number | null }
@@ -112,17 +114,6 @@ export function SchoolsPanel() {
       }))
     );
 
-  const sortTh = (key: SortKey, label: string, align?: 'right') => (
-    <Table.Th
-      ta={align}
-      aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
-      onClick={() => setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))}
-    >
-      {label}{sort.key === key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
-    </Table.Th>
-  );
-
   return (
     <>
       <Group justify="space-between" mb="sm" wrap="wrap" gap="sm">
@@ -148,9 +139,9 @@ export function SchoolsPanel() {
         <Table stickyHeader miw={680}>
           <Table.Thead>
             <Table.Tr>
-              {sortTh('school', 'School / Division')}
-              {sortTh('headcount', 'Headcount', 'right')}
-              {sortTh('med', 'Median', 'right')}
+              <SortableTh sortKey="school" label="School / Division" sort={sort} onSort={setSort} />
+              <SortableTh sortKey="headcount" label="Headcount" sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
               <Table.Th ta="right">Range (p25–p75)</Table.Th>
               <Table.Th />
             </Table.Tr>
@@ -188,18 +179,7 @@ export function SchoolsPanel() {
                       {s.p25 != null && s.p75 != null ? `${usd(s.p25)} – ${usd(s.p75)}` : '—'}
                     </Table.Td>
                     <Table.Td ta="right">
-                      <Button
-                        className="peer-add"
-                        size="compact-xs"
-                        variant={inTray ? 'light' : 'outline'}
-                        color={inTray ? 'pos' : 'accent'}
-                        radius="xl"
-                        leftSection={inTray ? <IconCheck size={12} /> : <IconPlus size={12} />}
-                        disabled={inTray}
-                        onClick={() => add({ type: 'school', id: s.school, label: s.school })}
-                      >
-                        {inTray ? 'In tray' : 'Compare'}
-                      </Button>
+                      <TrayButton inTray={inTray} onAdd={() => add({ type: 'school', id: s.school, label: s.school })} />
                     </Table.Td>
                   </Table.Tr>
                   {open && <DeptRows where={where} school={s.school} expr={expr} metric={metric} colSpan={5} />}

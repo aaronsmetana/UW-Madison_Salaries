@@ -1,7 +1,7 @@
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num } from '../lib/format';
@@ -68,9 +68,10 @@ export function SalaryHistogram({
   // salary scale: each bar is centered in its bin and the edge ticks line up with the bar edges.
   const data = bins.map((b) => ({ x: (b.lo + b.hi) / 2, label: b.label, range: b.range, n: b.n }));
   const edges = [...bins.map((b) => b.lo), hi];
-  const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
 
-  // Quartiles from the raw values → faint reference guides for market context.
+  // Quartiles from the raw values → faint reference guides for market context. Only the median gets
+  // an in-chart text label — labeling all three collides whenever the IQR is narrow (common for a
+  // single title's distribution); the caption below spells out all three.
   const sorted = [...values].filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
   const quantile = (p: number): number | null => {
     if (!sorted.length) return null;
@@ -78,7 +79,10 @@ export function SalaryHistogram({
     const a = Math.floor(i), c = Math.ceil(i);
     return sorted[a] + (sorted[c] - sorted[a]) * (i - a);
   };
-  const guides = [quantile(0.25), quantile(0.5), quantile(0.75)].filter((x): x is number => x != null);
+  const med = quantile(0.5);
+  const guides = [quantile(0.25), med, quantile(0.75)]
+    .filter((x): x is number => x != null)
+    .map((v) => ({ value: v, isMedian: v === med }));
 
   // Index of the bin the marked value falls in (last bin inclusive, matching binSalaries) → recolor it.
   let markerBin: number | null = null;
@@ -93,11 +97,11 @@ export function SalaryHistogram({
     ? (Math.max(lo, Math.min(hi, markerValue)) - lo) / (hi - lo)
     : null;
   // Recharts plot insets for this chart: left margin (12) + YAxis width (48); right margin (12);
-  // top margin (matches PLOT_TOP — headroom for the marker pin + label above the bars); default
-  // XAxis height (30) at the bottom.
+  // top margin (matches PLOT_TOP — headroom for the marker pin + label above the bars, plus the
+  // median guide's in-chart text label when there's room to show one); default XAxis height (30).
   const PLOT_LEFT = 60;
   const PLOT_RIGHT = 12;
-  const PLOT_TOP = 30;
+  const PLOT_TOP = guides.length ? 42 : 30;
   const X_AXIS_H = 30;
 
   return (
@@ -109,8 +113,15 @@ export function SalaryHistogram({
             <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={edges} tickFormatter={fmtK} tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} />
             <Tooltip content={<HistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
-            {guides.map((gx, i) => (
-              <ReferenceLine key={`q-${i}`} x={gx} stroke="var(--mantine-color-gray-5)" strokeDasharray="3 3" strokeWidth={1} />
+            {guides.map((g, i) => (
+              <ReferenceLine
+                key={`q-${i}`}
+                x={g.value}
+                stroke="var(--mantine-color-gray-5)"
+                strokeDasharray="3 3"
+                strokeWidth={g.isMedian ? 1.5 : 1}
+                label={g.isMedian ? { value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' } : undefined}
+              />
             ))}
             <Bar dataKey="n">
               {data.map((_, i) => (

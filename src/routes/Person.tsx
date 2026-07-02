@@ -7,11 +7,12 @@ import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, LabelList,
 } from 'recharts';
-import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtUsd } from '../lib/chartStyle';
 import { wrapChartTitle } from '../lib/chartText';
+import { YoyPill } from '../components/chart/pills';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
-import { IconAlertTriangle, IconPlus, IconArrowRight } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
@@ -28,6 +29,7 @@ import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
+import { TrayButton } from '../components/TrayButton';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
@@ -62,26 +64,6 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
         stroke="var(--mantine-color-body)"
         strokeWidth={1.5}
       />
-    </g>
-  );
-}
-
-/** Small +X% / −X% pill above each trend point — the raise vs the previous snapshot (null on the first).
- *  Floats a consistent gap above its dot (enough to clear the title-change diamond too); only when the dot
- *  sits near the top of the plot does it drop below instead, so the pill never collides with the top edge. */
-function YoyLabel(props: { x?: number; y?: number; value?: number | null }) {
-  const { x, y, value } = props;
-  if (x == null || y == null || value == null) return null;
-  const up = value >= 0;
-  const txt = `${up ? '+' : ''}${(value * 100).toFixed(1)}%`;
-  const color = up ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-red-7)';
-  const w = txt.length * 6 + 8;
-  const h = 15;
-  const cy = y > 48 ? y - 22 : y + 22; // uniform float above; flip below only when too close to the top
-  return (
-    <g>
-      <rect x={x - w / 2} y={cy - h / 2} width={w} height={h} rx={7} fill="var(--mantine-color-body)" fillOpacity={0.85} stroke={color} strokeOpacity={0.35} strokeWidth={1} />
-      <text x={x} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={700} fill={color}>{txt}</text>
     </g>
   );
 }
@@ -927,21 +909,12 @@ export default function Person() {
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
                             <Table.Td ta="right">
-                              <Button
-                                className="peer-add"
-                                size="compact-xs"
-                                variant={inTray ? 'light' : 'filled'}
-                                color={inTray ? 'gray' : 'accent'}
-                                radius="xl"
-                                leftSection={inTray ? undefined : <IconPlus size={12} />}
-                                disabled={inTray}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) });
-                                }}
-                              >
-                                {inTray ? 'In tray' : 'Add to tray'}
-                              </Button>
+                              <TrayButton
+                                inTray={inTray}
+                                addLabel="Add to tray"
+                                stopPropagation
+                                onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
+                              />
                             </Table.Td>
                           </Table.Tr>
                         );
@@ -1116,7 +1089,7 @@ export default function Person() {
               height={fteVaries ? 8 : 34}
               axisLine={{ stroke: 'var(--mantine-color-default-border)' }}
             />
-            <YAxis yAxisId="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
+            <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
             <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
             {/* Official grade pay-band floor / ceiling for context (kept as separate siblings — Recharts does
                 not traverse a Fragment's children). */}
@@ -1175,7 +1148,7 @@ export default function Person() {
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#trend-line-glow)" />
             {/* Primary line + per-step raise % labels + haloed active dot. */}
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out">
-              <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyLabel />} />
+              <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyPill count={trendPlot.length} />} />
             </Line>
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;

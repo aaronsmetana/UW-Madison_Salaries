@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtK, niceCurrencyTicks } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
 import { useTray } from '../state/tray';
 import { useControls } from '../state/controls';
@@ -227,6 +227,13 @@ export default function Compare() {
       }),
     [series, persons]
   );
+  // Gap values are all ≤0 (distance behind the top earner); Recharts' auto ticks over an all-negative
+  // range pick ugly steps (-$9,500/-$19,000/-$28,500) — snap to round numbers instead.
+  const gapTicks = useMemo(() => {
+    const vals = gapSeries.flatMap((row) => persons.map((p) => row[p.id]).filter((v): v is number => typeof v === 'number'));
+    if (!vals.length) return undefined;
+    return niceCurrencyTicks(Math.min(...vals, 0), Math.max(...vals, 0));
+  }, [gapSeries, persons]);
 
   const cadence = useMemo(
     () =>
@@ -357,7 +364,7 @@ export default function Compare() {
                   <LineChart data={trajectorySeries} margin={{ left: 12, right: 12 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis dataKey="label" tick={AXIS_TICK} />
-                    <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+                    <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
                     <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
                     {persons.map((p, i) => (
                       <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
@@ -367,7 +374,7 @@ export default function Compare() {
                   <ScatterChart margin={{ left: 12, right: 12 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={AXIS_TICK} />
-                    <YAxis type="number" dataKey="pay" tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+                    <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
                     <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} />
                     {persons.map((p, i) => (
                       <Scatter
@@ -402,7 +409,13 @@ export default function Compare() {
             <LineChart data={gapSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" tick={AXIS_TICK} />
-              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+              <YAxis
+                tickFormatter={fmtK}
+                ticks={gapTicks}
+                domain={gapTicks ? [gapTicks[0], gapTicks[gapTicks.length - 1]] : undefined}
+                width={80}
+                tick={AXIS_TICK}
+              />
               <Tooltip formatter={(v: number, key) => [usd(v), labelMap.get(String(key)) ?? key]} />
               {persons.map((p, i) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
@@ -512,7 +525,7 @@ export default function Compare() {
             <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" tick={AXIS_TICK} />
-              <YAxis tickFormatter={(v) => usd(v)} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+              <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip formatter={(v: number, key) => [usd(v), titleLabelMap.get(String(key)) ?? key]} />
               {titles.map((t, i) => (
                 <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot connectNulls />
