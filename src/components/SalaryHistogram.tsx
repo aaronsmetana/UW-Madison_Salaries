@@ -11,12 +11,15 @@ import { num, pct } from '../lib/format';
 import { useMounted } from '../lib/motion';
 import { ChartData } from './ChartData';
 
-/** Below this cohort size, the histogram renders as discrete "1 square = 1 person" unit columns
- *  instead of continuous bars — small cohorts read as countable people, not an abstract distribution.
- *  Larger cohorts (or a computed square size too small to read) fall back to bars automatically. */
+/** Below this cohort size, the histogram renders as segmented "brick" bars — a normal bar-chart
+ *  silhouette where each bar is visibly built from horizontal bricks, 1 brick = 1 person — so small
+ *  cohorts read as countable people without the plot dissolving into sparse floating dots. Larger
+ *  cohorts (or a computed brick too thin to read) fall back to continuous bars automatically. */
 const MAX_FOR_UNIT_MODE = 60;
-const CELL = 10;
-const CELL_GAP = 2;
+const BRICK_GAP = 2;
+/** The tallest stack always fills roughly this plot height — brick height scales to the cohort, so a
+ *  3-person maximum and a 12-person maximum both look intentional rather than stubby or towering. */
+const TARGET_PLOT_H = 200;
 
 interface TipData { range: string; n: number; lo: number; hi: number }
 
@@ -121,10 +124,11 @@ export function SalaryHistogram({
   const X_AXIS_H = 30;
 
   // Unit mode auto-selects for small cohorts (real countable people); falls back to bars if the
-  // per-square size would compute out too small to read (an extreme concentration into one bin).
+  // computed brick would be too thin to read (an extreme concentration into one bin).
   const maxN = Math.max(1, ...bins.map((b) => b.n));
-  const stackH = maxN * (CELL + CELL_GAP) - CELL_GAP;
-  const unitMode = values.length <= MAX_FOR_UNIT_MODE && bins.length >= 2 && stackH < 1400;
+  const brickH = Math.min(16, Math.floor(TARGET_PLOT_H / maxN) - BRICK_GAP);
+  const stackH = maxN * (brickH + BRICK_GAP) - BRICK_GAP;
+  const unitMode = values.length <= MAX_FOR_UNIT_MODE && bins.length >= 2 && brickH >= 5;
 
   const gradientColors = { bar: 'var(--bar)', active: 'var(--bar-active)' };
 
@@ -139,8 +143,9 @@ export function SalaryHistogram({
 
   if (unitMode) {
     const containerH = PLOT_TOP + stackH + X_AXIS_H;
-    // Which square (0-based, from the bottom) represents the marked value within its own bin — computed
-    // from the actual values sharing that bin, so the highlighted square sits at roughly the right rank.
+    const colH = (n: number) => (n > 0 ? n * (brickH + BRICK_GAP) - BRICK_GAP : 0);
+    // Which brick (0-based, from the bottom) represents the marked value within its own bin — computed
+    // from the actual values sharing that bin, so the highlighted brick sits at roughly the right rank.
     let markerRank = -1;
     if (markerBin != null && markerValue != null) {
       const b = bins[markerBin];
@@ -149,10 +154,30 @@ export function SalaryHistogram({
       markerRank = Math.min(colVals.filter((v) => v < markerValue).length, Math.max(0, b.n - 1));
     }
     const hoveredBin = activeIdx != null ? bins[activeIdx] : null;
+    const p25v = guides.length === 3 ? guides[0].value : null;
+    const p75v = guides.length === 3 ? guides[2].value : null;
 
     return (
       <>
         <div style={{ position: 'relative', height: containerH }}>
+          {/* Faint IQR backdrop (p25→p75) — gives the empty plot background structure and ties this
+              chart to the range strip above it. */}
+          {p25v != null && p75v != null && (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: `${at(p25v) * 100}%`,
+                width: `${(at(p75v) - at(p25v)) * 100}%`,
+                top: PLOT_TOP,
+                bottom: X_AXIS_H,
+                background: 'var(--mantine-color-accent-6)',
+                opacity: 0.05,
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+
           {guides.map((g, i) => (
             <div
               key={`g-${i}`}
@@ -176,56 +201,73 @@ export function SalaryHistogram({
             </div>
           ))}
 
+          {/* Baseline the bars sit on (columns floating in space read as unfinished). */}
+          <div
+            aria-hidden
+            style={{ position: 'absolute', left: 0, right: 0, bottom: X_AXIS_H, height: 1, background: 'var(--mantine-color-default-border)' }}
+          />
+
           {bins.map((b, i) => {
             const left = at(b.lo) * 100;
             const width = (at(b.hi) - at(b.lo)) * 100;
             const isMarkerCol = i === markerBin;
             const dimmed = activeIdx != null && activeIdx !== i;
-            const colH = b.n * (CELL + CELL_GAP) - CELL_GAP;
             return (
               <div
                 key={i}
-                onMouseEnter={() => setActiveIdx(i)}
-                onMouseLeave={() => setActiveIdx(null)}
-                onClick={onBinClick ? () => onBinClick({ lo: b.lo, hi: b.hi }) : undefined}
+                onMouseEnter={b.n > 0 ? () => setActiveIdx(i) : undefined}
+                onMouseLeave={b.n > 0 ? () => setActiveIdx(null) : undefined}
+                onClick={onBinClick && b.n > 0 ? () => onBinClick({ lo: b.lo, hi: b.hi }) : undefined}
                 style={{
                   position: 'absolute',
                   left: `${left}%`,
                   width: `${width}%`,
+                  top: PLOT_TOP,
                   bottom: X_AXIS_H,
-                  height: Math.max(colH, CELL),
                   display: 'flex',
                   flexDirection: 'column-reverse',
                   alignItems: 'center',
-                  gap: CELL_GAP,
-                  cursor: onBinClick ? 'pointer' : undefined,
+                  gap: BRICK_GAP,
+                  cursor: onBinClick && b.n > 0 ? 'pointer' : undefined,
                 }}
               >
-                {Array.from({ length: b.n }).map((_, sq) => {
-                  const isMarkerSquare = isMarkerCol && sq === markerRank;
+                {/* Bricks fill ~68% of the bin's width — the stack keeps a normal bar silhouette. */}
+                {Array.from({ length: b.n }).map((_, brick) => {
+                  const isMarkerBrick = isMarkerCol && brick === markerRank;
                   return (
                     <div
-                      key={sq}
+                      key={brick}
                       style={{
-                        width: CELL,
-                        height: CELL,
-                        borderRadius: 3,
+                        width: '68%',
+                        height: brickH,
+                        borderRadius: 2,
                         flexShrink: 0,
-                        background: isMarkerSquare ? 'var(--bar-active)' : 'var(--bar)',
-                        border: isMarkerSquare ? '2px solid var(--mantine-color-body)' : undefined,
-                        boxShadow: isMarkerSquare ? '0 1px 3px rgba(0,0,0,0.35)' : undefined,
-                        opacity: mounted ? (dimmed && !isMarkerSquare ? 0.4 : 1) : 0,
-                        transform: mounted ? 'scale(1)' : 'scale(0.5)',
-                        transition: `opacity 220ms ease ${Math.min(sq, 20) * 6}ms, transform 220ms ease ${Math.min(sq, 20) * 6}ms`,
+                        background: isMarkerBrick ? 'var(--bar-active)' : 'var(--bar)',
+                        boxShadow: isMarkerBrick ? 'inset 0 0 0 1.5px var(--mantine-color-body), 0 1px 3px rgba(0,0,0,0.3)' : undefined,
+                        opacity: mounted ? (dimmed && !isMarkerBrick ? 0.4 : 1) : 0,
+                        transform: mounted ? 'scaleY(1)' : 'scaleY(0.3)',
+                        transformOrigin: 'bottom',
+                        transition: `opacity 220ms ease ${Math.min(brick, 20) * 6}ms, transform 220ms ease ${Math.min(brick, 20) * 6}ms`,
                       }}
                     />
                   );
                 })}
+                {/* Count above each bar — quiet, useful, and it fills the air over the stacks. The
+                    subject's bar shows the pin instead (rendered separately, below). */}
+                {b.n > 0 && !isMarkerCol && (
+                  <Text
+                    component="span"
+                    c="dimmed"
+                    style={{ fontSize: 10, lineHeight: 1, marginBottom: 3, opacity: mounted ? (dimmed ? 0.4 : 0.9) : 0, transition: 'opacity 220ms ease' }}
+                  >
+                    {b.n}
+                  </Text>
+                )}
               </div>
             );
           })}
 
-          {/* Bin-edge $ labels along the bottom — counting squares IS the y-axis, so there's no y-axis to draw. */}
+          {/* Bin-edge $ labels along the bottom — counting bricks IS the y-axis, so there's no y-axis to draw. */}
           {edges.map((e, i) => (
             <Text
               key={i}
@@ -237,14 +279,15 @@ export function SalaryHistogram({
             </Text>
           ))}
 
-          {/* Marker pin + label above the highlighted square. */}
+          {/* Marker pin + label above the TOP of the subject's column (mid-stack anchoring overlapped
+              the bricks above it); the highlighted brick inside the stack carries the emphasis. */}
           {markerBin != null && markerRank >= 0 && (
             <div
               aria-hidden
               style={{
                 position: 'absolute',
                 left: `${(at(bins[markerBin].lo) + at(bins[markerBin].hi)) * 50}%`,
-                bottom: X_AXIS_H + markerRank * (CELL + CELL_GAP) + CELL + 6,
+                bottom: X_AXIS_H + colH(bins[markerBin].n) + 8,
                 transform: 'translateX(-50%)',
                 pointerEvents: 'none',
               }}
@@ -252,7 +295,7 @@ export function SalaryHistogram({
               <span
                 style={{
                   position: 'absolute',
-                  bottom: -6,
+                  bottom: -7,
                   left: '50%',
                   transform: 'translateX(-50%)',
                   width: 0,
@@ -262,19 +305,19 @@ export function SalaryHistogram({
                   borderTop: '7px solid var(--bar-active)',
                 }}
               />
-              <Text component="span" style={{ whiteSpace: 'nowrap', fontSize: 11, lineHeight: 1, color: 'var(--bar-active)', display: 'block', textAlign: 'center' }}>
+              <Text component="span" style={{ whiteSpace: 'nowrap', fontSize: 11, lineHeight: 1, color: 'var(--bar-active)', display: 'block', textAlign: 'center', paddingBottom: 2 }}>
                 {markerLabel}
               </Text>
             </div>
           )}
 
-          {/* Hover readout for the column under the cursor. */}
+          {/* Hover readout for the column under the cursor (clears the count label above the stack). */}
           {hoveredBin && (
             <div
               style={{
                 position: 'absolute',
                 left: `${(at(hoveredBin.lo) + at(hoveredBin.hi)) * 50}%`,
-                bottom: X_AXIS_H + Math.max(hoveredBin.n * (CELL + CELL_GAP) - CELL_GAP, CELL) + 10,
+                bottom: X_AXIS_H + Math.max(colH(hoveredBin.n), brickH) + 24,
                 transform: 'translateX(-50%)',
                 pointerEvents: 'none',
                 zIndex: 2,
@@ -284,7 +327,7 @@ export function SalaryHistogram({
             </div>
           )}
         </div>
-        {guides.length === 3 && <Text size="xs" c="dimmed" mt={4}>1 square = 1 person · Dashed guides: p25 · median · p75.</Text>}
+        {guides.length === 3 && <Text size="xs" c="dimmed" mt={4}>1 block = 1 person · Dashed guides: p25 · median · p75.</Text>}
         <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} />
       </>
     );

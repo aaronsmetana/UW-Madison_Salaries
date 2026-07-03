@@ -96,7 +96,8 @@ function LegendSwatch({ swatch, label }: { swatch: ReactNode; label: string }) {
  * Pay-vs-tenure scatter for everyone with the same title (the caller filters to the active cohort).
  * The subject pops in accent; same-school peers are green, others gray. A dashed least-squares line shows
  * the pay tenure alone predicts, and a callout reads whether the subject sits above or below that curve.
- * A crosshair locks onto the subject by default and glides to whichever point is hovered.
+ * Hovering a point shows a crosshair that glides between points as the cursor moves; it's hidden
+ * whenever the cursor isn't over the chart, rather than resting on "this person" by default.
  */
 export function TenurePayScatter({
   points,
@@ -128,9 +129,10 @@ export function TenurePayScatter({
   const gap = expected != null && self ? self.pay - expected : null;
   const above = gap != null && gap >= 0;
 
-  // The crosshair rests on "this person" and glides to whatever's hovered; a hovered peer gets a
-  // slightly larger ring so the shift in emphasis reads clearly against the resting state.
-  const active = hover ?? (self ? { tenure: self.tenure, pay: self.pay } : null);
+  // The crosshair only appears while the cursor is actually over a point — no resting state on "this
+  // person" when the chart isn't being interacted with. A hovered peer gets a slightly larger ring so
+  // it reads as distinct from hovering the self dot.
+  const active = hover;
   const emphasize = !!hover && !hover.isSelf;
   const onHover = (p: ScatterPoint) => setHover(p);
   const onLeave = () => setHover(null);

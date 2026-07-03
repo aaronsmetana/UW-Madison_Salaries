@@ -14,9 +14,9 @@ const MAX_PEER_TICKS = 300;
  * range, ticks p25 / median / p75 with value labels, and marks `value` (current salary) as a teal dot —
  * with an optional bright-green `target` line so the distance to close reads at a glance. The IQR fill
  * grows and the current dot sweeps into place once on mount. Div/percentage based and dark-mode safe.
- * Passing `values` (the cohort's individual pays) adds a faint tick per peer, so the strip reads as an
- * actual population rather than an abstract five-number summary, plus a hover readout of the salary and
- * share of the cohort under the cursor.
+ * Passing `values` (the cohort's individual pays) adds a slim "rug" lane of one faint mark per peer
+ * UNDER the track (never on it — on-track ticks read as a barcode against the pill), so the strip shows
+ * an actual population, plus a cursor-following readout of the salary/percentile under the pointer.
  */
 export function PeerRangeBar({
   min,
@@ -122,122 +122,112 @@ export function PeerRangeBar({
         />
       </div>
 
+      {/* Track + rug share one hover wrapper so the readout works over either lane. */}
       <div
         ref={trackRef}
         onMouseMove={(e) => updateHover(e.clientX)}
         onMouseLeave={() => setHoverPct(null)}
-        style={{
-          position: 'relative',
-          height: H,
-          borderRadius: H / 2,
-          background: 'linear-gradient(90deg, var(--mantine-color-gray-2), var(--mantine-color-gray-4))',
-          cursor: values?.length ? 'crosshair' : undefined,
-        }}
+        style={{ position: 'relative', cursor: values?.length ? 'crosshair' : undefined }}
       >
-        {/* interquartile range — grows from 0 width on mount */}
         <div
           style={{
-            position: 'absolute',
-            left: `${at(p25)}%`,
-            width: mounted ? `${iqrWidthPct}%` : 0,
-            top: 0,
-            bottom: 0,
-            background: 'var(--mantine-color-accent-3)',
-            opacity: 0.5,
-            transition: 'width 600ms ease-out',
+            position: 'relative',
+            height: H,
+            borderRadius: H / 2,
+            background: 'linear-gradient(90deg, var(--mantine-color-gray-2), var(--mantine-color-gray-4))',
           }}
-        />
-        {iqrWidthPct >= 18 && (
-          <Text
-            size="xs"
-            fw={600}
+        >
+          {/* interquartile range — grows from 0 width on mount */}
+          <div
             style={{
               position: 'absolute',
-              left: `${at(p25) + iqrWidthPct / 2}%`,
+              left: `${at(p25)}%`,
+              width: mounted ? `${iqrWidthPct}%` : 0,
+              top: 0,
+              bottom: 0,
+              background: 'var(--mantine-color-accent-3)',
+              opacity: 0.5,
+              transition: 'width 600ms ease-out',
+            }}
+          />
+          {/* p25 / median / p75 ticks */}
+          {ticks.map((t) => (
+            <div
+              key={t.label}
+              style={{
+                position: 'absolute',
+                left: `${at(t.x)}%`,
+                top: t.strong ? 3 : 5,
+                bottom: t.strong ? 3 : 5,
+                width: t.strong ? 2 : 1.5,
+                background: t.strong ? 'var(--mantine-color-gray-7)' : 'var(--mantine-color-gray-6)',
+                transform: 'translateX(-50%)',
+              }}
+            />
+          ))}
+          {/* target marker — bright green line */}
+          {target != null && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${at(target)}%`,
+                top: -5,
+                bottom: -5,
+                width: 3,
+                borderRadius: 2,
+                background: MARK_TARGET,
+                transform: 'translateX(-50%)',
+              }}
+            />
+          )}
+          {/* current marker — teal dot, sweeps in from the left edge on mount */}
+          <div
+            style={{
+              position: 'absolute',
+              left: mounted ? `${at(value)}%` : 0,
               top: '50%',
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              background: MARK_CURRENT,
+              border: '2px solid var(--mantine-color-body)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
               transform: 'translate(-50%, -50%)',
-              fontSize: 10,
-              color: 'var(--mantine-color-accent-9)',
-              opacity: mounted ? 0.75 : 0,
-              transition: 'opacity 400ms ease-out 300ms',
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
+              transition: 'left 600ms ease-out',
             }}
-          >
-            middle 50%
-          </Text>
+          />
+        </div>
+
+        {/* Rug lane: one faint round-capped mark per peer, in its own slim row UNDER the track (marks
+            drawn on the pill itself read as a barcode against the gradient). */}
+        {peerTicks.length > 0 && (
+          <div aria-hidden style={{ position: 'relative', height: 10, marginTop: 3 }}>
+            {peerTicks.map((v, i) => (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: `${at(v)}%`,
+                  top: 1.5,
+                  width: 1,
+                  height: 7,
+                  borderRadius: 999,
+                  background: 'var(--mantine-color-gray-6)',
+                  opacity: 0.35,
+                  transform: 'translateX(-50%)',
+                }}
+              />
+            ))}
+          </div>
         )}
-        {/* faint per-peer ticks — the strip reads as an actual population, not just five summary numbers */}
-        {peerTicks.map((v, i) => (
-          <div
-            key={i}
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: `${at(v)}%`,
-              top: 4,
-              bottom: 4,
-              width: 1.5,
-              background: 'var(--mantine-color-gray-7)',
-              opacity: 0.22,
-              transform: 'translateX(-50%)',
-              pointerEvents: 'none',
-            }}
-          />
-        ))}
-        {/* p25 / median / p75 ticks */}
-        {ticks.map((t) => (
-          <div
-            key={t.label}
-            style={{
-              position: 'absolute',
-              left: `${at(t.x)}%`,
-              top: t.strong ? 3 : 5,
-              bottom: t.strong ? 3 : 5,
-              width: t.strong ? 2 : 1.5,
-              background: t.strong ? 'var(--mantine-color-gray-7)' : 'var(--mantine-color-gray-6)',
-              transform: 'translateX(-50%)',
-            }}
-          />
-        ))}
-        {/* target marker — bright green line */}
-        {target != null && (
-          <div
-            style={{
-              position: 'absolute',
-              left: `${at(target)}%`,
-              top: -5,
-              bottom: -5,
-              width: 3,
-              borderRadius: 2,
-              background: MARK_TARGET,
-              transform: 'translateX(-50%)',
-            }}
-          />
-        )}
-        {/* current marker — teal dot, sweeps in from the left edge on mount */}
-        <div
-          style={{
-            position: 'absolute',
-            left: mounted ? `${at(value)}%` : 0,
-            top: '50%',
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            background: MARK_CURRENT,
-            border: '2px solid var(--mantine-color-body)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
-            transform: 'translate(-50%, -50%)',
-            transition: 'left 600ms ease-out',
-          }}
-        />
+
         {/* Cursor-following hover readout: salary at this point + share of the cohort earning less. */}
         {hoverPct != null && hoverValue != null && (
           <div
             style={{
               position: 'absolute',
               left: `${hoverPct}%`,
-              bottom: H + 8,
+              bottom: 'calc(100% + 6px)',
               transform: 'translateX(-50%)',
               pointerEvents: 'none',
               zIndex: 2,
@@ -275,6 +265,11 @@ export function PeerRangeBar({
           </Text>
         ))}
       </div>
+
+      {/* One quiet caption explains the encodings (in-band text collided with the median tick). */}
+      <Text size="xs" c="dimmed" mt={4}>
+        Shaded band = middle 50% of peers{peerTicks.length > 0 ? ' · each tick below the bar = one person' : ''}.
+      </Text>
 
       {/* Current is now pinned above the dot; only the target (when present) needs a legend. */}
       {target != null && (
