@@ -188,7 +188,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       {pinned && s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && (
         <Card withBorder padding="lg">
           <Text size="sm" fw={600} mb="md">Where {usd(pinSalary)} lands among {titleLabel}{scopeLabel}</Text>
-          <PeerRangeBar min={s.lo} p25={s.p25} median={s.med} p75={s.p75} max={s.hi} value={pinSalary!} />
+          <PeerRangeBar min={s.lo} p25={s.p25} median={s.med} p75={s.p75} max={s.hi} value={pinSalary!} values={pays} />
           {titleRow && (
             <Text size="sm" mt="md">
               <b>{usd(pinSalary)}</b> is at the <b>{ordinal(titleRow.pct)} percentile</b> — paid more than {titleRow.pct}% of {num(titleRow.n)} people with this title{school ? ' across UW' : ''}.

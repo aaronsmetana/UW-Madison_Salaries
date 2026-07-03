@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { usd } from './format';
 
 /**
@@ -5,11 +6,30 @@ import { usd } from './format';
  * Spread `GRID` onto <CartesianGrid>, pass `AXIS_TICK` to a `tick=` prop, and `Y_PAD` to a YAxis
  * `padding=` (keeps a top/bottom datum off the clip edge on line/scatter charts).
  */
-export const AXIS_TICK = { fontSize: 12 } as const;
+// `fill` matters as much as `fontSize` here — Recharts' own default tick color (#666) ignores dark
+// mode entirely, so every axis label washes out on a dark card unless this token supplies the color.
+export const AXIS_TICK = { fontSize: 12, fill: 'var(--mantine-color-dimmed)' } as const;
 // Horizontal gridlines only — vertical gridlines between categories add visual noise without helping
 // reads (a bar/line's own x-position already anchors it to its category).
 export const GRID = { strokeDasharray: '3 3', opacity: 0.3, vertical: false } as const;
 export const Y_PAD = { top: 6, bottom: 6 } as const;
+
+/**
+ * One glass-surface look for every Recharts *default* tooltip (i.e. any `<Tooltip formatter=…/>`
+ * that doesn't render a bespoke `content=` component) — pass as `contentStyle`. Bespoke tooltips get
+ * the same look via the `.chart-tip` class (see `TipSurface` in `components/chart/ChartTooltip.tsx`);
+ * this is the CSS-in-JS twin of that class for the cases where Recharts owns the markup.
+ */
+export const TIP_STYLE: CSSProperties = {
+  background: 'color-mix(in srgb, var(--mantine-color-body) 82%, transparent)',
+  backdropFilter: 'blur(10px)',
+  WebkitBackdropFilter: 'blur(10px)',
+  border: '1px solid var(--mantine-color-default-border)',
+  borderRadius: 10,
+  boxShadow: 'var(--mantine-shadow-md)',
+  padding: '6px 10px',
+};
+export const TIP_LABEL_STYLE: CSSProperties = { color: 'var(--mantine-color-text)', fontWeight: 600 };
 
 /** Rounded data-end / square baseline for bar marks: [topLeft, topRight, bottomRight, bottomLeft]. */
 export const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];

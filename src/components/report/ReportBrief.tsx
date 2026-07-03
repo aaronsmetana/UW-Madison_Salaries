@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus } from '@tabler/icons-react';
 import { usd, pct } from '../../lib/format';
-import { AXIS_TICK, GRID, fmtUsd } from '../../lib/chartStyle';
+import { AXIS_TICK, GRID, TIP_STYLE, fmtUsd } from '../../lib/chartStyle';
 import { CAND, PEER, type BriefModel, type ProofKind } from './model';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
@@ -280,7 +280,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                   <CartesianGrid {...GRID} />
                   <XAxis dataKey="date" tickFormatter={fmtHistTick} tick={AXIS_TICK} tickMargin={8} />
                   <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />
-                  <ChartTooltip formatter={(v: number) => usd(v)} labelFormatter={fmtHistTick} />
+                  <ChartTooltip formatter={(v: number) => usd(v)} labelFormatter={fmtHistTick} contentStyle={TIP_STYLE} />
                   <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
                   <Line type="monotone" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />
                 </ComposedChart>

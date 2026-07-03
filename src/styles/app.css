@@ -39,6 +39,41 @@ body {
   --mantine-color-dimmed: #586273;
 }
 
+/* ── Shared chart chrome: one glass tooltip look, soft bar-hover transitions, and a small reusable
+   "value pill" for chart hover-readouts (crosshair axis pills, range-bar hover readout). ── */
+.chart-tip {
+  background: color-mix(in srgb, var(--mantine-color-body) 82%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  box-shadow: var(--mantine-shadow-md);
+}
+.recharts-bar-rectangle path {
+  transition: fill-opacity 150ms ease;
+}
+.chart-value-pill {
+  background: var(--mantine-color-accent-7);
+  color: var(--mantine-color-white);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* A gentle lift on hover for interactive/clickable cards app-wide (mirrors .home-stats). */
+.card-hover {
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--mantine-shadow-md);
+}
+
 /* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker accent underline. */
 .mantine-Tabs-tab {
   color: var(--mantine-color-dimmed);
@@ -256,6 +291,9 @@ button:active,
   button:active,
   .mantine-Button-root:active,
   .mantine-ActionIcon-root:active { transform: none; }
+  .recharts-bar-rectangle path { transition: none; }
+  .card-hover { transition: none; }
+  .card-hover:hover { transform: none; }
 }
 
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */

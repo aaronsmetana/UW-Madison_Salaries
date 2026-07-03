@@ -1,5 +1,14 @@
 import type { ReactNode } from 'react';
-import { Paper, Text, Group } from '@mantine/core';
+import { Text, Group } from '@mantine/core';
+
+/**
+ * One glass surface for every bespoke chart tooltip in the app — a translucent, blurred card (see
+ * `.chart-tip` in `src/styles/app.css`) instead of each tooltip hand-rolling its own Paper/div. Wrap a
+ * tooltip's content in this instead of `<Paper withBorder shadow="sm" p="xs">` or a raw styled div.
+ */
+export function TipSurface({ children }: { children: ReactNode }) {
+  return <div className="chart-tip">{children}</div>;
+}
 
 export interface ChartTooltipRow {
   color?: string;
@@ -10,13 +19,11 @@ export interface ChartTooltipRow {
 /**
  * One themed tooltip surface for charts that just need a straightforward "series name + value" list
  * (as opposed to a derived-prose tooltip like TrendsPanel's median+YoY summary, which stays bespoke).
- * Matches the Paper-based look already used by the app's other custom tooltips, instead of Recharts'
- * unstyled default box.
  */
 export function ChartTooltip({ label, rows }: { label?: ReactNode; rows: ChartTooltipRow[] }) {
   if (!rows.length) return null;
   return (
-    <Paper withBorder shadow="sm" p="xs">
+    <TipSurface>
       {label != null && <Text size="sm" fw={600} mb={4}>{label}</Text>}
       {rows.map((r, i) => (
         <Group key={i} gap={10} wrap="nowrap" justify="space-between">
@@ -29,6 +36,6 @@ export function ChartTooltip({ label, rows }: { label?: ReactNode; rows: ChartTo
           <Text size="xs" fw={600} style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{r.value}</Text>
         </Group>
       ))}
-    </Paper>
+    </TipSurface>
   );
 }

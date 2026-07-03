@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
 import { fmtK } from '../lib/chartStyle';
@@ -5,7 +6,10 @@ import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 
 /** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line,
  *  optional gray `benchmarks` ticks (e.g. title median / p75), and optional `quartiles` (¼/½/¾ of the
- *  official min→max, drawn as subtle ticks + a caption) drawn inside the band. */
+ *  official min→max, drawn as subtle ticks + a caption) drawn inside the band. Hovering the band shows
+ *  a cursor-following readout of the salary and % through the band at that point — the same interaction
+ *  PeerRangeBar offers, so the two strips (rendered side-by-side on Person's "Pay & standing" tab) read
+ *  as one consistent family. */
 export function PayBandBar({
   min, max, value = null, target = null, benchmarks = [], quartiles = false,
 }: {
@@ -22,15 +26,31 @@ export function PayBandBar({
   const status = value == null ? null : value < min ? 'below min' : value > max ? 'over max' : `${Math.round(raw * 100)}% through band`;
   const color = value == null ? 'gray' : value < min ? 'yellow' : value > max ? 'red' : 'pos';
   const H = 22;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [hoverPct, setHoverPct] = useState<number | null>(null);
+  const hoverValue = hoverPct != null ? min + (hoverPct / 100) * span : null;
+
+  const updateHover = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    setHoverPct(frac * 100);
+  };
 
   return (
     <div>
       <div
+        ref={trackRef}
+        onMouseMove={(e) => updateHover(e.clientX)}
+        onMouseLeave={() => setHoverPct(null)}
         style={{
           position: 'relative',
           height: H,
           borderRadius: H / 2,
           background: 'linear-gradient(90deg, var(--mantine-color-gray-2), var(--mantine-color-gray-4))',
+          cursor: 'crosshair',
         }}
       >
         {target != null && (
@@ -91,6 +111,21 @@ export function PayBandBar({
               transform: 'translate(-50%, -50%)',
             }}
           />
+        )}
+        {/* Cursor-following hover readout: salary + % through the band at this point. */}
+        {hoverPct != null && hoverValue != null && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${hoverPct}%`,
+              bottom: H + 8,
+              transform: 'translateX(-50%)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <span className="chart-value-pill">~{usd(hoverValue)} · {Math.round(hoverPct)}% through the band</span>
+          </div>
         )}
       </div>
       <Group justify="space-between" mt={6}>

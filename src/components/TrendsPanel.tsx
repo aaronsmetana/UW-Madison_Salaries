@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { Card, Text, Loader, Paper, Group } from '@mantine/core';
+import { Card, Text, Loader, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceLine, LabelList,
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { lineGlowDefs } from './chartDefs';
+import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, whereAll, filterKey } from '../lib/queries';
@@ -37,7 +38,7 @@ function TrendTip({ active, payload, label }: {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
-    <Paper withBorder shadow="sm" p="xs">
+    <TipSurface>
       <Text size="sm" fw={600}>{label}</Text>
       <Text size="sm">
         Median {usd(p.med)}{' '}
@@ -46,7 +47,7 @@ function TrendTip({ active, payload, label }: {
       <Text size="xs" c="dimmed">
         {num(p.hc)} paid{p.renew != null ? ` · ${num(p.renew)} renewable` : ''}
       </Text>
-    </Paper>
+    </TipSurface>
   );
 }
 

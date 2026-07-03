@@ -1,18 +1,18 @@
 import { useParams } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
 } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconDownload } from '@tabler/icons-react';
 import {
-  ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -22,6 +22,8 @@ import { usd, num, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
 import { MiniBar } from '../components/MiniBar';
+import { TipSurface } from '../components/chart/ChartTooltip';
+import { barGradientDefs } from '../components/chartDefs';
 
 interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
 
@@ -30,12 +32,12 @@ function TenureTip({ active, payload }: { active?: boolean; payload?: { payload:
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 8, padding: '6px 10px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600 }}>{fullName(d.fn, d.ln) || '—'}</div>
-      <div style={{ fontSize: 12 }}>Pay: {usd(d.pay)}</div>
-      <div style={{ fontSize: 12 }}>Tenure: {d.tenure.toFixed(1)} years</div>
-      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>Click to view profile</div>
-    </div>
+    <TipSurface>
+      <Text size="sm" fw={600}>{fullName(d.fn, d.ln) || '—'}</Text>
+      <Text size="xs">Pay: {usd(d.pay)}</Text>
+      <Text size="xs">Tenure: {d.tenure.toFixed(1)} years</Text>
+      <Text size="xs" c="dimmed" mt={2}>Click to view profile</Text>
+    </TipSurface>
   );
 }
 
@@ -49,6 +51,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export default function School() {
+  const uid = useId();
+  const [hoveredBin, setHoveredBin] = useState<number | null>(null);
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
   useDocTitle(name);
@@ -280,7 +284,7 @@ export default function School() {
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-            <Tooltip formatter={(v: number) => usd(v)} />
+            <Tooltip formatter={(v: number) => usd(v)} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
@@ -299,6 +303,7 @@ export default function School() {
         </Group>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={distData} margin={{ left: 12, right: 12 }}>
+            <defs>{barGradientDefs(uid, { bar: 'var(--bar)' })}</defs>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis
@@ -308,8 +313,17 @@ export default function School() {
               domain={distScale === 'log' ? [0.5, 'auto'] : undefined}
               allowDataOverflow={distScale === 'log'}
             />
-            <Tooltip formatter={(v: number) => [num(v), 'People']} />
-            <Bar dataKey="n" name="People" fill="var(--bar)" radius={BAR_RADIUS} />
+            <Tooltip formatter={(v: number) => [num(v), 'People']} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
+            <Bar
+              dataKey="n"
+              name="People"
+              fill={`url(#${uid}-bar-bar)`}
+              radius={BAR_RADIUS}
+              onMouseEnter={(_, i) => setHoveredBin(i)}
+              onMouseLeave={() => setHoveredBin(null)}
+            >
+              {distData.map((_, i) => <Cell key={i} fillOpacity={hoveredBin != null && hoveredBin !== i ? 0.45 : 1} />)}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
         <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />

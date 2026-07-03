@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
 import { Box, Group, Text } from '@mantine/core';
-import { usd, pct } from '../lib/format';
+import { usd } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
+import { TipSurface } from './chart/ChartTooltip';
+import { CrosshairLayer } from './chart/CrosshairLayer';
 
 export interface ScatterPoint {
   tenure: number;
@@ -33,13 +35,19 @@ function leastSquares(pts: ScatterPoint[]): { slope: number; intercept: number }
   return { slope, intercept: sBar - slope * tBar };
 }
 
-/** A circle marker; Recharts injects cx/cy when passed as a Scatter `shape`. A wide transparent hit
- *  circle behind the visible dot gives a "proximity" hover target so you don't have to land on the dot
- *  exactly; the visible circle grows a touch on hover (see `.scatter-dot` in app.css). */
-function PeerDot({ cx, cy, r = 4.5, fill, stroke }: { cx?: number; cy?: number; r?: number; fill?: string; stroke?: string }) {
+interface DotProps {
+  cx?: number; cy?: number; r?: number; fill?: string; stroke?: string;
+  payload?: ScatterPoint; onHover?: (p: ScatterPoint) => void; onLeave?: () => void;
+}
+
+/** A circle marker; Recharts injects cx/cy/payload when passed as a Scatter `shape`. A wide transparent
+ *  hit circle behind the visible dot gives a "proximity" hover target so you don't have to land on the
+ *  dot exactly; the visible circle grows a touch on hover (see `.scatter-dot` in app.css) and reports
+ *  itself to the parent's crosshair via `onHover`/`onLeave`. */
+function PeerDot({ cx, cy, r = 4.5, fill, stroke, payload, onHover, onLeave }: DotProps) {
   if (cx == null || cy == null) return <g />;
   return (
-    <g>
+    <g onMouseEnter={() => payload && onHover?.(payload)} onMouseLeave={onLeave}>
       <circle cx={cx} cy={cy} r={15} fill="transparent" />
       <circle className="scatter-dot" cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.9} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />
     </g>
@@ -48,11 +56,11 @@ function PeerDot({ cx, cy, r = 4.5, fill, stroke }: { cx?: number; cy?: number; 
 
 /** The "this person" marker: a wide transparent hit area, an expanding/fading pulse ring (static when
  *  the user prefers reduced motion), and the accent dot. */
-function SelfDot({ cx, cy }: { cx?: number; cy?: number }) {
+function SelfDot({ cx, cy, payload, onHover, onLeave }: DotProps) {
   if (cx == null || cy == null) return <g />;
   const reduce = prefersReducedMotion();
   return (
-    <g>
+    <g onMouseEnter={() => payload && onHover?.(payload)} onMouseLeave={onLeave}>
       <circle cx={cx} cy={cy} r={16} fill="transparent" />
       <circle cx={cx} cy={cy} r={9} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={2} opacity={reduce ? 0.45 : 0.9}>
         {!reduce && (
@@ -71,10 +79,10 @@ function ScatterTip({ active, payload }: { active?: boolean; payload?: { payload
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <Box style={{ background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 8, padding: '6px 10px' }}>
+    <TipSurface>
       <Text size="xs" fw={600}>{d.name}{d.isSelf ? ' (this person)' : ''}</Text>
       <Text size="xs" c="dimmed">{d.tenure.toFixed(1)} yrs · {usd(d.pay)}</Text>
-    </Box>
+    </TipSurface>
   );
 }
 
@@ -88,6 +96,7 @@ function LegendSwatch({ swatch, label }: { swatch: ReactNode; label: string }) {
  * Pay-vs-tenure scatter for everyone with the same title (the caller filters to the active cohort).
  * The subject pops in accent; same-school peers are green, others gray. A dashed least-squares line shows
  * the pay tenure alone predicts, and a callout reads whether the subject sits above or below that curve.
+ * A crosshair locks onto the subject by default and glides to whichever point is hovered.
  */
 export function TenurePayScatter({
   points,
@@ -103,6 +112,8 @@ export function TenurePayScatter({
     const k = pt?.personKey ?? pt?.payload?.personKey;
     if (k) nav(`/person/${encodeURIComponent(k)}`);
   };
+  const reduceMotion = prefersReducedMotion();
+  const [hover, setHover] = useState<ScatterPoint | null>(null);
   const reg = leastSquares(points);
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   const xMax = Math.ceil(tMax / 10) * 10;
@@ -115,37 +126,31 @@ export function TenurePayScatter({
 
   const expected = reg && self ? reg.intercept + reg.slope * self.tenure : null;
   const gap = expected != null && self ? self.pay - expected : null;
-  const gapPct = gap != null && expected ? gap / expected : null;
-  // Gaps under 2% are noise-level (rounding, mid-cycle timing) — call those "in line" rather than
-  // flagging a direction that isn't really meaningful.
-  const neutral = gapPct != null && Math.abs(gapPct) < 0.02;
   const above = gap != null && gap >= 0;
+
+  // The crosshair rests on "this person" and glides to whatever's hovered; a hovered peer gets a
+  // slightly larger ring so the shift in emphasis reads clearly against the resting state.
+  const active = hover ?? (self ? { tenure: self.tenure, pay: self.pay } : null);
+  const emphasize = !!hover && !hover.isSelf;
+  const onHover = (p: ScatterPoint) => setHover(p);
+  const onLeave = () => setHover(null);
 
   return (
     <div>
-      {expected != null && gap != null && gapPct != null && self && (
+      {expected != null && gap != null && self && (
         <Box
           mb="md"
-          className={!neutral && !above ? 'tenure-callout' : undefined}
+          className={above ? undefined : 'tenure-callout'}
           style={{
-            borderLeft: `3px solid ${neutral ? 'var(--mantine-color-default-border)' : above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-orange-5)'}`,
-            background: neutral ? 'var(--mantine-color-default-hover)' : above ? 'var(--mantine-color-pos-light)' : 'var(--mantine-color-orange-light)',
+            borderLeft: `3px solid ${above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-orange-5)'}`,
+            background: above ? 'var(--mantine-color-pos-light)' : 'var(--mantine-color-orange-light)',
             borderRadius: 8,
             padding: '10px 12px',
           }}
         >
           <Text size="sm">
-            {neutral ? (
-              <>
-                <b>In line with the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically pays{' '}
-                {usd(expected)} — this person is within {pct(Math.abs(gapPct))} of that ({usd(Math.abs(gap))} {above ? 'more' : 'less'}).
-              </>
-            ) : (
-              <>
-                <b>{above ? 'Above' : 'Below'} the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically
-                pays {usd(expected)}. This person earns <b>{usd(Math.abs(gap))} ({pct(Math.abs(gapPct))})</b> {above ? 'more' : 'less'} than tenure alone predicts.
-              </>
-            )}
+            <b>{above ? 'Above' : 'Below'} the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically
+            pays {usd(expected)}. This person earns <b>{usd(Math.abs(gap))}</b> {above ? 'more' : 'less'} than tenure alone predicts.
           </Text>
         </Box>
       )}
@@ -168,7 +173,7 @@ export function TenurePayScatter({
             name="Pay"
             width={56}
             tick={AXIS_TICK}
-            tickFormatter={(v) => `$${Math.round(v / 1000)}k`}
+            tickFormatter={fmtK}
             domain={['auto', 'auto']}
             padding={{ top: 10, bottom: 10 }}
           />
@@ -182,9 +187,20 @@ export function TenurePayScatter({
               segment={[{ x: 0, y: reg.intercept }, { x: xMax, y: reg.intercept + reg.slope * xMax }]}
             />
           )}
-          <Scatter data={others} shape={<PeerDot fill="var(--mantine-color-gray-5)" />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
-          <Scatter data={schoolPts} shape={<PeerDot fill="var(--mantine-color-pos-6)" />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
-          <Scatter data={selfPts} shape={<SelfDot />} isAnimationActive={false} />
+          <Scatter data={others} shape={<PeerDot fill="var(--mantine-color-gray-5)" onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={schoolPts} shape={<PeerDot fill="var(--mantine-color-pos-6)" onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={selfPts} shape={<SelfDot onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} />
+          {active && (
+            <Customized
+              component={CrosshairLayer}
+              pointX={active.tenure}
+              pointY={active.pay}
+              xPillLabel={`${active.tenure.toFixed(1)}y`}
+              yPillLabel={usd(active.pay)}
+              emphasize={emphasize}
+              instant={reduceMotion}
+            />
+          )}
         </ScatterChart>
       </ResponsiveContainer>
 

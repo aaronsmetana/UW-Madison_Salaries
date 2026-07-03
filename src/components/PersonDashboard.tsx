@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert, Paper } from '@mantine/core';
+import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
@@ -8,6 +8,7 @@ import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, fmtDate } from '../lib/format';
+import { TipSurface } from './chart/ChartTooltip';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
@@ -40,7 +41,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <Paper withBorder shadow="sm" p="xs">
+    <TipSurface>
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
       <Text size="sm">Salary: {usd(d.salary)}</Text>
@@ -48,7 +49,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
-    </Paper>
+    </TipSurface>
   );
 }
 
@@ -379,7 +380,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <Text size="sm" fw={600}>How {name} compares to others with the title {latest?.title}</Text>
             {peerRank != null && <Text size="sm" c="dimmed">ranks <b>#{peerRank}</b> of {num(peer.n)} by salary</Text>}
           </Group>
-          <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} />
+          <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} values={peerPays} />
           {peerPct != null && (
             <Text size="sm" mt="sm">Paid more than <b>{peerPct}%</b> of people with this title.</Text>
           )}

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Paper } from '@mantine/core';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
-import { AXIS_TICK, GRID, BAR_RADIUS } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE } from '../lib/chartStyle';
 import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
@@ -13,6 +13,8 @@ import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
+import { TipSurface } from './chart/ChartTooltip';
+import { barGradientDefs } from './chartDefs';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; school: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
@@ -23,6 +25,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function ChangesPanel() {
+  const uid = useId();
+  const [hoveredWf, setHoveredWf] = useState<number | null>(null);
+  const [hoveredDist, setHoveredDist] = useState<number | null>(null);
   const { scope, metric, filters } = useControls();
   const where = whereAll(scope, filters);
   const { data: summary } = useSummary();
@@ -219,9 +224,18 @@ export function ChangesPanel() {
       step('Net change', Math.min(0, tot), tot, 'net'),
     ];
   }, [d]);
-  const wfColor = (kind: string, amount: number) =>
-    kind === 'net' ? (amount >= 0 ? 'var(--mantine-color-accent-6)' : 'var(--mantine-color-red-6)')
-      : kind === 'pos' ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-red-5)';
+  // Slot name into the waterfall chart's own gradient <defs> (see wfGradientColors below) — kept
+  // distinct from the raw color so each bar renders its "lit from above" gradient rather than a flat fill.
+  const wfColorSlot = (kind: string, amount: number) =>
+    kind === 'net' ? (amount >= 0 ? 'accent6' : 'red6') : kind === 'pos' ? 'pos6' : 'red5';
+  const wfGradientColors = {
+    accent6: 'var(--mantine-color-accent-6)', red6: 'var(--mantine-color-red-6)',
+    pos6: 'var(--mantine-color-pos-6)', red5: 'var(--mantine-color-red-5)',
+  };
+  const distGradientColors = {
+    red5: 'var(--mantine-color-red-5)', gray4: 'var(--mantine-color-gray-4)', pos5: 'var(--mantine-color-pos-5)',
+  };
+  const distColorSlot = (bucket: number) => (bucket < 0 ? 'red5' : bucket === 0 ? 'gray4' : 'pos5');
 
   // Share of continuing staff who got any raise, and the bucket the median raise lands in (histogram marker).
   const raisedPct = equity?.n_raised != null && s?.stayers ? equity.n_raised / s.stayers : null;
@@ -331,6 +345,7 @@ export function ChangesPanel() {
         {waterfall.length > 0 && (
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={waterfall} margin={{ left: 12, right: 12, top: 24 }}>
+              <defs>{barGradientDefs(uid, wfGradientColors)}</defs>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="name" tick={AXIS_TICK} />
               <YAxis width={56} tickFormatter={(v) => usdCompact(v)} tick={AXIS_TICK} />
@@ -340,17 +355,30 @@ export function ChangesPanel() {
                   if (!active || !payload?.length) return null;
                   const w = payload[0].payload as { name: string; amount: number };
                   return (
-                    <Paper withBorder shadow="sm" p="xs">
+                    <TipSurface>
                       <Text size="sm" fw={600}>{w.name}</Text>
                       <Text size="sm" c={w.amount >= 0 ? 'pos' : 'red'}>{w.amount >= 0 ? '+' : ''}{usd(w.amount)}</Text>
-                    </Paper>
+                    </TipSurface>
                   );
                 }}
               />
               <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
               <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
-              <Bar dataKey="bar" stackId="w" radius={BAR_RADIUS} isAnimationActive={false}>
-                {waterfall.map((w, i) => <Cell key={i} fill={wfColor(w.kind, w.amount)} />)}
+              <Bar
+                dataKey="bar"
+                stackId="w"
+                radius={BAR_RADIUS}
+                isAnimationActive={false}
+                onMouseEnter={(_, i) => setHoveredWf(i)}
+                onMouseLeave={() => setHoveredWf(null)}
+              >
+                {waterfall.map((w, i) => (
+                  <Cell
+                    key={i}
+                    fill={`url(#${uid}-bar-${wfColorSlot(w.kind, w.amount)})`}
+                    fillOpacity={hoveredWf != null && hoveredWf !== i ? 0.45 : 1}
+                  />
+                ))}
                 <LabelList
                   dataKey="amount" position="top"
                   formatter={(v: number) => `${v >= 0 ? '+' : '−'}${usdCompact(Math.abs(v))}`}
@@ -366,17 +394,28 @@ export function ChangesPanel() {
         <Text size="sm" fw={600} mb="sm">Raise distribution (% change, continuing staff)</Text>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12, top: 24 }}>
+            <defs>{barGradientDefs(`${uid}-dist`, distGradientColors)}</defs>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} />
-            <Tooltip formatter={(v: number) => [num(v), 'People']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
+            <Tooltip formatter={(v: number) => [num(v), 'People']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} contentStyle={TIP_STYLE} />
             {medBucketLabel && (
               <ReferenceLine x={medBucketLabel} stroke="var(--mantine-color-accent-6)" strokeDasharray="3 3"
                 label={{ value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
             )}
-            <Bar dataKey="n" name="People" radius={BAR_RADIUS}>
+            <Bar
+              dataKey="n"
+              name="People"
+              radius={BAR_RADIUS}
+              onMouseEnter={(_, i) => setHoveredDist(i)}
+              onMouseLeave={() => setHoveredDist(null)}
+            >
               {(raiseDist ?? []).map((r, i) => (
-                <Cell key={i} fill={r.pct_bucket < 0 ? 'var(--mantine-color-red-5)' : r.pct_bucket === 0 ? 'var(--mantine-color-gray-4)' : 'var(--mantine-color-pos-5)'} />
+                <Cell
+                  key={i}
+                  fill={`url(#${uid}-dist-bar-${distColorSlot(r.pct_bucket)})`}
+                  fillOpacity={hoveredDist != null && hoveredDist !== i ? 0.45 : 1}
+                />
               ))}
             </Bar>
           </BarChart>

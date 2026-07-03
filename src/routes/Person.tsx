@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, Paper, ScrollArea, Popover,
-  Tooltip as MantineTooltip,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
+  Tooltip as MantineTooltip, ThemeIcon,
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -13,7 +13,8 @@ import { wrapChartTitle } from '../lib/chartText';
 import { YoyPill } from '../components/chart/pills';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
-import { IconAlertTriangle, IconArrowRight } from '@tabler/icons-react';
+import { TipSurface } from '../components/chart/ChartTooltip';
+import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
@@ -42,7 +43,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
   const d = payload[0].payload;
   const partTime = d.rate != null && Math.round(d.rate) !== Math.round(d.salary);
   return (
-    <Paper withBorder shadow="sm" p="xs">
+    <TipSurface>
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
       <Text size="sm">Actual paid: {usd(d.salary)}</Text>
@@ -52,7 +53,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
-    </Paper>
+    </TipSurface>
   );
 }
 
@@ -440,6 +441,8 @@ export default function Person() {
   const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
   const animatedPay = useCountUp(lastSalary); // hero value counts up once on mount (reduced-motion → final)
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
+  const animatedGrowth = useCountUp(totalChange, 800);
+  const animatedTenure = useCountUp(tenureYears, 800);
   // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
   const firstDate = trend[0]?.date ?? null;
   const lastDate = trend[trend.length - 1]?.date ?? null;
@@ -745,14 +748,19 @@ export default function Person() {
           <Stack gap="lg" className="tab-rise">
             {/* Lead + supporting stat row: Actual pay dominates; Salary growth · Tenure are quieter. */}
             <div className="stat-cells">
-              {/* Lead — Actual pay: signature accent rail + a date chip top-right; the value counts up on mount. */}
+              {/* Lead — Actual pay: signature accent rail + a date chip top-right; the value counts up on mount.
+                  Clicking jumps to the Salary trend tab, where this number is charted over time. */}
               <Card
                 withBorder
                 radius="sm"
                 p="lg"
-                className="stat-lead"
+                className="stat-lead card-hover"
                 bg="var(--mantine-color-default-hover)"
-                style={{ position: 'relative', overflow: 'hidden' }}
+                style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                onClick={() => setTab('trends')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('trends'); } }}
               >
                 <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' }} />
                 <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
@@ -780,12 +788,28 @@ export default function Person() {
               </Card>
 
               {/* Salary growth — the change %, with the timeframe inline so the window reads as part of the
-                  number; the snapshot count / window-start (and any rate divergence) sit below as context. */}
-              <Card withBorder radius="sm" p="lg">
-                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Salary growth</Text>
+                  number; the snapshot count / window-start (and any rate divergence) sit below as context.
+                  Clicking jumps to the Salary trend tab, same as the lead card. */}
+              <Card
+                withBorder
+                radius="sm"
+                p="lg"
+                className="card-hover"
+                style={{ cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                onClick={() => setTab('trends')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('trends'); } }}
+              >
+                <Group gap={6} wrap="nowrap">
+                  <ThemeIcon size={20} radius="md" variant="light" color={totalChange == null ? 'gray' : totalChange < 0 ? 'red' : 'pos'}>
+                    <IconTrendingUp size={13} />
+                  </ThemeIcon>
+                  <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Salary growth</Text>
+                </Group>
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text fw={700} c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
-                    {sgnPct(totalChange)}
+                    {sgnPct(animatedGrowth)}
                   </Text>
                   {spanYears != null && spanYears >= 0.1 && (
                     <Text size="sm" c="dimmed">over {spanYears.toFixed(1)} yrs</Text>
@@ -798,12 +822,27 @@ export default function Person() {
                 )}
               </Card>
 
-              {/* Tenure */}
-              <Card withBorder radius="sm" p="lg">
-                <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Tenure</Text>
+              {/* Tenure — clicking jumps to the History tab, where the title/date timeline lives. */}
+              <Card
+                withBorder
+                radius="sm"
+                p="lg"
+                className="card-hover"
+                style={{ cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                onClick={() => setTab('history')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('history'); } }}
+              >
+                <Group gap={6} wrap="nowrap">
+                  <ThemeIcon size={20} radius="md" variant="light" color="accent">
+                    <IconClockHour4 size={13} />
+                  </ThemeIcon>
+                  <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Tenure</Text>
+                </Group>
                 <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>
-                  {tenureYears == null ? '—' : (
-                    <>{tenureYears.toFixed(1)}<Text span fw={500} c="dimmed" style={{ fontSize: 14 }}> yrs</Text></>
+                  {animatedTenure == null ? '—' : (
+                    <>{animatedTenure.toFixed(1)}<Text span fw={500} c="dimmed" style={{ fontSize: 14 }}> yrs</Text></>
                   )}
                 </Text>
                 {hireYear && (
@@ -849,7 +888,7 @@ export default function Person() {
                 </Text>
                 {cohortStats && cohortStats.n >= 2 ? (
                   <>
-                    <PeerRangeBar min={cohortStats.lo} p25={cohortStats.p25} median={cohortStats.med} p75={cohortStats.p75} max={cohortStats.hi} value={lastSalary} />
+                    <PeerRangeBar min={cohortStats.lo} p25={cohortStats.p25} median={cohortStats.med} p75={cohortStats.p75} max={cohortStats.hi} value={lastSalary} values={cohortPays} />
                     {cohortPct != null && (
                       <Text size="sm" mt="sm" mb="md">
                         Paid more than <b>{cohortPct}%</b> of {cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}.

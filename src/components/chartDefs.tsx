@@ -20,3 +20,22 @@ export function lineGlowDefs(id: string) {
     </Fragment>
   );
 }
+
+/**
+ * One vertical gradient per bar color: full strength at the top fading to ~72% opacity at the base, so
+ * every bar chart in the app shares the same subtle "lit from above" depth instead of a flat fill.
+ * `id` scopes the `<defs>` (unique per chart instance); `colors` is a `{ slot: cssColorVar }` map —
+ * reference a slot's gradient via `url(#${id}-bar-${slot})`.
+ */
+export function barGradientDefs(id: string, colors: Record<string, string>) {
+  return (
+    <Fragment>
+      {Object.entries(colors).map(([slot, color]) => (
+        <linearGradient key={slot} id={`${id}-bar-${slot}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={1} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.72} />
+        </linearGradient>
+      ))}
+    </Fragment>
+  );
+}

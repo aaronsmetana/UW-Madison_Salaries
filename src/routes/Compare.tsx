@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, fmtSnapTick } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, fmtSnapTick } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
 import { useTray, type TrayItem } from '../state/tray';
 import { useControls } from '../state/controls';
@@ -428,7 +428,7 @@ export default function Compare() {
                     <CartesianGrid {...GRID} />
                     <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={AXIS_TICK} />
                     <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-                    <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} />
+                    <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} contentStyle={TIP_STYLE} />
                     {persons.map((p) => (
                       <Scatter
                         key={p.id}
