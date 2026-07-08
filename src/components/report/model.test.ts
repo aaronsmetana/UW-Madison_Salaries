@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, type CohortRow } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, type CohortRow } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -74,6 +74,28 @@ describe('migrateConfig', () => {
     const current = { ...defaultConfig(), sections: [...defaultConfig().sections, 'risk'] };
     const migrated = migrateConfig(current);
     expect(migrated.sections).toContain('risk');
+  });
+});
+
+describe('buildSupervisoryCase', () => {
+  it('returns an empty case with no subject pay or no named reports', () => {
+    expect(buildSupervisoryCase(null, [{ key: 'a', name: 'A', pay: 100_000 }])).toEqual({ reports: [], invertedCount: 0, top: null, target15: null });
+    expect(buildSupervisoryCase(100_000, [])).toEqual({ reports: [], invertedCount: 0, top: null, target15: null });
+  });
+  it('flags inversions, computes the guideline differential, and picks the highest-paid report as the 15% target base', () => {
+    const c = buildSupervisoryCase(100_000, [
+      { key: 'a', name: 'Above', pay: 115_000 },
+      { key: 'b', name: 'Below', pay: 90_000 },
+    ]);
+    expect(c.invertedCount).toBe(1);
+    const above = c.reports.find((r) => r.key === 'a')!;
+    expect(above.inverted).toBe(true);
+    expect(above.differential).toBeCloseTo(0.15, 5);
+    expect(above.belowFloor).toBe(true); // subject (100k) < 115k * 1.15
+    const below = c.reports.find((r) => r.key === 'b')!;
+    expect(below.inverted).toBe(false);
+    expect(c.top?.key).toBe('a'); // highest-paid report, regardless of inversion
+    expect(c.target15).toBe(Math.round(115_000 * 1.15));
   });
 });
 

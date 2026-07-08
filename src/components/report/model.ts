@@ -1,6 +1,8 @@
 // Shared types + pure helpers for the comparison "equity review studio" (left setup pane + right brief).
+import type { ReactNode } from 'react';
 import { usd, plural } from '../../lib/format';
 import { percentile as percentileOf } from '../../lib/stats';
+import { POLICY } from './sources';
 
 // ── Palette (mirrors the brief's strict three-color rule) ──
 export const CAND = 'var(--mantine-color-accent-6)'; // candidate / subject — teal accent
@@ -199,6 +201,36 @@ export function deficitBadge(gapToMed: number | null): { text: string; tone: Bad
   return { text: 'at the median', tone: 'neutral' };
 }
 
+// ── Supervisory pay-inversion — anchored to the UW Salary Administration Guidelines' own
+//    "Supervisors or Managers and Subordinates" differential (see ./sources.tsx POLICY). ──
+export interface SupervisoryReport {
+  key: string; name: string; pay: number;
+  differential: number; // POLICY.payDifferential(max, min) of (subject, this report)'s pay
+  inverted: boolean; // this report is paid MORE than the subject
+  belowFloor: boolean; // subject is paid less than this report's pay × (1 + guideline differential)
+}
+export interface SupervisoryCase {
+  reports: SupervisoryReport[];
+  invertedCount: number;
+  top: SupervisoryReport | null; // the highest-paid named direct report
+  target15: number | null; // top's pay × 1.15, rounded — an opt-in base-parity target
+}
+export function buildSupervisoryCase(subjectPay: number | null, rows: { key: string; name: string; pay: number }[]): SupervisoryCase {
+  if (subjectPay == null || !rows.length) return { reports: [], invertedCount: 0, top: null, target15: null };
+  const reports: SupervisoryReport[] = rows.map((r) => ({
+    key: r.key,
+    name: r.name,
+    pay: r.pay,
+    differential: POLICY.payDifferential(Math.max(subjectPay, r.pay), Math.min(subjectPay, r.pay)),
+    inverted: r.pay > subjectPay,
+    belowFloor: subjectPay < r.pay * (1 + POLICY.supervisorDifferential),
+  }));
+  const invertedCount = reports.filter((r) => r.inverted).length;
+  const top = reports.reduce<SupervisoryReport | null>((best, r) => (!best || r.pay > best.pay ? r : best), null);
+  const target15 = top ? Math.round(top.pay * (1 + POLICY.supervisorDifferential)) : null;
+  return { reports, invertedCount, top, target15 };
+}
+
 // ── Receipt (itemized "base parity + value-adds = total") ──
 export interface ReceiptLine { id: string; label: string; amount: number; kind: 'base' | 'addon' | 'negotiated' }
 
@@ -211,10 +243,11 @@ export interface CaseStrength {
 }
 export function caseStrength(opts: {
   gapToMed: number | null; med: number | null; invCount: number; streakYears: number; activeFactors: number;
+  supervisoryInvertedCount?: number; // an out-earning direct report counts at least as much as a peer tenure inversion
 }): CaseStrength {
-  const { gapToMed, med, invCount, streakYears, activeFactors } = opts;
+  const { gapToMed, med, invCount, streakYears, activeFactors, supervisoryInvertedCount = 0 } = opts;
   const below = gapToMed != null && gapToMed > 0 && med ? Math.min(1, gapToMed / (0.1 * med)) : 0;
-  const inv = Math.min(1, invCount / 3);
+  const inv = Math.min(1, (invCount + supervisoryInvertedCount) / 3);
   const sustained = Math.min(1, streakYears / 5);
   const support = Math.min(1, activeFactors / 3);
   // Each bar is that signal's weighted CONTRIBUTION to the total (so the four bars sum to the score).
@@ -235,8 +268,10 @@ export interface ComparatorRow {
   key: string; name: string; title: string | null; pay: number; tenure: number | null;
   isSubject: boolean; isAnomaly: boolean; lessTenure: boolean; gap: number;
 }
-export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression';
-export interface ProofModel { kind: ProofKind; value: string; label: string; detail: string }
+export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression' | 'supervisory';
+// `label`/`detail` are ReactNode (not string) so a footnote `<Sup n={..}/>` marker can be embedded
+// inline; `value` (the big headline number/text on the card) stays a plain string.
+export interface ProofModel { kind: ProofKind; value: string; label: ReactNode; detail: ReactNode }
 export interface PayHistoryPoint { date: string; pay: number | null; med: number | null }
 export interface BriefModel {
   subjectName: string; subjectFirst: string; subjectPay: number | null;
@@ -255,6 +290,7 @@ export interface BriefModel {
   history: PayHistoryPoint[];
   format: 'brief' | 'detailed'; sections: string[];
   jobCode: string | null;
+  supervisory: SupervisoryCase;
 }
 
 /** Copy-ready talking points (left-pane only — never part of the printed brief). */
@@ -262,6 +298,7 @@ export function buildTalkingPoints(o: {
   subjectName: string; current: number | null; recommended: number | null; delta: number; pct: number;
   cohortLabel: string; percentile: number | null; invCount: number; invMaxGap: number;
   streakYears: number; factors: { label: string; note: string; amount: number | null }[];
+  supervisory?: SupervisoryCase;
 }): string {
   const lines: string[] = [];
   lines.push(`Subject: ${o.subjectName}`);
@@ -273,6 +310,11 @@ export function buildTalkingPoints(o: {
   if (o.percentile != null) lines.push(`• Paid at the ${ordinal(o.percentile)} percentile of ${o.cohortLabel}.`);
   if (o.invCount > 0) lines.push(`• ${plural(o.invCount, 'peer has', 'peers have')} less UW tenure and higher pay (up to +${usd(o.invMaxGap)}).`);
   if (o.streakYears >= 1) lines.push(`• Below the title median ${o.streakYears} consecutive year${o.streakYears === 1 ? '' : 's'}.`);
+  for (const r of o.supervisory?.reports ?? []) {
+    if (r.inverted && o.current != null) {
+      lines.push(`• Supervises ${r.name}, who is paid +${usd(r.pay - o.current)} more (UW guideline: ≥15% differential for supervisors over non-managing subordinates).`);
+    }
+  }
   for (const f of o.factors) lines.push(`• ${f.label}${f.note ? `: ${f.note}` : ''}${f.amount ? ` (+${usd(f.amount)})` : ''}.`);
   return lines.join('\n');
 }

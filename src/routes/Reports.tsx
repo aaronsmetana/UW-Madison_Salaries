@@ -21,7 +21,7 @@ import { ReportSetup, type SetupComparator, type SuggestPerson } from '../compon
 import { ReportBrief } from '../components/report/ReportBrief';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
-  cohortDocLabel, ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
+  cohortDocLabel, ordinal, buildSupervisoryCase, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
 
@@ -193,6 +193,19 @@ export default function Reports() {
     cmpReady && !!jobCode
   );
 
+  // Direct reports named under the Supervisory-scope factor — resolved at the same snapshot, kept
+  // separate from `trayPeople` (they are not comparators; naming one here never affects cohort stats).
+  const superviseeIds = config.supervisees.map((k) => sqlStr(k)).join(',');
+  const { data: superviseeRows } = useSql<TrayPerson>(
+    ['rpt-supervisees', superviseeIds, snap ?? '', metric],
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
+        any_value(school) school, ${personPay(metric)} pay,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${superviseeIds})
+     GROUP BY person_key`,
+    cmpReady && config.supervisees.length > 0
+  );
+
   // ── Derivation ──
   // As-of the snapshot date (not today) — matches every peer-side tenure calc below (all computed via
   // date_diff(..., snapshot_date)), so the subject's own tenure agrees with the peer matrix/inversions.
@@ -299,6 +312,13 @@ export default function Reports() {
     return { count: cands.length, maxGapPay };
   }, [peerListRows, subjectPay, subjectKey]);
 
+  // Supervisory pay inversion — anchored to the UW Salary Administration Guidelines' own
+  // "Supervisors or Managers and Subordinates" differential (≥15%; see components/report/sources.tsx).
+  const supervisoryCase = useMemo(
+    () => buildSupervisoryCase(subjectPay, (superviseeRows ?? []).map((r) => ({ key: r.person_key, name: fullName(r.fn, r.ln), pay: r.pay }))),
+    [subjectPay, superviseeRows]
+  );
+
   // Real-dollar (CPI-adjusted) erosion: the subject's own pay history may show nominal growth that's
   // actually a real-dollar pay cut once inflation is factored in — a distinct, often more persuasive,
   // framing than the raw percentage.
@@ -335,11 +355,19 @@ export default function Reports() {
   // ── Target + receipt math ──
   const targetPerson = (trayPeople ?? []).find((p) => p.person_key === config.targetKey) ?? null;
   const targetPay = targetPerson?.pay ?? null;
-  const baseParity = targetPay ?? stats.expMed ?? med ?? null;
+  const baseParityCore = targetPay ?? stats.expMed ?? med ?? null;
+  // Opt-in: raise base parity to the UW guideline's 15%-above-highest-paid-direct-report floor — only
+  // when it's actually higher than the existing target/median (this never LOWERS the ask; the user
+  // must also have checked the box in ReportSetup for this to apply at all).
+  const supervisorWins = config.supervisorTarget && supervisoryCase.target15 != null
+    && (baseParityCore == null || supervisoryCase.target15 > baseParityCore);
+  const baseParity = supervisorWins ? supervisoryCase.target15 : baseParityCore;
   const medianKind = stats.expMed != null ? 'tenure-adjusted median' : 'median';
-  const baseLabel = targetPerson
-    ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
-    : `${medianKind} of ${docCohortLabel}`;
+  const baseLabel = supervisorWins
+    ? `15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'} (UW Salary Administration Guidelines)`
+    : targetPerson
+      ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
+      : `${medianKind} of ${docCohortLabel}`;
 
   const activeFactors = useMemo(
     () => [
@@ -378,6 +406,19 @@ export default function Reports() {
     const out: ProofModel[] = [];
     if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: '' });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: plural(stats.invCount, 'peer'), label: stats.invCount === 1 ? 'tenure inversion — less UW tenure, higher pay' : 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
+    const belowFloorReports = supervisoryCase.reports.filter((r) => r.belowFloor);
+    if (belowFloorReports.length > 0) {
+      const invertedReports = supervisoryCase.reports.filter((r) => r.inverted);
+      const maxGap = invertedReports.length ? Math.max(...invertedReports.map((r) => r.pay - (subjectPay ?? 0))) : null;
+      out.push({
+        kind: 'supervisory',
+        value: invertedReports.length > 0 ? plural(invertedReports.length, 'direct report') : '<15% differential',
+        label: invertedReports.length > 0 ? 'direct reports paid more than their supervisor' : "pay doesn't meet the UW supervisory-differential guideline",
+        detail: invertedReports.length > 0
+          ? `paid up to +${usd(maxGap ?? 0)} more than ${subjectFirst}; UW guideline calls for ≥15% above a non-managing subordinate`
+          : `UW guideline calls for ≥15% above a non-managing subordinate — narrower for ${plural(belowFloorReports.length, 'named direct report')}`,
+      });
+    }
     if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
     if (band && subjectPay != null && band.max > band.min) {
       const posPct = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
@@ -385,7 +426,7 @@ export default function Reports() {
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
     return out;
-  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst]);
+  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst, supervisoryCase]);
 
   // Time-to-parity: absent an adjustment, how long a standard 2%/yr raise alone would take to reach
   // today's cohort median — reinforces that "wait and see" isn't a neutral option.
@@ -395,19 +436,24 @@ export default function Reports() {
   );
 
   // ── Case strength + talking points (left pane only) ──
-  const strength = useMemo(() => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length }), [stats, med, longevity, activeFactors.length]);
+  const strength = useMemo(
+    () => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length, supervisoryInvertedCount: supervisoryCase.invertedCount }),
+    [stats, med, longevity, activeFactors.length, supervisoryCase]
+  );
   const talkingPoints = useMemo(() => buildTalkingPoints({
     subjectName, current: subjectPay, recommended, delta: targetDelta, pct: targetPct, cohortLabel: docCohortLabel,
     percentile: stats.percentile, invCount: stats.invCount, invMaxGap: stats.invMaxGap, streakYears: longevity.streakYears,
-    factors: activeFactors,
-  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, docCohortLabel, stats, longevity, activeFactors]);
+    factors: activeFactors, supervisory: supervisoryCase,
+  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, docCohortLabel, stats, longevity, activeFactors, supervisoryCase]);
 
   const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ');
 
   const basisLabel = belowTarget
-    ? (targetPerson
-        ? `to match ${fullName(targetPerson.fn, targetPerson.ln)}'s salary${addOnSum > 0 ? ', plus documented value-adds' : ''}`
-        : `to reach the ${medianKind} of ${docCohortLabel}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
+    ? (supervisorWins
+        ? `to reach a 15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'}${addOnSum > 0 ? ', plus documented value-adds' : ''}`
+        : targetPerson
+          ? `to match ${fullName(targetPerson.fn, targetPerson.ln)}'s salary${addOnSum > 0 ? ', plus documented value-adds' : ''}`
+          : `to reach the ${medianKind} of ${docCohortLabel}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
     : '';
 
   const model: BriefModel = {
@@ -420,6 +466,7 @@ export default function Reports() {
     divergence: progression.avgAbs != null && progression.subjAbs != null && progression.subjAbs < progression.avgAbs ? { avgAbs: progression.avgAbs, subjAbs: progression.subjAbs } : null,
     history: medHist ?? [],
     format: config.format, sections: config.sections, jobCode,
+    supervisory: supervisoryCase,
   };
 
   // ── Setup-pane data ──
@@ -511,11 +558,18 @@ export default function Reports() {
         strengthHints={strengthHints}
         talkingPoints={talkingPoints}
         overAsk={overAsk}
+        overAskGuidelineAnchored={supervisorWins}
         onReset={() => {
           if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
           setConfig(defaultConfig());
         }}
         onHover={setHovered}
+        supervisoryCase={supervisoryCase}
+        onAddSupervisee={(p) => {
+          if (p.key === subjectKey) return;
+          if (!config.supervisees.includes(p.key)) setConfig({ ...config, supervisees: [...config.supervisees, p.key] });
+        }}
+        onRemoveSupervisee={(key) => setConfig({ ...config, supervisees: config.supervisees.filter((k) => k !== key) })}
       />
     </Box>
   );

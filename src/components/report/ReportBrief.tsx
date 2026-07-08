@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip,
 } from 'recharts';
-import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus } from '@tabler/icons-react';
+import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers } from '@tabler/icons-react';
 import { usd, pct } from '../../lib/format';
 import { AXIS_TICK, GRID, TIP_STYLE, fmtUsd } from '../../lib/chartStyle';
 import { CAND, PEER, type BriefModel, type ProofKind } from './model';
@@ -46,6 +46,7 @@ const PROOF_ICON: Record<ProofKind, ReactNode> = {
   sustained: <IconHistory size={22} />,
   gradeband: <IconGauge size={22} />,
   compression: <IconUserPlus size={22} />,
+  supervisory: <IconUsers size={22} />,
 };
 
 export function ReportBrief({ model, hovered, onHover }: {
@@ -236,7 +237,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                                   </Anchor>
                                 )}
                                 {r.isAnomaly
-                                  ? <Badge size="xs" variant="filled" color="accent" tt="none" ml={6}>Equity Anomaly</Badge>
+                                  ? <Badge size="xs" variant="filled" color="accent" tt="none" ml={6}>Pay inversion</Badge>
                                   : r.lessTenure && <Badge size="xs" variant="light" color="accent" tt="none" ml={6}>less tenure</Badge>}
                               </>
                             )}

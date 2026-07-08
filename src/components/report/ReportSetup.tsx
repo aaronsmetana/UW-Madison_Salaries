@@ -6,11 +6,11 @@ import {
 import { useClipboard } from '@mantine/hooks';
 import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
-import { usd } from '../../lib/format';
+import { usd, pct } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import {
   COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, newCustomFactor, type ReportConfig, type CohortMode, type FactorKey,
-  type CaseStrength, type BadgeTone, type StrengthKey,
+  type CaseStrength, type BadgeTone, type StrengthKey, type SupervisoryCase,
 } from './model';
 
 export interface SetupComparator { key: string; name: string; title: string | null; school: string | null; tenure: number | null; pay: number | null; isSubject: boolean }
@@ -22,7 +22,8 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
-  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, onReset, onHover,
+  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskGuidelineAnchored, onReset, onHover,
+  supervisoryCase, onAddSupervisee, onRemoveSupervisee,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -41,8 +42,14 @@ export function ReportSetup({
   strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>>;
   talkingPoints: string;
   overAsk: boolean;
+  overAskGuidelineAnchored?: boolean;
   onReset: () => void;
   onHover: (id: string | null) => void;
+  /** Resolved direct reports named under the Supervisory-scope factor (pay/differential vs. the
+   *  subject) — a distinct, report-local list, never mixed into the peer/comparator tray. */
+  supervisoryCase: SupervisoryCase;
+  onAddSupervisee: (p: { key: string; name: string }) => void;
+  onRemoveSupervisee: (key: string) => void;
 }) {
   const set = (patch: Partial<ReportConfig>) => onChange({ ...config, ...patch });
   const setFactor = (key: FactorKey, patch: Partial<ReportConfig['factors'][FactorKey]>) =>
@@ -250,6 +257,44 @@ export function ReportSetup({
                         </>
                       )}
                     </Group>
+
+                    {/* Supervisory pay-inversion check — report-local, distinct from the peer/comparator tray */}
+                    {f.key === 'supervision' && (
+                      <Box mt={8} pt={8} style={{ borderTop: '1px dashed var(--mantine-color-default-border)' }}>
+                        <Text size="xs" fw={600} c="dimmed" mb={4}>Direct reports (optional — checks for a supervisory pay inversion)</Text>
+                        <SearchBox
+                          size="sm"
+                          placeholder="Name a direct report you supervise…"
+                          onPick={(h) => onAddSupervisee({ key: h.person_key, name: h.name })}
+                        />
+                        {supervisoryCase.reports.length > 0 && (
+                          <Stack gap={4} mt={8}>
+                            {supervisoryCase.reports.map((r) => (
+                              <Group key={r.key} justify="space-between" wrap="nowrap" gap={6}>
+                                <Text size="xs" truncate style={{ flex: 1, minWidth: 0 }}>{r.name} · {usd(r.pay)}</Text>
+                                <Group gap={4} wrap="nowrap">
+                                  <Badge size="xs" variant="light" color={r.inverted ? 'orange' : 'gray'} tt="none" style={{ whiteSpace: 'nowrap' }}>
+                                    {r.inverted ? '+' : '−'}{pct(r.differential)} vs you
+                                  </Badge>
+                                  <ActionIcon variant="subtle" color="gray" size="xs" aria-label={`Remove ${r.name}`} onClick={() => onRemoveSupervisee(r.key)}>
+                                    <IconX size={12} />
+                                  </ActionIcon>
+                                </Group>
+                              </Group>
+                            ))}
+                          </Stack>
+                        )}
+                        {supervisoryCase.top && supervisoryCase.invertedCount > 0 && supervisoryCase.target15 != null && (
+                          <Checkbox
+                            mt={8}
+                            size="xs"
+                            label={`Set target to 15% above ${supervisoryCase.top.name} (${usd(supervisoryCase.target15)}) — UW Salary Administration Guidelines`}
+                            checked={config.supervisorTarget}
+                            onChange={(e) => set({ supervisorTarget: e.currentTarget.checked })}
+                          />
+                        )}
+                      </Box>
+                    )}
                   </Stack>
                 )}
               </Box>
@@ -406,7 +451,9 @@ export function ReportSetup({
           <Group gap={6} wrap="nowrap" align="flex-start" mt="md">
             <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
             <Text size="xs" c="orange.7">
-              The ask exceeds this cohort's 75th percentile — consider trimming value-adds for credibility.
+              {overAskGuidelineAnchored
+                ? "The ask exceeds this cohort's 75th percentile, but it's anchored to the UW Salary Administration Guidelines' published supervisory-differential rule — not an unsupported reach."
+                : "The ask exceeds this cohort's 75th percentile — consider trimming value-adds for credibility."}
             </Text>
           </Group>
         )}
