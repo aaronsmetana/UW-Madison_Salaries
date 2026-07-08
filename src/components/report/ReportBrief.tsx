@@ -57,7 +57,7 @@ export function ReportBrief({ model, hovered, onHover }: {
   const {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, realErosion, rows, maxPay, showTenure, anonymize,
-    netSavings, divergence, history, format, sections, jobCode, activeFactors,
+    attrition, divergence, history, format, sections, jobCode, activeFactors,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -313,22 +313,29 @@ export function ReportBrief({ model, hovered, onHover }: {
             </Card>
           )}
 
-          {/* Retention & replacement cost */}
+          {/* Retention & replacement cost — off by default (see Report sections); when shown, every
+              figure is either an independent, cited estimate or the public salary record itself. */}
           {has('risk') && (
             <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
               <Text size="sm" fw={700} mb={4}>Retention &amp; Replacement Cost</Text>
-              {belowTarget && netSavings > 0 && (
+              <Text size="sm" mb={6}>
+                Independent research estimates the cost of replacing an employee at roughly one-third of
+                annual salary at the median (Work Institute, 2020 Retention Report), rising to one-half to
+                two times salary for specialized or hard-to-fill roles (Gallup, 2019) — about{' '}
+                <b>{usd(subjectPay * 0.33)}–{usd(subjectPay * 2)}</b> for this position.
+              </Text>
+              {attrition && (
                 <Text size="sm" mb={6}>
-                  Granting this adjustment saves the department an estimated{' '}
-                  <Text span fw={800} c="green.7">{usd(netSavings)}</Text> vs. the low-end (0.5×) replacement estimate below.
+                  In the public salary record, <b>{attrition.leftN} of {attrition.ofN}</b> employees holding
+                  this title as of {attrition.fromLabel} no longer hold it as of {attrition.toLabel}.
                 </Text>
               )}
-              <Text size="sm">
-                {belowTarget ? `The one-time ${usd(targetDelta)} adjustment` : `Retaining ${subjectFirst}`} is a fraction of turnover cost:
-                industry HR studies (e.g., SHRM cost-per-hire research) estimate replacing {subjectFirst} at <b>{usd(subjectPay * 0.5)}–{usd(subjectPay * 2)}</b> (roughly
-                0.5×–2× annual salary in recruiting, lost productivity, and ramp-up). Keeping proven institutional knowledge is the
-                lower-cost, lower-risk choice.
-              </Text>
+              {belowTarget && (
+                <Text size="sm" c="dimmed">
+                  For comparison, the proposed {usd(targetDelta)} adjustment is {pct(targetDelta / (subjectPay * 0.33))} of
+                  even the conservative (one-third-of-salary) replacement estimate.
+                </Text>
+              )}
             </Paper>
           )}
 

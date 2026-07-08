@@ -137,6 +137,29 @@ export default function Reports() {
     return grades.find((g) => g.grade === subj.grade_number && g.basis === subj.grade_basis) ?? null;
   }, [subj, grades]);
 
+  // As-of the snapshot date (not today) — matches every peer-side tenure calc below (all computed via
+  // date_diff(..., snapshot_date)), so the subject's own tenure agrees with the peer matrix/inversions.
+  const snapDate = summary?.snapshots.find((x) => x.id === snap)?.date ?? null;
+  // The snapshot ~2 years before the subject's current one (for the retention section's attrition
+  // stat) — falls back to the earliest available snapshot when the record doesn't go back that far.
+  // `summary.snapshots` is the canonical chronological order (handles the Nov 2021 pre/post-TTC tie
+  // correctly; a plain date/string sort would not).
+  const fromSnapInfo = useMemo(() => {
+    const list = summary?.snapshots;
+    if (!list?.length || !snapDate) return null;
+    const nowTime = new Date(snapDate).getTime();
+    const targetTime = nowTime - 2 * 365.25 * 864e5;
+    let best = list[0];
+    let bestDiff = Infinity;
+    for (const s of list) {
+      const t = new Date(s.date).getTime();
+      if (t > nowTime) continue; // never look forward of the subject's own snapshot
+      const diff = Math.abs(t - targetTime);
+      if (diff < bestDiff) { bestDiff = diff; best = s; }
+    }
+    return best;
+  }, [summary, snapDate]);
+
   const { data: peerListRows } = useSql<PeerRow>(
     ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school,
@@ -206,10 +229,27 @@ export default function Reports() {
     cmpReady && config.supervisees.length > 0
   );
 
+  // Title attrition for the retention section — how many of the subject's same-title peers (as of
+  // ~2 years ago) are no longer in that title today. "No longer in it" (not "left UW") since this
+  // includes promotions/transfers, not just departures.
+  const fromSnapId = fromSnapInfo?.id ?? '';
+  const { data: attritionRows } = useSql<{ of_n: number; left_n: number }>(
+    ['rpt-attrition', jobCode ?? '', snap ?? '', fromSnapId],
+    `WITH f AS (SELECT DISTINCT person_key FROM salaries
+                WHERE snapshot_id = ${sqlStr(fromSnapId)} AND job_code = ${sqlStr(jobCode ?? '')}),
+          t AS (SELECT DISTINCT person_key FROM salaries
+                WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')})
+     SELECT (SELECT count(*) FROM f) of_n,
+            (SELECT count(*) FROM f WHERE person_key NOT IN (SELECT person_key FROM t)) left_n`,
+    cmpReady && !!jobCode && !!fromSnapId && fromSnapId !== snap
+  );
+  const attrition = useMemo(() => {
+    const r = attritionRows?.[0];
+    if (!r || !fromSnapInfo || r.of_n <= 0) return null;
+    return { leftN: r.left_n, ofN: r.of_n, fromLabel: fromSnapInfo.label, toLabel: snapLabel };
+  }, [attritionRows, fromSnapInfo, snapLabel]);
+
   // ── Derivation ──
-  // As-of the snapshot date (not today) — matches every peer-side tenure calc below (all computed via
-  // date_diff(..., snapshot_date)), so the subject's own tenure agrees with the peer matrix/inversions.
-  const snapDate = summary?.snapshots.find((x) => x.id === snap)?.date ?? null;
   const tenureYears = useMemo(() => {
     if (!subj?.date_of_hire || !snapDate) return null;
     return Math.max(0, (new Date(snapDate).getTime() - new Date(subj.date_of_hire).getTime()) / (365.25 * 864e5));
@@ -462,7 +502,7 @@ export default function Reports() {
     basisLabel: config.headline.trim() || basisLabel,
     receipt, activeFactors, proofs, yearsToParity, realErosion, rows, maxPay, showTenure,
     anonymize: config.anonymize,
-    netSavings: subjectPay != null ? subjectPay * 0.5 - targetDelta : 0,
+    attrition,
     divergence: progression.avgAbs != null && progression.subjAbs != null && progression.subjAbs < progression.avgAbs ? { avgAbs: progression.avgAbs, subjAbs: progression.subjAbs } : null,
     history: medHist ?? [],
     format: config.format, sections: config.sections, jobCode,

@@ -285,7 +285,7 @@ export interface BriefModel {
   realErosion: { firstYear: number; nominalPct: number; realPct: number } | null;
   rows: ComparatorRow[]; maxPay: number; showTenure: boolean;
   anonymize: boolean;
-  netSavings: number;
+  attrition: { leftN: number; ofN: number; fromLabel: string; toLabel: string } | null;
   divergence: { avgAbs: number; subjAbs: number } | null;
   history: PayHistoryPoint[];
   format: 'brief' | 'detailed'; sections: string[];
