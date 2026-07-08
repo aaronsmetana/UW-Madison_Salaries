@@ -8,7 +8,7 @@ import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num, pct, fullName, fmtDate } from '../lib/format';
+import { usd, pct, fullName, fmtDate, plural } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
@@ -20,7 +20,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
 import {
-  COHORT_DEFS, FACTOR_DEFS, defaultConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
+  COHORT_DEFS, FACTOR_DEFS, defaultConfig, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
   cohortDocLabel, ordinal, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
@@ -109,7 +109,7 @@ export default function Reports() {
   // Persist the whole setup (cohort, factors, override, sections…) per subject, so switching between
   // several in-progress equity cases (or a page refresh) doesn't lose the work already done on each.
   useEffect(() => {
-    setConfig(subjectKey ? readPref(`report.cfg.${subjectKey}`, defaultConfig()) : defaultConfig());
+    setConfig(subjectKey ? migrateConfig(readPref<unknown>(`report.cfg.${subjectKey}`, null)) : defaultConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectKey]);
   useEffect(() => {
@@ -377,13 +377,13 @@ export default function Reports() {
     if (subjectPay == null) return [];
     const out: ProofModel[] = [];
     if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: '' });
-    if (stats.invCount > 0) out.push({ kind: 'inversion', value: `${num(stats.invCount)} peers`, label: 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
+    if (stats.invCount > 0) out.push({ kind: 'inversion', value: plural(stats.invCount, 'peer'), label: stats.invCount === 1 ? 'tenure inversion — less UW tenure, higher pay' : 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
     if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
     if (band && subjectPay != null && band.max > band.min) {
       const posPct = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
       if (posPct < 50) out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in grade ${grade}'s official salary range`, detail: `band ${usd(band.min)}–${usd(band.max)}` });
     }
-    if (compression.count > 0) out.push({ kind: 'compression', value: `${num(compression.count)} recent hire${compression.count === 1 ? '' : 's'}`, label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
+    if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
     return out;
   }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst]);
 

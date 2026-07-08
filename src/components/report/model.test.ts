@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, type CohortRow } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, type CohortRow } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -36,6 +36,44 @@ describe('deficitBadge', () => {
     expect(deficitBadge(-5000)?.tone).toBe('surplus');
     expect(deficitBadge(0)?.tone).toBe('neutral');
     expect(deficitBadge(null)).toBeNull();
+  });
+});
+
+describe('defaultConfig', () => {
+  it('does not enable the retention/replacement-cost section by default', () => {
+    expect(defaultConfig().sections).not.toContain('risk');
+  });
+  it('enables the market-standing section by default', () => {
+    expect(defaultConfig().sections).toContain('standing');
+  });
+});
+
+describe('migrateConfig', () => {
+  it('returns fresh defaults for garbage input', () => {
+    expect(migrateConfig(null)).toEqual(defaultConfig());
+    expect(migrateConfig(undefined)).toEqual(defaultConfig());
+    expect(migrateConfig('nope')).toEqual(defaultConfig());
+  });
+  it('strips a pre-v1 config\'s retention section (it was on by an old default, not a choice) and backfills market-standing', () => {
+    const legacy = { sections: ['highlights', 'factors', 'peers', 'history', 'risk'] };
+    const migrated = migrateConfig(legacy);
+    expect(migrated.sections).not.toContain('risk');
+    expect(migrated.sections).toContain('standing');
+  });
+  it('preserves the user\'s own edits (custom factors, cohort choice) through migration', () => {
+    const legacy = {
+      cohort: 'grade',
+      customFactors: [{ id: 'custom-1', label: 'Led the migration', amount: 5000, note: 'Q1 2026' }],
+      sections: ['highlights', 'peers'],
+    };
+    const migrated = migrateConfig(legacy);
+    expect(migrated.cohort).toBe('grade');
+    expect(migrated.customFactors).toEqual(legacy.customFactors);
+  });
+  it('is idempotent at the current version — a v1 config with retention deliberately re-enabled keeps it', () => {
+    const current = { ...defaultConfig(), sections: [...defaultConfig().sections, 'risk'] };
+    const migrated = migrateConfig(current);
+    expect(migrated.sections).toContain('risk');
   });
 });
 

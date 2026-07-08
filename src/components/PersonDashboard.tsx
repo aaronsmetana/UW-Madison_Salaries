@@ -156,11 +156,13 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return { order, index, bySnap };
   }, [historyRows]);
 
+  // As-of the record's own latest snapshot date (not the viewer's "now") — matches the comparison
+  // report's tenure calc (Reports.tsx), so the two report types never disagree on the same person's tenure.
   const tenureYears = useMemo(() => {
     const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
-    if (!hire) return null;
-    return Math.max(0, (Date.now() - new Date(hire).getTime()) / (365.25 * 864e5));
-  }, [rows]);
+    if (!hire || !latest?.snapshot_date) return null;
+    return Math.max(0, (new Date(latest.snapshot_date).getTime() - new Date(hire).getTime()) / (365.25 * 864e5));
+  }, [rows, latest]);
 
   const firstSalary = trend[0]?.salary ?? null;
   const lastSalary = trend[trend.length - 1]?.salary ?? null;

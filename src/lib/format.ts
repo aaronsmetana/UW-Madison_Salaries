@@ -23,6 +23,11 @@ export function num(n: number | null | undefined): string {
   return Number(n).toLocaleString('en-US');
 }
 
+/** "1 peer", "3 peers" — count formatted with `num()`, singular/plural word chosen by count. */
+export function plural(n: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${num(n)} ${n === 1 ? singular : pluralForm}`;
+}
+
 export function pct(n: number | null | undefined, digits = 1): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
   return `${(Number(n) * 100).toFixed(digits)}%`;

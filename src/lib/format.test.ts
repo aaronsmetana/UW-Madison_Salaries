@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, formatName, fullName, fmtDate, fmtBasis } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -12,6 +12,13 @@ describe('format', () => {
   it('num formats with thousands separators', () => {
     expect(num(1234567)).toBe('1,234,567');
     expect(num(null)).toBe('—');
+  });
+  it('plural picks the singular/plural word by count', () => {
+    expect(plural(1, 'peer')).toBe('1 peer');
+    expect(plural(3, 'peer')).toBe('3 peers');
+    expect(plural(0, 'peer')).toBe('0 peers');
+    expect(plural(1, 'peer has', 'peers have')).toBe('1 peer has');
+    expect(plural(2, 'peer has', 'peers have')).toBe('2 peers have');
   });
   it('pct scales a fraction to a percentage', () => {
     expect(pct(0.025)).toBe('2.5%');

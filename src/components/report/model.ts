@@ -1,5 +1,5 @@
 // Shared types + pure helpers for the comparison "equity review studio" (left setup pane + right brief).
-import { usd, num } from '../../lib/format';
+import { usd, plural } from '../../lib/format';
 import { percentile as percentileOf } from '../../lib/stats';
 
 // ── Palette (mirrors the brief's strict three-color rule) ──
@@ -56,18 +56,26 @@ export function newCustomFactor(): CustomFactor {
 
 export const SECTION_DEFS = [
   { value: 'highlights', label: 'Evidence & proof points' },
+  { value: 'standing', label: 'Market standing' },
   { value: 'factors', label: 'Documented qualifications & responsibilities' },
   { value: 'peers', label: 'Peer comparison' },
   { value: 'history', label: 'Pay history' },
   { value: 'risk', label: 'Retention & replacement cost' },
 ];
 
+/** Bump when `ReportConfig`'s shape or defaults change in a way that needs one-time migration of
+ *  already-saved (localStorage) configs — see `migrateConfig`. */
+export const CONFIG_VERSION = 1;
+
 export interface ReportConfig {
+  configVersion: number;
   cohort: CohortMode;
   tenureBand: number; // ± years
   targetKey: string | null; // a curated peer whose pay becomes the base parity
   factors: Record<FactorKey, FactorState>;
   customFactors: CustomFactor[]; // open-ended, user-typed justifications (label + optional +$)
+  supervisees: string[]; // person_keys of named direct reports (report-local, not tray items)
+  supervisorTarget: boolean; // opt-in: raise base parity to ≥15% above the highest-paid supervisee
   override: number | ''; // manual final-salary override
   headline: string; // optional manual headline override
   format: 'brief' | 'detailed';
@@ -77,17 +85,52 @@ export interface ReportConfig {
 
 export function defaultConfig(): ReportConfig {
   return {
+    configVersion: CONFIG_VERSION,
     cohort: 'all',
     tenureBand: 3,
     targetKey: null,
     factors: Object.fromEntries(FACTOR_DEFS.map((f) => [f.key, { on: false, amount: '', note: '' }])) as Record<FactorKey, FactorState>,
     customFactors: [],
+    supervisees: [],
+    supervisorTarget: false,
     override: '',
     headline: '',
     format: 'brief',
-    sections: SECTION_DEFS.map((s) => s.value),
+    // Retention/replacement-cost is opt-in, not default-on — it reads as abrasive in a document handed
+    // to a supervisor; every other section (incl. the new market-standing panel) stays default-on.
+    sections: SECTION_DEFS.map((s) => s.value).filter((v) => v !== 'risk'),
     anonymize: false,
   };
+}
+
+/**
+ * Upgrades a saved (localStorage) `ReportConfig` — of any prior shape — to the current one. Missing
+ * fields backfill from `defaultConfig()`; a `configVersion` below the current one also applies
+ * one-time migrations (rather than just defaulting new fields), since those configs got their old
+ * values from a since-changed *default*, not a deliberate user choice.
+ */
+export function migrateConfig(saved: unknown): ReportConfig {
+  const base = defaultConfig();
+  if (!saved || typeof saved !== 'object') return base;
+  const s = saved as Partial<ReportConfig> & { factors?: Record<string, unknown> };
+  const merged: ReportConfig = {
+    ...base,
+    ...s,
+    factors: { ...base.factors, ...(s.factors ?? {}) } as ReportConfig['factors'],
+    customFactors: s.customFactors ?? [],
+    sections: Array.isArray(s.sections) ? s.sections : base.sections,
+    supervisees: Array.isArray(s.supervisees) ? s.supervisees : [],
+    supervisorTarget: s.supervisorTarget ?? false,
+    configVersion: CONFIG_VERSION,
+  };
+  const savedVersion = typeof s.configVersion === 'number' ? s.configVersion : 0;
+  if (savedVersion < 1) {
+    // Retention defaulted ON before v1 — force it off (this directive), and backfill the new
+    // market-standing section, for any config saved under the old default.
+    merged.sections = merged.sections.filter((v) => v !== 'risk');
+    if (!merged.sections.includes('standing')) merged.sections.push('standing');
+  }
+  return merged;
 }
 
 // ── Pure stats helpers ──
@@ -228,7 +271,7 @@ export function buildTalkingPoints(o: {
   lines.push('');
   lines.push('Why:');
   if (o.percentile != null) lines.push(`• Paid at the ${ordinal(o.percentile)} percentile of ${o.cohortLabel}.`);
-  if (o.invCount > 0) lines.push(`• ${num(o.invCount)} peers with less UW tenure are paid more (up to +${usd(o.invMaxGap)}).`);
+  if (o.invCount > 0) lines.push(`• ${plural(o.invCount, 'peer has', 'peers have')} less UW tenure and higher pay (up to +${usd(o.invMaxGap)}).`);
   if (o.streakYears >= 1) lines.push(`• Below the title median ${o.streakYears} consecutive year${o.streakYears === 1 ? '' : 's'}.`);
   for (const f of o.factors) lines.push(`• ${f.label}${f.note ? `: ${f.note}` : ''}${f.amount ? ` (+${usd(f.amount)})` : ''}.`);
   return lines.join('\n');
