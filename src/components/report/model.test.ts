@@ -28,6 +28,13 @@ describe('cohortStats percentile', () => {
   it('returns null percentile with fewer than 2 total people', () => {
     expect(cohortStats([], 100_000, null).percentile).toBeNull();
   });
+  it('also reports the full quartile spread (min/p25/max) for the market-standing distribution bar', () => {
+    const rows: CohortRow[] = [90_000, 100_000, 110_000, 120_000].map((pay) => ({ pay, tenure: null }));
+    const stats = cohortStats(rows, 105_000, null);
+    expect(stats.min).toBe(90_000);
+    expect(stats.max).toBe(120_000);
+    expect(stats.p25).not.toBeNull();
+  });
 });
 
 describe('deficitBadge', () => {

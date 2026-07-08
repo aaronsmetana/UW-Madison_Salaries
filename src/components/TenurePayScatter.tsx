@@ -7,6 +7,7 @@ import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
 import { Box, Group, Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
+import { leastSquares } from '../lib/stats';
 import { TipSurface } from './chart/ChartTooltip';
 import { CrosshairLayer } from './chart/CrosshairLayer';
 
@@ -17,22 +18,6 @@ export interface ScatterPoint {
   isSelf: boolean;
   name: string;
   personKey: string;
-}
-
-/** Least-squares fit of pay on tenure over the current cohort. */
-function leastSquares(pts: ScatterPoint[]): { slope: number; intercept: number } | null {
-  const n = pts.length;
-  if (n < 2) return null;
-  const tBar = pts.reduce((s, p) => s + p.tenure, 0) / n;
-  const sBar = pts.reduce((s, p) => s + p.pay, 0) / n;
-  let num = 0, den = 0;
-  for (const p of pts) {
-    num += (p.tenure - tBar) * (p.pay - sBar);
-    den += (p.tenure - tBar) ** 2;
-  }
-  if (den === 0) return null;
-  const slope = num / den;
-  return { slope, intercept: sBar - slope * tBar };
 }
 
 interface DotProps {
@@ -115,7 +100,7 @@ export function TenurePayScatter({
   };
   const reduceMotion = prefersReducedMotion();
   const [hover, setHover] = useState<ScatterPoint | null>(null);
-  const reg = leastSquares(points);
+  const reg = leastSquares(points.map((p) => ({ x: p.tenure, y: p.pay })));
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   const xMax = Math.ceil(tMax / 10) * 10;
   const xTicks: number[] = [];

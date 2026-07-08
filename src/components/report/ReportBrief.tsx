@@ -5,10 +5,12 @@ import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip,
 } from 'recharts';
-import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers } from '@tabler/icons-react';
-import { usd, pct } from '../../lib/format';
+import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown } from '@tabler/icons-react';
+import { usd, pct, plural } from '../../lib/format';
 import { AXIS_TICK, GRID, TIP_STYLE, fmtUsd } from '../../lib/chartStyle';
-import { CAND, PEER, type BriefModel, type ProofKind } from './model';
+import { PeerRangeBar } from '../PeerRangeBar';
+import { TenurePayScatter } from '../TenurePayScatter';
+import { CAND, PEER, ordinal, type BriefModel, type ProofKind } from './model';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
 function fmtHistTick(d: string): string {
@@ -47,6 +49,7 @@ const PROOF_ICON: Record<ProofKind, ReactNode> = {
   gradeband: <IconGauge size={22} />,
   compression: <IconUserPlus size={22} />,
   supervisory: <IconUsers size={22} />,
+  tenureTrend: <IconTrendingDown size={22} />,
 };
 
 export function ReportBrief({ model, hovered, onHover }: {
@@ -56,8 +59,9 @@ export function ReportBrief({ model, hovered, onHover }: {
 }) {
   const {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
-    basisLabel, receipt, proofs, yearsToParity, realErosion, rows, maxPay, showTenure, anonymize,
+    basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors,
+    standing, tenureScatterPoints, raiseCycle,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -69,6 +73,11 @@ export function ReportBrief({ model, hovered, onHover }: {
   const has = (s: string) => sections.includes(s);
   const showReceipt = receipt.length > 1; // base + at least one add-on / negotiated line
   const aMax = divergence ? Math.max(divergence.avgAbs, divergence.subjAbs, 1) : 1;
+  // The detailed-format tenure scatter reuses the shared TenurePayScatter component as-is (same
+  // self-inclusive fit line as the Person page) — its callout may read a hair different from the
+  // proof card above, which fits peers only for a stricter, self-independent evidence claim.
+  const selfScatterPt = tenureScatterPoints.find((p) => p.isSelf);
+  const raiseDistMax = raiseCycle ? Math.max(1, ...raiseCycle.dist.map((d) => d.n)) : 1;
 
   return (
     <Card withBorder padding="xl" className="print-area report-brief">
@@ -96,7 +105,8 @@ export function ReportBrief({ model, hovered, onHover }: {
               </Text>
               {yearsToParity != null && yearsToParity >= 0.5 && (
                 <Text size="xs" c="dimmed" mt={4}>
-                  Absent this adjustment, a standard 2%/yr raise alone would take ~{Math.ceil(yearsToParity)} more {Math.ceil(yearsToParity) === 1 ? 'year' : 'years'} to reach today's median.
+                  Absent this adjustment, a raise at {pct(yearsToParityRate)}/yr ({yearsToParityObserved ? "this title's own observed raise rate" : 'a standard assumption'}) alone
+                  would take ~{Math.ceil(yearsToParity)} more {Math.ceil(yearsToParity) === 1 ? 'year' : 'years'} to reach today's median.
                 </Text>
               )}
 
@@ -170,6 +180,58 @@ export function ReportBrief({ model, hovered, onHover }: {
               Since {realErosion.firstYear}, {subjectFirst}'s pay rose {pct(realErosion.nominalPct)} nominally — a{' '}
               <Text span fw={600}>{pct(Math.abs(realErosion.realPct))} decline</Text> in real (CPI-adjusted) purchasing power.
             </Text>
+          )}
+
+          {/* Market standing — a distribution view of the active benchmark cohort + how the subject
+              stands across every other available comparison pool (title/grade/division/tenure-band). */}
+          {has('standing') && standing && standing.min != null && standing.p25 != null && standing.med != null && standing.p75 != null && standing.max != null && (
+            <>
+              <Text size="sm" fw={600} mb="xs">Market standing</Text>
+              <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                <Text size="xs" c="dimmed" mb="md">
+                  {subjectFirst}'s pay against {standing.cohortLabel} ({plural(standing.values.length, 'person', 'people')}).
+                </Text>
+                <PeerRangeBar min={standing.min} p25={standing.p25} median={standing.med} p75={standing.p75} max={standing.max} value={subjectPay} values={standing.values} />
+
+                {standing.pools.length > 0 && (
+                  <Table mt="lg" style={{ maxWidth: 640 }}>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Comparison pool</Table.Th>
+                        <Table.Th ta="right">n</Table.Th>
+                        <Table.Th ta="right">Median</Table.Th>
+                        <Table.Th ta="right">Percentile</Table.Th>
+                        <Table.Th ta="right">Gap</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {standing.pools.map((p) => (
+                        <Table.Tr key={p.label}>
+                          <Table.Td>{p.label}</Table.Td>
+                          <Table.Td ta="right">{p.n}</Table.Td>
+                          <Table.Td ta="right">{usd(p.med)}</Table.Td>
+                          <Table.Td ta="right">{p.percentile != null ? ordinal(p.percentile) : '—'}</Table.Td>
+                          <Table.Td ta="right">
+                            {p.gapToMed == null ? '—' : p.gapToMed > 0 ? `−${usd(p.gapToMed)}` : p.gapToMed < 0 ? `+${usd(-p.gapToMed)}` : 'at median'}
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                )}
+
+                {format === 'detailed' && tenureScatterPoints.length >= 2 && (
+                  <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+                    <Text size="sm" fw={700} mb={4}>Pay vs. tenure — same-title peers</Text>
+                    <TenurePayScatter
+                      points={tenureScatterPoints}
+                      self={selfScatterPt ? { tenure: selfScatterPt.tenure, pay: selfScatterPt.pay } : null}
+                      titleLabel="this title"
+                    />
+                  </Box>
+                )}
+              </Card>
+            </>
           )}
 
           {/* Documented qualifications & responsibilities — the evidence behind any value-add factors */}
@@ -296,6 +358,38 @@ export function ReportBrief({ model, hovered, onHover }: {
                   <Text size="xs" c="dimmed">Title median</Text>
                 </Group>
               </Group>
+
+              {raiseCycle && (
+                <Text size="sm" mt="md">
+                  Same-title peers received a median <b>{pct(raiseCycle.medianPct)}</b> raise from {raiseCycle.fromLabel} to {raiseCycle.toLabel}
+                  {raiseCycle.subjectPct != null && <>; {subjectFirst} received <b>{pct(raiseCycle.subjectPct)}</b></>}.
+                </Text>
+              )}
+
+              {format === 'detailed' && raiseCycle && raiseCycle.dist.length > 0 && (
+                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+                  <Text size="sm" fw={700}>Raise distribution ({raiseCycle.fromLabel} → {raiseCycle.toLabel})</Text>
+                  <Text size="xs" c="dimmed" mb="md">% change in pay among {plural(raiseCycle.n, 'continuing same-title peer')}.</Text>
+                  <Group align="flex-end" gap={4} style={{ height: 90 }}>
+                    {raiseCycle.dist.map((d) => (
+                      <div key={d.bucket} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            width: '100%', maxWidth: 22,
+                            height: `${Math.max(3, (d.n / raiseDistMax) * 70)}px`,
+                            background: d.bucket === raiseCycle.subjectBucket ? 'var(--mantine-color-accent-6)' : 'var(--mantine-color-gray-4)',
+                            borderRadius: '3px 3px 0 0',
+                          }}
+                        />
+                        <Text fz={9} c="dimmed" mt={2}>{d.bucket > 0 ? '+' : ''}{d.bucket}%</Text>
+                      </div>
+                    ))}
+                  </Group>
+                  {raiseCycle.subjectBucket != null && (
+                    <Text size="xs" c="dimmed" mt={4}>Accent bar = {subjectFirst}'s own bucket.</Text>
+                  )}
+                </Box>
+              )}
 
               {format === 'detailed' && divergence && (
                 <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>

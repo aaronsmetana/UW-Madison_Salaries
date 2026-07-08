@@ -12,16 +12,18 @@ import { usd, pct, fullName, fmtDate, plural } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
+import { leastSquares } from '../lib/stats';
 import { readPref, writePref, clearPref } from '../lib/prefs';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { EmptyState } from '../components/EmptyState';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
+import { type ScatterPoint } from '../components/TenurePayScatter';
 import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
-  cohortDocLabel, ordinal, buildSupervisoryCase, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
+  cohortDocLabel, ordinal, buildSupervisoryCase, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
 
@@ -159,6 +161,15 @@ export default function Reports() {
     }
     return best;
   }, [summary, snapDate]);
+  // The snapshot immediately before the subject's current one (for the raise-cycle comparison) —
+  // "immediately before" in the canonical `summary.snapshots` order, so Nov 2021's pre/post-TTC pair
+  // is never treated as a single raise cycle.
+  const prevSnapInfo = useMemo(() => {
+    const list = summary?.snapshots;
+    if (!list?.length || !snap) return null;
+    const idx = list.findIndex((s) => s.id === snap);
+    return idx > 0 ? list[idx - 1] : null;
+  }, [summary, snap]);
 
   const { data: peerListRows } = useSql<PeerRow>(
     ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
@@ -249,6 +260,46 @@ export default function Reports() {
     return { leftN: r.left_n, ofN: r.of_n, fromLabel: fromSnapInfo.label, toLabel: snapLabel };
   }, [attritionRows, fromSnapInfo, snapLabel]);
 
+  // Raise-cycle comparison — same-title peers who appear in BOTH the previous and current snapshot
+  // (continuing appointments only; new hires/departures would distort a "raise" comparison).
+  const prevSnapId = prevSnapInfo?.id ?? '';
+  const { data: raiseCycleRows } = useSql<{ person_key: string; pay_from: number; pay_to: number }>(
+    ['rpt-raise-cycle', jobCode ?? '', snap ?? '', prevSnapId, metric],
+    `WITH cur AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
+                  WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key),
+          prv AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
+                  WHERE snapshot_id = ${sqlStr(prevSnapId)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+     SELECT cur.person_key, prv.pay pay_from, cur.pay pay_to
+     FROM cur JOIN prv USING (person_key) WHERE cur.pay > 0 AND prv.pay > 0`,
+    cmpReady && !!jobCode && !!prevSnapId
+  );
+  const raiseCycle = useMemo(() => {
+    const rows = raiseCycleRows ?? [];
+    if (!rows.length || !prevSnapInfo) return null;
+    const raises = rows.map((r) => (r.pay_to - r.pay_from) / r.pay_from);
+    const medianPct = median(raises);
+    if (medianPct == null) return null;
+    const subjRow = subjectKey ? rows.find((r) => r.person_key === subjectKey) : undefined;
+    const subjectPct = subjRow ? (subjRow.pay_to - subjRow.pay_from) / subjRow.pay_from : null;
+    // Annualize using the actual elapsed time between the two snapshots, so a >1-year gap between
+    // snapshots doesn't get read as a single year's raise.
+    const monthsBetween = snapDate
+      ? Math.max(1, (new Date(snapDate).getTime() - new Date(prevSnapInfo.date).getTime()) / (30.44 * 864e5))
+      : 12;
+    const annualRate = Math.pow(1 + medianPct, 12 / monthsBetween) - 1;
+    // 5-point-wide % bins, clamped to [-25%, +50%] — matches ChangesPanel's raise-distribution convention.
+    const bucketOf = (p: number) => Math.floor(Math.min(Math.max(p, -0.25), 0.5) * 100 / 5) * 5;
+    const distMap = new Map<number, number>();
+    for (const r of raises) distMap.set(bucketOf(r), (distMap.get(bucketOf(r)) ?? 0) + 1);
+    const dist = [...distMap.entries()].sort((a, b) => a[0] - b[0]).map(([bucket, n]) => ({ bucket, n }));
+    return {
+      n: rows.length, medianPct, subjectPct,
+      fromLabel: prevSnapInfo.label, toLabel: snapLabel,
+      annualRate: annualRate > 0 ? annualRate : null,
+      dist, subjectBucket: subjectPct != null ? bucketOf(subjectPct) : null,
+    };
+  }, [raiseCycleRows, prevSnapInfo, subjectKey, snapDate, snapLabel]);
+
   // ── Derivation ──
   const tenureYears = useMemo(() => {
     if (!subj?.date_of_hire || !snapDate) return null;
@@ -297,6 +348,21 @@ export default function Reports() {
   // never appear verbatim in a document handed to a supervisor or HR.
   const docCohortLabel = cohortDocLabel(selectedMode, { school, grade, tenureBand: config.tenureBand });
 
+  // Market-standing panel: a distribution view of the ACTIVE cohort (the one selected in "Benchmark
+  // cohort") plus a broader multi-pool percentile table drawn from every other AVAILABLE lens (title
+  // grade/division/similar-tenure — "curated" is excluded here since that's the named peer table below).
+  const standing = useMemo(() => {
+    if (subjectPay == null) return null;
+    const values = cohortRowsFor(selectedMode).map((r) => r.pay).filter((p) => p > 0);
+    const pools = ALL_MODES
+      .filter((m) => m !== 'curated' && cohortAvailable[m])
+      .map((m) => {
+        const s = statsByMode[m];
+        return { label: cohortDocLabel(m, { school, grade, tenureBand: config.tenureBand }), n: s.n, med: s.med, percentile: s.percentile, gapToMed: s.gapToMed };
+      });
+    return { min: stats.min, p25: stats.p25, med: stats.med, p75: stats.p75, max: stats.max, values, cohortLabel: docCohortLabel, pools };
+  }, [subjectPay, stats, cohortRowsFor, selectedMode, school, grade, config.tenureBand, docCohortLabel, statsByMode, cohortAvailable]);
+
   // Longevity (consecutive years below the title median)
   const longevity = useMemo(() => {
     const rows = (medHist ?? []).filter((r) => r.pay != null && r.pay > 0 && r.med != null);
@@ -309,6 +375,34 @@ export default function Reports() {
     }
     return { belowCount: below.length, total: rows.length, streak: streakDates.length, streakYears: new Set(streakDates.map((d) => new Date(d).getFullYear())).size };
   }, [medHist]);
+
+  // Tenure-vs-pay regression over ALL same-title peers (not just the curated/cohort-filtered set) — a
+  // continuous "what tenure alone predicts" line, distinct from the discrete tenure-inversion count.
+  const tenureRegression = useMemo(() => {
+    if (subjectPay == null || tenureYears == null) return null;
+    const pts = (peerListRows ?? [])
+      .filter((r) => r.person_key !== subjectKey && r.tenure != null && r.pay > 0)
+      .map((r) => ({ x: r.tenure as number, y: r.pay }));
+    if (pts.length < 8) return null;
+    const reg = leastSquares(pts);
+    if (!reg) return null;
+    const expected = reg.intercept + reg.slope * tenureYears;
+    return { n: pts.length, expected, gap: expected - subjectPay };
+  }, [peerListRows, subjectPay, tenureYears, subjectKey]);
+
+  // Points for the (detailed-format-only) tenure-vs-pay scatter — same-title peers + the subject. Peer
+  // names are generic ("Peer") since this cohort can run into the hundreds; the curated peer table
+  // elsewhere already carries real names for the comparators the user chose to name.
+  const tenureScatterPoints: ScatterPoint[] = useMemo(() => {
+    if (subjectPay == null) return [];
+    const peerPts: ScatterPoint[] = (peerListRows ?? [])
+      .filter((r) => r.person_key !== subjectKey && r.tenure != null && r.pay > 0)
+      .map((r) => ({ tenure: r.tenure as number, pay: r.pay, sameSchool: school != null && r.school === school, isSelf: false, name: 'Peer', personKey: r.person_key }));
+    const selfPt: ScatterPoint[] = tenureYears != null
+      ? [{ tenure: tenureYears, pay: subjectPay, sameSchool: true, isSelf: true, name: subjectName, personKey: subjectKey ?? '' }]
+      : [];
+    return [...peerPts, ...selfPt];
+  }, [peerListRows, subjectPay, subjectKey, school, tenureYears, subjectName]);
 
   // Absolute-dollar raise divergence
   const progression = useMemo(() => {
@@ -462,17 +556,32 @@ export default function Reports() {
     if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
     if (band && subjectPay != null && band.max > band.min) {
       const posPct = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
-      if (posPct < 50) out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in grade ${grade}'s official salary range`, detail: `band ${usd(band.min)}–${usd(band.max)}` });
+      if (posPct < 50) {
+        const compaRatio = subjectPay / ((band.min + band.max) / 2);
+        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in grade ${grade}'s official salary range`, detail: `band ${usd(band.min)}–${usd(band.max)} · compa-ratio ${compaRatio.toFixed(2)}` });
+      }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
+    if (tenureRegression && tenureRegression.gap > 0) {
+      out.push({
+        kind: 'tenureTrend',
+        value: usd(tenureRegression.gap),
+        label: 'below what tenure alone predicts',
+        detail: `based on the pay-vs-tenure trend across ${plural(tenureRegression.n, 'same-title peer')}`,
+      });
+    }
     return out;
-  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst, supervisoryCase]);
+  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst, supervisoryCase, tenureRegression]);
 
-  // Time-to-parity: absent an adjustment, how long a standard 2%/yr raise alone would take to reach
-  // today's cohort median — reinforces that "wait and see" isn't a neutral option.
+  // Time-to-parity: absent an adjustment, how long a raise alone would take to reach today's cohort
+  // median — reinforces that "wait and see" isn't a neutral option. Uses this title's own observed
+  // annualized raise rate (from the raise-cycle comparison) when available, else a standard 2%/yr
+  // assumption — either way the rate is named in the sentence and footnoted.
+  const yearsToParityRate = raiseCycle?.annualRate != null && raiseCycle.annualRate > 0 ? raiseCycle.annualRate : 0.02;
+  const yearsToParityObserved = raiseCycle?.annualRate != null && raiseCycle.annualRate > 0;
   const yearsToParity = useMemo(
-    () => (subjectPay != null && med != null && med > subjectPay ? Math.log(med / subjectPay) / Math.log(1.02) : null),
-    [subjectPay, med]
+    () => (subjectPay != null && med != null && med > subjectPay ? Math.log(med / subjectPay) / Math.log(1 + yearsToParityRate) : null),
+    [subjectPay, med, yearsToParityRate]
   );
 
   // ── Case strength + talking points (left pane only) ──
@@ -500,13 +609,14 @@ export default function Reports() {
     subjectName, subjectFirst, subjectPay, headerMeta,
     recommended, belowTarget, targetDelta, targetPct,
     basisLabel: config.headline.trim() || basisLabel,
-    receipt, activeFactors, proofs, yearsToParity, realErosion, rows, maxPay, showTenure,
+    receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure,
     anonymize: config.anonymize,
     attrition,
     divergence: progression.avgAbs != null && progression.subjAbs != null && progression.subjAbs < progression.avgAbs ? { avgAbs: progression.avgAbs, subjAbs: progression.subjAbs } : null,
     history: medHist ?? [],
     format: config.format, sections: config.sections, jobCode,
     supervisory: supervisoryCase,
+    standing, tenureRegression, tenureScatterPoints, raiseCycle,
   };
 
   // ── Setup-pane data ──

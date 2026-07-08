@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { usd, plural } from '../../lib/format';
 import { percentile as percentileOf } from '../../lib/stats';
 import { POLICY } from './sources';
+import type { ScatterPoint } from '../TenurePayScatter';
 
 // ── Palette (mirrors the brief's strict three-color rule) ──
 export const CAND = 'var(--mantine-color-accent-6)'; // candidate / subject — teal accent
@@ -159,8 +160,11 @@ export function ordinal(n: number): string {
 export interface CohortRow { pay: number; tenure: number | null }
 export interface CohortStats {
   n: number;
+  min: number | null;
+  p25: number | null;
   med: number | null;
   p75: number | null;
+  max: number | null;
   expMed: number | null; // tenure-adjusted median (peers with ≥ subject tenure)
   percentile: number | null;
   gapToMed: number | null; // med − subjectPay  (positive = subject below market = deficit)
@@ -171,8 +175,11 @@ export interface CohortStats {
 export function cohortStats(rows: CohortRow[], subjectPay: number | null, tenureYears: number | null): CohortStats {
   const pays = rows.map((r) => r.pay).filter((p) => p > 0).sort((a, b) => a - b);
   const n = pays.length;
+  const min = n ? pays[0] : null;
+  const p25 = quantile(pays, 0.25);
   const med = median(pays);
   const p75 = quantile(pays, 0.75);
+  const max = n ? pays[n - 1] : null;
   const expRows = tenureYears != null ? rows.filter((r) => r.tenure != null && r.tenure >= tenureYears - 1).map((r) => r.pay) : [];
   const expMed = expRows.length >= 5 ? median(expRows) : null;
   // Same "share strictly below, subject included" definition as the Person page's standing bars
@@ -189,7 +196,7 @@ export function cohortStats(rows: CohortRow[], subjectPay: number | null, tenure
       }
     }
   }
-  return { n, med, p75, expMed, percentile, gapToMed, invCount, invMaxGap };
+  return { n, min, p25, med, p75, max, expMed, percentile, gapToMed, invCount, invMaxGap };
 }
 
 /** Short deficit/surplus badge for a cohort radio label (tone drives semantic-scenting color). */
@@ -268,11 +275,21 @@ export interface ComparatorRow {
   key: string; name: string; title: string | null; pay: number; tenure: number | null;
   isSubject: boolean; isAnomaly: boolean; lessTenure: boolean; gap: number;
 }
-export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression' | 'supervisory';
+export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression' | 'supervisory' | 'tenureTrend';
 // `label`/`detail` are ReactNode (not string) so a footnote `<Sup n={..}/>` marker can be embedded
 // inline; `value` (the big headline number/text on the card) stays a plain string.
 export interface ProofModel { kind: ProofKind; value: string; label: ReactNode; detail: ReactNode }
 export interface PayHistoryPoint { date: string; pay: number | null; med: number | null }
+
+// ── Market standing — a distribution view of the active cohort + a multi-pool percentile table. ──
+export interface StandingPool { label: string; n: number; med: number | null; percentile: number | null; gapToMed: number | null }
+export interface StandingModel {
+  min: number | null; p25: number | null; med: number | null; p75: number | null; max: number | null;
+  values: number[];
+  cohortLabel: string;
+  pools: StandingPool[];
+}
+
 export interface BriefModel {
   subjectName: string; subjectFirst: string; subjectPay: number | null;
   headerMeta: string;
@@ -282,6 +299,8 @@ export interface BriefModel {
   activeFactors: { key: string; label: string; note: string; amount: number | null }[];
   proofs: ProofModel[];
   yearsToParity: number | null;
+  yearsToParityRate: number; // the annual rate actually used (observed title raise rate, or the 2% fallback)
+  yearsToParityObserved: boolean; // true when yearsToParityRate came from the raise-cycle data, not the fallback
   realErosion: { firstYear: number; nominalPct: number; realPct: number } | null;
   rows: ComparatorRow[]; maxPay: number; showTenure: boolean;
   anonymize: boolean;
@@ -291,6 +310,13 @@ export interface BriefModel {
   format: 'brief' | 'detailed'; sections: string[];
   jobCode: string | null;
   supervisory: SupervisoryCase;
+  standing: StandingModel | null;
+  tenureRegression: { n: number; expected: number; gap: number } | null;
+  tenureScatterPoints: ScatterPoint[];
+  raiseCycle: {
+    n: number; medianPct: number; subjectPct: number | null; fromLabel: string; toLabel: string;
+    annualRate: number | null; dist: { bucket: number; n: number }[]; subjectBucket: number | null;
+  } | null;
 }
 
 /** Copy-ready talking points (left-pane only — never part of the printed brief). */
