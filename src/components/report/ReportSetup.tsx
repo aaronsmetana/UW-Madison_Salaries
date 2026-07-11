@@ -23,7 +23,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
   cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskGuidelineAnchored, onReset, onHover,
-  supervisoryCase, onAddSupervisee, onRemoveSupervisee,
+  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -50,6 +50,9 @@ export function ReportSetup({
   supervisoryCase: SupervisoryCase;
   onAddSupervisee: (p: { key: string; name: string }) => void;
   onRemoveSupervisee: (key: string) => void;
+  /** Which evidence sections will actually render in the document (and why not, when they won't) —
+   *  a private nudge so the user can see how to strengthen the case before printing. */
+  evidenceChecklist: { label: string; ok: boolean; note?: string }[];
 }) {
   const set = (patch: Partial<ReportConfig>) => onChange({ ...config, ...patch });
   const setFactor = (key: FactorKey, patch: Partial<ReportConfig['factors'][FactorKey]>) =>
@@ -444,6 +447,24 @@ export function ReportSetup({
               })}
             </Stack>
             <Text size="xs" c="dimmed" mt={8}>Bars show each signal's contribution to the {caseStrength.score}-point score.</Text>
+          </Box>
+        )}
+
+        {evidenceChecklist.length > 0 && (
+          <Box mt="md">
+            <Text size="sm" fw={600} mb={4}>Evidence in this report</Text>
+            <Stack gap={3}>
+              {evidenceChecklist.map((e) => (
+                <Group key={e.label} gap={6} wrap="nowrap" align="flex-start">
+                  {e.ok
+                    ? <IconCheck size={13} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    : <IconX size={13} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
+                  <Text size="xs" c={e.ok ? undefined : 'dimmed'}>
+                    {e.label}{e.note ? <Text span c="dimmed"> — {e.note}</Text> : null}
+                  </Text>
+                </Group>
+              ))}
+            </Stack>
           </Box>
         )}
 

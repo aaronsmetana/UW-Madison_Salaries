@@ -3,13 +3,17 @@ import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Bad
 import { useReducedMotion } from '@mantine/hooks';
 import { Link } from 'react-router-dom';
 import {
-  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip,
+  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown } from '@tabler/icons-react';
 import { usd, pct, plural } from '../../lib/format';
-import { AXIS_TICK, GRID, TIP_STYLE, fmtUsd } from '../../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtUsd } from '../../lib/chartStyle';
 import { PeerRangeBar } from '../PeerRangeBar';
 import { TenurePayScatter } from '../TenurePayScatter';
+import { ChartTooltip } from '../chart/ChartTooltip';
+import { DeltaChip } from '../Delta';
+import { GlossaryTerm } from '../GlossaryTerm';
+import { Sup, NotesList, SourcesList, type CitationKey } from './sources';
 import { CAND, PEER, ordinal, type BriefModel, type ProofKind } from './model';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
@@ -60,7 +64,7 @@ export function ReportBrief({ model, hovered, onHover }: {
   const {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
-    attrition, divergence, history, format, sections, jobCode, activeFactors,
+    attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
     standing, tenureScatterPoints, raiseCycle,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
@@ -79,6 +83,57 @@ export function ReportBrief({ model, hovered, onHover }: {
   const selfScatterPt = tenureScatterPoints.find((p) => p.isSelf);
   const raiseDistMax = raiseCycle ? Math.max(1, ...raiseCycle.dist.map((d) => d.n)) : 1;
 
+  // ── Section numbering — sequential, based on what actually renders (a toggled-off section leaves
+  //    no gap in the numbering). Keep each `show` condition identical to that section's own JSX gate. ──
+  const sectionShow = {
+    highlights: has('highlights') && proofs.length > 0,
+    standing: has('standing') && !!standing && standing.min != null && standing.p25 != null && standing.med != null && standing.p75 != null && standing.max != null,
+    factors: has('factors') && activeFactors.length > 0,
+    peers: has('peers') && rows.length > 1,
+    history: has('history') && history.length >= 2,
+    risk: has('risk'),
+  };
+  const sectionOrder: (keyof typeof sectionShow)[] = ['highlights', 'standing', 'factors', 'peers', 'history', 'risk'];
+  const sectionNum: Partial<Record<keyof typeof sectionShow, number>> = {};
+  {
+    let n = 1; // "1." is always the Recommendation, which renders whenever subjectPay != null
+    for (const key of sectionOrder) if (sectionShow[key]) sectionNum[key] = ++n;
+  }
+  const notesSectionNum = Object.keys(sectionShow).filter((k) => sectionShow[k as keyof typeof sectionShow]).length + 2;
+
+  // ── Footnotes — one numbered list, built from exactly the claims rendered THIS printing. `fn(id)`
+  //    resolves an id to its footnote number (0 → render nothing, via <Sup>). ──
+  const hasPercentileClaim = proofs.some((p) => p.kind === 'market') || (standing?.pools.length ?? 0) > 0;
+  const noteDefs: { id: string; when: boolean; text: ReactNode }[] = [
+    { id: 'identity', when: true, text: 'Source: UW–Madison salary data (Wisconsin public record); zero/unreported salaries excluded; identity matched on name + date of hire.' },
+    { id: 'basis', when: belowTarget, text: "The title median is the median pay of everyone sharing the subject's job code at this snapshot. The tenure-adjusted target (used once at least 5 same-title peers meet or exceed the subject's tenure) is the median for that narrower, more comparable group instead." },
+    { id: 'parity', when: yearsToParity != null && yearsToParity >= 0.5, text: 'Time-to-parity assumes compounding raises at the stated annual rate with no other adjustment — a projection, not a commitment.' },
+    { id: 'tenure', when: showTenure, text: '"Tenure" = years since the UW–Madison date of hire (not total career experience), computed as of this snapshot.' },
+    { id: 'percentile', when: hasPercentileClaim, text: 'Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.' },
+    { id: 'supervisory', when: supervisory.reports.length > 0, text: <>Per the UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Supervisors or Managers and Subordinates&rdquo; provision: at least a 15% pay differential between a supervisor/manager and a non-managing subordinate (pay differential = (higher salary &minus; lower salary) &divide; lower salary). See Sources.</> },
+    { id: 'gradeband', when: proofs.some((p) => p.kind === 'gradeband'), text: "Compa-ratio = pay ÷ the grade's official band midpoint (a standard compensation metric; 1.00 = exactly at midpoint)." },
+    { id: 'tenureTrend', when: proofs.some((p) => p.kind === 'tenureTrend'), text: "The tenure-vs-pay trend is an ordinary least-squares fit of same-title peers' pay on tenure (the subject excluded from the fit), evaluated at the subject's own tenure." },
+    { id: 'raiseCycle', when: !!raiseCycle, text: 'The raise-cycle comparison covers continuing appointments only (present in both snapshots) in the same job code; the annualized rate compounds the median cycle raise over the actual elapsed months between the two snapshots.' },
+    { id: 'selfReported', when: has('factors') && activeFactors.length > 0, text: 'Value-add adjustments under "Documented qualifications & responsibilities" are self-reported by the subject, not independently verified against a position description or performance record.' },
+    { id: 'cpi', when: !!realErosion, text: 'Real-dollar (inflation-adjusted) figures use BLS Consumer Price Index (CPI-U) annual averages; recent years use the latest available approximation. See Sources.' },
+    { id: 'retention', when: has('risk'), text: 'Replacement-cost estimates are industry-wide benchmarks, not specific to this employee, role, or institution; the attrition figure, where shown, is drawn directly from the public salary record. See Sources.' },
+  ];
+  const activeNotes = noteDefs.filter((n) => n.when);
+  const fn = (id: string) => {
+    const i = activeNotes.findIndex((n) => n.id === id);
+    return i >= 0 ? i + 1 : 0;
+  };
+  const sourceIds: CitationKey[] = [
+    'wisStat', 'ufas',
+    ...(supervisory.reports.length > 0 ? (['uwSalaryGuidelines'] as CitationKey[]) : []),
+    ...(proofs.some((p) => p.kind === 'gradeband') ? (['uwHrGrades'] as CitationKey[]) : []),
+    ...(realErosion ? (['bls'] as CitationKey[]) : []),
+    ...(has('risk') ? (['workInstitute', 'gallup'] as CitationKey[]) : []),
+  ];
+  const PROOF_NOTE: Partial<Record<ProofKind, string>> = {
+    market: 'percentile', supervisory: 'supervisory', gradeband: 'gradeband', tenureTrend: 'tenureTrend',
+  };
+
   return (
     <Card withBorder padding="xl" className="print-area report-brief">
       <Title order={3}>Internal Equity &amp; Parity Review</Title>
@@ -86,6 +141,11 @@ export function ReportBrief({ model, hovered, onHover }: {
         Prepared for <Text span fw={600} c="bright">{subjectName || '—'}</Text>
         {headerMeta ? ` · ${headerMeta}` : ''}
       </Text>
+      {subjectPay != null && (
+        <Text size="xs" c="dimmed" mt={2}>
+          Data through {snapLabel} · generated {generated} · UW–Madison salary data released under Wisconsin's public-records law<Sup n={fn('identity')} />.
+        </Text>
+      )}
       <Divider my="md" />
 
       {subjectPay == null ? (
@@ -95,18 +155,18 @@ export function ReportBrief({ model, hovered, onHover }: {
           {/* Recommendation hero — with the itemized "receipt" docked directly under the number */}
           {belowTarget && recommended != null ? (
             <Paper radius="md" p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
-              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>Recommendation</Text>
+              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>1. Recommendation</Text>
               <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                 {usd(Math.round(animated))}
               </Text>
               <Text mt={8}>
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}
+                (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
               </Text>
               {yearsToParity != null && yearsToParity >= 0.5 && (
                 <Text size="xs" c="dimmed" mt={4}>
                   Absent this adjustment, a raise at {pct(yearsToParityRate)}/yr ({yearsToParityObserved ? "this title's own observed raise rate" : 'a standard assumption'}) alone
-                  would take ~{Math.ceil(yearsToParity)} more {Math.ceil(yearsToParity) === 1 ? 'year' : 'years'} to reach today's median.
+                  would take ~{Math.ceil(yearsToParity)} more {Math.ceil(yearsToParity) === 1 ? 'year' : 'years'} to reach today's median.<Sup n={fn('parity')} />
                 </Text>
               )}
 
@@ -147,7 +207,7 @@ export function ReportBrief({ model, hovered, onHover }: {
             </Paper>
           ) : (
             <Paper withBorder radius="md" p="lg" mb="lg">
-              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>Recommendation</Text>
+              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>1. Recommendation</Text>
               <Text fw={700} fz="lg" mt={4}>
                 {subjectFirst} is at or above the parity target{recommended != null ? ` (${usd(recommended)})` : ''} — maintain current pay.
               </Text>
@@ -158,17 +218,18 @@ export function ReportBrief({ model, hovered, onHover }: {
             <Text size="sm" c="dimmed" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is limited.</Text>
           )}
 
-          {/* Why — the proofs */}
-          {has('highlights') && proofs.length > 0 && (
+          {/* Why — the proofs. This is objective, salary+tenure-derived evidence, distinct from (and
+              ordered before) the self-reported value-adds in "Documented qualifications" below. */}
+          {sectionShow.highlights && (
             <>
-              <Text size="sm" fw={600} mb="xs">Why this is an equity correction</Text>
+              <Text size="sm" fw={600} mb="xs">{sectionNum.highlights}. Why this is an equity correction <Text span c="dimmed" size="xs" fw={400}>· objective evidence</Text></Text>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
                   <Card key={p.kind} withBorder radius="md" shadow="sm" padding="lg">
                     <ThemeIcon variant="light" color="accent" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
                     <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
                     <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
-                    {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}</Text>}
+                    {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}{PROOF_NOTE[p.kind] && <Sup n={fn(PROOF_NOTE[p.kind]!)} />}</Text>}
                   </Card>
                 ))}
               </SimpleGrid>
@@ -178,20 +239,20 @@ export function ReportBrief({ model, hovered, onHover }: {
           {has('highlights') && realErosion && (
             <Text size="sm" c="dimmed" mb="lg">
               Since {realErosion.firstYear}, {subjectFirst}'s pay rose {pct(realErosion.nominalPct)} nominally — a{' '}
-              <Text span fw={600}>{pct(Math.abs(realErosion.realPct))} decline</Text> in real (CPI-adjusted) purchasing power.
+              <Text span fw={600}>{pct(Math.abs(realErosion.realPct))} decline</Text> in real (CPI-adjusted) purchasing power.<Sup n={fn('cpi')} />
             </Text>
           )}
 
           {/* Market standing — a distribution view of the active benchmark cohort + how the subject
               stands across every other available comparison pool (title/grade/division/tenure-band). */}
-          {has('standing') && standing && standing.min != null && standing.p25 != null && standing.med != null && standing.p75 != null && standing.max != null && (
+          {sectionShow.standing && standing && (
             <>
-              <Text size="sm" fw={600} mb="xs">Market standing</Text>
+              <Text size="sm" fw={600} mb="xs">{sectionNum.standing}. Market standing</Text>
               <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
                 <Text size="xs" c="dimmed" mb="md">
-                  {subjectFirst}'s pay against {standing.cohortLabel} ({plural(standing.values.length, 'person', 'people')}).
+                  {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
                 </Text>
-                <PeerRangeBar min={standing.min} p25={standing.p25} median={standing.med} p75={standing.p75} max={standing.max} value={subjectPay} values={standing.values} />
+                <PeerRangeBar min={standing.min!} p25={standing.p25!} median={standing.med!} p75={standing.p75!} max={standing.max!} value={subjectPay} values={standing.values} />
 
                 {standing.pools.length > 0 && (
                   <Table mt="lg" style={{ maxWidth: 640 }}>
@@ -200,8 +261,8 @@ export function ReportBrief({ model, hovered, onHover }: {
                         <Table.Th>Comparison pool</Table.Th>
                         <Table.Th ta="right">n</Table.Th>
                         <Table.Th ta="right">Median</Table.Th>
-                        <Table.Th ta="right">Percentile</Table.Th>
-                        <Table.Th ta="right">Gap</Table.Th>
+                        <Table.Th ta="right"><GlossaryTerm term="percentile">Percentile</GlossaryTerm><Sup n={fn('percentile')} /></Table.Th>
+                        <Table.Th ta="right">vs. median</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -212,7 +273,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                           <Table.Td ta="right">{usd(p.med)}</Table.Td>
                           <Table.Td ta="right">{p.percentile != null ? ordinal(p.percentile) : '—'}</Table.Td>
                           <Table.Td ta="right">
-                            {p.gapToMed == null ? '—' : p.gapToMed > 0 ? `−${usd(p.gapToMed)}` : p.gapToMed < 0 ? `+${usd(-p.gapToMed)}` : 'at median'}
+                            <DeltaChip frac={p.med != null && p.med > 0 ? (subjectPay - p.med) / p.med : null} />
                           </Table.Td>
                         </Table.Tr>
                       ))}
@@ -234,10 +295,13 @@ export function ReportBrief({ model, hovered, onHover }: {
             </>
           )}
 
-          {/* Documented qualifications & responsibilities — the evidence behind any value-add factors */}
-          {has('factors') && activeFactors.length > 0 && (
+          {/* Documented qualifications & responsibilities — self-reported value-adds, distinct from and
+              ordered after the objective evidence above. */}
+          {sectionShow.factors && (
             <>
-              <Text size="sm" fw={600} mb="xs">Documented qualifications &amp; responsibilities</Text>
+              <Text size="sm" fw={600} mb="xs">
+                {sectionNum.factors}. Documented qualifications &amp; responsibilities <Text span c="dimmed" size="xs" fw={400}>· self-reported</Text><Sup n={fn('selfReported')} />
+              </Text>
               <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
                 <Stack gap={10}>
                   {activeFactors.map((f) => (
@@ -257,16 +321,16 @@ export function ReportBrief({ model, hovered, onHover }: {
           )}
 
           {/* Peer comparison matrix */}
-          {has('peers') && rows.length > 1 && (
+          {sectionShow.peers && (
             <>
-              <Text size="sm" fw={600} mb="xs">Peer comparison <Text span c="dimmed" size="xs">· your named comparators</Text></Text>
+              <Text size="sm" fw={600} mb="xs">{sectionNum.peers}. Peer comparison <Text span c="dimmed" size="xs">· your named comparators (n = {rows.length - 1})</Text></Text>
               <Card withBorder radius="md" shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Name</Table.Th>
                       <Table.Th>Title</Table.Th>
-                      {showTenure && <Table.Th ta="right">Tenure</Table.Th>}
+                      {showTenure && <Table.Th ta="right"><GlossaryTerm term="tenure">Tenure</GlossaryTerm><Sup n={fn('tenure')} /></Table.Th>}
                       <Table.Th>Salary</Table.Th>
                       <Table.Th ta="right">vs {subjectFirst}</Table.Th>
                     </Table.Tr>
@@ -334,16 +398,22 @@ export function ReportBrief({ model, hovered, onHover }: {
           )}
 
           {/* Pay history — subject vs. title median over time, plus (detailed format only) raise divergence */}
-          {has('history') && history.length >= 2 && (
+          {sectionShow.history && (
             <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
-              <Text size="sm" fw={700}>Pay vs. title median over time</Text>
+              <Text size="sm" fw={700}>{sectionNum.history}. Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
                 <ComposedChart data={history} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
                   <CartesianGrid {...GRID} />
                   <XAxis dataKey="date" tickFormatter={fmtHistTick} tick={AXIS_TICK} tickMargin={8} />
                   <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />
-                  <ChartTooltip formatter={(v: number) => usd(v)} labelFormatter={fmtHistTick} contentStyle={TIP_STYLE} />
+                  <Tooltip content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const tRows = payload
+                      .filter((it) => it.value != null)
+                      .map((it) => ({ color: it.stroke as string, name: it.name, value: usd(it.value as number) }));
+                    return <ChartTooltip label={fmtHistTick(String(label))} rows={tRows} />;
+                  }} />
                   <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
                   <Line type="monotone" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />
                 </ComposedChart>
@@ -362,7 +432,8 @@ export function ReportBrief({ model, hovered, onHover }: {
               {raiseCycle && (
                 <Text size="sm" mt="md">
                   Same-title peers received a median <b>{pct(raiseCycle.medianPct)}</b> raise from {raiseCycle.fromLabel} to {raiseCycle.toLabel}
-                  {raiseCycle.subjectPct != null && <>; {subjectFirst} received <b>{pct(raiseCycle.subjectPct)}</b></>}.
+                  {raiseCycle.subjectPct != null && <>; {subjectFirst} received <b>{pct(raiseCycle.subjectPct)}</b></>}
+                  {' '}(n = {raiseCycle.n}).<Sup n={fn('raiseCycle')} />
                 </Text>
               )}
 
@@ -409,9 +480,9 @@ export function ReportBrief({ model, hovered, onHover }: {
 
           {/* Retention & replacement cost — off by default (see Report sections); when shown, every
               figure is either an independent, cited estimate or the public salary record itself. */}
-          {has('risk') && (
+          {sectionShow.risk && (
             <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
-              <Text size="sm" fw={700} mb={4}>Retention &amp; Replacement Cost</Text>
+              <Text size="sm" fw={700} mb={4}>{sectionNum.risk}. Retention &amp; Replacement Cost<Sup n={fn('retention')} /></Text>
               <Text size="sm" mb={6}>
                 Independent research estimates the cost of replacing an employee at roughly one-third of
                 annual salary at the median (Work Institute, 2020 Retention Report), rising to one-half to
@@ -433,13 +504,18 @@ export function ReportBrief({ model, hovered, onHover }: {
             </Paper>
           )}
 
-          <Text size="xs" c="dimmed" mt="xl">
-            Methodology: the title median is the median pay of everyone sharing the subject's job code at this snapshot; the
-            tenure-adjusted target is the median for same-title peers with at least the subject's tenure. "Tenure" = years since the
-            UW–Madison date of hire (not total career experience). Value-add adjustments are self-reported. Real-dollar figures use
-            BLS CPI-U annual averages. Source: UW–Madison salary data (Wisconsin public record); zero/unreported salaries excluded;
-            identity matched on name + date of hire.{anonymize ? ' Peer identities anonymized; names available on request.' : ''}
-          </Text>
+          {/* Notes & Sources — the document's scholarly apparatus. Every note fires only when the claim
+              it explains actually rendered above, so the numbering never drifts or leaves an orphan. */}
+          <Text size="sm" fw={600} mb="xs">{notesSectionNum}. Notes &amp; Sources</Text>
+          <Box mb="md">
+            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: '0.04em' }}>Methodology notes</Text>
+            <NotesList notes={activeNotes.map((n) => n.text)} />
+            {anonymize && <Text size="xs" c="dimmed" mt={6}>Peer identities anonymized in this printing; names available on request.</Text>}
+          </Box>
+          <Box>
+            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: '0.04em' }}>Sources</Text>
+            <SourcesList ids={sourceIds} />
+          </Box>
         </>
       )}
     </Card>

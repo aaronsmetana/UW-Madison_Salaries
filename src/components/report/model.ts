@@ -293,6 +293,7 @@ export interface StandingModel {
 export interface BriefModel {
   subjectName: string; subjectFirst: string; subjectPay: number | null;
   headerMeta: string;
+  generated: string; snapLabel: string; // for the provenance line ("Data through {snapLabel} · generated {generated}")
   recommended: number | null; belowTarget: boolean; targetDelta: number; targetPct: number;
   basisLabel: string;
   receipt: ReceiptLine[];

@@ -57,6 +57,25 @@ export default function Reports() {
   const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig);
 
+  // ── Comparison studio (tray) — subject resolution lives here (ahead of the person-mode URL-sync
+  // effect below) so that effect can also read/write ?subject= for the comparison studio. ──
+  const persons = items.filter((i) => i.type === 'person');
+  const personIds = persons.map((p) => sqlStr(p.id)).join(',');
+
+  const [subjectKey, setSubjectKey] = useState<string | null>(() => params.get('subject'));
+  useEffect(() => {
+    // Seed the subject from the tray's chosen "Subject" (primaryId) when none/invalid; the in-report
+    // Select still overrides afterward. A subject seeded from ?subject= (above) is left alone as long
+    // as it's still a valid tray member.
+    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) {
+      const seed = primaryId && persons.some((p) => p.id === primaryId) ? primaryId : persons[0].id;
+      setSubjectKey(seed);
+    }
+    if (!persons.length && subjectKey) setSubjectKey(null);
+  }, [persons, subjectKey, primaryId]);
+  const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
+  const subjectFirst = subjectName.split(' ')[0] || 'They';
+
   // ── Report on person ── hydrated once from ?person=/?pname= on mount (a finished report is
   // shareable), then kept in sync (with ?type=) the same way Compare syncs its ?sel= tray link.
   const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(() => {
@@ -78,35 +97,21 @@ export default function Reports() {
           n.delete('person');
           n.delete('pname');
         }
+        // Mirrors Compare's ?sel= pattern: a finished comparison report is shareable via its subject.
+        if (type === 'comparison' && subjectKey) n.set('subject', subjectKey);
+        else n.delete('subject');
         return n;
       },
       { replace: true }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, selPerson]);
+  }, [type, selPerson, subjectKey]);
   const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
     ['rpt-person-hist', selPerson?.key ?? '', metric],
     `SELECT snapshot_label AS snapshot, title, job_code, school, ${expr} AS pay, fte
      FROM salaries WHERE person_key = ${sqlStr(selPerson?.key ?? '')} ORDER BY snapshot_date`,
     type === 'person' && !!selPerson
   );
-
-  // ── Comparison studio (tray) ──
-  const persons = items.filter((i) => i.type === 'person');
-  const personIds = persons.map((p) => sqlStr(p.id)).join(',');
-
-  const [subjectKey, setSubjectKey] = useState<string | null>(null);
-  useEffect(() => {
-    // Seed the subject from the tray's chosen "Subject" (primaryId) when none/invalid; the in-report
-    // Select still overrides afterward.
-    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) {
-      const seed = primaryId && persons.some((p) => p.id === primaryId) ? primaryId : persons[0].id;
-      setSubjectKey(seed);
-    }
-    if (!persons.length && subjectKey) setSubjectKey(null);
-  }, [persons, subjectKey, primaryId]);
-  const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
-  const subjectFirst = subjectName.split(' ')[0] || 'They';
 
   // Persist the whole setup (cohort, factors, override, sections…) per subject, so switching between
   // several in-progress equity cases (or a page refresh) doesn't lose the work already done on each.
@@ -538,7 +543,7 @@ export default function Reports() {
   const proofs: ProofModel[] = useMemo(() => {
     if (subjectPay == null) return [];
     const out: ProofModel[] = [];
-    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: '' });
+    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: `n = ${stats.n}` });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: plural(stats.invCount, 'peer'), label: stats.invCount === 1 ? 'tenure inversion — less UW tenure, higher pay' : 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
     const belowFloorReports = supervisoryCase.reports.filter((r) => r.belowFloor);
     if (belowFloorReports.length > 0) {
@@ -595,7 +600,9 @@ export default function Reports() {
     factors: activeFactors, supervisory: supervisoryCase,
   }), [subjectName, subjectPay, recommended, targetDelta, targetPct, docCohortLabel, stats, longevity, activeFactors, supervisoryCase]);
 
-  const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric], `prepared ${generated}`].filter(Boolean).join(' · ');
+  // "prepared {date}" moves to the brief's dedicated provenance line (below the header) instead of
+  // living here, so it doesn't compete with the identifying facts (title/grade/school/snapshot).
+  const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric]].filter(Boolean).join(' · ');
 
   const basisLabel = belowTarget
     ? (supervisorWins
@@ -606,7 +613,7 @@ export default function Reports() {
     : '';
 
   const model: BriefModel = {
-    subjectName, subjectFirst, subjectPay, headerMeta,
+    subjectName, subjectFirst, subjectPay, headerMeta, generated, snapLabel,
     recommended, belowTarget, targetDelta, targetPct,
     basisLabel: config.headline.trim() || basisLabel,
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure,
@@ -618,6 +625,24 @@ export default function Reports() {
     supervisory: supervisoryCase,
     standing, tenureRegression, tenureScatterPoints, raiseCycle,
   };
+
+  // Evidence-completeness checklist (private, setup-pane only): which document sections will actually
+  // render, and — when one won't — the concrete reason, so the user can see how to strengthen the case.
+  const evidenceChecklist = useMemo(() => {
+    const has = (s: string) => config.sections.includes(s);
+    const marketProof = proofs.find((p) => p.kind === 'market');
+    return [
+      { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools` },
+      { label: 'Percentile / market gap', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers' },
+      { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers' },
+      { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below' },
+      { label: 'Tenure-trend regression', ok: tenureRegression != null && tenureRegression.gap > 0, note: tenureRegression == null ? 'need ≥8 same-title peers with tenure' : tenureRegression.gap > 0 ? undefined : 'paid above the tenure trend' },
+      { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint' },
+      { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : undefined },
+      { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record' },
+      { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)' },
+    ];
+  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity]);
 
   // ── Setup-pane data ──
   const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({
@@ -720,6 +745,7 @@ export default function Reports() {
           if (!config.supervisees.includes(p.key)) setConfig({ ...config, supervisees: [...config.supervisees, p.key] });
         }}
         onRemoveSupervisee={(key) => setConfig({ ...config, supervisees: config.supervisees.filter((k) => k !== key) })}
+        evidenceChecklist={evidenceChecklist}
       />
     </Box>
   );
