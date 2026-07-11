@@ -12,7 +12,7 @@ export interface Citation { label: string; detail: string; url?: string }
 export const CITATIONS: Record<CitationKey, Citation> = {
   uwSalaryGuidelines: {
     label: 'UW–Madison Office of Human Resources, Salary Administration Guidelines',
-    detail: '"Supervisors or Managers and Subordinates" — at least a 15% pay differential between a supervisor/manager and a non-managing subordinate.',
+    detail: 'Sections cited: Compression (≥5% non-exempt / ≥8% exempt differential for distinct experience differences); Supervisors or Managers and Subordinates (≥15%); Parity Adjustment; Market Adjustments (market-competitive range = 85%–115% compa-ratio / 25%–75% position-in-range); Performance Adjustments (generally 5–10%); Pay Plan Adjustments; Retention Bonus.',
     url: 'https://hr.wisc.edu/docs/compensation/salary-administration-guidelines.pdf',
   },
   bls: {
@@ -51,8 +51,8 @@ export const CITATIONS: Record<CitationKey, Citation> = {
   },
 };
 
-// ── Policy — the UW Salary Administration Guidelines' own supervisory-differential rule, expressed
-//    as data so the report can compute with it (not just quote it). ──
+// ── Policy — the UW Salary Administration Guidelines' own rules, expressed as data so the report can
+//    compute with them (not just quote them). Every quote below is verbatim from the published PDF. ──
 export const POLICY = {
   supervisorDifferential: 0.15, // "Supervisors or Managers and Subordinates"
   directorDifferential: 0.20, // "Directors or Managers and Subordinate Directors or Managers" (cited, not yet wired to a picker)
@@ -60,6 +60,56 @@ export const POLICY = {
   payDifferential: (higher: number, lower: number): number => (higher - lower) / lower,
   supervisorQuote: 'At least 15% difference in pay between supervisors or managers and their non-managing subordinates.',
   source: 'uwSalaryGuidelines' as CitationKey,
+
+  // ── Compression — the guideline's suggested minimum differentials where two employees in the same or
+  //    similar title have "distinct differences" in knowledge, skills, experience, and abilities. ──
+  compressionDifferential: { exempt: 0.08, nonExempt: 0.05 },
+  compressionQuote:
+    'Compression exists when there is little difference in salary between employees who have distinct differences in their respective knowledge, skills, experience, abilities, and/or reporting structures or organizational structure stance.',
+  // Our operationalization of the guideline's "distinct difference" example (a same-title employee with
+  // 3 years of experience vs. one with 8): a peer with at least 5 fewer years of UW tenure. Footnoted.
+  distinctExperienceGapYears: 5,
+  /** The compression floor that applies to a given FLSA status (exempt → 8%, non-exempt → 5%). A null
+   *  status falls back to the more conservative 5% (under-claims rather than over-claims). */
+  compressionFloor: (exempt: boolean | null): number =>
+    exempt === true ? 0.08 : 0.05,
+
+  // ── Market Adjustments — "market competitive range is +/-15% of midpoint, which results in a range of
+  //    85%–115% compa-ratio or 25%–75% PIR". Below it, "a market competitive pay request can be made". ──
+  marketCompetitive: { compaLow: 0.85, compaHigh: 1.15, pirLow: 0.25, pirHigh: 0.75 },
+  marketRequestQuote: 'a market competitive pay request can be made for OHR to review and approve',
+  marketRangeQuote:
+    'a competitive range of +/-15% of the salary grade or market midpoint, which is 85%–115% compa-ratio or 25%–75% PIR',
+  /** The guideline's grade-position vocabulary, keyed off compa-ratio (compa takes precedence over PIR
+   *  when the two disagree at a band edge). <85% Emerging, 85–115% Established, >115% Advanced. */
+  gradePosition: (compa: number): 'Emerging in Grade' | 'Established in Grade' | 'Advanced in Grade' =>
+    compa < 0.85 ? 'Emerging in Grade' : compa > 1.15 ? 'Advanced in Grade' : 'Established in Grade',
+
+  // ── Performance Adjustments — "generally, a performance adjustment of 5-10% may be appropriate"; the
+  //    annual-review matrix (performance level × position in grade). Ranges are [low, high] fractions. ──
+  performanceAdjustment: {
+    general: [0.05, 0.10] as const,
+    // cols: Emerging / Established / Advanced in Grade (matches the guideline's own matrix)
+    matrix: {
+      exemplary: { emerging: [0.04, 0.06], established: [0.03, 0.05], advanced: [0.01, 0.03] },
+      meets: { emerging: [0.03, 0.05], established: [0.02, 0.04], advanced: [0.00, 0.02] },
+    },
+  } as const,
+
+  // ── Parity vs. Equity — the guideline reserves "equity adjustment" for protected-category inequities;
+  //    the applicable request terms for a same-title imbalance are parity / compression adjustments. ──
+  parityQuote:
+    'Balanced salary relationships should be maintained for staff within the same job title or who perform comparable job duties, taking into consideration distinguishing factors such as performance, knowledge, skills, experience, and education/certification/licenses.',
+  parityRemedyQuote: 'a parity or compression adjustment may be provided to rectify the situation',
+  equityAdjustmentScope:
+    'The guidelines reserve "equity adjustment" for inequities in categories protected by state and federal law (race, color, sex, national origin, age, disability, veteran status); the applicable request terms for a same-title imbalance are a parity or compression adjustment.',
+
+  // ── Pay plan, retention & hiring bonuses — the guideline's other instruments (cited for context). ──
+  payPlanQuote:
+    "Pay plan adjustments are the Legislature's Joint Committee on Employment Relations (JCOER) approved compensation adjustments.",
+  retentionBonusQuote:
+    "This bonus can be awarded, when necessary, to retain a valuable employee (i.e., specialized skill set, consistently outstanding performer, etc.) when increasing the employee's salary is not advised due to parity, range consideration, etc.",
+  hiringBonusMax: 0.15, // "The hiring bonus amount can be up to 15% of the proposed starting salary."
 };
 
 // ── Presentational: numbered footnote markers + the Notes/Sources lists that anchor them. ──
