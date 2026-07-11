@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, type CohortRow } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, type CohortRow } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -103,6 +103,40 @@ describe('buildSupervisoryCase', () => {
     expect(below.inverted).toBe(false);
     expect(c.top?.key).toBe('a'); // highest-paid report, regardless of inversion
     expect(c.target15).toBe(Math.round(115_000 * 1.15));
+  });
+});
+
+describe('buildGuidelineCompression', () => {
+  it('returns null without subject pay, tenure, or any distinctly-junior peer', () => {
+    expect(buildGuidelineCompression(null, 10, [{ pay: 90_000, tenure: 2 }], true)).toBeNull();
+    expect(buildGuidelineCompression(100_000, null, [{ pay: 90_000, tenure: 2 }], true)).toBeNull();
+    // peer is only 3 years junior (< the 5-year "distinct difference" gap) → no basis
+    expect(buildGuidelineCompression(100_000, 10, [{ pay: 90_000, tenure: 7 }], true)).toBeNull();
+  });
+  it('uses the 8% floor for exempt and flags peers within it despite ≥5 fewer years', () => {
+    // subject 100k, 10 yrs; peer 95k at 3 yrs (7 yrs junior). 100k < 95k*1.08=102.6k → compressed.
+    const c = buildGuidelineCompression(100_000, 10, [{ pay: 95_000, tenure: 3 }], true)!;
+    expect(c.threshold).toBe(0.08);
+    expect(c.n).toBe(1);
+    expect(c.count).toBe(1);
+    expect(c.invertedCount).toBe(0); // peer paid less, just not 8% less
+    expect(c.maxPeerPay).toBe(95_000);
+  });
+  it('counts an out-earning junior peer as inverted, and uses the conservative 5% floor when FLSA is unknown', () => {
+    // subject 100k; peer 105k at 2 yrs → inverted; another peer 96k at 1 yr: 100k<96k*1.05=100.8k → compressed
+    const c = buildGuidelineCompression(100_000, 10, [
+      { pay: 105_000, tenure: 2 },
+      { pay: 96_000, tenure: 1 },
+      { pay: 80_000, tenure: 1 }, // 5%+ below → NOT compressed
+      { pay: 200_000, tenure: 9 }, // only 1 yr junior → not distinctly junior, excluded
+    ], null)!;
+    expect(c.threshold).toBe(0.05);
+    expect(c.n).toBe(3); // three peers ≥5 yrs junior
+    expect(c.count).toBe(2);
+    expect(c.invertedCount).toBe(1);
+  });
+  it('skips peers with null tenure (can\'t establish a distinct difference)', () => {
+    expect(buildGuidelineCompression(100_000, 10, [{ pay: 99_000, tenure: null }], false)).toBeNull();
   });
 });
 

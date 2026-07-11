@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown } from '@tabler/icons-react';
+import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown, IconArrowsMinimize, IconRuler2 } from '@tabler/icons-react';
 import { usd, pct, plural } from '../../lib/format';
 import { AXIS_TICK, GRID, fmtUsd } from '../../lib/chartStyle';
 import { PeerRangeBar } from '../PeerRangeBar';
@@ -62,6 +62,8 @@ const PROOF_ICON: Record<ProofKind, ReactNode> = {
   compression: <IconUserPlus size={22} />,
   supervisory: <IconUsers size={22} />,
   tenureTrend: <IconTrendingDown size={22} />,
+  guidelineCompression: <IconArrowsMinimize size={22} />,
+  marketFloor: <IconRuler2 size={22} />,
 };
 
 export function ReportBrief({ model, hovered, onHover }: {
@@ -73,7 +75,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
-    standing, tenureScatterPoints, raiseCycle,
+    standing, tenureScatterPoints, raiseCycle, guidelineCompression,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -119,6 +121,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     { id: 'tenure', when: showTenure, text: '"Tenure" = years since the UW–Madison date of hire (not total career experience), computed as of this snapshot.' },
     { id: 'percentile', when: hasPercentileClaim, text: 'Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.' },
     { id: 'supervisory', when: supervisory.reports.length > 0, text: <>Per the UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Supervisors or Managers and Subordinates&rdquo; provision: at least a 15% pay differential between a supervisor/manager and a non-managing subordinate (pay differential = (higher salary &minus; lower salary) &divide; lower salary). See Sources.</> },
+    { id: 'guidelineCompression', when: !!guidelineCompression && guidelineCompression.count > 0, text: <>The UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Compression&rdquo; provision suggests at least a {guidelineCompression ? pct(guidelineCompression.threshold) : '5%'} pay differential ({guidelineCompression?.exempt === false ? 'non-exempt' : guidelineCompression?.exempt === true ? 'exempt/professional' : 'FLSA status unavailable — conservative non-exempt floor applied'}) where same-title employees have distinct differences in experience. &ldquo;Distinct differences&rdquo; is operationalized here as a peer with at least {guidelineCompression?.gapYears ?? 5} fewer years of UW tenure, mirroring the guideline&rsquo;s own 3-vs-8-year example. See Sources.</> },
     { id: 'gradeband', when: proofs.some((p) => p.kind === 'gradeband'), text: "Compa-ratio = pay ÷ the grade's official band midpoint (a standard compensation metric; 1.00 = exactly at midpoint)." },
     { id: 'tenureTrend', when: proofs.some((p) => p.kind === 'tenureTrend'), text: "The tenure-vs-pay trend is an ordinary least-squares fit of same-title peers' pay on tenure (the subject excluded from the fit), evaluated at the subject's own tenure." },
     { id: 'raiseCycle', when: !!raiseCycle, text: 'The raise-cycle comparison covers continuing appointments only (present in both snapshots) in the same job code; the annualized rate compounds the median cycle raise over the actual elapsed months between the two snapshots.' },
@@ -131,15 +134,21 @@ export function ReportBrief({ model, hovered, onHover }: {
     const i = activeNotes.findIndex((n) => n.id === id);
     return i >= 0 ? i + 1 : 0;
   };
+  // uwSalaryGuidelines is cited whenever any SAG-anchored claim renders (supervisory differential,
+  // guideline compression, or — Phase 3 — the market-competitive floor).
+  const citesGuidelines = supervisory.reports.length > 0
+    || (!!guidelineCompression && guidelineCompression.count > 0)
+    || proofs.some((p) => p.kind === 'marketFloor');
   const sourceIds: CitationKey[] = [
     'wisStat', 'ufas',
-    ...(supervisory.reports.length > 0 ? (['uwSalaryGuidelines'] as CitationKey[]) : []),
+    ...(citesGuidelines ? (['uwSalaryGuidelines'] as CitationKey[]) : []),
     ...(proofs.some((p) => p.kind === 'gradeband') ? (['uwHrGrades'] as CitationKey[]) : []),
     ...(realErosion ? (['bls'] as CitationKey[]) : []),
     ...(has('risk') ? (['workInstitute', 'gallup'] as CitationKey[]) : []),
   ];
   const PROOF_NOTE: Partial<Record<ProofKind, string>> = {
     market: 'percentile', supervisory: 'supervisory', gradeband: 'gradeband', tenureTrend: 'tenureTrend',
+    guidelineCompression: 'guidelineCompression',
   };
 
   return (

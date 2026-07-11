@@ -23,13 +23,14 @@ import { ReportSetup, type SetupComparator, type SuggestPerson } from '../compon
 import { ReportBrief } from '../components/report/ReportBrief';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
-  cohortDocLabel, ordinal, buildSupervisoryCase, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
+  cohortDocLabel, ordinal, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
 
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
   grade_number: number | null; grade_basis: string | null; school: string | null; date_of_hire: string | null;
+  flsa_status: string | null;
 }
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
@@ -129,6 +130,7 @@ export default function Reports() {
     ['rpt-subj', subjectKey, snap ?? '', metric],
     `SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
         arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
+        arg_max(flsa_status, ${expr}) flsa_status,
         any_value(school) school, min(date_of_hire) date_of_hire
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')}`,
     cmpReady
@@ -138,6 +140,10 @@ export default function Reports() {
   const jobCode = subj?.job_code ?? null;
   const grade = subj?.grade_number ?? null;
   const school = subj?.school ?? null;
+  // FLSA status drives the guideline's compression floor (exempt → 8%, non-exempt → 5%). Three spellings
+  // exist in the record ('Exempt' / 'Non-exempt' / 'Non-Exempt'), so match case-insensitively; a null
+  // status falls back to the conservative 5% floor (under-claims rather than over-claims).
+  const exempt = subj?.flsa_status == null ? null : !/^non/i.test(subj.flsa_status);
   const { data: grades } = useGrades();
   const band = useMemo(() => {
     if (!subj || subj.grade_number == null || !grades) return null;
@@ -458,6 +464,19 @@ export default function Reports() {
     [subjectPay, superviseeRows]
   );
 
+  // Guideline compression — same-title peers with distinctly less UW tenure (≥5 fewer years, the SAG's
+  // 3-vs-8-year example) whom the subject is NOT paid the guideline's differential above (≥5% non-exempt
+  // / ≥8% exempt). Distinct from the tenure-inversion count (that flags any junior peer paid strictly
+  // more; this flags the guideline's specific differential floor being unmet).
+  const guidelineCompression = useMemo(
+    () => buildGuidelineCompression(
+      subjectPay, tenureYears,
+      (peerListRows ?? []).filter((r) => r.person_key !== subjectKey).map((r) => ({ pay: r.pay, tenure: r.tenure })),
+      exempt,
+    ),
+    [subjectPay, tenureYears, peerListRows, subjectKey, exempt]
+  );
+
   // Real-dollar (CPI-adjusted) erosion: the subject's own pay history may show nominal growth that's
   // actually a real-dollar pay cut once inflation is factored in — a distinct, often more persuasive,
   // framing than the raw percentage.
@@ -545,6 +564,15 @@ export default function Reports() {
     const out: ProofModel[] = [];
     if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: `n = ${stats.n}` });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: plural(stats.invCount, 'peer'), label: stats.invCount === 1 ? 'tenure inversion — less UW tenure, higher pay' : 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
+    if (guidelineCompression && guidelineCompression.count > 0) {
+      const gc = guidelineCompression;
+      out.push({
+        kind: 'guidelineCompression',
+        value: plural(gc.count, 'peer'),
+        label: `within ${pct(gc.threshold)} of ${subjectFirst}'s pay despite ≥${gc.gapYears} fewer years at UW`,
+        detail: `UW guideline suggests at least a ${pct(gc.threshold)} differential where experience differs distinctly${gc.invertedCount > 0 ? ` (includes ${plural(gc.invertedCount, 'who out-earns', 'who out-earn')} ${subjectFirst})` : ''}`,
+      });
+    }
     const belowFloorReports = supervisoryCase.reports.filter((r) => r.belowFloor);
     if (belowFloorReports.length > 0) {
       const invertedReports = supervisoryCase.reports.filter((r) => r.inverted);
@@ -576,7 +604,7 @@ export default function Reports() {
       });
     }
     return out;
-  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst, supervisoryCase, tenureRegression]);
+  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst, supervisoryCase, tenureRegression, guidelineCompression]);
 
   // Time-to-parity: absent an adjustment, how long a raise alone would take to reach today's cohort
   // median — reinforces that "wait and see" isn't a neutral option. Uses this title's own observed
@@ -591,14 +619,14 @@ export default function Reports() {
 
   // ── Case strength + talking points (left pane only) ──
   const strength = useMemo(
-    () => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length, supervisoryInvertedCount: supervisoryCase.invertedCount }),
-    [stats, med, longevity, activeFactors.length, supervisoryCase]
+    () => caseStrength({ gapToMed: stats.gapToMed, med, invCount: stats.invCount, streakYears: longevity.streakYears, activeFactors: activeFactors.length, supervisoryInvertedCount: supervisoryCase.invertedCount, guidelineCompressionCount: guidelineCompression?.count ?? 0 }),
+    [stats, med, longevity, activeFactors.length, supervisoryCase, guidelineCompression]
   );
   const talkingPoints = useMemo(() => buildTalkingPoints({
     subjectName, current: subjectPay, recommended, delta: targetDelta, pct: targetPct, cohortLabel: docCohortLabel,
     percentile: stats.percentile, invCount: stats.invCount, invMaxGap: stats.invMaxGap, streakYears: longevity.streakYears,
-    factors: activeFactors, supervisory: supervisoryCase,
-  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, docCohortLabel, stats, longevity, activeFactors, supervisoryCase]);
+    factors: activeFactors, supervisory: supervisoryCase, guidelineCompression,
+  }), [subjectName, subjectPay, recommended, targetDelta, targetPct, docCohortLabel, stats, longevity, activeFactors, supervisoryCase, guidelineCompression]);
 
   // "prepared {date}" moves to the brief's dedicated provenance line (below the header) instead of
   // living here, so it doesn't compete with the identifying facts (title/grade/school/snapshot).
@@ -623,6 +651,7 @@ export default function Reports() {
     history: medHist ?? [],
     format: config.format, sections: config.sections, jobCode,
     supervisory: supervisoryCase,
+    guidelineCompression,
     standing, tenureRegression, tenureScatterPoints, raiseCycle,
   };
 
@@ -635,6 +664,7 @@ export default function Reports() {
       { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools` },
       { label: 'Percentile / market gap', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers' },
       { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers' },
+      { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers' },
       { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below' },
       { label: 'Tenure-trend regression', ok: tenureRegression != null && tenureRegression.gap > 0, note: tenureRegression == null ? 'need ≥8 same-title peers with tenure' : tenureRegression.gap > 0 ? undefined : 'paid above the tenure trend' },
       { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint' },
@@ -642,7 +672,7 @@ export default function Reports() {
       { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record' },
       { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)' },
     ];
-  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity]);
+  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt]);
 
   // ── Setup-pane data ──
   const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({

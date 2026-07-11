@@ -1,6 +1,6 @@
 // Shared types + pure helpers for the comparison "equity review studio" (left setup pane + right brief).
 import type { ReactNode } from 'react';
-import { usd, plural } from '../../lib/format';
+import { usd, pct, plural } from '../../lib/format';
 import { percentile as percentileOf } from '../../lib/stats';
 import { POLICY } from './sources';
 import type { ScatterPoint } from '../TenurePayScatter';
@@ -238,6 +238,39 @@ export function buildSupervisoryCase(subjectPay: number | null, rows: { key: str
   return { reports, invertedCount, top, target15 };
 }
 
+// ── Guideline compression — the SAG's suggested minimum differential (≥5% non-exempt / ≥8% exempt)
+//    between same-title employees with "distinct differences" in experience. We operationalize
+//    "distinct differences" as a peer with ≥5 fewer years of UW tenure (the guideline's own 3-vs-8-year
+//    example), then flag any such peer the subject is NOT paid at least the guideline's floor above. ──
+export interface GuidelineCompression {
+  threshold: number; // the applicable floor (0.05 or 0.08)
+  gapYears: number; // the tenure gap that qualifies a peer as "distinctly less experienced"
+  count: number; // distinctly-junior peers within `threshold` of the subject's pay (or above it)
+  invertedCount: number; // of `count`, those actually paid MORE than the subject
+  n: number; // distinctly-junior peers considered (the "of n" denominator)
+  maxPeerPay: number | null; // highest-paid compressed peer
+  exempt: boolean | null; // subject's FLSA status (drives the threshold; null → conservative 5%)
+}
+export function buildGuidelineCompression(
+  subjectPay: number | null,
+  tenureYears: number | null,
+  peers: { pay: number; tenure: number | null }[],
+  exempt: boolean | null,
+): GuidelineCompression | null {
+  if (subjectPay == null || tenureYears == null) return null;
+  const threshold = POLICY.compressionFloor(exempt);
+  const gapYears = POLICY.distinctExperienceGapYears;
+  // Peers with distinctly less UW tenure (null-tenure rows can't establish a "distinct difference").
+  const juniorPeers = peers.filter((p) => p.tenure != null && p.tenure <= tenureYears - gapYears && p.pay > 0);
+  const n = juniorPeers.length;
+  if (n === 0) return null; // no basis to assess compression
+  // Compressed = the subject is NOT paid at least the guideline's differential above this junior peer.
+  const compressed = juniorPeers.filter((p) => subjectPay < p.pay * (1 + threshold));
+  const invertedCount = compressed.filter((p) => p.pay > subjectPay).length;
+  const maxPeerPay = compressed.reduce<number | null>((best, p) => (best == null || p.pay > best ? p.pay : best), null);
+  return { threshold, gapYears, count: compressed.length, invertedCount, n, maxPeerPay, exempt };
+}
+
 // ── Receipt (itemized "base parity + value-adds = total") ──
 export interface ReceiptLine { id: string; label: string; amount: number; kind: 'base' | 'addon' | 'negotiated' }
 
@@ -251,10 +284,11 @@ export interface CaseStrength {
 export function caseStrength(opts: {
   gapToMed: number | null; med: number | null; invCount: number; streakYears: number; activeFactors: number;
   supervisoryInvertedCount?: number; // an out-earning direct report counts at least as much as a peer tenure inversion
+  guidelineCompressionCount?: number; // a below-guideline-differential junior peer is a compression signal too
 }): CaseStrength {
-  const { gapToMed, med, invCount, streakYears, activeFactors, supervisoryInvertedCount = 0 } = opts;
+  const { gapToMed, med, invCount, streakYears, activeFactors, supervisoryInvertedCount = 0, guidelineCompressionCount = 0 } = opts;
   const below = gapToMed != null && gapToMed > 0 && med ? Math.min(1, gapToMed / (0.1 * med)) : 0;
-  const inv = Math.min(1, (invCount + supervisoryInvertedCount) / 3);
+  const inv = Math.min(1, (invCount + supervisoryInvertedCount + guidelineCompressionCount) / 3);
   const sustained = Math.min(1, streakYears / 5);
   const support = Math.min(1, activeFactors / 3);
   // Each bar is that signal's weighted CONTRIBUTION to the total (so the four bars sum to the score).
@@ -275,7 +309,7 @@ export interface ComparatorRow {
   key: string; name: string; title: string | null; pay: number; tenure: number | null;
   isSubject: boolean; isAnomaly: boolean; lessTenure: boolean; gap: number;
 }
-export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression' | 'supervisory' | 'tenureTrend';
+export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'compression' | 'supervisory' | 'tenureTrend' | 'guidelineCompression' | 'marketFloor';
 // `label`/`detail` are ReactNode (not string) so a footnote `<Sup n={..}/>` marker can be embedded
 // inline; `value` (the big headline number/text on the card) stays a plain string.
 export interface ProofModel { kind: ProofKind; value: string; label: ReactNode; detail: ReactNode }
@@ -311,6 +345,7 @@ export interface BriefModel {
   format: 'brief' | 'detailed'; sections: string[];
   jobCode: string | null;
   supervisory: SupervisoryCase;
+  guidelineCompression: GuidelineCompression | null;
   standing: StandingModel | null;
   tenureRegression: { n: number; expected: number; gap: number } | null;
   tenureScatterPoints: ScatterPoint[];
@@ -326,6 +361,7 @@ export function buildTalkingPoints(o: {
   cohortLabel: string; percentile: number | null; invCount: number; invMaxGap: number;
   streakYears: number; factors: { label: string; note: string; amount: number | null }[];
   supervisory?: SupervisoryCase;
+  guidelineCompression?: GuidelineCompression | null;
 }): string {
   const lines: string[] = [];
   lines.push(`Subject: ${o.subjectName}`);
@@ -336,6 +372,10 @@ export function buildTalkingPoints(o: {
   lines.push('Why:');
   if (o.percentile != null) lines.push(`• Paid at the ${ordinal(o.percentile)} percentile of ${o.cohortLabel}.`);
   if (o.invCount > 0) lines.push(`• ${plural(o.invCount, 'peer has', 'peers have')} less UW tenure and higher pay (up to +${usd(o.invMaxGap)}).`);
+  const gc = o.guidelineCompression;
+  if (gc && gc.count > 0) {
+    lines.push(`• ${plural(gc.count, 'same-title peer is', 'same-title peers are')} within ${pct(gc.threshold)} of the subject's pay despite ≥${gc.gapYears} fewer years at UW — under the UW guideline's ${pct(gc.threshold)} compression differential.`);
+  }
   if (o.streakYears >= 1) lines.push(`• Below the title median ${o.streakYears} consecutive year${o.streakYears === 1 ? '' : 's'}.`);
   for (const r of o.supervisory?.reports ?? []) {
     if (r.inverted && o.current != null) {
