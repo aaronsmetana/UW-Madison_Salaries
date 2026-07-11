@@ -14,6 +14,7 @@ import { ChartTooltip } from '../chart/ChartTooltip';
 import { DeltaChip } from '../Delta';
 import { GlossaryTerm } from '../GlossaryTerm';
 import { Sup, NotesList, SourcesList, type CitationKey } from './sources';
+import { REPO_URL } from '../../lib/links';
 import { CAND, PEER, ordinal, type BriefModel, type ProofKind } from './model';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
@@ -43,6 +44,13 @@ function useAnimatedNumber(target: number, duration = 500) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [target, duration, reduce]);
+  // Guarantee the final value prints even if the user hits Print mid-tween — a half-animated headline
+  // number in a PDF would read as a bug.
+  useEffect(() => {
+    const snap = () => { setVal(target); from.current = target; };
+    window.addEventListener('beforeprint', snap);
+    return () => window.removeEventListener('beforeprint', snap);
+  }, [target]);
   return val;
 }
 
@@ -515,6 +523,13 @@ export function ReportBrief({ model, hovered, onHover }: {
           <Box>
             <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: '0.04em' }}>Sources</Text>
             <SourcesList ids={sourceIds} />
+          </Box>
+
+          {/* Print-only provenance footer (hidden on screen). */}
+          <Box className="print-only" mt="lg" pt="sm" style={{ borderTop: '1px solid var(--mantine-color-gray-3)' }}>
+            <Text size="xs" c="dimmed">
+              Generated {generated} from UW–Madison public salary records · {REPO_URL}
+            </Text>
           </Box>
         </>
       )}

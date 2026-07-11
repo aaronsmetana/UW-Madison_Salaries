@@ -1,3 +1,8 @@
+/* A print-only footer line (source + URL + generated date) — hidden on screen, shown only in print. */
+.print-only {
+  display: none;
+}
+
 /* Print only the .print-area (the report); hide the app shell and controls so the PDF reads as a
    formal, centered, standalone white-paper. */
 @media print {
@@ -44,5 +49,43 @@
   a[href] {
     text-decoration: none;
     color: inherit;
+  }
+
+  /* Keep evidence cards, tables, and charts from splitting across a page boundary, and never orphan a
+     section heading at the bottom of a page. */
+  .report-brief .mantine-Card-root,
+  .report-brief .mantine-Paper-root,
+  .report-brief table,
+  .report-brief .recharts-wrapper {
+    break-inside: avoid;
+  }
+  .report-brief h1,
+  .report-brief h2,
+  .report-brief h3 {
+    break-after: avoid;
+  }
+
+  /* Preserve the accent tints, salary bars, and badges — browsers strip element backgrounds in print
+     by default, which would blank the peer-table bars and the recommendation hero. */
+  .report-brief {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* On-screen the glossary terms carry a dotted underline (a hover affordance); in print there is no
+     hover, so the dotted line just reads as noise. */
+  .glossary-term {
+    border-bottom: none !important;
+  }
+
+  /* ResponsiveContainer can collapse to 0 width in a print context — pin it to full width. */
+  .report-brief .recharts-responsive-container {
+    width: 100% !important;
+  }
+
+  /* Reveal the print-only provenance footer. */
+  .print-only {
+    display: block !important;
+    visibility: visible !important;
   }
 }

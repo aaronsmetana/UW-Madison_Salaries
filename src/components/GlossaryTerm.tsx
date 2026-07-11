@@ -7,7 +7,7 @@ import { GLOSSARY, type GlossaryKey } from '../lib/glossary';
 export function GlossaryTerm({ term, children }: { term: GlossaryKey; children: ReactNode }) {
   return (
     <Tooltip label={GLOSSARY[term]} withArrow multiline w={260} events={{ hover: true, focus: true, touch: true }}>
-      <Text span tabIndex={0} style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>
+      <Text span className="glossary-term" tabIndex={0} style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}>
         {children}
       </Text>
     </Tooltip>

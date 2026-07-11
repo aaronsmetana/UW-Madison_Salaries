@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -30,6 +30,28 @@ export function AppShellLayout() {
   const loc = useLocation();
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure(false);
   const [collapsed, { toggle: toggleDesktop }] = useDisclosure(false);
+
+  // Force the light color scheme for the duration of any print. print.css paints the page white, but
+  // Mantine's dark-scheme text vars stay light — printing from dark mode would put near-white text on
+  // white paper. Swap to light for the print, then restore. Global (helps every printable page).
+  useEffect(() => {
+    const el = document.documentElement;
+    let prev: string | null = null;
+    const before = () => {
+      prev = el.getAttribute('data-mantine-color-scheme');
+      el.setAttribute('data-mantine-color-scheme', 'light');
+    };
+    const after = () => {
+      if (prev != null) el.setAttribute('data-mantine-color-scheme', prev);
+      prev = null;
+    };
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, []);
   const isActive = (to: string) => (to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to));
   const showControl = CONTROL_PATHS.some((p) => loc.pathname.startsWith(p));
 
