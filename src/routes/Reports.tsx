@@ -657,7 +657,9 @@ export default function Reports() {
       }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
-    if (tenureRegression && tenureRegression.gap > 0) {
+    // Gate: a tenure-trend gap under 2% of pay is within noise and reads as reaching — omit it from the
+    // document (the private checklist still flags it as too small; the detailed scatter stays as data).
+    if (tenureRegression && tenureRegression.gap >= 0.02 * subjectPay) {
       out.push({
         kind: 'tenureTrend',
         value: usd(tenureRegression.gap),
@@ -754,6 +756,17 @@ export default function Reports() {
     return out;
   }, [stats, standing, docCohortLabel, supervisoryCase, guidelineCompression, compression, subjectFirst, marketPosition, config.factors.performance, config.factors.scope]);
 
+  // Document-facing raise cycle: this is an advocacy brief, so when the subject OUT-raised peers this
+  // cycle (a clause that cuts against the ask) drop the subject's own line and bucket marker — the
+  // neutral peers-median sentence + JCOER pay-plan context stay. The private checklist still reports it.
+  const raiseCycleDoc = useMemo(() => {
+    if (!raiseCycle) return null;
+    if (raiseCycle.subjectPct != null && raiseCycle.subjectPct > raiseCycle.medianPct) {
+      return { ...raiseCycle, subjectPct: null, subjectBucket: null };
+    }
+    return raiseCycle;
+  }, [raiseCycle]);
+
   const valueAddTail = addOnSum > 0 ? ', plus documented value-adds' : '';
   const basisLabel = belowTarget
     ? (winningAnchor
@@ -777,7 +790,7 @@ export default function Reports() {
     guidelineCompression,
     marketPosition,
     guidelineProvisions,
-    standing, tenureRegression, tenureScatterPoints, raiseCycle,
+    standing, tenureRegression, tenureScatterPoints, raiseCycle: raiseCycleDoc,
   };
 
   // Evidence-completeness checklist (private, setup-pane only): which document sections will actually
