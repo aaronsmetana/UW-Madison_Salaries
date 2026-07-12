@@ -673,6 +673,66 @@ export default function Reports() {
   // living here, so it doesn't compete with the identifying facts (title/grade/school/snapshot).
   const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric]].filter(Boolean).join(' · ');
 
+  // ── "Basis under UW salary guidelines" — the SAG provisions this document's evidence actually
+  //    supports, in the guideline's own vocabulary. One row per supported provision; objective
+  //    (salary/tenure-derived) provisions first, self-reported ones flagged as such. ──
+  const guidelineProvisions = useMemo(() => {
+    const out: { key: string; name: string; quote: string; supportedBy: string; selfReported?: boolean }[] = [];
+    const belowCohortMedian = stats.gapToMed != null && stats.gapToMed > 0;
+    const poolsBelow = (standing?.pools ?? []).filter((p) => p.gapToMed != null && p.gapToMed > 0);
+    if (belowCohortMedian || poolsBelow.length > 0) {
+      out.push({
+        key: 'parity',
+        name: 'Parity adjustment',
+        quote: POLICY.parityQuote,
+        supportedBy: poolsBelow.length > 1
+          ? `paid below the median in ${plural(poolsBelow.length, 'comparison pool')} (see Market standing)`
+          : `paid below the ${docCohortLabel} median (${stats.percentile != null ? `${ordinal(stats.percentile)} percentile` : 'see Market standing'})`,
+      });
+    }
+    const supBelowFloor = supervisoryCase.reports.filter((r) => r.belowFloor);
+    const compressionBits: string[] = [];
+    if (guidelineCompression && guidelineCompression.count > 0) compressionBits.push(`${plural(guidelineCompression.count, 'same-title peer')} within ${pct(guidelineCompression.threshold)} despite ≥${guidelineCompression.gapYears} fewer years`);
+    if (stats.invCount > 0) compressionBits.push(`${plural(stats.invCount, 'tenure inversion')}`);
+    if (compression.count > 0) compressionBits.push(`${plural(compression.count, 'recent hire')} at or above ${subjectFirst}`);
+    if (supBelowFloor.length > 0) compressionBits.push(`${plural(supBelowFloor.length, 'direct report')} under the ≥15% supervisory differential`);
+    if (compressionBits.length > 0) {
+      out.push({
+        key: 'compression',
+        name: 'Compression adjustment',
+        quote: POLICY.compressionQuote,
+        supportedBy: compressionBits.join('; '),
+      });
+    }
+    if (marketPosition?.belowCompetitive) {
+      out.push({
+        key: 'marketFloor',
+        name: 'Market competitive pay request',
+        quote: POLICY.marketRequestQuote,
+        supportedBy: `compa-ratio ${marketPosition.compa.toFixed(2)} — below the guideline's 85% market-competitive floor for grade ${marketPosition.grade}`,
+      });
+    }
+    if (config.factors.performance.on) {
+      out.push({
+        key: 'performance',
+        name: 'Performance adjustment',
+        quote: `Performance adjustments refer to a salary increase due to notable and sustained performance; generally, a performance adjustment of ${pct(POLICY.performanceAdjustment.general[0])}–${pct(POLICY.performanceAdjustment.general[1])} may be appropriate.`,
+        supportedBy: config.factors.performance.note.trim() || 'documented under Performance & impact',
+        selfReported: true,
+      });
+    }
+    if (config.factors.scope.on) {
+      out.push({
+        key: 'scope',
+        name: 'Change-in-duties pay adjustment',
+        quote: 'Where there are significant, permanent changes to the responsibilities of a job, an increase to the salary without a title change may be appropriate (a change in duties pay adjustment).',
+        supportedBy: config.factors.scope.note.trim() || 'documented under Expanded scope / out-of-class',
+        selfReported: true,
+      });
+    }
+    return out;
+  }, [stats, standing, docCohortLabel, supervisoryCase, guidelineCompression, compression, subjectFirst, marketPosition, config.factors.performance, config.factors.scope]);
+
   const valueAddTail = addOnSum > 0 ? ', plus documented value-adds' : '';
   const basisLabel = belowTarget
     ? (winningAnchor
@@ -695,6 +755,7 @@ export default function Reports() {
     supervisory: supervisoryCase,
     guidelineCompression,
     marketPosition,
+    guidelineProvisions,
     standing, tenureRegression, tenureScatterPoints, raiseCycle,
   };
 

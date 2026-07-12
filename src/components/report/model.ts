@@ -324,6 +324,16 @@ export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'co
 export interface ProofModel { kind: ProofKind; value: string; label: ReactNode; detail: ReactNode }
 export interface PayHistoryPoint { date: string; pay: number | null; med: number | null }
 
+// ── Guideline basis — the SAG provisions the document's evidence actually supports, rendered in the
+//    guideline's own vocabulary (one row per supported provision, auto-derived from the evidence). ──
+export interface GuidelineProvision {
+  key: string;
+  name: string; // the provision's guideline-cased name (e.g. "Parity adjustment")
+  quote: string; // the guideline's own one-line definition or remedy language
+  supportedBy: string; // which evidence in THIS document invokes it
+  selfReported?: boolean; // performance / change-in-duties provisions rest on self-reported input
+}
+
 // ── Market-competitive position — the SAG's compa-ratio / PIR framework for a graded role. ──
 export interface MarketPosition {
   grade: number;
@@ -367,6 +377,7 @@ export interface BriefModel {
   supervisory: SupervisoryCase;
   guidelineCompression: GuidelineCompression | null;
   marketPosition: MarketPosition | null;
+  guidelineProvisions: GuidelineProvision[];
   standing: StandingModel | null;
   tenureRegression: { n: number; expected: number; gap: number } | null;
   tenureScatterPoints: ScatterPoint[];
@@ -404,5 +415,10 @@ export function buildTalkingPoints(o: {
     }
   }
   for (const f of o.factors) lines.push(`• ${f.label}${f.note ? `: ${f.note}` : ''}${f.amount ? ` (+${usd(f.amount)})` : ''}.`);
+  if (o.recommended != null && o.current != null && o.recommended > o.current) {
+    const hasCompression = (o.guidelineCompression?.count ?? 0) > 0 || o.invCount > 0 || (o.supervisory?.invertedCount ?? 0) > 0;
+    lines.push('');
+    lines.push(`Framing: request a parity adjustment${hasCompression ? ' (with a compression review)' : ''} under the UW Salary Administration Guidelines — the guideline's own remedy language, not an "equity adjustment" (which the guideline reserves for protected-category inequities).`);
+  }
   return lines.join('\n');
 }

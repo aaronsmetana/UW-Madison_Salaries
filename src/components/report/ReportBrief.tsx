@@ -13,7 +13,7 @@ import { TenurePayScatter } from '../TenurePayScatter';
 import { ChartTooltip } from '../chart/ChartTooltip';
 import { DeltaChip } from '../Delta';
 import { GlossaryTerm } from '../GlossaryTerm';
-import { Sup, NotesList, SourcesList, type CitationKey } from './sources';
+import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
 import { CAND, PEER, ordinal, type BriefModel, type ProofKind } from './model';
 
@@ -75,7 +75,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
-    standing, tenureScatterPoints, raiseCycle, guidelineCompression,
+    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -96,6 +96,7 @@ export function ReportBrief({ model, hovered, onHover }: {
   // ── Section numbering — sequential, based on what actually renders (a toggled-off section leaves
   //    no gap in the numbering). Keep each `show` condition identical to that section's own JSX gate. ──
   const sectionShow = {
+    guidelineBasis: has('guidelineBasis') && guidelineProvisions.length > 0,
     highlights: has('highlights') && proofs.length > 0,
     standing: has('standing') && !!standing && standing.min != null && standing.p25 != null && standing.med != null && standing.p75 != null && standing.max != null,
     factors: has('factors') && activeFactors.length > 0,
@@ -103,7 +104,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     history: has('history') && history.length >= 2,
     risk: has('risk'),
   };
-  const sectionOrder: (keyof typeof sectionShow)[] = ['highlights', 'standing', 'factors', 'peers', 'history', 'risk'];
+  const sectionOrder: (keyof typeof sectionShow)[] = ['guidelineBasis', 'highlights', 'standing', 'factors', 'peers', 'history', 'risk'];
   const sectionNum: Partial<Record<keyof typeof sectionShow, number>> = {};
   {
     let n = 1; // "1." is always the Recommendation, which renders whenever subjectPay != null
@@ -117,6 +118,7 @@ export function ReportBrief({ model, hovered, onHover }: {
   const noteDefs: { id: string; when: boolean; text: ReactNode }[] = [
     { id: 'identity', when: true, text: 'Source: UW–Madison salary data (Wisconsin public record); zero/unreported salaries excluded; identity matched on name + date of hire.' },
     { id: 'basis', when: belowTarget, text: "The title median is the median pay of everyone sharing the subject's job code at this snapshot. The tenure-adjusted target (used once at least 5 same-title peers meet or exceed the subject's tenure) is the median for that narrower, more comparable group instead." },
+    { id: 'equityTerm', when: sectionShow.guidelineBasis, text: POLICY.equityAdjustmentScope },
     { id: 'parity', when: yearsToParity != null && yearsToParity >= 0.5, text: 'Time-to-parity assumes compounding raises at the stated annual rate with no other adjustment — a projection, not a commitment.' },
     { id: 'tenure', when: showTenure, text: '"Tenure" = years since the UW–Madison date of hire (not total career experience), computed as of this snapshot.' },
     { id: 'percentile', when: hasPercentileClaim, text: 'Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.' },
@@ -139,7 +141,8 @@ export function ReportBrief({ model, hovered, onHover }: {
   // guideline compression, or — Phase 3 — the market-competitive floor).
   const citesGuidelines = supervisory.reports.length > 0
     || (!!guidelineCompression && guidelineCompression.count > 0)
-    || proofs.some((p) => p.kind === 'marketFloor');
+    || proofs.some((p) => p.kind === 'marketFloor')
+    || sectionShow.guidelineBasis;
   const sourceIds: CitationKey[] = [
     'wisStat', 'ufas',
     ...(citesGuidelines ? (['uwSalaryGuidelines'] as CitationKey[]) : []),
@@ -236,11 +239,40 @@ export function ReportBrief({ model, hovered, onHover }: {
             <Text size="sm" c="dimmed" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is limited.</Text>
           )}
 
+          {/* Basis under the UW Salary Administration Guidelines — the specific provisions this document's
+              evidence supports, in the guideline's own vocabulary (parity / compression / market request),
+              so the request speaks HR's language rather than an ad-hoc framing. */}
+          {sectionShow.guidelineBasis && (
+            <>
+              <Text size="sm" fw={600} mb="xs">
+                {sectionNum.guidelineBasis}. Basis under the UW Salary Administration Guidelines<Sup n={fn('equityTerm')} />
+              </Text>
+              <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+                <Stack gap="md">
+                  {guidelineProvisions.map((p) => (
+                    <Box key={p.key}>
+                      <Group gap={8} wrap="nowrap" align="center" mb={2}>
+                        <Text size="sm" fw={700}>{p.name}</Text>
+                        {p.selfReported && <Badge size="xs" variant="light" color="gray" tt="none">self-reported</Badge>}
+                      </Group>
+                      <Text size="xs" c="dimmed" fs="italic" mb={2}>“{p.quote}”</Text>
+                      <Text size="xs">Supported here by: {p.supportedBy}.</Text>
+                    </Box>
+                  ))}
+                </Stack>
+                <Text size="xs" c="dimmed" mt="md">
+                  Terms follow the guideline: this is a request for a <b>parity / compression adjustment</b>, not an
+                  “equity adjustment” (a term the guideline reserves for protected-category inequities).<Sup n={fn('equityTerm')} />
+                </Text>
+              </Card>
+            </>
+          )}
+
           {/* Why — the proofs. This is objective, salary+tenure-derived evidence, distinct from (and
               ordered before) the self-reported value-adds in "Documented qualifications" below. */}
           {sectionShow.highlights && (
             <>
-              <Text size="sm" fw={600} mb="xs">{sectionNum.highlights}. Why this is an equity correction <Text span c="dimmed" size="xs" fw={400}>· objective evidence</Text></Text>
+              <Text size="sm" fw={600} mb="xs">{sectionNum.highlights}. Grounds for a parity / compression adjustment <Text span c="dimmed" size="xs" fw={400}>· objective evidence</Text></Text>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
                   <Card key={p.kind} withBorder radius="md" shadow="sm" padding="lg">
