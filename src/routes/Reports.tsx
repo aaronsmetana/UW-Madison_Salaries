@@ -783,20 +783,24 @@ export default function Reports() {
   const evidenceChecklist = useMemo(() => {
     const has = (s: string) => config.sections.includes(s);
     const marketProof = proofs.find((p) => p.kind === 'market');
+    // subjectPct/medianPct comparison mirrors the document's raise-cycle gating (Phase C): the subject
+    // line is dropped when the subject out-raised peers, so the checklist explains that omission too.
+    const raiseSubjectOutpaced = raiseCycle?.subjectPct != null && raiseCycle.subjectPct > raiseCycle.medianPct;
+    const tenureTrendMeaningful = tenureRegression != null && subjectPay != null && tenureRegression.gap >= 0.02 * subjectPay;
     return [
-      { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools` },
-      { label: 'Percentile / market gap', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers' },
-      { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers' },
-      { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers' },
-      { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below' },
-      { label: 'Tenure-trend regression', ok: tenureRegression != null && tenureRegression.gap > 0, note: tenureRegression == null ? 'need ≥8 same-title peers with tenure' : tenureRegression.gap > 0 ? undefined : 'paid above the tenure trend' },
-      { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint' },
-      { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? `no published range for grade ${grade ?? '—'}` : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range' },
-      { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : undefined },
-      { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record' },
-      { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)' },
+      { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools`, sectionId: 'standing' },
+      { label: 'Percentile / market gap', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers', sectionId: 'highlights' },
+      { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers', sectionId: 'highlights' },
+      { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers', sectionId: 'highlights' },
+      { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below', sectionId: 'highlights' },
+      { label: 'Tenure-trend regression', ok: tenureTrendMeaningful, note: tenureRegression == null ? 'need ≥8 same-title peers with tenure' : tenureRegression.gap <= 0 ? 'paid above the tenure trend' : !tenureTrendMeaningful ? 'gap under 2% of pay — omitted as too small to claim' : undefined, sectionId: 'highlights' },
+      { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint', sectionId: 'highlights' },
+      { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? `no published range for grade ${grade ?? '—'}` : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range', sectionId: 'highlights' },
+      { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : raiseSubjectOutpaced ? 'subject out-raised peers — subject line omitted from document' : undefined, sectionId: 'history' },
+      { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record', sectionId: 'history' },
+      { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)', sectionId: 'risk' },
     ];
-  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt, marketPosition]);
+  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt, marketPosition, subjectPay]);
 
   // ── Setup-pane data ──
   const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({
@@ -887,7 +891,9 @@ export default function Reports() {
         strengthHints={strengthHints}
         talkingPoints={talkingPoints}
         overAsk={overAsk}
-        overAskGuidelineAnchored={winningAnchor != null}
+        overAskAnchor={winningAnchor?.key ?? null}
+        cohortP75={stats.p75}
+        recommended={recommended}
         onReset={() => {
           if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
           setConfig(defaultConfig());

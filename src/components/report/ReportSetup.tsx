@@ -4,7 +4,7 @@ import {
   SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
-import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle } from '@tabler/icons-react';
+import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
 import { usd, pct } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
@@ -22,7 +22,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
-  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskGuidelineAnchored, onReset, onHover,
+  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, onReset, onHover,
   supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, marketFloor, performanceGuide,
 }: {
   config: ReportConfig;
@@ -42,7 +42,12 @@ export function ReportSetup({
   strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>>;
   talkingPoints: string;
   overAsk: boolean;
-  overAskGuidelineAnchored?: boolean;
+  /** When the ask exceeds cohort p75, which guideline anchor (if any) justifies it — drives the notice's
+   *  tone: an anchored over-ask is informational, an unanchored one is a credibility warning. */
+  overAskAnchor: 'supervisor' | 'marketFloor' | null;
+  cohortP75: number | null;
+  /** The current recommended salary — powers the sticky footer that tracks factor toggles. */
+  recommended: number | null;
   onReset: () => void;
   onHover: (id: string | null) => void;
   /** Resolved direct reports named under the Supervisory-scope factor (pay/differential vs. the
@@ -51,8 +56,9 @@ export function ReportSetup({
   onAddSupervisee: (p: { key: string; name: string }) => void;
   onRemoveSupervisee: (key: string) => void;
   /** Which evidence sections will actually render in the document (and why not, when they won't) —
-   *  a private nudge so the user can see how to strengthen the case before printing. */
-  evidenceChecklist: { label: string; ok: boolean; note?: string }[];
+   *  a private nudge so the user can see how to strengthen the case before printing. `sectionId` links
+   *  a row to its document section so clicking it scrolls the brief there. */
+  evidenceChecklist: { label: string; ok: boolean; note?: string; sectionId?: string }[];
   /** The SAG market-competitive floor (85% of the grade midpoint) when the subject is below it — powers
    *  the opt-in floor target next to the target Select. Null when no published band / already competitive. */
   marketFloor: { floorPay: number; compa: number; grade: number } | null;
@@ -301,8 +307,11 @@ export function ReportSetup({
                               <Group key={r.key} justify="space-between" wrap="nowrap" gap={6}>
                                 <Text size="xs" truncate style={{ flex: 1, minWidth: 0 }}>{r.name} · {usd(r.pay)}</Text>
                                 <Group gap={4} wrap="nowrap">
-                                  <Badge size="xs" variant="light" color={r.inverted ? 'orange' : 'gray'} tt="none" style={{ whiteSpace: 'nowrap' }}>
-                                    {r.inverted ? '+' : '−'}{pct(r.differential)} vs you
+                                  <Badge
+                                    size="xs" variant="light" tt="none" style={{ whiteSpace: 'nowrap' }}
+                                    color={r.inverted ? 'orange' : r.belowFloor ? 'yellow' : 'gray'}
+                                  >
+                                    {r.inverted ? '+' : '−'}{pct(r.differential)} — {r.inverted ? 'inversion' : r.belowFloor ? 'under the 15% guideline' : 'meets guideline'}
                                   </Badge>
                                   <ActionIcon variant="subtle" color="gray" size="xs" aria-label={`Remove ${r.name}`} onClick={() => onRemoveSupervisee(r.key)}>
                                     <IconX size={12} />
@@ -312,7 +321,9 @@ export function ReportSetup({
                             ))}
                           </Stack>
                         )}
-                        {supervisoryCase.top && supervisoryCase.invertedCount > 0 && supervisoryCase.target15 != null && (
+                        {supervisoryCase.top && supervisoryCase.target15 != null
+                          && supervisoryCase.reports.some((r) => r.belowFloor)
+                          && (basePay == null || supervisoryCase.target15 > basePay) && (
                           <Checkbox
                             mt={8}
                             size="xs"
@@ -506,29 +517,49 @@ export function ReportSetup({
         {evidenceChecklist.length > 0 && (
           <Box mt="md">
             <Text size="sm" fw={600} mb={4}>Evidence in this report</Text>
+            <Text size="xs" c="dimmed" mb={6}>Click a rendered item to jump to it in the document.</Text>
             <Stack gap={3}>
-              {evidenceChecklist.map((e) => (
-                <Group key={e.label} gap={6} wrap="nowrap" align="flex-start">
-                  {e.ok
-                    ? <IconCheck size={13} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
-                    : <IconX size={13} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
-                  <Text size="xs" c={e.ok ? undefined : 'dimmed'}>
-                    {e.label}{e.note ? <Text span c="dimmed"> — {e.note}</Text> : null}
-                  </Text>
-                </Group>
-              ))}
+              {evidenceChecklist.map((e) => {
+                const jump = e.ok && e.sectionId
+                  ? () => document.getElementById(`report-sec-${e.sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  : undefined;
+                return (
+                  <Group
+                    key={e.label} gap={6} wrap="nowrap" align="flex-start"
+                    onClick={jump}
+                    style={jump ? { cursor: 'pointer' } : undefined}
+                  >
+                    {e.ok
+                      ? <IconCheck size={13} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                      : <IconX size={13} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
+                    <Text size="xs" c={e.ok ? undefined : 'dimmed'} td={jump ? 'underline' : undefined} style={jump ? { textDecorationStyle: 'dotted', textUnderlineOffset: 2 } : undefined}>
+                      {e.label}{e.note ? <Text span c="dimmed" td="none"> — {e.note}</Text> : null}
+                    </Text>
+                  </Group>
+                );
+              })}
             </Stack>
           </Box>
         )}
 
         {overAsk && (
           <Group gap={6} wrap="nowrap" align="flex-start" mt="md">
-            <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
-            <Text size="xs" c="orange.7">
-              {overAskGuidelineAnchored
-                ? "The ask exceeds this cohort's 75th percentile, but it's anchored to a published UW Salary Administration Guidelines differential (supervisory or market-competitive floor) — not an unsupported reach."
-                : "The ask exceeds this cohort's 75th percentile — consider trimming value-adds for credibility."}
-            </Text>
+            {overAskAnchor ? (
+              <>
+                <IconInfoCircle size={14} color="var(--mantine-color-accent-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <Text size="xs" c="accent.7">
+                  The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''}, but it's anchored to the
+                  UW guideline's {overAskAnchor === 'supervisor' ? '15% supervisory differential above a named direct report' : 'market-competitive floor (85% of the grade midpoint)'} — cite the guideline when you present it, not an unsupported reach.
+                </Text>
+              </>
+            ) : (
+              <>
+                <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <Text size="xs" c="orange.7">
+                  The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''} — consider trimming value-adds for credibility.
+                </Text>
+              </>
+            )}
           </Group>
         )}
 
@@ -568,6 +599,28 @@ export function ReportSetup({
           </Tooltip>
         </Group>
       </Card>
+
+      {/* Sticky recommendation readout — the long setup pane means a factor toggle near the top moves the
+          number well off-screen; this pins the current figure so every edit shows its effect at a glance. */}
+      {recommended != null && basePay != null && (
+        <Box
+          style={{
+            position: 'sticky', bottom: 0, zIndex: 2,
+            marginInline: 'calc(-1 * var(--mantine-spacing-md))', marginBottom: 'calc(-1 * var(--mantine-spacing-md))',
+            padding: '10px var(--mantine-spacing-md)',
+            background: 'var(--mantine-color-body)',
+            borderTop: '1px solid var(--mantine-color-default-border)',
+          }}
+        >
+          <Group justify="space-between" wrap="nowrap">
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.05em' }}>Recommended</Text>
+            <Text size="sm" fw={800} c="pos.7">
+              {usd(recommended)}
+              {recommended > basePay && <Text span c="dimmed" fw={600}> (+{pct((recommended - basePay) / basePay)})</Text>}
+            </Text>
+          </Group>
+        </Box>
+      )}
     </Stack>
   );
 }
