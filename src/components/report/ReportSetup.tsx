@@ -23,7 +23,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
   cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskGuidelineAnchored, onReset, onHover,
-  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, marketFloor,
+  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, marketFloor, performanceGuide,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -56,6 +56,14 @@ export function ReportSetup({
   /** The SAG market-competitive floor (85% of the grade midpoint) when the subject is below it — powers
    *  the opt-in floor target next to the target Select. Null when no published band / already competitive. */
   marketFloor: { floorPay: number; compa: number; grade: number } | null;
+  /** SAG performance-adjustment coaching for the Performance factor (5–10% general range + the annual-
+   *  review matrix cell for the subject's position in grade, with midrange dollar suggestions). */
+  performanceGuide: {
+    position: string | null;
+    general: readonly [number, number];
+    exemplary: readonly [number, number]; meets: readonly [number, number];
+    exemplaryAmt: number; meetsAmt: number;
+  } | null;
 }) {
   const set = (patch: Partial<ReportConfig>) => onChange({ ...config, ...patch });
   const setFactor = (key: FactorKey, patch: Partial<ReportConfig['factors'][FactorKey]>) =>
@@ -314,6 +322,34 @@ export function ReportSetup({
                           />
                         )}
                       </Box>
+                    )}
+
+                    {/* Performance-adjustment coaching — the SAG's 5–10% range + the matrix cell for the
+                        subject's position in grade, with one-click dollar suggestions. */}
+                    {f.key === 'performance' && performanceGuide && (
+                      <Box mt={4}>
+                        <Text size="xs" c="dimmed">
+                          UW guideline: a performance adjustment of {pct(performanceGuide.general[0])}–{pct(performanceGuide.general[1])} may be appropriate
+                          {performanceGuide.position ? ` (${performanceGuide.position}: Exemplary ${pct(performanceGuide.exemplary[0])}–${pct(performanceGuide.exemplary[1])}, Meets ${pct(performanceGuide.meets[0])}–${pct(performanceGuide.meets[1])})` : ''}.
+                        </Text>
+                        {basePay != null && (
+                          <Group gap={6} wrap="wrap" mt={4}>
+                            <Button size="compact-xs" variant="default" onClick={() => setFactor('performance', { amount: performanceGuide.exemplaryAmt })}>
+                              Exemplary ≈ {usd(performanceGuide.exemplaryAmt)}
+                            </Button>
+                            <Button size="compact-xs" variant="default" onClick={() => setFactor('performance', { amount: performanceGuide.meetsAmt })}>
+                              Meets ≈ {usd(performanceGuide.meetsAmt)}
+                            </Button>
+                          </Group>
+                        )}
+                      </Box>
+                    )}
+
+                    {/* Change-in-duties coaching — the SAG warns volume alone doesn't warrant an adjustment. */}
+                    {f.key === 'scope' && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        UW guideline: a “change in duties pay adjustment” rests on significant, permanent changes to complexity, scope, or accountability — a higher volume of the same work does not, on its own, warrant an adjustment.
+                      </Text>
                     )}
                   </Stack>
                 )}

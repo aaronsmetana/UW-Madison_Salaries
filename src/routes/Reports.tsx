@@ -494,6 +494,25 @@ export default function Reports() {
     };
   }, [subjectPay, band, grade]);
 
+  // Performance-adjustment coaching (setup-pane only): the SAG's 5–10% general range, plus the annual-
+  // review matrix cell for the subject's position in grade (Emerging/Established/Advanced) when a band
+  // exists, and midrange dollar suggestions to fill the Performance factor amount with.
+  const performanceGuide = useMemo(() => {
+    if (subjectPay == null) return null;
+    const posKey = marketPosition == null ? null
+      : marketPosition.position === 'Emerging in Grade' ? 'emerging' as const
+        : marketPosition.position === 'Advanced in Grade' ? 'advanced' as const : 'established' as const;
+    const m = POLICY.performanceAdjustment;
+    const cell = (lvl: 'exemplary' | 'meets'): readonly [number, number] => posKey ? m.matrix[lvl][posKey] : m.general;
+    const mid = (r: readonly [number, number]) => Math.round(subjectPay * (r[0] + r[1]) / 2);
+    return {
+      position: marketPosition?.position ?? null,
+      general: m.general,
+      exemplary: cell('exemplary'), meets: cell('meets'),
+      exemplaryAmt: mid(cell('exemplary')), meetsAmt: mid(cell('meets')),
+    };
+  }, [subjectPay, marketPosition]);
+
   // Real-dollar (CPI-adjusted) erosion: the subject's own pay history may show nominal growth that's
   // actually a real-dollar pay cut once inflation is factored in — a distinct, often more persuasive,
   // framing than the raw percentage.
@@ -882,6 +901,7 @@ export default function Reports() {
         onRemoveSupervisee={(key) => setConfig({ ...config, supervisees: config.supervisees.filter((k) => k !== key) })}
         evidenceChecklist={evidenceChecklist}
         marketFloor={marketPosition?.belowCompetitive ? { floorPay: marketPosition.floorPay, compa: marketPosition.compa, grade: marketPosition.grade } : null}
+        performanceGuide={performanceGuide}
       />
     </Box>
   );

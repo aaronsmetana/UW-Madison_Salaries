@@ -124,13 +124,14 @@ export function ReportBrief({ model, hovered, onHover }: {
     { id: 'percentile', when: hasPercentileClaim, text: 'Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.' },
     { id: 'supervisory', when: supervisory.reports.length > 0, text: <>Per the UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Supervisors or Managers and Subordinates&rdquo; provision: at least a 15% pay differential between a supervisor/manager and a non-managing subordinate (pay differential = (higher salary &minus; lower salary) &divide; lower salary). See Sources.</> },
     { id: 'guidelineCompression', when: !!guidelineCompression && guidelineCompression.count > 0, text: <>The UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Compression&rdquo; provision suggests at least a {guidelineCompression ? pct(guidelineCompression.threshold) : '5%'} pay differential ({guidelineCompression?.exempt === false ? 'non-exempt' : guidelineCompression?.exempt === true ? 'exempt/professional' : 'FLSA status unavailable — conservative non-exempt floor applied'}) where same-title employees have distinct differences in experience. &ldquo;Distinct differences&rdquo; is operationalized here as a peer with at least {guidelineCompression?.gapYears ?? 5} fewer years of UW tenure, mirroring the guideline&rsquo;s own 3-vs-8-year example. See Sources.</> },
+    { id: 'newHireCompression', when: proofs.some((p) => p.kind === 'compression'), text: 'Recent hires may additionally receive a hiring bonus of up to 15% of the proposed starting salary, which the public salary record does not capture — so the recorded salary understates new-hire total compensation.' },
     { id: 'gradeband', when: proofs.some((p) => p.kind === 'gradeband'), text: "Compa-ratio = pay ÷ the grade's official band midpoint (1.00 = exactly at midpoint). Position in range (PIR) = (pay − band minimum) ÷ (band maximum − band minimum), where 0% is the band floor and 100% the ceiling." },
     { id: 'marketFloor', when: proofs.some((p) => p.kind === 'marketFloor'), text: <>The UW–Madison Salary Administration Guidelines define the market-competitive range as +/-15% of the grade or market midpoint (85%&ndash;115% compa-ratio, or 25%&ndash;75% PIR); below it, &ldquo;a market competitive pay request can be made for OHR to review and approve.&rdquo; See Sources.</> },
     { id: 'tenureTrend', when: proofs.some((p) => p.kind === 'tenureTrend'), text: "The tenure-vs-pay trend is an ordinary least-squares fit of same-title peers' pay on tenure (the subject excluded from the fit), evaluated at the subject's own tenure." },
-    { id: 'raiseCycle', when: !!raiseCycle, text: 'The raise-cycle comparison covers continuing appointments only (present in both snapshots) in the same job code; the annualized rate compounds the median cycle raise over the actual elapsed months between the two snapshots.' },
+    { id: 'raiseCycle', when: !!raiseCycle, text: "The raise-cycle comparison covers continuing appointments only (present in both snapshots) in the same job code; the annualized rate compounds the median cycle raise over the actual elapsed months between the two snapshots. Observed cycle raises include the Legislature's Joint Committee on Employment Relations (JCOER)-approved pay plan adjustments, which are applied broadly and so maintain rather than close relative pay gaps." },
     { id: 'selfReported', when: has('factors') && activeFactors.length > 0, text: 'Value-add adjustments under "Documented qualifications & responsibilities" are self-reported by the subject, not independently verified against a position description or performance record.' },
     { id: 'cpi', when: !!realErosion, text: 'Real-dollar (inflation-adjusted) figures use BLS Consumer Price Index (CPI-U) annual averages; recent years use the latest available approximation. See Sources.' },
-    { id: 'retention', when: has('risk'), text: 'Replacement-cost estimates are industry-wide benchmarks, not specific to this employee, role, or institution; the attrition figure, where shown, is drawn directly from the public salary record. See Sources.' },
+    { id: 'retention', when: has('risk'), text: "Replacement-cost estimates are industry-wide benchmarks, not specific to this employee, role, or institution; the attrition figure, where shown, is drawn directly from the public salary record. The retention-bonus alternative is drawn from the UW–Madison Salary Administration Guidelines. See Sources." },
   ];
   const activeNotes = noteDefs.filter((n) => n.when);
   const fn = (id: string) => {
@@ -141,8 +142,9 @@ export function ReportBrief({ model, hovered, onHover }: {
   // guideline compression, or — Phase 3 — the market-competitive floor).
   const citesGuidelines = supervisory.reports.length > 0
     || (!!guidelineCompression && guidelineCompression.count > 0)
-    || proofs.some((p) => p.kind === 'marketFloor')
-    || sectionShow.guidelineBasis;
+    || proofs.some((p) => p.kind === 'marketFloor' || p.kind === 'compression')
+    || sectionShow.guidelineBasis
+    || has('risk'); // the retention section cites the guideline's retention-bonus provision
   const sourceIds: CitationKey[] = [
     'wisStat', 'ufas',
     ...(citesGuidelines ? (['uwSalaryGuidelines'] as CitationKey[]) : []),
@@ -152,7 +154,7 @@ export function ReportBrief({ model, hovered, onHover }: {
   ];
   const PROOF_NOTE: Partial<Record<ProofKind, string>> = {
     market: 'percentile', supervisory: 'supervisory', gradeband: 'gradeband', tenureTrend: 'tenureTrend',
-    guidelineCompression: 'guidelineCompression', marketFloor: 'marketFloor',
+    guidelineCompression: 'guidelineCompression', marketFloor: 'marketFloor', compression: 'newHireCompression',
   };
 
   return (
@@ -483,7 +485,8 @@ export function ReportBrief({ model, hovered, onHover }: {
                 <Text size="sm" mt="md">
                   Same-title peers received a median <b>{pct(raiseCycle.medianPct)}</b> raise from {raiseCycle.fromLabel} to {raiseCycle.toLabel}
                   {raiseCycle.subjectPct != null && <>; {subjectFirst} received <b>{pct(raiseCycle.subjectPct)}</b></>}
-                  {' '}(n = {raiseCycle.n}).<Sup n={fn('raiseCycle')} />
+                  {' '}(n = {raiseCycle.n}).<Sup n={fn('raiseCycle')} /> These cycles include the Legislature's JCOER-approved
+                  pay plan adjustments, which apply across the board and so maintain — rather than close — an existing pay gap.
                 </Text>
               )}
 
@@ -551,6 +554,10 @@ export function ReportBrief({ model, hovered, onHover }: {
                   even the conservative (one-third-of-salary) replacement estimate.
                 </Text>
               )}
+              <Text size="sm" c="dimmed" mt={6}>
+                The guidelines also provide for a <b>retention bonus</b> — an alternative instrument to retain a valuable
+                employee where a base-salary increase is not advised due to parity or range considerations.<Sup n={fn('retention')} />
+              </Text>
             </Paper>
           )}
 
