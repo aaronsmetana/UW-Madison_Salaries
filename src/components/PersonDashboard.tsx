@@ -261,7 +261,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       </div>
 
       {departed && (
-        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
           Not in the latest snapshot ({campusLatest?.label}) — may no longer be employed. Last seen {latest?.snapshot_label}.
         </Alert>
       )}

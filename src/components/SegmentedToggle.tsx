@@ -1,4 +1,5 @@
-import { SegmentedControl, Stack, Text } from '@mantine/core';
+import { SegmentedControl, Stack } from '@mantine/core';
+import { Eyebrow } from './Eyebrow';
 
 export interface ToggleOption {
   id: string;
@@ -41,9 +42,7 @@ export function SegmentedToggle({
   if (!label) return control;
   return (
     <Stack gap={4} align="flex-start">
-      <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, letterSpacing: '0.03em' }}>
-        {label}
-      </Text>
+      <Eyebrow>{label}</Eyebrow>
       {control}
     </Stack>
   );

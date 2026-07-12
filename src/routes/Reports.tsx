@@ -18,6 +18,7 @@ import { PersonDashboard } from '../components/PersonDashboard';
 import { EmptyState } from '../components/EmptyState';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
+import { Eyebrow } from '../components/Eyebrow';
 import { type ScatterPoint } from '../components/TenurePayScatter';
 import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
@@ -972,7 +973,7 @@ export default function Reports() {
       {type === 'person' && (
         <>
           <Card withBorder padding="lg" className="no-print">
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6} style={{ letterSpacing: '0.05em' }}>Report on</Text>
+            <Eyebrow mb={6}>Report on</Eyebrow>
             <SearchBox placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
             {selPerson && <Text size="sm" mt="sm">Showing report for <b>{selPerson.name}</b>.</Text>}
           </Card>
@@ -1005,7 +1006,7 @@ export default function Reports() {
         ) : (
           <>
             {/* Sticky ledger so the math is always visible while editing on mobile */}
-            <Paper className="no-print" withBorder radius="md" p="xs" style={{ position: 'sticky', top: 8, zIndex: 5 }}>
+            <Paper className="no-print" withBorder p="xs" style={{ position: 'sticky', top: 8, zIndex: 5 }}>
               <Group justify="space-between" wrap="nowrap">
                 <Text size="sm" c="dimmed">Current {subjectPay != null ? usd(subjectPay) : '—'}</Text>
                 <Text size="sm" fw={800} c={belowTarget ? 'green.7' : undefined}>

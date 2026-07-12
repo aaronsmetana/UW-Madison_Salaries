@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
+import { Eyebrow } from '../components/Eyebrow';
 import { SchoolsPanel } from '../components/SchoolsPanel';
 import { EarnersPanel } from '../components/EarnersPanel';
 import { TitlesPanel } from '../components/TitlesPanel';
@@ -77,13 +78,12 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const [toId, setToId] = useState<string | null>(null);
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   const railStyle = { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' } as const;
-  const labelStyle = { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' } as const;
 
   if (loading || series.length < 2) {
     return (
       <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
         <div aria-hidden style={railStyle} />
-        <Text tt="uppercase" c="dimmed" style={labelStyle}>Median pay growth</Text>
+        <Eyebrow>Median pay growth</Eyebrow>
         <Skeleton height={24} width={120} radius="sm" mt={8} />
       </Card>
     );
@@ -111,7 +111,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
     <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
       <div aria-hidden style={railStyle} />
       <Group justify="space-between" align="center" wrap="nowrap">
-        <Text tt="uppercase" c="dimmed" style={labelStyle}>Median pay growth</Text>
+        <Eyebrow>Median pay growth</Eyebrow>
         <SegmentedToggle
           size="xs"
           value={dollarMode}
@@ -235,7 +235,7 @@ export default function Explore() {
       )}
 
       {flagged.length > 0 && (
-        <Alert color="yellow" title={`${flagged.length} data-health note${flagged.length > 1 ? 's' : ''}`}>
+        <Alert color="orange" title={`${flagged.length} data-health note${flagged.length > 1 ? 's' : ''}`}>
           {flagged.slice(0, 3).map((s) => (
             <Text size="sm" key={s.snapshot_id}>
               <b>{s.snapshot_id}</b>: {s.messages.join('; ')}

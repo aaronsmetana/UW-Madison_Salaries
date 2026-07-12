@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, fmtSnapTick } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
+import { Eyebrow } from '../components/Eyebrow';
 import { useTray, type TrayItem } from '../state/tray';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
@@ -318,12 +319,12 @@ export default function Compare() {
       {/* ── Build your comparison: three labeled add blocks ── */}
       <Card withBorder padding="lg">
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
-          <Paper p="sm" radius="md" withBorder shadow="xs">
-            <Group gap={6} mb={8}><IconUser size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add person</Text></Group>
+          <Paper p="sm" withBorder shadow="sm">
+            <Group gap={6} mb={8}><IconUser size={15} /><Eyebrow>Add person</Eyebrow></Group>
             <SearchBox placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Paper>
-          <Paper p="sm" radius="md" withBorder shadow="xs">
-            <Group gap={6} mb={8}><IconBriefcase size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add title</Text></Group>
+          <Paper p="sm" withBorder shadow="sm">
+            <Group gap={6} mb={8}><IconBriefcase size={15} /><Eyebrow>Add title</Eyebrow></Group>
             <Select
               {...dropdownProps('md')}
               placeholder="Search a title…"
@@ -338,8 +339,8 @@ export default function Compare() {
               nothingFoundMessage="No matching title"
             />
           </Paper>
-          <Paper p="sm" radius="md" withBorder shadow="xs">
-            <Group gap={6} mb={8}><IconBuildingBank size={15} /><Text size="xs" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>Add school / division</Text></Group>
+          <Paper p="sm" withBorder shadow="sm">
+            <Group gap={6} mb={8}><IconBuildingBank size={15} /><Eyebrow>Add school / division</Eyebrow></Group>
             <Select
               {...dropdownProps('md')}
               placeholder="Search a school…"

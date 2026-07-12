@@ -1,6 +1,7 @@
 import type { ReactNode, CSSProperties } from 'react';
 import { Card, Text, Anchor } from '@mantine/core';
 import { Link } from 'react-router-dom';
+import { Eyebrow } from './Eyebrow';
 
 export type StatSize = 'hero' | 'md' | 'sm';
 
@@ -41,9 +42,7 @@ export function StatCard({
       {lead && (
         <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' }} />
       )}
-      <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
-        {label}{to && <Text span c="accent.7"> →</Text>}
-      </Text>
+      <Eyebrow>{label}{to && <Text span c="accent.7"> →</Text>}</Eyebrow>
       <Text mt={6} style={VALUE[size]}>{value}</Text>
       {sub != null && <Text size="sm" c="dimmed" mt={4}>{sub}</Text>}
     </Card>

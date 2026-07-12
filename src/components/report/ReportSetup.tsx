@@ -6,7 +6,8 @@ import {
 import { useClipboard } from '@mantine/hooks';
 import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
-import { usd, pct } from '../../lib/format';
+import { Eyebrow } from '../Eyebrow';
+import { usd, pct, fmtYears } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import {
   COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, newCustomFactor, type ReportConfig, type CohortMode, type FactorKey,
@@ -16,9 +17,7 @@ import {
 export interface SetupComparator { key: string; name: string; title: string | null; school: string | null; tenure: number | null; pay: number | null; isSubject: boolean }
 export interface SuggestPerson { key: string; name: string; pay: number }
 
-const SectionLabel = ({ children }: { children: ReactNode }) => (
-  <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.05em' }}>{children}</Text>
-);
+const SectionLabel = ({ children }: { children: ReactNode }) => <Eyebrow>{children}</Eyebrow>;
 
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
@@ -91,7 +90,7 @@ export function ReportSetup({
   return (
     <Stack gap="lg">
       {/* Subject */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>This is me (subject)</SectionLabel>
         <Select
           {...dropdownProps('md')}
@@ -105,7 +104,7 @@ export function ReportSetup({
       </Card>
 
       {/* Comparators — the subject is the anchor above; this tray holds only the other side of the scale. */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>Who you're compared against</SectionLabel>
         <Box mt={8} style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 8, overflow: 'hidden' }}>
           {peers.length === 0 && (
@@ -125,7 +124,7 @@ export function ReportSetup({
               <Box style={{ minWidth: 0 }}>
                 <Text size="sm" fw={600} truncate>{c.name}</Text>
                 <Text size="xs" c="dimmed" truncate>
-                  {[c.title, c.school, c.tenure != null ? `${c.tenure.toFixed(1)} yr` : null, c.pay != null ? usd(c.pay) : null].filter(Boolean).join(' · ')}
+                  {[c.title, c.school, c.tenure != null ? fmtYears(c.tenure) : null, c.pay != null ? usd(c.pay) : null].filter(Boolean).join(' · ')}
                 </Text>
               </Box>
               <Group gap={4} wrap="nowrap">
@@ -179,7 +178,7 @@ export function ReportSetup({
       </Card>
 
       {/* Benchmark cohort */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>Benchmark cohort</SectionLabel>
         <Radio.Group value={config.cohort} onChange={(v) => set({ cohort: v as CohortMode })} mt={8}>
           <Stack gap={8}>
@@ -190,7 +189,7 @@ export function ReportSetup({
                   <Group gap="xs" wrap="nowrap" justify="space-between">
                     <Radio value={c.value} label={c.label} />
                     {badge && (
-                      <Badge size="sm" {...badgeStyle(badge.tone)} tt="none" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Badge size="sm" {...badgeStyle(badge.tone)} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {badge.text}
                       </Badge>
                     )}
@@ -217,7 +216,7 @@ export function ReportSetup({
       </Card>
 
       {/* Target */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>Target salary (optional)</SectionLabel>
         <Select
           {...dropdownProps('md')}
@@ -246,7 +245,7 @@ export function ReportSetup({
       </Card>
 
       {/* Justification factors */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>Justification factors</SectionLabel>
         <Stack gap="sm" mt={8}>
           {FACTOR_DEFS.map((f) => {
@@ -308,8 +307,8 @@ export function ReportSetup({
                                 <Text size="xs" truncate style={{ flex: 1, minWidth: 0 }}>{r.name} · {usd(r.pay)}</Text>
                                 <Group gap={4} wrap="nowrap">
                                   <Badge
-                                    size="xs" variant="light" tt="none" style={{ whiteSpace: 'nowrap' }}
-                                    color={r.inverted ? 'orange' : r.belowFloor ? 'yellow' : 'gray'}
+                                    size="xs" variant="light" style={{ whiteSpace: 'nowrap' }}
+                                    color={r.inverted ? 'red' : r.belowFloor ? 'orange' : 'gray'}
                                   >
                                     {r.inverted ? '+' : '−'}{pct(r.differential)} — {r.inverted ? 'inversion' : r.belowFloor ? 'under the 15% guideline' : 'meets guideline'}
                                   </Badge>
@@ -442,7 +441,7 @@ export function ReportSetup({
       </Card>
 
       {/* Outcome override */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>Override the outcome</SectionLabel>
         <NumberInput
           mt={6}
@@ -465,7 +464,7 @@ export function ReportSetup({
       </Card>
 
       {/* Strategy tools — Kitchen-only (never on the right pane) */}
-      <Card withBorder radius="md" padding="md" bg="var(--mantine-color-default-hover)">
+      <Card withBorder padding="md" bg="var(--mantine-color-default-hover)">
         <Group justify="space-between" align="center" wrap="nowrap">
           <SectionLabel>Strategy tools (private)</SectionLabel>
           <Button
@@ -584,7 +583,7 @@ export function ReportSetup({
       </Card>
 
       {/* Sections + reset */}
-      <Card withBorder radius="md" padding="md">
+      <Card withBorder padding="md">
         <SectionLabel>Report sections</SectionLabel>
         <Checkbox.Group value={config.sections} onChange={(v) => set({ sections: v })} mt={8}>
           <Stack gap="xs">

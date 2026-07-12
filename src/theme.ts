@@ -19,7 +19,7 @@ export const theme = createTheme({
   primaryColor: 'accent',
   primaryShade: { light: 7, dark: 6 },
   defaultRadius: 'lg',
-  // Pick readable (dark) text automatically on light-luminance filled badges (e.g. yellow "WARNING").
+  // Pick readable (dark) text automatically on light-luminance filled badges (e.g. an orange "CAUTION").
   autoContrast: true,
   luminanceThreshold: 0.45,
   fontFamily: "'Hanken Grotesk', system-ui, -apple-system, Segoe UI, Roboto, sans-serif",

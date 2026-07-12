@@ -13,6 +13,7 @@ import { TenurePayScatter } from '../TenurePayScatter';
 import { ChartTooltip } from '../chart/ChartTooltip';
 import { DeltaChip } from '../Delta';
 import { GlossaryTerm } from '../GlossaryTerm';
+import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
 import { CAND, PEER, ordinal, type BriefModel, type ProofKind } from './model';
@@ -177,7 +178,7 @@ export function ReportBrief({ model, hovered, onHover }: {
         <>
           {/* Recommendation hero — with the itemized "receipt" docked directly under the number */}
           {belowTarget && recommended != null ? (
-            <Paper radius="md" p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
+            <Paper p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
               <Text size="sm" fw={600} c="dimmed">1. Recommendation</Text>
               <Text fw={800} c="pos.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                 {usd(Math.round(animated))}
@@ -195,7 +196,7 @@ export function ReportBrief({ model, hovered, onHover }: {
 
               {showReceipt && (
                 <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
-                  <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb={6} style={{ letterSpacing: '0.05em' }}>How this figure is built</Text>
+                  <Eyebrow mb={6}>How this figure is built</Eyebrow>
                   <Stack gap={4}>
                     {receipt.map((line) => {
                       const lit = line.kind === 'addon' && hovered === `factor:${line.id}`;
@@ -229,7 +230,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               )}
             </Paper>
           ) : (
-            <Paper withBorder radius="md" p="lg" mb="lg">
+            <Paper withBorder p="lg" mb="lg">
               <Text size="sm" fw={600} c="dimmed">1. Recommendation</Text>
               <Text fw={700} fz="lg" mt={4}>
                 {subjectFirst} is at or above the parity target{recommended != null ? ` (${usd(recommended)})` : ''} — maintain current pay.
@@ -247,13 +248,13 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.guidelineBasis && (
             <>
               <SectionHeading id="guidelineBasis" num={sectionNum.guidelineBasis} sup={fn('equityTerm')}>Basis under the UW Salary Administration Guidelines</SectionHeading>
-              <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+              <Card withBorder shadow="sm" padding="lg" mb="lg">
                 <Stack gap="md">
                   {guidelineProvisions.map((p) => (
                     <Box key={p.key}>
                       <Group gap={8} wrap="nowrap" align="center" mb={2}>
                         <Text size="sm" fw={700}>{p.name}</Text>
-                        {p.selfReported && <Badge size="xs" variant="light" color="gray" tt="none">self-reported</Badge>}
+                        {p.selfReported && <Badge size="xs" variant="light" color="gray">self-reported</Badge>}
                       </Group>
                       <Text size="xs" c="dimmed" fs="italic" mb={2}>“{p.quote}”</Text>
                       <Text size="xs">Supported here by: {p.supportedBy}.</Text>
@@ -275,7 +276,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               <SectionHeading id="highlights" num={sectionNum.highlights} annotation="objective evidence">Grounds for a parity / compression adjustment</SectionHeading>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
-                  <Card key={p.kind} withBorder radius="md" shadow="sm" padding="lg">
+                  <Card key={p.kind} withBorder shadow="sm" padding="lg">
                     <ThemeIcon variant="light" color="accent" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
                     <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
                     <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
@@ -298,7 +299,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.standing && standing && (
             <>
               <SectionHeading id="standing" num={sectionNum.standing}>Market standing</SectionHeading>
-              <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+              <Card withBorder shadow="sm" padding="lg" mb="lg">
                 <Text size="xs" c="dimmed" mb="md">
                   {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
                 </Text>
@@ -350,7 +351,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.factors && (
             <>
               <SectionHeading id="factors" num={sectionNum.factors} annotation="self-reported" sup={fn('selfReported')}>Documented qualifications &amp; responsibilities</SectionHeading>
-              <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+              <Card withBorder shadow="sm" padding="lg" mb="lg">
                 <Stack gap={10}>
                   {activeFactors.map((f) => (
                     <Group key={f.key} justify="space-between" wrap="nowrap" align="flex-start">
@@ -372,7 +373,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.peers && (
             <>
               <SectionHeading id="peers" num={sectionNum.peers} annotation={`your named comparators (n = ${rows.length - 1})`}>Peer comparison</SectionHeading>
-              <Card withBorder radius="md" shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
+              <Card withBorder shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table>
                   <Table.Thead>
                     <Table.Tr>
@@ -400,7 +401,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                         >
                           <Table.Td>
                             {r.isSubject ? (
-                              <><b>{r.name}</b> <Badge size="xs" variant="light" color="accent" tt="none" ml={4}>Review Subject</Badge></>
+                              <><b>{r.name}</b> <Badge size="xs" variant="light" color="accent" ml={4}>Review Subject</Badge></>
                             ) : (
                               <>
                                 {anonymize ? (
@@ -411,8 +412,8 @@ export function ReportBrief({ model, hovered, onHover }: {
                                   </Anchor>
                                 )}
                                 {r.isAnomaly
-                                  ? <Badge size="xs" variant="filled" color="accent" tt="none" ml={6}>Pay inversion</Badge>
-                                  : r.lessTenure && <Badge size="xs" variant="light" color="accent" tt="none" ml={6}>less tenure</Badge>}
+                                  ? <Badge size="xs" variant="filled" color="accent" ml={6}>Pay inversion</Badge>
+                                  : r.lessTenure && <Badge size="xs" variant="light" color="accent" ml={6}>less tenure</Badge>}
                               </>
                             )}
                           </Table.Td>
@@ -449,7 +450,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.history && (
             <>
               <SectionHeading id="history" num={sectionNum.history}>Pay history</SectionHeading>
-            <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
+            <Card withBorder shadow="sm" padding="lg" mb="lg">
               <Text size="sm" fw={700}>Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
@@ -535,7 +536,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.risk && (
             <>
               <SectionHeading id="risk" num={sectionNum.risk} sup={fn('retention')}>Retention &amp; replacement cost</SectionHeading>
-            <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
+            <Paper withBorder shadow="sm" p="md" mb="lg">
               <Text size="sm" mb={6}>
                 Independent research estimates the cost of replacing an employee at roughly one-third of
                 annual salary at the median (Work Institute, 2020 Retention Report), rising to one-half to
@@ -566,12 +567,12 @@ export function ReportBrief({ model, hovered, onHover }: {
               it explains actually rendered above, so the numbering never drifts or leaves an orphan. */}
           <SectionHeading id="notes" num={notesSectionNum}>Notes &amp; sources</SectionHeading>
           <Box mb="md">
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: '0.04em' }}>Methodology notes</Text>
+            <Eyebrow mb={4}>Methodology notes</Eyebrow>
             <NotesList notes={activeNotes.map((n) => n.text)} />
             {anonymize && <Text size="xs" c="dimmed" mt={6}>Peer identities anonymized in this printing; names available on request.</Text>}
           </Box>
           <Box>
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: '0.04em' }}>Sources</Text>
+            <Eyebrow mb={4}>Sources</Eyebrow>
             <SourcesList ids={sourceIds} />
           </Box>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Group, Button, Popover, Stack, MultiSelect, Pill, Indicator, Text } from '@mantine/core';
 import { IconFilter, IconFilterFilled } from '@tabler/icons-react';
+import { Eyebrow } from './Eyebrow';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { FACETS, whereAll, snapWhere, filterKey } from '../lib/queries';
@@ -67,7 +68,7 @@ export function FilterControls() {
       arrowSize={12}
       arrowOffset={16}
       arrowPosition="side"
-      shadow="xl"
+      shadow="lg"
       radius="md"
       trapFocus
       keepMounted
@@ -142,11 +143,7 @@ export function ActiveFilters({ standalone = false }: { standalone?: boolean }) 
 
   const body = (
     <Group gap="xs" wrap="wrap" align="center">
-      {standalone && (
-        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>
-          Active filters
-        </Text>
-      )}
+      {standalone && <Eyebrow>Active filters</Eyebrow>}
       {chips.map(({ field, v }) => (
         <Pill
           key={`${field}:${v}`}

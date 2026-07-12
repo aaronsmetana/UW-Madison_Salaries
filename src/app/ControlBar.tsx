@@ -8,6 +8,7 @@ import { paidHeadcount } from '../lib/queries';
 import { num } from '../lib/format';
 import { FilterControls, ActiveFilters } from '../components/FilterControls';
 import { SegmentedToggle } from '../components/SegmentedToggle';
+import { Eyebrow } from '../components/Eyebrow';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
@@ -179,9 +180,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   // Shared control elements, arranged differently by the header vs inline layouts below.
   const lens = (
     <>
-      <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em', flexShrink: 0 }}>
-        Showing
-      </Text>
+      <Eyebrow style={{ flexShrink: 0 }}>Showing</Eyebrow>
       <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
         <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} />
         <Select
@@ -209,9 +208,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         />
       </Group>
       <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
-        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.05em' }}>
-          Pay
-        </Text>
+        <Eyebrow>Pay</Eyebrow>
         <SegmentedToggle
           size="xs"
           value={metric}
@@ -250,7 +247,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   // actions right — and the Filters button stays put: active-filter chips flow into their own row below.
   if (inline) {
     return (
-      <Paper withBorder radius="md" px="sm" py="xs">
+      <Paper withBorder px="sm" py="xs">
         <Group justify="space-between" gap="md" wrap="wrap">
           <Group gap="md" wrap="wrap" align="center">{lens}</Group>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>

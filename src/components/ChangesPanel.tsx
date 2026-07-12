@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
 import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE } from '../lib/chartStyle';
+import { Eyebrow } from './Eyebrow';
 import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
@@ -287,7 +288,7 @@ export function ChangesPanel() {
         />
       </Group>
       <Group gap="xs" wrap="wrap">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.03em' }}>Quick range</Text>
+        <Eyebrow>Quick range</Eyebrow>
         <Button size="compact-xs" variant="default" onClick={presetLatest}>Latest pair</Button>
         <Button size="compact-xs" variant="default" onClick={presetYoY}>Year over year</Button>
         <Button size="compact-xs" variant="default" onClick={presetTTC}>Since TTC</Button>
@@ -448,7 +449,7 @@ export function ChangesPanel() {
           <Text size="sm" fw={600} mb="sm">Net headcount flow by division</Text>
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <div>
-              <Text size="xs" c="pos" fw={700} tt="uppercase" mb={4}>Net gainers</Text>
+              <Eyebrow c="pos" mb={4}>Net gainers</Eyebrow>
               <Table>
                 <Table.Tbody>
                   {netTop.gainers.map((r) => (
@@ -462,7 +463,7 @@ export function ChangesPanel() {
               </Table>
             </div>
             <div>
-              <Text size="xs" c="red" fw={700} tt="uppercase" mb={4}>Net losers</Text>
+              <Eyebrow c="red" mb={4}>Net losers</Eyebrow>
               <Table>
                 <Table.Tbody>
                   {netTop.losers.map((r) => (

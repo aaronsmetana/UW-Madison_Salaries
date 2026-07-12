@@ -7,6 +7,7 @@ import { sqlStr } from '../lib/duckdb';
 import { usd, usdCompact, num } from '../lib/format';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox } from '../components/SearchBox';
+import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
@@ -25,9 +26,7 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
         <ThemeIcon size={22} radius="md" variant="light" color={color}>
           {icon}
         </ThemeIcon>
-        <Text c="dimmed" lh={1.2} ta="center" lineClamp={1} tt="uppercase" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
-          {label}
-        </Text>
+        <Eyebrow ta="center" lineClamp={1} style={{ lineHeight: 1.2 }}>{label}</Eyebrow>
       </Group>
       {hint ? <Tooltip label={hint} withArrow>{valueNode}</Tooltip> : valueNode}
     </Stack>

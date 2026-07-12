@@ -159,7 +159,7 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
                           ) : (
                             <Badge color="gray" variant="light" radius="sm">likely different</Badge>
                           )}
-                          <Badge color="yellow" variant="light" radius="sm">{g.ids.length}</Badge>
+                          <Badge color="orange" variant="light" radius="sm">{g.ids.length}</Badge>
                         </Group>
                         {open && g.ids.map((id) => (
                           <Group

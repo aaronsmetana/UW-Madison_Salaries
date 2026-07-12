@@ -32,6 +32,7 @@ import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
+import { Eyebrow } from '../components/Eyebrow';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
@@ -731,7 +732,7 @@ export default function Person() {
       </Group>
 
       {departed && (
-        <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
           Not in the latest snapshot ({campusLatest?.label}) — may no longer be employed. Last seen {latest?.snapshot_label}.
         </Alert>
       )}
@@ -764,11 +765,9 @@ export default function Person() {
               >
                 <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' }} />
                 <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
-                  <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>
-                    Actual pay
-                  </Text>
+                  <Eyebrow>Actual pay</Eyebrow>
                   {latest?.snapshot_label && (
-                    <Badge variant="light" color="accent" radius="sm" tt="none" style={{ fontWeight: 600, flexShrink: 0 }}>
+                    <Badge variant="light" color="accent" radius="sm" style={{ fontWeight: 600, flexShrink: 0 }}>
                       {latest.snapshot_label}
                     </Badge>
                   )}
@@ -776,7 +775,7 @@ export default function Person() {
                 <Group gap={8} align="center" wrap="nowrap" mt={6}>
                   <Text fw={700} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
-                    <Badge variant="light" color="gray" radius="sm" tt="none" style={{ fontWeight: 600 }}>
+                    <Badge variant="light" color="gray" radius="sm" style={{ fontWeight: 600 }}>
                       {+lastFte.toFixed(2)} FTE
                     </Badge>
                   )}
@@ -805,7 +804,7 @@ export default function Person() {
                   <ThemeIcon size={20} radius="md" variant="light" color={totalChange == null ? 'gray' : totalChange < 0 ? 'red' : 'pos'}>
                     <IconTrendingUp size={13} />
                   </ThemeIcon>
-                  <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Salary growth</Text>
+                  <Eyebrow>Salary growth</Eyebrow>
                 </Group>
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text fw={700} c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
@@ -838,7 +837,7 @@ export default function Person() {
                   <ThemeIcon size={20} radius="md" variant="light" color="accent">
                     <IconClockHour4 size={13} />
                   </ThemeIcon>
-                  <Text tt="uppercase" c="dimmed" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em' }}>Tenure</Text>
+                  <Eyebrow>Tenure</Eyebrow>
                 </Group>
                 <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>
                   {animatedTenure == null ? '—' : (

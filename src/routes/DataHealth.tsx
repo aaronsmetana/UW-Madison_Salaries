@@ -4,6 +4,7 @@ import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
+import { Eyebrow } from '../components/Eyebrow';
 import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
@@ -12,7 +13,7 @@ import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
 
-const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'yellow', error: 'red', info: 'gray' };
+const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'orange', error: 'red', info: 'gray' };
 
 /** Snapshot-over-snapshot delta chip for the ingestion table. `tone="neutral"` for headcount (a
  *  population size, not a status); the median-salary delta keeps `signed` (money). */
@@ -65,7 +66,7 @@ function SectionTitle({ id, children, onCopy }: { id: string; children: ReactNod
 /** One "Pay" definition: an accent icon anchor + bold term + description, in a small bordered card. */
 function DefCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <Paper withBorder radius="md" p="sm">
+    <Paper withBorder p="sm">
       <Group gap={8} mb={4} wrap="nowrap">
         <ThemeIcon variant="light" color="accent" size="md" radius="md">{icon}</ThemeIcon>
         <Text size="sm" fw={700}>{title}</Text>
@@ -160,7 +161,7 @@ function JumpNav({ items }: { items: [string, string][] }) {
   }, [items]);
   return (
     <Group gap="sm" wrap="wrap" className="data-jumpnav">
-      <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.04em' }}>Jump to</Text>
+      <Eyebrow>Jump to</Eyebrow>
       {items.map(([href, label]) => (
         <Anchor key={href} href={href} size="xs" underline="never" className={`data-jump-chip${active === href ? ' active' : ''}`}>
           {label}

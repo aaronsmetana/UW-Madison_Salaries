@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
+import { Eyebrow } from './Eyebrow';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -124,7 +125,7 @@ export function TitlesPanel() {
         />
         <Group gap="sm" wrap="nowrap">
           <Group gap={6} wrap="nowrap">
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.03em' }}>Min people</Text>
+            <Eyebrow>Min people</Eyebrow>
             <Button.Group>
               {THRESHOLDS.map((th) => (
                 <Button key={th.id} size="compact-xs" variant={minN === Number(th.id) ? 'filled' : 'default'}

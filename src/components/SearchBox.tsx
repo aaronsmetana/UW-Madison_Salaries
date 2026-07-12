@@ -249,14 +249,14 @@ export function SearchBox({
                     </Text>
                     {inactive && (
                       <Tooltip label="Not in the latest snapshot — may no longer be employed." withArrow position="top">
-                        <Badge size="xs" radius="sm" variant="light" color="gray" tt="none" style={{ flexShrink: 0, cursor: 'pointer' }}>
+                        <Badge size="xs" radius="sm" variant="light" color="gray" style={{ flexShrink: 0, cursor: 'pointer' }}>
                           Former
                         </Badge>
                       </Tooltip>
                     )}
                     {multiAppt && (
                       <Tooltip label="Holds multiple appointments in the latest snapshot (e.g., split or joint roles)." withArrow position="top">
-                        <Badge size="xs" radius="sm" variant="default" tt="none" fw={500} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                        <Badge size="xs" radius="sm" variant="default" fw={500} style={{ flexShrink: 0, cursor: 'pointer' }}>
                           Multiple roles
                         </Badge>
                       </Tooltip>
@@ -264,7 +264,7 @@ export function SearchBox({
                     {sharedName && (
                       <Tooltip label="Multiple people share this name — double-check this is the right person." multiline w={260} withArrow position="top">
                         <span style={{ display: 'inline-flex', flexShrink: 0 }}>
-                          <IconAlertTriangle size={14} color="var(--mantine-color-yellow-6)" />
+                          <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" />
                         </span>
                       </Tooltip>
                     )}
