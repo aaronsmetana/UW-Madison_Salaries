@@ -24,6 +24,9 @@ export const theme = createTheme({
   luminanceThreshold: 0.45,
   fontFamily: "'Hanken Grotesk', system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
   headings: { fontFamily: "'Hanken Grotesk', system-ui, sans-serif", fontWeight: '700' },
+  // `xxs` (11px) is the app's smallest legible label size — footnotes, eyebrows, dense captions —
+  // replacing the scattered hardcoded fontSize:9/10/11. Mantine merges these onto its defaults.
+  fontSizes: { xxs: '0.6875rem' },
   // sm = the spec's shadow-card; md = mid; lg = shadow-frame (deep, for floating elements).
   shadows: {
     sm: '0 1px 2px rgba(20,40,50,.04), 0 12px 30px rgba(20,40,50,.05)',
@@ -36,8 +39,12 @@ export const theme = createTheme({
     Card: { defaultProps: { radius: 'lg', withBorder: true, padding: 'lg' } },
     // One table look everywhere: zebra rows, hover highlight, comfortable row spacing.
     Table: { defaultProps: { striped: true, highlightOnHover: true, verticalSpacing: 'sm' } },
+    // Badges read as sentence case by default (the app's convention); a true status label that should
+    // shout re-adds tt="uppercase" explicitly at the call site.
+    Badge: { defaultProps: { tt: 'none' } },
   },
 });
 
-// Semantic, colorblind-safe accents (raises/cuts) used by charts/badges.
-export const SEMANTIC = { up: 'pos', down: 'red', neutral: 'gray' } as const;
+// Semantic, colorblind-safe accents used by charts/badges. Severity ramp: neutral (gray) →
+// warn/caution (orange, e.g. approaching a threshold) → down/violated/negative (red). `up` = positive.
+export const SEMANTIC = { up: 'pos', warn: 'orange', down: 'red', neutral: 'gray' } as const;

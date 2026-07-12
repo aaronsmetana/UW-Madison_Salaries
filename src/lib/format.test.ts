@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis, fmtYears } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -12,6 +12,13 @@ describe('format', () => {
   it('num formats with thousands separators', () => {
     expect(num(1234567)).toBe('1,234,567');
     expect(num(null)).toBe('—');
+  });
+  it('fmtYears formats tenure with one decimal and a yr suffix', () => {
+    expect(fmtYears(11.4)).toBe('11.4 yr');
+    expect(fmtYears(0)).toBe('0.0 yr');
+    expect(fmtYears(16.83, 1)).toBe('16.8 yr');
+    expect(fmtYears(null)).toBe('—');
+    expect(fmtYears(Number.NaN)).toBe('—');
   });
   it('plural picks the singular/plural word by count', () => {
     expect(plural(1, 'peer')).toBe('1 peer');
