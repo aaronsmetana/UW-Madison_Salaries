@@ -194,7 +194,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               )}
 
               {showReceipt && (
-                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-accent-2)' }}>
+                <Box mt="lg" pt="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
                   <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb={6} style={{ letterSpacing: '0.05em' }}>How this figure is built</Text>
                   <Stack gap={4}>
                     {receipt.map((line) => {
@@ -393,7 +393,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                       const bg = r.isSubject
                         ? 'var(--mantine-color-accent-light)'
                         : r.isAnomaly
-                          ? 'var(--mantine-color-accent-0)'
+                          ? 'var(--mantine-color-accent-light-hover)'
                           : lit ? 'var(--mantine-color-default-hover)' : undefined;
                       return (
                         <Table.Tr
@@ -424,7 +424,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                           {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
                           <Table.Td style={{ minWidth: 200 }}>
                             <Text size="sm" fw={r.isSubject ? 700 : 500}>{usd(r.pay)}</Text>
-                            <div style={{ position: 'relative', marginTop: 3, height: 6, borderRadius: 3, background: 'var(--mantine-color-gray-2)' }}>
+                            <div style={{ position: 'relative', marginTop: 3, height: 6, borderRadius: 3, background: 'var(--mantine-color-default-border)' }}>
                               <div style={{ width: `${(r.pay / maxPay) * 100}%`, height: '100%', borderRadius: 3, background: r.isSubject ? CAND : PEER, transition: 'width 300ms ease' }} />
                               {!r.isSubject && subjectPay != null && (
                                 <div style={{ position: 'absolute', top: -2, bottom: -2, left: `${(subjectPay / maxPay) * 100}%`, width: 2, background: CAND }} />
@@ -435,7 +435,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                             {r.isSubject ? (
                               <Text span size="xs" c="dimmed">baseline</Text>
                             ) : (
-                              <Text span fw={r.gap > 0 ? 800 : 700} fz={r.gap > 0 ? 'md' : 'sm'} c={r.isAnomaly ? 'accent.7' : 'dimmed'}>
+                              <Text span fw={r.gap > 0 ? 800 : 700} fz={r.gap > 0 ? 'md' : 'sm'} c={r.isAnomaly ? 'accent' : 'dimmed'}>
                                 {r.gap > 0 ? '+' : r.gap < 0 ? '−' : ''}{usd(Math.abs(r.gap))}
                               </Text>
                             )}
