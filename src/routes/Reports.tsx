@@ -26,6 +26,7 @@ import {
   cohortDocLabel, ordinal, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
+import { POLICY } from '../components/report/sources';
 
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
@@ -477,6 +478,22 @@ export default function Reports() {
     [subjectPay, tenureYears, peerListRows, subjectKey, exempt]
   );
 
+  // Market-competitive position — the SAG's compa-ratio / PIR framework against the subject's official
+  // pay-grade band (only computable for grades with a published range, currently 15 & 27). Below the
+  // 85%-compa / 25%-PIR floor triggers the guideline's "market competitive pay request".
+  const marketPosition = useMemo(() => {
+    if (subjectPay == null || band == null || grade == null || band.max <= band.min) return null;
+    const mid = (band.min + band.max) / 2;
+    const compa = subjectPay / mid;
+    const pir = (subjectPay - band.min) / (band.max - band.min);
+    return {
+      grade, mid, compa, pir,
+      position: POLICY.gradePosition(compa),
+      belowCompetitive: compa < POLICY.marketCompetitive.compaLow || pir < POLICY.marketCompetitive.pirLow,
+      floorPay: Math.round(POLICY.marketCompetitive.compaLow * mid),
+    };
+  }, [subjectPay, band, grade]);
+
   // Real-dollar (CPI-adjusted) erosion: the subject's own pay history may show nominal growth that's
   // actually a real-dollar pay cut once inflation is factored in — a distinct, often more persuasive,
   // framing than the raw percentage.
@@ -514,15 +531,36 @@ export default function Reports() {
   const targetPerson = (trayPeople ?? []).find((p) => p.person_key === config.targetKey) ?? null;
   const targetPay = targetPerson?.pay ?? null;
   const baseParityCore = targetPay ?? stats.expMed ?? med ?? null;
-  // Opt-in: raise base parity to the UW guideline's 15%-above-highest-paid-direct-report floor — only
-  // when it's actually higher than the existing target/median (this never LOWERS the ask; the user
-  // must also have checked the box in ReportSetup for this to apply at all).
-  const supervisorWins = config.supervisorTarget && supervisoryCase.target15 != null
-    && (baseParityCore == null || supervisoryCase.target15 > baseParityCore);
-  const baseParity = supervisorWins ? supervisoryCase.target15 : baseParityCore;
   const medianKind = stats.expMed != null ? 'tenure-adjusted median' : 'median';
-  const baseLabel = supervisorWins
-    ? `15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'} (UW Salary Administration Guidelines)`
+  // Opt-in guideline anchors (supervisory 15%, market-competitive floor) — each is a base-parity
+  // CANDIDATE, applied only when the user checked its box in ReportSetup AND it exceeds the existing
+  // target/median. The single highest opted-in anchor wins the base-parity slot; neither ever LOWERS
+  // the ask. Both come straight from a published UW guideline, so an over-p75 ask stays anchored.
+  const anchorCandidates = useMemo(() => {
+    const out: { key: 'supervisor' | 'marketFloor'; pay: number; base: string; basis: string }[] = [];
+    if (config.supervisorTarget && supervisoryCase.target15 != null) {
+      out.push({
+        key: 'supervisor', pay: supervisoryCase.target15,
+        base: `15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'} (UW Salary Administration Guidelines)`,
+        basis: `to reach a 15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'}`,
+      });
+    }
+    if (config.marketFloorTarget && marketPosition?.belowCompetitive) {
+      out.push({
+        key: 'marketFloor', pay: marketPosition.floorPay,
+        base: `the market-competitive floor for grade ${marketPosition.grade} — 85% of the band midpoint (UW Salary Administration Guidelines)`,
+        basis: `to reach the market-competitive floor for grade ${marketPosition.grade} (85% of the band midpoint)`,
+      });
+    }
+    return out;
+  }, [config.supervisorTarget, config.marketFloorTarget, supervisoryCase, marketPosition]);
+  const winningAnchor = anchorCandidates.reduce<(typeof anchorCandidates)[number] | null>((best, a) => {
+    if (baseParityCore != null && a.pay <= baseParityCore) return best; // never lowers the core ask
+    return !best || a.pay > best.pay ? a : best;
+  }, null);
+  const baseParity = winningAnchor ? winningAnchor.pay : baseParityCore;
+  const baseLabel = winningAnchor
+    ? winningAnchor.base
     : targetPerson
       ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
       : `${medianKind} of ${docCohortLabel}`;
@@ -587,11 +625,14 @@ export default function Reports() {
       });
     }
     if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
-    if (band && subjectPay != null && band.max > band.min) {
-      const posPct = Math.round(((subjectPay - band.min) / (band.max - band.min)) * 100);
+    if (marketPosition && band) {
+      const mp = marketPosition;
+      const posPct = Math.round(mp.pir * 100);
       if (posPct < 50) {
-        const compaRatio = subjectPay / ((band.min + band.max) / 2);
-        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in grade ${grade}'s official salary range`, detail: `band ${usd(band.min)}–${usd(band.max)} · compa-ratio ${compaRatio.toFixed(2)}` });
+        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · compa-ratio ${mp.compa.toFixed(2)}` });
+      }
+      if (mp.belowCompetitive) {
+        out.push({ kind: 'marketFloor', value: `compa-ratio ${mp.compa.toFixed(2)}`, label: `below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: 'the UW guideline provides that a market competitive pay request can be made for OHR to review and approve' });
       }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
@@ -604,7 +645,7 @@ export default function Reports() {
       });
     }
     return out;
-  }, [subjectPay, stats, longevity, docCohortLabel, band, grade, compression, subjectFirst, supervisoryCase, tenureRegression, guidelineCompression]);
+  }, [subjectPay, stats, longevity, docCohortLabel, band, compression, subjectFirst, supervisoryCase, tenureRegression, guidelineCompression, marketPosition]);
 
   // Time-to-parity: absent an adjustment, how long a raise alone would take to reach today's cohort
   // median — reinforces that "wait and see" isn't a neutral option. Uses this title's own observed
@@ -632,12 +673,13 @@ export default function Reports() {
   // living here, so it doesn't compete with the identifying facts (title/grade/school/snapshot).
   const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric]].filter(Boolean).join(' · ');
 
+  const valueAddTail = addOnSum > 0 ? ', plus documented value-adds' : '';
   const basisLabel = belowTarget
-    ? (supervisorWins
-        ? `to reach a 15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'}${addOnSum > 0 ? ', plus documented value-adds' : ''}`
+    ? (winningAnchor
+        ? `${winningAnchor.basis}${valueAddTail}`
         : targetPerson
-          ? `to match ${fullName(targetPerson.fn, targetPerson.ln)}'s salary${addOnSum > 0 ? ', plus documented value-adds' : ''}`
-          : `to reach the ${medianKind} of ${docCohortLabel}${addOnSum > 0 ? ', plus documented value-adds' : ''}`)
+          ? `to match ${fullName(targetPerson.fn, targetPerson.ln)}'s salary${valueAddTail}`
+          : `to reach the ${medianKind} of ${docCohortLabel}${valueAddTail}`)
     : '';
 
   const model: BriefModel = {
@@ -652,6 +694,7 @@ export default function Reports() {
     format: config.format, sections: config.sections, jobCode,
     supervisory: supervisoryCase,
     guidelineCompression,
+    marketPosition,
     standing, tenureRegression, tenureScatterPoints, raiseCycle,
   };
 
@@ -668,11 +711,12 @@ export default function Reports() {
       { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below' },
       { label: 'Tenure-trend regression', ok: tenureRegression != null && tenureRegression.gap > 0, note: tenureRegression == null ? 'need ≥8 same-title peers with tenure' : tenureRegression.gap > 0 ? undefined : 'paid above the tenure trend' },
       { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint' },
+      { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? `no published range for grade ${grade ?? '—'}` : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range' },
       { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : undefined },
       { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record' },
       { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)' },
     ];
-  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt]);
+  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt, marketPosition]);
 
   // ── Setup-pane data ──
   const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({
@@ -763,7 +807,7 @@ export default function Reports() {
         strengthHints={strengthHints}
         talkingPoints={talkingPoints}
         overAsk={overAsk}
-        overAskGuidelineAnchored={supervisorWins}
+        overAskGuidelineAnchored={winningAnchor != null}
         onReset={() => {
           if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
           setConfig(defaultConfig());
@@ -776,6 +820,7 @@ export default function Reports() {
         }}
         onRemoveSupervisee={(key) => setConfig({ ...config, supervisees: config.supervisees.filter((k) => k !== key) })}
         evidenceChecklist={evidenceChecklist}
+        marketFloor={marketPosition?.belowCompetitive ? { floorPay: marketPosition.floorPay, compa: marketPosition.compa, grade: marketPosition.grade } : null}
       />
     </Box>
   );

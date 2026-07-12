@@ -23,7 +23,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
   cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskGuidelineAnchored, onReset, onHover,
-  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist,
+  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, marketFloor,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -53,6 +53,9 @@ export function ReportSetup({
   /** Which evidence sections will actually render in the document (and why not, when they won't) —
    *  a private nudge so the user can see how to strengthen the case before printing. */
   evidenceChecklist: { label: string; ok: boolean; note?: string }[];
+  /** The SAG market-competitive floor (85% of the grade midpoint) when the subject is below it — powers
+   *  the opt-in floor target next to the target Select. Null when no published band / already competitive. */
+  marketFloor: { floorPay: number; compa: number; grade: number } | null;
 }) {
   const set = (patch: Partial<ReportConfig>) => onChange({ ...config, ...patch });
   const setFactor = (key: FactorKey, patch: Partial<ReportConfig['factors'][FactorKey]>) =>
@@ -212,6 +215,20 @@ export function ReportSetup({
           clearable
         />
         <Text size="xs" c="dimmed" mt={4}>Naming a peer sets the base parity to their pay; value-adds stack on top.</Text>
+        {marketFloor && (
+          <Checkbox
+            mt={10}
+            size="xs"
+            label={`Set target to the market-competitive floor — 85% of grade ${marketFloor.grade}'s midpoint (${usd(marketFloor.floorPay)}) · UW salary guideline`}
+            checked={config.marketFloorTarget}
+            onChange={(e) => set({ marketFloorTarget: e.currentTarget.checked })}
+          />
+        )}
+        {marketFloor && (
+          <Text size="xs" c="dimmed" mt={4}>
+            Current pay is a {marketFloor.compa.toFixed(2)} compa-ratio — below the guideline's 0.85 market-competitive floor. The highest opted-in guideline anchor wins; it never lowers the ask.
+          </Text>
+        )}
       </Card>
 
       {/* Justification factors */}
@@ -473,7 +490,7 @@ export function ReportSetup({
             <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
             <Text size="xs" c="orange.7">
               {overAskGuidelineAnchored
-                ? "The ask exceeds this cohort's 75th percentile, but it's anchored to the UW Salary Administration Guidelines' published supervisory-differential rule — not an unsupported reach."
+                ? "The ask exceeds this cohort's 75th percentile, but it's anchored to a published UW Salary Administration Guidelines differential (supervisory or market-competitive floor) — not an unsupported reach."
                 : "The ask exceeds this cohort's 75th percentile — consider trimming value-adds for credibility."}
             </Text>
           </Group>

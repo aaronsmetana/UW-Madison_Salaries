@@ -59,6 +59,7 @@ export function newCustomFactor(): CustomFactor {
 
 export const SECTION_DEFS = [
   { value: 'highlights', label: 'Evidence & proof points' },
+  { value: 'guidelineBasis', label: 'Basis under UW salary guidelines' },
   { value: 'standing', label: 'Market standing' },
   { value: 'factors', label: 'Documented qualifications & responsibilities' },
   { value: 'peers', label: 'Peer comparison' },
@@ -68,7 +69,7 @@ export const SECTION_DEFS = [
 
 /** Bump when `ReportConfig`'s shape or defaults change in a way that needs one-time migration of
  *  already-saved (localStorage) configs — see `migrateConfig`. */
-export const CONFIG_VERSION = 1;
+export const CONFIG_VERSION = 2;
 
 export interface ReportConfig {
   configVersion: number;
@@ -79,6 +80,7 @@ export interface ReportConfig {
   customFactors: CustomFactor[]; // open-ended, user-typed justifications (label + optional +$)
   supervisees: string[]; // person_keys of named direct reports (report-local, not tray items)
   supervisorTarget: boolean; // opt-in: raise base parity to ≥15% above the highest-paid supervisee
+  marketFloorTarget: boolean; // opt-in: raise base parity to the SAG market-competitive floor (85% of band midpoint)
   override: number | ''; // manual final-salary override
   headline: string; // optional manual headline override
   format: 'brief' | 'detailed';
@@ -96,6 +98,7 @@ export function defaultConfig(): ReportConfig {
     customFactors: [],
     supervisees: [],
     supervisorTarget: false,
+    marketFloorTarget: false,
     override: '',
     headline: '',
     format: 'brief',
@@ -124,6 +127,7 @@ export function migrateConfig(saved: unknown): ReportConfig {
     sections: Array.isArray(s.sections) ? s.sections : base.sections,
     supervisees: Array.isArray(s.supervisees) ? s.supervisees : [],
     supervisorTarget: s.supervisorTarget ?? false,
+    marketFloorTarget: s.marketFloorTarget ?? false,
     configVersion: CONFIG_VERSION,
   };
   const savedVersion = typeof s.configVersion === 'number' ? s.configVersion : 0;
@@ -132,6 +136,11 @@ export function migrateConfig(saved: unknown): ReportConfig {
     // market-standing section, for any config saved under the old default.
     merged.sections = merged.sections.filter((v) => v !== 'risk');
     if (!merged.sections.includes('standing')) merged.sections.push('standing');
+  }
+  if (savedVersion < 2) {
+    // The "Basis under UW salary guidelines" section is new in v2 and default-on; backfill it for
+    // configs saved before it existed (a deliberate removal at v2+ then sticks).
+    if (!merged.sections.includes('guidelineBasis')) merged.sections.push('guidelineBasis');
   }
   return merged;
 }
@@ -315,6 +324,17 @@ export type ProofKind = 'market' | 'inversion' | 'sustained' | 'gradeband' | 'co
 export interface ProofModel { kind: ProofKind; value: string; label: ReactNode; detail: ReactNode }
 export interface PayHistoryPoint { date: string; pay: number | null; med: number | null }
 
+// ── Market-competitive position — the SAG's compa-ratio / PIR framework for a graded role. ──
+export interface MarketPosition {
+  grade: number;
+  mid: number; // band midpoint
+  compa: number; // pay ÷ midpoint
+  pir: number; // (pay − min) ÷ (max − min)
+  position: 'Emerging in Grade' | 'Established in Grade' | 'Advanced in Grade';
+  belowCompetitive: boolean; // compa < 85% OR pir < 25% → the guideline's market-request trigger
+  floorPay: number; // 85% of midpoint, rounded — the opt-in market-competitive floor target
+}
+
 // ── Market standing — a distribution view of the active cohort + a multi-pool percentile table. ──
 export interface StandingPool { label: string; n: number; med: number | null; percentile: number | null; gapToMed: number | null }
 export interface StandingModel {
@@ -346,6 +366,7 @@ export interface BriefModel {
   jobCode: string | null;
   supervisory: SupervisoryCase;
   guidelineCompression: GuidelineCompression | null;
+  marketPosition: MarketPosition | null;
   standing: StandingModel | null;
   tenureRegression: { n: number; expected: number; gap: number } | null;
   tenureScatterPoints: ScatterPoint[];

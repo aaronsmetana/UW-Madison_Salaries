@@ -53,6 +53,9 @@ describe('defaultConfig', () => {
   it('enables the market-standing section by default', () => {
     expect(defaultConfig().sections).toContain('standing');
   });
+  it('enables the UW-guideline-basis section by default', () => {
+    expect(defaultConfig().sections).toContain('guidelineBasis');
+  });
 });
 
 describe('migrateConfig', () => {
@@ -77,10 +80,23 @@ describe('migrateConfig', () => {
     expect(migrated.cohort).toBe('grade');
     expect(migrated.customFactors).toEqual(legacy.customFactors);
   });
-  it('is idempotent at the current version — a v1 config with retention deliberately re-enabled keeps it', () => {
+  it('is idempotent at the current version — a current config with retention deliberately re-enabled keeps it', () => {
     const current = { ...defaultConfig(), sections: [...defaultConfig().sections, 'risk'] };
     const migrated = migrateConfig(current);
     expect(migrated.sections).toContain('risk');
+  });
+  it('backfills the guideline-basis section for a v1 config once, preserving its other section edits', () => {
+    const v1 = { configVersion: 1, sections: ['highlights', 'peers'], supervisorTarget: true };
+    const migrated = migrateConfig(v1);
+    expect(migrated.sections).toContain('guidelineBasis');
+    expect(migrated.sections).toContain('peers');
+    expect(migrated.supervisorTarget).toBe(true); // a real user choice survives
+    expect(migrated.marketFloorTarget).toBe(false); // new field backfills to opt-out
+  });
+  it('respects a deliberate removal of the guideline-basis section at the current version', () => {
+    const current = { ...defaultConfig(), sections: defaultConfig().sections.filter((s) => s !== 'guidelineBasis') };
+    const migrated = migrateConfig(current);
+    expect(migrated.sections).not.toContain('guidelineBasis');
   });
 });
 
