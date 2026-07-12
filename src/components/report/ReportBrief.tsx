@@ -276,7 +276,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               <SectionHeading id="highlights" num={sectionNum.highlights} annotation="objective evidence">Grounds for a parity / compression adjustment</SectionHeading>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
-                  <Card key={p.kind} withBorder shadow="sm" padding="lg">
+                  <Card key={p.kind} withBorder shadow="sm" padding="lg" h="100%">
                     <ThemeIcon variant="light" color="accent" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
                     <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
                     <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
@@ -303,7 +303,15 @@ export function ReportBrief({ model, hovered, onHover }: {
                 <Text size="xs" c="dimmed" mb="md">
                   {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
                 </Text>
-                <PeerRangeBar min={standing.min!} p25={standing.p25!} median={standing.med!} p75={standing.p75!} max={standing.max!} value={subjectPay} values={standing.values} />
+                {/* A quartile distribution needs enough people to be meaningful — p25/p75 of two or three
+                    peers is noise. Below n=4, show the pool table only (a plain comparison, not a fake box). */}
+                {standing.values.length >= 4 ? (
+                  <PeerRangeBar min={standing.min!} p25={standing.p25!} median={standing.med!} p75={standing.p75!} max={standing.max!} value={subjectPay} values={standing.values} />
+                ) : (
+                  <Text size="sm">
+                    Too few peers in this cohort for a distribution; see the comparison pools below and the peer table.
+                  </Text>
+                )}
 
                 {standing.pools.length > 0 && (
                   <Table mt="lg" style={{ maxWidth: 640 }}>

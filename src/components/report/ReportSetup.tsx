@@ -4,7 +4,7 @@ import {
   SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
-import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
+import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
 import { Eyebrow } from '../Eyebrow';
 import { usd, pct, fmtYears } from '../../lib/format';
@@ -525,15 +525,17 @@ export function ReportSetup({
                 return (
                   <Group
                     key={e.label} gap={6} wrap="nowrap" align="flex-start"
+                    className={jump ? 'evidence-jump' : undefined}
                     onClick={jump}
                     style={jump ? { cursor: 'pointer' } : undefined}
                   >
                     {e.ok
                       ? <IconCheck size={13} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
                       : <IconX size={13} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
-                    <Text size="xs" c={e.ok ? undefined : 'dimmed'} td={jump ? 'underline' : undefined} style={jump ? { textDecorationStyle: 'dotted', textUnderlineOffset: 2 } : undefined}>
-                      {e.label}{e.note ? <Text span c="dimmed" td="none"> — {e.note}</Text> : null}
+                    <Text size="xs" c={e.ok ? undefined : 'dimmed'} style={{ flex: 1, minWidth: 0 }}>
+                      {e.label}{e.note ? <Text span c="dimmed"> — {e.note}</Text> : null}
                     </Text>
+                    {jump && <IconChevronRight className="evidence-jump-chevron" size={12} style={{ flexShrink: 0, marginTop: 2, opacity: 0, transition: 'opacity 120ms' }} />}
                   </Group>
                 );
               })}

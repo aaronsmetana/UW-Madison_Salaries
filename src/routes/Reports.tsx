@@ -654,7 +654,7 @@ export default function Reports() {
         out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · compa-ratio ${mp.compa.toFixed(2)}` });
       }
       if (mp.belowCompetitive) {
-        out.push({ kind: 'marketFloor', value: `compa-ratio ${mp.compa.toFixed(2)}`, label: `below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
+        out.push({ kind: 'marketFloor', value: mp.compa.toFixed(2), label: `compa-ratio — below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
       }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });

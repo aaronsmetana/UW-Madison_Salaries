@@ -5,6 +5,7 @@ import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
 import { Eyebrow } from '../components/Eyebrow';
+import { dropdownProps } from '../lib/selectProps';
 import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
@@ -466,6 +467,7 @@ export default function DataHealth() {
           <SectionTitle id="snapshots" onCopy={onCopied}>Per-snapshot ingestion</SectionTitle>
           <Group gap="sm" wrap="wrap">
             <Select
+              {...dropdownProps('sm')}
               size="xs" w={120} aria-label="Filter snapshots by year" data={yearOptions}
               value={year} onChange={(v) => setYear(v ?? 'all')} allowDeselect={false}
             />
