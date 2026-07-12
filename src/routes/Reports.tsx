@@ -558,10 +558,12 @@ export default function Reports() {
   const anchorCandidates = useMemo(() => {
     const out: { key: 'supervisor' | 'marketFloor'; pay: number; base: string; basis: string }[] = [];
     if (config.supervisorTarget && supervisoryCase.target15 != null) {
+      // The document must not name a supervised subordinate when Anonymize is on — use a generic phrase.
+      const topRef = config.anonymize ? 'the highest-paid direct report' : (supervisoryCase.top?.name ?? 'the named direct report');
       out.push({
         key: 'supervisor', pay: supervisoryCase.target15,
-        base: `15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'} (UW Salary Administration Guidelines)`,
-        basis: `to reach a 15% supervisory differential above ${supervisoryCase.top?.name ?? 'the named direct report'}`,
+        base: `15% supervisory differential above ${topRef} (UW Salary Administration Guidelines)`,
+        basis: `to reach a 15% supervisory differential above ${topRef}`,
       });
     }
     if (config.marketFloorTarget && marketPosition?.belowCompetitive) {
@@ -572,7 +574,7 @@ export default function Reports() {
       });
     }
     return out;
-  }, [config.supervisorTarget, config.marketFloorTarget, supervisoryCase, marketPosition]);
+  }, [config.supervisorTarget, config.marketFloorTarget, config.anonymize, supervisoryCase, marketPosition]);
   const winningAnchor = anchorCandidates.reduce<(typeof anchorCandidates)[number] | null>((best, a) => {
     if (baseParityCore != null && a.pay <= baseParityCore) return best; // never lowers the core ask
     return !best || a.pay > best.pay ? a : best;
@@ -651,7 +653,7 @@ export default function Reports() {
         out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · compa-ratio ${mp.compa.toFixed(2)}` });
       }
       if (mp.belowCompetitive) {
-        out.push({ kind: 'marketFloor', value: `compa-ratio ${mp.compa.toFixed(2)}`, label: `below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: 'the UW guideline provides that a market competitive pay request can be made for OHR to review and approve' });
+        out.push({ kind: 'marketFloor', value: `compa-ratio ${mp.compa.toFixed(2)}`, label: `below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
       }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });

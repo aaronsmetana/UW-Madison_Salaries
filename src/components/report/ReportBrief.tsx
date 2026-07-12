@@ -178,13 +178,13 @@ export function ReportBrief({ model, hovered, onHover }: {
           {/* Recommendation hero — with the itemized "receipt" docked directly under the number */}
           {belowTarget && recommended != null ? (
             <Paper radius="md" p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
-              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>1. Recommendation</Text>
-              <Text fw={800} c="green.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
+              <Text size="sm" fw={600} c="dimmed">1. Recommendation</Text>
+              <Text fw={800} c="pos.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                 {usd(Math.round(animated))}
               </Text>
               <Text mt={8}>
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                (<Text span fw={700} c="green.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
+                (<Text span fw={700} c="pos.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
               </Text>
               {yearsToParity != null && yearsToParity >= 0.5 && (
                 <Text size="xs" c="dimmed" mt={4}>
@@ -222,7 +222,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                     <Divider my={4} />
                     <Group justify="space-between" wrap="nowrap" px={6}>
                       <Text size="sm" fw={800}>Total parity recommendation</Text>
-                      <Text size="sm" fw={800} c="green.7">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
+                      <Text size="sm" fw={800} c="pos.7">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
                     </Group>
                   </Stack>
                 </Box>
@@ -230,7 +230,7 @@ export function ReportBrief({ model, hovered, onHover }: {
             </Paper>
           ) : (
             <Paper withBorder radius="md" p="lg" mb="lg">
-              <Text size="xs" tt="uppercase" fw={700} c="dimmed" style={{ letterSpacing: '0.05em' }}>1. Recommendation</Text>
+              <Text size="sm" fw={600} c="dimmed">1. Recommendation</Text>
               <Text fw={700} fz="lg" mt={4}>
                 {subjectFirst} is at or above the parity target{recommended != null ? ` (${usd(recommended)})` : ''} — maintain current pay.
               </Text>
@@ -246,9 +246,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               so the request speaks HR's language rather than an ad-hoc framing. */}
           {sectionShow.guidelineBasis && (
             <>
-              <Text size="sm" fw={600} mb="xs">
-                {sectionNum.guidelineBasis}. Basis under the UW Salary Administration Guidelines<Sup n={fn('equityTerm')} />
-              </Text>
+              <SectionHeading id="guidelineBasis" num={sectionNum.guidelineBasis} sup={fn('equityTerm')}>Basis under the UW Salary Administration Guidelines</SectionHeading>
               <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
                 <Stack gap="md">
                   {guidelineProvisions.map((p) => (
@@ -274,7 +272,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               ordered before) the self-reported value-adds in "Documented qualifications" below. */}
           {sectionShow.highlights && (
             <>
-              <Text size="sm" fw={600} mb="xs">{sectionNum.highlights}. Grounds for a parity / compression adjustment <Text span c="dimmed" size="xs" fw={400}>· objective evidence</Text></Text>
+              <SectionHeading id="highlights" num={sectionNum.highlights} annotation="objective evidence">Grounds for a parity / compression adjustment</SectionHeading>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
                 {proofs.map((p) => (
                   <Card key={p.kind} withBorder radius="md" shadow="sm" padding="lg">
@@ -299,7 +297,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               stands across every other available comparison pool (title/grade/division/tenure-band). */}
           {sectionShow.standing && standing && (
             <>
-              <Text size="sm" fw={600} mb="xs">{sectionNum.standing}. Market standing</Text>
+              <SectionHeading id="standing" num={sectionNum.standing}>Market standing</SectionHeading>
               <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
                 <Text size="xs" c="dimmed" mb="md">
                   {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
@@ -351,9 +349,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               ordered after the objective evidence above. */}
           {sectionShow.factors && (
             <>
-              <Text size="sm" fw={600} mb="xs">
-                {sectionNum.factors}. Documented qualifications &amp; responsibilities <Text span c="dimmed" size="xs" fw={400}>· self-reported</Text><Sup n={fn('selfReported')} />
-              </Text>
+              <SectionHeading id="factors" num={sectionNum.factors} annotation="self-reported" sup={fn('selfReported')}>Documented qualifications &amp; responsibilities</SectionHeading>
               <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
                 <Stack gap={10}>
                   {activeFactors.map((f) => (
@@ -363,7 +359,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                         {f.note && <Text size="xs" c="dimmed">{f.note}</Text>}
                       </Box>
                       {f.amount != null && (
-                        <Text size="sm" fw={700} c="green.7" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
+                        <Text size="sm" fw={700} c="pos.7" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
                       )}
                     </Group>
                   ))}
@@ -375,7 +371,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {/* Peer comparison matrix */}
           {sectionShow.peers && (
             <>
-              <Text size="sm" fw={600} mb="xs">{sectionNum.peers}. Peer comparison <Text span c="dimmed" size="xs">· your named comparators (n = {rows.length - 1})</Text></Text>
+              <SectionHeading id="peers" num={sectionNum.peers} annotation={`your named comparators (n = ${rows.length - 1})`}>Peer comparison</SectionHeading>
               <Card withBorder radius="md" shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table>
                   <Table.Thead>
@@ -451,8 +447,10 @@ export function ReportBrief({ model, hovered, onHover }: {
 
           {/* Pay history — subject vs. title median over time, plus (detailed format only) raise divergence */}
           {sectionShow.history && (
+            <>
+              <SectionHeading id="history" num={sectionNum.history}>Pay history</SectionHeading>
             <Card withBorder radius="md" shadow="sm" padding="lg" mb="lg">
-              <Text size="sm" fw={700}>{sectionNum.history}. Pay vs. title median over time</Text>
+              <Text size="sm" fw={700}>Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
                 <ComposedChart data={history} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
@@ -529,13 +527,15 @@ export function ReportBrief({ model, hovered, onHover }: {
                 </Box>
               )}
             </Card>
+            </>
           )}
 
           {/* Retention & replacement cost — off by default (see Report sections); when shown, every
               figure is either an independent, cited estimate or the public salary record itself. */}
           {sectionShow.risk && (
+            <>
+              <SectionHeading id="risk" num={sectionNum.risk} sup={fn('retention')}>Retention &amp; replacement cost</SectionHeading>
             <Paper withBorder radius="md" shadow="sm" p="md" mb="lg">
-              <Text size="sm" fw={700} mb={4}>{sectionNum.risk}. Retention &amp; Replacement Cost<Sup n={fn('retention')} /></Text>
               <Text size="sm" mb={6}>
                 Independent research estimates the cost of replacing an employee at roughly one-third of
                 annual salary at the median (Work Institute, 2020 Retention Report), rising to one-half to
@@ -559,11 +559,12 @@ export function ReportBrief({ model, hovered, onHover }: {
                 employee where a base-salary increase is not advised due to parity or range considerations.<Sup n={fn('retention')} />
               </Text>
             </Paper>
+            </>
           )}
 
           {/* Notes & Sources — the document's scholarly apparatus. Every note fires only when the claim
               it explains actually rendered above, so the numbering never drifts or leaves an orphan. */}
-          <Text size="sm" fw={600} mb="xs">{notesSectionNum}. Notes &amp; Sources</Text>
+          <SectionHeading id="notes" num={notesSectionNum}>Notes &amp; sources</SectionHeading>
           <Box mb="md">
             <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: '0.04em' }}>Methodology notes</Text>
             <NotesList notes={activeNotes.map((n) => n.text)} />
@@ -583,6 +584,20 @@ export function ReportBrief({ model, hovered, onHover }: {
         </>
       )}
     </Card>
+  );
+}
+
+/** One shared heading for every numbered section — sentence case, uniform size/weight/spacing, always
+ *  outside its card. `id` (a section key) becomes a scroll anchor the setup-pane checklist links to. */
+function SectionHeading({ id, num, children, annotation, sup }: {
+  id?: string; num: number | undefined; children: ReactNode; annotation?: string; sup?: number;
+}) {
+  return (
+    <Text id={id ? `report-sec-${id}` : undefined} size="sm" fw={600} mb="xs" style={{ scrollMarginTop: 12 }}>
+      {num}. {children}
+      {annotation && <Text span c="dimmed" size="xs" fw={400}> · {annotation}</Text>}
+      {sup != null && sup > 0 && <Sup n={sup} />}
+    </Text>
   );
 }
 

@@ -483,7 +483,7 @@ export function ReportSetup({
           <Box mt={8}>
             <Group justify="space-between" mb={6}>
               <Text size="sm" fw={600}>Case strength</Text>
-              <Badge variant="light" color={caseStrength.label === 'Strong' ? 'green' : caseStrength.label === 'Moderate' ? 'accent' : 'gray'}>
+              <Badge variant="light" color={caseStrength.label === 'Strong' ? 'pos' : caseStrength.label === 'Moderate' ? 'accent' : 'gray'}>
                 {caseStrength.label} · {caseStrength.score}
               </Badge>
             </Group>

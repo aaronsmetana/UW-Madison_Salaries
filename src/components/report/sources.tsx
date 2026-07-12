@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { List, Text } from '@mantine/core';
+import { List, Text, Anchor } from '@mantine/core';
 
 // ── Citations — every reputable source the brief can footnote. Keep url text visible (not just an
 //    href): a printed page can't be clicked. ──
@@ -145,7 +145,9 @@ export function SourcesList({ ids }: { ids: CitationKey[] }) {
         return (
           <List.Item key={id}>
             <Text span fw={600} c="dimmed">{c.label}.</Text> {c.detail}
-            {c.url && <Text span c="dimmed"> {c.url}</Text>}
+            {/* URL shown as visible text (a printed page can't be clicked) but also linked on screen.
+               print.css renders anchors as plain inherited text, so the printed page is unchanged. */}
+            {c.url && <> <Anchor href={c.url} target="_blank" rel="noopener noreferrer" c="dimmed" inherit>{c.url}</Anchor></>}
           </List.Item>
         );
       })}
