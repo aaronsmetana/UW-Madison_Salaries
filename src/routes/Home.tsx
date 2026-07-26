@@ -22,11 +22,14 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
   );
   return (
     <Stack gap={2} align="center" style={{ flex: 1, minWidth: 0, paddingInline: 8 }}>
-      <Group gap={6} justify="center" wrap="nowrap">
+      {/* Five tiles share a 760px row, so the icon leaves ~110px for the label — enough for "DIVISIONS"
+          but not "MEDIAN SALARY". Allow a second line and reserve its height on every tile, so the longer
+          labels stay readable and all five values still sit on one baseline. */}
+      <Group gap={6} justify="center" align="center" wrap="nowrap" mih={30}>
         <ThemeIcon size={22} radius="md" variant="light" color={color}>
           {icon}
         </ThemeIcon>
-        <Eyebrow ta="center" lineClamp={1} style={{ lineHeight: 1.2 }}>{label}</Eyebrow>
+        <Eyebrow ta="center" lineClamp={2} style={{ lineHeight: 1.2 }}>{label}</Eyebrow>
       </Group>
       {hint ? <Tooltip label={hint} withArrow>{valueNode}</Tooltip> : valueNode}
     </Stack>

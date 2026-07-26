@@ -979,7 +979,12 @@ export default function Reports() {
                 >
                   Download CSV
                 </Button>
-                <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>
+                <Button
+                  variant="default"
+                  leftSection={<IconPrinter size={16} />}
+                  disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
+                  onClick={() => window.print()}
+                >
                   Print / Save as PDF
                 </Button>
                 <Button
