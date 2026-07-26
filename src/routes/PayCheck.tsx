@@ -1,14 +1,16 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Card, Group, Select, NumberInput, type ComboboxItem } from '@mantine/core';
-import { IconChevronDown } from '@tabler/icons-react';
+import { IconChevronDown, IconChartHistogram } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { useControls } from '../state/controls';
 import { paidHeadcount } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { num } from '../lib/format';
+import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
+import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { useDocTitle } from '../lib/useDocTitle';
 
@@ -164,11 +166,11 @@ export default function PayCheck() {
       </Card>
 
       {!code || !snap ? (
-        <Card withBorder padding="xl">
-          <Text c="dimmed" ta="center">
-            Pick a title above to see its salary distribution, pay by school, and everyone who holds it.
-          </Text>
-        </Card>
+        <EmptyState
+          icon={<IconChartHistogram size={ICON.feature} />}
+          title="No title selected"
+          hint="Pick a title above to see its salary distribution, pay by school, and everyone who holds it."
+        />
       ) : (
         <TitleStats jobCode={code} snap={snap} metric={metric} school={school} pinSalary={pinSalary} />
       )}
