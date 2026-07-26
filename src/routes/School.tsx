@@ -129,9 +129,10 @@ export default function School() {
     !!name
   );
 
-  const { data: bandRows } = useSql<{ banded: number; avg_pos: number | null; over_max: number; below_min: number }>(
+  const { data: bandRows } = useSql<{ banded: number; graded: number; avg_pos: number | null; over_max: number; below_min: number }>(
     ['school-band', name, snap ?? '', metric, fk],
     `SELECT count(*) FILTER (WHERE g."grade" IS NOT NULL) banded,
+        count(*) FILTER (WHERE p.grade_number IS NOT NULL) graded,
         avg((p.pay - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.pay BETWEEN g."min" AND g."max") avg_pos,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay > g."max") over_max,
         count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay < g."min") below_min
@@ -234,12 +235,23 @@ export default function School() {
       <Card withBorder padding="lg">
         <Text size="sm" fw={600} mb="md">Pay-band utilization</Text>
         {band && band.banded > 0 ? (
-          <SimpleGrid cols={{ base: 2, sm: 4 }}>
-            <Stat label="Avg band position" value={band.avg_pos == null ? '—' : `${Math.round(band.avg_pos * 100)}%`} />
-            <Stat label="People with a grade range" value={num(band.banded)} />
-            <Stat label="Over max" value={num(band.over_max)} />
-            <Stat label="Below min" value={num(band.below_min)} />
-          </SimpleGrid>
+          <>
+            <SimpleGrid cols={{ base: 2, sm: 4 }}>
+              <Stat label="Avg band position" value={band.avg_pos == null ? '—' : `${Math.round(band.avg_pos * 100)}%`} />
+              {/* The denominator is the point: with only a couple of grades seeded, a bare "90" reads as a
+                  school-wide finding when it covers a sliver of the graded population. */}
+              <Stat label="People with a grade range" value={`${num(band.banded)} of ${num(band.graded)}`} />
+              <Stat label="Over max" value={num(band.over_max)} />
+              <Stat label="Below min" value={num(band.below_min)} />
+            </SimpleGrid>
+            {band.graded > 0 && band.banded / band.graded < 0.5 && (
+              <Text size="xs" c="dimmed" mt="sm">
+                Based on {Math.round((band.banded / band.graded) * 100)}% of this division&apos;s graded
+                appointments — the reference table in <code>data/reference/salary-grades.csv</code> covers only
+                part of the salary structure, so treat these as indicative of that subset, not the division.
+              </Text>
+            )}
+          </>
         ) : (
           <Text size="sm" c="dimmed">
             No matching pay-band ranges yet — add grades to <code>data/reference/salary-grades.csv</code> to

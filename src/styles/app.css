@@ -436,6 +436,15 @@ button:active,
 :root[data-mantine-color-scheme='dark'] .data-disclaimer { border-left-color: var(--mantine-color-orange-4); }
 :root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
 
+/* Same treatment for the warning alerts that carry a title (pay-band reference, data-health notes).
+   An orange `Alert` renders its bold title in mid-orange on a pale orange fill — 2.5:1, a serious
+   contrast failure — and per the note above no orange shade fixes it, so the rule + icon carry the
+   warning and the title keeps the default text color. */
+.alert-warn { border-left: 4px solid var(--mantine-color-orange-6); }
+.alert-warn .mantine-Alert-icon { color: var(--mantine-color-orange-7); }
+:root[data-mantine-color-scheme='dark'] .alert-warn { border-left-color: var(--mantine-color-orange-4); }
+:root[data-mantine-color-scheme='dark'] .alert-warn .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
+
 /* Collapsible disclaimer body (<details>/<summary>): drop the native marker, add our own rotating chevron
    so returning readers can fold the heavy text away. */
 .disc-details > summary {

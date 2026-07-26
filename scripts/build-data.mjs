@@ -403,12 +403,34 @@ async function main() {
 
   const latestYear = dataSnaps.length ? dataSnaps[dataSnaps.length - 1].snapshot_year : null;
   const maxEff = grades.reduce((m, g) => (g.effective_year != null && g.effective_year > m ? g.effective_year : m), 0) || null;
+
+  // Coverage, not just presence: a handful of seeded grades still reports "ok" under an existence +
+  // freshness check, so the pay-band panels render a confident-looking average over a tiny slice of
+  // people. Measure against the rows that *have* a grade in the source (many appointments legitimately
+  // aren't on the graded structure at all) — that's the population the reference is supposed to band.
+  const gradeKeys = new Set(grades.map((g) => `${g.grade}|${norm(g.basis ?? '')}`));
+  const latestRows = latest ? allRows.filter((r) => r.snapshot_id === latest.snapshot_id) : [];
+  const gradedRows = latestRows.filter((r) => r.grade_number != null);
+  const matchedRows = gradedRows.filter((r) => gradeKeys.has(`${r.grade_number}|${norm(r.grade_basis ?? '')}`));
+  const coverage = gradedRows.length ? matchedRows.length / gradedRows.length : null;
+  const SPARSE_BELOW = 0.5;
+
   const refStatus = {
     generated_at: new Date().toISOString(),
     grades_count: grades.length,
     max_effective_year: maxEff,
     latest_snapshot_year: latestYear,
-    status: grades.length === 0 ? 'missing' : latestYear && maxEff && latestYear - maxEff > 1 ? 'stale' : 'ok',
+    graded_rows: gradedRows.length,
+    matched_rows: matchedRows.length,
+    coverage,
+    status:
+      grades.length === 0
+        ? 'missing'
+        : latestYear && maxEff && latestYear - maxEff > 1
+          ? 'stale'
+          : coverage != null && coverage < SPARSE_BELOW
+            ? 'sparse'
+            : 'ok',
   };
   fs.writeFileSync(path.join(OUT_DIR, 'reference-status.json'), JSON.stringify(refStatus, null, 2));
 

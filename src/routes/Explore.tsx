@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Anchor, Skeleton, Card, Select,
 } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
@@ -18,6 +19,7 @@ import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { usd, usdCompact, num, fmtDate } from '../lib/format';
+import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
@@ -226,16 +228,33 @@ export default function Explore() {
 
       <SearchBox />
 
+      {/* `.alert-warn` (gray surface, orange rule + icon) rather than an orange Alert: the orange
+          variant renders its bold title at 2.5:1 on its own tint, which axe flags as serious. Neither
+          of these alerts had ever rendered before, so the suite had never caught it. */}
       {refStatus && refStatus.status !== 'ok' && (
-        <Alert color={refStatus.status === 'missing' ? 'gray' : 'orange'} title="Pay-band reference">
+        <Alert
+          variant="light"
+          color="gray"
+          className={refStatus.status === 'missing' ? undefined : 'alert-warn'}
+          icon={refStatus.status === 'missing' ? undefined : <IconAlertTriangle size={ICON.control} />}
+          title="Pay-band reference"
+        >
           {refStatus.status === 'missing'
             ? 'No pay-band grade ranges are loaded — paste them into data/reference/salary-grades.csv to enable pay-band views.'
-            : `Pay-band ranges are from ${refStatus.max_effective_year}, but the latest data is ${refStatus.latest_snapshot_year} — ranges may be out of date. Refresh data/reference/salary-grades.csv from the Salary Structure page.`}
+            : refStatus.status === 'sparse'
+              ? `Only ${refStatus.grades_count} grade range${refStatus.grades_count === 1 ? '' : 's'} are loaded, covering ${num(refStatus.matched_rows)} of ${num(refStatus.graded_rows)} graded appointments (${Math.round((refStatus.coverage ?? 0) * 100)}%) — pay-band figures describe that slice, not the whole population. Paste the full grade→range table into data/reference/salary-grades.csv from the Salary Structure page.`
+              : `Pay-band ranges are from ${refStatus.max_effective_year}, but the latest data is ${refStatus.latest_snapshot_year} — ranges may be out of date. Refresh data/reference/salary-grades.csv from the Salary Structure page.`}
         </Alert>
       )}
 
       {flagged.length > 0 && (
-        <Alert color="orange" title={`${flagged.length} data-health note${flagged.length > 1 ? 's' : ''}`}>
+        <Alert
+          variant="light"
+          color="gray"
+          className="alert-warn"
+          icon={<IconAlertTriangle size={ICON.control} />}
+          title={`${flagged.length} data-health note${flagged.length > 1 ? 's' : ''}`}
+        >
           {flagged.slice(0, 3).map((s) => (
             <Text size="sm" key={s.snapshot_id}>
               <b>{s.snapshot_id}</b>: {s.messages.join('; ')}

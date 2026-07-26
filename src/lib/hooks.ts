@@ -44,10 +44,16 @@ export interface ReferenceStatus {
   grades_count: number;
   max_effective_year: number | null;
   latest_snapshot_year: number | null;
-  status: 'ok' | 'stale' | 'missing';
+  /** Latest-snapshot rows carrying a grade in the source — the population the reference should band. */
+  graded_rows: number;
+  /** Of those, how many matched a grade→range row in the reference table. */
+  matched_rows: number;
+  /** matched_rows / graded_rows, or null when nothing in the snapshot carries a grade. */
+  coverage: number | null;
+  status: 'ok' | 'stale' | 'missing' | 'sparse';
 }
 
-/** Freshness of the pay-band reference table (drives the staleness banner). */
+/** Freshness *and* coverage of the pay-band reference table (drives the pay-band banner). */
 export function useReferenceStatus() {
   return useQuery({ queryKey: ['ref-status'], queryFn: () => fetchData<ReferenceStatus>('reference-status.json') });
 }
