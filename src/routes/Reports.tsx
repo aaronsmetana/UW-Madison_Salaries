@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -40,6 +40,15 @@ interface TrayPerson { person_key: string; fn: string; ln: string; title: string
 
 const ALL_MODES: CohortMode[] = ['all', 'school', 'tenure', 'grade', 'curated'];
 
+/**
+ * The report export controls. `Button.Group` pins its children to a single row, which ran the last two
+ * buttons off a phone screen — so below the tablet breakpoint they become a plain wrapping row instead
+ * of the joined strip.
+ */
+function ExportBar({ joined, children }: { joined: boolean; children: ReactNode }) {
+  return joined ? <Button.Group>{children}</Button.Group> : <Group gap="xs" wrap="wrap">{children}</Group>;
+}
+
 export default function Reports() {
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
@@ -49,6 +58,9 @@ export default function Reports() {
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = fmtDate(new Date());
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
+  // Phone-width layout for the header controls: the mode switcher's full labels measure 633px, which
+  // pushed the whole page 274px wider than a 375px viewport and scrolled the app sideways.
+  const isNarrow = useMediaQuery('(max-width: 48em)') ?? false;
 
   // The tray's "Report →" shortcut deep-links here with ?mode=compare to open the comparison studio
   // (kept working as a legacy trigger); ?type= is the current, shareable form this page now writes.
@@ -956,17 +968,22 @@ export default function Reports() {
         <PageHeader
           title="Reports"
           right={
-            <Group gap="md">
+            <Group gap="md" w={isNarrow ? '100%' : undefined}>
               <SegmentedControl
                 radius="xl"
+                fullWidth={isNarrow}
+                w={isNarrow ? '100%' : undefined}
                 value={type}
                 onChange={setType}
                 data={[
-                  { value: 'person', label: 'On a Specified Person' },
-                  { value: 'comparison', label: 'Salary Increase Justification (People In Tray)' },
+                  { value: 'person', label: isNarrow ? 'One person' : 'On a Specified Person' },
+                  {
+                    value: 'comparison',
+                    label: isNarrow ? 'Raise case (tray)' : 'Salary Increase Justification (People In Tray)',
+                  },
                 ]}
               />
-              <Button.Group>
+              <ExportBar joined={!isNarrow}>
                 <Button
                   variant="default"
                   leftSection={<IconDownload size={16} />}
@@ -1008,7 +1025,7 @@ export default function Reports() {
                 >
                   {docCopyState === 'rich' ? 'Copied' : docCopyState === 'plain' ? 'Copied (plain text)' : 'Copy for email'}
                 </Button>
-              </Button.Group>
+              </ExportBar>
             </Group>
           }
         />

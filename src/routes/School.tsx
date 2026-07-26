@@ -199,13 +199,16 @@ export default function School() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <div style={{ paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
+      {/* Wraps like PageHeader's own action slot — see the note on Person's header. `nowrap` squeezed the
+          button until its label clipped ("+ Add to tray" needed 83px in an 80px button). */}
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+        <div style={{ flex: '1 1 320px', minWidth: 0, paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
           <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>{name}</Title>
         </div>
         <Button
           variant={has(name) ? 'light' : 'filled'}
           disabled={has(name)}
+          style={{ flexShrink: 0 }}
           onClick={() => add({ type: 'school', id: name, label: name })}
         >
           {has(name) ? 'In tray' : '+ Add to tray'}

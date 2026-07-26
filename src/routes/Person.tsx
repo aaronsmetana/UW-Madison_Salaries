@@ -672,8 +672,12 @@ export default function Person() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <div style={{ paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
+      {/* Wraps like PageHeader's own action slot: `nowrap` kept the buttons beside the name on a phone,
+          squeezing the title into ~215px so "Kenneth Poss" broke across two lines and the breadcrumb
+          across six — and pushing the page 53px wider than the viewport. The flex-basis keeps the
+          desktop row unchanged and only drops the actions below once they can no longer both fit. */}
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+        <div style={{ flex: '1 1 320px', minWidth: 0, paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
           <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (
@@ -703,7 +707,7 @@ export default function Person() {
             <MetaPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
           </Group>
         </div>
-        <Group gap="sm" wrap="nowrap">
+        <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
           <Popover width={320} position="bottom-end" shadow="md" withArrow trapFocus>
             <Popover.Target>
               <Button variant="default">Compare with…</Button>

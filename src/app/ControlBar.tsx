@@ -181,11 +181,15 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   const lens = (
     <>
       <Eyebrow style={{ flexShrink: 0 }}>Showing</Eyebrow>
-      <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+      {/* Scope + snapshot: allowed to wrap and shrink. Held at `nowrap` with `flexShrink: 0` this row
+          measured 370px against ~343px of usable width on a 375px screen, which scrolled Explore and
+          Compare sideways. The 180px snapshot Select keeps that as a max, not a fixed size. */}
+      <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
         <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} />
         <Select
           {...dropdownProps('sm')}
           w={180}
+          maw="100%"
           aria-label="Snapshot"
           leftSection={<IconCalendar size={15} />}
           leftSectionWidth={30}
