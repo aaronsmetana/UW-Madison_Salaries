@@ -15,7 +15,8 @@
     "fetch-titles": "node scripts/fetch-job-titles.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "eslint . --ext .ts,.tsx",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.29.0",
@@ -30,6 +31,8 @@
     "recharts": "^2.13.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^20.16.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",

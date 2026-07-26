@@ -1,6 +1,8 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { configDefaults } from 'vitest/config';
 
 // Self-hosted, no third-party origins. 'wasm-unsafe-eval' is required for DuckDB-WASM;
 // worker-src allows the bundled (same-origin) DuckDB worker; style 'unsafe-inline' for Mantine.
@@ -70,4 +72,7 @@ export default defineConfig({
   ],
   worker: { format: 'es' },
   optimizeDeps: { exclude: ['@duckdb/duckdb-wasm'] },
+  // `e2e/**` holds Playwright specs (a separate test runner, its own `test()` global) — Vitest's
+  // default glob would otherwise try to collect them too and fail with a runner-mismatch error.
+  test: { exclude: [...configDefaults.exclude, 'e2e/**'] },
 });

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconDownload, IconPrinter, IconFileReport } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck } from '@tabler/icons-react';
+import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, personPay } from '../lib/queries';
+import { salaryExpr, personPay, basisEquivWhere } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, pct, fullName, fmtDate, plural } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -32,7 +33,7 @@ import { POLICY } from '../components/report/sources';
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
   grade_number: number | null; grade_basis: string | null; school: string | null; date_of_hire: string | null;
-  flsa_status: string | null;
+  flsa_status: string | null; comp_basis: string | null;
 }
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
@@ -59,6 +60,7 @@ export default function Reports() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig);
+  const [docCopyState, setDocCopyState] = useState<'idle' | 'rich' | 'plain'>('idle');
 
   // ── Comparison studio (tray) — subject resolution lives here (ahead of the person-mode URL-sync
   // effect below) so that effect can also read/write ?subject= for the comparison studio. ──
@@ -132,16 +134,24 @@ export default function Reports() {
     ['rpt-subj', subjectKey, snap ?? '', metric],
     `SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
         arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
-        arg_max(flsa_status, ${expr}) flsa_status,
+        arg_max(flsa_status, ${expr}) flsa_status, arg_max(comp_basis, ${expr}) comp_basis,
         any_value(school) school, min(date_of_hire) date_of_hire
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')}`,
     cmpReady
   );
   const subj = subjRows?.[0];
-  const subjectPay = subj?.pay ?? null;
+  // A $0 / unreported salary is not a real subject pay — normalize to null so every downstream gate
+  // (`subjectPay == null` → the pick-a-subject empty state) handles it, rather than rendering a
+  // nonsense "$0 → $X (+$X, 0.0%)" recommendation.
+  const subjectPay = subj?.pay != null && subj.pay > 0 ? subj.pay : null;
   const jobCode = subj?.job_code ?? null;
   const grade = subj?.grade_number ?? null;
   const school = subj?.school ?? null;
+  // Same-title/grade cohorts below are scoped to the subject's own pay basis (9-month vs 12-month
+  // appointments are never compared raw — a mixed cohort would otherwise mislabel a lower academic-year
+  // salary as "below market" against 12-month peers). `basisEquivWhere` is label-drift + NULL-era
+  // tolerant (see its doc); '' (no filter) when the subject's basis is unknown.
+  const compBasisWhere = basisEquivWhere(subj?.comp_basis);
   // FLSA status drives the guideline's compression floor (exempt → 8%, non-exempt → 5%). Three spellings
   // exist in the record ('Exempt' / 'Non-exempt' / 'Non-Exempt'), so match case-insensitively; a null
   // status falls back to the conservative 5% floor (under-claims rather than over-claims).
@@ -185,19 +195,19 @@ export default function Reports() {
   }, [summary, snap]);
 
   const { data: peerListRows } = useSql<PeerRow>(
-    ['rpt-peerlist', jobCode ?? '', snap ?? '', metric],
+    ['rpt-peerlist', jobCode ?? '', snap ?? '', metric, compBasisWhere],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
-        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere} GROUP BY person_key)
      SELECT person_key, pay, tenure, school FROM pp WHERE pay > 0`,
     cmpReady && !!jobCode
   );
 
   const { data: gradeListRows } = useSql<{ person_key: string; pay: number; tenure: number | null }>(
-    ['rpt-gradelist', grade ?? -1, snap ?? '', metric],
+    ['rpt-gradelist', grade ?? -1, snap ?? '', metric, compBasisWhere],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
-        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND grade_number = ${grade ?? -1} GROUP BY person_key)
+        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND grade_number = ${grade ?? -1} ${compBasisWhere} GROUP BY person_key)
      SELECT person_key, pay, tenure FROM pp WHERE pay > 0`,
     cmpReady && grade != null
   );
@@ -212,13 +222,20 @@ export default function Reports() {
   );
 
   const { data: medHist } = useSql<{ date: string; med: number | null; pay: number | null }>(
-    ['rpt-med-hist', jobCode ?? '', subjectKey ?? '', metric],
+    ['rpt-med-hist', jobCode ?? '', subjectKey ?? '', metric, compBasisWhere],
     `WITH per_snap AS (
         SELECT snapshot_id, any_value(snapshot_date) date, person_key, ${personPay(metric)} pay
         FROM salaries WHERE job_code = ${sqlStr(jobCode ?? '')} GROUP BY snapshot_id, person_key),
-      m AS (SELECT snapshot_id, any_value(date) date, median(pay) FILTER (WHERE pay > 0) med FROM per_snap GROUP BY snapshot_id),
-      s AS (SELECT snapshot_id, pay FROM per_snap WHERE person_key = ${sqlStr(subjectKey ?? '')})
-     SELECT m.date date, m.med med, s.pay pay FROM m JOIN s USING (snapshot_id) ORDER BY date`,
+      -- The median is scoped to the subject's own pay basis (see compBasisWhere); the subject's OWN
+      -- pay history (s, below) stays unfiltered — their historical basis may differ from today's.
+      per_snap_basis AS (
+        SELECT snapshot_id, person_key, ${personPay(metric)} pay
+        FROM salaries WHERE job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere} GROUP BY snapshot_id, person_key),
+      m AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med FROM per_snap_basis GROUP BY snapshot_id),
+      -- per_snap is already one row per (snapshot_id, person_key), so the subject has at most one row
+      -- per snapshot — group by snapshot_id alone (any_value picks that single date/pay).
+      s AS (SELECT snapshot_id, any_value(date) date, any_value(pay) pay FROM per_snap WHERE person_key = ${sqlStr(subjectKey ?? '')} GROUP BY snapshot_id)
+     SELECT s.date date, m.med med, s.pay pay FROM m JOIN s USING (snapshot_id) ORDER BY date`,
     cmpReady && !!jobCode
   );
 
@@ -232,10 +249,10 @@ export default function Reports() {
   // Also carries tenure (not just top-10-by-pay) so the same rows can surface tenure-inversion
   // suggestions — peers who out-earn the subject despite less UW tenure — not just top earners.
   const { data: suggestRows } = useSql<{ person_key: string; fn: string; ln: string; pay: number; tenure: number | null }>(
-    ['rpt-suggest', jobCode ?? '', snap ?? '', metric],
+    ['rpt-suggest', jobCode ?? '', snap ?? '', metric, compBasisWhere],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')}
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere}
      GROUP BY person_key ORDER BY pay DESC LIMIT 200`,
     cmpReady && !!jobCode
   );
@@ -277,11 +294,11 @@ export default function Reports() {
   // (continuing appointments only; new hires/departures would distort a "raise" comparison).
   const prevSnapId = prevSnapInfo?.id ?? '';
   const { data: raiseCycleRows } = useSql<{ person_key: string; pay_from: number; pay_to: number }>(
-    ['rpt-raise-cycle', jobCode ?? '', snap ?? '', prevSnapId, metric],
+    ['rpt-raise-cycle', jobCode ?? '', snap ?? '', prevSnapId, metric, compBasisWhere],
     `WITH cur AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
-                  WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key),
+                  WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere} GROUP BY person_key),
           prv AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
-                  WHERE snapshot_id = ${sqlStr(prevSnapId)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
+                  WHERE snapshot_id = ${sqlStr(prevSnapId)} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere} GROUP BY person_key)
      SELECT cur.person_key, prv.pay pay_from, cur.pay pay_to
      FROM cur JOIN prv USING (person_key) WHERE cur.pay > 0 AND prv.pay > 0`,
     cmpReady && !!jobCode && !!prevSnapId
@@ -791,6 +808,7 @@ export default function Reports() {
     guidelineCompression,
     marketPosition,
     guidelineProvisions,
+    cohortBasisScoped: !!subj?.comp_basis,
     standing, tenureRegression, tenureScatterPoints, raiseCycle: raiseCycleDoc,
   };
 
@@ -963,6 +981,27 @@ export default function Reports() {
                 </Button>
                 <Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>
                   Print / Save as PDF
+                </Button>
+                <Button
+                  variant="default"
+                  leftSection={<IconFileTypeDoc size={16} />}
+                  disabled={type !== 'comparison' || subjectPay == null}
+                  onClick={() => downloadDoc(briefToWordHtml(model), `Salary brief - ${subjectName || 'employee'}.doc`)}
+                >
+                  Download .doc
+                </Button>
+                <Button
+                  variant="default"
+                  color={docCopyState !== 'idle' ? 'pos' : undefined}
+                  leftSection={docCopyState !== 'idle' ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                  disabled={type !== 'comparison' || subjectPay == null}
+                  onClick={async () => {
+                    const rich = await copyBriefRichText(briefToWordHtml(model));
+                    setDocCopyState(rich ? 'rich' : 'plain');
+                    setTimeout(() => setDocCopyState('idle'), 1500);
+                  }}
+                >
+                  {docCopyState === 'rich' ? 'Copied' : docCopyState === 'plain' ? 'Copied (plain text)' : 'Copy for email'}
                 </Button>
               </Button.Group>
             </Group>

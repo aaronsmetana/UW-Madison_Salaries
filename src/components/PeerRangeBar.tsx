@@ -91,6 +91,7 @@ export function PeerRangeBar({
       <div style={{ position: 'relative', height: 28 }}>
         <Text
           fw={700}
+          className="accent7-text"
           style={{
             position: 'absolute',
             left: mounted ? `${pos}%` : 0,

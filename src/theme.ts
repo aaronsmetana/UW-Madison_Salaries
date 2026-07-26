@@ -42,6 +42,10 @@ export const theme = createTheme({
     // Badges read as sentence case by default (the app's convention); a true status label that should
     // shout re-adds tt="uppercase" explicitly at the call site.
     Badge: { defaultProps: { tt: 'none' } },
+    // Inline text links must be visually distinguishable without relying on color alone (WCAG
+    // 1.4.1) — hover-only underlining fails that for any link sitting in a sentence. Card-wrapper
+    // anchors (the whole card is the link) opt out explicitly with underline="never" at the call site.
+    Anchor: { defaultProps: { underline: 'always' } },
   },
 });
 

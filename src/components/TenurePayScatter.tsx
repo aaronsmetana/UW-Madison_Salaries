@@ -142,6 +142,11 @@ export function TenurePayScatter({
         </Box>
       )}
 
+      {/* role="img" on the wrapper + aria-hidden on the chart itself: recharts tags every individual
+          scatter point with its own unlabeled role="img" (hundreds of them for a large title), which
+          reads as noise to a screen reader — one accessible summary for the whole plot instead. */}
+      <div role="img" aria-label={`Scatter plot of pay versus tenure for ${titleLabel}, tenure in years on the x-axis and pay in dollars on the y-axis.`}>
+      <div aria-hidden="true">
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart margin={{ left: 12, right: 16, top: 10, bottom: 4 }}>
           <CartesianGrid {...GRID} />
@@ -190,6 +195,8 @@ export function TenurePayScatter({
           )}
         </ScatterChart>
       </ResponsiveContainer>
+      </div>
+      </div>
 
       <Group gap="lg" mt="xs" wrap="wrap">
         <LegendSwatch swatch={<svg width={14} height={14} aria-hidden><circle cx={7} cy={7} r={6} fill="var(--mantine-color-accent-6)" stroke="var(--mantine-color-body)" strokeWidth={1.5} /></svg>} label="This person" />

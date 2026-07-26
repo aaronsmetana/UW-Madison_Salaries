@@ -20,7 +20,7 @@ export function TrayButton({
 }) {
   return (
     <Button
-      className="peer-add"
+      className={inTray ? 'peer-add' : 'peer-add accent-adaptive-text'}
       size="compact-xs"
       variant={inTray ? 'light' : 'outline'}
       color={inTray ? 'pos' : 'accent'}

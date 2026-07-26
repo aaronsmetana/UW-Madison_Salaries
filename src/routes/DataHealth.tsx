@@ -14,7 +14,9 @@ import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
 
-const STATUS_COLOR: Record<string, string> = { ok: 'green', warning: 'orange', error: 'red', info: 'gray' };
+// 'pos' (not stock Mantine 'green') — the app's own vetted positive palette; plain 'green's light-variant
+// text (green-7, ~2.4:1 on this badge's pale fill) fails WCAG AA, 'pos' clears it comfortably (~5:1).
+const STATUS_COLOR: Record<string, string> = { ok: 'pos', warning: 'orange', error: 'red', info: 'gray' };
 
 /** Snapshot-over-snapshot delta chip for the ingestion table. `tone="neutral"` for headcount (a
  *  population size, not a status); the median-salary delta keeps `signed` (money). */
@@ -528,6 +530,7 @@ export default function DataHealth() {
                   color={STATUS_COLOR[s.status] ?? 'gray'}
                   variant={s.status === 'ok' || s.status === 'info' ? 'light' : 'filled'}
                   radius="sm"
+                  className={s.status === 'ok' ? 'pos-light-text' : undefined}
                 >
                   <VisuallyHidden>System status: </VisuallyHidden>{s.status.toUpperCase()}
                 </Badge>

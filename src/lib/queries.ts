@@ -82,3 +82,41 @@ export function whereAll(scope: Scope, filters: Filters): string {
 
 /** stable string key for the active filters (for query caching). */
 export const filterKey = (filters: Filters): string => JSON.stringify(filters);
+
+// ── Compensation-basis equivalence — the source relabeled the `comp_basis` column mid-series, so
+//    the SAME pay basis appears under different labels in different snapshots, and there's no basis
+//    recorded at all before Sep 2024. 'Annual' (through Apr 2024 snapshots) and '12 Month' (Sep 2025
+//    on) mean the same thing; likewise 'Academic' ↔ '9 Month'. (Mirrors BASIS_ALIASES in ./format.ts,
+//    which normalizes these for DISPLAY; this is the query-side equivalence.) ──
+const BASIS_CLASSES: string[][] = [
+  ['annual', '12 month'],
+  ['academic', '9 month'],
+];
+/** The equivalence class (normalized-lowercase labels) a basis belongs to — its own singleton when
+ *  the label isn't part of a known relabeling. */
+function basisClass(basis: string): string[] {
+  const key = basis.trim().toLowerCase();
+  return BASIS_CLASSES.find((c) => c.includes(key)) ?? [key];
+}
+
+/**
+ * SQL predicate scoping a same-title/grade cohort to the subject's own pay basis, so a 9-month
+ * (academic-year) salary is never compared raw against a 12-month one. Matches every label in the
+ * subject's equivalence class (see `BASIS_CLASSES`) AND keeps NULL-basis rows (snapshots before the
+ * column existed) rather than dropping their whole history. Returns '' (no filter) when the subject's
+ * basis is unknown. Begins with `AND ` (callers append it after an existing WHERE, with their own
+ * leading space in the template — matching the original inline predicate it replaced).
+ */
+export function basisEquivWhere(subjBasis: string | null | undefined): string {
+  if (!subjBasis || !subjBasis.trim()) return '';
+  const cls = basisClass(subjBasis);
+  return `AND (lower(comp_basis) IN (${cls.map(sqlStr).join(', ')}) OR comp_basis IS NULL)`;
+}
+
+/** Whether two `comp_basis` values name the same pay basis (label-drift-tolerant — see
+ *  `basisEquivWhere`). A null/blank on either side is treated as "unknown → don't exclude" (true),
+ *  matching the query-side predicate's NULL tolerance. */
+export function sameBasis(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !a.trim() || !b || !b.trim()) return true;
+  return basisClass(a).includes(b.trim().toLowerCase());
+}

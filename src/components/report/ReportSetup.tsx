@@ -168,7 +168,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
             <Group gap={6}>
               {inversionSuggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="orange" className="orange-light-text" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -189,7 +189,12 @@ export function ReportSetup({
                   <Group gap="xs" wrap="nowrap" justify="space-between">
                     <Radio value={c.value} label={c.label} />
                     {badge && (
-                      <Badge size="sm" {...badgeStyle(badge.tone)} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Badge
+                        size="sm"
+                        {...badgeStyle(badge.tone)}
+                        className={badge.tone === 'surplus' ? 'orange-light-text' : undefined}
+                        style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                      >
                         {badge.text}
                       </Badge>
                     )}
@@ -499,9 +504,9 @@ export function ReportSetup({
                         <Text size="xs" c="dimmed" fw={600}>{p.value}<Text span c="dimmed" fw={400}> / {p.max}</Text></Text>
                       </Group>
                     </Group>
-                    <Progress value={p.value} color={p.value > 0 ? 'accent' : 'gray'} size="sm" radius="sm" />
+                    <Progress value={p.value} color={p.value > 0 ? 'accent' : 'gray'} size="sm" radius="sm" aria-label={`${p.label}: ${p.value} of ${p.max}`} />
                     {!maxed && hint && (
-                      <Text size="xs" mt={3} c={hint.tone === 'action' ? 'accent.7' : 'dimmed'}>
+                      <Text size="xs" mt={3} c={hint.tone === 'action' ? 'accent.7' : 'dimmed'} className={hint.tone === 'action' ? 'accent7-text' : undefined}>
                         {hint.tone === 'action' ? '↳ ' : ''}{hint.text}
                       </Text>
                     )}
@@ -528,6 +533,9 @@ export function ReportSetup({
                     className={jump ? 'evidence-jump' : undefined}
                     onClick={jump}
                     style={jump ? { cursor: 'pointer' } : undefined}
+                    tabIndex={jump ? 0 : undefined}
+                    role={jump ? 'button' : undefined}
+                    onKeyDown={jump ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } } : undefined}
                   >
                     {e.ok
                       ? <IconCheck size={13} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
@@ -548,7 +556,7 @@ export function ReportSetup({
             {overAskAnchor ? (
               <>
                 <IconInfoCircle size={14} color="var(--mantine-color-accent-6)" style={{ flexShrink: 0, marginTop: 2 }} />
-                <Text size="xs" c="accent.7">
+                <Text size="xs" c="accent.7" className="accent7-text">
                   The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''}, but it's anchored to the
                   UW guideline's {overAskAnchor === 'supervisor' ? '15% supervisory differential above a named direct report' : 'market-competitive floor (85% of the grade midpoint)'} — cite the guideline when you present it, not an unsupported reach.
                 </Text>
@@ -615,7 +623,7 @@ export function ReportSetup({
         >
           <Group justify="space-between" wrap="nowrap">
             <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.05em' }}>Recommended</Text>
-            <Text size="sm" fw={800} c="pos.7">
+            <Text size="sm" fw={800} c="pos.7" className="pos-adaptive-text">
               {usd(recommended)}
               {recommended > basePay && <Text span c="dimmed" fw={600}> (+{pct((recommended - basePay) / basePay)})</Text>}
             </Text>

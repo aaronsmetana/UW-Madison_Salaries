@@ -64,7 +64,7 @@ function Chip({ item, isPrimary, onPrimary, onRemove }: {
       ) : (
         <Icon size={15} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
       )}
-      <Anchor component={Link} to={href(item.id)} c={isPrimary ? 'accent.7' : 'inherit'} fw={isPrimary ? 600 : undefined} underline="hover" fz="sm" lineClamp={1} title={item.label}>
+      <Anchor component={Link} to={href(item.id)} c={isPrimary ? 'accent.7' : 'inherit'} className={isPrimary ? 'accent7-text' : undefined} fw={isPrimary ? 600 : undefined} underline="hover" fz="sm" lineClamp={1} title={item.label}>
         {item.label}
       </Anchor>
       <ActionIcon size={19} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>

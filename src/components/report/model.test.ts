@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, type CohortRow } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -165,5 +165,17 @@ describe('caseStrength', () => {
     const strong = caseStrength({ gapToMed: 20_000, med: 100_000, invCount: 3, streakYears: 5, activeFactors: 3 });
     expect(strong.score).toBe(100);
     expect(strong.label).toBe('Strong');
+  });
+});
+
+describe('fmtYearsToParity', () => {
+  it('rounds up and pluralizes normally under the cap', () => {
+    expect(fmtYearsToParity(1)).toBe('~1 more year');
+    expect(fmtYearsToParity(4.2)).toBe('~5 more years');
+    expect(fmtYearsToParity(10)).toBe('~10 more years');
+  });
+  it('caps an unbounded projection at a round "10+" instead of an absurd figure', () => {
+    expect(fmtYearsToParity(10.1)).toBe('10+ more years');
+    expect(fmtYearsToParity(57)).toBe('10+ more years');
   });
 });

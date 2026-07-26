@@ -42,7 +42,7 @@ export function StatCard({
       {lead && (
         <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' }} />
       )}
-      <Eyebrow>{label}{to && <Text span c="accent.7"> →</Text>}</Eyebrow>
+      <Eyebrow>{label}{to && <Text span c="accent.7" className="accent7-text"> →</Text>}</Eyebrow>
       <Text mt={6} style={VALUE[size]}>{value}</Text>
       {sub != null && <Text size="sm" c="dimmed" mt={4}>{sub}</Text>}
     </Card>

@@ -16,7 +16,7 @@ import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
-import { CAND, PEER, ordinal, type BriefModel, type ProofKind } from './model';
+import { CAND, PEER, ordinal, fmtYearsToParity, type BriefModel, type ProofKind } from './model';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
 function fmtHistTick(d: string): string {
@@ -76,7 +76,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
-    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions,
+    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -123,6 +123,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     { id: 'parity', when: yearsToParity != null && yearsToParity >= 0.5, text: 'Time-to-parity assumes compounding raises at the stated annual rate with no other adjustment — a projection, not a commitment.' },
     { id: 'tenure', when: showTenure, text: '"Tenure" = years since the UW–Madison date of hire (not total career experience), computed as of this snapshot.' },
     { id: 'percentile', when: hasPercentileClaim, text: 'Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.' },
+    { id: 'compBasis', when: cohortBasisScoped && (sectionShow.highlights || sectionShow.peers || sectionShow.standing || sectionShow.history), text: "Same-title comparisons are scoped to the subject's own pay basis — 9-month (academic-year) and 12-month appointments are never compared raw." },
     { id: 'supervisory', when: supervisory.reports.length > 0, text: <>Per the UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Supervisors or Managers and Subordinates&rdquo; provision: at least a 15% pay differential between a supervisor/manager and a non-managing subordinate (pay differential = (higher salary &minus; lower salary) &divide; lower salary). See Sources.</> },
     { id: 'guidelineCompression', when: !!guidelineCompression && guidelineCompression.count > 0, text: <>The UW–Madison Salary Administration Guidelines&rsquo; &ldquo;Compression&rdquo; provision suggests at least a {guidelineCompression ? pct(guidelineCompression.threshold) : '5%'} pay differential ({guidelineCompression?.exempt === false ? 'non-exempt' : guidelineCompression?.exempt === true ? 'exempt/professional' : 'FLSA status unavailable — conservative non-exempt floor applied'}) where same-title employees have distinct differences in experience. &ldquo;Distinct differences&rdquo; is operationalized here as a peer with at least {guidelineCompression?.gapYears ?? 5} fewer years of UW tenure, mirroring the guideline&rsquo;s own 3-vs-8-year example. See Sources.</> },
     { id: 'newHireCompression', when: proofs.some((p) => p.kind === 'compression'), text: 'Recent hires may additionally receive a hiring bonus of up to 15% of the proposed starting salary, which the public salary record does not capture — so the recorded salary understates new-hire total compensation.' },
@@ -185,12 +186,17 @@ export function ReportBrief({ model, hovered, onHover }: {
               </Text>
               <Text mt={8}>
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                (<Text span fw={700} c="pos.7">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
+                (<Text span fw={700} c="pos.7" className="pos-adaptive-text">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
               </Text>
               {yearsToParity != null && yearsToParity >= 0.5 && (
                 <Text size="xs" c="dimmed" mt={4}>
                   Absent this adjustment, a raise at {pct(yearsToParityRate)}/yr ({yearsToParityObserved ? "this title's own observed raise rate" : 'a standard assumption'}) alone
-                  would take ~{Math.ceil(yearsToParity)} more {Math.ceil(yearsToParity) === 1 ? 'year' : 'years'} to reach today's median.<Sup n={fn('parity')} />
+                  would take {fmtYearsToParity(yearsToParity)} to reach today's median, if that rate continues.<Sup n={fn('parity')} />
+                </Text>
+              )}
+              {standing != null && standing.values.length < 4 && (
+                <Text size="xs" c="dimmed" fw={600} mt={4}>
+                  Based on a small same-title comparison group (n = {standing.values.length}) — see Market standing below.
                 </Text>
               )}
 
@@ -223,7 +229,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                     <Divider my={4} />
                     <Group justify="space-between" wrap="nowrap" px={6}>
                       <Text size="sm" fw={800}>Total parity recommendation</Text>
-                      <Text size="sm" fw={800} c="pos.7">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
+                      <Text size="sm" fw={800} c="pos.7" className="pos-adaptive-text">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
                     </Group>
                   </Stack>
                 </Box>
@@ -368,7 +374,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                         {f.note && <Text size="xs" c="dimmed">{f.note}</Text>}
                       </Box>
                       {f.amount != null && (
-                        <Text size="sm" fw={700} c="pos.7" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
+                        <Text size="sm" fw={700} c="pos.7" className="pos-adaptive-text" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
                       )}
                     </Group>
                   ))}
@@ -616,7 +622,7 @@ function DivBar({ label, value, max, color, emphasize }: { label: string; value:
     <div style={{ marginBottom: 10 }}>
       <Group justify="space-between" gap="xs" mb={3}>
         <Text size="sm" fw={emphasize ? 700 : 500}>{label}</Text>
-        <Text size="sm" fw={700} c={emphasize ? 'accent.7' : undefined}>+{usd(value)}</Text>
+        <Text size="sm" fw={700} c={emphasize ? 'accent.7' : undefined} className={emphasize ? 'accent7-text' : undefined}>+{usd(value)}</Text>
       </Group>
       <Progress value={filled} color={color} size="lg" radius="sm" />
     </div>

@@ -12,6 +12,10 @@ public/data/
 *.log
 .DS_Store
 
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+
 # editor
 .vscode/
 .idea/

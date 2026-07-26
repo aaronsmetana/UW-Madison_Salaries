@@ -250,7 +250,7 @@ export default function Home() {
           <Stack gap={6} align="center" className="hero-rise" style={{ position: 'relative' }}>
             <Title order={1} ta="center" style={{ letterSpacing: '-0.02em', fontSize: 'clamp(2rem, 4vw, 3rem)' }}>
               <Text span inherit c="bright">UW–Madison </Text>
-              <Text span inherit c="accent.7">Salaries</Text>
+              <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
             </Title>
             <Text c="dimmed" ta="center" maw={580} size="lg">
               Search anyone by name to see their salary, how it changed over the years, and how they stack up against everyone with the same title.
@@ -288,7 +288,7 @@ export default function Home() {
                 {kpis.map((k) => <Kpi key={k.label} {...k} />)}
               </SimpleGrid>
               <Sparkline bins={bins} median={summary?.latest?.median ?? null} />
-              <Text size="xs" c="accent.7" fw={600} ta="center" mt="md">
+              <Text size="xs" c="accent.7" className="accent7-text" fw={600} ta="center" mt="md">
                 Browse schools &amp; titles in General Comparisons <span className="browse-arrow">→</span>
               </Text>
             </Paper>

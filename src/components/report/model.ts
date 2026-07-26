@@ -166,6 +166,15 @@ export function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+/** "~4 more years" / "~1 more year" / "10+ more years" — the raw log-compounding estimate is
+ *  unbounded (a slow observed raise rate against a large gap can project 50+ years), which reads as
+ *  absurd rather than persuasive; capped at a round "10+" past that point. */
+export function fmtYearsToParity(years: number): string {
+  const n = Math.ceil(years);
+  if (n > 10) return '10+ more years';
+  return `~${n} more ${n === 1 ? 'year' : 'years'}`;
+}
+
 export interface CohortRow { pay: number; tenure: number | null }
 export interface CohortStats {
   n: number;
@@ -378,6 +387,10 @@ export interface BriefModel {
   guidelineCompression: GuidelineCompression | null;
   marketPosition: MarketPosition | null;
   guidelineProvisions: GuidelineProvision[];
+  /** True when every same-title cohort query (proofs, standing, peer suggestions, pay history,
+   *  raise cycle) was scoped to the subject's own pay basis — false when the subject's comp_basis
+   *  is unknown, so no basis filter could be applied (drives a methodology note, not a claim gate). */
+  cohortBasisScoped: boolean;
   standing: StandingModel | null;
   tenureRegression: { n: number; expected: number; gap: number } | null;
   tenureScatterPoints: ScatterPoint[];

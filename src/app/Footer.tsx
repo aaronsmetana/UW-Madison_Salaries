@@ -20,7 +20,7 @@ export function Footer() {
     >
       <Text size="xs" c="dimmed">
         Public salary records, released under Wisconsin&rsquo;s open-records law.{' '}
-        <Anchor component={Link} to="/data" c="dimmed" underline="hover" inherit>Data &middot; About</Anchor>
+        <Anchor component={Link} to="/data" c="dimmed" underline="always" inherit>Data &middot; About</Anchor>
         {summary?.generated_at ? ` · data generated ${fmtDate(summary.generated_at)}` : ''}
       </Text>
       <Anchor href={REPO_URL} target="_blank" rel="noopener noreferrer" c="dimmed" underline="hover" size="xs">

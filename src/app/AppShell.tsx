@@ -3,7 +3,7 @@ import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
-  IconChevronLeft, IconChevronRight,
+  IconChevronLeft, IconChevronRight, IconListSearch,
 } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
@@ -19,6 +19,7 @@ const NAV = [
   { label: 'General Comparisons', to: '/explore', icon: IconBuildingBank },
   { label: 'Compare People, Titles & Schools', to: '/compare', icon: IconArrowsDiff },
   { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
+  { label: 'Screening', to: '/screening', icon: IconListSearch },
 ];
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
@@ -133,7 +134,7 @@ export function AppShellLayout() {
                     </Text>
                     <Text component="span" style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
                       <Text span inherit c="bright">UW–Madison </Text>
-                      <Text span inherit c="accent.7">Salaries</Text>
+                      <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
                     </Text>
                   </Stack>
                 </Group>
@@ -145,7 +146,7 @@ export function AppShellLayout() {
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
                 <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
                   Public salary records obtained via open-records requests by{' '}
-                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="hover" inherit>
+                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="always" inherit className="accent7-text">
                     UFAS Local 223
                   </Anchor>
                 </Text>

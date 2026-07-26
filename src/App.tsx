@@ -13,6 +13,7 @@ const PayCheck = lazyWithRetry(() => import('./routes/PayCheck'));
 const Explore = lazyWithRetry(() => import('./routes/Explore'));
 const Compare = lazyWithRetry(() => import('./routes/Compare'));
 const Reports = lazyWithRetry(() => import('./routes/Reports'));
+const Screening = lazyWithRetry(() => import('./routes/Screening'));
 const DataHealth = lazyWithRetry(() => import('./routes/DataHealth'));
 const Person = lazyWithRetry(() => import('./routes/Person'));
 const School = lazyWithRetry(() => import('./routes/School'));
@@ -45,6 +46,7 @@ const router = createBrowserRouter(
         { path: 'explore', element: <Explore /> },
         { path: 'compare', element: <Compare /> },
         { path: 'reports', element: <Reports /> },
+        { path: 'screening', element: <Screening /> },
         { path: 'data', element: <DataHealth /> },
         { path: 'person/:id', element: <Person /> },
         { path: 'school/:id', element: <School /> },

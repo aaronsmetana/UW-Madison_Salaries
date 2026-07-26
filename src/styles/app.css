@@ -35,8 +35,66 @@ body {
   --bar-active: #4f93a4;
   --series-accent: #4f93a4;
 }
+/* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 2.64:1
+   against the dark header (#242424), well under WCAG AA's 4.5:1. accent-4 measures ~6.45:1 there. */
+:root[data-mantine-color-scheme='dark'] .accent7-text {
+  color: var(--mantine-color-accent-4) !important;
+}
+
+/* ── "Positive/accent" small text & badges: the shade Mantine's own Badge/Button/Text variant
+   resolution picks by default (shade 7) reads at ~2.4–4.4:1 against typical card/badge surfaces —
+   short of WCAG AA's 4.5:1 — across several unrelated components. Rather than one rule per call
+   site, each pattern gets one shared class, applied at every occurrence of that pattern. ── */
+
+/* Badge "OK" status + an "up" Delta/DeltaChip/RankDeltaChip — Mantine's own dark-mode resolution
+   for these already clears AA; only light mode needs a darker shade. */
+:root[data-mantine-color-scheme='light'] .pos-light-text,
+:root[data-mantine-color-scheme='light'] .pos-light-text .mantine-Badge-label {
+  color: var(--mantine-color-pos-8) !important;
+}
+
+/* Raw c="pos.7" emphasis text (recommendation deltas, receipt totals) — measured short in BOTH
+   themes (their surfaces vary: white cards, tinted rows, dark cards), so both need a shade swap. */
+:root[data-mantine-color-scheme='light'] .pos-adaptive-text { color: var(--mantine-color-pos-9) !important; }
+:root[data-mantine-color-scheme='dark'] .pos-adaptive-text { color: var(--mantine-color-pos-4) !important; }
+
+/* Raw c="red.7" emphasis text (Person's negative salary-growth stat) — same shade-7 shortfall. */
+:root[data-mantine-color-scheme='light'] .red-adaptive-text { color: var(--mantine-color-red-9) !important; }
+:root[data-mantine-color-scheme='dark'] .red-adaptive-text { color: var(--mantine-color-red-4) !important; }
+
+/* TrayButton's outline "accent" text (compact-xs, used in every peer/school/title table) — short in
+   both themes the same way as pos-adaptive-text above. */
+:root[data-mantine-color-scheme='light'] .accent-adaptive-text,
+:root[data-mantine-color-scheme='light'] .accent-adaptive-text:hover,
+:root[data-mantine-color-scheme='light'] .accent-adaptive-text .mantine-Button-label,
+:root[data-mantine-color-scheme='light'] .accent-adaptive-text:hover .mantine-Button-label {
+  color: var(--mantine-color-accent-8) !important;
+}
+:root[data-mantine-color-scheme='dark'] .accent-adaptive-text,
+:root[data-mantine-color-scheme='dark'] .accent-adaptive-text:hover,
+:root[data-mantine-color-scheme='dark'] .accent-adaptive-text .mantine-Button-label,
+:root[data-mantine-color-scheme='dark'] .accent-adaptive-text:hover .mantine-Button-label {
+  color: var(--mantine-color-accent-4) !important;
+}
+
+/* Orange Badge/Button "light" variant text (the "weak case" badge, "strong comparator" chips) —
+   light mode only measured; orange-9 (the darkest available shade) improves this from ~2.7:1 to
+   ~3.9:1 against the badge's own pale-orange fill, still short of 4.5:1 — same-hue text-on-tint
+   pairings run out of headroom in the stock orange ramp. A full fix would need a different (less
+   saturated) background, not just a darker orange — flagged here rather than silently accepted. */
+:root[data-mantine-color-scheme='light'] .orange-light-text,
+:root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Badge-label,
+:root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Button-label {
+  color: var(--mantine-color-orange-9) !important;
+}
 :root[data-mantine-color-scheme='light'] {
   --mantine-color-dimmed: #586273;
+}
+/* A "down" delta's red (Delta.tsx/RankDeltaChip) resolves to red-7 in light mode — only 3.64:1
+   against a typical pale card surface. Mantine's own dark-mode resolution for the same prop already
+   clears WCAG AA, so only light mode needs the darker shade. */
+:root[data-mantine-color-scheme='light'] .delta-down {
+  color: var(--mantine-color-red-9) !important;
 }
 
 /* ── Shared chart chrome: one glass tooltip look, soft bar-hover transitions, and a small reusable
@@ -369,13 +427,13 @@ button:active,
 :root[data-mantine-color-scheme='light'] .data-jump-chip:hover { background-color: var(--mantine-color-accent-1); }
 :root[data-mantine-color-scheme='dark'] .data-jump-chip:hover { background-color: var(--mantine-color-dark-5); }
 
-/* Accuracy disclaimer: a subtle neutral surface (the gray "light" Alert) with a bold amber left rule and
-   amber icon + title — the warning semantic without the muddy orange fill. Mirrors the .tenure-callout pattern. */
+/* Accuracy disclaimer: a subtle neutral surface (the gray "light" Alert) with a bold amber left rule
+   and icon — the warning semantic without the muddy orange fill. Mirrors the .tenure-callout pattern.
+   The title stays the default text color (not orange): against this pale surface, no shade of orange
+   clears WCAG's 4.5:1 for text, and the icon + border + bold weight already carry the warning cue. */
 .data-disclaimer { border-left: 4px solid var(--mantine-color-orange-6); }
-.data-disclaimer .mantine-Alert-title,
 .data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-7); }
 :root[data-mantine-color-scheme='dark'] .data-disclaimer { border-left-color: var(--mantine-color-orange-4); }
-:root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-title,
 :root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
 
 /* Collapsible disclaimer body (<details>/<summary>): drop the native marker, add our own rotating chevron
@@ -465,7 +523,12 @@ button:active,
   font-weight: 700;
 }
 :root[data-mantine-color-scheme='light'] .data-jump-chip.active { background-color: var(--mantine-color-accent-1); }
-:root[data-mantine-color-scheme='dark'] .data-jump-chip.active { background-color: var(--mantine-color-dark-5); }
+:root[data-mantine-color-scheme='dark'] .data-jump-chip.active {
+  background-color: var(--mantine-color-dark-5);
+  /* accent-7 (the light-mode color, set above) only reads ~2.9:1 against this dark chip — same fix
+     as the header wordmark/credit link (see .accent7-text). */
+  color: var(--mantine-color-accent-4);
+}
 
 /* Sortable ingestion-table headers: pointer + accent on hover; the chevron shows the active sort direction. */
 .sort-th { cursor: pointer; color: inherit; }

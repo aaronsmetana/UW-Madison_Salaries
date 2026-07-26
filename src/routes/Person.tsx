@@ -190,7 +190,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
         <div style={{ position: 'absolute', left: '50%', top: -2, bottom: -2, width: 1, background: 'var(--mantine-color-default-border)', transform: 'translateX(-50%)' }} />
         <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
       </div>
-      <Text size="sm" fw={700} c={above ? 'pos.7' : 'dimmed'} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
+      <Text size="sm" fw={700} c={above ? 'pos.7' : 'dimmed'} className={above ? 'pos-adaptive-text' : undefined} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
         {pct}th <Text span size="xs" fw={500} c="dimmed">pctile</Text>
       </Text>
     </Group>
@@ -807,7 +807,12 @@ export default function Person() {
                   <Eyebrow>Salary growth</Eyebrow>
                 </Group>
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
-                  <Text fw={700} c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'} style={{ fontSize: 24, lineHeight: 1.1 }}>
+                  <Text
+                    fw={700}
+                    c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'}
+                    className={totalChange == null ? undefined : totalChange < 0 ? 'red-adaptive-text' : 'pos-adaptive-text'}
+                    style={{ fontSize: 24, lineHeight: 1.1 }}
+                  >
                     {sgnPct(animatedGrowth)}
                   </Text>
                   {spanYears != null && spanYears >= 0.1 && (
@@ -971,22 +976,21 @@ export default function Person() {
                             key={p.person_key}
                             className={`peer-row${sameSchool ? ' peer-same-school' : ''}`}
                             ref={isYou ? subjectRowRef : undefined}
+                            // Mouse convenience only — the name below is a real link, so keyboard/screen-reader
+                            // users have a proper, unambiguous way in (a `role="button"` row would otherwise
+                            // nest one interactive element inside another around the tray button in the last cell).
                             onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
-                            tabIndex={isYou ? undefined : 0}
-                            role={isYou ? undefined : 'button'}
-                            onKeyDown={(e) => {
-                              if (!isYou && (e.key === 'Enter' || e.key === ' ')) {
-                                e.preventDefault();
-                                nav(`/person/${encodeURIComponent(p.person_key)}`);
-                              }
-                            }}
                             style={{ cursor: isYou ? 'default' : 'pointer', background: isYou ? 'var(--mantine-color-accent-light)' : undefined }}
                           >
                             <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
                             <Table.Td>
-                              <Text span size="sm" c={isYou ? undefined : 'accent'} fw={isYou ? 700 : undefined}>
-                                {fullName(p.fn, p.ln) || '—'}
-                              </Text>
+                              {isYou ? (
+                                <Text span size="sm" fw={700}>{fullName(p.fn, p.ln) || '—'}</Text>
+                              ) : (
+                                <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} size="sm" c="accent" underline="hover" onClick={(e) => e.stopPropagation()}>
+                                  {fullName(p.fn, p.ln) || '—'}
+                                </Anchor>
+                              )}
                               {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
                             </Table.Td>
                             <Table.Td title={sameSchool ? `Same school as ${name}` : undefined}>
@@ -1057,7 +1061,7 @@ export default function Person() {
             </Text>
           ) : (
             <Text size="sm" mt="md">
-              <Text span fw={700} c="pos.7">{usd(band.max - lastRate)}</Text> of headroom to the top of grade {latest?.grade_number}'s band
+              <Text span fw={700} c="pos.7" className="pos-adaptive-text">{usd(band.max - lastRate)}</Text> of headroom to the top of grade {latest?.grade_number}'s band
               <Text span c="dimmed"> (grade max {usd(band.max)}).</Text>
             </Text>
           )}
@@ -1093,7 +1097,7 @@ export default function Person() {
               <Text fw={700} size="xl">{projectedRate != null ? usd(projectedRate) : '—'}</Text>
               {projectedRate != null && lastRate != null && (
                 <Text size="xs" c="dimmed">
-                  <Text span c="pos.7" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
+                  <Text span c="pos.7" className="pos-adaptive-text" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 ? ` · actual ${usd(projectedRate * lastFte)}` : ''}
                 </Text>
               )}
