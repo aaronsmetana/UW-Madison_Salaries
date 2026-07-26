@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd } from '../lib/format';
-import { fmtK } from '../lib/chartStyle';
+import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
 
@@ -69,6 +69,47 @@ export function PeerRangeBar({
   })();
 
   const iqrWidthPct = Math.max(0, at(p75) - at(p25));
+
+  // p25/median/p75 labels are centered on their ticks, so a cohort with a long right tail (a handful of
+  // very high earners stretching `max`) squeezes all three into a sliver of the track and their labels
+  // collide — "Professor" puts p75 at $258k against a $749k max. Measure the real track and label widths
+  // and stagger any collision onto a second row, the same two-row approach the Person trend chart uses
+  // for title-change dividers. Measured rather than guessed from a percentage so it holds at every width.
+  const labelRowRef = useRef<HTMLDivElement>(null);
+  const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [labelRows, setLabelRows] = useState<number[]>([0, 0, 0]);
+
+  useLayoutEffect(() => {
+    const row = labelRowRef.current;
+    if (!row) return;
+    const measure = () => {
+      const els = labelRefs.current.filter((el): el is HTMLDivElement => !!el);
+      if (!els.length) return;
+      const next = assignLabelRows(
+        els.map((el) => el.offsetLeft),
+        els.map((el) => el.offsetWidth)
+      );
+      setLabelRows((prev) => (prev.length === next.length && prev.every((r, i) => r === next[i]) ? prev : next));
+    };
+    measure();
+    // Observe the labels themselves, not just their container: a late web-font swap widens the text
+    // without changing the container at all, which would otherwise leave the first (narrower)
+    // measurement in place and the labels overlapping. The container covers layout-driven changes
+    // (nav collapsing, a tab becoming visible); the window listener covers viewport resizes, which
+    // some engines don't surface through ResizeObserver.
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    labelRefs.current.forEach((el) => el && ro.observe(el));
+    document.fonts?.ready.then(measure).catch(() => {});
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [min, max, p25, median, p75]);
+
+  const LABEL_ROW_H = 14;
+  const labelRowCount = Math.max(1, ...labelRows.map((r) => r + 1));
 
   const hoverValue = hoverPct != null ? min + (hoverPct / 100) * span : null;
   const hoverBelowShare = hoverValue != null && values?.length
@@ -246,17 +287,22 @@ export function PeerRangeBar({
         <Text size="xs" c="dimmed" style={{ position: 'absolute', left: 0 }}>{usd(min)} · lowest</Text>
         <Text size="xs" c="dimmed" style={{ position: 'absolute', right: 0 }}>highest · {usd(max)}</Text>
       </div>
-      {/* interior labels sit under their ticks (compact $Xk so they don't crowd) */}
-      <div style={{ position: 'relative', height: 14 }}>
-        {ticks.map((t) => (
+      {/* interior labels sit under their ticks (compact $Xk so they don't crowd), dropping to a second
+          row when a tight interquartile range would otherwise overlap them */}
+      <div ref={labelRowRef} style={{ position: 'relative', height: labelRowCount * LABEL_ROW_H }}>
+        {ticks.map((t, i) => (
           <Text
             key={t.label}
+            ref={(el: HTMLDivElement | null) => {
+              labelRefs.current[i] = el;
+            }}
             size="xs"
             c="dimmed"
             fw={t.strong ? 600 : 400}
             style={{
               position: 'absolute',
               left: `${at(t.x)}%`,
+              top: (labelRows[i] ?? 0) * LABEL_ROW_H,
               transform: 'translateX(-50%)',
               whiteSpace: 'nowrap',
               fontSize: 10.5,

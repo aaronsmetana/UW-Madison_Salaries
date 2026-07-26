@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { niceCurrencyTicks, fmtSnapTick } from './chartStyle';
+import { niceCurrencyTicks, fmtSnapTick, assignLabelRows } from './chartStyle';
 
 describe('niceCurrencyTicks', () => {
   it('picks round ticks for an all-negative range abutting zero', () => {
@@ -34,5 +34,63 @@ describe('fmtSnapTick', () => {
   });
   it('passes an unrecognized label through unchanged', () => {
     expect(fmtSnapTick('Q1')).toBe('Q1');
+  });
+});
+
+describe('assignLabelRows', () => {
+  /** Rebuilds each label's span and asserts nothing sharing a row overlaps. */
+  const noRowOverlaps = (centers: number[], widths: number[], rows: number[]) => {
+    const spans = centers.map((c, i) => ({ row: rows[i], left: c - widths[i] / 2, right: c + widths[i] / 2 }));
+    for (let i = 0; i < spans.length; i++) {
+      for (let j = i + 1; j < spans.length; j++) {
+        if (spans[i].row !== spans[j].row) continue;
+        expect(spans[i].right <= spans[j].left || spans[j].right <= spans[i].left).toBe(true);
+      }
+    }
+  };
+
+  it('keeps every label on one row when they are well separated', () => {
+    const centers = [100, 400, 700];
+    const widths = [50, 67, 50];
+    expect(assignLabelRows(centers, widths)).toEqual([0, 0, 0]);
+  });
+
+  it('drops only the colliding middle label to a second row', () => {
+    // The real desktop geometry from the Person page: p25/median/p75 of a long-tailed "Professor" cohort.
+    const centers = [242.9, 286.9, 342.9];
+    const widths = [50, 67, 50];
+    const rows = assignLabelRows(centers, widths);
+    expect(rows).toEqual([0, 1, 0]);
+    noRowOverlaps(centers, widths, rows);
+  });
+
+  it('opens a third row when all three labels mutually collide', () => {
+    // The same cohort at mobile width — two rows are not enough, p25 would still sit on p75.
+    const centers = [72, 85, 101];
+    const widths = [50, 67, 50];
+    const rows = assignLabelRows(centers, widths);
+    expect(rows).toEqual([0, 1, 2]);
+    noRowOverlaps(centers, widths, rows);
+  });
+
+  it('never leaves two labels overlapping on the same row', () => {
+    // Sweep a range of crowding levels; the invariant must hold for every one of them.
+    for (let spacing = 2; spacing <= 120; spacing += 2) {
+      const centers = [0, spacing, spacing * 2, spacing * 3];
+      const widths = [40, 60, 40, 55];
+      noRowOverlaps(centers, widths, assignLabelRows(centers, widths));
+    }
+  });
+
+  it('honours the gap argument as minimum breathing room', () => {
+    // 60px apart with 50px-wide labels: 10px of slack, so a 4px gap fits but a 20px gap does not.
+    const centers = [0, 60];
+    const widths = [50, 50];
+    expect(assignLabelRows(centers, widths, 4)).toEqual([0, 0]);
+    expect(assignLabelRows(centers, widths, 20)).toEqual([0, 1]);
+  });
+
+  it('collapses to a single row before anything has been measured', () => {
+    expect(assignLabelRows([0, 0, 0], [0, 0, 0])).toEqual([0, 0, 0]);
   });
 });

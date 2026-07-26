@@ -93,3 +93,42 @@ export function niceCurrencyTicks(min: number, max: number, maxTicks = 5): numbe
   }
   return ticks;
 }
+
+/**
+ * Stacks centered, absolutely-positioned labels into as few rows as it takes for no two labels sharing
+ * a row to overlap — the generalized form of the two-row stagger used for the title-change dividers on
+ * the Person trend chart. Walk left→right and drop each label onto the first row it clears.
+ *
+ * Two rows are not always enough: when a cohort's interquartile range collapses into a sliver of the
+ * track (a few very high earners stretching `max`), p25/median/p75 can *all three* mutually collide, and
+ * a fixed two-row stagger would still leave p25 sitting on p75. Row count is therefore unbounded — in
+ * practice it is 1 for a healthy spread and at most one row per label in the degenerate case.
+ *
+ * Takes geometry straight from the DOM rather than re-deriving it from the data: `centersPx` are the
+ * labels' resolved anchor offsets (`offsetLeft`) and `widthsPx` their `offsetWidth`. Labels are centered
+ * on their anchor (`translateX(-50%)`), so a label spans `center ± width/2`. Recomputing the anchors
+ * from percentages instead would let the measurement drift out of step with what is actually painted.
+ * `gap` is the minimum breathing room, in px, between two labels sharing a row.
+ *
+ * Pure so it can be unit-tested. Returns a 0-based row index per label; all-zero widths (i.e. before
+ * anything has been measured) collapse to a single row, which is the correct unstaggered layout.
+ */
+export function assignLabelRows(centersPx: number[], widthsPx: number[], gap = 6): number[] {
+  // Right edge of the last label placed on each row, in px; index === row number.
+  const rowEnds: number[] = [];
+
+  return centersPx.map((center, i) => {
+    const width = widthsPx[i] ?? 0;
+    // A zero-width label paints nothing, so it can neither collide nor push anything down a row.
+    // Without this, an unmeasured set (all widths 0) would fan out into one row per label.
+    if (width <= 0) return 0;
+
+    const left = center - width / 2;
+    const right = center + width / 2;
+
+    let row = rowEnds.findIndex((end) => left >= end + gap);
+    if (row === -1) row = rowEnds.length; // no existing row clears it — open a new one
+    rowEnds[row] = Math.max(rowEnds[row] ?? -Infinity, right);
+    return row;
+  });
+}
