@@ -132,3 +132,24 @@ export const FTE_MULT_SQL = 'COALESCE(NULLIF(fte, 0), 1)';
 
 /** JS form: the multiplier for one raw row. */
 export const fteMult = (fte) => (fte == null || fte === 0 ? 1 : fte);
+
+/**
+ * Collapse a pay-band reference table to ONE row per (grade, basis), keeping the newest
+ * `effective_year`. A real published grade table carries several years for the same grade, and every
+ * extra row is a silent correctness bug downstream: School's pay-band panel LEFT JOINs `grades` on
+ * (grade, basis), so a duplicate multiplies that person's row and skews the banded/graded coverage,
+ * `avg_pos`, `over_max` and `below_min` it reports; PersonDashboard, TitleStats and screening all use
+ * `grades.find(...)`, which silently takes whichever year happens to sit first in the file. Deduping
+ * here fixes all four at once. A row with no `effective_year` loses to any row that has one, and ties
+ * keep the first occurrence.
+ */
+export function latestGradeBands(rows) {
+  const latest = new Map();
+  for (const g of rows) {
+    const key = `${g.grade}|${norm(g.basis ?? '')}`;
+    const prev = latest.get(key);
+    const year = g.effective_year ?? -Infinity;
+    if (!prev || year > (prev.effective_year ?? -Infinity)) latest.set(key, g);
+  }
+  return [...latest.values()];
+}

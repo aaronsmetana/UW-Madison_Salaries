@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   norm, excelSerialToISO, parseDate, parseMoney, parseNum, parseGrade,
   makePersonKey, snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median,
+  latestGradeBands,
 } from './lib/normalize.mjs';
 
 describe('dates', () => {
@@ -103,5 +104,31 @@ describe('column-map covers all observed header variants', () => {
     expect(aliasSet('job_code').has(norm('Jobcode'))).toBe(true);
     expect(aliasSet('fte').has(norm('Full_Time_Equivalent'))).toBe(true);
     expect(aliasSet('date_of_hire').has(norm('DATE_OF_HIRE'))).toBe(true);
+  });
+});
+
+describe('pay-band reference dedupe', () => {
+  const band = (grade, basis, year, min) => ({ grade, basis, effective_year: year, min, max: min + 1000 });
+
+  it('keeps one row per (grade, basis), newest effective_year wins', () => {
+    const out = latestGradeBands([
+      band(15, 'annual_12mo', 2024, 34000),
+      band(15, 'annual_12mo', 2025, 35360),
+      band(15, 'annual_9mo', 2025, 28000),
+      band(27, 'annual_12mo', 2025, 95824),
+    ]);
+    expect(out).toHaveLength(3);
+    expect(out.find((g) => g.grade === 15 && g.basis === 'annual_12mo').min).toBe(35360);
+  });
+
+  it('a row with no effective_year loses to one that has it, but survives alone', () => {
+    expect(latestGradeBands([band(15, 'annual_12mo', null, 34000), band(15, 'annual_12mo', 2025, 35360)]))
+      .toEqual([expect.objectContaining({ min: 35360 })]);
+    expect(latestGradeBands([band(15, 'annual_12mo', null, 34000)])).toHaveLength(1);
+  });
+
+  it('treats a null basis as its own key rather than dropping the row', () => {
+    const out = latestGradeBands([band(15, null, 2025, 34000), band(15, 'annual_12mo', 2025, 35360)]);
+    expect(out).toHaveLength(2);
   });
 });

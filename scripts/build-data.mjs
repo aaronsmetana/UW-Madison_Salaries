@@ -20,7 +20,7 @@ import XLSX from 'xlsx';
 import duckdb from 'duckdb';
 import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
-  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, fteMult,
+  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, fteMult, latestGradeBands,
 } from './lib/normalize.mjs';
 import { computeHomeStats } from './lib/home-stats.mjs';
 
@@ -178,7 +178,7 @@ function readGrades() {
     const key = Object.keys(r).find((x) => norm(x) === norm(k));
     return key ? r[key] : null;
   };
-  return rows
+  const parsed = rows
     .map((r) => {
       const g = parseInt(String(pick(r, 'grade') ?? '').replace(/\D/g, ''), 10);
       return {
@@ -190,6 +190,7 @@ function readGrades() {
       };
     })
     .filter((x) => x.grade != null && x.min != null && x.max != null);
+  return latestGradeBands(parsed);
 }
 
 function readWorkbook(filePath) {
