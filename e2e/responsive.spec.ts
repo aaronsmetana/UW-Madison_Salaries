@@ -149,3 +149,28 @@ for (const [name, path] of TABBED) {
     }
   });
 }
+
+/**
+ * The AppShell header has a fixed height, but the control bar inside it wraps as the viewport
+ * narrows — so the two can drift apart silently. They had: a hardcoded 104px was 7px short at
+ * 1440px and 19px short on a phone, and the bar spilled out of the header onto the page content
+ * beneath it. Only /school renders the control bar (CONTROL_PATHS in AppShell).
+ */
+for (const width of [1440, 768, 375]) {
+  test(`the control bar fits inside the app header at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`./school/${encodeURIComponent('School of Medicine and Public Health')}`, {
+      waitUntil: 'networkidle',
+    });
+    await page.waitForTimeout(2_000);
+
+    const spill = await page.evaluate(() => {
+      const header = document.querySelector('.mantine-AppShell-header');
+      const bar = header?.lastElementChild;
+      if (!header || !bar) return null;
+      return Math.round(bar.getBoundingClientRect().bottom - header.getBoundingClientRect().bottom);
+    });
+    expect(spill, 'control bar should be measurable inside the header').not.toBeNull();
+    expect(spill!, `control bar spills ${spill}px past the header at ${width}px`).toBeLessThanOrEqual(0);
+  });
+}

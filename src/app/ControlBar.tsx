@@ -179,13 +179,16 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   );
 
   // Shared control elements, arranged differently by the header vs inline layouts below.
-  const lens = (
+  //
+  // `wrapScope` is the difference that matters. In the INLINE panel the scope+snapshot row must wrap:
+  // held at nowrap it measured 370px against ~343px of usable width at 375px and scrolled Explore and
+  // Compare sideways. In the HEADER strip it must NOT: that strip is a fixed-height single-row
+  // horizontal scroller, so a wrapped second row has nowhere to go and paints on top of the controls
+  // beside it. Same elements, opposite requirement — hence the parameter rather than one value.
+  const lens = (wrapScope: boolean) => (
     <>
       <Eyebrow style={{ flexShrink: 0 }}>Showing</Eyebrow>
-      {/* Scope + snapshot: allowed to wrap and shrink. Held at `nowrap` with `flexShrink: 0` this row
-          measured 370px against ~343px of usable width on a 375px screen, which scrolled Explore and
-          Compare sideways. The 180px snapshot Select keeps that as a max, not a fixed size. */}
-      <Group gap="xs" wrap="wrap" style={{ minWidth: 0 }}>
+      <Group gap="xs" wrap={wrapScope ? 'wrap' : 'nowrap'} style={{ minWidth: 0, flexShrink: wrapScope ? 1 : 0 }}>
         <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} />
         <Select
           {...dropdownProps('sm')}
@@ -254,7 +257,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     return (
       <Paper withBorder px="sm" py="xs">
         <Group justify="space-between" gap="md" wrap="wrap">
-          <Group gap="md" wrap="wrap" align="center">{lens}</Group>
+          <Group gap="md" wrap="wrap" align="center">{lens(true)}</Group>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             {/* Active-lens summary: only when the view is narrowed from the defaults, so it reads as a
                 "you've focused the data" reminder beside the Reset button rather than restating the toggles. */}
@@ -276,13 +279,13 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   // Header strip: persistent bar with a context badge on the right.
   return (
     <Group
-      h={48}
+      mih={48}
       px="md"
       gap="md"
       wrap="nowrap"
       style={{ borderTop: '1px solid var(--mantine-color-default-border)', overflowX: 'auto' }}
     >
-      {lens}
+      {lens(false)}
       <Group gap="xs" ml="auto" wrap="nowrap" style={{ flexShrink: 0 }}>
         <FilterControls />
         <ActiveFilters />

@@ -95,7 +95,11 @@ export function AppShellLayout() {
     <>
       <GlobalLoadingBar />
       <AppShell
-        header={{ height: showControl ? 104 : 64 }}
+        // The control bar's height is not fixed: its scope/snapshot/metric groups wrap as the viewport
+        // narrows. A single hardcoded 104px was 7px short even at 1440px and 19px short below 768px,
+        // so the bar spilled past the header and collided with the page content beneath it. Measured
+        // values plus a little slack, per breakpoint.
+        header={{ height: showControl ? { base: 136, sm: 116 } : 64 }}
         navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
         footer={{ height: 40 }}
         padding="md"
