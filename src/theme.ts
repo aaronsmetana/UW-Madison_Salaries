@@ -22,8 +22,27 @@ export const theme = createTheme({
   // Pick readable (dark) text automatically on light-luminance filled badges (e.g. an orange "CAUTION").
   autoContrast: true,
   luminanceThreshold: 0.45,
-  fontFamily: "'Hanken Grotesk', system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-  headings: { fontFamily: "'Hanken Grotesk', system-ui, sans-serif", fontWeight: '700' },
+  // 'Hanken Fallback' is a metric-overridden alias for the local system face (see the @font-face
+  // block in styles/app.css). It sits between the webfont and the raw system stack so the pre-swap
+  // paint already has Hanken's advance widths — without it, `font-display: swap` re-lays-out every
+  // label the moment the font arrives, which is exactly what broke PeerRangeBar's measured label
+  // stagger once before.
+  fontFamily: "'Hanken Grotesk', 'Hanken Fallback', 'Hanken Fallback Alt', system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+  headings: {
+    fontFamily: "'Hanken Grotesk', 'Hanken Fallback', 'Hanken Fallback Alt', system-ui, sans-serif",
+    fontWeight: '700',
+    // One heading ramp for the whole app. PageHeader, Person, and School each used to carry their own
+    // inline `clamp()` on their h1 — three copies of the same intent that could drift apart. h1/h2 stay
+    // fluid (they set the page's tone and need to ease down on a phone); h3/h4 are fixed, because they
+    // label cards and sections whose own widths are already responsive. Letter-spacing rides along in
+    // app.css, keyed off Title's data-order, since Mantine's `sizes` has no slot for it.
+    sizes: {
+      h1: { fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', lineHeight: '1.15' },
+      h2: { fontSize: 'clamp(1.375rem, 2.2vw, 1.75rem)', lineHeight: '1.2' },
+      h3: { fontSize: '1.25rem', lineHeight: '1.3' },
+      h4: { fontSize: '1.0625rem', lineHeight: '1.4' },
+    },
+  },
   // `xxs` (11px) is the app's smallest legible label size — footnotes, eyebrows, dense captions —
   // replacing the scattered hardcoded fontSize:9/10/11. Mantine merges these onto its defaults.
   fontSizes: { xxs: '0.6875rem' },

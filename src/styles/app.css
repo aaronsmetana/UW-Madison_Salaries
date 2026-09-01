@@ -1,44 +1,201 @@
 /* App-wide UI polish that's easier to express in CSS than per-component props. */
 
-/* ── Bespoke theme tokens the Mantine palette can't express (accent gradient, chart bars, canvas). ── */
+/* ── Self-hosted Hanken Grotesk (OFL-1.1; see public/fonts/OFL.txt) ──────────────────────────────
+   Served from our own origin, NOT Google Fonts. The production CSP (vite.config.ts) is
+   `font-src 'self' data:`, so the previous <link> to fonts.gstatic.com was blocked on every load —
+   the app had never actually rendered in this typeface, only in the system fallback, while logging
+   24 CSP errors per page. Self-hosting keeps the CSP closed, sends nothing to a third party, and
+   lets the PWA serve the font offline like every other asset.
+
+   One variable file per subset covers the whole 400–900 range the UI uses (the old link pulled four
+   separate static weights). `vietnamese` is included because faculty names carry those diacritics;
+   `→` and `≥` are outside every Latin subset and fall back to the system font by design. */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/hanken-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/hanken-grotesk-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+
+/* Metric-matched fallbacks. `font-display: swap` paints in a fallback first and re-paints in Hanken
+   the moment it arrives — and a width change across that swap is not cosmetic here: PeerRangeBar
+   measures live label geometry with offsetWidth to stagger colliding quartile labels, and a
+   post-measurement widening is precisely the bug fixed in 17045d0. Overriding the fallback's metrics
+   to match Hanken's makes the swap dimensionally inert.
+
+   Two faces, not one, because a single `size-adjust` cannot serve both platform stacks: measured
+   against Hanken over a representative app string (names, titles, currency, labels), Arial needs
+   99.32% while Roboto needs 109.68% — a 10% gap that would reflow every label on whichever platform
+   lost the coin toss. Arial resolves on macOS and Windows, Roboto on Android and most Linux, so the
+   pair covers effectively everyone; `local()` misses fall through to the next entry harmlessly.
+   ascent/descent are Hanken's own (1.0 / 0.3 em, measured) divided by each face's size-adjust, so
+   the line box matches too.
+
+   This narrows the swap, it does not erase it: measured across the app's real strings, drift drops
+   from 3.6-5.0% (raw system-ui) to under 2.1% on the 14px/400 quartile labels that PeerRangeBar
+   actually measures. The residual is largest on bold and uppercase text, because Hanken's digits run
+   narrow against Arial's while its bold runs wide — no single size-adjust can satisfy both. That
+   remainder is covered by PeerRangeBar re-measuring on `document.fonts.ready`; keep that. */
+@font-face {
+  font-family: 'Hanken Fallback';
+  src: local('Arial');
+  size-adjust: 99.32%;
+  ascent-override: 100.68%;
+  descent-override: 30.21%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Hanken Fallback Alt';
+  src: local('Roboto');
+  size-adjust: 109.68%;
+  ascent-override: 91.17%;
+  descent-override: 27.35%;
+  line-gap-override: 0%;
+}
+
+
+/* ── Design tokens ───────────────────────────────────────────────────────────────────────────────
+   Everything visual that isn't expressible as a Mantine theme value lives here, defined ONCE per
+   colour scheme. Pages compose these; no route or component hardcodes a colour. Changing a value
+   here changes every page.
+
+   The surface ramp is the load-bearing part. Mantine paints both the page and every Paper/Card from
+   `--mantine-color-body`, so out of the box dark mode rendered cards at #242424 on a #242424 page —
+   identical luminance, with only a border separating a card from the canvas. Pointing
+   `--mantine-color-body` at `--surface` and painting `body` with `--page-bg` gives back a real
+   three-step elevation (canvas → surface → raised) that every card, header, popover, and tooltip in
+   the app inherits for free. Light mode already worked this way; this just makes it symmetrical. */
 :root {
   --accent-grad: linear-gradient(135deg, #15839b, #0e6e83);
   --bar: #9cc6d0; /* non-highlighted histogram bars */
   --bar-active: #0e6e83; /* the highlighted bar / "this" */
-  --page-bg: #f2f4f6; /* app canvas behind cards (light) */
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
+
+  /* Elevation ramp (light): a cool paper canvas, white cards, a sunken well for inset areas. */
+  --page-bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f4f6f8;
+
+  /* Hairlines. Alpha rather than a flat grey so a border reads consistently over any surface in the
+     ramp instead of going muddy on the tinted ones. */
+  --hairline: rgba(13, 42, 53, 0.10);
+  --hairline-strong: rgba(13, 42, 53, 0.18);
+  /* The 1px top highlight that makes a flat card read as a physical sheet under a light source. */
+  --surface-sheen: rgba(255, 255, 255, 0.9);
+
+  /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
+     this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
+     meaning, corrected once, instead of one class per component. */
+  --text-accent: var(--mantine-color-accent-8);
+  --text-pos: var(--mantine-color-pos-9);
+  --text-neg: var(--mantine-color-red-9);
 }
 
-/* Marine-teal + cool-grey canvas in light mode; cards stay white (Mantine surface var unchanged). */
-:root[data-mantine-color-scheme='light'] body {
+/* Bridge the tokens above onto the Mantine variables that actually paint things. Two details matter:
+   Mantine emits its own variables under `:root[data-mantine-color-scheme=...]`, so a bare `:root`
+   override loses on specificity and silently does nothing; and Paper/Card take their border from
+   `--paper-border-color` (gray-3), not from `--mantine-color-default-border`. Both are handled below —
+   without them the ramp is decorative and the app keeps rendering Mantine's stock greys. */
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-body: var(--surface);
+  --mantine-color-default-border: var(--hairline);
+}
+body {
   background: var(--page-bg);
 }
 
-/* Tabular, lining numerals everywhere so columns of money/counts align. */
-body {
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-/* Brighten/darken low-contrast secondary ("dimmed") text for readability/accessibility. */
 :root[data-mantine-color-scheme='dark'] {
+  /* Same three steps, inverted: a near-black canvas, a lifted card, a further-lifted popover. Kept
+     slightly cool (blue-teal cast) so it sits under the marine accent rather than fighting it. */
+  --page-bg: #101418;
+  --surface: #181d22;
+  --surface-raised: #20262c;
+  --surface-sunken: #0c1013;
+
+  --hairline: rgba(255, 255, 255, 0.085);
+  --hairline-strong: rgba(255, 255, 255, 0.16);
+
+  /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
+     inputs, dark-5 hover, dark-4 borders. Remapping these four onto the ramp is what makes the
+     elevation reach Paper, Card, AppShell, Popover, Select, and this file's own .scope-search-pill /
+     .app-dropdown-option / .data-jump-chip rules, all at once. */
+  --mantine-color-dark-7: #101418;
+  --mantine-color-dark-6: #181d22;
+  --mantine-color-dark-5: #20262c;
+  --mantine-color-dark-4: #2c333a;
+  --mantine-color-body: var(--surface);
+  --mantine-color-default-border: var(--hairline);
+  /* On a dark sheet the light source reads as a faint white edge, not a bright one. */
+  --surface-sheen: rgba(255, 255, 255, 0.055);
+
+  --text-accent: var(--mantine-color-accent-4);
+  --text-pos: var(--mantine-color-pos-4);
+  --text-neg: var(--mantine-color-red-4);
+
+  /* Brighten low-contrast secondary text for readability against the surfaces above. */
   --mantine-color-dimmed: #c1c2c5;
+
   /* Same-school row tint for dark mode: an explicit, readable dark-green band (the light #edf6f1 washed out
      the text). Comparable strength to the subject row's teal accent-light, but a distinct green hue. */
   --pos-row-bg: rgba(21, 163, 107, 0.16);
   /* Histogram bars in dark mode: the light-mode pair (pale bar / dark ink highlight) inverts on a dark
      surface — a highlight needs to be LIGHTER than its surroundings to pop, not darker. Chosen from the
-     accent ramp and checked against the card surface (~#1a1b1e) with the dataviz skill's validator:
+     accent ramp and checked against the card surface (--surface, #181d22) with the dataviz skill's validator:
      bar-active (accent-5, contrast 4.95:1) reads clearly brighter than bar (accent-7, contrast 2.93:1,
      relieved by the histogram's tooltip + data table). */
   --bar: #0e6e83;
   --bar-active: #4f93a4;
   --series-accent: #4f93a4;
 }
+
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-dimmed: #586273;
+}
+
+/* The card treatment itself: a hairline plus a single top inner highlight. One rule, so every
+   bordered Paper in the app — stat tiles, chart cards, report sections, empty states — gains the
+   same physicality without piling on shadows. */
+.mantine-Paper-root[data-with-border] {
+  --paper-border-color: var(--hairline);
+  box-shadow: inset 0 1px 0 0 var(--surface-sheen);
+}
+
+/* Optical letter-spacing for the heading ramp defined in theme.ts (Mantine's `headings.sizes` has no
+   slot for it). Large type needs tightening to avoid looking loose; small type needs it left alone, so
+   this tapers rather than applying one value everywhere. */
+.mantine-Title-root[data-order='1'] { letter-spacing: -0.025em; }
+.mantine-Title-root[data-order='2'] { letter-spacing: -0.02em; }
+.mantine-Title-root[data-order='3'] { letter-spacing: -0.01em; }
+
+/* Tabular, lining numerals everywhere so columns of money/counts align. */
+body {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 /* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 2.64:1
    against the dark header (#242424), well under WCAG AA's 4.5:1. accent-4 measures ~6.45:1 there. */
 :root[data-mantine-color-scheme='dark'] .accent7-text {
-  color: var(--mantine-color-accent-4) !important;
+  color: var(--text-accent) !important;
 }
 
 /* ── "Positive/accent" small text & badges: the shade Mantine's own Badge/Button/Text variant
@@ -54,27 +211,21 @@ body {
 }
 
 /* Raw c="pos.7" emphasis text (recommendation deltas, receipt totals) — measured short in BOTH
-   themes (their surfaces vary: white cards, tinted rows, dark cards), so both need a shade swap. */
-:root[data-mantine-color-scheme='light'] .pos-adaptive-text { color: var(--mantine-color-pos-9) !important; }
-:root[data-mantine-color-scheme='dark'] .pos-adaptive-text { color: var(--mantine-color-pos-4) !important; }
+   themes (their surfaces vary: white cards, tinted rows, dark cards), so both need a shade swap —
+   which --text-pos now carries, so this is one rule instead of a per-theme pair. */
+.pos-adaptive-text { color: var(--text-pos) !important; }
 
 /* Raw c="red.7" emphasis text (Person's negative salary-growth stat) — same shade-7 shortfall. */
-:root[data-mantine-color-scheme='light'] .red-adaptive-text { color: var(--mantine-color-red-9) !important; }
-:root[data-mantine-color-scheme='dark'] .red-adaptive-text { color: var(--mantine-color-red-4) !important; }
+.red-adaptive-text { color: var(--text-neg) !important; }
 
 /* TrayButton's outline "accent" text (compact-xs, used in every peer/school/title table) — short in
-   both themes the same way as pos-adaptive-text above. */
-:root[data-mantine-color-scheme='light'] .accent-adaptive-text,
-:root[data-mantine-color-scheme='light'] .accent-adaptive-text:hover,
-:root[data-mantine-color-scheme='light'] .accent-adaptive-text .mantine-Button-label,
-:root[data-mantine-color-scheme='light'] .accent-adaptive-text:hover .mantine-Button-label {
-  color: var(--mantine-color-accent-8) !important;
-}
-:root[data-mantine-color-scheme='dark'] .accent-adaptive-text,
-:root[data-mantine-color-scheme='dark'] .accent-adaptive-text:hover,
-:root[data-mantine-color-scheme='dark'] .accent-adaptive-text .mantine-Button-label,
-:root[data-mantine-color-scheme='dark'] .accent-adaptive-text:hover .mantine-Button-label {
-  color: var(--mantine-color-accent-4) !important;
+   both themes the same way as pos-adaptive-text above. Eight selectors collapse to four now that the
+   per-theme value lives on --text-accent. */
+.accent-adaptive-text,
+.accent-adaptive-text:hover,
+.accent-adaptive-text .mantine-Button-label,
+.accent-adaptive-text:hover .mantine-Button-label {
+  color: var(--text-accent) !important;
 }
 
 /* Orange Badge/Button "light" variant text (the "weak case" badge, "strong comparator" chips) —
@@ -87,14 +238,12 @@ body {
 :root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Button-label {
   color: var(--mantine-color-orange-9) !important;
 }
-:root[data-mantine-color-scheme='light'] {
-  --mantine-color-dimmed: #586273;
-}
+
 /* A "down" delta's red (Delta.tsx/RankDeltaChip) resolves to red-7 in light mode — only 3.64:1
    against a typical pale card surface. Mantine's own dark-mode resolution for the same prop already
    clears WCAG AA, so only light mode needs the darker shade. */
 :root[data-mantine-color-scheme='light'] .delta-down {
-  color: var(--mantine-color-red-9) !important;
+  color: var(--text-neg) !important;
 }
 
 /* ── Shared chart chrome: one glass tooltip look, soft bar-hover transitions, and a small reusable

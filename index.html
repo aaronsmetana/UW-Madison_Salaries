@@ -10,11 +10,15 @@
     />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="canonical" href="https://aaronsmetana.github.io/UW-Madison_Salaries/" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Self-hosted (see the @font-face block in src/styles/app.css). Preload only the `latin`
+         subset: it covers effectively all UI chrome, so it is on the critical path, while latin-ext
+         and vietnamese load on demand for names that need them. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/hanken-grotesk-latin.woff2"
+      crossorigin
     />
     <meta
       name="description"

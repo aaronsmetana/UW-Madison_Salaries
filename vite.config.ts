@@ -16,7 +16,10 @@ const CSP = [
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
-  "frame-ancestors 'none'",
+  // No `frame-ancestors`: browsers ignore it in a <meta> CSP (it is header-only), so it protected
+  // nothing and logged a console error on every page load. GitHub Pages cannot set response headers,
+  // so clickjacking protection is genuinely unavailable here — dropping the directive removes the
+  // noise without removing any defence that ever existed.
   "form-action 'self'",
 ].join('; ');
 
