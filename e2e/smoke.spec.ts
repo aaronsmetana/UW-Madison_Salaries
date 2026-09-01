@@ -37,3 +37,48 @@ test('data health page renders the source/manifest table', async ({ page }) => {
   await page.goto('./data');
   await expect(page.locator('table').first()).toBeVisible({ timeout: 60_000 });
 });
+
+// The landing distribution's quartile markers are the same collision risk as PeerRangeBar's (see
+// person.spec.ts): p25 and the median sit close together on a right-skewed curve, so their labels
+// run into each other and render as one unreadable string. Same guard, same shape — and it must
+// hold at phone width, where the chart is narrowest and all three crowd.
+for (const { name, width, height } of [
+  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'mobile', width: 375, height: 812 },
+]) {
+  test(`home distribution quartile labels never overlap (${name})`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('./', { waitUntil: 'networkidle' });
+
+    // Anchor both ends — the labels' container also starts with "p25 $…", and a start-anchored
+    // regex would match the wrapper and compare the wrong boxes.
+    const labels = [
+      page.getByText(/^p25 \$[\d.,]+k$/).first(),
+      page.getByText(/^median \$[\d.,]+k$/).first(),
+      page.getByText(/^p75 \$[\d.,]+k$/).first(),
+    ];
+    await expect(labels[0]).toBeVisible({ timeout: 60_000 });
+    // The stagger re-measures on document.fonts.ready; let that settle before reading geometry.
+    await page.waitForTimeout(800);
+
+    const boxes = [];
+    for (const label of labels) {
+      const box = await label.boundingBox();
+      expect(box, 'quartile label should have a layout box').not.toBeNull();
+      boxes.push(box!);
+    }
+
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const sameRow = Math.abs(a.y - b.y) < 8;
+        const overlapsX = a.x + a.width > b.x && b.x + b.width > a.x;
+        expect(
+          sameRow && overlapsX,
+          `labels ${i}/${j} overlap at ${width}px — a=${JSON.stringify(a)} b=${JSON.stringify(b)}`
+        ).toBe(false);
+      }
+    }
+  });
+}

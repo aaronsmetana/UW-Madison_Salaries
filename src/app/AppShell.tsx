@@ -150,7 +150,9 @@ export function AppShellLayout() {
                     UFAS Local 223
                   </Anchor>
                 </Text>
-                <Text c="dimmed" ta="center" w="100%" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
+                {/* `ta="center" w="100%"` centred this under the longer line above, which read as a
+                    misalignment in a right-aligned stack. Inherit the stack's own alignment instead. */}
+                <Text c="dimmed" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
               </Stack>
             </Group>
           </Group>

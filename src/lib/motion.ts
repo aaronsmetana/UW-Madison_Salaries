@@ -46,3 +46,19 @@ export function useCountUp(target: number | null, duration = 600): number | null
   }, [target, duration]);
   return value;
 }
+
+/**
+ * Like `useMounted`, but waits for data rather than for the first paint: stays `false` until `ready`
+ * turns true, then flips once and stays. A plain mount flag is no good for a chart whose data arrives
+ * after mount — it would spend its animation on an empty box and then pop the real content in. Honors
+ * reduced motion by starting settled.
+ */
+export function useReveal(ready: boolean): boolean {
+  const [revealed, setRevealed] = useState(prefersReducedMotion);
+  useEffect(() => {
+    if (revealed || !ready) return;
+    const id = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(id);
+  }, [ready, revealed]);
+  return revealed;
+}

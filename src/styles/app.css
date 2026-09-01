@@ -540,6 +540,15 @@ button:active,
   50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 4px var(--mantine-color-accent-light); }
 }
 
+/* Showcase band below the hero: the arrow slides on hover, matching the stats card's own affordance
+   so the two read as the same gesture. */
+.showcase-arrow {
+  display: inline-block;
+  transition: transform 160ms ease;
+  color: var(--text-accent);
+}
+.showcase-card:hover .showcase-arrow { transform: translateX(3px); }
+
 /* System-Wide stats card lifts on hover; its "Browse" arrow nudges right. */
 .home-stats { transition: transform 160ms ease, box-shadow 160ms ease; }
 .home-stats:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.28); }
@@ -550,6 +559,8 @@ button:active,
   .hero-rise > * { animation: none; }
   .hero-aurora { animation: none; }
   .hero-search-input { animation: none; }
+  .showcase-arrow { transition: none; }
+  .showcase-card:hover .showcase-arrow { transform: none; }
 }
 
 /* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the

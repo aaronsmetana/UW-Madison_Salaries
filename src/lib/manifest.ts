@@ -45,6 +45,14 @@ export interface HomeStats {
   salary_lo: number | null;
   salary_hi: number | null;
   bins: { bucket: number; n: number }[];
+  /** Upper edge of the histogram, in dollars — reported so the page can label the cap. */
+  bin_cap: number | null;
+  /** People at or above `bin_cap`, excluded from `bins` so outliers don't flatten the curve. */
+  bins_overflow: number | null;
+  /** Quartiles over the same actual-pay measure `bins` describes (and the headline median uses). */
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
   top_title: { title: string; n: number } | null;
   top_division: { school: string; n: number } | null;
   p90: number | null;
