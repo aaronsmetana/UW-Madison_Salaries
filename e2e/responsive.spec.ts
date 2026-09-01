@@ -57,3 +57,95 @@ test(`no horizontal page overflow at ${PHONE.width}px: person`, async ({ page })
     expect(await pageOverflow(page), `person/${tab} is wider than the viewport`).toBe(0);
   }
 });
+
+/**
+ * The same guard, but driving every tab.
+ *
+ * The block above visits each route once and therefore only ever sees its DEFAULT tab — Explore has
+ * six, School four. That blind spot is not hypothetical: School's Departments table shipped with a
+ * 560px `miw` and no scroll wrapper, inside a Mantine Card that computes `overflow: hidden`, so its
+ * "Total payroll" column was silently unreachable on a phone. The mobile-overflow pass that fixed
+ * four other routes could not have caught it.
+ */
+const TABBED = [
+  ['explore', './explore'],
+  ['school', `./school/${encodeURIComponent('School of Medicine and Public Health')}`],
+] as const;
+
+for (const [name, path] of TABBED) {
+  test(`no horizontal page overflow at ${PHONE.width}px across every tab: ${name}`, async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(path, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2_500);
+
+    const tabs = await page.getByRole('tab').allTextContents();
+    expect(tabs.length, `${name} should render tabs`).toBeGreaterThan(1);
+
+    for (const tab of tabs) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      // Each panel mounts its own tables/charts; give the query + render a beat to settle.
+      await page.waitForTimeout(1_200);
+      expect(await pageOverflow(page), `${name} → "${tab}" is wider than the viewport`).toBe(0);
+    }
+  });
+}
+
+/**
+ * Content that is wider than its container AND has no scrollable ancestor is simply unreachable:
+ * no scrollbar, no page overflow, nothing to drag — the columns are just gone. Page-overflow checks
+ * cannot see it, because the clipping is exactly what stops the page getting wide.
+ *
+ * This is the app's own established pattern, asserted: every other wide table pairs `miw` with a
+ * `ScrollArea.Autosize` or `Table.ScrollContainer`. School's Departments table paired `miw={560}`
+ * with neither, inside a Mantine Card that computes `overflow: hidden`, hiding 219px — three of its
+ * four columns, i.e. every number in it — at phone width.
+ */
+async function unreachableTables(page: import('@playwright/test').Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('table')]
+      .filter((t) => t.offsetParent !== null) // Mantine keeps inactive tab panels mounted but hidden
+      .filter((t) => {
+        // Skip screen-reader-only tables (ChartData renders each chart's data inside VisuallyHidden).
+        // Those are clipped to a 1px box deliberately and are reachable by assistive tech — exactly
+        // the case this check must not confuse with a table whose columns are genuinely lost. Detect
+        // it by the 1px box rather than by class name, so it holds if the implementation changes.
+        for (let el: HTMLElement | null = t.parentElement; el; el = el.parentElement) {
+          if (el.clientWidth <= 1) return false;
+        }
+        return true;
+      })
+      .map((t) => {
+        let clippedBy: string | null = null;
+        for (let el: HTMLElement | null = t.parentElement; el; el = el.parentElement) {
+          const ox = getComputedStyle(el).overflowX;
+          if (ox === 'auto' || ox === 'scroll') return null; // a real scroller — content is reachable
+          if (ox === 'hidden') { clippedBy = el.className || el.tagName; break; }
+        }
+        const host = t.parentElement!;
+        const hidden = t.scrollWidth - host.clientWidth;
+        // A few px is a table shrinking to min-content and overshooting by a border or a rounded
+        // column — nothing is actually lost. A lost column costs far more than this; School's
+        // Departments hid 219px. Threshold it so the gate stays actionable instead of noisy.
+        const LOST_COLUMN_PX = 16;
+        return hidden > LOST_COLUMN_PX
+          ? { hidden, clippedBy, headers: [...t.querySelectorAll('th')].map((th) => th.textContent?.trim()) }
+          : null;
+      })
+      .filter(Boolean)
+  );
+}
+
+for (const [name, path] of TABBED) {
+  test(`no table content is clipped out of reach at ${PHONE.width}px: ${name}`, async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(path, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2_500);
+
+    for (const tab of await page.getByRole('tab').allTextContents()) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      await page.waitForTimeout(1_200);
+      const bad = await unreachableTables(page);
+      expect(bad, `${name} → "${tab}" clips table content with no way to scroll to it`).toEqual([]);
+    }
+  });
+}

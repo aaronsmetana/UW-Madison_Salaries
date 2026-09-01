@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useId, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
+  ScrollArea,
 } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconDownload } from '@tabler/icons-react';
@@ -394,7 +395,12 @@ export default function School() {
             {depts && depts.length === 0 ? (
               <Text c="dimmed" ta="center" py="xl">No departments recorded for this school.</Text>
             ) : (
-              <Table stickyHeader miw={560}>
+              // Wide content scrolls inside its own container, never the document — and never gets
+              // clipped out of reach either. Without this the Card's `overflow: hidden` swallowed
+              // 219px at phone width: Headcount, Median and Total payroll, i.e. every number in the
+              // table, with no scrollbar to reach them. Matches the five other wide tables in the app.
+              <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
+                <Table stickyHeader miw={560}>
                 <Table.Thead>
                   <Table.Tr>
                     {deptSortTh('department', 'Department')}
@@ -430,7 +436,8 @@ export default function School() {
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
-              </Table>
+                </Table>
+              </ScrollArea.Autosize>
             )}
             <Text size="xs" c="dimmed" mt="sm">
               Click a department to see it isolated in General Comparisons.

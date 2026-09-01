@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -73,6 +73,10 @@ export default function Reports() {
   const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig);
   const [docCopyState, setDocCopyState] = useState<'idle' | 'rich' | 'plain'>('idle');
+  // The "Copied" confirmation resets itself after a beat; hold the timer so navigating away mid-beat
+  // cancels it rather than setting state on an unmounted page.
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copyResetTimer.current) clearTimeout(copyResetTimer.current); }, []);
 
   // ── Comparison studio (tray) — subject resolution lives here (ahead of the person-mode URL-sync
   // effect below) so that effect can also read/write ?subject= for the comparison studio. ──
@@ -1020,7 +1024,8 @@ export default function Reports() {
                   onClick={async () => {
                     const rich = await copyBriefRichText(briefToWordHtml(model));
                     setDocCopyState(rich ? 'rich' : 'plain');
-                    setTimeout(() => setDocCopyState('idle'), 1500);
+                    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+                    copyResetTimer.current = setTimeout(() => setDocCopyState('idle'), 1500);
                   }}
                 >
                   {docCopyState === 'rich' ? 'Copied' : docCopyState === 'plain' ? 'Copied (plain text)' : 'Copy for email'}

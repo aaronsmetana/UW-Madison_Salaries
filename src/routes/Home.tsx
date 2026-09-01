@@ -226,13 +226,19 @@ function ShowcaseCard({ icon, title, blurb, stat, to }: {
 function RotatingFact({ facts }: { facts: string[] }) {
   const [i, setI] = useState(0);
   const [show, setShow] = useState(true);
+  const swapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (facts.length < 2 || prefersReducedMotion()) return;
     const id = setInterval(() => {
       setShow(false);
-      setTimeout(() => { setI((p) => (p + 1) % facts.length); setShow(true); }, 350);
+      // Held in a ref so unmounting mid-fade cancels the swap too — clearing only the interval
+      // leaves this one pending and it sets state on a gone component.
+      swapTimer.current = setTimeout(() => { setI((p) => (p + 1) % facts.length); setShow(true); }, 350);
     }, 6000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      if (swapTimer.current) clearTimeout(swapTimer.current);
+    };
   }, [facts.length]);
   if (!facts.length) return null;
   return (

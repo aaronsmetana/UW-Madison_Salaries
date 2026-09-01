@@ -11,8 +11,6 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "data": "node scripts/build-data.mjs",
-    "fetch-grades": "node scripts/fetch-salary-grades.mjs",
-    "fetch-titles": "node scripts/fetch-job-titles.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint . --ext .ts,.tsx",
