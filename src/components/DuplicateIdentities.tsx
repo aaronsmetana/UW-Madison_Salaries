@@ -1,11 +1,12 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Card, Title, Stack, Group, Text, Badge, Anchor, ScrollArea, Switch, Popover, Loader } from '@mantine/core';
+import { Card, Stack, Group, Text, Badge, Anchor, ScrollArea, Switch, Popover, Loader } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconChevronRight, IconAlertTriangle } from '@tabler/icons-react';
 import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { fullName, usd, num } from '../lib/format';
 import { ICON } from '../lib/ui';
+import { SectionTitle } from './SectionTitle';
 
 interface IdRow {
   person_key: string; fn: string | null; ln: string | null;
@@ -112,21 +113,19 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
     setExpanded((p) => { const n = new Set(p); if (n.has(name)) n.delete(name); else n.add(name); return n; });
 
   return (
-    <Card withBorder padding="lg" id="duplicates">
+    <Card id="duplicates">
       <Group justify="space-between" mb="xs" wrap="wrap" gap="sm">
-        {/* h3: a review panel nested under Data · About's h2 sections. */}
-        <Title order={3} fz="h4">Possible duplicate identities (review)</Title>
+        <SectionTitle id="duplicates">Possible duplicate identities</SectionTitle>
         {flaggedCount > 0 && (
           <Switch size="xs" label="Flagged only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.currentTarget.checked)} />
         )}
       </Group>
       <Stack gap="sm">
         <Text size="sm">
-          People are matched across snapshots by <b>name + hire date</b> (no employee ID exists in the source).
-          That can fail two ways: one name can <b>split</b> into two records, or — harder to spot — two different
-          people can be <b>merged</b> into one. Expand a group to see the people behind a shared name; a group is{' '}
-          <b>flagged</b> when two identities share the same title + school, or their hire dates are under 90 days
-          apart — a likely single person split in two.
+          Where <Anchor href="#identity" underline="always">name + hire date matching</Anchor> may have gone
+          wrong. Expand a group to see the people behind a shared name. A group is <b>flagged</b> when two
+          identities share the same title and school, or their hire dates fall under 90 days apart — a likely
+          single person split in two.
         </Text>
 
         {rows == null ? (

@@ -36,6 +36,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
+import { GLOSSARY } from '../lib/glossary';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 
@@ -966,7 +967,7 @@ export default function Person() {
                         <SortableTh sortKey="name" label="Name" sort={peerSort} onSort={setPeerSort} />
                         <SortableTh sortKey="school" label="School" sort={peerSort} onSort={setPeerSort} />
                         <SortableTh sortKey="department" label="Department" sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="tenure" label={<GlossaryTerm term="tenure">Tenure</GlossaryTerm>} sort={peerSort} onSort={setPeerSort} align="right" />
+                        <SortableTh sortKey="tenure" label="Tenure" tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
                         <SortableTh sortKey="salary" label="Salary" sort={peerSort} onSort={setPeerSort} align="right" />
                         <Table.Th w={132} />
                       </Table.Tr>

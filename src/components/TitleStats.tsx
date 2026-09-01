@@ -14,7 +14,7 @@ import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
-import { GlossaryTerm } from './GlossaryTerm';
+import { GLOSSARY } from '../lib/glossary';
 import { StatSkeleton, ChartSkeleton, TableSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
@@ -263,7 +263,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                 <SortableTh sortKey="name" label="Name" sort={peopleSort} onSort={setPeopleSort} />
                 <SortableTh sortKey="school" label="School" sort={peopleSort} onSort={setPeopleSort} />
                 <SortableTh sortKey="department" label="Department" sort={peopleSort} onSort={setPeopleSort} />
-                <SortableTh sortKey="tenure" label={<GlossaryTerm term="tenure">Tenure</GlossaryTerm>} sort={peopleSort} onSort={setPeopleSort} align="right" />
+                <SortableTh sortKey="tenure" label="Tenure" tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <Table.Th w={132} />
               </Table.Tr>

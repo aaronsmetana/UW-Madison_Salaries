@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, CopyButton, Switch, ThemeIcon, Select, UnstyledButton, VisuallyHidden } from '@mantine/core';
-import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconLink, IconCheck, IconCash, IconClock, IconStack2, IconArrowUp, IconChevronUp, IconChevronDown, IconSelector, IconReload } from '@tabler/icons-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, Switch, ThemeIcon, Select, ScrollArea, VisuallyHidden } from '@mantine/core';
+import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconStack2, IconArrowUp, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
 import { num, usd } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
@@ -9,6 +9,8 @@ import { dropdownProps } from '../lib/selectProps';
 import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
+import { SortableTh, type SortState } from '../components/SortableTh';
+import { SectionTitle } from '../components/SectionTitle';
 import { useDocTitle } from '../lib/useDocTitle';
 import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
@@ -18,6 +20,16 @@ import { ICON } from '../lib/ui';
 // 'pos' (not stock Mantine 'green') — the app's own vetted positive palette; plain 'green's light-variant
 // text (green-7, ~2.4:1 on this badge's pale fill) fails WCAG AA, 'pos' clears it comfortably (~5:1).
 const STATUS_COLOR: Record<string, string> = { ok: 'pos', warning: 'orange', error: 'red', info: 'gray' };
+
+/** The columns one appointment row carries. Kept here rather than inline so the count in the disclosure
+ *  label can't drift from the list, and `data-about.spec.ts` can check it against the manifest. */
+const PROSE = 860; // Reading measure. Nothing else in the app sets a width, so prose ran to 1440px here.
+
+const RECORD_FIELDS = [
+  'name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary',
+  'FTE-adjusted salary', 'base pay', 'FTE', 'pay-rate type', 'FLSA status',
+  'employee category', 'employee type', 'hire date',
+] as const;
 
 /** Snapshot-over-snapshot delta chip for the ingestion table. `tone="neutral"` for headcount (a
  *  population size, not a status); the median-salary delta keeps `signed` (money). */
@@ -47,31 +59,24 @@ function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'ri
   );
 }
 
-/** A section header with a copy-anchor affordance: a chain icon that fades in on hover and copies a
- *  deep link (e.g. …/data#methodology) to the clipboard. */
-function SectionTitle({ id, children, onCopy }: { id: string; children: ReactNode; onCopy?: () => void }) {
-  const url = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}#${id}` : `#${id}`;
+/** One of the page's two subjects. The sections beneath are h3s, so the outline reads
+ *  h1 (page) → h2 (subject) → h3 (section) with nothing skipped. */
+function Zone({ title, blurb, children }: { title: string; blurb: string; children: ReactNode }) {
   return (
-    <Group gap={6} wrap="nowrap" className="section-head">
-      {/* h2: these are the page's top-level sections, directly under PageHeader's h1. */}
-      <Title order={2} fz="h4">{children}</Title>
-      <CopyButton value={url} timeout={1400}>
-        {({ copied, copy }) => (
-          <Tooltip label={copied ? 'Link copied' : 'Copy link to this section'} withArrow>
-            <ActionIcon className="copy-anchor" variant="subtle" color="gray" size="sm" aria-label="Copy link to this section" onClick={() => { copy(); onCopy?.(); }}>
-              {copied ? <IconCheck size={ICON.compact} /> : <IconLink size={ICON.compact} />}
-            </ActionIcon>
-          </Tooltip>
-        )}
-      </CopyButton>
-    </Group>
+    <Stack gap="lg">
+      <Box>
+        <Title order={2}>{title}</Title>
+        <Text c="dimmed" mt={4} maw={PROSE}>{blurb}</Text>
+      </Box>
+      {children}
+    </Stack>
   );
 }
 
 /** One "Pay" definition: an accent icon anchor + bold term + description, in a small bordered card. */
 function DefCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <Paper withBorder p="sm">
+    <Paper withBorder p="sm" radius="md">
       <Group gap={8} mb={4} wrap="nowrap">
         <ThemeIcon variant="light" color="accent" size="md" radius="md">{icon}</ThemeIcon>
         <Text size="sm" fw={700}>{title}</Text>
@@ -125,23 +130,11 @@ function BackToTop() {
 
 type SortKey = 'date' | 'rows';
 
-/** A clickable, sortable table header: toggles asc/desc and shows a chevron for the active direction. */
-function SortTh({ label, sortKey, active, dir, onSort, ta, tip }: {
-  label: string; sortKey: SortKey; active: boolean; dir: 'asc' | 'desc'; onSort: (k: SortKey) => void;
-  ta?: 'right'; tip?: string;
-}) {
-  return (
-    <Table.Th ta={ta}>
-      <UnstyledButton className="sort-th" onClick={() => onSort(sortKey)} title={tip} aria-label={`Sort by ${label}`}>
-        <Group gap={4} wrap="nowrap" justify={ta === 'right' ? 'flex-end' : 'flex-start'}>
-          <span>{label}</span>
-          {active
-            ? (dir === 'asc' ? <IconChevronUp size={ICON.inline} /> : <IconChevronDown size={ICON.inline} />)
-            : <IconSelector size={ICON.inline} style={{ opacity: 0.35 }} />}
-        </Group>
-      </UnstyledButton>
-    </Table.Th>
-  );
+/** Height of the fixed chrome this page stacks (app header + sticky jump nav), read from the single
+ *  `--data-chrome-top` token in app.css so JS and CSS cannot drift apart. */
+function chromeTop(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--data-chrome-top');
+  return parseInt(raw, 10) || 108;
 }
 
 /** Sticky "Jump to" nav with a scrollspy highlight — an IntersectionObserver lights up the chip whose
@@ -159,7 +152,8 @@ function JumpNav({ items }: { items: [string, string][] }) {
         const current = ids.find((id) => seen.get(id));
         if (current) setActive(`#${current}`);
       },
-      { rootMargin: '-112px 0px -75% 0px', threshold: 0 }
+      // Same source of truth as `.data-jumpnav`'s `top` and the sections' `scroll-margin-top`.
+      { rootMargin: `-${chromeTop() + 4}px 0px -75% 0px`, threshold: 0 }
     );
     els.forEach((el) => obs.observe(el));
     return () => obs.disconnect();
@@ -181,23 +175,14 @@ export default function DataHealth() {
   const { data: manifest, isLoading, error, refetch } = useManifest();
   const snapId = useActiveSnapshotId();
   const [compact, setCompact] = useState(false);
-  const [sort, setSort] = useState<{ key: SortKey | null; dir: 'asc' | 'desc' }>({ key: null, dir: 'desc' });
+  // 'date' ascending reproduces the chronological default the table always had.
+  const [sort, setSort] = useState<SortState<SortKey>>({ key: 'date', dir: 'asc' });
   const [year, setYear] = useState('all');
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<number | undefined>(undefined);
   const parquetUrl = `${import.meta.env.BASE_URL}data/salaries.parquet`;
   const manifestUrl = `${import.meta.env.BASE_URL}data/manifest.json`;
   const parquetSize = useFileSize(parquetUrl);
   const manifestSize = useFileSize(manifestUrl);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
-  };
-  const onCopied = () => showToast('Link copied to clipboard!');
-  const toggleSort = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
 
   // Shimmer skeleton while the static manifest payload is fetched, so the page never flashes empty.
   if (isLoading)
@@ -248,7 +233,7 @@ export default function DataHealth() {
 
   let displaySnaps = orderedSnaps;
   if (year !== 'all') displaySnaps = displaySnaps.filter((s) => String(s.snapshot_year) === year);
-  if (sort.key) {
+  {
     const mul = sort.dir === 'asc' ? 1 : -1;
     const cmp =
       sort.key === 'rows'
@@ -260,10 +245,10 @@ export default function DataHealth() {
 
   const toc: [string, string][] = [
     ['#source', 'Source'],
-    ['#disclaimer', 'Disclaimer'],
+    ['#disclaimer', 'Accuracy'],
     ['#privacy', 'Privacy'],
-    ['#how-it-works', 'How figures work'],
-    ['#methodology', 'Methodology'],
+    ['#how-it-works', 'Figures'],
+    ['#methodology', 'Method'],
     ['#snapshots', 'Snapshots'],
     ['#duplicates', 'Duplicates'],
   ];
@@ -280,22 +265,25 @@ export default function DataHealth() {
       </Group>
       <PageHeader
         title="Data · About"
-        description="Per-snapshot ingestion health, detected column mappings, and source provenance. Salary data is a Wisconsin public record obtained via union open-records requests. Every figure is a point-in-time, best-effort transcription — treat it as approximate and verify against official sources."
+        description="Where these salary records come from, how they were processed, and what they can and can't tell you."
       />
 
       <JumpNav items={toc} />
 
-      <Card withBorder padding="lg" id="source">
-        <SectionTitle id="source" onCopy={onCopied}>Data source &amp; acknowledgment</SectionTitle>
+      <Zone
+        title="What this data is"
+        blurb="Who released these records, how far you can trust a number, and what the three pay views actually measure."
+      >
+      <Card id="source" maw={PROSE}>
+        <SectionTitle id="source">Data source &amp; acknowledgment</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             The UW–Madison salary report files presented here are <b>public records</b>, obtained through
             Wisconsin open-records requests (Wisconsin Public Records Law, Wis. Stat. §§ 19.31–19.39) filed by{' '}
             <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>United Faculty &amp; Academic Staff (UFAS)</Anchor>
-            {' '}— <b>AFT Local 223, AFL-CIO</b>, the union representing UW–Madison faculty and academic staff.
-            UFAS advocates for the pay, working conditions, and rights of campus faculty and academic staff;
-            <b> their open-records work is what makes this transparency possible, and the credit for these records
-            belongs to them.</b>
+            {' '}— AFT Local 223, AFL-CIO, the union representing UW–Madison faculty and academic staff.
+            Their open-records work is what makes this transparency possible, and the credit for these
+            records belongs to them.
           </Text>
           <Text size="sm">
             This site is an independent project built by Aaron Smetana to make those public records easier to
@@ -318,15 +306,16 @@ export default function DataHealth() {
       <Alert
         color="gray"
         variant="light"
-        radius="md"
-        className="data-disclaimer"
+        radius="lg"
+        maw={PROSE}
+        className="alert-warn"
         icon={<IconAlertTriangle size={ICON.feature} />}
         title="Accuracy & disclaimer — these numbers may not reflect reality"
         id="disclaimer"
         styles={{ title: { fontSize: 'var(--mantine-h4-font-size)', fontWeight: 700 } }}
       >
         <details className="disc-details" open>
-          <summary className="disc-summary">
+          <summary>
             <Text span size="sm" fw={600}>
               Every figure here is a point-in-time, gross, best-effort transcription of a public spreadsheet —
               treat all of it as approximate, not as a person's verified pay.
@@ -334,7 +323,7 @@ export default function DataHealth() {
           </summary>
           <Stack gap="sm" mt="sm">
           <Text size="sm">A number can be wrong or misleading for many reasons. For example:</Text>
-          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" verticalSpacing="xs">
+          <Box className="disc-grid">
             <DItem lead="Part-time staff">the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</DItem>
             <DItem lead="Multiple appointments">a person's pay is blended across roles, so a split or joint appointment may not read as you'd expect.</DItem>
             <DItem lead="Bonuses & deferred pay">coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</DItem>
@@ -344,21 +333,20 @@ export default function DataHealth() {
             <DItem lead="Nov 2021 (TTC)">nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</DItem>
             <DItem lead="Oct 2023 scope change">some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</DItem>
             <DItem lead="Column mapping">columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</DItem>
-            <DItem id="identity" lead="Identity matching">people are matched by name + hire date with <b>no employee ID</b>, so two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
+            <DItem id="identity" lead="Identity matching">people are matched by name + hire date, with no employee ID in the source. Two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
             <DItem lead="Name formatting & transcription">ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</DItem>
-          </SimpleGrid>
+          </Box>
           <Text size="sm" mt={4}>
-            This is an <b>independent, best-effort project</b> and is <b>not affiliated with or endorsed by
-            UW–Madison</b>. Salary data is a Wisconsin public record. The information is provided "as is," may be
-            inaccurate or incomplete, and carries <b>no warranty and no liability</b> — verify against official
-            UW–Madison or State of Wisconsin sources before relying on it for any decision.
+            The information is provided "as is," may be inaccurate or incomplete, and carries{' '}
+            <b>no warranty and no liability</b> — verify against official UW–Madison or State of Wisconsin
+            sources before relying on it for any decision.
           </Text>
           </Stack>
         </details>
       </Alert>
 
-      <Card withBorder padding="lg" id="privacy">
-        <SectionTitle id="privacy" onCopy={onCopied}>Privacy &amp; responsible use</SectionTitle>
+      <Card id="privacy" maw={PROSE}>
+        <SectionTitle id="privacy">Privacy &amp; responsible use</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
@@ -371,45 +359,42 @@ export default function DataHealth() {
             anything beyond the released report is collected or displayed.
           </Text>
           <Text size="sm">
-            A salary here is gross annualized pay for a role at a point in time — <b>not</b> a person's total
-            compensation, their take-home, or their worth. And because people are matched by name + hire date
-            with no employee ID, the most consequential possible error is a salary attributed to the{' '}
-            <b>wrong named person</b> (two people merged, or one split in two).
+            A salary here is pay for a role at a point in time — <b>not</b> a person's total compensation or
+            their worth. And the most consequential error this data can make is naming the{' '}
+            <Anchor href="#identity" underline="always">wrong person</Anchor>.
           </Text>
         </Stack>
       </Card>
 
-      <Card withBorder padding="lg" id="how-it-works">
-        <SectionTitle id="how-it-works" onCopy={onCopied}>How these figures are calculated</SectionTitle>
+      <Card id="how-it-works" maw={PROSE}>
+        <SectionTitle id="how-it-works">How these figures are calculated</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
-            Each source row is one <b>appointment</b>, carrying a full-time annual <b>rate</b> and an{' '}
-            <b>FTE</b> (appointment percentage — e.g. 0.5 = half-time). The "Pay" control switches between three views:
+            Each source row is one <b>appointment</b>, carrying a full-time annual rate and an FTE — the
+            appointment percentage, where 0.5 is half-time. Hourly appointments report no FTE at all; they are
+            counted at their full listed rate rather than as zero. The "Pay" control switches between three views:
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-            <DefCard icon={<IconCash size={ICON.control} />} title="Actual pay">Rate × FTE (the reported FTE-adjusted salary) — closest to what the person was actually paid.</DefCard>
+            <DefCard icon={<IconCash size={ICON.control} />} title="Actual pay">Rate × FTE (or the full rate, for hourly staff with no FTE on file) — closest to what the person was actually paid.</DefCard>
             <DefCard icon={<IconClock size={ICON.control} />} title="Full-time rate">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</DefCard>
             <DefCard icon={<IconStack2 size={ICON.control} />} title="Base pay">Base salary as reported; may exclude supplemental or overload pay.</DefCard>
           </SimpleGrid>
           <Text size="sm">
             A person holding <b>more than one paid appointment</b> is combined by summing each appointment's
-            actual (rate × FTE) earnings, so split roles aren't double-counted. Unpaid <b>$0</b> affiliate
+            actual (rate × FTE) earnings, so split roles aren't double-counted. Unpaid $0 affiliate
             appointments are excluded from headcount, medians, and totals.
-          </Text>
-
-          <Text size="sm" fw={700} mt="lg">A snapshot in time</Text>
-          <Text size="sm">
-            Every figure reflects a single periodic report. Pay, FTE, title, and grade change between
-            snapshots, and raises or appointment changes that happen between reports aren't captured — so a
-            person's true earnings can be higher or lower than any single number shown here. Amounts are gross
-            annualized figures (not take-home) and exclude benefits. See the accuracy &amp; disclaimer callout
-            above for the full list of caveats.
           </Text>
         </Stack>
       </Card>
 
-      <Card withBorder padding="lg" id="methodology">
-        <SectionTitle id="methodology" onCopy={onCopied}>Methodology, reproducibility &amp; downloads</SectionTitle>
+      </Zone>
+
+      <Zone
+        title="How it was built"
+        blurb="The pipeline from a published spreadsheet to the numbers on this site — auditable, and downloadable in full."
+      >
+      <Card id="methodology" maw={PROSE}>
+        <SectionTitle id="methodology">Methodology, reproducibility &amp; downloads</SectionTitle>
         <Stack gap="sm">
           <Text size="sm">
             This project is open source. The ingestion code, column-detection logic, and applied corrections are
@@ -417,25 +402,33 @@ export default function DataHealth() {
             reproduce it from the raw records yourself.
           </Text>
           <Group gap="sm" wrap="wrap">
-            <Button component="a" className="data-dl-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBrandGithub size={ICON.compact} />}>Source code &amp; ingestion</Button>
-            <Button component="a" className="data-dl-btn" href={parquetUrl} download variant="default" size="xs" radius="md" leftSection={<IconDownload size={ICON.compact} />}>Dataset (Parquet){parquetSize ? ` · ${parquetSize}` : ''}</Button>
-            <Button component="a" className="data-dl-btn" href={manifestUrl} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBraces size={ICON.compact} />}>Manifest (JSON){manifestSize ? ` · ${manifestSize}` : ''}</Button>
+            <Button component="a" className="data-dl-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" leftSection={<IconBrandGithub size={ICON.compact} />}>Source code &amp; ingestion</Button>
+            <Button component="a" className="data-dl-btn" href={parquetUrl} download variant="default" size="xs" leftSection={<IconDownload size={ICON.compact} />}>Dataset (Parquet){parquetSize ? ` · ${parquetSize}` : ''}</Button>
+            <Button component="a" className="data-dl-btn" href={manifestUrl} target="_blank" rel="noopener noreferrer" variant="default" size="xs" leftSection={<IconBraces size={ICON.compact} />}>Manifest (JSON){manifestSize ? ` · ${manifestSize}` : ''}</Button>
             {dict?.data_dictionary_url && (
-              <Button component="a" className="data-dl-btn" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBook2 size={ICON.compact} />}>Data dictionary</Button>
+              <Button component="a" className="data-dl-btn" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" leftSection={<IconBook2 size={ICON.compact} />}>Data dictionary</Button>
             )}
           </Group>
 
-          <Text size="sm" fw={700} mt="lg">What's in a record</Text>
-          <Text size="sm">Each appointment row carries these fields, tagged with the snapshot it came from:</Text>
-          <Group gap={6} wrap="wrap">
-            {['name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary', 'FTE-adjusted salary', 'base pay', 'FTE', 'pay-rate type', 'FLSA status', 'employee category', 'employee type', 'hire date'].map((f) => (
-              <Code key={f} className="kbd-chip">{f}</Code>
-            ))}
-          </Group>
-          <Text size="sm">The three &ldquo;Pay&rdquo; views are derived from those columns; nothing else about a person is stored.</Text>
+          <Accordion variant="contained" mt="xs" multiple>
+            <Accordion.Item value="record">
+              <Accordion.Control>
+                <Text size="sm" fw={600}>What's in a record — {RECORD_FIELDS.length} fields</Text>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Text size="xs" c="dimmed" mb="sm">
+                  Each appointment row carries these, tagged with the snapshot it came from. The three "Pay"
+                  views are derived from them; nothing else about a person is stored.
+                </Text>
+                <Group gap={6} wrap="wrap">
+                  {RECORD_FIELDS.map((f) => (
+                    <Code key={f} className="kbd-chip">{f}</Code>
+                  ))}
+                </Group>
+              </Accordion.Panel>
+            </Accordion.Item>
 
-          {latestSnap && Object.keys(latestSnap.detected_mapping).length > 0 && (
-            <Accordion variant="contained" mt="xs">
+            {latestSnap && Object.keys(latestSnap.detected_mapping).length > 0 && (
               <Accordion.Item value="mapping">
                 <Accordion.Control>
                   <Text size="sm" fw={600}>Detected column mappings — {latestSnap.snapshot_label}</Text>
@@ -461,14 +454,14 @@ export default function DataHealth() {
                   )}
                 </Accordion.Panel>
               </Accordion.Item>
-            </Accordion>
-          )}
+            )}
+          </Accordion>
         </Stack>
       </Card>
 
-      <Card withBorder padding="lg" id="snapshots">
+      <Card id="snapshots">
         <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
-          <SectionTitle id="snapshots" onCopy={onCopied}>Per-snapshot ingestion</SectionTitle>
+          <SectionTitle id="snapshots">Per-snapshot ingestion</SectionTitle>
           <Group gap="sm" wrap="wrap">
             <Select
               {...dropdownProps('sm')}
@@ -486,13 +479,17 @@ export default function DataHealth() {
           )}
         </Text>
         <Box role="region" aria-label="Per-snapshot ingestion table" tabIndex={0} className="data-snap-region">
-        <Table.ScrollContainer minWidth={compact ? 680 : 920} className="data-snap-scroll">
-      <Table stickyHeader stickyHeaderOffset={108} className="data-snap-table">
+        {/* `stickyHeaderOffset` resolves against the nearest scrolling ancestor, which inside a
+            ScrollContainer is the ScrollArea viewport — not the document. The old 108px offset therefore
+            pushed the header 108px DOWN INTO the table, over the first two rows. `ScrollArea.Autosize`
+            with a bounded height and no offset is what the app's seven other sticky tables use. */}
+        <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present" className="data-snap-scroll">
+      <Table stickyHeader miw={compact ? 680 : 920} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>
-            <SortTh label="Snapshot" sortKey="date" active={sort.key === 'date'} dir={sort.dir} onSort={toggleSort} />
+            <SortableTh sortKey="date" label="Snapshot" sort={sort} onSort={setSort} />
             {!compact && <Th>Source (file · sheet)</Th>}
-            <SortTh label="Rows" sortKey="rows" active={sort.key === 'rows'} dir={sort.dir} onSort={toggleSort} ta="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several)." />
+            <SortableTh sortKey="rows" label="Rows" sort={sort} onSort={setSort} align="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several)." />
             <Th ta="right" tip="Distinct identities in the dump (name + hire date).">People</Th>
             <Th ta="right" tip="People with at least one paid appointment — the headcount used across the site.">Paid</Th>
             <Th ta="right" tip="Change in paid headcount vs the previous snapshot.">Δ paid</Th>
@@ -509,7 +506,7 @@ export default function DataHealth() {
             <Table.Tr key={s.snapshot_id} style={{ background: s.note ? 'var(--mantine-color-default-hover)' : undefined }}>
               <Table.Td>
                 <Text size="sm" fw={500}>{s.snapshot_label}</Text>
-                {!compact && <Code>{s.snapshot_id}</Code>}
+                {!compact && <Code className="kbd-chip">{s.snapshot_id}</Code>}
               </Table.Td>
               {!compact && (
                 <Table.Td>
@@ -543,7 +540,7 @@ export default function DataHealth() {
                   <Text size="xs" c="dimmed" mt={2}>unmapped: {s.unmapped_headers.join(', ')}</Text>
                 )}
                 {s.note && (
-                  <Text size="xs" fs="italic" c="accent" mt={2}>{s.note}</Text>
+                  <Text size="xs" fs="italic" c="dimmed" mt={2}>{s.note}</Text>
                 )}
               </Table.Td>
             </Table.Tr>
@@ -558,23 +555,18 @@ export default function DataHealth() {
           )}
         </Table.Tbody>
       </Table>
-        </Table.ScrollContainer>
+        </ScrollArea.Autosize>
         </Box>
         <Text size="xs" c="dimmed" mt="sm">
-          <b>People</b> = distinct identities in the dump. <b>Paid</b> = people with at least one paid appointment —
-          the "headcount" used across the site. <b>Unpaid $0</b> = appointments with no salary (affiliates given
-          campus access), excluded from headcount and salary stats. A <b>shaded row</b> carries a note worth reading
-          (e.g. the Nov-2021 TTC relabel or the Oct-2023 scope change). <b>Status</b>: OK = ingested cleanly;
-          INFO/WARNING = a flagged note; ERROR = a problem in that dump.
+          Hover any column heading for its definition. A <b>shaded row</b> carries a note worth reading — the
+          Nov-2021 TTC relabel, or the Oct-2023 scope change.
         </Text>
       </Card>
 
       <DuplicateIdentities snap={snapId} />
+      </Zone>
     </Stack>
     <BackToTop />
-    <div className="data-toast" data-show={toast ? true : undefined} role="status" aria-live="polite">
-      {toast && (<><IconCheck size={ICON.control} /><span>{toast}</span></>)}
-    </div>
     </>
   );
 }

@@ -566,12 +566,13 @@ button:active,
 /* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the
    global tokens above, so the page still reads as the same app — just calmer for a long, prose-heavy page. ── */
 
-/* A touch more leading on this page's prose (it's denser and longer than the rest of the app). */
-.data-about .mantine-Text-root { line-height: 1.65; }
+/* One number for the fixed chrome this page stacks: the 64px app header plus the sticky jump nav.
+   It used to be written three times — the nav's `top`, the table's `stickyHeaderOffset`, and the
+   scrollspy's `rootMargin` — as 64 / 108 / 112, none of which knew the others existed. */
+:root { --data-chrome-top: 108px; }
 
-/* Fluid section headings: scale gently with the viewport so they ease down on mobile without breakpoints
-   (the page's h1 already uses clamp() in PageHeader). */
-.data-about .section-head .mantine-Title-root { font-size: clamp(1rem, 2.6vw, 1.125rem); }
+/* Fragment links landed their section at y=0, i.e. behind all of that. */
+.data-about [id] { scroll-margin-top: calc(var(--data-chrome-top) + 12px); }
 
 /* "Jump to" links become subtle pill chips (mirrors the .scope-search-pill / .app-dropdown-option neutrals). */
 .data-jump-chip {
@@ -587,56 +588,35 @@ button:active,
 :root[data-mantine-color-scheme='light'] .data-jump-chip:hover { background-color: var(--mantine-color-accent-1); }
 :root[data-mantine-color-scheme='dark'] .data-jump-chip:hover { background-color: var(--mantine-color-dark-5); }
 
-/* Accuracy disclaimer: a subtle neutral surface (the gray "light" Alert) with a bold amber left rule
-   and icon — the warning semantic without the muddy orange fill. Mirrors the .tenure-callout pattern.
-   The title stays the default text color (not orange): against this pale surface, no shade of orange
-   clears WCAG's 4.5:1 for text, and the icon + border + bold weight already carry the warning cue. */
-.data-disclaimer { border-left: 4px solid var(--mantine-color-orange-6); }
-.data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-7); }
-:root[data-mantine-color-scheme='dark'] .data-disclaimer { border-left-color: var(--mantine-color-orange-4); }
-:root[data-mantine-color-scheme='dark'] .data-disclaimer .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
-
-/* Same treatment for the warning alerts that carry a title (pay-band reference, data-health notes).
-   An orange `Alert` renders its bold title in mid-orange on a pale orange fill — 2.5:1, a serious
-   contrast failure — and per the note above no orange shade fixes it, so the rule + icon carry the
-   warning and the title keeps the default text color. */
+/* Warning alerts that carry a title (the accuracy disclaimer, pay-band reference, data-health notes):
+   a neutral "light" Alert with a bold amber left rule and icon — the warning semantic without the muddy
+   orange fill. An orange `Alert` renders its bold title in mid-orange on a pale orange fill — 2.5:1, a
+   serious contrast failure — and no orange shade clears 4.5:1 against this surface, so the rule + icon
+   carry the warning and the title keeps the default text color. */
 .alert-warn { border-left: 4px solid var(--mantine-color-orange-6); }
 .alert-warn .mantine-Alert-icon { color: var(--mantine-color-orange-7); }
 :root[data-mantine-color-scheme='dark'] .alert-warn { border-left-color: var(--mantine-color-orange-4); }
 :root[data-mantine-color-scheme='dark'] .alert-warn .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
 
-/* Collapsible disclaimer body (<details>/<summary>): drop the native marker, add our own rotating chevron
-   so returning readers can fold the heavy text away. */
-.disc-details > summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.disc-details > summary::-webkit-details-marker { display: none; }
-.disc-details > summary::before {
-  content: '▸';
-  color: var(--mantine-color-orange-6);
-  display: inline-block;
-  margin-top: 1px;
-  transition: transform 150ms ease;
-}
-.disc-details[open] > summary::before { transform: rotate(90deg); }
+/* Collapsible disclaimer body (<details>/<summary>). The native marker does the disclosure job; it used
+   to be replaced by a hand-built rotating '▸' in a third accent colour. */
+.disc-details > summary { cursor: pointer; }
 
-/* "Live" freshness dot: the project's positive green with a slow expanding-ring pulse. */
+/* The caveat list packs into columns instead of a row-major grid: eleven items of uneven height left
+   ragged holes opposite the tall ones. Columns fill top-to-bottom, so there are none. */
+.disc-grid > * { break-inside: avoid; margin-bottom: var(--mantine-spacing-xs); }
+@media (min-width: 62em) {
+  .disc-grid { columns: 2; column-gap: var(--mantine-spacing-xl); }
+}
+
+/* "Live" freshness dot. Static: it was a 2.4s infinite animation whose only message was that the page
+   had loaded, which the text beside it already says. */
 .live-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
   flex-shrink: 0;
   background: var(--mantine-color-pos-6);
-  animation: live-pulse 2.4s ease-out infinite;
-}
-@keyframes live-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mantine-color-pos-6) 55%, transparent); }
-  70% { box-shadow: 0 0 0 7px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 /* Copy-anchor on each section header: the chain icon stays invisible until the header is hovered/focused. */
@@ -644,13 +624,11 @@ button:active,
 .section-head:hover .copy-anchor,
 .section-head:focus-within .copy-anchor { opacity: 1; }
 
-/* Glassmorphism sticky header for the long ingestion table: a semi-transparent surface (built from the
-   theme's body color) that blurs the rows scrolling beneath it. */
-.data-snap-table thead th {
-  background-color: color-mix(in srgb, var(--mantine-color-body) 80%, transparent) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
+/* The sticky header must be opaque. It was 80% transparent with a `backdrop-filter` meant to blur the
+   rows beneath — but backdrop-filter on a `border-collapse` cell does not composite reliably, so rows
+   simply showed through the header. Mantine's own `var(--mantine-color-body)` is opaque and correct;
+   only the hairline below is ours. */
+.data-snap-table thead th { box-shadow: inset 0 -1px 0 0 var(--hairline-strong); }
 
 /* Methodology download buttons: a tactile lift on hover (uses the theme's md shadow). */
 .data-dl-btn { transition: transform 120ms ease, box-shadow 120ms ease; }
@@ -682,10 +660,23 @@ button:active,
   top: 64px;
   z-index: 6;
   padding: 8px 0;
-  background-color: color-mix(in srgb, var(--mantine-color-body) 88%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--hairline);
 }
+
+/* On a phone the chips wrap to 123px — 15% of the screen — and stickiness pinned that there for all
+   ten screens of the page. Below `sm` they scroll sideways on one line and stay put. */
+@media (max-width: 48em) {
+  .data-jumpnav {
+    position: static;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .data-jumpnav::-webkit-scrollbar { display: none; }
+  .data-jumpnav > * { flex: 0 0 auto; }
+}
+
 .data-jump-chip.active {
   border-color: var(--mantine-color-accent-5);
   color: var(--mantine-color-accent-7);
@@ -699,8 +690,17 @@ button:active,
   color: var(--mantine-color-accent-4);
 }
 
-/* Sortable ingestion-table headers: pointer + accent on hover; the chevron shows the active sort direction. */
-.sort-th { cursor: pointer; color: inherit; }
+/* Sortable table headers. The label lives in a real <button> (the ARIA pattern for a sortable header),
+   and a button's UA styles would otherwise beat the inherited `.mantine-Table-th` treatment above — which
+   is exactly what happened on the ingestion table, where two of ten columns rendered at 16px sentence
+   case beside eight at 11px uppercase. Inherit every type property back, explicitly. */
+.sort-th {
+  cursor: pointer;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
 .sort-th:hover { color: var(--mantine-color-accent-7); }
 
 /* Keep numbers column-aligned down each numeric column of the ingestion table. */
@@ -713,29 +713,6 @@ button:active,
   border-radius: 5px;
   box-shadow: inset 0 -1px 0 var(--mantine-color-default-border);
 }
-
-/* Copy-confirmation toast: a small snackbar that slides up from the bottom-left (clear of the bottom-center
-   selection tray and the bottom-right back-to-top button). */
-.data-toast {
-  position: fixed;
-  left: 24px;
-  bottom: 24px;
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border-radius: var(--mantine-radius-md);
-  background: var(--mantine-color-pos-7);
-  color: var(--mantine-color-white);
-  font-size: var(--mantine-font-size-sm);
-  box-shadow: var(--mantine-shadow-md);
-  opacity: 0;
-  transform: translateY(12px);
-  pointer-events: none;
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-.data-toast[data-show] { opacity: 1; transform: translateY(0); }
 
 /* Mobile: a right-edge fade on the table's scroll viewport hints that more columns exist off-screen, and the
    download buttons grow to a comfortable 48px tap target. */
@@ -751,7 +728,6 @@ button:active,
   .live-dot { animation: none; }
   .disc-details > summary::before,
   .data-dl-btn,
-  .data-toast,
   .back-to-top { transition: none; }
 }
 

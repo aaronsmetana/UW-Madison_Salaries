@@ -11,7 +11,7 @@ import { SegmentedToggle } from './SegmentedToggle';
 import { MiniBar } from './MiniBar';
 import { RankDeltaChip } from './Delta';
 import { SortableTh, type SortState } from './SortableTh';
-import { GlossaryTerm } from './GlossaryTerm';
+import { GLOSSARY } from '../lib/glossary';
 import { EmptyState } from './EmptyState';
 import { ICON } from '../lib/ui';
 
@@ -128,7 +128,7 @@ export function EarnersPanel() {
               <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
               <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="fte" label={<GlossaryTerm term="fte">FTE</GlossaryTerm>} sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" />
               <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
             </Table.Tr>
           </Table.Thead>
