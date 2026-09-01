@@ -203,7 +203,7 @@ export default function School() {
           button until its label clipped ("+ Add to tray" needed 83px in an 80px button). */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div style={{ flex: '1 1 320px', minWidth: 0, paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
-          <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>{name}</Title>
+          <Title order={1}>{name}</Title>
         </div>
         <Button
           variant={has(name) ? 'light' : 'filled'}

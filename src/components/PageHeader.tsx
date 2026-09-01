@@ -16,9 +16,8 @@ export function PageHeader({
 }) {
   const head = (
     <Box pl="md" style={{ borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
-      <Title order={1} style={{ letterSpacing: '-0.02em', fontSize: 'clamp(1.75rem, 3vw, 2.5rem)' }}>
-        {title}
-      </Title>
+      {/* Size + letter-spacing come from the shared heading ramp (theme.ts + app.css). */}
+      <Title order={1}>{title}</Title>
       {description != null && (
         <Text c="dimmed" maw={720} mt={6} size="lg">
           {description}
