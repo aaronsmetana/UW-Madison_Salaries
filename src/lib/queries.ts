@@ -11,11 +11,29 @@ export const FACETS: { field: string; label: string; searchable?: boolean }[] = 
 ];
 const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
 
+/**
+ * The FTE multiplier used by every actual-pay expression below.
+ *
+ * `fte = 0` in this source does NOT mean "earns nothing". Every zero-FTE row is an hourly
+ * appointment (`pay_rate_type` Hourly / Hourly_Timeclock) where no fixed appointment percentage is
+ * recorded — 1,178 people in the Mar 2026 snapshot, mostly temporary University Staff, with a real
+ * median rate of $45,760. Multiplying by a literal zero turned all of them into $0 earners, which
+ * quietly did three things: depressed the published median by ~$2,700 ($74,387 against $77,126),
+ * dropped them from every FTE-gated headcount (the long-standing gap between Home's 22,009 and
+ * Explore's 20,872), and removed the lowest-paid group in the data from the cohort medians,
+ * percentiles, and Screening runs this tool exists to produce.
+ *
+ * `NULLIF(fte, 0)` maps that zero to "unknown" so the annualized rate stands as the best available
+ * estimate. Keep every actual-pay expression going through this constant — the bug was one literal
+ * multiply copied to seven call sites, and it only takes one more copy to reintroduce it.
+ */
+export const FTE_MULT = 'COALESCE(NULLIF(fte, 0), 1)';
+
 /** SQL expression for the selected salary metric (per appointment; full annual rate for full/base). */
 export function salaryExpr(metric: Metric): string {
   switch (metric) {
     case 'fte':
-      return 'COALESCE(salary_fte_adjusted, salary * COALESCE(fte, 1))';
+      return `COALESCE(salary_fte_adjusted, salary * ${FTE_MULT})`;
     case 'base':
       return 'COALESCE(base_pay, salary)';
     default:
@@ -27,11 +45,11 @@ export function salaryExpr(metric: Metric): string {
 export function earningsExpr(metric: Metric): string {
   switch (metric) {
     case 'fte':
-      return 'COALESCE(salary_fte_adjusted, salary * COALESCE(fte, 1))';
+      return `COALESCE(salary_fte_adjusted, salary * ${FTE_MULT})`;
     case 'base':
-      return 'COALESCE(base_pay, salary) * COALESCE(fte, 1)';
+      return `COALESCE(base_pay, salary) * ${FTE_MULT}`;
     default:
-      return 'salary * COALESCE(fte, 1)';
+      return `salary * ${FTE_MULT}`;
   }
 }
 

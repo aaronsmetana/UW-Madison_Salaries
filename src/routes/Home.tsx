@@ -4,6 +4,7 @@ import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, Paper, Th
 import { IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
+import { FTE_MULT } from '../lib/queries';
 import { usd, usdCompact, num } from '../lib/format';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox } from '../components/SearchBox';
@@ -128,7 +129,7 @@ export default function Home() {
 
   const { data: payrollRows } = useSql<{ total: number | null }>(
     ['home-payroll', snap ?? ''],
-    `SELECT sum(salary * COALESCE(fte, 1)) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
+    `SELECT sum(salary * ${FTE_MULT}) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
     needsSql
   );
   const payroll = artifactUsable ? homeStats.payroll_total : (payrollRows?.[0]?.total ?? null);

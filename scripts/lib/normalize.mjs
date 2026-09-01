@@ -121,3 +121,14 @@ export function median(nums) {
   const mid = Math.floor(a.length / 2);
   return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
 }
+
+/**
+ * SQL and JS forms of the FTE multiplier — the Node twin of `FTE_MULT` in src/lib/queries.ts, which
+ * carries the full explanation. Short version: `fte = 0` marks an hourly appointment with no recorded
+ * appointment percentage, not a person who earns nothing, so it must be read as "unknown" (1) rather
+ * than multiplied through as zero. Keep these two in step with the TS constant.
+ */
+export const FTE_MULT_SQL = 'COALESCE(NULLIF(fte, 0), 1)';
+
+/** JS form: the multiplier for one raw row. */
+export const fteMult = (fte) => (fte == null || fte === 0 ? 1 : fte);

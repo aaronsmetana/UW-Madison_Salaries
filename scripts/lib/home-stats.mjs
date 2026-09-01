@@ -1,4 +1,17 @@
 import duckdb from 'duckdb';
+import { FTE_MULT_SQL } from './normalize.mjs';
+
+/** Upper edge of the landing-page histogram, in dollars. Salaries at or above this are counted into
+ *  `bins_overflow` rather than binned, so a handful of extreme outliers don't compress the bars that
+ *  describe where almost everyone actually sits. */
+const BIN_CAP = 250000;
+
+/** The measure the landing page describes, matching `earningsExpr('fte')` in src/lib/queries.ts and
+ *  the manifest's own `salary_median` (build-data.mjs) — i.e. "Actual pay", the app's default metric.
+ *  It has to be the same expression the headline median is computed from: the bins used the raw
+ *  full-time rate while the median came from FTE-adjusted pay, so the landing chart was drawing its
+ *  median marker ~$5k off, on a curve built from a different quantity. */
+const PAY = `COALESCE(salary_fte_adjusted, salary * ${FTE_MULT_SQL})`;
 
 // Mirrors the six useSql queries in src/routes/Home.tsx so the landing page can render from a
 // ~2KB static JSON instead of booting DuckDB-WASM + downloading the full parquet.
@@ -14,16 +27,30 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
 
     (async () => {
       const [payrollRow] = await run(
-        `SELECT sum(salary * COALESCE(fte, 1)) AS total FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0`
+        `SELECT sum(salary * ${FTE_MULT_SQL}) AS total FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0`
       );
       const [dimsRow] = await run(
         `SELECT count(DISTINCT school) AS schools, count(DISTINCT job_code) AS titles,
                 min(salary) FILTER (WHERE salary > 0) AS lo, max(salary) FILTER (WHERE salary > 0) AS hi
          FROM ${src} WHERE snapshot_id = '${snap}'`
       );
+      // The histogram is capped so one $3M outlier can't flatten the whole curve into the baseline.
+      // The cap is reported (not silently applied): BIN_CAP and the overflow count travel with the
+      // data so the landing page can label the last bin as "and N above" instead of quietly dropping
+      // the top tail while its axis still claims to show the distribution.
       const bins = await run(
-        `SELECT floor(salary / 10000) * 10000 AS bucket, count(*) AS n FROM ${src}
-         WHERE snapshot_id = '${snap}' AND salary > 0 AND salary < 250000 GROUP BY bucket ORDER BY bucket`
+        `SELECT floor(${PAY} / 10000) * 10000 AS bucket, count(*) AS n FROM ${src}
+         WHERE snapshot_id = '${snap}' AND ${PAY} > 0 AND ${PAY} < ${BIN_CAP} GROUP BY bucket ORDER BY bucket`
+      );
+      const [overflowRow] = await run(
+        `SELECT count(*) AS n FROM ${src} WHERE snapshot_id = '${snap}' AND ${PAY} >= ${BIN_CAP}`
+      );
+      // Quartiles over the same population the bins describe (per appointment, positive salary), so
+      // the markers the landing chart draws sit on its own curve rather than on a different one.
+      const [quartRow] = await run(
+        `SELECT quantile_cont(${PAY}, 0.25) AS p25, quantile_cont(${PAY}, 0.5) AS p50,
+                quantile_cont(${PAY}, 0.75) AS p75
+         FROM ${src} WHERE snapshot_id = '${snap}' AND ${PAY} > 0`
       );
       const [titleTop] = await run(
         `SELECT title, count(*) AS n FROM ${src} WHERE snapshot_id = '${snap}' AND title IS NOT NULL
@@ -58,6 +85,11 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
           salary_lo: toNum(dimsRow?.lo),
           salary_hi: toNum(dimsRow?.hi),
           bins: bins.map((b) => ({ bucket: toNum(b.bucket), n: toNum(b.n) })),
+          bin_cap: BIN_CAP,
+          bins_overflow: toNum(overflowRow?.n) ?? 0,
+          p25: toNum(quartRow?.p25),
+          p50: toNum(quartRow?.p50),
+          p75: toNum(quartRow?.p75),
           top_title: titleTop ? { title: titleTop.title, n: toNum(titleTop.n) } : null,
           top_division: divTop ? { school: divTop.school, n: toNum(divTop.n) } : null,
           p90: toNum(factRow?.p90),

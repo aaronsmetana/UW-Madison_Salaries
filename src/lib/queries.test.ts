@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis } from './queries';
+import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, FTE_MULT } from './queries';
 
 describe('salary expressions', () => {
   it('salaryExpr returns the per-appointment rate for each metric', () => {
@@ -9,17 +9,29 @@ describe('salary expressions', () => {
   });
 
   it('earningsExpr prorates full/base by FTE; fte metric is already prorated', () => {
-    expect(earningsExpr('full')).toBe('salary * COALESCE(fte, 1)');
-    expect(earningsExpr('base')).toContain('* COALESCE(fte, 1)');
+    expect(earningsExpr('full')).toBe(`salary * ${FTE_MULT}`);
+    expect(earningsExpr('base')).toContain(`* ${FTE_MULT}`);
     expect(earningsExpr('fte')).toContain('salary_fte_adjusted');
-    expect(earningsExpr('fte')).not.toMatch(/\)\s*\*\s*COALESCE\(fte/); // not double-prorated
+    expect(earningsExpr('fte')).not.toMatch(/\)\s*\*\s*COALESCE\(NULLIF\(fte/); // not double-prorated
   });
 
   it('personPay blends only across >1 positive-salary appointment', () => {
     const p = personPay('full');
     expect(p).toContain('count(*) FILTER (WHERE salary > 0) > 1');
-    expect(p).toContain('sum(salary * COALESCE(fte, 1)) FILTER (WHERE salary > 0)');
+    expect(p).toContain(`sum(salary * ${FTE_MULT}) FILTER (WHERE salary > 0)`);
     expect(p).toContain('any_value(salary) FILTER (WHERE salary > 0)');
+  });
+
+  // Regression guard. `fte = 0` marks an hourly appointment with no recorded appointment percentage,
+  // not someone who earns nothing; a plain COALESCE(fte, 1) leaves the 0 intact and multiplies 1,178
+  // real people down to $0, which silently removed the lowest-paid group in the data from every
+  // FTE-adjusted median, headcount, and Screening run. Assert on the shape rather than the exact
+  // string so a rewrite of the expression still has to keep zero out of the multiplier.
+  it('treats fte = 0 as unknown, never as a zero multiplier', () => {
+    for (const expr of [FTE_MULT, earningsExpr('full'), earningsExpr('base'), earningsExpr('fte'), salaryExpr('fte')]) {
+      expect(expr).toContain('NULLIF(fte, 0)');
+      expect(expr).not.toMatch(/COALESCE\(fte,\s*1\)/);
+    }
   });
 });
 
