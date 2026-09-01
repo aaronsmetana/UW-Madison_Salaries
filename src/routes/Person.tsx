@@ -37,6 +37,7 @@ import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
 import { useDocTitle } from '../lib/useDocTitle';
+import { ICON } from '../lib/ui';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
@@ -736,7 +737,7 @@ export default function Person() {
       </Group>
 
       {departed && (
-        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={ICON.control} />}>
           Not in the latest snapshot ({campusLatest?.label}) — may no longer be employed. Last seen {latest?.snapshot_label}.
         </Alert>
       )}
@@ -806,7 +807,7 @@ export default function Person() {
               >
                 <Group gap={6} wrap="nowrap">
                   <ThemeIcon size={20} radius="md" variant="light" color={totalChange == null ? 'gray' : totalChange < 0 ? 'red' : 'pos'}>
-                    <IconTrendingUp size={13} />
+                    <IconTrendingUp size={ICON.inline} />
                   </ThemeIcon>
                   <Eyebrow>Salary growth</Eyebrow>
                 </Group>
@@ -844,7 +845,7 @@ export default function Person() {
               >
                 <Group gap={6} wrap="nowrap">
                   <ThemeIcon size={20} radius="md" variant="light" color="accent">
-                    <IconClockHour4 size={13} />
+                    <IconClockHour4 size={ICON.inline} />
                   </ThemeIcon>
                   <Eyebrow>Tenure</Eyebrow>
                 </Group>
@@ -867,7 +868,7 @@ export default function Person() {
                   {name} is the only employee at UW with the title {latest?.title} (job code {jobCode}) in the latest snapshot — no one else to compare against.
                 </Text>
                 <Group justify="flex-end" mt="md">
-                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={14} />}>
+                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={ICON.compact} />}>
                     Go to title page
                   </Button>
                 </Group>
@@ -916,7 +917,7 @@ export default function Person() {
                   </Text>
                 )}
                 <Group justify="flex-end" mt="md">
-                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={14} />}>
+                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={ICON.compact} />}>
                     Go to title page
                   </Button>
                 </Group>

@@ -5,6 +5,7 @@ import { IconChevronRight, IconAlertTriangle } from '@tabler/icons-react';
 import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { fullName, usd, num } from '../lib/format';
+import { ICON } from '../lib/ui';
 
 interface IdRow {
   person_key: string; fn: string | null; ln: string | null;
@@ -150,7 +151,7 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
                           onClick={() => toggle(g.name)} role="button" tabIndex={0}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(g.name); } }}
                         >
-                          <IconChevronRight size={15} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease', flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
+                          <IconChevronRight size={ICON.compact} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease', flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
                           <Text size="sm" fw={500} style={{ flex: 1, minWidth: 0 }} lineClamp={1}>{g.name}</Text>
                           {g.closeHire && g.minGapDays != null && (
                             <Text size="xs" c="orange" style={{ flexShrink: 0 }}>hires {Math.round(g.minGapDays)}d apart</Text>

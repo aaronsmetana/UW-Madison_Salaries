@@ -29,6 +29,7 @@ import {
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
+import { ICON } from '../lib/ui';
 
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
@@ -990,7 +991,7 @@ export default function Reports() {
               <ExportBar joined={!isNarrow}>
                 <Button
                   variant="default"
-                  leftSection={<IconDownload size={16} />}
+                  leftSection={<IconDownload size={ICON.control} />}
                   disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
                   onClick={() =>
                     type === 'person'
@@ -1002,7 +1003,7 @@ export default function Reports() {
                 </Button>
                 <Button
                   variant="default"
-                  leftSection={<IconPrinter size={16} />}
+                  leftSection={<IconPrinter size={ICON.control} />}
                   disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
                   onClick={() => window.print()}
                 >
@@ -1010,7 +1011,7 @@ export default function Reports() {
                 </Button>
                 <Button
                   variant="default"
-                  leftSection={<IconFileTypeDoc size={16} />}
+                  leftSection={<IconFileTypeDoc size={ICON.control} />}
                   disabled={type !== 'comparison' || subjectPay == null}
                   onClick={() => downloadDoc(briefToWordHtml(model), `Salary brief - ${subjectName || 'employee'}.doc`)}
                 >
@@ -1019,7 +1020,7 @@ export default function Reports() {
                 <Button
                   variant="default"
                   color={docCopyState !== 'idle' ? 'pos' : undefined}
-                  leftSection={docCopyState !== 'idle' ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                  leftSection={docCopyState !== 'idle' ? <IconCheck size={ICON.control} /> : <IconCopy size={ICON.control} />}
                   disabled={type !== 'comparison' || subjectPay == null}
                   onClick={async () => {
                     const rich = await copyBriefRichText(briefToWordHtml(model));
@@ -1047,7 +1048,7 @@ export default function Reports() {
             <div className="print-area"><PersonDashboard personKey={selPerson.key} metric={metric} /></div>
           ) : (
             <EmptyState
-              icon={<IconFileReport size={22} />}
+              icon={<IconFileReport size={ICON.feature} />}
               title="No employee selected"
               hint="Search and pick an employee above to generate a single-page report on their pay, title history, and how they compare to others in their title."
             />

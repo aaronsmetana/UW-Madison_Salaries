@@ -7,6 +7,7 @@ import { useSql, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { fullName } from '../lib/format';
 import { DROPDOWN_TIERS, type DropdownSize } from '../lib/selectProps';
+import { ICON } from '../lib/ui';
 
 interface Hit {
   person_key: string;
@@ -273,7 +274,7 @@ export function SearchBox({
                     {sharedName && (
                       <Tooltip label="Multiple people share this name — double-check this is the right person." multiline w={260} withArrow position="top">
                         <span style={{ display: 'inline-flex', flexShrink: 0 }}>
-                          <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" />
+                          <IconAlertTriangle size={ICON.compact} color="var(--mantine-color-orange-6)" />
                         </span>
                       </Tooltip>
                     )}

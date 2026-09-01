@@ -7,6 +7,7 @@ import {
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useTray, type TrayItem } from '../state/tray';
+import { ICON } from '../lib/ui';
 
 const TYPE_META: Record<TrayItem['type'], { icon: typeof IconUser; one: string; many: string; href: (id: string) => string }> = {
   person: { icon: IconUser, one: 'person', many: 'people', href: (id) => `/person/${encodeURIComponent(id)}` },
@@ -58,17 +59,17 @@ function Chip({ item, isPrimary, onPrimary, onRemove }: {
             onClick={onPrimary}
             style={{ flexShrink: 0 }}
           >
-            {isPrimary ? <IconStarFilled size={14} /> : <IconStar size={14} />}
+            {isPrimary ? <IconStarFilled size={ICON.compact} /> : <IconStar size={ICON.compact} />}
           </ActionIcon>
         </Tooltip>
       ) : (
-        <Icon size={15} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
+        <Icon size={ICON.compact} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
       )}
       <Anchor component={Link} to={href(item.id)} c={isPrimary ? 'accent.7' : 'inherit'} className={isPrimary ? 'accent7-text' : undefined} fw={isPrimary ? 600 : undefined} underline="hover" fz="sm" lineClamp={1} title={item.label}>
         {item.label}
       </Anchor>
       <ActionIcon size={19} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
-        <IconX size={14} />
+        <IconX size={ICON.compact} />
       </ActionIcon>
     </Group>
   );
@@ -159,7 +160,7 @@ export function SelectionTray() {
               variant="subtle"
               color="gray"
               onClick={() => setExpanded((v) => !v)}
-              rightSection={expanded ? <IconChevronDown size={15} /> : <IconChevronUp size={15} />}
+              rightSection={expanded ? <IconChevronDown size={ICON.compact} /> : <IconChevronUp size={ICON.compact} />}
               style={{ flexShrink: 0 }}
             >
               {expanded ? 'Hide' : 'Show all'}
@@ -175,7 +176,7 @@ export function SelectionTray() {
               to="/compare"
               data-disabled={!canCompare || undefined}
               onClick={(e) => { if (!canCompare) e.preventDefault(); }}
-              leftSection={<IconArrowsLeftRight size={16} />}
+              leftSection={<IconArrowsLeftRight size={ICON.control} />}
               style={{ flexShrink: 0 }}
             >
               Compare
@@ -189,7 +190,7 @@ export function SelectionTray() {
               to="/reports?mode=compare"
               data-disabled={!hasPerson || undefined}
               onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
-              leftSection={<IconReportAnalytics size={16} />}
+              leftSection={<IconReportAnalytics size={ICON.control} />}
               style={{ flexShrink: 0 }}
             >
               Equity Report

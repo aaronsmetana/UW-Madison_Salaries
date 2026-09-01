@@ -7,6 +7,7 @@ import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { FACETS, whereAll, snapWhere, filterKey } from '../lib/queries';
 import { scopeKey } from '../state/controls';
 import { dropdownProps } from '../lib/selectProps';
+import { ICON } from '../lib/ui';
 
 function FacetMultiSelect({ field, label, searchable }: { field: string; label: string; searchable?: boolean }) {
   const { scope, filters, setFilter } = useControls();
@@ -92,7 +93,7 @@ export function FilterControls() {
               color={active ? 'accent' : 'gray'}
               aria-expanded={opened}
               leftSection={
-                active ? <IconFilterFilled size={14} /> : <IconFilter size={14} stroke={1.8} />
+                active ? <IconFilterFilled size={ICON.compact} /> : <IconFilter size={ICON.compact} stroke={1.8} />
               }
             >
               Filters

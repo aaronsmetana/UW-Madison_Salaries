@@ -13,6 +13,7 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
+import { ICON } from '../lib/ui';
 
 // 'pos' (not stock Mantine 'green') — the app's own vetted positive palette; plain 'green's light-variant
 // text (green-7, ~2.4:1 on this badge's pale fill) fails WCAG AA, 'pos' clears it comfortably (~5:1).
@@ -58,7 +59,7 @@ function SectionTitle({ id, children, onCopy }: { id: string; children: ReactNod
         {({ copied, copy }) => (
           <Tooltip label={copied ? 'Link copied' : 'Copy link to this section'} withArrow>
             <ActionIcon className="copy-anchor" variant="subtle" color="gray" size="sm" aria-label="Copy link to this section" onClick={() => { copy(); onCopy?.(); }}>
-              {copied ? <IconCheck size={15} /> : <IconLink size={15} />}
+              {copied ? <IconCheck size={ICON.compact} /> : <IconLink size={ICON.compact} />}
             </ActionIcon>
           </Tooltip>
         )}
@@ -117,7 +118,7 @@ function BackToTop() {
       variant="filled" color="accent" size="xl" radius="xl" aria-label="Back to top"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
     >
-      <IconArrowUp size={20} />
+      <IconArrowUp size={ICON.nav} />
     </ActionIcon>
   );
 }
@@ -135,8 +136,8 @@ function SortTh({ label, sortKey, active, dir, onSort, ta, tip }: {
         <Group gap={4} wrap="nowrap" justify={ta === 'right' ? 'flex-end' : 'flex-start'}>
           <span>{label}</span>
           {active
-            ? (dir === 'asc' ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />)
-            : <IconSelector size={13} style={{ opacity: 0.35 }} />}
+            ? (dir === 'asc' ? <IconChevronUp size={ICON.inline} /> : <IconChevronDown size={ICON.inline} />)
+            : <IconSelector size={ICON.inline} style={{ opacity: 0.35 }} />}
         </Group>
       </UnstyledButton>
     </Table.Th>
@@ -210,13 +211,13 @@ export default function DataHealth() {
     );
   if (error)
     return (
-      <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={20} />} title="Couldn't load the data manifest">
+      <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={ICON.nav} />} title="Couldn't load the data manifest">
         <Stack gap="sm" align="flex-start">
           <Text size="sm">
             The ingestion manifest failed to load ({(error as Error).message}). This is usually a temporary
             network hiccup fetching the static data file.
           </Text>
-          <Button size="xs" variant="default" leftSection={<IconReload size={15} />} onClick={() => refetch()}>Retry</Button>
+          <Button size="xs" variant="default" leftSection={<IconReload size={ICON.compact} />} onClick={() => refetch()}>Retry</Button>
         </Stack>
       </Alert>
     );
@@ -319,7 +320,7 @@ export default function DataHealth() {
         variant="light"
         radius="md"
         className="data-disclaimer"
-        icon={<IconAlertTriangle size={22} />}
+        icon={<IconAlertTriangle size={ICON.feature} />}
         title="Accuracy & disclaimer — these numbers may not reflect reality"
         id="disclaimer"
         styles={{ title: { fontSize: 'var(--mantine-h4-font-size)', fontWeight: 700 } }}
@@ -386,9 +387,9 @@ export default function DataHealth() {
             <b>FTE</b> (appointment percentage — e.g. 0.5 = half-time). The "Pay" control switches between three views:
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-            <DefCard icon={<IconCash size={16} />} title="Actual pay">Rate × FTE (the reported FTE-adjusted salary) — closest to what the person was actually paid.</DefCard>
-            <DefCard icon={<IconClock size={16} />} title="Full-time rate">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</DefCard>
-            <DefCard icon={<IconStack2 size={16} />} title="Base pay">Base salary as reported; may exclude supplemental or overload pay.</DefCard>
+            <DefCard icon={<IconCash size={ICON.control} />} title="Actual pay">Rate × FTE (the reported FTE-adjusted salary) — closest to what the person was actually paid.</DefCard>
+            <DefCard icon={<IconClock size={ICON.control} />} title="Full-time rate">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</DefCard>
+            <DefCard icon={<IconStack2 size={ICON.control} />} title="Base pay">Base salary as reported; may exclude supplemental or overload pay.</DefCard>
           </SimpleGrid>
           <Text size="sm">
             A person holding <b>more than one paid appointment</b> is combined by summing each appointment's
@@ -416,11 +417,11 @@ export default function DataHealth() {
             reproduce it from the raw records yourself.
           </Text>
           <Group gap="sm" wrap="wrap">
-            <Button component="a" className="data-dl-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBrandGithub size={15} />}>Source code &amp; ingestion</Button>
-            <Button component="a" className="data-dl-btn" href={parquetUrl} download variant="default" size="xs" radius="md" leftSection={<IconDownload size={15} />}>Dataset (Parquet){parquetSize ? ` · ${parquetSize}` : ''}</Button>
-            <Button component="a" className="data-dl-btn" href={manifestUrl} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBraces size={15} />}>Manifest (JSON){manifestSize ? ` · ${manifestSize}` : ''}</Button>
+            <Button component="a" className="data-dl-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBrandGithub size={ICON.compact} />}>Source code &amp; ingestion</Button>
+            <Button component="a" className="data-dl-btn" href={parquetUrl} download variant="default" size="xs" radius="md" leftSection={<IconDownload size={ICON.compact} />}>Dataset (Parquet){parquetSize ? ` · ${parquetSize}` : ''}</Button>
+            <Button component="a" className="data-dl-btn" href={manifestUrl} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBraces size={ICON.compact} />}>Manifest (JSON){manifestSize ? ` · ${manifestSize}` : ''}</Button>
             {dict?.data_dictionary_url && (
-              <Button component="a" className="data-dl-btn" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBook2 size={15} />}>Data dictionary</Button>
+              <Button component="a" className="data-dl-btn" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" radius="md" leftSection={<IconBook2 size={ICON.compact} />}>Data dictionary</Button>
             )}
           </Group>
 
@@ -572,7 +573,7 @@ export default function DataHealth() {
     </Stack>
     <BackToTop />
     <div className="data-toast" data-show={toast ? true : undefined} role="status" aria-live="polite">
-      {toast && (<><IconCheck size={16} /><span>{toast}</span></>)}
+      {toast && (<><IconCheck size={ICON.control} /><span>{toast}</span></>)}
     </div>
     </>
   );

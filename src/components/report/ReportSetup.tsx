@@ -9,6 +9,7 @@ import { SearchBox } from '../SearchBox';
 import { Eyebrow } from '../Eyebrow';
 import { usd, pct, fmtYears } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
+import { ICON } from '../../lib/ui';
 import {
   COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, newCustomFactor, type ReportConfig, type CohortMode, type FactorKey,
   type CaseStrength, type BadgeTone, type StrengthKey, type SupervisoryCase,
@@ -135,11 +136,11 @@ export function ReportSetup({
                     aria-label={config.targetKey === c.key ? `Clear ${c.name} as parity target` : `Set ${c.name} as parity target`}
                     onClick={() => set({ targetKey: config.targetKey === c.key ? null : c.key })}
                   >
-                    <IconTarget size={16} />
+                    <IconTarget size={ICON.control} />
                   </ActionIcon>
                 </Tooltip>
                 <ActionIcon variant="subtle" color="gray" aria-label={`Remove ${c.name}`} onClick={() => onRemovePerson(c.key)}>
-                  <IconX size={16} />
+                  <IconX size={ICON.control} />
                 </ActionIcon>
               </Group>
             </Group>
@@ -155,7 +156,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Suggested equity benchmarks (top earners in this title):</Text>
             <Group gap={6}>
               {suggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.inline} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -168,7 +169,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
             <Group gap={6}>
               {inversionSuggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="orange" className="orange-light-text" leftSection={<IconPlus size={12} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="orange" className="orange-light-text" leftSection={<IconPlus size={ICON.inline} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -318,7 +319,7 @@ export function ReportSetup({
                                     {r.inverted ? '+' : '−'}{pct(r.differential)} — {r.inverted ? 'inversion' : r.belowFloor ? 'under the 15% guideline' : 'meets guideline'}
                                   </Badge>
                                   <ActionIcon variant="subtle" color="gray" size="xs" aria-label={`Remove ${r.name}`} onClick={() => onRemoveSupervisee(r.key)}>
-                                    <IconX size={12} />
+                                    <IconX size={ICON.inline} />
                                   </ActionIcon>
                                 </Group>
                               </Group>
@@ -395,7 +396,7 @@ export function ReportSetup({
                     aria-label="Remove custom factor"
                     onClick={() => set({ customFactors: config.customFactors.filter((x) => x.id !== c.id) })}
                   >
-                    <IconX size={14} />
+                    <IconX size={ICON.compact} />
                   </ActionIcon>
                 </Group>
                 <Group gap={6} wrap="wrap" align="center" mt={6} ml={0}>
@@ -438,7 +439,7 @@ export function ReportSetup({
           size="xs"
           variant="subtle"
           mt="sm"
-          leftSection={<IconPlus size={14} />}
+          leftSection={<IconPlus size={ICON.compact} />}
           onClick={() => set({ customFactors: [...config.customFactors, newCustomFactor()] })}
         >
           Add custom factor
@@ -476,7 +477,7 @@ export function ReportSetup({
             variant="subtle"
             size="compact-xs"
             color={clip.copied ? 'pos' : 'gray'}
-            leftSection={clip.copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+            leftSection={clip.copied ? <IconCheck size={ICON.compact} /> : <IconCopy size={ICON.compact} />}
             onClick={() => clip.copy(talkingPoints)}
           >
             {clip.copied ? 'Copied' : 'Export talking points'}
@@ -500,7 +501,7 @@ export function ReportSetup({
                     <Group justify="space-between" gap={4} mb={2}>
                       <Text size="xs" c="dimmed">{p.label}</Text>
                       <Group gap={3} wrap="nowrap">
-                        {maxed && <IconCheck size={12} color="var(--mantine-color-pos-6)" />}
+                        {maxed && <IconCheck size={ICON.inline} color="var(--mantine-color-pos-6)" />}
                         <Text size="xs" c="dimmed" fw={600}>{p.value}<Text span c="dimmed" fw={400}> / {p.max}</Text></Text>
                       </Group>
                     </Group>
@@ -538,8 +539,8 @@ export function ReportSetup({
                     onKeyDown={jump ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } } : undefined}
                   >
                     {e.ok
-                      ? <IconCheck size={13} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
-                      : <IconX size={13} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
+                      ? <IconCheck size={ICON.inline} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                      : <IconX size={ICON.inline} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
                     <Text size="xs" c={e.ok ? undefined : 'dimmed'} style={{ flex: 1, minWidth: 0 }}>
                       {e.label}{e.note ? <Text span c="dimmed"> — {e.note}</Text> : null}
                     </Text>
@@ -555,7 +556,7 @@ export function ReportSetup({
           <Group gap={6} wrap="nowrap" align="flex-start" mt="md">
             {overAskAnchor ? (
               <>
-                <IconInfoCircle size={14} color="var(--mantine-color-accent-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <IconInfoCircle size={ICON.compact} color="var(--mantine-color-accent-6)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <Text size="xs" c="accent.7" className="accent7-text">
                   The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''}, but it's anchored to the
                   UW guideline's {overAskAnchor === 'supervisor' ? '15% supervisory differential above a named direct report' : 'market-competitive floor (85% of the grade midpoint)'} — cite the guideline when you present it, not an unsupported reach.
@@ -563,7 +564,7 @@ export function ReportSetup({
               </>
             ) : (
               <>
-                <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <IconAlertTriangle size={ICON.compact} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <Text size="xs" c="orange.7">
                   The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''} — consider trimming value-adds for credibility.
                 </Text>
@@ -602,7 +603,7 @@ export function ReportSetup({
         </Checkbox.Group>
         <Group justify="flex-end" mt="md">
           <Tooltip label="Clear all factors, target, override and cohort back to defaults">
-            <Button variant="subtle" color="gray" size="xs" leftSection={<IconRefresh size={14} />} onClick={onReset}>
+            <Button variant="subtle" color="gray" size="xs" leftSection={<IconRefresh size={ICON.compact} />} onClick={onReset}>
               Reset setup
             </Button>
           </Tooltip>

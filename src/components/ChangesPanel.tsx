@@ -16,6 +16,7 @@ import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
 import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
+import { ICON } from '../lib/ui';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; school: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
@@ -428,7 +429,7 @@ export function ChangesPanel() {
       <Stack gap="sm">
         <Group justify="space-between">
           <Text size="sm" fw={600}>Biggest pay changes (continuing staff)</Text>
-          <Button size="compact-xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportMovers} disabled={!(raises ?? []).length}>
+          <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportMovers} disabled={!(raises ?? []).length}>
             CSV
           </Button>
         </Group>
@@ -513,7 +514,7 @@ export function ChangesPanel() {
         <Card withBorder padding="lg">
           <Group justify="space-between" mb="sm">
             <Text size="sm" fw={600}>Top title transitions (flows)</Text>
-            <Button size="compact-xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportFlows} disabled={!(flows ?? []).length}>
+            <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportFlows} disabled={!(flows ?? []).length}>
               CSV
             </Button>
           </Group>

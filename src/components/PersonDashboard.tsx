@@ -15,6 +15,7 @@ import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
+import { ICON } from '../lib/ui';
 
 interface Row {
   first_name: string | null;
@@ -261,7 +262,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       </div>
 
       {departed && (
-        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={ICON.control} />}>
           Not in the latest snapshot ({campusLatest?.label}) — may no longer be employed. Last seen {latest?.snapshot_label}.
         </Alert>
       )}

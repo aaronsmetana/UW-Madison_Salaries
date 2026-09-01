@@ -13,6 +13,7 @@ import { MiniBar } from './MiniBar';
 import { EmptyState } from './EmptyState';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
+import { ICON } from '../lib/ui';
 
 interface TitleRow {
   job_code: string; title: string; n: number; med: number | null;
@@ -121,7 +122,7 @@ export function TitlesPanel() {
       <Group justify="space-between" mb="sm" wrap="wrap" gap="sm">
         <TextInput
           size="md" w={340} placeholder="Search titles or job codes…"
-          leftSection={<IconSearch size={16} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
+          leftSection={<IconSearch size={ICON.control} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
         />
         <Group gap="sm" wrap="nowrap">
           <Group gap={6} wrap="nowrap">
@@ -134,7 +135,7 @@ export function TitlesPanel() {
             </Button.Group>
           </Group>
           <Text size="xs" c="dimmed">{num(view.length)} of {num((titles ?? []).length)} titles</Text>
-          <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportCsv} disabled={!titles?.length}>
+          <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv} disabled={!titles?.length}>
             CSV
           </Button>
         </Group>

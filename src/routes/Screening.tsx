@@ -346,7 +346,7 @@ export default function Screening() {
                       </Badge>
                     </Table.Td>
                     <Table.Td>
-                      <Button size="xs" variant="default" rightSection={<IconArrowRight size={14} />} onClick={() => draftReport(r)}>
+                      <Button size="xs" variant="default" rightSection={<IconArrowRight size={ICON.compact} />} onClick={() => draftReport(r)}>
                         Draft report
                       </Button>
                     </Table.Td>

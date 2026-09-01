@@ -4,6 +4,7 @@ import { IconBrandGithub } from '@tabler/icons-react';
 import { useSummary } from '../lib/hooks';
 import { fmtDate } from '../lib/format';
 import { REPO_URL } from '../lib/links';
+import { ICON } from '../lib/ui';
 
 /** App-wide footer: data provenance + generation date, and a link to the source repo. Rendered once
  *  from the shell, below every route, so this context doesn't rely on a visitor finding Data · About. */
@@ -25,7 +26,7 @@ export function Footer() {
       </Text>
       <Anchor href={REPO_URL} target="_blank" rel="noopener noreferrer" c="dimmed" underline="hover" size="xs">
         <Group gap={4} wrap="nowrap">
-          <IconBrandGithub size={14} />
+          <IconBrandGithub size={ICON.compact} />
           Source on GitHub
         </Group>
       </Anchor>

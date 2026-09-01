@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { VisuallyHidden, Group, ActionIcon, Tooltip, Table, Button } from '@mantine/core';
 import { IconTable, IconDownload } from '@tabler/icons-react';
 import { downloadCSV } from '../lib/csv';
+import { ICON } from '../lib/ui';
 
 /**
  * A chart's data as a table: a screen-reader/print-only fallback by default, with a small toggle to
@@ -32,7 +33,7 @@ export function ChartData({
         <Group justify="flex-end" mt={4}>
           <Tooltip label="View as table" withArrow>
             <ActionIcon size="sm" variant="subtle" color="gray" aria-label="View chart data as a table" aria-pressed={false} onClick={() => setVisible(true)}>
-              <IconTable size={14} />
+              <IconTable size={ICON.compact} />
             </ActionIcon>
           </Tooltip>
         </Group>
@@ -56,10 +57,10 @@ export function ChartData({
   return (
     <div>
       <Group justify="flex-end" gap={4} mt={4}>
-        <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconDownload size={12} />} onClick={exportCsv}>CSV</Button>
+        <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconDownload size={ICON.inline} />} onClick={exportCsv}>CSV</Button>
         <Tooltip label="Hide table" withArrow>
           <ActionIcon size="sm" variant="light" color="accent" aria-label="Hide chart data table" aria-pressed onClick={() => setVisible(false)}>
-            <IconTable size={14} />
+            <IconTable size={ICON.compact} />
           </ActionIcon>
         </Tooltip>
       </Group>

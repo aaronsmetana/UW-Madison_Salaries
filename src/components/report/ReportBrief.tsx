@@ -17,6 +17,7 @@ import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
 import { CAND, PEER, ordinal, fmtYearsToParity, type BriefModel, type ProofKind } from './model';
+import { ICON } from '../../lib/ui';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
 function fmtHistTick(d: string): string {
@@ -56,15 +57,15 @@ function useAnimatedNumber(target: number, duration = 500) {
 }
 
 const PROOF_ICON: Record<ProofKind, ReactNode> = {
-  market: <IconChartBar size={22} />,
-  inversion: <IconScale size={22} />,
-  sustained: <IconHistory size={22} />,
-  gradeband: <IconGauge size={22} />,
-  compression: <IconUserPlus size={22} />,
-  supervisory: <IconUsers size={22} />,
-  tenureTrend: <IconTrendingDown size={22} />,
-  guidelineCompression: <IconArrowsMinimize size={22} />,
-  marketFloor: <IconRuler2 size={22} />,
+  market: <IconChartBar size={ICON.feature} />,
+  inversion: <IconScale size={ICON.feature} />,
+  sustained: <IconHistory size={ICON.feature} />,
+  gradeband: <IconGauge size={ICON.feature} />,
+  compression: <IconUserPlus size={ICON.feature} />,
+  supervisory: <IconUsers size={ICON.feature} />,
+  tenureTrend: <IconTrendingDown size={ICON.feature} />,
+  guidelineCompression: <IconArrowsMinimize size={ICON.feature} />,
+  marketFloor: <IconRuler2 size={ICON.feature} />,
 };
 
 export function ReportBrief({ model, hovered, onHover }: {

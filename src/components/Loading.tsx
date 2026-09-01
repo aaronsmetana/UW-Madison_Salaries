@@ -3,6 +3,7 @@ import { Loader, Group, Text, Transition, Alert, Button, Card, Skeleton, Stack }
 import { IconAlertTriangle, IconWifiOff } from '@tabler/icons-react';
 import { useIsFetching } from '@tanstack/react-query';
 import { useDbReady, useSummary } from '../lib/hooks';
+import { ICON } from '../lib/ui';
 
 /**
  * Thin, indeterminate top progress bar shown whenever data is being fetched/parsed
@@ -63,7 +64,7 @@ export function OfflineBanner() {
   }, []);
   if (online) return null;
   return (
-    <Alert color="gray" variant="light" icon={<IconWifiOff size={16} />} mb="md">
+    <Alert color="gray" variant="light" icon={<IconWifiOff size={ICON.control} />} mb="md">
       <Text size="sm">Offline — showing cached data. Some pages or snapshots may be unavailable until you're back online.</Text>
     </Alert>
   );

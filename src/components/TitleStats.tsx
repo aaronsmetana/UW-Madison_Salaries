@@ -18,6 +18,7 @@ import { GlossaryTerm } from './GlossaryTerm';
 import { StatSkeleton, ChartSkeleton, TableSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
+import { ICON } from '../lib/ui';
 
 function ordinal(p: number): string {
   const r = Math.round(p);
@@ -250,7 +251,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           size="md"
           mb="sm"
           placeholder="Search within this title…"
-          leftSection={<IconSearch size={16} />}
+          leftSection={<IconSearch size={ICON.control} />}
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
         />

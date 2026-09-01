@@ -13,6 +13,7 @@ import { RankDeltaChip } from './Delta';
 import { SortableTh, type SortState } from './SortableTh';
 import { GlossaryTerm } from './GlossaryTerm';
 import { EmptyState } from './EmptyState';
+import { ICON } from '../lib/ui';
 
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
@@ -98,14 +99,14 @@ export function EarnersPanel() {
       <Group justify="space-between" mb="sm" wrap="wrap" gap="sm">
         <TextInput
           size="md" w={300} placeholder="Search name or title…"
-          leftSection={<IconSearch size={16} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
+          leftSection={<IconSearch size={ICON.control} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
         />
         <Group gap="sm" wrap="nowrap">
           <SegmentedToggle
             size="xs" label="Show top" value={String(limit)} onChange={(v) => setLimit(Number(v))}
             options={[{ id: '25', label: '25' }, { id: '100', label: '100' }, { id: '500', label: '500' }]}
           />
-          <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportCsv} disabled={!earners.length}>
+          <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv} disabled={!earners.length}>
             CSV
           </Button>
         </Group>

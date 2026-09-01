@@ -26,6 +26,7 @@ import { ChartData } from '../components/ChartData';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { barGradientDefs } from '../components/chartDefs';
+import { ICON } from '../lib/ui';
 
 interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
 
@@ -379,7 +380,7 @@ export default function School() {
           <Card withBorder padding="lg">
             <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
               <Text size="sm" fw={600}>Departments in {name}</Text>
-              <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportDeptsCsv} disabled={!depts?.length}>
+              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportDeptsCsv} disabled={!depts?.length}>
                 CSV
               </Button>
             </Group>

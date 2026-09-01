@@ -13,6 +13,7 @@ import { MiniBar } from './MiniBar';
 import { TrayButton } from './TrayButton';
 import { SortableTh } from './SortableTh';
 import { EmptyState } from './EmptyState';
+import { ICON } from '../lib/ui';
 
 interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null }
 interface DeptRow { department: string; headcount: number; med: number | null }
@@ -122,13 +123,13 @@ export function SchoolsPanel() {
           size="md"
           w={320}
           placeholder="Search divisions…"
-          leftSection={<IconSearch size={16} />}
+          leftSection={<IconSearch size={ICON.control} />}
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
         />
         <Group gap="sm" wrap="nowrap">
           <Text size="xs" c="dimmed">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
-          <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} onClick={exportCsv} disabled={!schools?.length}>
+          <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv} disabled={!schools?.length}>
             CSV
           </Button>
         </Group>
@@ -166,7 +167,7 @@ export function SchoolsPanel() {
                           aria-label={open ? `Collapse ${s.school}` : `Expand ${s.school} departments`}
                           onClick={() => toggle(s.school)}
                         >
-                          <IconChevronRight size={15} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }} />
+                          <IconChevronRight size={ICON.compact} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }} />
                         </ActionIcon>
                         <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500} lineClamp={1}>
                           {s.school}

@@ -1,5 +1,6 @@
 import { Button } from '@mantine/core';
 import { IconPlus, IconCheck } from '@tabler/icons-react';
+import { ICON } from '../lib/ui';
 
 /**
  * The one "add to compare tray" pill, used in every row-level table (Schools, Titles, Person peers).
@@ -25,7 +26,7 @@ export function TrayButton({
       variant={inTray ? 'light' : 'outline'}
       color={inTray ? 'pos' : 'accent'}
       radius="xl"
-      leftSection={inTray ? <IconCheck size={12} /> : <IconPlus size={12} />}
+      leftSection={inTray ? <IconCheck size={ICON.inline} /> : <IconPlus size={ICON.inline} />}
       disabled={inTray}
       onClick={(e) => {
         if (stopPropagation) e.stopPropagation();

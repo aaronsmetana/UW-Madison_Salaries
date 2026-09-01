@@ -26,6 +26,7 @@ import { ControlBar } from '../app/ControlBar';
 import { dropdownProps } from '../lib/selectProps';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { encodeSel, decodeSel } from '../lib/share';
+import { ICON } from '../lib/ui';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
@@ -320,11 +321,11 @@ export default function Compare() {
       <Card withBorder padding="lg">
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
           <Paper p="sm" withBorder shadow="sm">
-            <Group gap={6} mb={8}><IconUser size={15} /><Eyebrow>Add person</Eyebrow></Group>
+            <Group gap={6} mb={8}><IconUser size={ICON.compact} /><Eyebrow>Add person</Eyebrow></Group>
             <SearchBox placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Paper>
           <Paper p="sm" withBorder shadow="sm">
-            <Group gap={6} mb={8}><IconBriefcase size={15} /><Eyebrow>Add title</Eyebrow></Group>
+            <Group gap={6} mb={8}><IconBriefcase size={ICON.compact} /><Eyebrow>Add title</Eyebrow></Group>
             <Select
               {...dropdownProps('md')}
               placeholder="Search a title…"
@@ -340,7 +341,7 @@ export default function Compare() {
             />
           </Paper>
           <Paper p="sm" withBorder shadow="sm">
-            <Group gap={6} mb={8}><IconBuildingBank size={15} /><Eyebrow>Add school / division</Eyebrow></Group>
+            <Group gap={6} mb={8}><IconBuildingBank size={ICON.compact} /><Eyebrow>Add school / division</Eyebrow></Group>
             <Select
               {...dropdownProps('md')}
               placeholder="Search a school…"

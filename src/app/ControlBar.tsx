@@ -10,6 +10,7 @@ import { FilterControls, ActiveFilters } from '../components/FilterControls';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { Eyebrow } from '../components/Eyebrow';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
+import { ICON } from '../lib/ui';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
 const METRIC_HELP: Record<Metric, string> = {
@@ -70,7 +71,7 @@ function ScopeMenu({ scope, setScope, options }: {
           radius={DROPDOWN_TIERS.sm.radius}
           w={180}
           aria-label="Scope"
-          leftSection={<IconBuildingBank size={15} />}
+          leftSection={<IconBuildingBank size={ICON.compact} />}
           leftSectionWidth={30}
           rightSection={<Combobox.Chevron />}
           rightSectionPointerEvents="none"
@@ -87,7 +88,7 @@ function ScopeMenu({ scope, setScope, options }: {
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
             placeholder="Filter divisions…"
-            leftSection={<IconSearch size={14} />}
+            leftSection={<IconSearch size={ICON.compact} />}
           />
         </div>
         {/* Scroll on this wrapper (not the padded list), so the scrollbar sits outside the 6px island
@@ -169,7 +170,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
       size="xs"
       variant="subtle"
       color="gray"
-      leftSection={<IconRefresh size={14} />}
+      leftSection={<IconRefresh size={ICON.compact} />}
       onClick={() => { setScope({ kind: 'all' }); setMetric('fte'); setActiveSnapshot(null); clearFilters(); }}
       disabled={atDefaults}
     >
@@ -191,7 +192,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
           w={180}
           maw="100%"
           aria-label="Snapshot"
-          leftSection={<IconCalendar size={15} />}
+          leftSection={<IconCalendar size={ICON.compact} />}
           leftSectionWidth={30}
           data={snapOptions}
           value={snapValue}
@@ -222,7 +223,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         <HoverCard width={300} shadow="md" position="bottom" withArrow>
           <HoverCard.Target>
             <ActionIcon variant="subtle" color="gray" size="sm" aria-label="What do these pay options mean?">
-              <IconInfoCircle size={16} />
+              <IconInfoCircle size={ICON.control} />
             </ActionIcon>
           </HoverCard.Target>
           <HoverCard.Dropdown>
