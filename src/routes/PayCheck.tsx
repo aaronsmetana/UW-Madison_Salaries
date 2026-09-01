@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Card, Group, Select, NumberInput, type ComboboxItem } from '@mantine/core';
 import { IconChevronDown, IconChartHistogram } from '@tabler/icons-react';
@@ -35,9 +35,15 @@ export default function PayCheck() {
   const [params, setParams] = useSearchParams();
   const code = params.get('code') || null;
   const school = params.get('sch') || null;
-  const salStr = params.get('sal');
-  const salaryNum = salStr ? Number(salStr) : NaN;
-  const pinSalary = Number.isFinite(salaryNum) && salaryNum > 0 ? salaryNum : null;
+
+  // The pinned salary is deliberately NOT in the URL, unlike `code` and `sch`. This page promises the
+  // figure you type "is never uploaded or stored", and a query parameter breaks that promise in three
+  // places at once: it lands in browser history, it rides along in any link you copy or share, and —
+  // because GitHub Pages has no rewrite and deep links bounce through public/404.html — it ends up in
+  // a request URL sent to GitHub's servers. Component state keeps the claim literally true. Nobody
+  // wants to share their own salary in a link anyway, so nothing of value is lost.
+  const [pinInput, setPinInput] = useState<number | string>('');
+  const pinSalary = typeof pinInput === 'number' && Number.isFinite(pinInput) && pinInput > 0 ? pinInput : null;
 
   const snap = useActiveSnapshotId();
   const { metric } = useControls();
@@ -119,7 +125,7 @@ export default function PayCheck() {
     <Stack gap="lg">
       <PageHeader
         title="Search Title Salaries"
-        description="Pick a title to see its pay distribution, the people in it, and how it varies by school. Optionally filter to a school or enter a salary to pin where it lands. Any salary you enter stays in your browser."
+        description="Pick a title to see its pay distribution, the people in it, and how it varies by school. Optionally filter to a school or enter a salary to pin where it lands. A salary you enter stays on this page and never leaves your browser."
       />
 
       <Card padding="lg">
@@ -133,6 +139,10 @@ export default function PayCheck() {
             value={code}
             onChange={(v) => setP('code', v)}
             searchable
+            // ~1,300 titles, each rendered through a custom renderOption. Mantine mounts every option
+            // when no limit is set, so opening this dropdown built ~1,300 DOM subtrees before showing
+            // anything. The field is searchable, so the full set stays reachable by typing.
+            limit={50}
             w={440}
             nothingFoundMessage="No matching title"
             rightSection={<IconChevronDown size={18} stroke={2} />}
@@ -153,8 +163,8 @@ export default function PayCheck() {
             size="md"
             label="Salary to pin (optional)"
             placeholder="e.g. 120000"
-            value={salStr ? Number(salStr) : ''}
-            onChange={(v) => setP('sal', typeof v === 'number' ? v : null)}
+            value={pinInput}
+            onChange={setPinInput}
             min={0}
             step={1000}
             thousandSeparator=","
@@ -162,7 +172,10 @@ export default function PayCheck() {
             w={200}
           />
         </Group>
-        <Text size="xs" c="dimmed" mt="xs">Private — any salary you enter is never uploaded or stored.</Text>
+        <Text size="xs" c="dimmed" mt="xs">
+          Private — the salary you enter stays on this page. It is never uploaded, saved, or put in the
+          address bar, so it can&rsquo;t end up in your history or in a link you share.
+        </Text>
       </Card>
 
       {!code || !snap ? (

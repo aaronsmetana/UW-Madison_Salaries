@@ -26,10 +26,15 @@ export function EmptyState({
         <ThemeIcon size={size === 'sm' ? 36 : 48} radius="xl" variant="light" color="gray">
           {icon}
         </ThemeIcon>
+        {/* The `md` title is an h2, not an h4: it is the page's main content when a page has nothing
+            to show yet (PayCheck, Screening, Reports), sitting directly under PageHeader's h1, and an
+            h1 -> h4 jump breaks the outline screen-reader users navigate by. `fz` keeps the old visual
+            size. The `sm` variant stays a Text, not a heading, because it labels a panel inside an
+            already-headed section. */}
         {size === 'sm' ? (
           <Text fw={600} ta="center">{title}</Text>
         ) : (
-          <Title order={4} ta="center">{title}</Title>
+          <Title order={2} fz="h4" ta="center">{title}</Title>
         )}
         {hint != null && <Text c="dimmed" ta="center" maw={420} size="sm">{hint}</Text>}
         {action}

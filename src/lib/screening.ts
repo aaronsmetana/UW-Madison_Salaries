@@ -80,12 +80,39 @@ export function computeScreeningResults(opts: {
 }): ScreeningResult[] {
   const { subjects, cohortRows, payHistory, grades, minCohortN, toReal } = opts;
 
-  const cohortByJob = new Map<string, CohortMember[]>();
-  for (const r of cohortRows) {
-    const list = cohortByJob.get(r.job_code);
+  // Bucket the cohort by job code AND pay-basis class up front, rather than re-filtering the whole
+  // job-code cohort for every subject. The old shape called `sameBasis` — which lowercases, trims and
+  // searches an equivalence table — once per (subject x cohort-member) pair, so an unscoped run over a
+  // title like Professor did roughly n^2 string comparisons for that title alone, on the main thread.
+  // Bucketing is one pass; each subject then only walks its own (much smaller) bucket to drop itself.
+  //
+  // The null handling has to mirror `sameBasis` exactly or results would change: a blank basis on
+  // EITHER side means "unknown, don't exclude". So members with no basis go in their own bucket and
+  // are appended to every subject's cohort, and a subject with no basis gets the whole job code.
+  const byJobAndBasis = new Map<string, CohortMember[]>();
+  const byJob = new Map<string, CohortMember[]>();
+  const push = (m: Map<string, CohortMember[]>, key: string, r: CohortMember) => {
+    const list = m.get(key);
     if (list) list.push(r);
-    else cohortByJob.set(r.job_code, [r]);
+    else m.set(key, [r]);
+  };
+  const NO_BASIS = '\u0000none';
+  const basisKey = (b: string | null | undefined) => (b && b.trim() ? b.trim().toLowerCase() : NO_BASIS);
+  for (const r of cohortRows) {
+    push(byJob, r.job_code, r);
+    push(byJobAndBasis, `${r.job_code}|${basisKey(r.comp_basis)}`, r);
   }
+
+  /** Everyone in `job_code` whose basis is comparable to `basis`, self included (callers drop self). */
+  const cohortFor = (job_code: string, basis: string | null | undefined): CohortMember[] => {
+    if (basisKey(basis) === NO_BASIS) return byJob.get(job_code) ?? []; // unknown subject basis matches all
+    const sameClass = byJobAndBasis.get(`${job_code}|${basisKey(basis)}`) ?? [];
+    // Other spellings of the same basis (the source relabeled the column mid-series).
+    const aliases = (byJob.get(job_code) ?? []).filter(
+      (r) => basisKey(r.comp_basis) !== basisKey(basis) && sameBasis(basis, r.comp_basis)
+    );
+    return aliases.length ? [...sameClass, ...aliases] : sameClass;
+  };
 
   const historyByPerson = new Map<string, PayPoint[]>();
   for (const p of payHistory) {
@@ -95,9 +122,8 @@ export function computeScreeningResults(opts: {
   }
 
   return subjects.map((s) => {
-    const wholeCohort = s.job_code ? cohortByJob.get(s.job_code) ?? [] : [];
-    const cohort = wholeCohort.filter(
-      (r) => r.person_key !== s.person_key && sameBasis(s.comp_basis, r.comp_basis)
+    const cohort = (s.job_code ? cohortFor(s.job_code, s.comp_basis) : []).filter(
+      (r) => r.person_key !== s.person_key
     );
     const tooFewPeers = cohort.length < minCohortN;
     const cohortForStats = cohort.map((r) => ({ pay: r.pay, tenure: r.tenure }));

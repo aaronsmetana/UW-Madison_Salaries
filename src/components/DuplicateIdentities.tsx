@@ -113,7 +113,8 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
   return (
     <Card withBorder padding="lg" id="duplicates">
       <Group justify="space-between" mb="xs" wrap="wrap" gap="sm">
-        <Title order={4}>Possible duplicate identities (review)</Title>
+        {/* h3: a review panel nested under Data · About's h2 sections. */}
+        <Title order={3} fz="h4">Possible duplicate identities (review)</Title>
         {flaggedCount > 0 && (
           <Switch size="xs" label="Flagged only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.currentTarget.checked)} />
         )}

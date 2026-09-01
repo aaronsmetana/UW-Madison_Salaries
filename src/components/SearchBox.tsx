@@ -73,23 +73,32 @@ export function SearchBox({
   const fuzzyEnabled = enabled && !primaryFetching && (primaryHits?.length ?? 0) === 0 && q.length >= 3;
   const { data: fuzzyHits, isFetching: fuzzyFetching } = useSql<Hit>(
     ['search-fuzzy', q],
-    `WITH m AS (
-        SELECT person_key, first_name, last_name, school, title, hire_year, snapshot_date,
-               jaro_winkler_similarity(lower(first_name || ' ' || last_name), ${sqlStr(q)}) AS sim
+    // Collapse to one row per person BEFORE scoring. This used to compute a Jaro-Winkler similarity
+    // for every row — ~250k of them, i.e. each person once per snapshot — on every debounce that
+    // found no exact match, which is constantly while someone types a name the data doesn't have.
+    // The score depends only on the name, so all but one evaluation per person was waste: ~22k
+    // comparisons instead of ~250k, for identical results.
+    //
+    // Deliberately NOT prefiltered on a first letter, which is the tempting version of this: a
+    // typo IN the first letter still scores well above the threshold (jaro_winkler('jenneth poss',
+    // 'kenneth poss') is ~0.94), so that filter would silently drop exactly the misspellings this
+    // fallback exists to catch.
+    `WITH people AS (
+        SELECT person_key,
+           arg_max(first_name, snapshot_date) AS fn,
+           arg_max(last_name, snapshot_date)  AS ln,
+           arg_max(school, snapshot_date)     AS school,
+           arg_max(title, snapshot_date)      AS title,
+           arg_max(hire_year, snapshot_date)  AS hire_year,
+           max(snapshot_date)                 AS last_date
         FROM salaries
+        GROUP BY person_key
      )
-     SELECT person_key,
-        arg_max(first_name, snapshot_date) AS fn,
-        arg_max(last_name, snapshot_date)  AS ln,
-        arg_max(school, snapshot_date)     AS school,
-        arg_max(title, snapshot_date)      AS title,
-        arg_max(hire_year, snapshot_date)  AS hire_year,
-        1                                  AS latest_appts,
-        max(snapshot_date)                 AS last_date,
-        max(sim)                           AS sim
-     FROM m
-     GROUP BY person_key
-     HAVING max(sim) > 0.86
+     SELECT person_key, fn, ln, school, title, hire_year, last_date,
+        1 AS latest_appts,
+        jaro_winkler_similarity(lower(fn || ' ' || ln), ${sqlStr(q)}) AS sim
+     FROM people
+     WHERE jaro_winkler_similarity(lower(fn || ' ' || ln), ${sqlStr(q)}) > 0.86
      ORDER BY sim DESC
      LIMIT 8`,
     fuzzyEnabled

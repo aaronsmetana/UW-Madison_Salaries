@@ -82,3 +82,26 @@ for (const { name, width, height } of [
     }
   });
 }
+
+// PayCheck tells the reader the salary they type "is never uploaded, saved, or put in the address
+// bar". It used to live in a `?sal=` query parameter, which broke that in three places at once:
+// browser history, any copied link, and — because GitHub Pages has no rewrite and deep links bounce
+// through public/404.html — a request URL sent to GitHub's servers. This asserts the promise holds.
+test('a pinned salary never reaches the URL', async ({ page }) => {
+  await page.goto('./paycheck');
+
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await expect(title).toBeVisible({ timeout: 60_000 });
+  await title.click();
+  await page.getByRole('option').first().click();
+
+  const secret = '123456';
+  await page.getByRole('textbox', { name: /Salary to pin/ }).fill(secret);
+  // Let any state/URL write settle before reading the address bar.
+  await page.waitForTimeout(1_000);
+
+  expect(page.url()).not.toContain(secret);
+  expect(page.url()).not.toContain('sal=');
+  // The value is still doing its job on the page, just not in the URL.
+  await expect(page.getByRole('textbox', { name: /Salary to pin/ })).toHaveValue(/123,?456/);
+});

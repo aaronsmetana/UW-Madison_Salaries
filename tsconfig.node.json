@@ -1,0 +1,24 @@
+{
+  // The tooling half of the repo. tsconfig.json covers `src` only, which left the Playwright specs
+  // and the 463-line ETL outside `npm run build`'s typecheck entirely — a broken E2E helper or a
+  // renamed export in scripts/lib would only surface when CI actually ran them.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node"]
+  },
+  // scripts/*.mjs are deliberately NOT here: they carry no annotations, so `checkJs` reports 118
+  // implicit-any findings that are "this is plain JS", not defects. ESLint covers them instead — it
+  // is the tool that catches what actually goes wrong there (unused bindings, undefined references).
+  "include": ["e2e", "playwright.config.ts", "vite.config.ts"]
+}

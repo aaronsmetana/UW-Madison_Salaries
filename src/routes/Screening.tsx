@@ -1,20 +1,22 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea } from '@mantine/core';
-import { IconListSearch, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
+import { IconListSearch, IconInfoCircle, IconArrowRight, IconDownload } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
+import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
 import { Eyebrow } from '../components/Eyebrow';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
-import { usd, fmtYears, fullName } from '../lib/format';
+import { usd, num, fmtYears, fullName } from '../lib/format';
 import { toReal } from '../lib/cpi';
-import { useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
+import { useSql, useActiveSnapshotId, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { computeScreeningResults, type ScreeningResult } from '../lib/screening';
+import { downloadCSV } from '../lib/csv';
 
 const TENURE_EXPR = `date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25`;
 
@@ -27,18 +29,56 @@ interface CohortRowSql { person_key: string; job_code: string; comp_basis: strin
 interface HistRowSql { person_key: string; snapshot_date: string; pay: number }
 
 const PAGE_SIZE = 100;
+const DEFAULT_MIN_N = 4;
 
 export default function Screening() {
   const nav = useNavigate();
   const { add } = useTray();
   const snap = useActiveSnapshotId();
   const { data: grades } = useGrades();
+  const { data: summary } = useSummary();
+  const campusHeadcount = summary?.latest?.headcount ?? null;
 
-  const [school, setSchool] = useState<string>('');
-  const [department, setDepartment] = useState<string>('');
-  const [minN, setMinN] = useState<number>(4);
-  const [runParams, setRunParams] = useState<{ school: string; department: string; minN: number } | null>(null);
+  // The run lives in the URL, like every other view in this app ("Controls live in the URL -> every
+  // view is shareable/bookmarkable", state/controls.tsx). A screen is the most link-worthy thing here
+  // — it is what you send to a steward — and it used to evaporate on reload.
+  const [params, setParams] = useSearchParams();
+  const runParams = useMemo(() => {
+    if (!params.get('run')) return null;
+    const n = Number(params.get('minN'));
+    return {
+      school: params.get('sch') ?? '',
+      department: params.get('dept') ?? '',
+      minN: Number.isFinite(n) && n >= 2 ? n : DEFAULT_MIN_N,
+    };
+  }, [params]);
+
+  // Form state is seeded from the URL but edits freely until Screen is pressed, so typing in the
+  // pickers doesn't re-run the query on every keystroke.
+  const [school, setSchool] = useState<string>(() => params.get('sch') ?? '');
+  const [department, setDepartment] = useState<string>(() => params.get('dept') ?? '');
+  const [minN, setMinN] = useState<number>(() => {
+    const n = Number(params.get('minN'));
+    return Number.isFinite(n) && n >= 2 ? n : DEFAULT_MIN_N;
+  });
   const [showAll, setShowAll] = useState(false);
+
+  const unscoped = !school && !department;
+
+  const run = () => {
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        n.set('run', '1');
+        if (school) n.set('sch', school); else n.delete('sch');
+        if (department) n.set('dept', department); else n.delete('dept');
+        if (minN !== DEFAULT_MIN_N) n.set('minN', String(minN)); else n.delete('minN');
+        return n;
+      },
+      { replace: true }
+    );
+    setShowAll(false);
+  };
 
   const { data: schoolOpts } = useSql<{ school: string }>(
     ['screen-schools', snap ?? ''],
@@ -127,7 +167,51 @@ export default function Screening() {
     }).sort((a, b) => b.score - a.score);
   }, [runParams, subjects, cohortRows, histRows, grades]);
 
-  const visible = showAll ? results : results.slice(0, PAGE_SIZE);
+  // Sortable like every other table in the app; score-descending stays the default because that is
+  // the ranking the page exists to produce.
+  type ScreenSortKey = 'name' | 'title' | 'school' | 'tenure' | 'pay' | 'score';
+  const [sort, setSort] = useState<SortState<ScreenSortKey>>({ key: 'score', dir: 'desc' });
+  const sorted = useMemo(() => {
+    const { key, dir } = sort;
+    const val = (r: ScreeningResult) =>
+      key === 'name' ? r.name
+      : key === 'title' ? (r.title ?? '')
+      : key === 'school' ? (r.school ?? '')
+      : key === 'tenure' ? (r.tenure ?? -1)
+      : key === 'pay' ? r.pay
+      : r.score;
+    return [...results].sort((a, b) => {
+      const x = val(a), y = val(b);
+      const cmp = typeof x === 'string' ? x.localeCompare(y as string) : (x as number) - (y as number);
+      return dir === 'asc' ? cmp : -cmp;
+    });
+  }, [results, sort]);
+
+  const visible = showAll ? sorted : sorted.slice(0, PAGE_SIZE);
+
+  // Export the whole ranking, not just the visible page — the point of a screen is to hand the list
+  // to someone. Flags are flattened to their own columns so the CSV is filterable in a spreadsheet.
+  const exportCsv = () =>
+    downloadCSV(
+      `uw-screening-${runParams?.school || 'all'}${runParams?.department ? `-${runParams.department}` : ''}-${snap ?? 'latest'}.csv`,
+      sorted.map((r) => ({
+        name: r.name,
+        title: r.title ?? '',
+        school: r.school ?? '',
+        department: r.department ?? '',
+        tenure_years: r.tenure != null ? r.tenure.toFixed(1) : '',
+        pay: Math.round(r.pay),
+        cohort_n: r.cohortN,
+        percentile: r.percentile ?? '',
+        gap_to_median: r.gapToMed != null ? Math.round(r.gapToMed) : '',
+        tenure_inversions: r.tenureInvCount,
+        compression: r.compressionCount,
+        below_market: r.belowMarket ? 'yes' : 'no',
+        real_dollar_decline: r.realErosion ? 'yes' : 'no',
+        case_strength: r.scoreLabel,
+        score: r.score,
+      }))
+    );
 
   const draftReport = (r: ScreeningResult) => {
     add({ type: 'person', id: r.key, label: r.name });
@@ -173,18 +257,28 @@ export default function Screening() {
             label="Min. cohort size"
             description="Below this, parity/compression are skipped"
             value={minN}
-            onChange={(v) => setMinN(typeof v === 'number' ? v : 4)}
+            onChange={(v) => setMinN(typeof v === 'number' ? v : DEFAULT_MIN_N)}
             min={2}
             max={50}
             w={180}
           />
           <Button
             leftSection={<IconListSearch size={ICON.control} />}
-            onClick={() => { setRunParams({ school, department, minN }); setShowAll(false); }}
+            onClick={run}
           >
-            Screen
+            {unscoped && campusHeadcount != null ? `Screen all ${num(campusHeadcount)}` : 'Screen'}
           </Button>
         </Group>
+        {/* An unscoped run pulls every employee and their full pay history into the browser and scores
+            each against their whole title cohort — tens of millions of operations on the main thread,
+            behind a single "Screening…" label. It is a legitimate thing to want; it just shouldn't be
+            the thing you fall into because the empty state suggested it. Say what it costs. */}
+        {unscoped && (
+          <Text size="xs" c="dimmed" mt="sm">
+            No scope selected — this screens every employee at once and can take a while to compute.
+            Picking a school or department is much faster.
+          </Text>
+        )}
       </Card>
 
       <Alert icon={<IconInfoCircle size={ICON.control} />} color="accent" variant="light">
@@ -196,7 +290,7 @@ export default function Screening() {
         <EmptyState
           icon={<IconListSearch size={ICON.feature} />}
           title="No screen run yet"
-          hint="Pick a scope above (or leave it as All schools) and click Screen to rank everyone by case strength."
+          hint="Pick a school or department above, then click Screen to rank everyone in it by case strength."
         />
       ) : loading ? (
         <LoadingState label="Screening…" />
@@ -204,22 +298,25 @@ export default function Screening() {
         <EmptyState icon={<IconListSearch size={ICON.feature} />} title="No one in scope" hint="Try a broader school/department." />
       ) : (
         <Card withBorder padding={0}>
-          <Group justify="space-between" p="md" pb="xs">
+          <Group justify="space-between" p="md" pb="xs" wrap="wrap" gap="sm">
             <Text size="sm" c="dimmed">
               {results.length} people ranked by case strength{showAll || results.length <= PAGE_SIZE ? '' : ` — showing top ${PAGE_SIZE}`}.
             </Text>
+            <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.inline} />} onClick={exportCsv}>
+              CSV
+            </Button>
           </Group>
           <ScrollArea.Autosize mah={720} type="auto">
             <Table stickyHeader striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Title</Table.Th>
-                  <Table.Th>School</Table.Th>
-                  <Table.Th ta="right">Tenure</Table.Th>
-                  <Table.Th ta="right">Pay</Table.Th>
+                  <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
+                  <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
+                  <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
+                  <SortableTh sortKey="tenure" label="Tenure" sort={sort} onSort={setSort} align="right" />
+                  <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
                   <Table.Th>Flags</Table.Th>
-                  <Table.Th ta="right">Case strength</Table.Th>
+                  <SortableTh sortKey="score" label="Case strength" sort={sort} onSort={setSort} align="right" />
                   <Table.Th w={140} />
                 </Table.Tr>
               </Table.Thead>

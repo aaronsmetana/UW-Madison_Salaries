@@ -10,7 +10,16 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react-hooks/recommended',
   ],
-  ignorePatterns: ['dist', 'public', 'node_modules', 'scripts', '*.config.*', '.eslintrc.cjs'],
+  // `scripts` is linted: the 463-line ETL is the least-covered code in the repo (no typecheck, and
+  // its own tests only reach scripts/lib), so the one automated check it can have should run.
+  ignorePatterns: ['dist', 'public', 'node_modules', '*.config.*', '.eslintrc.cjs'],
+  overrides: [
+    {
+      // Node tooling, not browser code: `process`, `console` and friends are expected here.
+      files: ['scripts/**/*.mjs'],
+      env: { node: true, browser: false },
+    },
+  ],
   rules: {
     'no-undef': 'off', // TypeScript handles this
     '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],

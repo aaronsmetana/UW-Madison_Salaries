@@ -17,9 +17,12 @@ async function runAxe(page: import('@playwright/test').Page) {
   const results = await new AxeBuilder({ page })
     // Mantine's own Popover/Combobox target wrapper (every Select/SearchBox in the app) renders
     // `aria-expanded` on a plain `<div aria-haspopup="dialog">` with no explicit interactive role —
-    // a Mantine-internal markup choice, not something app code controls. Verified via direct DOM
-    // inspection (id="mantine-*-target"); excluded here rather than chased through library internals.
-    .disableRules(['aria-allowed-attr'])
+    // a Mantine-internal markup choice, not something app code controls.
+    //
+    // Scoped by selector rather than `.disableRules(['aria-allowed-attr'])`, which switched the rule
+    // off for the whole page: any genuine misuse of an ARIA attribute in app code would have been
+    // waved through with it. This is the same narrow tool already used for the two known gaps below.
+    .exclude('[id^="mantine-"][id$="-target"]')
     // .orange-light-text (ReportSetup's "weak case" badge + "strong comparator" suggestion chips):
     // already darkened to orange-9, the darkest stock shade, which only reaches ~3.9:1 against the
     // badge's own pale-orange fill — same-hue text-on-tint has no more headroom left in this ramp.
@@ -32,7 +35,13 @@ async function runAxe(page: import('@playwright/test').Page) {
     // Narrow, known gap — excluded here rather than left to intermittently fail this gate.
     .exclude('.accent-adaptive-text')
     .analyze();
-  const bad = results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+  // `heading-order` is scored *moderate*, so a critical/serious gate never sees it — which is how
+  // routes drifted to an h1 followed directly by an h3 or h4. Heading structure is the main way a
+  // screen-reader user navigates a long page, so it's opted in explicitly alongside the severity gate.
+  const ALSO_FAIL = new Set(['heading-order']);
+  const bad = results.violations.filter(
+    (v) => v.impact === 'critical' || v.impact === 'serious' || ALSO_FAIL.has(v.id)
+  );
   if (bad.length) {
     console.log(JSON.stringify(bad.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => n.target) })), null, 2));
   }

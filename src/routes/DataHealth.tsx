@@ -52,7 +52,8 @@ function SectionTitle({ id, children, onCopy }: { id: string; children: ReactNod
   const url = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}#${id}` : `#${id}`;
   return (
     <Group gap={6} wrap="nowrap" className="section-head">
-      <Title order={4}>{children}</Title>
+      {/* h2: these are the page's top-level sections, directly under PageHeader's h1. */}
+      <Title order={2} fz="h4">{children}</Title>
       <CopyButton value={url} timeout={1400}>
         {({ copied, copy }) => (
           <Tooltip label={copied ? 'Link copied' : 'Copy link to this section'} withArrow>

@@ -22,14 +22,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
       - name: Test
         run: npm run test
       - name: Build data (ETL → public/data)
@@ -40,8 +42,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: E2E
         run: npm run e2e
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: dist
 
@@ -53,6 +55,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
-# Hardening note: pin these actions to commit SHAs (e.g. actions/checkout@<sha>)
-# once you're set up, per the plan's supply-chain hardening.
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+# Actions are pinned to commit SHAs, not tags. A tag is mutable: whoever controls the action's repo
+# can repoint v4 at new code, and this workflow runs with a token that can publish the site. The
+# trailing comment records which release each SHA was, so these stay legible when you come to bump
+# them — resolve a new one with:
+#   curl -sS https://api.github.com/repos/actions/checkout/git/ref/tags/v4

@@ -70,6 +70,29 @@ describe('computeScreeningResults', () => {
     expect(results[0].cohortN).toBe(3); // all three count as the same 12-month basis
   });
 
+  // The cohort lookup buckets by (job code, basis) instead of re-filtering per subject, and a subject
+  // whose OWN basis is unknown takes a different branch: `sameBasis` treats a blank on either side as
+  // "don't exclude", so such a subject must still see the whole job code rather than an empty bucket.
+  it('gives a subject with no recorded pay basis the whole job-code cohort', () => {
+    const cohortRows: CohortMember[] = [
+      { person_key: 'p1', job_code: 'J1', comp_basis: '12 Month', pay: 62_000, tenure: 8 },
+      { person_key: 'p2', job_code: 'J1', comp_basis: '9 Month', pay: 63_000, tenure: 8 },
+      { person_key: 'p3', job_code: 'J1', comp_basis: null, pay: 61_000, tenure: 8 },
+      { person_key: 'other', job_code: 'J2', comp_basis: '12 Month', pay: 99_000, tenure: 8 }, // different title
+    ];
+    for (const unknown of [null, '', '   ']) {
+      const results = computeScreeningResults({
+        subjects: [subject({ comp_basis: unknown })],
+        cohortRows,
+        payHistory: [],
+        grades: [],
+        minCohortN: 1,
+        toReal: noReal,
+      });
+      expect(results[0].cohortN, `basis ${JSON.stringify(unknown)}`).toBe(3); // all of J1, none of J2
+    }
+  });
+
   it('marks tooFewPeers below the minimum and skips parity/compression scoring', () => {
     const cohortRows: CohortMember[] = [
       { person_key: 'p1', job_code: 'J1', comp_basis: '12 Month', pay: 90_000, tenure: 1 },

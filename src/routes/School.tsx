@@ -11,6 +11,7 @@ import {
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
+import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
@@ -163,7 +164,7 @@ export default function School() {
     enabled
   );
   type DeptSortKey = 'department' | 'headcount' | 'med' | 'payroll';
-  const [deptSort, setDeptSort] = useState<{ key: DeptSortKey; dir: 'asc' | 'desc' }>({ key: 'headcount', dir: 'desc' });
+  const [deptSort, setDeptSort] = useState<SortState<DeptSortKey>>({ key: 'headcount', dir: 'desc' });
   const deptView = useMemo(() => {
     const rows = depts ?? [];
     const { key, dir } = deptSort;
@@ -174,16 +175,6 @@ export default function School() {
     return sorted;
   }, [depts, deptSort]);
   const maxDeptHc = useMemo(() => Math.max(1, ...(depts ?? []).map((d) => d.headcount)), [depts]);
-  const deptSortTh = (key: DeptSortKey, label: string, align?: 'right') => (
-    <Table.Th
-      ta={align}
-      aria-sort={deptSort.key === key ? (deptSort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
-      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
-      onClick={() => setDeptSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))}
-    >
-      {label}{deptSort.key === key ? (deptSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
-    </Table.Th>
-  );
   const exportDeptsCsv = () =>
     downloadCSV(
       `uw-${name}-departments-${snap ?? 'latest'}.csv`,
@@ -403,10 +394,10 @@ export default function School() {
                 <Table stickyHeader miw={560}>
                 <Table.Thead>
                   <Table.Tr>
-                    {deptSortTh('department', 'Department')}
-                    {deptSortTh('headcount', 'Headcount', 'right')}
-                    {deptSortTh('med', 'Median', 'right')}
-                    {deptSortTh('payroll', 'Total payroll', 'right')}
+                    <SortableTh sortKey="department" label="Department" sort={deptSort} onSort={setDeptSort} />
+                    <SortableTh sortKey="headcount" label="Headcount" sort={deptSort} onSort={setDeptSort} align="right" />
+                    <SortableTh sortKey="med" label="Median" sort={deptSort} onSort={setDeptSort} align="right" />
+                    <SortableTh sortKey="payroll" label="Total payroll" sort={deptSort} onSort={setDeptSort} align="right" />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
