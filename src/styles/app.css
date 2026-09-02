@@ -90,11 +90,19 @@
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
-  /* Elevation ramp (light): a cool paper canvas, white cards, a sunken well for inset areas. */
-  --page-bg: #eef1f5;
+  /* Elevation ramp (light): a cool paper canvas, white cards, a sunken well for inset areas.
+     `--page-bg` was #eef1f5, a distinctly blue grey; the saturation is dropped (not the coolness — see
+     the dark block's note) because it was tinting every neutral on the page toward blue-grey wash.
+     `--chrome` is the step that was missing: header, sidebar, cards, and the search input all painted
+     the same #ffffff, so the app shell was indistinguishable from the content inside it. */
+  --page-bg: #f3f4f5;
+  --chrome: #f8f9fa;
   --surface: #ffffff;
+  --surface-sunken: #eceef0;
+  /* "Raised" on a white sheet cannot be a lighter colour — there isn't one. It is the same surface
+     plus a shadow, which is what separates an overlay from the card beneath it. */
   --surface-raised: #ffffff;
-  --surface-sunken: #f4f6f8;
+  --raised-shadow: var(--mantine-shadow-md);
 
   /* Hairlines. Alpha rather than a flat grey so a border reads consistently over any surface in the
      ramp instead of going muddy on the tinted ones. */
@@ -109,6 +117,10 @@
   --text-accent: var(--mantine-color-accent-8);
   --text-pos: var(--mantine-color-pos-9);
   --text-neg: var(--mantine-color-red-9);
+  /* Not from the stock orange ramp: orange-9 is its darkest shade and still only reaches 3.96:1 on an
+     orange "light" fill, which is why this pairing sat documented-but-unfixed. #b3400d measures
+     5.29:1 there and 4.83:1 on the deeper orange-1, and still reads orange rather than brown. */
+  --text-warn: #b3400d;
 }
 
 /* Bridge the tokens above onto the Mantine variables that actually paint things. Two details matter:
@@ -128,9 +140,11 @@ body {
   /* Same three steps, inverted: a near-black canvas, a lifted card, a further-lifted popover. Kept
      slightly cool (blue-teal cast) so it sits under the marine accent rather than fighting it. */
   --page-bg: #101418;
+  --chrome: #14181c;
   --surface: #181d22;
   --surface-raised: #20262c;
   --surface-sunken: #0c1013;
+  --raised-shadow: 0 4px 14px rgba(0, 0, 0, .45);
 
   --hairline: rgba(255, 255, 255, 0.085);
   --hairline-strong: rgba(255, 255, 255, 0.16);
@@ -152,7 +166,10 @@ body {
   --text-pos: var(--mantine-color-pos-4);
   --text-neg: var(--mantine-color-red-4);
 
-  /* Brighten low-contrast secondary text for readability against the surfaces above. */
+  /* Brighten low-contrast secondary text for readability against the surfaces above. Body text was
+     Mantine's dark-0 (#c9c9c9) — a mid grey doing headline duty, the dark-mode twin of the problem
+     above. #e8eaed measures 14.1:1 on --surface. */
+  --mantine-color-text: #e8eaed;
   --mantine-color-dimmed: #c1c2c5;
 
   /* Same-school row tint for dark mode: an explicit, readable dark-green band (the light #edf6f1 washed out
@@ -169,7 +186,22 @@ body {
 }
 
 :root[data-mantine-color-scheme='light'] {
-  --mantine-color-dimmed: #586273;
+  /* Body text carried #000 while `dimmed` (#586273) was painting 28 elements to body's 16 — grey was
+     the page's primary voice, which is most of why it read washed out. Body moves off pure black to a
+     near-black that is easier to read at length (17.6:1 on white), and `dimmed` is darkened so that
+     when it IS the right choice it still holds the page: 7.4:1 on --surface, 6.7:1 on --page-bg,
+     up from 6.2:1 / 5.6:1. */
+  --mantine-color-text: #16191d;
+  --mantine-color-dimmed: #4d5666;
+}
+
+/* The app shell sits one step off the content it frames. Mantine paints AppShell's header/navbar from
+   `--mantine-color-body`, the same variable Card and Paper use — which is why header, sidebar, every
+   card and the search input all measured as one identical colour in both themes. */
+.mantine-AppShell-header,
+.mantine-AppShell-navbar,
+.mantine-AppShell-footer {
+  background-color: var(--chrome);
 }
 
 /* The card treatment itself: a hairline plus a single top inner highlight. One rule, so every
@@ -192,8 +224,10 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 2.64:1
-   against the dark header (#242424), well under WCAG AA's 4.5:1. accent-4 measures ~6.45:1 there. */
+/* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 3.04:1
+   against the dark app chrome (--chrome, #14181c), under WCAG AA's 4.5:1. accent-4 measures 7.43:1
+   there. (Re-measured after the shell moved off --surface onto its own --chrome step; the ratios
+   recorded here previously were against Mantine's stock #242424.) */
 :root[data-mantine-color-scheme='dark'] .accent7-text {
   color: var(--text-accent) !important;
 }
@@ -228,15 +262,15 @@ body {
   color: var(--text-accent) !important;
 }
 
-/* Orange Badge/Button "light" variant text (the "weak case" badge, "strong comparator" chips) —
-   light mode only measured; orange-9 (the darkest available shade) improves this from ~2.7:1 to
-   ~3.9:1 against the badge's own pale-orange fill, still short of 4.5:1 — same-hue text-on-tint
-   pairings run out of headroom in the stock orange ramp. A full fix would need a different (less
-   saturated) background, not just a darker orange — flagged here rather than silently accepted. */
+/* Orange Badge/Button "light" variant text (the "weak case" badge, "strong comparator" chips), light
+   mode only. This pairing was documented as unfixable: orange-9 is the stock ramp's darkest shade and
+   still only reached ~3.9:1 on the badge's own pale-orange fill. The fix was to stop taking the colour
+   from that ramp — `--text-warn` (#b3400d) measures 5.29:1 on the light fill and 4.83:1 on orange-1,
+   so the pairing now clears AA without changing the badge's background. */
 :root[data-mantine-color-scheme='light'] .orange-light-text,
 :root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Badge-label,
 :root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Button-label {
-  color: var(--mantine-color-orange-9) !important;
+  color: var(--text-warn) !important;
 }
 
 /* A "down" delta's red (Delta.tsx/RankDeltaChip) resolves to red-7 in light mode — only 3.64:1
@@ -685,7 +719,7 @@ button:active,
 :root[data-mantine-color-scheme='light'] .data-jump-chip.active { background-color: var(--mantine-color-accent-1); }
 :root[data-mantine-color-scheme='dark'] .data-jump-chip.active {
   background-color: var(--mantine-color-dark-5);
-  /* accent-7 (the light-mode color, set above) only reads ~2.9:1 against this dark chip — same fix
+  /* accent-7 (the light-mode color, set above) only reads 2.60:1 against this dark chip — same fix
      as the header wordmark/credit link (see .accent7-text). */
   color: var(--mantine-color-accent-4);
 }

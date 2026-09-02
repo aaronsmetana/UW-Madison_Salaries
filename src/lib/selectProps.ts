@@ -19,7 +19,7 @@ const CARD_SHADOW = '0 8px 24px -4px rgba(0, 0, 0, 0.18)';
 export const DROPDOWN_TIERS = {
   sm: { mantineSize: 'xs', radius: 8,  optionFont: 13, optionPad: '5px 9px',   island: 5, maxDropdown: 300, inputFont: 13, nameFont: 15, subFont: 12, rowPad: 7,  icon: 16 },
   md: { mantineSize: 'md', radius: 10, optionFont: 15, optionPad: '8px 11px',  island: 6, maxDropdown: 360, inputFont: 15, nameFont: 17, subFont: 13, rowPad: 9,  icon: 18 },
-  lg: { mantineSize: 'xl', radius: 14, optionFont: 18, optionPad: '12px 14px', island: 8, maxDropdown: 460, inputFont: 20, nameFont: 22, subFont: 14, rowPad: 13, icon: 26 },
+  lg: { mantineSize: 'xl', radius: 16, optionFont: 18, optionPad: '12px 14px', island: 8, maxDropdown: 460, inputFont: 20, nameFont: 22, subFont: 14, rowPad: 13, icon: 26 },
 } as const;
 
 const comboboxProps: ComboboxProps = { width: 'target', position: 'bottom-start', offset: 0 };

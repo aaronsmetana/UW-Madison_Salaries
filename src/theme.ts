@@ -43,17 +43,22 @@ export const theme = createTheme({
       h4: { fontSize: '1.0625rem', lineHeight: '1.4' },
     },
   },
-  // `xxs` (11px) is the app's smallest legible label size — footnotes, eyebrows, dense captions —
-  // replacing the scattered hardcoded fontSize:9/10/11. Mantine merges these onto its defaults.
-  fontSizes: { xxs: '0.6875rem' },
+  // The measured landing page ran 48 → 22 → 18 → 16 → 14 → 12px on nineteen elements → 11 → 10: nine
+  // sizes with no reading register, so body copy, captions and footnotes all shared 12px. Two changes
+  // fix that without touching the heading ramp. `xs` moves off Mantine's 12px so `size="xs"` — the
+  // app's most-used size by a wide margin — becomes a caption size rather than the default body size.
+  // `xxs` (11px) stays the floor: eyebrows and dense labels only.
+  fontSizes: { xxs: '0.6875rem', xs: '0.8125rem' },
   // sm = the spec's shadow-card; md = mid; lg = shadow-frame (deep, for floating elements).
   shadows: {
     sm: '0 1px 2px rgba(20,40,50,.04), 0 12px 30px rgba(20,40,50,.05)',
     md: '0 4px 14px rgba(20,40,50,.08)',
     lg: '0 2px 4px rgba(20,40,50,.04), 0 22px 60px rgba(20,40,50,.10)',
   },
-  // Card / stat radii from the spec (sm 11 · md 16 · lg 18).
-  radius: { sm: '11px', md: '16px', lg: '18px' },
+  // Two steps, not three. 16 and 18 are indistinguishable side by side, which is what made a nested
+  // card inside a card read as imprecise rather than deliberate; `md` is kept as an alias of `lg` so
+  // the ~30 existing `radius="md"` call sites don't have to change to get the single card radius.
+  radius: { sm: '10px', md: '16px', lg: '16px' },
   components: {
     Card: { defaultProps: { radius: 'lg', withBorder: true, padding: 'lg' } },
     // One table look everywhere: zebra rows, hover highlight, comfortable row spacing.
