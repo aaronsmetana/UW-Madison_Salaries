@@ -83,6 +83,42 @@ for (const { name, width, height } of [
   });
 }
 
+/**
+ * The distribution is the landing page's centrepiece and the thing the hero's headline number labels,
+ * but it reveals itself with a `scaleY(0.04) -> scaleY(1)` transition. A chart that never finishes that
+ * transition renders as a 5px sliver and looks like an empty card — and it is invisible to the label
+ * test above, which only reads the HTML labels beneath the SVG.
+ *
+ * (This is also the one thing that cannot be checked from a hidden browser tab: rAF is throttled to
+ * zero there, so the reveal never advances and every measurement reads as stuck.)
+ */
+for (const { name, width, height } of [
+  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'mobile', width: 375, height: 812 },
+]) {
+  test(`home distribution actually renders its curve (${name})`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('./', { waitUntil: 'networkidle' });
+
+    const svg = page.locator('svg[viewBox="0 0 1000 120"]');
+    await expect(svg).toBeVisible({ timeout: 60_000 });
+    // The reveal is a 700ms transform; give it room to finish rather than racing it.
+    await page.waitForTimeout(1_200);
+
+    const box = await svg.boundingBox();
+    expect(box, 'the distribution should have a layout box').not.toBeNull();
+    expect(box!.height, 'the distribution collapsed — its reveal transform never completed').toBeGreaterThan(60);
+    expect(box!.width, 'the distribution has no width').toBeGreaterThan(200);
+
+    // A curve, not a flat line: the area path has to describe real vertical variation.
+    const spread = await svg.locator('path').first().evaluate((el) => {
+      const ys = (el.getAttribute('d') ?? '').match(/,(\d+(?:\.\d+)?)/g)?.map((m) => parseFloat(m.slice(1))) ?? [];
+      return ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
+    });
+    expect(spread, 'the distribution path is flat — no shape in the data').toBeGreaterThan(40);
+  });
+}
+
 // PayCheck tells the reader the salary they type "is never uploaded, saved, or put in the address
 // bar". It used to live in a `?sal=` query parameter, which broke that in three places at once:
 // browser history, any copied link, and — because GitHub Pages has no rewrite and deep links bounce

@@ -121,6 +121,11 @@
      orange "light" fill, which is why this pairing sat documented-but-unfixed. #b3400d measures
      5.29:1 there and 4.83:1 on the deeper orange-1, and still reads orange rather than brown. */
   --text-warn: #b3400d;
+
+  /* The display step. The measured type scale ran 48 -> 22 with nothing between, because the only
+     thing at 48 was a wordmark. It is now the one number the landing page leads with, so the step is
+     a real register rather than a one-off inline clamp on a route. */
+  --fs-display: clamp(2.75rem, 6vw, 4.25rem);
 }
 
 /* Bridge the tokens above onto the Mantine variables that actually paint things. Two details matter:
@@ -546,13 +551,6 @@ button:active,
 .hero-rise > *:nth-child(4) { animation-delay: 240ms; }
 .hero-rise > *:nth-child(n + 5) { animation-delay: 300ms; }
 
-/* The accent glow behind the title breathes slowly. */
-.hero-aurora { animation: aurora-breathe 9s ease-in-out infinite; }
-@keyframes aurora-breathe {
-  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
-  50% { opacity: 0.72; transform: translate(-50%, -50%) scale(1.08); }
-}
-
 /* A faint dot-grid behind the hero, masked to fade out toward the edges. */
 .hero-dotgrid {
   position: absolute;
@@ -561,17 +559,11 @@ button:active,
   pointer-events: none;
   background-image: radial-gradient(var(--mantine-color-default-border) 1px, transparent 1.5px);
   background-size: 22px 22px;
-  -webkit-mask-image: radial-gradient(ellipse 55% 45% at 50% 42%, #000 0%, transparent 72%);
-  mask-image: radial-gradient(ellipse 55% 45% at 50% 42%, #000 0%, transparent 72%);
-  opacity: 0.6;
-}
-
-/* The big search box has a slow resting glow that invites typing; cancelled on focus. */
-.hero-search-input { animation: search-breathe 3.6s ease-in-out infinite; }
-.hero-search-input:focus { animation: none; }
-@keyframes search-breathe {
-  0%, 100% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 0 transparent; }
-  50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 4px var(--mantine-color-accent-light); }
+  /* Scoped to the top of the page: this element is a sibling of ALL the content with `inset: 0`, so
+     the mask is what keeps it behind the hero rather than tiling the entire page height. */
+  -webkit-mask-image: radial-gradient(ellipse 60% 22% at 50% 12%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(ellipse 60% 22% at 50% 12%, #000 0%, transparent 70%);
+  opacity: 0.55;
 }
 
 /* Showcase band below the hero: the arrow slides on hover, matching the stats card's own affordance
@@ -583,18 +575,18 @@ button:active,
 }
 .showcase-card:hover .showcase-arrow { transform: translateX(3px); }
 
-/* System-Wide stats card lifts on hover; its "Browse" arrow nudges right. */
-.home-stats { transition: transform 160ms ease, box-shadow 160ms ease; }
-.home-stats:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.28); }
+/* The supporting-figures row links to General Comparisons; its arrow nudges on hover. */
 .browse-arrow { display: inline-block; transition: transform 160ms ease; }
 .home-stats:hover .browse-arrow { transform: translateX(3px); }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-rise > * { animation: none; }
-  .hero-aurora { animation: none; }
-  .hero-search-input { animation: none; }
-  .showcase-arrow { transition: none; }
-  .showcase-card:hover .showcase-arrow { transform: none; }
+  /* `.browse-arrow` was never in this block — the showcase arrow was guarded and the stats row's
+     matching gesture was not, so one of the two identical affordances still moved. */
+  .showcase-arrow,
+  .browse-arrow { transition: none; }
+  .showcase-card:hover .showcase-arrow,
+  .home-stats:hover .browse-arrow { transform: none; }
 }
 
 /* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the

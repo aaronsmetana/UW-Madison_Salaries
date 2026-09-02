@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, Paper, ThemeIcon, Anchor, Badge, Card } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
 import {
-  IconCoin, IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch,
+  IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch,
 } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -356,8 +356,9 @@ export default function Home() {
   // Labels are kept to one word each so all five wrap identically (i.e. not at all): "MEDIAN SALARY"
   // and "UNIQUE TITLES" were the only two that broke to a second line, which left the row visibly
   // ragged even with the reserved label height. The precise figure stays in the hover for Payroll.
+  // Median is no longer here — it is the page's headline (see the hero below), which is the whole point
+  // of leading with the data. Four supporting figures remain.
   const kpis: KpiData[] = [
-    { label: 'Median', value: summary?.latest?.median ?? null, format: usd, hint: 'Median actual pay across all employees', icon: <IconCoin size={ICON.control} />, color: 'pos' },
     { label: 'Employees', value: summary?.latest?.headcount ?? null, format: num, icon: <IconUsers size={ICON.control} />, color: 'accent' },
     { label: 'Payroll', value: payroll, format: usdCompact, hint: payroll != null ? usd(payroll) : undefined, icon: <IconReportMoney size={ICON.control} />, color: 'accent' },
     { label: 'Divisions', value: dims?.schools ?? null, format: num, icon: <IconBuildingBank size={ICON.control} />, color: 'accent' },
@@ -368,53 +369,44 @@ export default function Home() {
     <Box style={{ paddingBlock: 'clamp(24px, 6vh, 64px)', position: 'relative' }}>
       <div className="hero-dotgrid" aria-hidden />
       <Stack gap="xl" w="100%" style={{ position: 'relative', zIndex: 1 }}>
-        {/* Hero title with a soft, theme-aware glow that breathes behind it. */}
-        <Box style={{ position: 'relative' }}>
-          <Box
-            aria-hidden
-            className="hero-aurora"
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: 'min(680px, 90%)',
-              height: 220,
-              background: 'radial-gradient(60% 60% at 50% 50%, var(--mantine-color-accent-light) 0%, transparent 70%)',
-              opacity: 0.6,
-              pointerEvents: 'none',
-              filter: 'blur(8px)',
-              transform: 'translate(-50%, -50%)',
-            }}
-          />
-          <Stack gap={6} align="center" className="hero-rise" style={{ position: 'relative' }}>
-            <Title order={1} ta="center" style={{ letterSpacing: '-0.02em', fontSize: 'clamp(2rem, 4vw, 3rem)' }}>
-              <Text span inherit c="bright">UW–Madison </Text>
-              <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
-            </Title>
-            <Text c="dimmed" ta="center" maw={580} size="lg">
-              Search anyone by name to see their salary, how it changed over the years, and how they stack up against everyone with the same title.
-            </Text>
-          </Stack>
-        </Box>
+        {/* The page opens with what it knows, not with its own name. The 48px wordmark that used to sit
+            here was the same two-tone construction as the 18px one in the header directly above it. */}
+        <Stack gap={4} align="center" className="hero-rise">
+          <Eyebrow>
+            {summary?.latest?.headcount != null ? `${num(summary.latest.headcount)} employees` : 'All employees'}
+            {latestLabel ? ` · ${latestLabel}` : ''}
+          </Eyebrow>
+          <Title order={1} ta="center" fz="var(--fs-display)" lh={1.05}>
+            {summary?.latest?.median != null ? usd(summary.latest.median) : '—'}
+          </Title>
+          <Text c="dimmed" ta="center" maw={620}>
+            is the median UW–Madison salary. Search anyone by name to see their pay, how it changed, and
+            how they compare to everyone with the same title.
+          </Text>
+        </Stack>
 
-        {/* Hero search + empty-state content share one centered width and reveal in a gentle cascade. */}
-        <Stack gap="lg" maw={760} mx="auto" w="100%" className="hero-rise">
+        {/* The distribution sits directly under the median that labels it, so the marker under the
+            headline number is the same number. Then search — the action — then the supporting figures. */}
+        <Stack gap="lg" maw={900} mx="auto" w="100%" className="hero-rise">
+          <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
+            <Distribution
+              bins={bins}
+              p25={artifactUsable ? homeStats.p25 : null}
+              median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
+              p75={artifactUsable ? homeStats.p75 : null}
+              cap={artifactUsable ? homeStats.bin_cap : null}
+              overflow={artifactUsable ? homeStats.bins_overflow : null}
+              headcount={summary?.latest?.headcount ?? null}
+            />
+          </Anchor>
+
           <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
 
-          {/* System-wide stats (as of the latest snapshot) — the whole card links to General Comparisons. */}
+          {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
+              Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}
           <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
-            <Paper className="home-stats" withBorder radius="lg" px="lg" pt="xl" pb="lg" w="100%" style={{ position: 'relative', overflow: 'visible' }}>
-              {/* Centered title chip straddling the top border. */}
-              <Badge
-                variant="default"
-                radius="sm"
-                size="sm"
-                style={{ position: 'absolute', top: 0, left: '50%', transform: 'translate(-50%, -50%)' }}
-              >
-                System-Wide
-              </Badge>
-              {/* Desktop: one even row of five, split by faint vertical dividers. */}
-              <Group gap={0} wrap="nowrap" align="stretch" visibleFrom="sm">
+            <Box className="home-stats" pt="md" style={{ borderTop: '1px solid var(--hairline)' }}>
+              <Group gap={0} wrap="nowrap" align="stretch" visibleFrom="xs">
                 {kpis.map((k, i) => (
                   <Fragment key={k.label}>
                     {i > 0 && <Divider orientation="vertical" />}
@@ -422,41 +414,14 @@ export default function Home() {
                   </Fragment>
                 ))}
               </Group>
-              {/* Narrow: wrap into a grid (no vertical dividers — spacing separates them). */}
-              <SimpleGrid cols={{ base: 2, xs: 3 }} spacing="md" verticalSpacing="lg" hiddenFrom="sm">
+              <SimpleGrid cols={2} spacing="md" verticalSpacing="lg" hiddenFrom="xs">
                 {kpis.map((k) => <Kpi key={k.label} {...k} />)}
               </SimpleGrid>
-              <Distribution
-                bins={bins}
-                p25={artifactUsable ? homeStats.p25 : null}
-                median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
-                p75={artifactUsable ? homeStats.p75 : null}
-                cap={artifactUsable ? homeStats.bin_cap : null}
-                overflow={artifactUsable ? homeStats.bins_overflow : null}
-                headcount={summary?.latest?.headcount ?? null}
-              />
               <Text size="xs" c="accent.7" className="accent7-text" fw={600} ta="center" mt="md">
                 Browse schools &amp; titles in General Comparisons <span className="browse-arrow">→</span>
               </Text>
-            </Paper>
+            </Box>
           </Anchor>
-
-          <RotatingFact facts={facts} />
-
-          {summary?.snapshot_count != null && firstSnap && latestLabel && (
-            <Text size="xs" c="dimmed" ta="center">
-              <Anchor component={Link} to="/data" c="dimmed" underline="hover">
-                Data based on {num(summary.snapshot_count)} snapshots ({firstSnap} – {latestLabel}) • Latest: {latestLabel}
-              </Anchor>
-            </Text>
-          )}
-
-          {/* Snapshot/FTE disclaimer — a quiet caption, not an alert. */}
-          <Text size="xs" c="dimmed" ta="center" fs="italic" maw={640} mx="auto" mt={-8}>
-            Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between
-            snapshots, so actual pay earned may be higher or lower than the amounts shown.{' '}
-            <Anchor component={Link} to="/data" c="dimmed" underline="always" fs="normal">How this data works →</Anchor>
-          </Text>
         </Stack>
 
         {/* Below the fold. The hero column above stays narrow on purpose; this band is wider because
@@ -498,6 +463,27 @@ export default function Home() {
               stat={summary?.latest?.headcount != null ? `${num(summary.latest.headcount)} employees` : '\u00a0'}
             />
           </SimpleGrid>
+        </Stack>
+
+        {/* Footnotes. These used to sit between the stats and the showcase band, which pushed the band
+            below the fold — they are the least urgent thing on the page and were occupying the most
+            valuable space on it. */}
+        <Stack gap="xs" maw={900} mx="auto" w="100%">
+          <RotatingFact facts={facts} />
+
+          {summary?.snapshot_count != null && firstSnap && latestLabel && (
+            <Text size="xs" c="dimmed" ta="center">
+              <Anchor component={Link} to="/data" c="dimmed" underline="hover">
+                Data based on {num(summary.snapshot_count)} snapshots ({firstSnap} – {latestLabel}) • Latest: {latestLabel}
+              </Anchor>
+            </Text>
+          )}
+
+          <Text size="xs" c="dimmed" ta="center" fs="italic" maw={640} mx="auto">
+            Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between
+            snapshots, so actual pay earned may be higher or lower than the amounts shown.{' '}
+            <Anchor component={Link} to="/data" c="dimmed" underline="always" fs="normal">How this data works →</Anchor>
+          </Text>
         </Stack>
       </Stack>
     </Box>
