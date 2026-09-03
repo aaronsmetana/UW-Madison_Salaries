@@ -16,7 +16,8 @@ import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
-import { CAND, PEER, ordinal, fmtYearsToParity, type BriefModel, type ProofKind } from './model';
+import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind } from './model';
+import { ordinal } from '../../lib/stats';
 import { ICON } from '../../lib/ui';
 
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */

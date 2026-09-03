@@ -18,6 +18,7 @@ import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
+import { ordinal } from '../lib/stats';
 import { ChartData } from '../components/ChartData';
 import { span } from '../components/SourceNote';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
@@ -506,7 +507,7 @@ export default function Compare() {
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
-              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, (v) => `${v}th pctile`)} /> : null} />
+              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
               {persons.map((p) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls />
               ))}

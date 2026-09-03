@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { percentile, leastSquares } from './stats';
+import { percentile, leastSquares, ordinal } from './stats';
+
+describe('ordinal', () => {
+  it('suffixes 1/2/3 and everything else', () => {
+    expect([1, 2, 3, 4, 50, 78].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '50th', '78th']);
+  });
+  it('keeps the teens on "th"', () => {
+    // The case a naive `n % 10` gets wrong, and the reason two call sites hardcoding "th" only
+    // looked correct: most percentiles happen not to be 1, 2 or 3.
+    expect([11, 12, 13, 111, 112, 113].map(ordinal)).toEqual(['11th', '12th', '13th', '111th', '112th', '113th']);
+  });
+  it('resumes after the teens', () => {
+    expect([21, 22, 23, 31, 42, 93].map(ordinal)).toEqual(['21st', '22nd', '23rd', '31st', '42nd', '93rd']);
+  });
+  it('rounds a fractional percentile before suffixing it', () => {
+    expect(ordinal(20.6)).toBe('21st');
+  });
+});
 
 describe('percentile', () => {
   it('is the share of the other values strictly below, with an n-1 denominator', () => {

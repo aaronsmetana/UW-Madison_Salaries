@@ -14,6 +14,8 @@ import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
 import { span } from './SourceNote';
+import { PercentileNote } from './PercentileNote';
+import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
@@ -234,10 +236,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     !!lastSnap && !!jobCode
   );
   const peerPays = useMemo(() => (peerPayRows ?? []).map((r) => r.pay), [peerPayRows]);
-  const peerPct = useMemo(() => {
-    if (!peerPays.length || lastSalary == null) return null;
-    return Math.round((100 * peerPays.filter((p) => p <= lastSalary).length) / peerPays.length);
-  }, [peerPays, lastSalary]);
+  // `percentile()` (lib/stats.ts), not a local formula: this page and /person show the same person
+  // against the same pool, so they must not disagree about where they sit.
+  const peerPct = useMemo(
+    () => (peerPays.length > 1 && lastSalary != null && lastSalary > 0 ? percentile(lastSalary, peerPays) : null),
+    [peerPays, lastSalary]
+  );
   const peerRank = useMemo(() => {
     if (!peerPays.length || lastSalary == null) return null;
     return peerPays.filter((p) => p > lastSalary).length + 1;
@@ -387,9 +391,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             How {name} compares to others with the title {latest?.title}
           </CardTitle>
           <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} values={peerPays} />
-          {peerPct != null && (
-            <Text size="sm" mt="sm">Paid more than <b>{peerPct}%</b> of people with this title.</Text>
-          )}
+          <PercentileNote pct={peerPct} pool="people with this title" mt="sm" />
           <Text size="xs" c="dimmed" mt={4} mb="md">
             Among {num(peer.n)} people with job code {jobCode} in the latest snapshot.
           </Text>

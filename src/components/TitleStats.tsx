@@ -20,13 +20,8 @@ import { StatSkeleton, ChartSkeleton, TableSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
 import { ICON } from '../lib/ui';
+import { PercentileNote } from './PercentileNote';
 
-function ordinal(p: number): string {
-  const r = Math.round(p);
-  const v = r % 100;
-  const s = ['th', 'st', 'nd', 'rd'];
-  return r + (s[(v - 20) % 10] || s[v] || s[0]);
-}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
@@ -192,12 +187,22 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           <CardTitle>Where {usd(pinSalary)} lands among {titleLabel}{scopeLabel}</CardTitle>
           <PeerRangeBar min={s.lo} p25={s.p25} median={s.med} p75={s.p75} max={s.hi} value={pinSalary!} values={pays} />
           {titleRow && (
-            <Text size="sm" mt="md">
-              <b>{usd(pinSalary)}</b> is at the <b>{ordinal(titleRow.pct)} percentile</b> — paid more than {titleRow.pct}% of {num(titleRow.n)} people with this title{school ? ' across UW' : ''}.
-            </Text>
+            <PercentileNote
+              pct={titleRow.pct}
+              n={titleRow.n}
+              pool={`people with this title${school ? ' across UW' : ''}`}
+              subject={<b>{usd(pinSalary)}</b>}
+              mt="md"
+            />
           )}
           {school && schoolRow && (
-            <Text size="sm" mt={4}>Within {school}: {ordinal(schoolRow.pct)} percentile (more than {schoolRow.pct}% of {num(schoolRow.n)}).</Text>
+            <PercentileNote
+              pct={schoolRow.pct}
+              n={schoolRow.n}
+              pool={`people with this title within ${school}`}
+              subject={<b>{usd(pinSalary)}</b>}
+              mt={4}
+            />
           )}
         </Card>
       )}

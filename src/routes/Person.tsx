@@ -22,7 +22,7 @@ import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis } from '../lib/format';
 import { usePref } from '../lib/prefs';
-import { percentile } from '../lib/stats';
+import { percentile, ordinal } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
@@ -31,6 +31,7 @@ import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
 import { span } from '../components/SourceNote';
+import { PercentileNote } from '../components/PercentileNote';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
@@ -195,7 +196,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
         <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
       </div>
       <Text size="sm" fw={700} c={above ? 'pos.7' : 'dimmed'} className={above ? 'pos-adaptive-text' : undefined} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
-        {pct}th <Text span size="xs" fw={500} c="dimmed">pctile</Text>
+        {ordinal(pct)} <Text span size="xs" fw={500} c="dimmed">pctile</Text>
       </Text>
     </Group>
   );
@@ -585,7 +586,7 @@ export default function Person() {
     const i = cohortList.findIndex((p) => p.person_key === key);
     return i >= 0 ? i + 1 : null;
   }, [cohortList, key]);
-  const cohortPct = lastSalary != null && cohortPays.length > 1 ? percentile(lastSalary, cohortPays) : null;
+  const cohortPct = lastSalary != null && lastSalary > 0 && cohortPays.length > 1 ? percentile(lastSalary, cohortPays) : null;
 
   // Pay-vs-tenure scatter points for the active cohort (only peers with a known tenure can be plotted).
   const scatterPoints = useMemo<ScatterPoint[]>(
@@ -903,11 +904,12 @@ export default function Person() {
                 {cohortStats && cohortStats.n >= 2 ? (
                   <>
                     <PeerRangeBar min={cohortStats.lo} p25={cohortStats.p25} median={cohortStats.med} p75={cohortStats.p75} max={cohortStats.hi} value={lastSalary} values={cohortPays} />
-                    {cohortPct != null && (
-                      <Text size="sm" mt="sm" mb="md">
-                        Paid more than <b>{cohortPct}%</b> of {cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}.
-                      </Text>
-                    )}
+                    <PercentileNote
+                      pct={cohortPct}
+                      pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
+                      mt="sm"
+                      mb="md"
+                    />
                     <SalaryHistogram
                       values={cohortPays}
                       markerValue={lastSalary}

@@ -1,7 +1,7 @@
 // Shared types + pure helpers for the comparison "equity review studio" (left setup pane + right brief).
 import type { ReactNode } from 'react';
 import { usd, pct, plural } from '../../lib/format';
-import { percentile as percentileOf } from '../../lib/stats';
+import { percentile as percentileOf, ordinal } from '../../lib/stats';
 import { POLICY } from './sources';
 import type { ScatterPoint } from '../TenurePayScatter';
 
@@ -159,11 +159,6 @@ export function quantile(sortedAsc: number[], q: number): number | null {
   const hi = Math.ceil(pos);
   if (lo === hi) return sortedAsc[lo];
   return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (pos - lo);
-}
-export function ordinal(n: number): string {
-  const v = n % 100;
-  const s = ['th', 'st', 'nd', 'rd'];
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 /** "~4 more years" / "~1 more year" / "10+ more years" — the raw log-compounding estimate is

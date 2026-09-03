@@ -11,6 +11,18 @@ export function percentile(value: number, salaries: number[]): number {
   return Math.round((below / (salaries.length - 1)) * 100);
 }
 
+/**
+ * "1st", "2nd", "3rd", "11th", "21st" — the suffix for a rank or a percentile. Lives beside
+ * `percentile()` because it exists to label its output, and because two hand-rolled copies had
+ * already drifted apart on whether they round their input.
+ */
+export function ordinal(n: number): string {
+  const r = Math.round(n);
+  const v = r % 100;
+  const s = ['th', 'st', 'nd', 'rd'];
+  return r + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 /** Ordinary least-squares fit of y on x. Returns null with fewer than 2 points or zero x-variance
  *  (a vertical fit is undefined). Shared by the tenure-vs-pay scatter and the comparison report's
  *  tenure-trend regression, so both read the exact same line for the same cohort. */
