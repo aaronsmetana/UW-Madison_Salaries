@@ -48,9 +48,19 @@ async function setTheme(page: Page, theme: 'light' | 'dark') {
   }, theme);
 }
 
-/** Let a viewport or theme change land: re-layout, webfont metrics, and any in-flight query. */
+/**
+ * Let a viewport or theme change land: re-layout, webfont metrics, and any in-flight query.
+ *
+ * The loading bar is the reason this is not just a sleep. `.global-loading-bar` is a fixed 3px strip
+ * that renders while any query is in flight, and under reduced motion it renders at full width rather
+ * than as a moving sliver — so a shot taken while a query happened to be running differed from the
+ * baseline by a bright band across the top of the page and nothing else. It was the only thing
+ * separating two otherwise identical Home screenshots. Waiting for it to clear is also the honest
+ * definition of "the page has settled".
+ */
 async function settle(page: Page) {
   await page.evaluate(() => document.fonts?.ready);
+  await expect(page.locator('.global-loading-bar')).toHaveCount(0, { timeout: 60_000 });
   await page.waitForTimeout(350);
 }
 
