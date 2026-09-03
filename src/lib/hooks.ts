@@ -75,3 +75,14 @@ export function useActiveSnapshotId(): string | undefined {
   const latest = data?.snapshots[data.snapshots.length - 1]?.id;
   return activeSnapshot ?? latest;
 }
+
+/**
+ * The active snapshot's human label ("Mar 2026") — the counterpart to `useActiveSnapshotId()` for
+ * anything a reader sees. A snapshot-scoped chart needs this to say what period it describes; the
+ * id ("2026-03") is a key, not a date anyone should be shown.
+ */
+export function useActiveSnapshotLabel(): string | undefined {
+  const id = useActiveSnapshotId();
+  const { data } = useSummary();
+  return data?.snapshots.find((s) => s.id === id)?.label;
+}

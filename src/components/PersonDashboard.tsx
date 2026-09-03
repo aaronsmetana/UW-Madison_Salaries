@@ -13,6 +13,7 @@ import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
+import { span } from './SourceNote';
 import { CardTitle } from './CardTitle';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
@@ -303,7 +304,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           </LineChart>
         </ResponsiveContainer>
         <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.</Text>
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} />
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} unit="snapshots" period={span(trendData.map((t) => t.label))} />
       </Card>
 
       {/* Title & salary history */}
@@ -410,9 +411,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       )}
 
       <Text size="xs" c="dimmed" mt="md">
-        Source: UW–Madison salary data (Wisconsin public record), {METRIC_LABEL[metric]}. Title comparison uses everyone
-        sharing this person's job code in their latest snapshot. Pay-band ranges are best-effort and only partially seeded.
-        Person identity is matched on name + date of hire and is best-effort.
+        Figures shown are {METRIC_LABEL[metric]}. Title comparison uses everyone sharing this person's job code in their
+        latest snapshot. Pay-band ranges are best-effort and only partially seeded. Person identity is matched on
+        name + date of hire and is best-effort.
       </Text>
     </Stack>
   );

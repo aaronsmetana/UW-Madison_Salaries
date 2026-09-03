@@ -30,6 +30,7 @@ import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
+import { span } from '../components/SourceNote';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
@@ -1300,6 +1301,8 @@ export default function Person() {
           caption={dollarMode === 'real' ? `Salary over time (in ${REAL_BASE_YEAR} dollars)` : 'Salary over time'}
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}
           rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])}
+          unit="snapshots"
+          period={span(trendData.map((t) => t.label))}
         />
       </Card>
         </Tabs.Panel>

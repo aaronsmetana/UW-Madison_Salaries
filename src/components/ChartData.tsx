@@ -1,22 +1,37 @@
 import { useState } from 'react';
-import { VisuallyHidden, Group, ActionIcon, Tooltip, Table, Button } from '@mantine/core';
+import { VisuallyHidden, ActionIcon, Tooltip, Table, Button } from '@mantine/core';
 import { IconTable, IconDownload } from '@tabler/icons-react';
 import { downloadCSV } from '../lib/csv';
 import { ICON } from '../lib/ui';
+import { SourceNote } from './SourceNote';
 
 /**
- * A chart's data as a table: a screen-reader/print-only fallback by default, with a small toggle to
- * make it visible (and downloadable as CSV) for anyone who'd rather read numbers than a plot — the
- * a11y artifact this app already built for every chart becomes a feature for everyone.
+ * A chart's data as a table — a screen-reader/print-only fallback by default, with a toggle to make
+ * it visible for anyone who'd rather read numbers than a plot — plus the chart's provenance footer.
+ *
+ * The two live together because they are one row of the card: the same strip that says where the
+ * figures came from is the strip that lets you take them. Keeping them apart would have meant two
+ * stacked dimmed lines under every chart, and a `SourceNote` sitting beside a `ChartData` at
+ * thirteen call sites is exactly the "two components for one job" pattern this pass is undoing.
+ *
+ * The CSV button used to appear only *after* the reader opened the table, so the download was
+ * hidden behind an affordance most people never pressed. It is always visible now.
  */
 export function ChartData({
   caption,
   columns,
   rows,
+  n,
+  unit,
+  period,
 }: {
   caption: string;
   columns: string[];
   rows: Array<Array<string | number | null | undefined>>;
+  /** The population the chart describes, when that differs from its row count (see `SourceNote`). */
+  n?: number | null;
+  unit?: string;
+  period?: string | null;
 }) {
   const [visible, setVisible] = useState(false);
   if (!rows.length) return null;
@@ -27,16 +42,45 @@ export function ChartData({
       rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i] ?? ''])))
     );
 
-  if (!visible) {
-    return (
-      <>
-        <Group justify="flex-end" mt={4}>
-          <Tooltip label="View as table" withArrow>
-            <ActionIcon size="sm" variant="subtle" color="gray" aria-label="View chart data as a table" aria-pressed={false} onClick={() => setVisible(true)}>
+  // One footer for both states, rendered directly under the chart either way — so opening the table
+  // doesn't move the button that closes it to the far side of a screenful of rows.
+  const footer = (
+    <SourceNote
+      n={n ?? rows.length}
+      unit={unit}
+      period={period}
+      actions={
+        <>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color="gray"
+            leftSection={<IconDownload size={ICON.inline} />}
+            onClick={exportCsv}
+          >
+            CSV
+          </Button>
+          <Tooltip label={visible ? 'Hide table' : 'View as table'} withArrow>
+            <ActionIcon
+              size="sm"
+              variant={visible ? 'light' : 'subtle'}
+              color={visible ? 'accent' : 'gray'}
+              aria-label={visible ? 'Hide chart data table' : 'View chart data as a table'}
+              aria-pressed={visible}
+              onClick={() => setVisible((v) => !v)}
+            >
               <IconTable size={ICON.compact} />
             </ActionIcon>
           </Tooltip>
-        </Group>
+        </>
+      }
+    />
+  );
+
+  if (!visible) {
+    return (
+      <>
+        {footer}
         <VisuallyHidden>
           <table>
             <caption>{caption}</caption>
@@ -56,14 +100,7 @@ export function ChartData({
 
   return (
     <div>
-      <Group justify="flex-end" gap={4} mt={4}>
-        <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconDownload size={ICON.inline} />} onClick={exportCsv}>CSV</Button>
-        <Tooltip label="Hide table" withArrow>
-          <ActionIcon size="sm" variant="light" color="accent" aria-label="Hide chart data table" aria-pressed onClick={() => setVisible(false)}>
-            <IconTable size={ICON.compact} />
-          </ActionIcon>
-        </Tooltip>
-      </Group>
+      {footer}
       <Table.ScrollContainer minWidth={Math.max(320, columns.length * 110)}>
         <Table striped withTableBorder mt={4} stickyHeader>
           <Table.Caption>{caption}</Table.Caption>

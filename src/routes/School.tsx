@@ -17,7 +17,7 @@ import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
-import { useSql, useActiveSnapshotId } from '../lib/hooks';
+import { useSql, useActiveSnapshotId, useActiveSnapshotLabel } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, filterWhere, filterKey } from '../lib/queries';
@@ -25,10 +25,18 @@ import { useTray } from '../state/tray';
 import { usd, num, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
+import { span } from '../components/SourceNote';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { barGradientDefs } from '../components/chartDefs';
 import { ICON } from '../lib/ui';
+
+/**
+ * The tenure/pay scatter plots one dot per person, so a large division would otherwise hand Recharts
+ * tens of thousands of nodes. The cap is a render budget, not a data statement — which is exactly why
+ * the chart has to say when it bites, rather than letting the plotted count read as the headcount.
+ */
+const TENURE_PLOT_CAP = 3000;
 
 interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
 
@@ -62,6 +70,8 @@ export default function School() {
   const name = decodeURIComponent(id ?? '');
   useDocTitle(name);
   const snap = useActiveSnapshotId();
+  // The id keys the SQL; the label is what a chart footer shows a reader.
+  const snapLabel = useActiveSnapshotLabel();
   const { metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const { add, has } = useTray();
@@ -153,7 +163,8 @@ export default function School() {
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
         ${personPay(metric)} pay
-     FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key LIMIT 3000`,
+     FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key
+     LIMIT ${TENURE_PLOT_CAP}`,
     enabled
   );
 
@@ -284,10 +295,18 @@ export default function School() {
             />
           </ScatterChart>
         </ResponsiveContainer>
-        <ChartData caption="Tenure vs pay" columns={['Tenure (yrs)', 'Pay']} rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])} />
         <Text size="xs" c="dimmed">
           A flat or downward cloud suggests salary compression (newer hires paid like — or above — veterans).
+          {(tenurePay ?? []).length >= TENURE_PLOT_CAP &&
+            ` Divisions larger than ${num(TENURE_PLOT_CAP)} people are capped here, so this cloud is a sample rather than everyone.`}
         </Text>
+        <ChartData
+          caption="Tenure vs pay"
+          columns={['Tenure (yrs)', 'Pay']}
+          rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])}
+          unit="people plotted"
+          period={snapLabel ? `as of ${snapLabel}` : undefined}
+        />
       </Card>
 
       <Card withBorder padding="lg">
@@ -301,7 +320,13 @@ export default function School() {
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
           </LineChart>
         </ResponsiveContainer>
-        <ChartData caption="Median salary over time" columns={['Snapshot', 'Median', 'Headcount']} rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])} />
+        <ChartData
+          caption="Median salary over time"
+          columns={['Snapshot', 'Median', 'Headcount']}
+          rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])}
+          unit="snapshots"
+          period={span((trend ?? []).map((t) => t.label))}
+        />
       </Card>
 
       <Card withBorder padding="lg">
@@ -341,7 +366,14 @@ export default function School() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <ChartData caption="Salary distribution" columns={['Salary bin', 'People']} rows={distData.map((d) => [d.label, d.n])} />
+        <ChartData
+          caption="Salary distribution"
+          columns={['Salary bin', 'People']}
+          rows={distData.map((d) => [d.label, d.n])}
+          n={distData.reduce((s, d) => s + d.n, 0)}
+          unit="salary records"
+          period={snapLabel ? `as of ${snapLabel}` : undefined}
+        />
       </Card>
           </Stack>
         </Tabs.Panel>

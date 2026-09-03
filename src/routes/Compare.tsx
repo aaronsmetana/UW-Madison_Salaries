@@ -19,6 +19,7 @@ import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
 import { usd, num, pct } from '../lib/format';
 import { ChartData } from '../components/ChartData';
+import { span } from '../components/SourceNote';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
 import { SvgPill } from '../components/chart/pills';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -450,15 +451,17 @@ export default function Compare() {
                   </ScatterChart>
                 )}
               </ResponsiveContainer>
-              <ChartData
-                caption={dollarMode === 'real' ? `Salary by snapshot (in ${REAL_BASE_YEAR} dollars)` : 'Salary by snapshot'}
-                columns={['Snapshot', ...persons.map((p) => p.label)]}
-                rows={trajectorySeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
-              />
               <Text size="xs" c="dimmed" mt={4}>
                 {xMode === 'tenure' ? 'Aligned by years since hire — compares people at the same career stage.' : 'By calendar snapshot.'}
                 {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
               </Text>
+              <ChartData
+                caption={dollarMode === 'real' ? `Salary by snapshot (in ${REAL_BASE_YEAR} dollars)` : 'Salary by snapshot'}
+                columns={['Snapshot', ...persons.map((p) => p.label)]}
+                rows={trajectorySeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+                unit="snapshots"
+                period={span(trajectorySeries.map((row) => row.label as string))}
+              />
             </>
           )}
         </Card>
@@ -484,12 +487,14 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          <Text size="xs" c="dimmed">0 = highest-paid in the group at that snapshot; below 0 = behind by that amount.</Text>
           <ChartData
             caption="Pay gap to the top earner by snapshot"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={gapSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+            unit="snapshots"
+            period={span(gapSeries.map((row) => row.label as string))}
           />
-          <Text size="xs" c="dimmed">0 = highest-paid in the group at that snapshot; below 0 = behind by that amount.</Text>
         </Card>
       )}
 
@@ -507,12 +512,14 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          <Text size="xs" c="dimmed">Each person's percentile among peers in their own school at that snapshot.</Text>
           <ChartData
             caption="Percentile within school over time"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={standingSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+            unit="snapshots"
+            period={span(standingSeries.map((row) => row.label as string))}
           />
-          <Text size="xs" c="dimmed">Each person's percentile among peers in their own school at that snapshot.</Text>
         </Card>
       )}
 
@@ -594,12 +601,14 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+          <Text size="xs" c="dimmed">Median salary per title at each snapshot.</Text>
           <ChartData
             caption="Median salary per title over time"
             columns={['Snapshot', ...titles.map((t) => t.label)]}
             rows={titleSeries.map((row) => [row.label as string, ...titles.map((t) => row[t.id] ?? null)])}
+            unit="snapshots"
+            period={span(titleSeries.map((row) => row.label as string))}
           />
-          <Text size="xs" c="dimmed">Median salary per title at each snapshot.</Text>
         </Card>
       )}
 

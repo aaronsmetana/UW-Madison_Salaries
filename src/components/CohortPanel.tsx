@@ -11,6 +11,7 @@ import { sqlStr } from '../lib/duckdb';
 import { whereAll, filterKey } from '../lib/queries';
 import { num, pct } from '../lib/format';
 import { ChartData } from './ChartData';
+import { span } from './SourceNote';
 import { StatCard } from './StatCard';
 import { StatSkeleton, ChartSkeleton } from './Loading';
 import { SegmentedToggle } from './SegmentedToggle';
@@ -213,12 +214,18 @@ export function CohortPanel() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <ChartData caption="Retention by hire year" columns={['Hire year', 'Retained %', 'Left %']} rows={chart.map((c) => [c.year, c.retention, c.lost])} />
         <Text size="xs" c="dimmed">
           Each bar is one hire-year cohort: green = share still present in the latest snapshot ({latest?.label}),
           grey = share since gone. Snapshots begin in 2021, so the shaded pre-2021 cohorts reflect only survivors
           already employed by then; the most recent cohorts are also immature (little time to attrit yet).
         </Text>
+        <ChartData
+          caption="Retention by hire year"
+          columns={['Hire year', 'Retained %', 'Left %']}
+          rows={chart.map((c) => [c.year, c.retention, c.lost])}
+          unit="hire-year cohorts"
+          period={latest?.label ? `as of ${latest.label}` : undefined}
+        />
       </Card>
 
       <Card withBorder padding="lg">
@@ -268,13 +275,19 @@ export function CohortPanel() {
                 <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
               </ComposedChart>
             </ResponsiveContainer>
-            <ChartData caption="Workforce turnover" columns={['As of', 'Joined', 'Left', 'Net']} rows={turnover.map((x) => [x.label, x.joined, x.departed, x.net])} />
             <Text size="xs" c="dimmed">
               Paid employees who joined vs left between each snapshot and the one before it; the accent line is the
               net change. Counts paid staff only (unpaid $0 affiliates excluded); the duplicate Pre-TTC snapshot is
               omitted. The dashed marker flags the snapshot with the most churn — usually a source-coverage change,
               not a real hiring/exit wave.
             </Text>
+            <ChartData
+              caption="Workforce turnover"
+              columns={['As of', 'Joined', 'Left', 'Net']}
+              rows={turnover.map((x) => [x.label, x.joined, x.departed, x.net])}
+              unit="snapshot steps"
+              period={span(turnover.map((x) => x.label))}
+            />
           </>
         )}
       </Card>

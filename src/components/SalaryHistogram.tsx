@@ -328,7 +328,7 @@ export function SalaryHistogram({
           )}
         </div>
         {guides.length === 3 && <Text size="xs" c="dimmed" mt={4}>1 block = 1 person · Dashed guides: p25 · median · p75.</Text>}
-        <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} />
+        <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people" />
       </>
     );
   }
@@ -423,7 +423,7 @@ export function SalaryHistogram({
         )}
       </div>
       {guides.length === 3 && <Text size="xs" c="dimmed" mt={4}>Dashed guides: p25 · median · p75.</Text>}
-      <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} />
+      <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people" />
     </>
   );
 }

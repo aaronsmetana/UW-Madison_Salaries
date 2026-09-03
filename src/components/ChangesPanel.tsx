@@ -423,8 +423,15 @@ export function ChangesPanel() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <ChartData caption="Raise distribution (% change)" columns={['% bin', 'People']} rows={(raiseDist ?? []).map((r) => [`${r.pct_bucket}%`, r.n])} />
         <Text size="xs" c="dimmed">5% bins; values clamped to [−25%, +50%]. Green = raise, red = cut, grey = no change; the dashed line marks the median.</Text>
+        <ChartData
+          caption="Raise distribution (% change)"
+          columns={['% bin', 'People']}
+          rows={(raiseDist ?? []).map((r) => [`${r.pct_bucket}%`, r.n])}
+          n={(raiseDist ?? []).reduce((s, r) => s + r.n, 0)}
+          unit="people"
+          period={`${fromLabel} → ${toLabel}`}
+        />
       </Card>
 
       <Stack gap="sm">
@@ -547,7 +554,14 @@ export function ChangesPanel() {
               ))}
             </Table.Tbody>
           </Table>
-          <ChartData caption="Title transitions" columns={['From', 'To', 'People', 'Median pay change']} rows={(flows ?? []).map((f) => [f.a_title, f.b_title, f.n, f.med_delta])} />
+          <ChartData
+            caption="Title transitions"
+            columns={['From', 'To', 'People', 'Median pay change']}
+            rows={(flows ?? []).map((f) => [f.a_title, f.b_title, f.n, f.med_delta])}
+            n={(flows ?? []).reduce((s, f) => s + f.n, 0)}
+            unit="people"
+            period={`${fromLabel} → ${toLabel}`}
+          />
         </Card>
       )}
 
