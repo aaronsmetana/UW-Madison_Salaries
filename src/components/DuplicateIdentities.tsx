@@ -6,7 +6,7 @@ import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { fullName, usd, num } from '../lib/format';
 import { ICON } from '../lib/ui';
-import { SectionTitle } from './SectionTitle';
+import { CardTitle } from './CardTitle';
 
 interface IdRow {
   person_key: string; fn: string | null; ln: string | null;
@@ -114,12 +114,16 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
 
   return (
     <Card id="duplicates">
-      <Group justify="space-between" mb="xs" wrap="wrap" gap="sm">
-        <SectionTitle id="duplicates">Possible duplicate identities</SectionTitle>
-        {flaggedCount > 0 && (
+      <CardTitle
+        order={3}
+        anchorId="duplicates"
+        mb="xs"
+        right={flaggedCount > 0 && (
           <Switch size="xs" label="Flagged only" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.currentTarget.checked)} />
         )}
-      </Group>
+      >
+        Possible duplicate identities
+      </CardTitle>
       <Stack gap="sm">
         <Text size="sm">
           Where <Anchor href="#identity" underline="always">name + hire date matching</Anchor> may have gone

@@ -7,6 +7,7 @@ import { useClipboard } from '@mantine/hooks';
 import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
 import { Eyebrow } from '../Eyebrow';
+import { CardTitle } from '../CardTitle';
 import { usd, pct, fmtYears } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import { ICON } from '../../lib/ui';
@@ -486,12 +487,16 @@ export function ReportSetup({
 
         {caseStrength && (
           <Box mt={8}>
-            <Group justify="space-between" mb={6}>
-              <Text size="sm" fw={600}>Case strength</Text>
-              <Badge variant="light" color={caseStrength.label === 'Strong' ? 'pos' : caseStrength.label === 'Moderate' ? 'accent' : 'gray'}>
-                {caseStrength.label} · {caseStrength.score}
-              </Badge>
-            </Group>
+            <CardTitle
+              mb={6}
+              right={
+                <Badge variant="light" color={caseStrength.label === 'Strong' ? 'pos' : caseStrength.label === 'Moderate' ? 'accent' : 'gray'}>
+                  {caseStrength.label} · {caseStrength.score}
+                </Badge>
+              }
+            >
+              Case strength
+            </CardTitle>
             <Stack gap={8}>
               {caseStrength.parts.map((p) => {
                 const maxed = p.value >= p.max;
@@ -521,8 +526,9 @@ export function ReportSetup({
 
         {evidenceChecklist.length > 0 && (
           <Box mt="md">
-            <Text size="sm" fw={600} mb={4}>Evidence in this report</Text>
-            <Text size="xs" c="dimmed" mb={6}>Click a rendered item to jump to it in the document.</Text>
+            <CardTitle mb={6} sub="Click a rendered item to jump to it in the document.">
+              Evidence in this report
+            </CardTitle>
             <Stack gap={3}>
               {evidenceChecklist.map((e) => {
                 const jump = e.ok && e.sectionId

@@ -10,7 +10,7 @@ import { MiniBar } from '../components/MiniBar';
 import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
 import { SortableTh, type SortState } from '../components/SortableTh';
-import { SectionTitle } from '../components/SectionTitle';
+import { CardTitle } from '../components/CardTitle';
 import { useDocTitle } from '../lib/useDocTitle';
 import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
@@ -275,7 +275,7 @@ export default function DataHealth() {
         blurb="Who released these records, how far you can trust a number, and what the three pay views actually measure."
       >
       <Card id="source" maw={PROSE}>
-        <SectionTitle id="source">Data source &amp; acknowledgment</SectionTitle>
+        <CardTitle order={3} anchorId="source">Data source &amp; acknowledgment</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
             The UW–Madison salary report files presented here are <b>public records</b>, obtained through
@@ -346,7 +346,7 @@ export default function DataHealth() {
       </Alert>
 
       <Card id="privacy" maw={PROSE}>
-        <SectionTitle id="privacy">Privacy &amp; responsible use</SectionTitle>
+        <CardTitle order={3} anchorId="privacy">Privacy &amp; responsible use</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
             These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
@@ -367,7 +367,7 @@ export default function DataHealth() {
       </Card>
 
       <Card id="how-it-works" maw={PROSE}>
-        <SectionTitle id="how-it-works">How these figures are calculated</SectionTitle>
+        <CardTitle order={3} anchorId="how-it-works">How these figures are calculated</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
             Each source row is one <b>appointment</b>, carrying a full-time annual rate and an FTE — the
@@ -394,7 +394,7 @@ export default function DataHealth() {
         blurb="The pipeline from a published spreadsheet to the numbers on this site — auditable, and downloadable in full."
       >
       <Card id="methodology" maw={PROSE}>
-        <SectionTitle id="methodology">Methodology, reproducibility &amp; downloads</SectionTitle>
+        <CardTitle order={3} anchorId="methodology">Methodology, reproducibility &amp; downloads</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
             This project is open source. The ingestion code, column-detection logic, and applied corrections are
@@ -410,7 +410,10 @@ export default function DataHealth() {
             )}
           </Group>
 
-          <Accordion variant="contained" mt="xs" multiple>
+          {/* `order` wraps each Accordion.Control's <button> in an <h3>, which is the ARIA pattern for
+              an accordion. These two labels read as card headings but cannot BE `CardTitle`: a heading
+              nested inside a button is invalid, and Accordion.Control renders a button. */}
+          <Accordion variant="contained" mt="xs" multiple order={3}>
             <Accordion.Item value="record">
               <Accordion.Control>
                 <Text size="sm" fw={600}>What's in a record — {RECORD_FIELDS.length} fields</Text>
@@ -461,7 +464,7 @@ export default function DataHealth() {
 
       <Card id="snapshots">
         <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
-          <SectionTitle id="snapshots">Per-snapshot ingestion</SectionTitle>
+          <CardTitle order={3} anchorId="snapshots">Per-snapshot ingestion</CardTitle>
           <Group gap="sm" wrap="wrap">
             <Select
               {...dropdownProps('sm')}

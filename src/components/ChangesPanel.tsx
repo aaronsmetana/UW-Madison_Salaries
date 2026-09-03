@@ -3,6 +3,7 @@ import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, But
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
 import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
+import { CardTitle } from './CardTitle';
 import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
@@ -330,7 +331,7 @@ export function ChangesPanel() {
       </SimpleGrid>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="sm">Payroll change decomposition</Text>
+        <CardTitle mb="sm">Payroll change decomposition</CardTitle>
         <SimpleGrid cols={{ base: 2, sm: 4 }}>
           <Stat label="Total change" value={usd(d?.total_change)} />
           <Stat label="From raises (continuing)" value={usd(d?.raises)} />
@@ -393,7 +394,7 @@ export function ChangesPanel() {
       </Card>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="sm">Raise distribution (% change, continuing staff)</Text>
+        <CardTitle mb="sm">Raise distribution (% change, continuing staff)</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12, top: 24 }}>
             <defs>{barGradientDefs(`${uid}-dist`, distGradientColors)}</defs>
@@ -427,19 +428,23 @@ export function ChangesPanel() {
       </Card>
 
       <Stack gap="sm">
-        <Group justify="space-between">
-          <Text size="sm" fw={600}>Biggest pay changes (continuing staff)</Text>
-          <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportMovers} disabled={!(raises ?? []).length}>
-            CSV
-          </Button>
-        </Group>
+        <CardTitle
+          mb={0}
+          right={
+            <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportMovers} disabled={!(raises ?? []).length}>
+              CSV
+            </Button>
+          }
+        >
+          Biggest pay changes (continuing staff)
+        </CardTitle>
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder padding="lg">
-            <Text size="sm" fw={600} mb="sm">Biggest raises</Text>
+            <CardTitle order={3} mb="sm">Biggest raises</CardTitle>
             <Table><Table.Tbody>{moverRows(raises)}</Table.Tbody></Table>
           </Card>
           <Card withBorder padding="lg">
-            <Text size="sm" fw={600} mb="sm">Biggest decreases</Text>
+            <CardTitle order={3} mb="sm">Biggest decreases</CardTitle>
             <Table><Table.Tbody>{moverRows(cuts)}</Table.Tbody></Table>
           </Card>
         </SimpleGrid>
@@ -447,7 +452,7 @@ export function ChangesPanel() {
 
       {(netTop.gainers.length > 0 || netTop.losers.length > 0) && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="sm">Net headcount flow by division</Text>
+          <CardTitle mb="sm">Net headcount flow by division</CardTitle>
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <div>
               <Eyebrow c="pos" mb={4}>Net gainers</Eyebrow>
@@ -483,7 +488,7 @@ export function ChangesPanel() {
       )}
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="sm">Title / job-code changes {isTTC ? '(reclassification)' : '(promotions & laterals)'}</Text>
+        <CardTitle mb="sm">Title / job-code changes {isTTC ? '(reclassification)' : '(promotions & laterals)'}</CardTitle>
         <Table>
           <Table.Thead>
             <Table.Tr>
@@ -512,12 +517,16 @@ export function ChangesPanel() {
 
       {(flows ?? []).length > 0 && (
         <Card withBorder padding="lg">
-          <Group justify="space-between" mb="sm">
-            <Text size="sm" fw={600}>Top title transitions (flows)</Text>
-            <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportFlows} disabled={!(flows ?? []).length}>
-              CSV
-            </Button>
-          </Group>
+          <CardTitle
+            mb="sm"
+            right={
+              <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportFlows} disabled={!(flows ?? []).length}>
+                CSV
+              </Button>
+            }
+          >
+            Top title transitions (flows)
+          </CardTitle>
           <Table>
             <Table.Thead>
               <Table.Tr>
@@ -544,7 +553,7 @@ export function ChangesPanel() {
 
       {(mobility ?? []).length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="sm">Internal moves (changed school)</Text>
+          <CardTitle mb="sm">Internal moves (changed school)</CardTitle>
           <Table>
             <Table.Thead>
               <Table.Tr>

@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useId, useMemo, useState } from 'react';
 import {
-  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, SegmentedControl, Tabs,
+  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, Tabs,
   ScrollArea,
 } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,6 +11,8 @@ import {
   ScatterChart, Scatter,
 } from 'recharts';
 import { StatCard } from '../components/StatCard';
+import { CardTitle } from '../components/CardTitle';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
@@ -229,7 +231,7 @@ export default function School() {
       </SimpleGrid>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Pay-band utilization</Text>
+        <CardTitle>Pay-band utilization</CardTitle>
         {band && band.banded > 0 ? (
           <>
             <SimpleGrid cols={{ base: 2, sm: 4 }}>
@@ -260,7 +262,7 @@ export default function School() {
         <Tabs.Panel value="dist" pt="md">
           <Stack gap="lg">
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Tenure vs pay (compression check)</Text>
+        <CardTitle>Tenure vs pay (compression check)</CardTitle>
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
@@ -286,7 +288,7 @@ export default function School() {
       </Card>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Median salary over time</Text>
+        <CardTitle>Median salary over time</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={trend ?? []} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
@@ -300,15 +302,17 @@ export default function School() {
       </Card>
 
       <Card withBorder padding="lg">
-        <Group justify="space-between" mb="md">
-          <Text size="sm" fw={600}>Salary distribution (current snapshot, $20k bins)</Text>
-          <SegmentedControl
-            size="xs"
-            value={distScale}
-            onChange={(v) => setDistScale(v as 'linear' | 'log')}
-            data={[{ value: 'linear', label: 'Linear' }, { value: 'log', label: 'Log' }]}
-          />
-        </Group>
+        <CardTitle
+          right={
+            <SegmentedToggle
+              value={distScale}
+              onChange={(v) => setDistScale(v as 'linear' | 'log')}
+              options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
+            />
+          }
+        >
+          Salary distribution (current snapshot, $20k bins)
+        </CardTitle>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={distData} margin={{ left: 12, right: 12 }}>
             <defs>{barGradientDefs(uid, { bar: 'var(--bar)' })}</defs>
@@ -342,7 +346,7 @@ export default function School() {
         <Tabs.Panel value="people" pt="md">
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Composition by category</Text>
+          <CardTitle>Composition by category</CardTitle>
           <Table>
             <Table.Tbody>
               {(comp ?? []).map((c) => (
@@ -356,7 +360,7 @@ export default function School() {
         </Card>
 
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Top earners</Text>
+          <CardTitle>Top earners</CardTitle>
           <Table>
             <Table.Tbody>
               {(earners ?? []).map((e) => (
@@ -378,12 +382,15 @@ export default function School() {
 
         <Tabs.Panel value="departments" pt="md">
           <Card withBorder padding="lg">
-            <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
-              <Text size="sm" fw={600}>Departments in {name}</Text>
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportDeptsCsv} disabled={!depts?.length}>
-                CSV
-              </Button>
-            </Group>
+            <CardTitle
+              right={
+                <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportDeptsCsv} disabled={!depts?.length}>
+                  CSV
+                </Button>
+              }
+            >
+              Departments in {name}
+            </CardTitle>
             {depts && depts.length === 0 ? (
               <Text c="dimmed" ta="center" py="xl">No departments recorded for this school.</Text>
             ) : (

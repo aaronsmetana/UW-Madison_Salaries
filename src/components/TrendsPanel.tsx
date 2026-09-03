@@ -15,6 +15,7 @@ import { prefersReducedMotion } from '../lib/motion';
 import { ChartData } from './ChartData';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
+import { CardTitle } from './CardTitle';
 import { YoyPill } from './chart/pills';
 import { usePref } from '../lib/prefs';
 
@@ -104,8 +105,8 @@ export function TrendsPanel() {
 
   return (
     <Card withBorder padding="lg">
-      <Group justify="space-between" align="center" mb="md" wrap="wrap">
-        <Text size="sm" fw={600}>Median salary &amp; headcount over time</Text>
+      <CardTitle
+        right={
         <Group gap="sm" wrap="wrap">
           <SegmentedToggle
             value={dollarMode}
@@ -118,7 +119,10 @@ export function TrendsPanel() {
             options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
           />
         </Group>
-      </Group>
+        }
+      >
+        Median salary &amp; headcount over time
+      </CardTitle>
       {/* Two stacked single-axis panels sharing an x-axis (syncId) instead of one dual-axis chart —
           a shared plot with two different y-scales makes the point where the lines cross meaningless.
           The median panel keeps the full rich tooltip (it reads hc/renew off the same `plot` rows even

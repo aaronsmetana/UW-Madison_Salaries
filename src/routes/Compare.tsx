@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Stack, Title, Text, Card, Table, Loader, SegmentedControl, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
+import { Stack, Title, Text, Card, Table, Loader, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
 import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -8,6 +8,8 @@ import {
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, fmtSnapTick } from '../lib/chartStyle';
 import { PageHeader } from '../components/PageHeader';
+import { CardTitle } from '../components/CardTitle';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { Eyebrow } from '../components/Eyebrow';
 import { useTray, type TrayItem } from '../state/tray';
 import { useControls } from '../state/controls';
@@ -386,23 +388,24 @@ export default function Compare() {
 
       {persons.length > 0 && (
         <Card withBorder padding="lg">
-          <Group justify="space-between" mb="md" wrap="wrap">
-            <Text size="sm" fw={600}>People — salary trajectory</Text>
-            <Group gap="sm" wrap="wrap">
-              <SegmentedControl
-                size="xs"
-                value={dollarMode}
-                onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
-                data={[{ value: 'nominal', label: 'Nominal' }, { value: 'real', label: `${REAL_BASE_YEAR} $` }]}
-              />
-              <SegmentedControl
-                size="xs"
-                value={xMode}
-                onChange={(v) => setXMode(v as 'date' | 'tenure')}
-                data={[{ value: 'date', label: 'By date' }, { value: 'tenure', label: 'By tenure' }]}
-              />
-            </Group>
-          </Group>
+          <CardTitle
+            right={
+              <Group gap="sm" wrap="wrap">
+                <SegmentedToggle
+                  value={dollarMode}
+                  onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
+                  options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
+                />
+                <SegmentedToggle
+                  value={xMode}
+                  onChange={(v) => setXMode(v as 'date' | 'tenure')}
+                  options={[{ id: 'date', label: 'By date' }, { id: 'tenure', label: 'By tenure' }]}
+                />
+              </Group>
+            }
+          >
+            People — salary trajectory
+          </CardTitle>
           {pLoading ? (
             <Loader />
           ) : (
@@ -463,7 +466,7 @@ export default function Compare() {
 
       {persons.length > 1 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Pay gap to the top earner in this group</Text>
+          <CardTitle>Pay gap to the top earner in this group</CardTitle>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
@@ -492,7 +495,7 @@ export default function Compare() {
 
       {persons.length > 0 && standingSeries.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Relative standing within school (percentile over time)</Text>
+          <CardTitle>Relative standing within school (percentile over time)</CardTitle>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
@@ -515,7 +518,7 @@ export default function Compare() {
 
       {persons.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Raise cadence &amp; stagnation</Text>
+          <CardTitle>Raise cadence &amp; stagnation</CardTitle>
           <Table>
             <Table.Thead>
               <Table.Tr>
@@ -543,7 +546,7 @@ export default function Compare() {
 
       {titles.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Titles — side-by-side (current snapshot)</Text>
+          <CardTitle>Titles — side-by-side (current snapshot)</CardTitle>
           {tLoading ? (
             <Loader />
           ) : (
@@ -579,7 +582,7 @@ export default function Compare() {
 
       {titles.length > 0 && titleSeries.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Titles — median salary over time</Text>
+          <CardTitle>Titles — median salary over time</CardTitle>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
@@ -602,7 +605,7 @@ export default function Compare() {
 
       {schools.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Schools — side-by-side (current snapshot)</Text>
+          <CardTitle>Schools — side-by-side (current snapshot)</CardTitle>
           {sLoading ? (
             <Loader />
           ) : (

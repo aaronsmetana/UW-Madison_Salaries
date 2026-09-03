@@ -12,6 +12,7 @@ import type { Metric } from '../state/controls';
 import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
+import { CardTitle } from './CardTitle';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
 import { GLOSSARY } from '../lib/glossary';
@@ -188,7 +189,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
       {pinned && s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Where {usd(pinSalary)} lands among {titleLabel}{scopeLabel}</Text>
+          <CardTitle>Where {usd(pinSalary)} lands among {titleLabel}{scopeLabel}</CardTitle>
           <PeerRangeBar min={s.lo} p25={s.p25} median={s.med} p75={s.p75} max={s.hi} value={pinSalary!} values={pays} />
           {titleRow && (
             <Text size="sm" mt="md">
@@ -202,7 +203,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       )}
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Salary distribution{scopeLabel}</Text>
+        <CardTitle>Salary distribution{scopeLabel}</CardTitle>
         <SalaryHistogram
           values={pays}
           markerValue={pinned ? pinSalary : null}
@@ -215,7 +216,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
       {band && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Official pay band — grade {g?.grade_number}</Text>
+          <CardTitle>Official pay band — grade {g?.grade_number}</CardTitle>
           <PayBandBar
             min={band.min}
             max={band.max}
@@ -227,12 +228,14 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       )}
 
       <Card withBorder padding="lg">
-        <Group justify="space-between" mb="sm" wrap="nowrap">
-          <Text size="sm" fw={600}>People with this title{scopeLabel}</Text>
-          {pinned && rank != null && (
+        <CardTitle
+          mb="sm"
+          right={pinned && rank != null && (
             <Text size="sm" c="dimmed">{usd(pinSalary)} would rank <b>#{rank}</b> of {num(s.n)}</Text>
           )}
-        </Group>
+        >
+          People with this title{scopeLabel}
+        </CardTitle>
         {binFilter && (
           <Badge
             variant="light"
@@ -306,7 +309,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       </Card>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Pay by school (market view)</Text>
+        <CardTitle>Pay by school (market view)</CardTitle>
         <Table>
           <Table.Thead>
             <Table.Tr>

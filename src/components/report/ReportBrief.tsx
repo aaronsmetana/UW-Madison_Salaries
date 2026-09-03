@@ -183,7 +183,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {/* Recommendation hero — with the itemized "receipt" docked directly under the number */}
           {belowTarget && recommended != null ? (
             <Paper p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
-              <Text size="sm" fw={600} c="dimmed">1. Recommendation</Text>
+              <Title order={3} fz="h5" c="dimmed">1. Recommendation</Title>
               <Text fw={800} c="pos.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
                 {usd(Math.round(animated))}
               </Text>
@@ -240,7 +240,7 @@ export function ReportBrief({ model, hovered, onHover }: {
             </Paper>
           ) : (
             <Paper withBorder p="lg" mb="lg">
-              <Text size="sm" fw={600} c="dimmed">1. Recommendation</Text>
+              <Title order={3} fz="h5" c="dimmed">1. Recommendation</Title>
               <Text fw={700} fz="lg" mt={4}>
                 {subjectFirst} is at or above the parity target{recommended != null ? ` (${usd(recommended)})` : ''} — maintain current pay.
               </Text>
@@ -606,16 +606,21 @@ export function ReportBrief({ model, hovered, onHover }: {
 }
 
 /** One shared heading for every numbered section — sentence case, uniform size/weight/spacing, always
- *  outside its card. `id` (a section key) becomes a scroll anchor the setup-pane checklist links to. */
+ *  outside its card. `id` (a section key) becomes a scroll anchor the setup-pane checklist links to.
+ *
+ *  h3: the brief's own title above is an h2, which sits under the page's h1. This used to be a
+ *  `<Text size="sm" fw={600}>` — a styled span — so a document that is explicitly organised into
+ *  numbered sections offered a screen reader no way to move between them. `fz="h5"` is the shared
+ *  card-heading size (theme.ts), so nothing about the printed brief changes visually. */
 function SectionHeading({ id, num, children, annotation, sup }: {
   id?: string; num: number | undefined; children: ReactNode; annotation?: string; sup?: number;
 }) {
   return (
-    <Text id={id ? `report-sec-${id}` : undefined} size="sm" fw={600} mb="xs" style={{ scrollMarginTop: 12 }}>
+    <Title order={3} fz="h5" id={id ? `report-sec-${id}` : undefined} mb="xs" style={{ scrollMarginTop: 12 }}>
       {num}. {children}
       {annotation && <Text span c="dimmed" size="xs" fw={400}> · {annotation}</Text>}
       {sup != null && sup > 0 && <Sup n={sup} />}
-    </Text>
+    </Title>
   );
 }
 

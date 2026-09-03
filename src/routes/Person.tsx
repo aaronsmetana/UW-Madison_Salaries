@@ -33,6 +33,7 @@ import { ChartData } from '../components/ChartData';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
+import { CardTitle } from '../components/CardTitle';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
@@ -878,9 +879,9 @@ export default function Person() {
 
             {peer && peer.n > 1 && lastSalary != null && jobCode && (
               <Card withBorder padding="lg">
-                <Group justify="space-between" mb="xs" wrap="nowrap" align="flex-start">
-                  <Text size="sm" fw={600}>How this person compares to others with the same title</Text>
-                  {allCount > schoolCount && (
+                <CardTitle
+                  mb="xs"
+                  right={allCount > schoolCount && (
                     <SegmentedToggle
                       value={cohort}
                       onChange={(v) => setCohort(v as 'all' | 'school')}
@@ -890,7 +891,9 @@ export default function Person() {
                       ]}
                     />
                   )}
-                </Group>
+                >
+                  How this person compares to others with the same title
+                </CardTitle>
                 <Text size="xs" c="dimmed" mb="md">
                   {cohort === 'school'
                     ? `Among ${num(cohortStats?.n ?? 0)} ${(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title ${latest?.title} — same title, same school (${latest?.school}).`
@@ -927,12 +930,9 @@ export default function Person() {
 
             {scatterPoints.length >= 4 && (
               <Card withBorder padding="lg">
-                <Group justify="space-between" mb="md" wrap="nowrap" align="flex-start">
-                  <div>
-                    <Text size="sm" fw={600}>Pay vs. tenure — same title</Text>
-                    <Text size="xs" c="dimmed">Where this person sits against what tenure alone predicts for {latest?.title}.</Text>
-                  </div>
-                  {allCount > schoolCount && (
+                <CardTitle
+                  sub={<>Where this person sits against what tenure alone predicts for {latest?.title}.</>}
+                  right={allCount > schoolCount && (
                     <SegmentedToggle
                       value={cohort}
                       onChange={(v) => setCohort(v as 'all' | 'school')}
@@ -942,23 +942,24 @@ export default function Person() {
                       ]}
                     />
                   )}
-                </Group>
+                >
+                  Pay vs. tenure — same title
+                </CardTitle>
                 <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} />
               </Card>
             )}
 
             {peers && peers.length > 1 && (
               <Card withBorder padding="lg">
-                <Group justify="space-between" mb="md" wrap="nowrap">
-                  <Text size="sm" fw={600}>
-                    Others with this title{cohort === 'school' ? ` · ${latest?.school}` : ''}
-                  </Text>
-                  {cohortRank != null && (
+                <CardTitle
+                  right={cohortRank != null && (
                     <Text size="sm" c="dimmed">
                       {name} ranks <b>#{cohortRank}</b> of {num(cohortList.length)} by salary
                     </Text>
                   )}
-                </Group>
+                >
+                  Others with this title{cohort === 'school' ? ` · ${latest?.school}` : ''}
+                </CardTitle>
                 <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
                   <Table stickyHeader miw={760}>
                     <Table.Thead>
@@ -1039,8 +1040,9 @@ export default function Person() {
       {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
       {standingPools.length > 0 && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb={2}>Standing — where this pay ranks in each pool (latest snapshot)</Text>
-          <Text size="xs" c="dimmed" mb="md">Rank and percentile across each pool this person belongs to.</Text>
+          <CardTitle sub="Rank and percentile across each pool this person belongs to.">
+            Standing — where this pay ranks in each pool (latest snapshot)
+          </CardTitle>
           <Stack gap="sm">
             {standingPools.map((p, i) => (
               <PercentileBar key={p.label} label={p.label} n={p.n} below={p.below} pct={p.pct} delay={i * 90} />
@@ -1054,12 +1056,11 @@ export default function Person() {
               the Overview title bar, so this card is purely the HR grade-structure lens.) */}
       {band && lastRate != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb={2}>
+          <CardTitle
+            sub={<>Where the full-time rate sits in grade {latest?.grade_number}'s official min–max, and the room to the top.</>}
+          >
             Pay band — grade {latest?.grade_number} · official HR range
-          </Text>
-          <Text size="xs" c="dimmed" mb="md">
-            Where the full-time rate sits in grade {latest?.grade_number}'s official min–max, and the room to the top.
-          </Text>
+          </CardTitle>
           <PayBandBar min={band.min} max={band.max} value={lastRate} quartiles />
           {lastRate >= band.max ? (
             <Text size="sm" mt="md">
@@ -1077,8 +1078,9 @@ export default function Person() {
       {/* 4c — Raise / what-if: presets, steppers, the projected rate, and where it lands on the band. */}
       {lastRate != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb={4}>Raise / what-if simulator</Text>
-          <Text size="xs" c="dimmed" mb="sm">Projects the full-time salary rate; actual pay scales with FTE.</Text>
+          <CardTitle mb="sm" sub="Projects the full-time salary rate; actual pay scales with FTE.">
+            Raise / what-if simulator
+          </CardTitle>
           <Group gap="xs" mb="md" wrap="wrap">
             {[
               { label: 'Flat 2%', val: 2 },
@@ -1137,14 +1139,12 @@ export default function Person() {
 
         <Tabs.Panel value="trends" pt="md">
       <Card withBorder padding="lg">
-        <Group justify="space-between" align="flex-start" mb="md" wrap="nowrap">
-          <div>
-            <Text size="sm" fw={600}>Salary over time</Text>
-            <Text size="xs" c="dimmed">
-              Rate is the full-time salary; Actual pay scales it by FTE.
-              {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
-            </Text>
-          </div>
+        <CardTitle
+          sub={<>
+            Rate is the full-time salary; Actual pay scales it by FTE.
+            {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
+          </>}
+          right={
           <Group gap="sm" wrap="wrap">
             <SegmentedToggle
               value={dollarMode}
@@ -1157,7 +1157,10 @@ export default function Person() {
               options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Rate' }]}
             />
           </Group>
-        </Group>
+          }
+        >
+          Salary over time
+        </CardTitle>
         {/* Hero salary chart: a ComposedChart with a gradient area + soft-glow line, faint title-era bands,
             grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
             the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
@@ -1303,7 +1306,7 @@ export default function Person() {
 
         <Tabs.Panel value="history" pt="md">
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Title & salary history</Text>
+        <CardTitle>Title & salary history</CardTitle>
         <Table.ScrollContainer minWidth={880}>
         <Table>
           <Table.Thead>

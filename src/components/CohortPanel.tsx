@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import { Stack, Card, Text, SimpleGrid, Group } from '@mantine/core';
+import { Stack, Card, Text, SimpleGrid } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
   ReferenceArea, ReferenceLine,
@@ -14,6 +14,7 @@ import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
 import { StatSkeleton, ChartSkeleton } from './Loading';
 import { SegmentedToggle } from './SegmentedToggle';
+import { CardTitle } from './CardTitle';
 import { SvgPill } from './chart/pills';
 import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
@@ -156,13 +157,16 @@ export function CohortPanel() {
       </SimpleGrid>
 
       <Card withBorder padding="lg">
-        <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
-          <Text size="sm" fw={600}>Retention by hire year (share still here)</Text>
-          <SegmentedToggle
-            size="xs" value={sortMode} onChange={(v) => setSortMode(v as 'year' | 'retention')}
-            options={[{ id: 'year', label: 'By year' }, { id: 'retention', label: 'By retention' }]}
-          />
-        </Group>
+        <CardTitle
+          right={
+            <SegmentedToggle
+              size="xs" value={sortMode} onChange={(v) => setSortMode(v as 'year' | 'retention')}
+              options={[{ id: 'year', label: 'By year' }, { id: 'retention', label: 'By retention' }]}
+            />
+          }
+        >
+          Retention by hire year (share still here)
+        </CardTitle>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chart} margin={{ left: 12, right: 12 }}>
             <defs>{barGradientDefs(uid, { stayed: 'var(--mantine-color-pos-6)', lost: 'var(--mantine-color-gray-4)' })}</defs>
@@ -218,7 +222,7 @@ export function CohortPanel() {
       </Card>
 
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Workforce turnover — paid staff joining vs leaving</Text>
+        <CardTitle>Workforce turnover — paid staff joining vs leaving</CardTitle>
         {flowFetching && !flow ? (
           <ChartSkeleton height={280} />
         ) : (

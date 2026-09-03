@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Group, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
+import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
@@ -13,6 +13,7 @@ import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
+import { CardTitle } from './CardTitle';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
@@ -284,7 +285,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
       {/* Salary over time */}
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Salary over time</Text>
+        <CardTitle>Salary over time</CardTitle>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
@@ -307,7 +308,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
       {/* Title & salary history */}
       <Card withBorder padding="lg">
-        <Text size="sm" fw={600} mb="md">Title &amp; salary history</Text>
+        <CardTitle>Title &amp; salary history</CardTitle>
         <Table.ScrollContainer minWidth={680}>
         <Table>
           <Table.Thead>
@@ -379,10 +380,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {peer && peer.n > 1 && lastSalary != null && jobCode &&
         peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
         <Card withBorder padding="lg">
-          <Group justify="space-between" mb="md" wrap="nowrap">
-            <Text size="sm" fw={600}>How {name} compares to others with the title {latest?.title}</Text>
-            {peerRank != null && <Text size="sm" c="dimmed">ranks <b>#{peerRank}</b> of {num(peer.n)} by salary</Text>}
-          </Group>
+          <CardTitle
+            right={peerRank != null && <Text size="sm" c="dimmed">ranks <b>#{peerRank}</b> of {num(peer.n)} by salary</Text>}
+          >
+            How {name} compares to others with the title {latest?.title}
+          </CardTitle>
           <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} values={peerPays} />
           {peerPct != null && (
             <Text size="sm" mt="sm">Paid more than <b>{peerPct}%</b> of people with this title.</Text>
@@ -402,7 +404,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {/* Pay band */}
       {band && lastRate != null && (
         <Card withBorder padding="lg">
-          <Text size="sm" fw={600} mb="md">Pay band — grade {latest?.grade_number} (full-time rate vs the official range)</Text>
+          <CardTitle>Pay band — grade {latest?.grade_number} (full-time rate vs the official range)</CardTitle>
           <PayBandBar min={band.min} max={band.max} value={lastRate} />
         </Card>
       )}
