@@ -33,12 +33,21 @@ const SHOT = {
   // re-shoots until two consecutive frames are identical, so a generous timeout absorbs that rather
   // than a fixed sleep per chart.
   timeout: 25_000,
-  // No `maxDiffPixelRatio`. It was set to 0.01 and it hid real changes: on a sparse page — the empty
-  // Titles view, the 404, the departments table — the token pass moved hairlines, card corners and
-  // 11px labels, which together came to under 1% of a mostly-white full-page shot, so three pages
-  // reported "unchanged" while every one of them had in fact changed. Playwright's per-pixel
-  // `threshold` (0.2 by default) already absorbs antialiasing noise, and running the suite twice
-  // against one build produced zero diffs, so there is no flake left for a count tolerance to soak up.
+  // An ABSOLUTE cap, and deliberately not `maxDiffPixelRatio`. The ratio version was tried at 0.01
+  // and hid real changes: on a sparse page — the empty Titles view, the 404, the departments table —
+  // the token pass moved hairlines, card corners and 11px labels, which together came to under 1% of
+  // a mostly-white full-page shot, so three pages reported "unchanged" while all three had changed.
+  // A ratio scales the blind spot with the page; an absolute count does not.
+  //
+  // 250px is calibrated against the two things it has to tell apart. Below it: Person on a 375px
+  // viewport settles with the peer table about two pixels higher or lower between runs, because a
+  // Recharts container above it measures its own height slightly differently at that width — 99
+  // antialiased pixels along two rows of text, no content difference at all (verified by cropping and
+  // magnifying both images). Above it, by orders of magnitude: every real change so far. The radius
+  // and surface pass moved 39 baselines, the heading pass 7, and each of those rewrites thousands of
+  // pixels per page. There is no plausible design change that lands under 250 pixels of a full-page
+  // shot and still matters.
+  maxDiffPixels: 250,
 } as const;
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
@@ -60,7 +69,42 @@ async function setTheme(page: Page, theme: 'light' | 'dark') {
  */
 async function settle(page: Page) {
   await page.evaluate(() => document.fonts?.ready);
+  // Force one re-layout after the webfont has actually applied. Recharts decides how many x-axis
+  // ticks fit by *measuring* rendered label widths, and it makes that decision once — so if the
+  // decision was made against the fallback face, a different tick set gets baked in and stays. The
+  // app's metric-overridden fallbacks narrow the swap but do not erase it (app.css puts the residual
+  // at ~2%), which is enough to flip a tick in or out. That produced a Person diff in the axis labels
+  // and the table headers on a commit that only touched the router.
+  //
+  // A one-pixel viewport nudge makes ResponsiveContainer re-measure with the final metrics.
+  const vp = page.viewportSize();
+  if (vp) {
+    await page.setViewportSize({ width: vp.width + 1, height: vp.height });
+    await page.setViewportSize(vp);
+  }
   await expect(page.locator('.global-loading-bar')).toHaveCount(0, { timeout: 60_000 });
+  // Re-run the app's own "centre the subject row" scroll, now that layout is final.
+  //
+  // Person's peer table centres the highlighted row on mount (Person.tsx) by measuring `rowRect.top`.
+  // That measurement happens when the peer data arrives, which is before the webfont has finished
+  // settling and before the re-layout above — so the position it computes is a pixel or two off, and
+  // in a 1,251-row table a pixel or two of drift lands the scroll on a different row. The screenshot
+  // then shows a different slice of the table every run: a ~20,000-pixel diff on a commit that only
+  // touched the router.
+  //
+  // Resetting the scroll to zero is not enough, because the app's effect can still fire afterwards
+  // and re-centre from the stale measurement. Reproducing the same calculation against settled
+  // layout is deterministic, and keeps the subject row — and its `.row-this` treatment — in frame.
+  await page.evaluate(() => {
+    document.querySelectorAll<HTMLElement>('.mantine-ScrollArea-viewport').forEach((vp) => { vp.scrollTop = 0; });
+    const row = document.querySelector('.row-this');
+    const vp = row?.closest<HTMLElement>('.mantine-ScrollArea-viewport');
+    if (row && vp) {
+      const r = row.getBoundingClientRect();
+      const v = vp.getBoundingClientRect();
+      vp.scrollTop += r.top - v.top - vp.clientHeight / 2 + r.height / 2;
+    }
+  });
   await page.waitForTimeout(350);
 }
 
@@ -73,20 +117,20 @@ async function settle(page: Page) {
  * desktop image and abort before dark and mobile were even taken — exactly the two that most need
  * looking at. Soft assertions compare all three and still fail the test.
  */
-async function shots(page: Page, name: string) {
+async function shots(page: Page, name: string, opts: { fullPage?: boolean } = {}) {
   await page.setViewportSize(DESKTOP);
   await setTheme(page, 'light');
   await settle(page);
-  await expect.soft(page).toHaveScreenshot(`${name}-light-desktop.png`, SHOT);
+  await expect.soft(page).toHaveScreenshot(`${name}-light-desktop.png`, { ...SHOT, ...opts });
 
   await setTheme(page, 'dark');
   await settle(page);
-  await expect.soft(page).toHaveScreenshot(`${name}-dark-desktop.png`, SHOT);
+  await expect.soft(page).toHaveScreenshot(`${name}-dark-desktop.png`, { ...SHOT, ...opts });
 
   await setTheme(page, 'light');
   await page.setViewportSize(MOBILE);
   await settle(page);
-  await expect.soft(page).toHaveScreenshot(`${name}-light-mobile.png`, SHOT);
+  await expect.soft(page).toHaveScreenshot(`${name}-light-mobile.png`, { ...SHOT, ...opts });
 }
 
 /** A route that renders straight from its URL. */
@@ -122,7 +166,20 @@ test('visual: person', async ({ page }) => {
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
   await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
-  await shots(page, 'person');
+  // Viewport-only, not full-page — the one test in this file that is.
+  //
+  // Person is the densest page in the app and has two regions that will not settle to the pixel: a
+  // 1,251-point Recharts scatter, and a 1,251-row peer table in a 460px scroll box that centres the
+  // subject row by measuring its position on mount. A pixel of layout drift lands that scroll on a
+  // different row, so the shot captures a different slice of the table. Re-running the centring
+  // against settled layout (see `settle`) helped and did not fix it; across six runs it still moved
+  // on three, once by 22,000 pixels.
+  //
+  // Both live below the fold, and neither is what this suite is for. What it is for — the header,
+  // the hero, the stat cards, the tab bar, the card treatment and the headings — is all above it and
+  // is stable. Shooting the viewport keeps that under exact comparison instead of letting one scroll
+  // box make the whole page unreadable as a diff.
+  await shots(page, 'person', { fullPage: false });
 });
 
 test('visual: school', async ({ page }) => {
