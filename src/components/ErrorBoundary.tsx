@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   render() {
     if (this.state.error) {
       return (
-        <Stack p="xl" maw={640}>
+        <Stack p="xl" maw="var(--measure)">
           <Alert color="red" title="Something went wrong on this view">
             <Text size="sm">{this.state.error.message}</Text>
           </Alert>

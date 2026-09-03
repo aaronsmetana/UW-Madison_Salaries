@@ -122,7 +122,6 @@ export function AppShellLayout() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0,
-                      boxShadow: '0 4px 12px rgba(14,110,131,.34)',
                     }}
                   >
                     <svg width={19} height={19} viewBox="0 0 18 18" aria-hidden role="img">
@@ -133,10 +132,14 @@ export function AppShellLayout() {
                   </Box>
                   {/* Two-tone wordmark + small uppercase eyebrow for a masthead feel. */}
                   <Stack gap={0} style={{ lineHeight: 1.05 }}>
-                    <Text style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em' }} tt="uppercase" c="dimmed" visibleFrom="xs">
+                    {/* Deliberately not `Eyebrow`, though it looks like one: the wide 0.14em tracking is
+                        a masthead device, and Eyebrow's contract fixes its own spacing. The size is the
+                        shared `xxs` token rather than the 9px literal it used to carry — below the
+                        scale's floor, and the smallest text anywhere in the app. */}
+                    <Text fz="xxs" fw={700} lts="0.14em" tt="uppercase" c="dimmed" visibleFrom="xs">
                       Open record salary data
                     </Text>
-                    <Text component="span" style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                    <Text component="span" fz="lg" fw={700} lts="-0.02em" style={{ lineHeight: 1.1 }}>
                       <Text span inherit c="bright">UW–Madison </Text>
                       <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
                     </Text>
@@ -148,7 +151,7 @@ export function AppShellLayout() {
               <ColorSchemeToggle />
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
-                <Text c="dimmed" ta="right" style={{ fontSize: 11 }}>
+                <Text c="dimmed" ta="right" fz="xxs">
                   Public salary records obtained via open-records requests by{' '}
                   <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="always" inherit className="accent7-text">
                     UFAS Local 223
@@ -156,7 +159,7 @@ export function AppShellLayout() {
                 </Text>
                 {/* `ta="center" w="100%"` centred this under the longer line above, which read as a
                     misalignment in a right-aligned stack. Inherit the stack's own alignment instead. */}
-                <Text c="dimmed" style={{ fontSize: 11 }}>Built by Aaron Smetana</Text>
+                <Text c="dimmed" fz="xxs">Built by Aaron Smetana</Text>
               </Stack>
             </Group>
           </Group>

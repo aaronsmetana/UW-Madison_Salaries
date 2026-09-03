@@ -23,12 +23,6 @@ async function runAxe(page: import('@playwright/test').Page) {
     // off for the whole page: any genuine misuse of an ARIA attribute in app code would have been
     // waved through with it. This is the same narrow tool already used for the two known gaps below.
     .exclude('[id^="mantine-"][id$="-target"]')
-    // .orange-light-text (ReportSetup's "weak case" badge + "strong comparator" suggestion chips):
-    // already darkened to orange-9, the darkest stock shade, which only reaches ~3.9:1 against the
-    // badge's own pale-orange fill — same-hue text-on-tint has no more headroom left in this ramp.
-    // A real fix needs a different (less saturated) background, tracked as a known gap, not silently
-    // dropped: excluded by exact selector so a regression anywhere else still fails this gate.
-    .exclude('.orange-light-text')
     // .accent-adaptive-text (TrayButton's outline "Add to tray"): fixed and verified correct (accent-8)
     // on the vast majority of rows in Person's 1000+-row peer tables; a handful of rows measure a
     // different, unexplained blended shade at scan time that further investigation didn't resolve.

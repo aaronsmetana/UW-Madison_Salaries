@@ -379,7 +379,7 @@ export default function Home() {
           <Title order={1} ta="center" fz="var(--fs-display)" lh={1.05}>
             {summary?.latest?.median != null ? usd(summary.latest.median) : '—'}
           </Title>
-          <Text c="dimmed" ta="center" maw={620}>
+          <Text c="dimmed" ta="center" maw="var(--measure)">
             is the median UW–Madison salary. Search anyone by name to see their pay, how it changed, and
             how they compare to everyone with the same title.
           </Text>
@@ -387,7 +387,7 @@ export default function Home() {
 
         {/* The distribution sits directly under the median that labels it, so the marker under the
             headline number is the same number. Then search — the action — then the supporting figures. */}
-        <Stack gap="lg" maw={900} mx="auto" w="100%" className="hero-rise">
+        <Stack gap="lg" maw="var(--content-prose)" mx="auto" w="100%" className="hero-rise">
           <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
             <Distribution
               bins={bins}
@@ -429,7 +429,7 @@ export default function Home() {
             nothing indicating that Compare, Reports, Screening or the division pages existed at all.
             Everything here reads from the same two JSON artifacts the stats card uses, so the landing
             page still never touches DuckDB. */}
-        <Stack gap="md" maw={1100} mx="auto" w="100%" mt="xl">
+        <Stack gap="md" maw="var(--content-max)" mx="auto" w="100%" mt="xl">
           <Group justify="center" gap={8}>
             <Eyebrow c="dimmed">Also in here</Eyebrow>
           </Group>
@@ -468,7 +468,7 @@ export default function Home() {
         {/* Footnotes. These used to sit between the stats and the showcase band, which pushed the band
             below the fold — they are the least urgent thing on the page and were occupying the most
             valuable space on it. */}
-        <Stack gap="xs" maw={900} mx="auto" w="100%">
+        <Stack gap="xs" maw="var(--content-prose)" mx="auto" w="100%">
           <RotatingFact facts={facts} />
 
           {summary?.snapshot_count != null && firstSnap && latestLabel && (
@@ -479,7 +479,7 @@ export default function Home() {
             </Text>
           )}
 
-          <Text size="xs" c="dimmed" ta="center" fs="italic" maw={640} mx="auto">
+          <Text size="xs" c="dimmed" ta="center" fs="italic" maw="var(--measure)" mx="auto">
             Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between
             snapshots, so actual pay earned may be higher or lower than the amounts shown.{' '}
             <Anchor component={Link} to="/data" c="dimmed" underline="always" fs="normal">How this data works →</Anchor>

@@ -36,7 +36,7 @@ export function EmptyState({
         ) : (
           <Title order={2} fz="h4" ta="center">{title}</Title>
         )}
-        {hint != null && <Text c="dimmed" ta="center" maw={420} size="sm">{hint}</Text>}
+        {hint != null && <Text c="dimmed" ta="center" maw="var(--measure-narrow)" size="sm">{hint}</Text>}
         {action}
       </Stack>
     </Card>

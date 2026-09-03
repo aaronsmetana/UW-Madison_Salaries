@@ -23,7 +23,7 @@ const STATUS_COLOR: Record<string, string> = { ok: 'pos', warning: 'orange', err
 
 /** The columns one appointment row carries. Kept here rather than inline so the count in the disclosure
  *  label can't drift from the list, and `data-about.spec.ts` can check it against the manifest. */
-const PROSE = 860; // Reading measure. Nothing else in the app sets a width, so prose ran to 1440px here.
+const PROSE = 'var(--content-prose)'; // The app-wide reading column (app.css). Without it prose ran to 1440px here.
 
 const RECORD_FIELDS = [
   'name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary',
@@ -510,8 +510,10 @@ export default function DataHealth() {
               </Table.Td>
               {!compact && (
                 <Table.Td>
-                  <Text size="xs">{s.source_file}</Text>
-                  <Text size="xs" c="dimmed">{s.source_sheet}</Text>
+                  {/* Verbatim strings out of the source workbook, so they take the mono register
+                      (app.css) rather than being retyped as prose. */}
+                  <Text size="xs" className="mono">{s.source_file}</Text>
+                  <Text size="xs" c="dimmed" className="mono">{s.source_sheet}</Text>
                 </Table.Td>
               )}
               <Table.Td ta="right">

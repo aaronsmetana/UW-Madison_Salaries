@@ -90,26 +90,23 @@
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
-  /* Elevation ramp (light): a cool paper canvas, white cards, a sunken well for inset areas.
-     `--page-bg` was #eef1f5, a distinctly blue grey; the saturation is dropped (not the coolness — see
-     the dark block's note) because it was tinting every neutral on the page toward blue-grey wash.
-     `--chrome` is the step that was missing: header, sidebar, cards, and the search input all painted
-     the same #ffffff, so the app shell was indistinguishable from the content inside it. */
-  --page-bg: #f3f4f5;
-  --chrome: #f8f9fa;
+  /* Elevation ramp (light): a near-neutral paper canvas, white cards, white overlays.
+     The last of the blue is gone — #eef1f5 then #f3f4f5 were both cool greys tinting every neutral on
+     the page toward wash. The steps are deliberately close together now, because separation is the
+     border's job (see the shell hairlines and the Paper rule below), not the tone's. */
+  --page-bg: #f7f7f8;
+  --chrome: #fcfcfd;
   --surface: #ffffff;
-  --surface-sunken: #eceef0;
-  /* "Raised" on a white sheet cannot be a lighter colour — there isn't one. It is the same surface
-     plus a shadow, which is what separates an overlay from the card beneath it. */
+  /* "Raised" on a white sheet cannot be a lighter colour — there isn't one; in light mode an overlay
+     is separated from the card beneath it by `shadows.md`, which Mantine's Popover/Modal already
+     apply. The token exists because dark mode genuinely needs the extra step (see below). */
   --surface-raised: #ffffff;
-  --raised-shadow: var(--mantine-shadow-md);
 
   /* Hairlines. Alpha rather than a flat grey so a border reads consistently over any surface in the
-     ramp instead of going muddy on the tinted ones. */
-  --hairline: rgba(13, 42, 53, 0.10);
-  --hairline-strong: rgba(13, 42, 53, 0.18);
-  /* The 1px top highlight that makes a flat card read as a physical sheet under a light source. */
-  --surface-sheen: rgba(255, 255, 255, 0.9);
+     ramp instead of going muddy on the tinted ones. Neutral ink, not the old blue-black, for the same
+     reason the canvas lost its tint. */
+  --hairline: rgba(16, 24, 32, 0.09);
+  --hairline-strong: rgba(16, 24, 32, 0.16);
 
   /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
@@ -126,6 +123,18 @@
      thing at 48 was a wordmark. It is now the one number the landing page leads with, so the step is
      a real register rather than a one-off inline clamp on a route. */
   --fs-display: clamp(2.75rem, 6vw, 4.25rem);
+
+  /* Layout widths. Fifteen call sites carried seven different `maw` numbers — 420, 480, 620, 640,
+     720, 860, 900, 1100 — none of which knew about the others.
+
+     Two units on purpose, because these are two different things. A *container* is a page-layout
+     decision and belongs in px. A *measure* is a line length — a count of characters, which is what
+     makes text comfortable to read — so it belongs in `ch` and should track the type size of whatever
+     it is applied to. Conflating the two is what produced the seven numbers. */
+  --content-max: 1200px; /* full-width bands: the showcase row, wide tables */
+  --content-prose: 880px; /* a reading column that also holds layout (the /data cards, Home's hero) */
+  --measure: 62ch; /* one paragraph */
+  --measure-narrow: 44ch; /* a centred hint or caption */
 }
 
 /* Bridge the tokens above onto the Mantine variables that actually paint things. Two details matter:
@@ -142,30 +151,36 @@ body {
 }
 
 :root[data-mantine-color-scheme='dark'] {
-  /* Same three steps, inverted: a near-black canvas, a lifted card, a further-lifted popover. Kept
-     slightly cool (blue-teal cast) so it sits under the marine accent rather than fighting it. */
-  --page-bg: #101418;
-  --chrome: #14181c;
-  --surface: #181d22;
-  --surface-raised: #20262c;
-  --surface-sunken: #0c1013;
-  --raised-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+  /* One base and one lift, rather than four unrelated hex greys. Each surface is the canvas with a
+     little more light on it, so the steps stay in proportion and moving the base moves all of them.
+     `--lift` is a cool white, not pure white, so every step keeps the blue-teal cast that lets the
+     ramp sit under the marine accent rather than fight it.
 
-  --hairline: rgba(255, 255, 255, 0.085);
-  --hairline-strong: rgba(255, 255, 255, 0.16);
+     These resolve OPAQUE on purpose. A literal rgba() surface would break three things this file has
+     already fixed: a Paper nested in a Card (Compare's three add-blocks, ReportBrief's note panel)
+     would stack the overlay and render darker than a card on its own; and both `.data-snap-table
+     thead th` and `.data-jumpnav` below are sticky surfaces that have to occlude the rows scrolling
+     underneath them — see the comment on the table header, which records that exact bug. */
+  --base: #08090b;
+  --lift: #d8e6f5;
+  --page-bg: var(--base);
+  --chrome: color-mix(in srgb, var(--lift) 3.5%, var(--base));
+  --surface: color-mix(in srgb, var(--lift) 6%, var(--base));
+  --surface-raised: color-mix(in srgb, var(--lift) 10%, var(--base));
+
+  --hairline: rgba(255, 255, 255, 0.09);
+  --hairline-strong: rgba(255, 255, 255, 0.17);
 
   /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
      inputs, dark-5 hover, dark-4 borders. Remapping these four onto the ramp is what makes the
      elevation reach Paper, Card, AppShell, Popover, Select, and this file's own .scope-search-pill /
      .app-dropdown-option / .data-jump-chip rules, all at once. */
-  --mantine-color-dark-7: #101418;
-  --mantine-color-dark-6: #181d22;
-  --mantine-color-dark-5: #20262c;
-  --mantine-color-dark-4: #2c333a;
+  --mantine-color-dark-7: var(--page-bg);
+  --mantine-color-dark-6: var(--surface);
+  --mantine-color-dark-5: var(--surface-raised);
+  --mantine-color-dark-4: color-mix(in srgb, var(--lift) 16%, var(--base));
   --mantine-color-body: var(--surface);
   --mantine-color-default-border: var(--hairline);
-  /* On a dark sheet the light source reads as a faint white edge, not a bright one. */
-  --surface-sheen: rgba(255, 255, 255, 0.055);
 
   --text-accent: var(--mantine-color-accent-4);
   --text-pos: var(--mantine-color-pos-4);
@@ -173,7 +188,8 @@ body {
 
   /* Brighten low-contrast secondary text for readability against the surfaces above. Body text was
      Mantine's dark-0 (#c9c9c9) — a mid grey doing headline duty, the dark-mode twin of the problem
-     above. #e8eaed measures 14.1:1 on --surface. */
+     above. #e8eaed measures 15.0:1 on --surface (#141619) and 16.5:1 on the canvas; #c1c2c5 dimmed
+     measures 10.2:1. The deeper base improved all three — they were 14.1:1 and below on #181d22. */
   --mantine-color-text: #e8eaed;
   --mantine-color-dimmed: #c1c2c5;
 
@@ -181,10 +197,10 @@ body {
      the text). Comparable strength to the subject row's teal accent-light, but a distinct green hue. */
   --pos-row-bg: rgba(21, 163, 107, 0.16);
   /* Histogram bars in dark mode: the light-mode pair (pale bar / dark ink highlight) inverts on a dark
-     surface — a highlight needs to be LIGHTER than its surroundings to pop, not darker. Chosen from the
-     accent ramp and checked against the card surface (--surface, #181d22) with the dataviz skill's validator:
-     bar-active (accent-5, contrast 4.95:1) reads clearly brighter than bar (accent-7, contrast 2.93:1,
-     relieved by the histogram's tooltip + data table). */
+     surface — a highlight needs to be LIGHTER than its surroundings to pop, not darker. Both chosen from
+     the accent ramp and measured against the card surface (--surface, now #141619): bar-active
+     (accent-5) reads at 5.22:1, clearly brighter than bar (accent-7) at 3.09:1 — which is below AA for
+     text but is a chart fill, and is relieved by the histogram's tooltip and its data table. */
   --bar: #0e6e83;
   --bar-active: #4f93a4;
   --series-accent: #4f93a4;
@@ -194,33 +210,43 @@ body {
   /* Body text carried #000 while `dimmed` (#586273) was painting 28 elements to body's 16 — grey was
      the page's primary voice, which is most of why it read washed out. Body moves off pure black to a
      near-black that is easier to read at length (17.6:1 on white), and `dimmed` is darkened so that
-     when it IS the right choice it still holds the page: 7.4:1 on --surface, 6.7:1 on --page-bg,
-     up from 6.2:1 / 5.6:1. */
+     when it IS the right choice it still holds the page: 7.4:1 on --surface, 6.9:1 on --page-bg
+     (#f7f7f8), up from 6.2:1 / 5.6:1. Body text is 17.6:1 and 16.5:1 on the same two. */
   --mantine-color-text: #16191d;
   --mantine-color-dimmed: #4d5666;
 }
 
 /* The app shell sits one step off the content it frames. Mantine paints AppShell's header/navbar from
    `--mantine-color-body`, the same variable Card and Paper use — which is why header, sidebar, every
-   card and the search input all measured as one identical colour in both themes. */
+   card and the search input all measured as one identical colour in both themes.
+
+   The hairline is the other half of that fix, and the more important half: a shell edge is what
+   actually separates chrome from canvas. Tone alone had to carry it before, which is why the steps
+   had to be far enough apart to see — and why the whole page read as washed. */
 .mantine-AppShell-header,
 .mantine-AppShell-navbar,
 .mantine-AppShell-footer {
   background-color: var(--chrome);
 }
+.mantine-AppShell-header { border-bottom: 1px solid var(--hairline); }
+.mantine-AppShell-navbar { border-right: 1px solid var(--hairline); }
+.mantine-AppShell-footer { border-top: 1px solid var(--hairline); }
 
-/* The card treatment itself: a hairline plus a single top inner highlight. One rule, so every
-   bordered Paper in the app — stat tiles, chart cards, report sections, empty states — gains the
-   same physicality without piling on shadows. */
+/* The card treatment: a hairline, and nothing else. Paper/Card take their border from
+   `--paper-border-color` (Mantine's gray-3), not from `--mantine-color-default-border`, so the ramp
+   only reaches a card through this rule.
+
+   The inset top highlight that used to be here is gone. It was a light-source cue — the trick that
+   makes a flat rectangle read as a physical sheet — and it is the single most dated thing the app
+   was doing, applied to all 86 bordered surfaces at once. A border is enough. */
 .mantine-Paper-root[data-with-border] {
   --paper-border-color: var(--hairline);
-  box-shadow: inset 0 1px 0 0 var(--surface-sheen);
 }
 
 /* Optical letter-spacing for the heading ramp defined in theme.ts (Mantine's `headings.sizes` has no
    slot for it). Large type needs tightening to avoid looking loose; small type needs it left alone, so
    this tapers rather than applying one value everywhere. */
-.mantine-Title-root[data-order='1'] { letter-spacing: -0.025em; }
+.mantine-Title-root[data-order='1'] { letter-spacing: -0.03em; }
 .mantine-Title-root[data-order='2'] { letter-spacing: -0.02em; }
 .mantine-Title-root[data-order='3'] { letter-spacing: -0.01em; }
 
@@ -229,10 +255,10 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 3.04:1
-   against the dark app chrome (--chrome, #14181c), under WCAG AA's 4.5:1. accent-4 measures 7.43:1
-   there. (Re-measured after the shell moved off --surface onto its own --chrome step; the ratios
-   recorded here previously were against Mantine's stock #242424.) */
+/* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 3.22:1
+   against the dark app chrome (--chrome, now #0f1113), under WCAG AA's 4.5:1. accent-4 measures
+   7.88:1 there. (Re-measured against the base+lift ramp; the ratios recorded here previously were
+   against the flat #14181c chrome, and before that against Mantine's stock #242424.) */
 :root[data-mantine-color-scheme='dark'] .accent7-text {
   color: var(--text-accent) !important;
 }
@@ -278,8 +304,8 @@ body {
   color: var(--text-warn) !important;
 }
 
-/* A "down" delta's red (Delta.tsx/RankDeltaChip) resolves to red-7 in light mode — only 3.64:1
-   against a typical pale card surface. Mantine's own dark-mode resolution for the same prop already
+/* A "down" delta's red (Delta.tsx/RankDeltaChip) resolves to red-7 in light mode — only 3.84:1
+   against a white card surface. Mantine's own dark-mode resolution for the same prop already
    clears WCAG AA, so only light mode needs the darker shade. */
 :root[data-mantine-color-scheme='light'] .delta-down {
   color: var(--text-neg) !important;
@@ -311,13 +337,15 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-/* A gentle lift on hover for interactive/clickable cards app-wide (mirrors .home-stats). */
+/* Hover on an interactive card: the border comes forward. It used to lift 2px and grow a shadow —
+   two elevation signals for something that never leaves the page. Changing the edge says "this
+   responds" without pretending the card is floating. */
 .card-hover {
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition: border-color 120ms ease;
 }
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--mantine-shadow-md);
+  --paper-border-color: var(--hairline-strong);
+  border-color: var(--hairline-strong);
 }
 
 /* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker accent underline. */
@@ -348,10 +376,12 @@ textarea:focus-visible,
   outline-offset: -2px;
 }
 
-/* Shared table style: muted uppercase header + tabular numerals (one look for every table). */
+/* Shared table style: muted uppercase header + tabular numerals (one look for every table). The size
+   is the `xxs` token, not a literal 11 — this rule and `Eyebrow` are the two places that define the
+   app's small-label register, and they had drifted apart by a pixel. */
 .mantine-Table-thead .mantine-Table-th {
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: var(--mantine-font-size-xxs);
   letter-spacing: 0.04em;
   font-weight: 700;
   color: var(--mantine-color-dimmed);
@@ -373,9 +403,10 @@ textarea:focus-visible,
   box-shadow: inset 3px 0 0 0 var(--mantine-color-pos-6);
 }
 
-/* Hero search input: resting elevation, deeper border in light mode, and a clear focus ring. */
+/* Hero search input: a deeper border at rest and a clear ring on focus. The 18px resting shadow it
+   used to carry made the page's primary control look like it was hovering over the page even when
+   nothing was happening; the border already marks it as the biggest input on the page. */
 .hero-search-input {
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 :root[data-mantine-color-scheme='light'] .hero-search-input {
@@ -383,7 +414,7 @@ textarea:focus-visible,
 }
 :root .hero-search-input:focus {
   border-color: var(--mantine-color-accent-7);
-  box-shadow: 0 0 0 3px var(--mantine-color-accent-light), 0 6px 18px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 0 0 3px var(--mantine-color-accent-light);
 }
 
 /* Select/MultiSelect "merged card": while the dropdown is open (data-expanded), flatten the input's
@@ -501,19 +532,22 @@ textarea:focus-visible,
   border-left-color: var(--mantine-color-orange-4) !important;
 }
 
-/* Tab sections fade + rise once on mount (Overview + Pay & standing) — a single gentle stagger, not a cascade. */
+/* Tab sections fade + rise once on mount (Overview + Pay & standing) — a single gentle stagger, not a
+   cascade. Durations and travel are roughly halved from where they started: at 420-520ms with delays
+   running to 300ms the page was still assembling itself well after it was readable, which reads as
+   slow rather than as considered. 4px and ~240ms is the register the reference products use. */
 @keyframes section-rise {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.tab-rise > * { animation: section-rise 420ms ease-out both; }
-.tab-rise > *:nth-child(2) { animation-delay: 60ms; }
-.tab-rise > *:nth-child(3) { animation-delay: 120ms; }
-.tab-rise > *:nth-child(n + 4) { animation-delay: 160ms; }
+.tab-rise > * { animation: section-rise 240ms ease-out both; }
+.tab-rise > *:nth-child(2) { animation-delay: 40ms; }
+.tab-rise > *:nth-child(3) { animation-delay: 80ms; }
+.tab-rise > *:nth-child(n + 4) { animation-delay: 110ms; }
 
 /* One fade+rise on the whole page when navigating between routes (a single beat, not a stagger —
    the tab-rise cascade above is for sections within one page). */
-.route-rise { animation: section-rise 200ms ease-out both; }
+.route-rise { animation: section-rise 160ms ease-out both; }
 
 /* A touch of "press" feedback on buttons/action icons app-wide — cheap, universal, and the kind of
    micro-interaction that reads as considered rather than flashy. */
@@ -539,17 +573,16 @@ button:active,
   .mantine-ActionIcon-root:active { transform: none; }
   .recharts-bar-rectangle path { transition: none; }
   .card-hover { transition: none; }
-  .card-hover:hover { transform: none; }
 }
 
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */
 
 /* Staggered fade-rise reveal for the hero groups (reuses the section-rise keyframes). */
-.hero-rise > * { animation: section-rise 520ms ease-out both; }
-.hero-rise > *:nth-child(2) { animation-delay: 90ms; }
-.hero-rise > *:nth-child(3) { animation-delay: 170ms; }
-.hero-rise > *:nth-child(4) { animation-delay: 240ms; }
-.hero-rise > *:nth-child(n + 5) { animation-delay: 300ms; }
+.hero-rise > * { animation: section-rise 240ms ease-out both; }
+.hero-rise > *:nth-child(2) { animation-delay: 50ms; }
+.hero-rise > *:nth-child(3) { animation-delay: 95ms; }
+.hero-rise > *:nth-child(4) { animation-delay: 135ms; }
+.hero-rise > *:nth-child(n + 5) { animation-delay: 170ms; }
 
 /* A faint dot-grid behind the hero, masked to fade out toward the edges. */
 .hero-dotgrid {
@@ -656,9 +689,9 @@ button:active,
    only the hairline below is ours. */
 .data-snap-table thead th { box-shadow: inset 0 -1px 0 0 var(--hairline-strong); }
 
-/* Methodology download buttons: a tactile lift on hover (uses the theme's md shadow). */
-.data-dl-btn { transition: transform 120ms ease, box-shadow 120ms ease; }
-.data-dl-btn:hover { transform: translateY(-1px); box-shadow: var(--mantine-shadow-md); }
+/* Methodology download buttons. The hover lift is gone for the same reason as `.card-hover`: a
+   button that rises off the page is elevation used as decoration. Mantine's own hover fill is the
+   feedback. */
 
 /* Floating back-to-top: hidden until the reader scrolls past one viewport, then slides in (bottom-right;
    clear of the bottom-center selection tray). */
@@ -711,8 +744,8 @@ button:active,
 :root[data-mantine-color-scheme='light'] .data-jump-chip.active { background-color: var(--mantine-color-accent-1); }
 :root[data-mantine-color-scheme='dark'] .data-jump-chip.active {
   background-color: var(--mantine-color-dark-5);
-  /* accent-7 (the light-mode color, set above) only reads 2.60:1 against this dark chip — same fix
-     as the header wordmark/credit link (see .accent7-text). */
+  /* accent-7 (the light-mode color, set above) only reads 2.81:1 against this dark chip — same fix
+     as the header wordmark/credit link (see .accent7-text). accent-4 measures 6.88:1. */
   color: var(--mantine-color-accent-4);
 }
 
@@ -729,15 +762,36 @@ button:active,
 }
 .sort-th:hover { color: var(--mantine-color-accent-7); }
 
-/* Keep numbers column-aligned down each numeric column of the ingestion table. */
+/* ── The monospace metadata register ────────────────────────────────────────────────────────────
+   Machine strings — snapshot ids, column names, file names, ingestion counts — set in the platform
+   mono stack (theme.ts). It is a *voice*, not decoration: it marks the difference between a number
+   the app computed for a reader and a value copied verbatim out of the source data.
+
+   It stops at money. PeerRangeBar measures rendered label widths to stagger colliding quartile
+   labels, and app.css's whole @font-face metric-override block exists to keep that measurement
+   stable — changing the face under a measured label is the regression fixed in 17045d0. Currency
+   keeps Hanken with tabular figures, which already aligns. */
+.mono {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  /* The mono stack runs optically larger than Hanken at the same px, so it needs pulling back to sit
+     level with the text beside it. */
+  font-size: 0.94em;
+}
+
+/* Keep numbers column-aligned down each numeric column of the ingestion table. Note these do NOT take
+   the mono register above: a row count is a figure this app computed for a reader, not a string copied
+   out of the source. The register marks the second kind — see `.kbd-chip` and the source filenames. */
 .data-snap-table td { font-variant-numeric: tabular-nums; }
 
-/* kbd-style schema chips: a depressible "keycap" look (inset shadow + a heavier bottom border). */
+/* Schema chips: literal column names out of the parquet file, so they take the mono register. The
+   "keycap" treatment they used to carry — a heavier bottom border plus an inset shadow faking a
+   depressible key — is gone; these are labels, not controls, and nothing about them is pressable. */
 .kbd-chip {
   border: 1px solid var(--mantine-color-default-border);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  box-shadow: inset 0 -1px 0 var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-xs);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.94em;
 }
 
 /* Mobile: a right-edge fade on the table's scroll viewport hints that more columns exist off-screen, and the
@@ -753,7 +807,6 @@ button:active,
 @media (prefers-reduced-motion: reduce) {
   .live-dot { animation: none; }
   .disc-details > summary::before,
-  .data-dl-btn,
   .back-to-top { transition: none; }
 }
 

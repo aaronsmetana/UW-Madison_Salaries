@@ -18,7 +18,7 @@ export const theme = createTheme({
   colors: { accent, pos },
   primaryColor: 'accent',
   primaryShade: { light: 7, dark: 6 },
-  defaultRadius: 'lg',
+  defaultRadius: 'sm', // controls (buttons, inputs, chips) — cards opt up to `lg` below
   // Pick readable (dark) text automatically on light-luminance filled badges (e.g. an orange "CAUTION").
   autoContrast: true,
   luminanceThreshold: 0.45,
@@ -28,6 +28,17 @@ export const theme = createTheme({
   // label the moment the font arrives, which is exactly what broke PeerRangeBar's measured label
   // stagger once before.
   fontFamily: "'Hanken Grotesk', 'Hanken Fallback', 'Hanken Fallback Alt', system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+  // A metadata voice for machine strings: snapshot ids, column names, file names, ingestion counts.
+  // Mantine's `<Code>` was already resolving *some* mono stack here — its own default — so this is
+  // less about introducing monospace than about the app owning the choice and being able to apply it
+  // outside `<Code>` (see `.mono` in app.css). Platform stack, so no font file to download and
+  // nothing for the `font-src 'self' data:` CSP (vite.config.ts) to block.
+  //
+  // Deliberately NOT used for money. PeerRangeBar measures live label geometry with `offsetWidth` to
+  // stagger colliding quartile labels, and the @font-face metric-override block in app.css exists to
+  // keep that measurement stable across the webfont swap. Changing the face under a measured label is
+  // the bug fixed in 17045d0.
+  fontFamilyMonospace: "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
   headings: {
     fontFamily: "'Hanken Grotesk', 'Hanken Fallback', 'Hanken Fallback Alt', system-ui, sans-serif",
     fontWeight: '700',
@@ -41,6 +52,10 @@ export const theme = createTheme({
       h2: { fontSize: 'clamp(1.375rem, 2.2vw, 1.75rem)', lineHeight: '1.2' },
       h3: { fontSize: '1.25rem', lineHeight: '1.3' },
       h4: { fontSize: '1.0625rem', lineHeight: '1.4' },
+      // The card-title step. Seventy-seven cards across the app labelled themselves with a
+      // `<Text size="sm" fw={600}>` — a styled span, not a heading — because the ramp stopped at h4
+      // and nothing on it was the right size for a card. `CardTitle` renders here instead.
+      h5: { fontSize: '0.9375rem', lineHeight: '1.35' },
     },
   },
   // The measured landing page ran 48 → 22 → 18 → 16 → 14 → 12px on nineteen elements → 11 → 10: nine
@@ -49,16 +64,26 @@ export const theme = createTheme({
   // app's most-used size by a wide margin — becomes a caption size rather than the default body size.
   // `xxs` (11px) stays the floor: eyebrows and dense labels only.
   fontSizes: { xxs: '0.6875rem', xs: '0.8125rem' },
-  // sm = the spec's shadow-card; md = mid; lg = shadow-frame (deep, for floating elements).
+  // A shadow means "this is floating above the page" — nothing else. Cards are already bordered (86
+  // `withBorder` call sites), so the old soft 30px-blur `sm` was piling elevation on top of a border
+  // that was already doing the separating, which is most of what made the app read as soft.
+  //
+  // `sm` is kept as a near-nothing hairline rather than removed so the eleven explicit `shadow="sm"`
+  // call sites (ReportBrief, Compare) inherit the new discipline without being touched.
   shadows: {
-    sm: '0 1px 2px rgba(20,40,50,.04), 0 12px 30px rgba(20,40,50,.05)',
-    md: '0 4px 14px rgba(20,40,50,.08)',
-    lg: '0 2px 4px rgba(20,40,50,.04), 0 22px 60px rgba(20,40,50,.10)',
+    sm: '0 1px 2px rgba(16, 24, 32, .04)',
+    md: '0 4px 12px rgba(16, 24, 32, .10)', // dropdowns, tooltips, popovers
+    lg: '0 8px 32px rgba(16, 24, 32, .14)', // the selection tray, back-to-top
   },
-  // Two steps, not three. 16 and 18 are indistinguishable side by side, which is what made a nested
-  // card inside a card read as imprecise rather than deliberate; `md` is kept as an alias of `lg` so
-  // the ~30 existing `radius="md"` call sites don't have to change to get the single card radius.
-  radius: { sm: '10px', md: '16px', lg: '16px' },
+  // Five real steps, and every one of them used. Two of these were previously Mantine's untouched
+  // defaults doing the wrong job: `xs` was 2px (a corner you cannot see) and `xl` was 32px, which only
+  // *looked* round because all twelve of its call sites are small circles and pills — an ActionIcon,
+  // a ThemeIcon, the selection tray, the tray chips. `xl` is now an actual pill, which is what every
+  // one of those sites meant.
+  //
+  // The card corner drops 16 -> 10. `md` stops being an alias of `lg`, so a control inside a card is
+  // now visibly a smaller radius than the card, rather than the same one.
+  radius: { xs: '4px', sm: '6px', md: '8px', lg: '10px', xl: '999px' },
   components: {
     Card: { defaultProps: { radius: 'lg', withBorder: true, padding: 'lg' } },
     // One table look everywhere: zebra rows, hover highlight, comfortable row spacing.

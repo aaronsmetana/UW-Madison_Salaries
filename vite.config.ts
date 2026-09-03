@@ -49,7 +49,7 @@ export default defineConfig({
         short_name: 'UW Salaries',
         description: 'Search, compare, and explore public-record salary data across UW–Madison.',
         theme_color: '#0E6E83',
-        background_color: '#0a2530',
+        background_color: '#08090b', // the dark canvas (--base in app.css), so the splash matches the app
         display: 'standalone',
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },

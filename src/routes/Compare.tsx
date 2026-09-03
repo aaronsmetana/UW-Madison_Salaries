@@ -377,7 +377,7 @@ export default function Compare() {
             </ThemeIcon>
             {/* h2: the page's main content under PageHeader's h1 (see EmptyState's note). */}
             <Title order={2} fz="h3" ta="center">Build a side-by-side comparison</Title>
-            <Text c="dimmed" ta="center" maw={480}>
+            <Text c="dimmed" ta="center" maw="var(--measure-narrow)">
               Add people, titles, or schools using the search boxes above — or the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
             </Text>
           </Stack>
