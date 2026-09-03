@@ -6,6 +6,9 @@ import { ControlsProvider } from './state/controls';
 import { TrayProvider } from './state/tray';
 import { AppShellLayout } from './app/AppShell';
 import { lazyWithRetry } from './lib/lazyRetry';
+// Eager, unlike every other route: this is the page that has to render when something has already
+// gone wrong, so it should not depend on fetching a chunk of its own.
+import NotFound from './routes/NotFound';
 
 // Lazy-loaded routes → each becomes its own chunk (smaller initial bundle).
 const Home = lazyWithRetry(() => import('./routes/Home'));
@@ -51,6 +54,10 @@ const router = createBrowserRouter(
         { path: 'person/:id', element: <Person /> },
         { path: 'school/:id', element: <School /> },
         { path: 'title/:code', element: <TitleRedirect /> },
+        // Catch-all. Without it an unmatched address fell through to React Router's default error
+        // element — a bare "Unexpected Application Error! / 404 Not Found" with no chrome, outside
+        // the theme, and no way back. As a child of the layout this keeps the header, nav and footer.
+        { path: '*', element: <NotFound /> },
       ],
     },
   ],
