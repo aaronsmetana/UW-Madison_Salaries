@@ -143,7 +143,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
 
 export default function Explore() {
-  useDocTitle('General Comparisons');
+  useDocTitle('Divisions');
   const { data: summary, isLoading } = useSummary();
   const { data: manifest } = useManifest();
   const { data: refStatus } = useReferenceStatus();
@@ -220,8 +220,8 @@ export default function Explore() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="General Comparisons"
-        description="Browse divisions and schools side by side — headcount, median pay, and top earners — then add any school or title (＋ Compare) to line them up on the Compare page. Or jump straight to a person."
+        title="Divisions"
+        description="Every school and division side by side: how many people work there, what they are paid, and who earns the most. Add any of them to your tray to line them up on the Compare page."
       />
 
       <ControlBar inline />
@@ -239,11 +239,14 @@ export default function Explore() {
           icon={refStatus.status === 'missing' ? undefined : <IconAlertTriangle size={ICON.control} />}
           title="Pay-band reference"
         >
+          {/* Each branch tells a reader what the figures on this page can and cannot be trusted to
+              say. None of them tells that reader to go and edit a file in the repository — that
+              instruction is in the README's pay-band section, addressed to whoever can act on it. */}
           {refStatus.status === 'missing'
-            ? 'No pay-band grade ranges are loaded — paste them into data/reference/salary-grades.csv to enable pay-band views.'
+            ? 'No official pay-band ranges are loaded, so pay-band views are unavailable across the site.'
             : refStatus.status === 'sparse'
-              ? `Only ${refStatus.grades_count} grade range${refStatus.grades_count === 1 ? '' : 's'} are loaded, covering ${num(refStatus.matched_rows)} of ${num(refStatus.graded_rows)} graded appointments (${Math.round((refStatus.coverage ?? 0) * 100)}%) — pay-band figures describe that slice, not the whole population. Paste the full grade→range table into data/reference/salary-grades.csv from the Salary Structure page.`
-              : `Pay-band ranges are from ${refStatus.max_effective_year}, but the latest data is ${refStatus.latest_snapshot_year} — ranges may be out of date. Refresh data/reference/salary-grades.csv from the Salary Structure page.`}
+              ? `Official pay-band ranges are loaded for only ${refStatus.grades_count} of UW's grades, covering ${num(refStatus.matched_rows)} of ${num(refStatus.graded_rows)} graded appointments (${Math.round((refStatus.coverage ?? 0) * 100)}%). Pay-band figures describe that slice, not the whole population.`
+              : `Pay-band ranges are from ${refStatus.max_effective_year}, but the latest salary data is from ${refStatus.latest_snapshot_year}, so the ranges may be out of date.`}
         </Alert>
       )}
 

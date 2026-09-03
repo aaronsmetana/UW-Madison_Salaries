@@ -313,8 +313,8 @@ export default function Compare() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Compare People, Titles & Schools"
-        description="Search and add anyone, any title, or any school, then compare salaries side by side. Selections are saved (your tray) so you can keep building across pages."
+        title="Compare"
+        description="Add any people, titles, or schools and see their salaries side by side. Your selection follows you around the site, so you can keep building it as you browse."
       />
 
       <ControlBar inline />

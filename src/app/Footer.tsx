@@ -7,7 +7,7 @@ import { REPO_URL } from '../lib/links';
 import { ICON } from '../lib/ui';
 
 /** App-wide footer: data provenance + generation date, and a link to the source repo. Rendered once
- *  from the shell, below every route, so this context doesn't rely on a visitor finding Data · About. */
+ *  from the shell, below every route, so this context doesn't rely on a visitor finding About the data. */
 export function Footer() {
   const { data: summary } = useSummary();
   return (
@@ -21,7 +21,7 @@ export function Footer() {
     >
       <Text size="xs" c="dimmed">
         Public salary records, released under Wisconsin&rsquo;s open-records law.{' '}
-        <Anchor component={Link} to="/data" c="dimmed" underline="always" inherit>Data &middot; About</Anchor>
+        <Anchor component={Link} to="/data" c="dimmed" underline="always" inherit>About the data</Anchor>
         {summary?.generated_at ? ` · data generated ${fmtDate(summary.generated_at)}` : ''}
       </Text>
       <Anchor href={REPO_URL} target="_blank" rel="noopener noreferrer" c="dimmed" underline="hover" size="xs">

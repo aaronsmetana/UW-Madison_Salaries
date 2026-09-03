@@ -13,11 +13,17 @@ import { ColorSchemeToggle } from '../components/ColorSchemeToggle';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
 
+// Destinations, not instructions. These read as query verbs — "Search Person's Salary", "General
+// Comparisons" — which describe what the software does rather than what the visitor is looking at, and
+// the longest of them ("Compare People, Titles & Schools") wrapped to two lines in the sidebar. A nav
+// label's job is to name the place it goes; the page's own description says what you can do there.
+//
+// Each label is also the h1 of the page it opens, so arriving somewhere confirms the link you clicked.
 const NAV = [
-  { label: "Search Person's Salary", to: '/', icon: IconUserSearch },
-  { label: 'Search Title Salaries', to: '/paycheck', icon: IconBriefcase },
-  { label: 'General Comparisons', to: '/explore', icon: IconBuildingBank },
-  { label: 'Compare People, Titles & Schools', to: '/compare', icon: IconArrowsDiff },
+  { label: 'People', to: '/', icon: IconUserSearch },
+  { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
+  { label: 'Divisions', to: '/explore', icon: IconBuildingBank },
+  { label: 'Compare', to: '/compare', icon: IconArrowsDiff },
   { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
   { label: 'Screening', to: '/screening', icon: IconListSearch },
 ];
@@ -169,7 +175,7 @@ export function AppShellLayout() {
         <AppShell.Navbar p="sm">
           <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
           <Divider my="xs" />
-          {renderLink({ label: 'Data · About', to: '/data', icon: IconInfoCircle }, true)}
+          {renderLink({ label: 'About the data', to: '/data', icon: IconInfoCircle }, true)}
           {/* Collapse/expand toggle anchored at the bottom of the sidebar (desktop only). */}
           <Tooltip label="Expand menu" position="right" withArrow disabled={!collapsed}>
             <Button

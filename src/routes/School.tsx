@@ -242,18 +242,21 @@ export default function School() {
               <Stat label="Over max" value={num(band.over_max)} />
               <Stat label="Below min" value={num(band.below_min)} />
             </SimpleGrid>
+            {/* Says what the number covers, not how a maintainer would widen the coverage. The repo
+                path this used to print belongs in the README's pay-band section, where the person who
+                can act on it will actually be. */}
             {band.graded > 0 && band.banded / band.graded < 0.5 && (
               <Text size="xs" c="dimmed" mt="sm">
                 Based on {Math.round((band.banded / band.graded) * 100)}% of this division&apos;s graded
-                appointments — the reference table in <code>data/reference/salary-grades.csv</code> covers only
-                part of the salary structure, so treat these as indicative of that subset, not the division.
+                appointments. Official pay-band ranges are only loaded for some of UW&apos;s grades, so read
+                this as describing that slice rather than the whole division.
               </Text>
             )}
           </>
         ) : (
           <Text size="sm" c="dimmed">
-            No matching pay-band ranges yet — add grades to <code>data/reference/salary-grades.csv</code> to
-            enable this (currently only grades 15 &amp; 27 are seeded).
+            No official pay-band ranges are loaded for this division&apos;s grades, so there is nothing to
+            measure its salaries against here.
           </Text>
         )}
       </Card>
@@ -439,7 +442,7 @@ export default function School() {
               </ScrollArea.Autosize>
             )}
             <Text size="xs" c="dimmed" mt="sm">
-              Click a department to see it isolated in General Comparisons.
+              Click a department to see it on its own under Divisions.
             </Text>
           </Card>
         </Tabs.Panel>

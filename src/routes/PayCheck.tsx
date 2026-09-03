@@ -31,7 +31,7 @@ function DropdownCountRow({ option, counts }: { option: ComboboxItem; counts: Ma
 }
 
 export default function PayCheck() {
-  useDocTitle('Search Title Salaries');
+  useDocTitle('Titles');
   const [params, setParams] = useSearchParams();
   const code = params.get('code') || null;
   const school = params.get('sch') || null;
@@ -124,8 +124,8 @@ export default function PayCheck() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Search Title Salaries"
-        description="Pick a title to see its pay distribution, the people in it, and how it varies by school. Optionally filter to a school or enter a salary to pin where it lands. A salary you enter stays on this page and never leaves your browser."
+        title="Titles"
+        description="Pick a job title to see what it pays across UW–Madison: the full range, who holds it, and how it varies by school. You can pin your own salary to see where it lands — it stays in your browser and is never sent anywhere."
       />
 
       <Card padding="lg">

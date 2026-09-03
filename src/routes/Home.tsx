@@ -437,7 +437,7 @@ export default function Home() {
                 {kpis.map((k) => <Kpi key={k.label} {...k} />)}
               </SimpleGrid>
               <Text size="xs" c="accent.7" className="accent7-text" fw={600} ta="center" mt="md">
-                Browse schools &amp; titles in General Comparisons <span className="browse-arrow">→</span>
+                Browse every school and title under Divisions <span className="browse-arrow">→</span>
               </Text>
             </Box>
           </Anchor>

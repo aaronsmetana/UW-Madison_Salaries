@@ -269,7 +269,7 @@ export default function Person() {
   const rows = useMemo(() => data ?? [], [data]);
   const latest = rows[rows.length - 1];
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
-  useDocTitle(latest ? name : "Search Person's Salary");
+  useDocTitle(latest ? name : 'People');
 
   // Flag people who aren't in the most recent snapshot (likely no longer employed).
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;

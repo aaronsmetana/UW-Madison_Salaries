@@ -972,6 +972,7 @@ export default function Reports() {
       <div className="no-print">
         <PageHeader
           title="Reports"
+          description="Build a written case for one person's pay, using the UW Salary Administration Guidelines. What comes out is a one-page brief you can print, download, or paste into an email."
           right={
             <Group gap="md" w={isNarrow ? '100%' : undefined}>
               <SegmentedControl

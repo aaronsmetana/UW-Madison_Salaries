@@ -171,7 +171,7 @@ function JumpNav({ items }: { items: [string, string][] }) {
 }
 
 export default function DataHealth() {
-  useDocTitle('Data · About');
+  useDocTitle('About the data');
   const { data: manifest, isLoading, error, refetch } = useManifest();
   const snapId = useActiveSnapshotId();
   const [compact, setCompact] = useState(false);
@@ -264,7 +264,7 @@ export default function DataHealth() {
         </Text>
       </Group>
       <PageHeader
-        title="Data · About"
+        title="About the data"
         description="Where these salary records come from, how they were processed, and what they can and can't tell you."
       />
 

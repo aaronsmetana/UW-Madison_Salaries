@@ -225,7 +225,7 @@ export default function Screening() {
     <Stack gap="lg">
       <PageHeader
         title="Screening"
-        description="Batch-run the UW Salary Administration Guidelines checks (parity, compression, market floor) across a school or division, ranked by case strength."
+        description="Check a whole school or department at once against the UW Salary Administration Guidelines. Everyone is ranked by how strong their case looks across three tests: parity, compression, and the market floor."
       />
 
       <Card withBorder padding="lg">
