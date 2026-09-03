@@ -119,10 +119,15 @@
      5.29:1 there and 4.83:1 on the deeper orange-1, and still reads orange rather than brown. */
   --text-warn: #b3400d;
 
-  /* The display step. The measured type scale ran 48 -> 22 with nothing between, because the only
-     thing at 48 was a wordmark. It is now the one number the landing page leads with, so the step is
-     a real register rather than a one-off inline clamp on a route. */
-  --fs-display: clamp(2.75rem, 6vw, 4.25rem);
+  /* The display step: the landing page's title, the largest type in the app. Sized for a line of
+     words rather than a short number — it briefly held the median at up to 68px, which is right for
+     "$75,763" and far too wide for "UW–Madison Salaries".
+
+     `--fs-stat` is the figure register beneath it, for the system-wide numbers on the landing page.
+     Those are the page's data now that the headline is its name again, so they carry real size
+     instead of the 22px they were given while something bigger sat above them. */
+  --fs-display: clamp(2.25rem, 5vw, 3.5rem);
+  --fs-stat: clamp(1.75rem, 3.2vw, 2.25rem);
 
   /* Layout widths. Fifteen call sites carried seven different `maw` numbers — 420, 480, 620, 640,
      720, 860, 900, 1100 — none of which knew about the others.

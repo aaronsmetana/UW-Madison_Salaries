@@ -18,21 +18,30 @@ import { ICON } from '../lib/ui';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
 
-/** One system-wide stat: centered icon+label over its value, which counts up from 0 as the data loads. */
+/**
+ * One system-wide stat: centered icon+label over its value, which counts up from 0 as the data loads.
+ *
+ * These are the landing page's figures. They were sized at 22px when a 68px number sat above them and
+ * they were explicitly supporting cast; with the headline back to being the site's name, they are the
+ * data on the page and are sized to be read from across a desk (`--fs-stat`, 28-36px).
+ */
 function Kpi({ icon, label, value, format, color, hint }: KpiData) {
   const animated = useCountUp(value, 1000);
   const valueNode = (
-    <Text fw={700} fz={22} ta="center" style={{ letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+    <Text
+      fw={700}
+      ta="center"
+      style={{ fontSize: 'var(--fs-stat)', lineHeight: 1.1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
+    >
       {animated == null ? '—' : format(Math.round(animated))}
     </Text>
   );
   return (
-    <Stack gap={2} align="center" style={{ flex: 1, minWidth: 0, paddingInline: 8 }}>
-      {/* Five tiles share a 760px row, so the icon leaves ~110px for the label — enough for "DIVISIONS"
-          but not "MEDIAN SALARY". Allow a second line and reserve its height on every tile, so the longer
-          labels stay readable and all five values still sit on one baseline. */}
-      <Group gap={6} justify="center" align="center" wrap="nowrap" mih={30}>
-        <ThemeIcon size={22} radius="md" variant="light" color={color}>
+    <Stack gap={8} align="center" style={{ flex: 1, minWidth: 0, paddingInline: 12 }}>
+      {/* The icon leaves ~110px for the label, so a second line is allowed and its height reserved on
+          every tile — otherwise a tile whose label wraps drops its value off the shared baseline. */}
+      <Group gap={7} justify="center" align="center" wrap="nowrap" mih={30}>
+        <ThemeIcon size={26} radius="md" variant="light" color={color}>
           {icon}
         </ThemeIcon>
         <Eyebrow ta="center" lineClamp={2} style={{ lineHeight: 1.2 }}>{label}</Eyebrow>
@@ -369,19 +378,29 @@ export default function Home() {
     <Box style={{ paddingBlock: 'clamp(24px, 6vh, 64px)', position: 'relative' }}>
       <div className="hero-dotgrid" aria-hidden />
       <Stack gap="xl" w="100%" style={{ position: 'relative', zIndex: 1 }}>
-        {/* The page opens with what it knows, not with its own name. The 48px wordmark that used to sit
-            here was the same two-tone construction as the 18px one in the header directly above it. */}
-        <Stack gap={4} align="center" className="hero-rise">
+        {/* The page leads with the site's name. It briefly led with the median instead — a 68px
+            "$75,763" — which put the most interesting fact in the largest type, but left a visitor
+            landing cold with no statement of what the site is. The median has not gone anywhere: it
+            is in the sentence below, and the curve beneath that is a picture of it. */}
+        <Stack gap={6} align="center" className="hero-rise">
           <Eyebrow>
             {summary?.latest?.headcount != null ? `${num(summary.latest.headcount)} employees` : 'All employees'}
             {latestLabel ? ` · ${latestLabel}` : ''}
           </Eyebrow>
           <Title order={1} ta="center" fz="var(--fs-display)" lh={1.05}>
-            {summary?.latest?.median != null ? usd(summary.latest.median) : '—'}
+            <Text span inherit c="bright">UW–Madison </Text>
+            <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
           </Title>
           <Text c="dimmed" ta="center" maw="var(--measure)">
-            is the median UW–Madison salary. Search anyone by name to see their pay, how it changed, and
-            how they compare to everyone with the same title.
+            Search anyone by name to see their pay, how it changed, and how they compare to everyone
+            with the same title.
+            {/* "UW–Madison" is the title directly above; repeating it here pushed the figure onto a
+                line of its own. */}
+            {summary?.latest?.median != null && (
+              <> The median salary is{' '}
+                <Text span inherit fw={700} c="var(--mantine-color-text)">{usd(summary.latest.median)}</Text>.
+              </>
+            )}
           </Text>
         </Stack>
 
