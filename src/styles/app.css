@@ -90,6 +90,14 @@
      stopped being a fourth teal and became MARK_SELF: in dark mode the old bar colour WAS the
      light-mode subject colour, so the marked bar vanished into its neighbours. Population neutral,
      subject accent — one rule, every chart. */
+  /* Motion ramp — mirrors MOTION in src/lib/motion.ts, which CSS cannot import.
+     src/lib/motion.test.ts parses this block and fails if the two ever drift. */
+  --dur-instant: 120ms;
+  --dur-quick: 240ms;
+  --dur-reveal: 600ms;
+  --dur-figure: 800ms;
+  --dur-route: 160ms;
+  --ease-out: cubic-bezier(.22, .8, .3, 1);
   --bar: var(--mantine-color-gray-4);
 
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
@@ -332,7 +340,7 @@ body {
   box-shadow: var(--mantine-shadow-md);
 }
 .recharts-bar-rectangle path {
-  transition: fill-opacity 150ms ease;
+  transition: fill-opacity var(--dur-instant) ease;
 }
 /* Recharts draws the axis rule, the tick marks and the tooltip crosshair with hard-coded #666/#ccc
    presentation attributes, which ignore the color scheme. Left alone, the axis rule reads 5.74:1 on
@@ -364,7 +372,7 @@ path.recharts-tooltip-cursor {
    two elevation signals for something that never leaves the page. Changing the edge says "this
    responds" without pretending the card is floating. */
 .card-hover {
-  transition: border-color 120ms ease;
+  transition: border-color var(--dur-instant) ease;
 }
 .card-hover:hover {
   --paper-border-color: var(--hairline-strong);
@@ -430,7 +438,7 @@ textarea:focus-visible,
    used to carry made the page's primary control look like it was hovering over the page even when
    nothing was happening; the border already marks it as the biggest input on the page. */
 .hero-search-input {
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color var(--dur-instant) ease, box-shadow var(--dur-instant) ease;
 }
 :root[data-mantine-color-scheme='light'] .hero-search-input {
   border-color: var(--mantine-color-gray-4);
@@ -534,7 +542,7 @@ textarea:focus-visible,
    list isn't a wall of repeated buttons (it pops accent on hover) — but 0.6 rather than near-invisible,
    so it still reads as an available action rather than a disabled one. Touch has no hover state, so it
    stays fully visible there. */
-.peer-row .peer-add { opacity: 0.6; transition: opacity 120ms ease; }
+.peer-row .peer-add { opacity: 0.6; transition: opacity var(--dur-instant) ease; }
 .peer-row:hover .peer-add,
 .peer-row:focus-within .peer-add { opacity: 1; }
 @media (hover: none) {
@@ -547,7 +555,7 @@ textarea:focus-visible,
    draw `<circle class="chart-dot">`, so one rule covers both. (In the scatter a wide transparent hit
    circle behind each dot is the real proximity target — see its PeerDot.) The subject's own mark is
    excluded: it is already the largest thing in either chart. */
-.chart-dot { transition: r 120ms ease; }
+.chart-dot { transition: r var(--dur-instant) ease; }
 .chart-dot:hover { r: 6.5px; }
 
 /* "Below the tenure curve" callout reads as a muddy brown in dark mode — use a brighter amber tint
@@ -565,14 +573,14 @@ textarea:focus-visible,
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.tab-rise > * { animation: section-rise 240ms ease-out both; }
+.tab-rise > * { animation: section-rise var(--dur-quick) ease-out both; }
 .tab-rise > *:nth-child(2) { animation-delay: 40ms; }
 .tab-rise > *:nth-child(3) { animation-delay: 80ms; }
 .tab-rise > *:nth-child(n + 4) { animation-delay: 110ms; }
 
 /* One fade+rise on the whole page when navigating between routes (a single beat, not a stagger —
    the tab-rise cascade above is for sections within one page). */
-.route-rise { animation: section-rise 160ms ease-out both; }
+.route-rise { animation: section-rise var(--dur-route) ease-out both; }
 
 /* A touch of "press" feedback on buttons/action icons app-wide — cheap, universal, and the kind of
    micro-interaction that reads as considered rather than flashy. */
@@ -603,7 +611,7 @@ button:active,
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */
 
 /* Staggered fade-rise reveal for the hero groups (reuses the section-rise keyframes). */
-.hero-rise > * { animation: section-rise 240ms ease-out both; }
+.hero-rise > * { animation: section-rise var(--dur-quick) ease-out both; }
 .hero-rise > *:nth-child(2) { animation-delay: 50ms; }
 .hero-rise > *:nth-child(3) { animation-delay: 95ms; }
 .hero-rise > *:nth-child(4) { animation-delay: 135ms; }
@@ -664,7 +672,7 @@ button:active,
   border-radius: 999px;
   font-weight: 600;
   border: 1px solid var(--mantine-color-default-border);
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
 }
 :root[data-mantine-color-scheme='light'] .data-jump-chip { background-color: var(--mantine-color-gray-1); }
 :root[data-mantine-color-scheme='dark'] .data-jump-chip { background-color: var(--mantine-color-dark-6); }
@@ -765,7 +773,7 @@ button:active,
 }
 
 /* Copy-anchor on each section header: the chain icon stays invisible until the header is hovered/focused. */
-.section-head .copy-anchor { opacity: 0; transition: opacity 120ms ease; }
+.section-head .copy-anchor { opacity: 0; transition: opacity var(--dur-instant) ease; }
 .section-head:hover .copy-anchor,
 .section-head:focus-within .copy-anchor { opacity: 1; }
 
