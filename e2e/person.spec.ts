@@ -208,3 +208,33 @@ test('the peer strip names the person under the cursor, and reads the axis betwe
   await page.mouse.move(box.x + box.width / 2, box.y - 34);
   await expect(pill).toHaveText(/^~\$[\d,]+/, { timeout: 5_000 });
 });
+
+/**
+ * A legend that doesn't match the line it labels teaches the reader a key that is wrong. This one
+ * had drifted twice over: the swatch for "Title median" was dashed "5 3" while the chart drew "6 4",
+ * and "New title era" was "2 3" against the chart's "2 4". Nothing caught it because the legend and
+ * the chart are 1,100 lines apart and neither one is wrong on its own.
+ */
+test('every dash in the trend legend is a dash the chart actually draws', async ({ page }) => {
+  await openPerson(page, 'Aaron Smetana');
+  await page.getByRole('tab', { name: /Salary trend/ }).click();
+  await expect(page.locator('.recharts-wrapper').first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(1500);
+
+  const dashes = await page.evaluate(() => {
+    const norm = (el: Element) => getComputedStyle(el).strokeDasharray.replace(/px|\s/g, '');
+    const chartRoot = document.querySelector('.recharts-wrapper')!;
+    // Legend swatches are small standalone <svg> elements, not part of the Recharts surface.
+    const swatches = [...document.querySelectorAll('svg:not(.recharts-surface) line')]
+      .filter((l) => !chartRoot.contains(l))
+      .map(norm)
+      .filter((d) => d && d !== 'none');
+    const drawn = [...chartRoot.querySelectorAll('path, line')].map(norm).filter((d) => d && d !== 'none');
+    return { swatches: [...new Set(swatches)], drawn: [...new Set(drawn)] };
+  });
+
+  expect(dashes.swatches.length).toBeGreaterThan(0);
+  for (const d of dashes.swatches) {
+    expect(dashes.drawn, `legend draws ${d}, which the chart never does`).toContain(d);
+  }
+});

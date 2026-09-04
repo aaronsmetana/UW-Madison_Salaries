@@ -90,6 +90,15 @@ function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
 }
 
 /** Custom legend below the trend chart, explaining the title-era demarcations. */
+/**
+ * Dash patterns shared between the trend chart and the legend that describes it.
+ *
+ * They had drifted: the legend drew the title median as "5 3" against the chart's "6 4", and the
+ * title-era divider as "2 3" against "2 4". A legend that doesn't match the line it labels is worse
+ * than no legend — it teaches the reader a key that is wrong. Only the grade band happened to agree.
+ */
+const TREND_DASH = { median: '6 4', gradeBand: '4 4', era: '2 4' } as const;
+
 function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleChange: boolean; hasFte: boolean; hasGradeBand: boolean; mode: 'actual' | 'rate' }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
@@ -104,11 +113,11 @@ function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleC
         mode === 'actual' ? 'Actual pay' : 'Salary rate',
       )}
       {item(
-        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="5 3" /></svg>,
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray={TREND_DASH.median} /></svg>,
         'Title median — resets at each title change',
       )}
       {hasGradeBand && item(
-        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" /></svg>,
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} /></svg>,
         'Grade band min / max',
       )}
       {hasFte && item(
@@ -123,7 +132,7 @@ function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleC
         'Title change',
       )}
       {hasTitleChange && item(
-        <svg width={10} height={14} aria-hidden><line x1={5} y1={1} x2={5} y2={13} stroke="var(--mantine-color-gray-4)" strokeWidth={1} strokeDasharray="2 3" /></svg>,
+        <svg width={10} height={14} aria-hidden><line x1={5} y1={1} x2={5} y2={13} stroke="var(--mantine-color-gray-4)" strokeWidth={1} strokeDasharray={TREND_DASH.era} /></svg>,
         'New title era',
       )}
     </Group>
@@ -1225,11 +1234,11 @@ export default function Person() {
             {/* Grade pay-band floor/ceiling, labelled on the RIGHT — next to the current (latest) salary,
                 the band that's actually in effect today (the band can shift as the grade changes over time). */}
             {band && (
-              <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
+              <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain"
                 label={{ value: `grade min ${usd(band.min)}`, position: 'insideBottomRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
             )}
             {band && (
-              <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="4 4" ifOverflow="extendDomain"
+              <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain"
                 label={{ value: `grade max ${usd(band.max)}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
             )}
             {/* Label the leftmost title era too (e.g. a pre-TTC title) — it begins at the chart's left edge
@@ -1250,7 +1259,7 @@ export default function Person() {
                 x={t.label}
                 stroke="var(--mantine-color-gray-4)"
                 strokeWidth={1}
-                strokeDasharray="2 4"
+                strokeDasharray={TREND_DASH.era}
                 label={<TitleChangeLabel title={t.title} row={t.row} anchor={t.anchor} />}
               />
             ))}
@@ -1266,7 +1275,7 @@ export default function Person() {
                 name="Title median"
                 stroke="var(--mantine-color-gray-5)"
                 strokeWidth={2}
-                strokeDasharray="6 4"
+                strokeDasharray={TREND_DASH.median}
                 dot={false}
                 connectNulls={false}
                 legendType="none"
