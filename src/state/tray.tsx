@@ -27,6 +27,31 @@ const Ctx = createContext<TrayState | null>(null);
 const KEY = 'uwsal.tray.v1';
 const KEY_PRIMARY = 'uwsal.tray.primary.v1';
 
+/**
+ * Every localStorage touch in this file goes through these.
+ *
+ * `TrayProvider` mounts in `App.tsx` above the router and above the `ErrorBoundary`, so anything
+ * that throws here takes the whole app down to a blank page with no recovery. And localStorage does
+ * throw: browsers configured to block site data (Safari's "Block All Cookies", enterprise policy)
+ * raise a SecurityError on *read*, not just on write, and a full quota raises on write. `prefs.ts`
+ * already guards all four of its accesses for the same reason.
+ */
+function readStore(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeStore(key: string, value: string | null): void {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // Blocked or full — the tray just won't survive this session.
+  }
+}
+
 /** The lowest CHART_SERIES index not already used by `existing` — so colors are assigned densely
  *  from the front and a removed item's slot gets reclaimed by the next addition, rather than every
  *  item marching forward forever. Exported for direct unit testing (no React/localStorage needed). */
@@ -39,7 +64,7 @@ export function nextColorIdx(existing: { colorIdx: number }[]): number {
 export function TrayProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<TrayItem[]>(() => {
     try {
-      const raw = JSON.parse(localStorage.getItem(KEY) || '[]') as (Partial<TrayItem> & TrayItemInput)[];
+      const raw = JSON.parse(readStore(KEY) || '[]') as (Partial<TrayItem> & TrayItemInput)[];
       // Migrate tray items persisted before colorIdx existed: assign densely, in stored order.
       const withColors: TrayItem[] = [];
       for (const it of raw) {
@@ -51,10 +76,10 @@ export function TrayProvider({ children }: { children: ReactNode }) {
       return [];
     }
   });
-  const [primaryId, setPrimaryId] = useState<string | null>(() => localStorage.getItem(KEY_PRIMARY) || null);
+  const [primaryId, setPrimaryId] = useState<string | null>(() => readStore(KEY_PRIMARY) || null);
 
   useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify(items));
+    writeStore(KEY, JSON.stringify(items));
   }, [items]);
 
   // Keep the subject valid: if it isn't a person still in the tray, fall back to the first person (or null).
@@ -65,8 +90,7 @@ export function TrayProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   useEffect(() => {
-    if (primaryId) localStorage.setItem(KEY_PRIMARY, primaryId);
-    else localStorage.removeItem(KEY_PRIMARY);
+    writeStore(KEY_PRIMARY, primaryId);
   }, [primaryId]);
 
   const value = useMemo<TrayState>(
