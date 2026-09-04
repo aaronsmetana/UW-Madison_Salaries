@@ -1,24 +1,24 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Customized,
 } from 'recharts';
 import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
-import { Box, Group, Text } from '@mantine/core';
+import { Box, Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { leastSquares } from '../lib/stats';
 import { TipSurface } from './chart/ChartTooltip';
 import { CrosshairLayer } from './chart/CrosshairLayer';
 import { ChartData } from './ChartData';
+import {
+  MARK_SELF, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_STRONG, MarkerLegend, type PeerPoint,
+} from './markers';
 
-export interface ScatterPoint {
+/** A peer plus the tenure this chart needs. Everything about *marking* them lives in PeerPoint, so the
+ *  peer strip on the same page draws the same person the same way. */
+export interface ScatterPoint extends PeerPoint {
   tenure: number;
-  pay: number;
-  sameSchool: boolean;
-  isSelf: boolean;
-  name: string;
-  personKey: string;
 }
 
 interface DotProps {
@@ -30,12 +30,12 @@ interface DotProps {
  *  hit circle behind the visible dot gives a "proximity" hover target so you don't have to land on the
  *  dot exactly; the visible circle grows a touch on hover (see `.scatter-dot` in app.css) and reports
  *  itself to the parent's crosshair via `onHover`/`onLeave`. */
-function PeerDot({ cx, cy, r = 4.5, fill, stroke, payload, onHover, onLeave }: DotProps) {
+function PeerDot({ cx, cy, r = DOT_R.peer, fill, stroke, payload, onHover, onLeave }: DotProps) {
   if (cx == null || cy == null) return <g />;
   return (
     <g onMouseEnter={() => payload && onHover?.(payload)} onMouseLeave={onLeave}>
       <circle cx={cx} cy={cy} r={15} fill="transparent" />
-      <circle className="scatter-dot" cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.9} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />
+      <circle className="chart-dot" cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.9} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />
     </g>
   );
 }
@@ -48,7 +48,7 @@ function SelfDot({ cx, cy, payload, onHover, onLeave }: DotProps) {
   return (
     <g onMouseEnter={() => payload && onHover?.(payload)} onMouseLeave={onLeave}>
       <circle cx={cx} cy={cy} r={16} fill="transparent" />
-      <circle cx={cx} cy={cy} r={9} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={2} opacity={reduce ? 0.45 : 0.9}>
+      <circle cx={cx} cy={cy} r={9} fill="none" stroke={MARK_SELF} strokeWidth={2} opacity={reduce ? 0.45 : 0.9}>
         {!reduce && (
           <>
             <animate attributeName="r" values="9;18;9" dur="1.8s" repeatCount="indefinite" />
@@ -56,7 +56,7 @@ function SelfDot({ cx, cy, payload, onHover, onLeave }: DotProps) {
           </>
         )}
       </circle>
-      <circle cx={cx} cy={cy} r={7.5} fill="var(--mantine-color-accent-6)" stroke="var(--mantine-color-body)" strokeWidth={1.5} />
+      <circle cx={cx} cy={cy} r={DOT_R.self} fill={MARK_SELF} stroke="var(--mantine-color-body)" strokeWidth={1.5} />
     </g>
   );
 }
@@ -69,12 +69,6 @@ function ScatterTip({ active, payload }: { active?: boolean; payload?: { payload
       <Text size="xs" fw={600}>{d.name}{d.isSelf ? ' (this person)' : ''}</Text>
       <Text size="xs" c="dimmed">{d.tenure.toFixed(1)} yrs · {usd(d.pay)}</Text>
     </TipSurface>
-  );
-}
-
-function LegendSwatch({ swatch, label }: { swatch: ReactNode; label: string }) {
-  return (
-    <Group gap={6} wrap="nowrap" align="center">{swatch}<Text size="xs" c="dimmed">{label}</Text></Group>
   );
 }
 
@@ -173,15 +167,15 @@ export function TenurePayScatter({
           <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<ScatterTip />} />
           {reg && (
             <ReferenceLine
-              stroke="var(--mantine-color-gray-5)"
-              strokeDasharray="6 4"
-              strokeWidth={2}
+              stroke={GUIDE_STRONG.stroke}
+              strokeDasharray={GUIDE_STRONG.dasharray}
+              strokeWidth={GUIDE_STRONG.width}
               ifOverflow="extendDomain"
               segment={[{ x: 0, y: reg.intercept }, { x: xMax, y: reg.intercept + reg.slope * xMax }]}
             />
           )}
-          <Scatter data={others} shape={<PeerDot fill="var(--mantine-color-gray-5)" onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
-          <Scatter data={schoolPts} shape={<PeerDot fill="var(--mantine-color-pos-6)" onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={others} shape={<PeerDot fill={MARK_PEER} onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={schoolPts} shape={<PeerDot fill={MARK_PEER_SAME_SCHOOL} onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
           <Scatter data={selfPts} shape={<SelfDot onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} />
           {active && (
             <Customized
@@ -199,12 +193,14 @@ export function TenurePayScatter({
       </div>
       </div>
 
-      <Group gap="lg" mt="xs" wrap="wrap">
-        <LegendSwatch swatch={<svg width={14} height={14} aria-hidden><circle cx={7} cy={7} r={6} fill="var(--mantine-color-accent-6)" stroke="var(--mantine-color-body)" strokeWidth={1.5} /></svg>} label="This person" />
-        <LegendSwatch swatch={<svg width={12} height={12} aria-hidden><circle cx={6} cy={6} r={4.5} fill="var(--mantine-color-pos-6)" /></svg>} label="Same school" />
-        <LegendSwatch swatch={<svg width={12} height={12} aria-hidden><circle cx={6} cy={6} r={4.5} fill="var(--mantine-color-gray-5)" /></svg>} label="Others" />
-        <LegendSwatch swatch={<svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" /></svg>} label="Tenure-expected pay" />
-      </Group>
+      <MarkerLegend
+        items={[
+          { color: MARK_SELF, round: true, label: 'This person' },
+          ...(schoolPts.length ? [{ color: MARK_PEER_SAME_SCHOOL, round: true, label: 'Same school' }] : []),
+          { color: MARK_PEER, round: true, label: 'Others' },
+          ...(reg ? [{ color: GUIDE_STRONG.stroke, dashed: true, label: 'Tenure-expected pay' }] : []),
+        ]}
+      />
 
       {/* This was the only chart in the app with no source line, no CSV and no data table — including
           as an exhibit inside the printed report brief, where a figure with no numbers behind it is
