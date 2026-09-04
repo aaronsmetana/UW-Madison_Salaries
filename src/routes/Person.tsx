@@ -598,19 +598,25 @@ export default function Person() {
   const splitAppointment = cohortSelfPay != null && lastSalary != null && Math.round(cohortSelfPay) !== Math.round(lastSalary);
   const cohortPct = cohortSelfPay != null && cohortSelfPay > 0 && cohortPays.length > 1 ? percentile(cohortSelfPay, cohortPays) : null;
 
-  // Pay-vs-tenure scatter points for the active cohort (only peers with a known tenure can be plotted).
-  const scatterPoints = useMemo<ScatterPoint[]>(
-    () => cohortList
-      .filter((p) => p.tenure != null && Number.isFinite(p.tenure))
-      .map((p) => ({
-        tenure: Math.max(0, p.tenure as number),
-        pay: p.pay,
-        sameSchool: p.person_key !== key && !!p.school && p.school === latest?.school,
-        isSelf: p.person_key === key,
-        name: fullName(p.fn, p.ln) || '—',
-        personKey: p.person_key,
-      })),
+  // One cohort, marked once. Both charts on this tab are handed the same array so they cannot disagree
+  // about who is the subject and who shares their school; the scatter simply drops the members whose
+  // tenure the source never recorded.
+  const cohortPoints = useMemo(
+    () => cohortList.map((p) => ({
+      pay: p.pay,
+      tenure: p.tenure,
+      sameSchool: p.person_key !== key && !!p.school && p.school === latest?.school,
+      isSelf: p.person_key === key,
+      name: fullName(p.fn, p.ln) || '—',
+      personKey: p.person_key,
+    })),
     [cohortList, key, latest],
+  );
+  const scatterPoints = useMemo<ScatterPoint[]>(
+    () => cohortPoints
+      .filter((p) => p.tenure != null && Number.isFinite(p.tenure))
+      .map(({ tenure, ...rest }) => ({ ...rest, tenure: Math.max(0, tenure as number) })),
+    [cohortPoints],
   );
   const selfScatter = useMemo(() => {
     const s = cohortList.find((p) => p.person_key === key);
@@ -920,7 +926,7 @@ export default function Person() {
                       p75={cohortStats.p75}
                       max={cohortStats.hi}
                       value={cohortSelfPay ?? lastSalary}
-                      values={cohortPays}
+                      points={cohortPoints}
                       domain={allPaysDomain}
                       label={latest?.first_name?.trim() || 'This person'}
                     />

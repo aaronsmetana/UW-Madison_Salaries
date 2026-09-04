@@ -87,6 +87,7 @@
   --accent-grad: linear-gradient(135deg, #15839b, #0e6e83);
   --bar: #9cc6d0; /* non-highlighted histogram bars */
   --bar-active: #0e6e83; /* the highlighted bar / "this" */
+
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
@@ -525,10 +526,12 @@ textarea:focus-visible,
 
 /* ── Tasteful motion layer (all reduced-motion guarded at the bottom of this file). ── */
 
-/* Tenure scatter dots grow a touch on direct hover (the wide transparent hit circle behind each one
-   is the real proximity hover target — see TenurePayScatter's PeerDot). Self dot is excluded (it pulses). */
-.scatter-dot { transition: r 120ms ease; }
-.scatter-dot:hover { r: 6.5px; }
+/* Every peer dot in the app grows a touch on direct hover — the tenure scatter and the peer strip both
+   draw `<circle class="chart-dot">`, so one rule covers both. (In the scatter a wide transparent hit
+   circle behind each dot is the real proximity target — see its PeerDot.) The subject's own mark is
+   excluded: it is already the largest thing in either chart. */
+.chart-dot { transition: r 120ms ease; }
+.chart-dot:hover { r: 6.5px; }
 
 /* "Below the tenure curve" callout reads as a muddy brown in dark mode — use a brighter amber tint
    and a lighter rule so it pops (mirrors the --pos-row-bg dark treatment above). */
@@ -572,7 +575,7 @@ button:active,
    pulse is gated in TenurePayScatter.) */
 @media (prefers-reduced-motion: reduce) {
   .tab-rise > *, .route-rise { animation: none; }
-  .scatter-dot { transition: none; }
+  .chart-dot { transition: none; }
   button:active,
   .mantine-Button-root:active,
   .mantine-ActionIcon-root:active { transform: none; }

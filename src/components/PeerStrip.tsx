@@ -3,16 +3,18 @@ import { Text } from '@mantine/core';
 import { usd, num } from '../lib/format';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
-import { MARK_CURRENT } from './markers';
+import {
+  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_SOFT,
+  MarkerLegend, type PeerPoint,
+} from './markers';
 import { binSalaries } from '../lib/histogram';
-import { dotRows, DOT_R, ROW_H, MAX_ROWS } from '../lib/swarm';
+import { dotRows, ROW_H, MAX_ROWS } from '../lib/swarm';
 import { ChartData } from './ChartData';
 
 const RIBBON_H = 76;
-/** SVG user units for the ribbon. preserveAspectRatio="none" stretches these to the real width. */
-const VB_W = 1000;
-const VB_H = 100;
-const MARKER_LANE_H = 30;
+/** Headroom above the population for the subject's own mark, which sits on its own lane. */
+const SELF_LANE_H = DOT_R.self * 2 + 5;
+const MARKER_LANE_H = 26;
 const AXIS_LABEL_ROW_H = 15;
 
 interface AxisLabel {
@@ -40,8 +42,19 @@ function anchorFor(frac: number): { tx: string; centreShift: number } {
  * Here the population is dots (or, when they will not fit, a density ribbon) and the subject is a
  * different mark on its own lane, tied to the axis by a leader line. Vertical position carries no
  * meaning in either mode — it is collision avoidance and nothing else — so there is no second meaning
- * to misread. The axis draws three labels — lowest, median, highest — which is what keeps it legible at
- * phone width; the twelve bin edges it replaces overlapped in every adjacent pair at 375px.
+ * to misread. The axis draws three labels, which is what keeps it legible at phone width; the twelve
+ * bin edges it replaces overlapped in every adjacent pair at 375px.
+ *
+ * Marks, radii and guide styling all come from `markers.tsx`, so a peer, a same-school peer and the
+ * subject are drawn identically here and in the tenure scatter on the same page. The population is
+ * SVG for the same reason: it is what the scatter draws, so both get the same hover behaviour from one
+ * rule rather than two implementations of it.
+ *
+ * The one deliberate difference from the scatter is where the subject sits. In the scatter both axes
+ * carry meaning, so the subject has to be drawn in place among the cloud. Here the vertical axis means
+ * nothing, so putting the subject inside the swarm would put them back among the population — the
+ * exact confusion this chart exists to remove. They get their own lane, and the leader line carries
+ * their position down to the axis.
  */
 export function PeerStrip({
   min,
@@ -50,7 +63,7 @@ export function PeerStrip({
   p75,
   max,
   value,
-  values,
+  points,
   domain,
   label = 'This person',
   caption = 'Salary distribution',
@@ -62,8 +75,9 @@ export function PeerStrip({
   max: number;
   /** The subject's pay. */
   value: number;
-  /** Every peer's pay, the subject included — they are one of the population, not an outsider. */
-  values: number[];
+  /** Every peer in the cohort, the subject included — they are one of the population, not an outsider.
+   *  Same array the tenure scatter is handed, so the two charts cannot disagree about who is who. */
+  points: PeerPoint[];
   /** Hold the axis to a wider range than the cohort (the whole title) so a narrower cohort — "same
    *  school" — visibly thins inside it instead of re-fitting to itself and looking identical. */
   domain?: [number, number];
@@ -72,6 +86,7 @@ export function PeerStrip({
   caption?: string;
 }) {
   const mounted = useMounted();
+
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotW, setPlotW] = useState(0);
   const [hoverPct, setHoverPct] = useState<number | null>(null);
@@ -97,32 +112,45 @@ export function PeerStrip({
     return () => ro.disconnect();
   }, []);
 
-  const sorted = values.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  const peers = points
+    .filter((p) => Number.isFinite(p.pay) && p.pay > 0)
+    .sort((a, b) => a.pay - b.pay);
+  /** Every pay in the cohort — the subject included, because they are one of the 48. Stats, the
+   *  ribbon and the hover readout all describe the whole population. */
+  const sorted = peers.map((p) => p.pay);
+  /** The dots actually drawn. The subject is left out because they already have their own mark on the
+   *  lane above; drawing them twice puts an unexplained grey dot directly under their leader line, and
+   *  makes the legend's "Others" a lie. This is what the scatter does too. */
+  const plotted = peers.filter((p) => !p.isSelf);
+  const hasSameSchool = plotted.some((p) => p.sameSchool);
 
   // Greedy row packing, sorted by value so the packer fills each row left to right. This is the same
   // helper the chart label staggers use — a dot is a label of constant width, so there is no second
   // algorithm to keep in step with the first.
-  const rows = dotRows(sorted, at, plotW);
+  const rows = dotRows(plotted.map((p) => p.pay), at, plotW);
   const rowsNeeded = rows.length ? Math.max(...rows) + 1 : 0;
   const useRibbon = rowsNeeded > MAX_ROWS;
-  const plotH = useRibbon ? RIBBON_H : Math.max(3, rowsNeeded) * ROW_H;
+  const swarmH = useRibbon ? RIBBON_H : Math.max(3, rowsNeeded) * ROW_H;
+  const plotH = swarmH + SELF_LANE_H;
 
-  // Ribbon: a bin count per x, drawn as one area. Straight segments between 24 bin centres read as a
-  // curve at this width and stay honest about being binned counts.
+  // Ribbon: a bin count per x, drawn as one area in the population's own colour. Straight segments
+  // between 24 bin centres read as a curve at this width and stay honest about being binned counts.
   const ribbonPath = (() => {
-    if (!useRibbon) return null;
+    if (!useRibbon || plotW <= 0) return null;
     const bins = binSalaries(sorted, 24, [axisMin, axisMax]);
     if (bins.length < 2) return null;
     const peak = Math.max(1, ...bins.map((b) => b.n));
+    const base = plotH;
     const pts = bins.map((b) => {
-      const x = at((b.lo + b.hi) / 2) * VB_W;
-      const y = VB_H - (b.n / peak) * (VB_H - 2);
+      const x = at((b.lo + b.hi) / 2) * plotW;
+      const y = base - (b.n / peak) * (swarmH - 2);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
-    return `M0,${VB_H} L${pts.join(' L')} L${VB_W},${VB_H} Z`;
+    return `M0,${base} L${pts.join(' L')} L${plotW},${base} Z`;
   })();
 
   const pos = at(value) * 100;
+  const selfX = at(value) * plotW;
   const labelTx = pos < 12 ? '0%' : pos > 88 ? '-100%' : '-50%';
 
   // Three labels, never twelve — and deliberately not a fourth for the subject. The marker prints the
@@ -221,48 +249,27 @@ export function PeerStrip({
   return (
     <div>
       <div className="peer-strip">
-        {/* Subject lane. The label and the dot share one x; the leader line below carries that x down
-            to the axis, so nothing about which mark the label names is left to inference. */}
+        {/* The subject's label. `accent7-text` is the app's existing fix for this pairing: the mark
+            colour reads under 4.5:1 as type on the dark card, so dark mode swaps it for --text-accent.
+            A label is not the mark colour applied to text — see MARK_SELF_TEXT. */}
         <div style={{ position: 'relative', height: MARKER_LANE_H }}>
-          {/* `accent7-text` is the app's existing fix for this exact pairing: accent-7 reads 3.08:1
-              against the dark card, under AA, so dark mode swaps it for --text-accent. Without it the
-              a11y gate fails on this label, which is how it was caught. */}
           <Text
             className="peer-strip-you accent7-text"
             fw={700}
             style={{
               position: 'absolute',
               left: `${pos}%`,
-              top: 0,
+              bottom: 2,
               transform: `translateX(${labelTx})`,
               whiteSpace: 'nowrap',
               fontSize: 12.5,
-              color: MARK_CURRENT,
+              color: MARK_SELF_TEXT,
               opacity: mounted ? 1 : 0,
               transition: 'opacity 240ms ease',
             }}
           >
             {label} · {usd(value)}
           </Text>
-          <div
-            aria-hidden
-            className="peer-strip-marker"
-            style={{
-              position: 'absolute',
-              left: `${pos}%`,
-              bottom: -DOT_R - 2,
-              width: 16,
-              height: 16,
-              borderRadius: '50%',
-              background: MARK_CURRENT,
-              border: '2px solid var(--mantine-color-body)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
-              transform: 'translateX(-50%)',
-              opacity: mounted ? 1 : 0,
-              transition: 'opacity 240ms ease',
-              zIndex: 3,
-            }}
-          />
         </div>
 
         <div
@@ -271,78 +278,81 @@ export function PeerStrip({
           onMouseLeave={() => setHoverPct(null)}
           style={{ position: 'relative', height: plotH, cursor: sorted.length ? 'crosshair' : undefined }}
         >
-          {/* Middle 50% — the band the caption names, and the only fill in the plot. */}
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: `${at(p25) * 100}%`,
-              width: `${(at(p75) - at(p25)) * 100}%`,
-              top: 0,
-              bottom: 0,
-              background: 'var(--mantine-color-accent-6)',
-              opacity: 0.08,
-            }}
-          />
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: `${at(median) * 100}%`,
-              top: 0,
-              bottom: 0,
-              width: 0,
-              borderLeft: '1px dashed var(--mantine-color-gray-6)',
-              opacity: 0.8,
-            }}
-          />
-
-          {/* Leader line: the subject's x, drawn the full height of the plot down to the axis. */}
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: `${pos}%`,
-              top: 0,
-              bottom: 0,
-              width: 1,
-              marginLeft: -0.5,
-              background: MARK_CURRENT,
-              opacity: mounted ? 0.55 : 0,
-              transition: 'opacity 240ms ease',
-              zIndex: 2,
-            }}
-          />
-
-          {useRibbon && ribbonPath ? (
+          {plotW > 0 && (
             <svg
+              width={plotW}
+              height={plotH}
+              style={{ position: 'absolute', inset: 0, overflow: 'visible' }}
               aria-hidden
-              viewBox={`0 0 ${VB_W} ${VB_H}`}
-              preserveAspectRatio="none"
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: mounted ? 1 : 0, transition: 'opacity 240ms ease' }}
             >
-              <path d={ribbonPath} fill="var(--bar)" fillOpacity={0.55} stroke="var(--bar)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-            </svg>
-          ) : (
-            sorted.map((v, i) => (
-              <div
-                key={i}
-                aria-hidden
-                className="peer-strip-dot"
-                style={{
-                  position: 'absolute',
-                  left: `${at(v) * 100}%`,
-                  bottom: (rows[i] ?? 0) * ROW_H,
-                  width: DOT_R * 2,
-                  height: DOT_R * 2,
-                  borderRadius: '50%',
-                  background: 'var(--bar)',
-                  transform: 'translateX(-50%)',
-                  opacity: mounted ? 0.85 : 0,
-                  transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms`,
-                }}
+              {/* Middle 50% — the band the caption names, and the only fill in the plot. */}
+              <rect
+                x={at(p25) * plotW}
+                width={Math.max(0, (at(p75) - at(p25)) * plotW)}
+                y={0}
+                height={plotH}
+                fill="var(--mantine-color-accent-6)"
+                opacity={0.08}
               />
-            ))
+              <line
+                x1={at(median) * plotW}
+                x2={at(median) * plotW}
+                y1={0}
+                y2={plotH}
+                stroke={GUIDE_SOFT.stroke}
+                strokeDasharray={GUIDE_SOFT.dasharray}
+                strokeWidth={GUIDE_SOFT.width}
+              />
+
+              {useRibbon && ribbonPath ? (
+                <path
+                  d={ribbonPath}
+                  fill={MARK_PEER}
+                  fillOpacity={0.55}
+                  stroke={MARK_PEER}
+                  strokeWidth={1}
+                  opacity={mounted ? 1 : 0}
+                  style={{ transition: 'opacity 240ms ease' }}
+                />
+              ) : (
+                plotted.map((p, i) => (
+                  <circle
+                    key={p.personKey || i}
+                    className="chart-dot"
+                    cx={at(p.pay) * plotW}
+                    cy={plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
+                    r={DOT_R.peer}
+                    fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
+                    fillOpacity={0.9}
+                    opacity={mounted ? 1 : 0}
+                    style={{ transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms` }}
+                  />
+                ))
+              )}
+
+              {/* Leader line + the subject's mark, drawn exactly as the tenure scatter draws it. */}
+              <line
+                x1={selfX}
+                x2={selfX}
+                y1={SELF_LANE_H / 2}
+                y2={plotH}
+                stroke={MARK_SELF}
+                strokeWidth={1}
+                opacity={mounted ? 0.55 : 0}
+                style={{ transition: 'opacity 240ms ease' }}
+              />
+              <circle
+                className="peer-strip-marker"
+                cx={selfX}
+                cy={SELF_LANE_H / 2}
+                r={DOT_R.self}
+                fill={MARK_SELF}
+                stroke="var(--mantine-color-body)"
+                strokeWidth={1.5}
+                opacity={mounted ? 1 : 0}
+                style={{ transition: 'opacity 240ms ease' }}
+              />
+            </svg>
           )}
 
           {hoverPct != null && hoverValue != null && (
@@ -391,10 +401,21 @@ export function PeerStrip({
         </div>
       </div>
 
+      <MarkerLegend
+        items={[
+          // "This person" verbatim, not the name — the scatter's legend on the same page says exactly
+          // this, and two legends a card apart disagreeing about what to call the same mark is the
+          // small kind of inconsistency that makes a page feel assembled rather than designed.
+          { color: MARK_SELF, round: true, label: 'This person' },
+          // The ribbon is one shape for the whole cohort — it cannot separate same-school peers, so the
+          // legend must not offer a mark the chart never draws.
+          ...(hasSameSchool && !useRibbon ? [{ color: MARK_PEER_SAME_SCHOOL, round: true, label: 'Same school' }] : []),
+          { color: MARK_PEER, round: true, label: useRibbon ? 'Everyone with this title' : 'Others' },
+        ]}
+      />
+
       <Text size="xs" c="dimmed" mt={4}>
-        {useRibbon
-          ? `Height = how many people earn about that much · `
-          : `1 dot = 1 person · `}
+        {useRibbon ? 'Height = how many people earn about that much · ' : '1 dot = 1 person · '}
         shaded band = middle 50% of peers ({fmtK(p25)}–{fmtK(p75)}).
       </Text>
 
