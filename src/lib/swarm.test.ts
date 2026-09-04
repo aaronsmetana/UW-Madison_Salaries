@@ -1,12 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { dotRows, DOT_R, DOT_GAP, MAX_ROWS } from './swarm';
+import { dotRows, DOT_GAP, MAX_ROWS } from './swarm';
+import { DOT_R } from '../components/markers';
+
+/**
+ * The radius the strip actually draws with.
+ *
+ * This used to be swarm.ts's own `DOT_R = 4` while PeerStrip rendered at `DOT_R.peer = 4.5`, so the
+ * packer reserved 8px for a 9px dot and every row-neighbour overlapped by a pixel. The test passed
+ * throughout, because it measured the packer against the same private constant the packer used —
+ * a closed loop that could never see the mismatch. Importing the drawn radius is the fix.
+ */
+const R = DOT_R.peer;
 
 /** The mapping the strip uses: value -> 0..1 across the axis. */
 const scale = (min: number, max: number) => (v: number) => (max > min ? (v - min) / (max - min) : 0);
 
 /** Every pair of dots sharing a row must clear each other by at least the gap. */
 function overlapsOnAnyRow(values: number[], rows: number[], at: (v: number) => number, w: number): string | null {
-  const need = DOT_R * 2 + DOT_GAP;
+  const need = R * 2 + DOT_GAP;
   for (let i = 0; i < values.length; i++) {
     for (let j = i + 1; j < values.length; j++) {
       if (rows[i] !== rows[j]) continue;
@@ -28,7 +39,7 @@ describe('dotRows', () => {
     ];
     const at = scale(98699, 147107);
     for (const w of [280, 375, 640, 1100]) {
-      const rows = dotRows(values, at, w);
+      const rows = dotRows(values, at, w, R);
       expect(rows).toHaveLength(values.length);
       expect(overlapsOnAnyRow(values, rows, at, w)).toBeNull();
     }
@@ -36,15 +47,15 @@ describe('dotRows', () => {
 
   it('stacks identical salaries rather than hiding them behind each other', () => {
     const values = [80000, 80000, 80000, 80000];
-    const rows = dotRows(values, scale(70000, 90000), 600);
+    const rows = dotRows(values, scale(70000, 90000), 600, R);
     expect(new Set(rows).size).toBe(4);
   });
 
   it('needs more rows as the axis narrows', () => {
     const values = Array.from({ length: 120 }, (_, i) => 100000 + i * 400);
     const at = scale(100000, 147600);
-    const wide = Math.max(...dotRows(values, at, 1100)) + 1;
-    const narrow = Math.max(...dotRows(values, at, 300)) + 1;
+    const wide = Math.max(...dotRows(values, at, 1100, R)) + 1;
+    const narrow = Math.max(...dotRows(values, at, 300, R)) + 1;
     expect(narrow).toBeGreaterThan(wide);
   });
 
@@ -54,12 +65,12 @@ describe('dotRows', () => {
     const at = scale(100000, 200000);
     const spread = Array.from({ length: 120 }, (_, i) => 100000 + i * 800);
     const clustered = Array.from({ length: 120 }, (_, i) => 110000 + i * 16);
-    expect(Math.max(...dotRows(spread, at, 900)) + 1).toBeLessThanOrEqual(MAX_ROWS);
-    expect(Math.max(...dotRows(clustered, at, 900)) + 1).toBeGreaterThan(MAX_ROWS);
+    expect(Math.max(...dotRows(spread, at, 900, R)) + 1).toBeLessThanOrEqual(MAX_ROWS);
+    expect(Math.max(...dotRows(clustered, at, 900, R)) + 1).toBeGreaterThan(MAX_ROWS);
   });
 
   it('returns nothing before the container has been measured', () => {
-    expect(dotRows([1, 2, 3], scale(1, 3), 0)).toEqual([]);
-    expect(dotRows([], scale(0, 1), 500)).toEqual([]);
+    expect(dotRows([1, 2, 3], scale(1, 3), 0, R)).toEqual([]);
+    expect(dotRows([], scale(0, 1), 500, R)).toEqual([]);
   });
 });

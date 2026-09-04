@@ -184,3 +184,27 @@ for (const { name, width, height } of [
     }
   });
 }
+
+/**
+ * The scatter directly below the strip names the person you point at. The strip answered the same
+ * gesture with an estimated axis value, so one dot meant two different things on one page. It snaps
+ * to the nearest dot now — necessary, not decorative: these dots are r=4.5 and packed a couple of
+ * pixels apart, which plain :hover makes a hard target for a mouse and an impossible one for a
+ * finger. The axis readout stays for the space between dots, where it is the only sensible answer.
+ */
+test('the peer strip names the person under the cursor, and reads the axis between them', async ({ page }) => {
+  await openPerson(page, 'Aaron Smetana');
+  const dots = page.locator('.peer-strip circle.chart-dot');
+  await expect(dots.first()).toBeVisible({ timeout: 60_000 });
+
+  const box = await dots.nth(5).boundingBox();
+  if (!box) throw new Error('peer dot has no box');
+  const pill = page.locator('.peer-strip .chart-value-pill');
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // A name and a pay figure — not the "~$X · Nth percentile" estimate.
+  await expect(pill).toHaveText(/^[^~]+ · \$[\d,]+$/, { timeout: 5_000 });
+
+  await page.mouse.move(box.x + box.width / 2, box.y - 34);
+  await expect(pill).toHaveText(/^~\$[\d,]+/, { timeout: 5_000 });
+});

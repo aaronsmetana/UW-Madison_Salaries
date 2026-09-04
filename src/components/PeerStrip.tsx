@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd, num } from '../lib/format';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
@@ -8,7 +8,7 @@ import {
   MarkerLegend, type PeerPoint,
 } from './markers';
 import { binSalaries } from '../lib/histogram';
-import { dotRows, ROW_H, MAX_ROWS } from '../lib/swarm';
+import { dotRows, rowHeight, MAX_ROWS } from '../lib/swarm';
 import { ChartData } from './ChartData';
 
 const RIBBON_H = 76;
@@ -16,6 +16,12 @@ const RIBBON_H = 76;
 const SELF_LANE_H = DOT_R.self * 2 + 5;
 const MARKER_LANE_H = 26;
 const AXIS_LABEL_ROW_H = 15;
+/** How close the cursor must come to a dot before the readout names that person instead of the
+ *  axis position. Roughly a dot's diameter plus a little slack — enough to be reachable, small
+ *  enough that the space between dots still reads the axis. */
+const HOVER_SNAP_PX = 14;
+/** One source for the dot radius: the packer reserves exactly what the renderer draws. */
+const ROW_H = rowHeight(DOT_R.peer);
 
 interface AxisLabel {
   x: number;
@@ -90,12 +96,18 @@ export function PeerStrip({
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotW, setPlotW] = useState(0);
   const [hoverPct, setHoverPct] = useState<number | null>(null);
+  const [hoverY, setHoverY] = useState<number | null>(null);
 
   // The five-number summary describes the cohort; the axis may span something wider (see `domain`).
   const axisMin = domain ? Math.min(domain[0], min) : min;
   const axisMax = domain ? Math.max(domain[1], max) : max;
   const span = axisMax - axisMin;
-  const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - axisMin) / span)) : 0);
+  // Memoised because the hover hit-test depends on it: an `at` rebuilt every render would make that
+  // useMemo recompute on every mouse move, which is the one place in this component that matters.
+  const at = useCallback(
+    (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - axisMin) / span)) : 0),
+    [axisMin, span],
+  );
 
   // The dot dodge needs real pixels, and only the container width can supply them. Fonts play no part
   // here (unlike the axis labels below), so a plain ResizeObserver is enough.
@@ -127,7 +139,7 @@ export function PeerStrip({
   // Greedy row packing, sorted by value so the packer fills each row left to right. This is the same
   // helper the chart label staggers use — a dot is a label of constant width, so there is no second
   // algorithm to keep in step with the first.
-  const rows = dotRows(plotted.map((p) => p.pay), at, plotW);
+  const rows = dotRows(plotted.map((p) => p.pay), at, plotW, DOT_R.peer);
   const rowsNeeded = rows.length ? Math.max(...rows) + 1 : 0;
   const useRibbon = rowsNeeded > MAX_ROWS;
   const swarmH = useRibbon ? RIBBON_H : Math.max(3, rowsNeeded) * ROW_H;
@@ -222,12 +234,40 @@ export function PeerStrip({
     ? sorted.filter((v) => v < hoverValue).length / sorted.length
     : null;
 
-  const updateHover = (clientX: number) => {
+  /**
+   * The peer under the cursor, if there is one close enough.
+   *
+   * The scatter directly below this chart names the person you point at; the strip answered with an
+   * estimated axis value instead, so the same dot meant two different things on one page. Snapping
+   * to the nearest dot rather than relying on `:hover` is what makes it usable — these dots are
+   * r=4.5 and packed a couple of pixels apart, which is a hard target to hit with a mouse and an
+   * impossible one on a touch screen. The positional readout stays for the space between dots,
+   * where reading the axis is the only sensible answer.
+   */
+  const hoveredPeer = useMemo(() => {
+    if (useRibbon || hoverPct == null || hoverY == null || plotW <= 0) return null;
+    const hx = (hoverPct / 100) * plotW;
+    let best: { p: PeerPoint; cx: number } | null = null;
+    let bestD = HOVER_SNAP_PX;
+    for (let i = 0; i < plotted.length; i++) {
+      const cx = at(plotted[i].pay) * plotW;
+      const cy = plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1;
+      const d = Math.hypot(cx - hx, cy - hoverY);
+      if (d < bestD) {
+        bestD = d;
+        best = { p: plotted[i], cx };
+      }
+    }
+    return best;
+  }, [useRibbon, hoverPct, hoverY, plotW, plotH, plotted, rows, at]);
+
+  const updateHover = (clientX: number, clientY: number) => {
     const el = plotRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0) return;
     setHoverPct(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * 100);
+    setHoverY(clientY - rect.top);
   };
 
   // A cohort with no spread at all — every holder of the title on the identical figure, which the
@@ -274,8 +314,8 @@ export function PeerStrip({
 
         <div
           ref={plotRef}
-          onMouseMove={(e) => updateHover(e.clientX)}
-          onMouseLeave={() => setHoverPct(null)}
+          onMouseMove={(e) => updateHover(e.clientX, e.clientY)}
+          onMouseLeave={() => { setHoverPct(null); setHoverY(null); }}
           style={{ position: 'relative', height: plotH, cursor: sorted.length ? 'crosshair' : undefined }}
         >
           {plotW > 0 && (
@@ -321,9 +361,9 @@ export function PeerStrip({
                     className="chart-dot"
                     cx={at(p.pay) * plotW}
                     cy={plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
-                    r={DOT_R.peer}
+                    r={hoveredPeer?.p === p ? DOT_R.peer + 2 : DOT_R.peer}
                     fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
-                    fillOpacity={0.9}
+                    fillOpacity={hoveredPeer && hoveredPeer.p !== p ? 0.45 : 0.9}
                     opacity={mounted ? 1 : 0}
                     style={{ transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms` }}
                   />
@@ -359,7 +399,7 @@ export function PeerStrip({
             <div
               style={{
                 position: 'absolute',
-                left: `${hoverPct}%`,
+                left: hoveredPeer ? `${(hoveredPeer.cx / plotW) * 100}%` : `${hoverPct}%`,
                 bottom: 'calc(100% + 4px)',
                 transform: 'translateX(-50%)',
                 pointerEvents: 'none',
@@ -367,7 +407,9 @@ export function PeerStrip({
               }}
             >
               <span className="chart-value-pill">
-                ~{usd(hoverValue)}{hoverBelow != null ? ` · ${Math.round(hoverBelow * 100)}th percentile` : ''}
+                {hoveredPeer
+                  ? `${hoveredPeer.p.name} · ${usd(hoveredPeer.p.pay)}`
+                  : `~${usd(hoverValue)}${hoverBelow != null ? ` · ${Math.round(hoverBelow * 100)}th percentile` : ''}`}
               </span>
             </div>
           )}
