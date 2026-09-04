@@ -11,6 +11,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
 import { CommandPalette, PaletteTrigger, usePalette } from '../components/CommandPalette';
 import { NAV, ABOUT, type NavItem } from './nav';
+import { consumeUpdate } from '../lib/appUpdate';
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
@@ -22,6 +23,14 @@ export function AppShellLayout() {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure(false);
   const [collapsed, { toggle: toggleDesktop }] = useDisclosure(false);
   const palette = usePalette();
+
+  // A newer build activated while this tab was open (see lib/appUpdate). Take it at the first
+  // navigation: the reader has already left the view they were on, so a reload costs them nothing,
+  // and they get the new bundle without ever being told to refresh. `consumeUpdate` is false on the
+  // first render, so this never fires on load.
+  useEffect(() => {
+    if (consumeUpdate()) window.location.reload();
+  }, [loc.pathname]);
 
   // Force the light color scheme for the duration of any print. print.css paints the page white, but
   // Mantine's dark-scheme text vars stay light — printing from dark mode would put near-white text on

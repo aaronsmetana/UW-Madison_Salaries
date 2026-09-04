@@ -54,6 +54,17 @@ export default defineConfig({
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },
       workbox: {
+        // vite-plugin-pwa only injects these two for `registerType: 'autoUpdate'` when it also owns
+        // the registration — the branch is guarded on `injectRegister` being 'auto' or unset. We set
+        // `injectRegister: false` and call registerSW() ourselves, so that branch never ran and the
+        // generated worker came out prompt-shaped: no skipWaiting, no clientsClaim, only a
+        // `message → SKIP_WAITING` listener that nothing ever posts to (the client's own
+        // `updateServiceWorker` is a no-op in autoUpdate mode). Every deploy installed, moved to
+        // `waiting`, and stayed there — measured on production, a build several commits old still
+        // being served with a newer worker parked behind it. Set them here so autoUpdate means what
+        // it says while we keep owning the registration.
+        skipWaiting: true,
+        clientsClaim: true,
         // Exclude .wasm from precache (the two DuckDB bundles are large) — cached at runtime instead.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
         runtimeCaching: [
