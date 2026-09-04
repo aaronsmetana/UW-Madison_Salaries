@@ -10,6 +10,7 @@ import { prefersReducedMotion } from '../lib/motion';
 import { leastSquares } from '../lib/stats';
 import { TipSurface } from './chart/ChartTooltip';
 import { CrosshairLayer } from './chart/CrosshairLayer';
+import { ChartData } from './ChartData';
 
 export interface ScatterPoint {
   tenure: number;
@@ -204,6 +205,20 @@ export function TenurePayScatter({
         <LegendSwatch swatch={<svg width={12} height={12} aria-hidden><circle cx={6} cy={6} r={4.5} fill="var(--mantine-color-gray-5)" /></svg>} label="Others" />
         <LegendSwatch swatch={<svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" /></svg>} label="Tenure-expected pay" />
       </Group>
+
+      {/* This was the only chart in the app with no source line, no CSV and no data table — including
+          as an exhibit inside the printed report brief, where a figure with no numbers behind it is
+          exactly the thing a reader is entitled to check. Tenure is rounded here because a point on a
+          scatter is not a 15-decimal measurement; the CSV keeps the raw value. */}
+      <ChartData
+        caption={`Pay vs. tenure — ${titleLabel}`}
+        columns={['Name', 'Tenure (yrs)', 'Pay']}
+        rows={[...points]
+          .sort((a, b) => b.pay - a.pay)
+          .map((p) => [p.isSelf ? `${p.name} (this person)` : p.name, Number(p.tenure.toFixed(1)), p.pay])}
+        n={points.length}
+        unit="people"
+      />
     </div>
   );
 }
