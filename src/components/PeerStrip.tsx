@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
-import { usd } from '../lib/format';
+import { usd, num } from '../lib/format';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import { MARK_CURRENT } from './markers';
@@ -172,6 +172,25 @@ export function PeerStrip({
 
   const labelRowCount = Math.max(1, ...labelRows.map((r) => r + 1));
 
+  // The five-number summary rather than the plotted values: it is what the chart is *about*, it stays
+  // one screenful for a 1,251-person cohort, and the peer table below the card already lists everyone.
+  const summaryTable = (
+    <ChartData
+      caption={caption}
+      columns={['Statistic', 'Salary']}
+      rows={[
+        ['Lowest', min],
+        ['25th percentile', p25],
+        ['Median', median],
+        ['75th percentile', p75],
+        ['Highest', max],
+        [label, value],
+      ]}
+      n={sorted.length}
+      unit="people"
+    />
+  );
+
   const hoverValue = hoverPct != null ? axisMin + (hoverPct / 100) * span : null;
   const hoverBelow = hoverValue != null && sorted.length
     ? sorted.filter((v) => v < hoverValue).length / sorted.length
@@ -184,6 +203,22 @@ export function PeerStrip({
     if (rect.width <= 0) return;
     setHoverPct(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * 100);
   };
+
+  // A cohort with no spread at all — every holder of the title on the identical figure, which the
+  // 173 Crowd Control Officers all at $124,800 really are. There is no axis to draw, and the dots
+  // would pile on x=0 while the ribbon's binning collapsed to a single bin and drew nothing. Say what
+  // is true instead of rendering an empty plot.
+  if (!(span > 0)) {
+    return (
+      <div>
+        <Text size="sm">
+          All {num(sorted.length)} people with this title are paid exactly {usd(axisMin)} — there is no
+          spread to plot.
+        </Text>
+        {summaryTable}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -365,20 +400,7 @@ export function PeerStrip({
         shaded band = middle 50% of peers ({fmtK(p25)}–{fmtK(p75)}).
       </Text>
 
-      <ChartData
-        caption={caption}
-        columns={['Statistic', 'Salary']}
-        rows={[
-          ['Lowest', min],
-          ['25th percentile', p25],
-          ['Median', median],
-          ['75th percentile', p75],
-          ['Highest', max],
-          [label, value],
-        ]}
-        n={sorted.length}
-        unit="people"
-      />
+      {summaryTable}
     </div>
   );
 }
