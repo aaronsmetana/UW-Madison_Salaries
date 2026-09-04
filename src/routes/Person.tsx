@@ -27,8 +27,7 @@ import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
-import { PeerRangeBar } from '../components/PeerRangeBar';
-import { SalaryHistogram } from '../components/SalaryHistogram';
+import { PeerStrip } from '../components/PeerStrip';
 import { ChartData } from '../components/ChartData';
 import { PercentileNote } from '../components/PercentileNote';
 import { LoadingState } from '../components/Loading';
@@ -904,19 +903,21 @@ export default function Person() {
                 </Text>
                 {cohortStats && cohortStats.n >= 2 ? (
                   <>
-                    <PeerRangeBar min={cohortStats.lo} p25={cohortStats.p25} median={cohortStats.med} p75={cohortStats.p75} max={cohortStats.hi} value={lastSalary} values={cohortPays} />
+                    <PeerStrip
+                      min={cohortStats.lo}
+                      p25={cohortStats.p25}
+                      median={cohortStats.med}
+                      p75={cohortStats.p75}
+                      max={cohortStats.hi}
+                      value={lastSalary}
+                      values={cohortPays}
+                      domain={allPaysDomain}
+                      label={latest?.first_name?.trim() || 'This person'}
+                    />
                     <PercentileNote
                       pct={cohortPct}
                       pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
                       mt="sm"
-                      mb="md"
-                    />
-                    <SalaryHistogram
-                      values={cohortPays}
-                      markerValue={lastSalary}
-                      markerLabel="this person"
-                      domain={allPaysDomain}
-                      tooFewText={`Only ${num(cohortStats.n)} ${cohortStats.n === 1 ? 'person has' : 'people have'} this title here — too few to chart a distribution.`}
                     />
                   </>
                 ) : (

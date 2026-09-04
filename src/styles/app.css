@@ -903,3 +903,14 @@ button:active,
   .report-flow { grid-template-columns: 1fr; }
   .report-flow-arrow { justify-self: center; transform: rotate(90deg); }
 }
+
+/* ── Peer strip: the person page's "where do I sit" chart. ────────────────────────────────────────
+   Geometry is computed in the component (it needs measured pixels for the dot dodge), so all that
+   lives here is the container and the motion guard. The reveal is opacity-only and inline, which a
+   media query can only reach with !important — killing it leaves every mark at its final opacity,
+   which is exactly the reduced-motion behaviour we want. */
+.peer-strip { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .peer-strip * { transition: none !important; }
+}
