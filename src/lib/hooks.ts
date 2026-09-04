@@ -3,9 +3,21 @@ import { query, getDB } from './duckdb';
 import { fetchData, type HomeStats, type Manifest, type Summary } from './manifest';
 import { useControls } from '../state/controls';
 
-/** Resolves once DuckDB-WASM + the Parquet have loaded; errors if the dataset can't be loaded. */
-export function useDbReady() {
-  return useQuery({ queryKey: ['db-ready'], queryFn: () => getDB().then(() => true), retry: 1 });
+/**
+ * Resolves once DuckDB-WASM + the Parquet have loaded; errors if the dataset can't be loaded.
+ *
+ * `enabled` is the whole point of this hook's shape. Booting DuckDB costs ~13.8 MB over the wire
+ * (7.5 MB wasm + 6.0 MB Parquet + ~250 KB of worker/JS), so only a caller that actually intends to
+ * query may start it. `useSql` passes its own `enabled` straight through, which makes the boot
+ * follow real demand for every query in the app without any call site having to think about it.
+ *
+ * Pass `false` to *observe* without starting anything: the query still subscribes to the shared
+ * ['db-ready'] cache entry and reports an error raised by a real consumer, but fetches nothing
+ * itself. That is what `DataErrorBanner` wants — it renders on every route, including the ones
+ * (Home, /data, 404) that serve entirely from precomputed JSON and never touch the Parquet.
+ */
+export function useDbReady(enabled = true) {
+  return useQuery({ queryKey: ['db-ready'], queryFn: () => getDB().then(() => true), retry: 1, enabled });
 }
 
 /** Headline KPIs + snapshot list (static JSON — works even if DuckDB/Parquet fail to load). */
@@ -64,6 +76,11 @@ export function useSql<T = Record<string, unknown>>(
   sql: string,
   enabled = true
 ) {
+  // Booting DuckDB is this app's single largest cost, so it follows demand: a query that will not
+  // run must not pay for it. Threading the same `enabled` through means Home — whose eight queries
+  // are all gated behind `needsSql` — loads nothing, while any page that really queries still marks
+  // the dataset as needed so `DataErrorBanner` has something to observe.
+  useDbReady(enabled);
   // Include the SQL text in the key so changing a query without changing its key can't serve stale data.
   return useQuery({ queryKey: ['sql', ...key, sql], queryFn: () => query<T>(sql), enabled });
 }

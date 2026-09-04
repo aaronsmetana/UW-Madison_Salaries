@@ -31,9 +31,17 @@ export function GlobalLoadingBar() {
   );
 }
 
-/** Global banner shown when the salary dataset (DuckDB/Parquet) or summary fails to load. */
+/**
+ * Global banner shown when the salary dataset (DuckDB/Parquet) or summary fails to load.
+ *
+ * `useDbReady(false)` observes without initiating. This component renders in the shell on *every*
+ * route, so calling the enabled form here made every page — Home, /data, 404 included — download
+ * ~13.8 MB of DuckDB-WASM and Parquet purely to decide whether to render an error. That silently
+ * defeated Home's own `home-stats.json` path, which exists so the landing page can render from 1 KB.
+ * The banner only ever needs to report a failure something else already hit.
+ */
 export function DataErrorBanner() {
-  const db = useDbReady();
+  const db = useDbReady(false);
   const summary = useSummary();
   if (!db.isError && !summary.isError) return null;
   return (

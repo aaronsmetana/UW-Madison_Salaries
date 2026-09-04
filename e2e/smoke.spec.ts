@@ -173,3 +173,47 @@ test('canonical URL and social title follow the route', async ({ page }) => {
 
   expect(titled.canonical).not.toBe(about.canonical);
 });
+
+/**
+ * Booting DuckDB costs ~13.8 MB over the wire (7.5 MB wasm + 6.0 MB Parquet + ~250 KB worker/JS),
+ * so the pages that serve from precomputed JSON must not pay for it. Home has `home-stats.json`
+ * (1 KB) and gates all eight of its queries behind `needsSql`, and the 404 route renders no data at
+ * all. That optimisation existed once before and was silently defeated by `DataErrorBanner` calling
+ * the enabled form of `useDbReady` from the shell, on every route — exactly the kind of regression a
+ * comment cannot prevent and this test can.
+ *
+ * `/data` is deliberately NOT in this list: `DuplicateIdentities` (DataHealth.tsx:587) runs two real
+ * queries, so the data-health page genuinely needs the dataset and paying for it there is correct.
+ */
+for (const route of ['./', './this-route-does-not-exist']) {
+  test(`no DuckDB boot on a route that never queries (${route})`, async ({ page }) => {
+    const heavy: string[] = [];
+    page.on('request', (r) => {
+      const u = r.url();
+      if (/\.wasm(\?|$)/.test(u) || /\.parquet(\?|$)/.test(u)) heavy.push(u.split('/').pop()!);
+    });
+    await page.goto(route);
+    // Wait for the page to be genuinely settled, so "nothing was fetched" isn't just "not yet".
+    await expect(page.locator('footer, [class*=Footer]').first()).toBeVisible({ timeout: 60_000 });
+    await page.waitForLoadState('networkidle');
+    expect(heavy, `${route} downloaded DuckDB/Parquet it never queries`).toEqual([]);
+  });
+}
+
+test('a route that does query still loads the dataset', async ({ page }) => {
+  const heavy: string[] = [];
+  page.on('request', (r) => {
+    if (/\.parquet(\?|$)/.test(r.url())) heavy.push('parquet');
+  });
+  await page.goto('./explore');
+  await expect(page.locator('svg').first()).toBeVisible({ timeout: 60_000 });
+  await expect(() => expect(heavy.length).toBeGreaterThan(0)).toPass({ timeout: 60_000 });
+});
+
+test('the data error banner still fires when the dataset really fails', async ({ page }) => {
+  // The banner now observes rather than initiates, so the thing worth proving is that observing is
+  // enough: a route that queries must still surface the failure.
+  await page.route('**/salaries.parquet', (r) => r.abort());
+  await page.goto('./explore');
+  await expect(page.getByText(/Couldn't load the salary data/i)).toBeVisible({ timeout: 60_000 });
+});
