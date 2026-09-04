@@ -1217,7 +1217,6 @@ export default function Person() {
               tickLine={false}
               tickMargin={fteVaries ? undefined : 10}
               height={fteVaries ? 8 : 34}
-              axisLine={{ stroke: 'var(--mantine-color-default-border)' }}
             />
             <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
             <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />

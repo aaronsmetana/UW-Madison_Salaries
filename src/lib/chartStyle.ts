@@ -8,10 +8,18 @@ import { usd } from './format';
  */
 // `fill` matters as much as `fontSize` here — Recharts' own default tick color (#666) ignores dark
 // mode entirely, so every axis label washes out on a dark card unless this token supplies the color.
+// The axis line and tick marks have the same problem and are fixed in app.css rather than here: they
+// are one CSS rule that reaches all 40 axes in the app, where a token would be a prop 40 call sites
+// have to remember — the same failure mode that left `isAnimationActive` off 22 marks.
 export const AXIS_TICK = { fontSize: 12, fill: 'var(--mantine-color-dimmed)' } as const;
 // Horizontal gridlines only — vertical gridlines between categories add visual noise without helping
 // reads (a bar/line's own x-position already anchors it to its category).
-export const GRID = { strokeDasharray: '3 3', opacity: 0.3, vertical: false } as const;
+// `stroke` for the same reason as AXIS_TICK's `fill`: Recharts' default is a fixed `#ccc`, which
+// takes no notice of the color scheme. It got away with it only because `opacity: 0.3` is forgiving
+// on both grounds — 1.13:1 on the light card (so light mode effectively had no gridlines at all)
+// and 2.11:1 on the dark one. `--hairline-strong` carries its own per-scheme alpha, so the blanket
+// opacity goes with it: keeping both would multiply 0.16 by 0.3 and erase the grid entirely.
+export const GRID = { strokeDasharray: '3 3', stroke: 'var(--hairline-strong)', vertical: false } as const;
 export const Y_PAD = { top: 6, bottom: 6 } as const;
 
 /**

@@ -334,6 +334,20 @@ body {
 .recharts-bar-rectangle path {
   transition: fill-opacity 150ms ease;
 }
+/* Recharts draws the axis rule, the tick marks and the tooltip crosshair with hard-coded #666/#ccc
+   presentation attributes, which ignore the color scheme. Left alone, the axis rule reads 5.74:1 on
+   the light card while the peer dots it frames read 1.9:1 — the frame shouting over the data. CSS
+   rather than props on purpose: a declaration beats a presentation attribute, so this reaches every
+   axis in the app at once and a newly-added chart cannot forget it. */
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: var(--hairline-strong);
+}
+/* Scoped to `path` because bar charts render the cursor as a <rect> whose meaningful property is
+   `fill` — and every bar chart here already passes its own `cursor={{ fill: … }}`. */
+path.recharts-tooltip-cursor {
+  stroke: var(--hairline-strong);
+}
 .chart-value-pill {
   background: var(--mantine-color-accent-7);
   color: var(--mantine-color-white);
