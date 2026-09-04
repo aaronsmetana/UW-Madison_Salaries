@@ -16,6 +16,14 @@ export function downloadCSV(filename: string, rows: Record<string, unknown>[]): 
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  // In the document and revoked on a later tick: a detached anchor doesn't reliably trigger a
+  // download in Firefox, and revoking synchronously after click() races the download that click()
+  // only just started — for a large export the browser can lose the blob before it has read it.
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }
