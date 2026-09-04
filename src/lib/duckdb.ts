@@ -105,3 +105,14 @@ export async function query<T = Record<string, unknown>>(sql: string): Promise<T
 
 /** Escape a string literal for inline SQL. */
 export const sqlStr = (s: string): string => `'${String(s).replace(/'/g, "''")}'`;
+
+/**
+ * A quoted `LIKE` pattern matching any row *containing* `s`.
+ *
+ * `sqlStr` escapes quotes, which is all that's needed for a plain literal — but inside a LIKE
+ * pattern `%` and `_` are wildcards, so passing search text through `sqlStr` alone let a reader who
+ * typed `%` match every employee and `_` match any single character. Escape those (and the escape
+ * character itself); the caller must pair this with `ESCAPE '\\'`.
+ */
+export const sqlLikeContains = (s: string): string =>
+  sqlStr(`%${String(s).replace(/[\\%_]/g, (c) => `\\${c}`)}%`);

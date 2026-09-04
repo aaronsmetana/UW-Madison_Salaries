@@ -4,7 +4,7 @@ import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql, useSummary } from '../lib/hooks';
-import { sqlStr } from '../lib/duckdb';
+import { sqlStr, sqlLikeContains } from '../lib/duckdb';
 import { fullName } from '../lib/format';
 import { DROPDOWN_TIERS, type DropdownSize } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
@@ -51,7 +51,7 @@ export function SearchBox({
         SELECT person_key, first_name, last_name, school, title, hire_year, snapshot_date,
                count(*) OVER (PARTITION BY person_key, snapshot_id) per_snap
         FROM salaries
-        WHERE lower(first_name || ' ' || last_name) LIKE ${sqlStr(`%${q}%`)}
+        WHERE lower(first_name || ' ' || last_name) LIKE ${sqlLikeContains(q)} ESCAPE '\\'
      )
      SELECT person_key,
         arg_max(first_name, snapshot_date) AS fn,

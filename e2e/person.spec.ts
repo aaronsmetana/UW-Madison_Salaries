@@ -14,6 +14,29 @@ test('search finds a person and navigates to their profile', async ({ page }) =>
   await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
 });
 
+/**
+ * `%` and `_` are LIKE wildcards. The search box interpolates what a reader types into a LIKE
+ * pattern, so before `sqlLikeContains` escaped them a single `%` matched all 22,000 employees and
+ * `_` matched any character — the box quietly stopped being a search.
+ */
+test('typing a SQL wildcard searches for the character, not for everyone', async ({ page }) => {
+  await page.goto('./');
+  const search = page.getByRole('combobox', { name: 'Search a person' });
+  await expect(search).toBeVisible({ timeout: 60_000 });
+
+  // A real name first, to prove the query works at all and to wait out the DuckDB boot.
+  await search.fill('Kenneth Poss');
+  await expect(page.getByRole('option').first()).toBeVisible({ timeout: 60_000 });
+
+  // `__` is two "any single character" wildcards, so unescaped it matches every employee with a
+  // name of two characters or more — i.e. everyone. Two characters, not one, because the box only
+  // queries at `q.length >= 2`; a single `_` would never run the query and the test would pass
+  // vacuously. Assert the *positive* empty state for the same reason: a count of zero is also true
+  // in the window before results arrive.
+  await search.fill('__');
+  await expect(page.getByText(/No matches for/)).toBeVisible({ timeout: 15_000 });
+});
+
 /** Land on a person profile by name, the way a reader gets there. */
 async function openPerson(page: import('@playwright/test').Page, name: string) {
   await page.goto('./');
