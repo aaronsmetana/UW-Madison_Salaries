@@ -1,5 +1,5 @@
 import duckdb from 'duckdb';
-import { FTE_MULT_SQL } from './normalize.mjs';
+import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
 
 /** Upper edge of the landing-page histogram, in dollars. Salaries at or above this are counted into
  *  `bins_overflow` rather than binned, so a handful of extreme outliers don't compress the bars that
@@ -11,7 +11,7 @@ const BIN_CAP = 250000;
  *  It has to be the same expression the headline median is computed from: the bins used the raw
  *  full-time rate while the median came from FTE-adjusted pay, so the landing chart was drawing its
  *  median marker ~$5k off, on a curve built from a different quantity. */
-const PAY = `COALESCE(salary_fte_adjusted, salary * ${FTE_MULT_SQL})`;
+const PAY = ACTUAL_PAY_SQL;
 
 // Mirrors the six useSql queries in src/routes/Home.tsx so the landing page can render from a
 // ~2KB static JSON instead of booting DuckDB-WASM + downloading the full parquet.

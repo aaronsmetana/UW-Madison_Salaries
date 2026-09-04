@@ -17,7 +17,7 @@ import { TipSurface } from '../components/chart/ChartTooltip';
 import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay } from '../lib/queries';
+import { personPay, actualPay } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis, spanLabel } from '../lib/format';
@@ -301,9 +301,12 @@ export default function Person() {
     return [...by.values()]
       .map((g) => {
         const appts = g.rows.length;
-        const paid = g.rows.reduce((s, r) => s + (r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1)), 0);
+        const paid = g.rows.reduce((s, r) => s + actualPay(r), 0);
         const rate = g.rows.reduce((s, r) => s + (r.salary ?? 0), 0);
-        const fte = g.rows.reduce((s, r) => s + (r.fte ?? 1), 0);
+        // null, not 0, when no appointment records a percentage — every row here is hourly. Summed
+        // as a number it reported "Appointment: 0% FTE" in the trend tooltip, which says the person
+        // does not work; the honest answer is that the source does not say.
+        const fte = g.rows.some((r) => r.fte) ? g.rows.reduce((s, r) => s + (r.fte ?? 1), 0) : null;
         // primary appointment = highest FTE (tie-break highest salary) — drives the displayed title
         const primary = g.rows.reduce((best, r) => {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
@@ -426,8 +429,7 @@ export default function Person() {
       let s = bySnap.get(r.snapshot_id);
       if (!s) { s = { date: String(r.snapshot_date), jobs: new Map() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
       if (r.job_code != null) {
-        const actual = r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1);
-        s.jobs.set(r.job_code, (s.jobs.get(r.job_code) ?? 0) + actual);
+        s.jobs.set(r.job_code, (s.jobs.get(r.job_code) ?? 0) + actualPay(r));
       }
     }
     return { order, index, bySnap };
@@ -1335,7 +1337,7 @@ export default function Person() {
               const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
               const isNew = !!priorSnap && !!r.job_code && !inPrior;
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
-              const actual = r.salary_fte_adjusted ?? (r.salary ?? 0) * (r.fte ?? 1);
+              const actual = actualPay(r);
               const priorActual = inPrior ? priorSnap!.jobs.get(r.job_code!)! : null;
               const deltaPct = priorActual ? (actual - priorActual) / priorActual : null;
               // Org move = Division/Department changed vs the previous displayed row.
@@ -1388,7 +1390,8 @@ export default function Person() {
                       <Text size="sm" c="dimmed">—</Text>
                     )}
                   </Table.Td>
-                  <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
+                  {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says. */}
+                  <Table.Td ta="right">{r.fte || '—'}</Table.Td>
                   <Table.Td><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
                 </Table.Tr>
               );

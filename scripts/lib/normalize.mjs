@@ -134,6 +134,19 @@ export const FTE_MULT_SQL = 'COALESCE(NULLIF(fte, 0), 1)';
 export const fteMult = (fte) => (fte == null || fte === 0 ? 1 : fte);
 
 /**
+ * The same rule one column up, and the Node twin of `ACTUAL_PAY` / `actualPay` in
+ * src/lib/queries.ts (which carries the full explanation). Short version: the Apr-2024 and Sep-2024
+ * workbooks publish `salary_fte_adjusted` as a literal 0 on hourly rows, having already multiplied
+ * the rate by a zero FTE themselves. A plain `??` treats that as a reported figure and hands back
+ * $0 for 1,591 people who hold a real annualized rate.
+ */
+export const FTE_ADJUSTED_SQL = 'NULLIF(salary_fte_adjusted, 0)';
+export const ACTUAL_PAY_SQL = `COALESCE(${FTE_ADJUSTED_SQL}, salary * ${FTE_MULT_SQL})`;
+
+/** JS form: actual pay for one raw row. */
+export const actualPay = (row) => (row.salary_fte_adjusted || null) ?? row.salary * fteMult(row.fte);
+
+/**
  * Collapse a pay-band reference table to ONE row per (grade, basis), keeping the newest
  * `effective_year`. A real published grade table carries several years for the same grade, and every
  * extra row is a silent correctness bug downstream: School's pay-band panel LEFT JOINs `grades` on

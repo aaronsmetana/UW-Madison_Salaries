@@ -363,7 +363,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                     <Text size="xs" c={deltaPct > 0 ? 'pos' : 'red'}>{deltaPct > 0 ? '+' : ''}{pct(deltaPct)}</Text>
                   )}
                 </Table.Td>
-                <Table.Td ta="right">{r.fte ?? '—'}</Table.Td>
+                {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly). */}
+                <Table.Td ta="right">{r.fte || '—'}</Table.Td>
               </Table.Tr>
               );
             })}

@@ -20,7 +20,7 @@ import XLSX from 'xlsx';
 import duckdb from 'duckdb';
 import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
-  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, fteMult, latestGradeBands,
+  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, latestGradeBands,
 } from './lib/normalize.mjs';
 import { computeHomeStats } from './lib/home-stats.mjs';
 
@@ -264,7 +264,7 @@ async function main() {
         // Median/min/max are on ACTUAL pay (FTE-adjusted) — matches what the app shows; "paid" is still
         // gated on a positive full-time salary.
         if (row.salary == null || row.salary === 0) zeroNull++;
-        else { salaries.push(row.salary_fte_adjusted ?? row.salary * fteMult(row.fte)); paidPeople.add(pkey); }
+        else { salaries.push(actualPay(row)); paidPeople.add(pkey); }
         people.add(pkey);
         allRows.push({
           snapshot_id: id,

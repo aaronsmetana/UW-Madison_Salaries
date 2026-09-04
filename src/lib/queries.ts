@@ -29,11 +29,44 @@ const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
  */
 export const FTE_MULT = 'COALESCE(NULLIF(fte, 0), 1)';
 
+/**
+ * The same zero-means-unknown rule, applied one column up.
+ *
+ * `FTE_MULT` fixed the multiply this app performs. It did not fix the multiply the *source* already
+ * performed: the Apr-2024 and Sep-2024 workbooks report `salary_fte_adjusted` as a literal 0 for
+ * hourly appointments, having done `rate x 0` themselves before publishing. `COALESCE` only falls
+ * through on NULL, so that zero was taken as a reported figure and won — 2,499 rows across 1,591
+ * people, every one of them holding a real annualized rate (median $41,600), all reading as $0.
+ *
+ * It never happens on a row with a recorded FTE: in this dataset `salary_fte_adjusted = 0` occurs
+ * only where `fte = 0`, i.e. only on the hourly rows the paragraph above describes. So the zero is
+ * always the artifact, never a genuine "earned nothing" — those are the unpaid affiliate rows, which
+ * carry `salary = 0` and are excluded by the `salary > 0` filters instead.
+ *
+ * The visible symptom was a person page showing "Current $0" for a custodian on $16.50/hr. The
+ * invisible one was a 1,000-person dip in the paid headcount at both those snapshots, which read on
+ * every trend chart in the app as if the university had shed staff and re-hired them.
+ */
+export const FTE_ADJUSTED = 'NULLIF(salary_fte_adjusted, 0)';
+
+/** Actual pay for one appointment: the reported FTE-adjusted figure, else rate x FTE. */
+export const ACTUAL_PAY = `COALESCE(${FTE_ADJUSTED}, salary * ${FTE_MULT})`;
+
+/**
+ * The JS twin of `ACTUAL_PAY`, for rows already fetched — Person's trend and history compute this
+ * client-side from the raw columns rather than in SQL, and so need the same two guards. Written as
+ * `|| null` / `|| 1` rather than `??` on purpose: `??` passes a zero through, which is exactly how
+ * both of these got the multiply wrong in the first place.
+ */
+export function actualPay(r: { salary: number | null; salary_fte_adjusted: number | null; fte: number | null }): number {
+  return (r.salary_fte_adjusted || null) ?? (r.salary ?? 0) * (r.fte || 1);
+}
+
 /** SQL expression for the selected salary metric (per appointment; full annual rate for full/base). */
 export function salaryExpr(metric: Metric): string {
   switch (metric) {
     case 'fte':
-      return `COALESCE(salary_fte_adjusted, salary * ${FTE_MULT})`;
+      return ACTUAL_PAY;
     case 'base':
       return 'COALESCE(base_pay, salary)';
     default:
@@ -45,7 +78,7 @@ export function salaryExpr(metric: Metric): string {
 export function earningsExpr(metric: Metric): string {
   switch (metric) {
     case 'fte':
-      return `COALESCE(salary_fte_adjusted, salary * ${FTE_MULT})`;
+      return ACTUAL_PAY;
     case 'base':
       return `COALESCE(base_pay, salary) * ${FTE_MULT}`;
     default:

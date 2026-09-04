@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, FTE_MULT } from './queries';
+import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, actualPay, FTE_MULT } from './queries';
 
 describe('salary expressions', () => {
   it('salaryExpr returns the per-appointment rate for each metric', () => {
@@ -32,6 +32,48 @@ describe('salary expressions', () => {
       expect(expr).toContain('NULLIF(fte, 0)');
       expect(expr).not.toMatch(/COALESCE\(fte,\s*1\)/);
     }
+  });
+
+  // The same defect one column up, and the one a reader actually reported: the Apr-2024 and Sep-2024
+  // workbooks publish `salary_fte_adjusted` as a literal 0 on hourly rows, having already done
+  // `rate x 0` themselves. COALESCE only falls through on NULL, so that zero won — 2,499 rows across
+  // 1,591 people, all holding a real annualized rate, every one reading as $0.
+  it('treats a reported FTE-adjusted salary of 0 as unknown, never as a reported figure', () => {
+    for (const expr of [salaryExpr('fte'), earningsExpr('fte')]) {
+      expect(expr).toContain('NULLIF(salary_fte_adjusted, 0)');
+      expect(expr).not.toMatch(/COALESCE\(salary_fte_adjusted,/);
+    }
+  });
+});
+
+/**
+ * `actualPay` is the JS half of the same rule, and the half that shipped broken: Person's trend and
+ * history compute pay client-side and used `??`, which passes a zero straight through. The reported
+ * symptom was a custodian on $16.50/hr — an annualized $34,320, fte 0 — whose page read "Current $0".
+ */
+describe('actualPay', () => {
+  const row = (salary: number | null, adj: number | null, fte: number | null) =>
+    ({ salary, salary_fte_adjusted: adj, fte });
+
+  it('uses the reported FTE-adjusted figure when there is one', () => {
+    expect(actualPay(row(100_000, 50_000, 0.5))).toBe(50_000);
+  });
+
+  it('falls back to rate x FTE when the adjusted figure is absent', () => {
+    expect(actualPay(row(100_000, null, 0.5))).toBe(50_000);
+  });
+
+  it('reads fte = 0 as unrecorded, so an hourly rate stands at full value', () => {
+    expect(actualPay(row(34_320, null, 0))).toBe(34_320);
+  });
+
+  it('reads an adjusted salary of 0 as unrecorded too — the source already multiplied by that zero', () => {
+    expect(actualPay(row(33_009.6, 0, 0))).toBeCloseTo(33_009.6);
+  });
+
+  it('still returns 0 for a genuinely unpaid appointment', () => {
+    expect(actualPay(row(0, 0, 0))).toBe(0);
+    expect(actualPay(row(null, null, null))).toBe(0);
   });
 });
 
