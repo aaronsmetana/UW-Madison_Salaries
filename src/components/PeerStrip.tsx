@@ -146,8 +146,6 @@ export function PeerStrip({
     const measure = () => {
       const els = labelRefs.current.filter((el): el is HTMLDivElement => !!el);
       if (!els.length) return;
-      // `offsetLeft` is already the centre — the label is placed by `left: X%` and recentred with
-      // translateX(-50%), which does not move offsetLeft.
       // `offsetLeft` is the anchor point, which is the centre only for the centred labels; the two
       // edge-hugging ones sit half a width to one side of it. Correct for that before packing, or the
       // packer compares the wrong boxes and staggers labels that never touched. The fraction comes off
