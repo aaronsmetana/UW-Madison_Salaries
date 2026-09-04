@@ -23,6 +23,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { type ScatterPoint } from '../components/TenurePayScatter';
 import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
+import { ReportFlow } from '../components/report/ReportFlow';
 import {
   COHORT_DEFS, FACTOR_DEFS, defaultConfig, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
@@ -972,7 +973,7 @@ export default function Reports() {
       <div className="no-print">
         <PageHeader
           title="Reports"
-          description="Build a written case for one person's pay, using the UW Salary Administration Guidelines. What comes out is a one-page brief you can print, download, or paste into an email."
+          description="Build a written case for one person's pay, using the UW Salary Administration Guidelines."
           right={
             <Group gap="md" w={isNarrow ? '100%' : undefined}>
               <SegmentedControl
@@ -1036,6 +1037,7 @@ export default function Reports() {
             </Group>
           }
         />
+        <ReportFlow type={type === 'comparison' ? 'comparison' : 'person'} />
       </div>
 
       {type === 'person' && (

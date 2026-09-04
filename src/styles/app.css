@@ -884,3 +884,22 @@ button:active,
 /* Command-palette destination rows. Hover only — the list is Tab-navigable, and `:focus-visible`
    already draws Mantine's focus ring, so a second highlight on focus would double it. */
 .palette-row:hover { background: var(--mantine-color-default-hover); }
+
+/* ── /reports: the what-you-give → what-it-checks → what-you-get strip (ReportFlow.tsx) ──────────
+   Three equal columns with the connectors between them, so the arrows take only the width they need
+   and never steal it from the text. Below `sm` the columns stack and the arrows turn to point down —
+   the same reading order, rotated, rather than a separate mobile layout. */
+.report-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: stretch;
+  gap: var(--mantine-spacing-sm);
+}
+.report-flow-arrow {
+  align-self: center;
+  color: var(--mantine-color-dimmed);
+}
+@media (max-width: 48em) {
+  .report-flow { grid-template-columns: 1fr; }
+  .report-flow-arrow { justify-self: center; transform: rotate(90deg); }
+}
