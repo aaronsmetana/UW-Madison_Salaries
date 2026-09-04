@@ -5,6 +5,7 @@ import {
 import { AXIS_TICK, GRID, fmtK, BAR_RADIUS } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { barGradientDefs } from './chartDefs';
+import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num, pct } from '../lib/format';
@@ -164,7 +165,10 @@ export function SalaryHistogram({
   const stackH = maxN * (brickH + BRICK_GAP) - BRICK_GAP;
   const unitMode = values.length <= MAX_FOR_UNIT_MODE && bins.length >= 2 && brickH >= 5;
 
-  const gradientColors = { bar: 'var(--bar)', active: 'var(--bar-active)' };
+  // Bars keep --bar: they are counts, not people, so they are not the peer dot in another shape.
+  // The highlighted bin is a different thing — it is the subject, and the subject is marked the
+  // same way in every chart in the app.
+  const gradientColors = { bar: 'var(--bar)', active: MARK_SELF };
 
   // Closes over `total`/`cumBelow` (bin-derived, not props) — must be a nested component rather than
   // a module-level one, and passed to Recharts as an element (`content={<BarsHistTip />}`) rather than
@@ -227,7 +231,7 @@ export function SalaryHistogram({
                 top: UNIT_TOP - (g.isMedian ? MEDIAN_LABEL_BAND + 14 : 0),
                 bottom: X_AXIS_H,
                 width: 0,
-                borderLeft: `1px dashed var(--mantine-color-gray-5)`,
+                borderLeft: `${GUIDE_SOFT.width}px dashed ${GUIDE_SOFT.stroke}`,
                 borderLeftWidth: g.isMedian ? 1.5 : 1,
                 opacity: 0.7,
               }}
@@ -281,7 +285,7 @@ export function SalaryHistogram({
                         height: brickH,
                         borderRadius: 2,
                         flexShrink: 0,
-                        background: isMarkerBrick ? 'var(--bar-active)' : 'var(--bar)',
+                        background: isMarkerBrick ? MARK_SELF : 'var(--bar)',
                         boxShadow: isMarkerBrick ? 'inset 0 0 0 1.5px var(--mantine-color-body), 0 1px 3px rgba(0,0,0,0.3)' : undefined,
                         opacity: mounted ? (dimmed && !isMarkerBrick ? 0.4 : 1) : 0,
                         transform: mounted ? 'scaleY(1)' : 'scaleY(0.3)',
@@ -341,10 +345,10 @@ export function SalaryHistogram({
                   height: 0,
                   borderLeft: '5px solid transparent',
                   borderRight: '5px solid transparent',
-                  borderTop: '7px solid var(--bar-active)',
+                  borderTop: `7px solid ${MARK_SELF}`,
                 }}
               />
-              <Text component="span" style={{ whiteSpace: 'nowrap', fontSize: 11, lineHeight: 1, color: 'var(--bar-active)', display: 'block', textAlign: 'center', paddingBottom: 2 }}>
+              <Text component="span" className="accent7-text" style={{ whiteSpace: 'nowrap', fontSize: 11, lineHeight: 1, color: MARK_SELF_TEXT, display: 'block', textAlign: 'center', paddingBottom: 2 }}>
                 {markerLabel}
               </Text>
             </div>
@@ -386,8 +390,8 @@ export function SalaryHistogram({
               <ReferenceLine
                 key={`q-${i}`}
                 x={g.value}
-                stroke="var(--mantine-color-gray-5)"
-                strokeDasharray="3 3"
+                stroke={GUIDE_SOFT.stroke}
+                strokeDasharray={GUIDE_SOFT.dasharray}
                 strokeWidth={g.isMedian ? 1.5 : 1}
                 label={g.isMedian ? { value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' } : undefined}
               />
@@ -423,7 +427,7 @@ export function SalaryHistogram({
               left: `calc(${PLOT_LEFT}px + ${markerFraction} * (100% - ${PLOT_LEFT + PLOT_RIGHT}px))`,
               width: 2,
               marginLeft: -1,
-              background: 'var(--bar-active)',
+              background: MARK_SELF,
               // White casing so the line stays legible over a colored (highlighted) bar.
               boxShadow: '0 0 0 1.5px var(--mantine-color-body)',
               pointerEvents: 'none',
@@ -440,11 +444,12 @@ export function SalaryHistogram({
                 height: 0,
                 borderLeft: '5px solid transparent',
                 borderRight: '5px solid transparent',
-                borderTop: '8px solid var(--bar-active)',
+                borderTop: `8px solid ${MARK_SELF}`,
               }}
             />
             <Text
               component="span"
+              className="accent7-text"
               style={{
                 position: 'absolute',
                 top: -24,
@@ -453,7 +458,7 @@ export function SalaryHistogram({
                 whiteSpace: 'nowrap',
                 fontSize: 11,
                 lineHeight: 1,
-                color: 'var(--bar-active)',
+                color: MARK_SELF_TEXT,
               }}
             >
               {markerLabel}

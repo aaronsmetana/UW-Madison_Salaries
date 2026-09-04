@@ -85,8 +85,12 @@
    the app inherits for free. Light mode already worked this way; this just makes it symmetrical. */
 :root {
   --accent-grad: linear-gradient(135deg, #15839b, #0e6e83);
-  --bar: #9cc6d0; /* non-highlighted histogram bars */
-  --bar-active: #0e6e83; /* the highlighted bar / "this" */
+  /* Histogram bars: the population, in the same neutral every other chart draws the population in
+     (MARK_PEER — see markers.tsx). It used to be a pale teal, which was fine until "this person"
+     stopped being a fourth teal and became MARK_SELF: in dark mode the old bar colour WAS the
+     light-mode subject colour, so the marked bar vanished into its neighbours. Population neutral,
+     subject accent — one rule, every chart. */
+  --bar: var(--mantine-color-gray-4);
 
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
@@ -207,8 +211,7 @@ body {
      the accent ramp and measured against the card surface (--surface, now #141619): bar-active
      (accent-5) reads at 5.22:1, clearly brighter than bar (accent-7) at 3.09:1 — which is below AA for
      text but is a chart fill, and is relieved by the histogram's tooltip and its data table. */
-  --bar: #0e6e83;
-  --bar-active: #4f93a4;
+  --bar: var(--mantine-color-gray-6);
   --series-accent: #4f93a4;
 }
 

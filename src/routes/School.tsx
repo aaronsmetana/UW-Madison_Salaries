@@ -25,6 +25,7 @@ import { useTray } from '../state/tray';
 import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
+import { MARK_PEER } from '../components/markers';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { barGradientDefs } from '../components/chartDefs';
@@ -282,9 +283,12 @@ export default function School() {
             <XAxis type="number" dataKey="tenure" name="Tenure" unit=" yrs" tick={AXIS_TICK} />
             <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} />
             <Tooltip content={<TenureTip />} cursor={{ strokeDasharray: '3 3' }} />
+            {/* People, so MARK_PEER — the same grey the person page's scatter draws a peer in.
+                `--bar` is for bars, which are counts, and it is a lighter tone because a bar is a
+                large filled area where a dot is a few pixels. */}
             <Scatter
               data={tenurePay ?? []}
-              fill="var(--bar)"
+              fill={MARK_PEER}
               fillOpacity={0.5}
               cursor="pointer"
               onClick={(pt: { person_key?: string; payload?: { person_key?: string } }) => {
