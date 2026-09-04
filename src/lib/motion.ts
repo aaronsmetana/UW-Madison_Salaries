@@ -40,6 +40,27 @@ export const MOTION = {
  * independently arrived at the same 120 ms ceiling, which is the part that matters: past that, a
  * reveal stops reading as one gesture and starts reading as a slow load.
  */
+/**
+ * Animation props for a Recharts mark (`<Bar>`, `<Line>`, `<Area>`, `<Scatter>`).
+ *
+ * Recharts tweens a mark whenever its data changes and has no notion of `prefers-reduced-motion`,
+ * so a mark that omits `isAnimationActive` re-animates on every filter change and ignores the
+ * preference outright. Seventeen marks across six files had done exactly that while their
+ * neighbours were explicitly gated — which is why an eslint rule now refuses a mark that carries
+ * neither this helper nor an explicit `isAnimationActive`.
+ *
+ * The defaults also cap Recharts' own: it uses 1500ms for lines and areas, nearly twice the app's
+ * register, and 400ms for bars.
+ */
+export function chartAnim(reduce: boolean, duration: number = MOTION.reveal) {
+  return {
+    isAnimationActive: !reduce,
+    animationBegin: 0,
+    animationDuration: duration,
+    animationEasing: MOTION.easeRecharts,
+  } as const;
+}
+
 export function stagger(i: number): number {
   return Math.min(i * MOTION.stagger, MOTION.staggerCap);
 }

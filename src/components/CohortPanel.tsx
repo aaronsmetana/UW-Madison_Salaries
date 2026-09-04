@@ -18,6 +18,7 @@ import { CardTitle } from './CardTitle';
 import { SvgPill } from './chart/pills';
 import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
+import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 /** Hover card: capitalized "Retention" plus the underlying counts so the % is grounded. */
 function RetentionTip({ active, payload, label }: {
@@ -59,6 +60,7 @@ function AreaPillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; 
 }
 
 export function CohortPanel() {
+  const reduceMotion = prefersReducedMotion();
   const uid = useId();
   const { scope, filters } = useControls();
   const { data: summary } = useSummary();
@@ -181,6 +183,7 @@ export function CohortPanel() {
                 label={<AreaPillLabel text="pre-2021 hires: survivors only" />} />
             )}
             <Bar
+              {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="retention"
               name="Retained"
               fill={`url(#${uid}-bar-stayed)`}
@@ -199,6 +202,7 @@ export function CohortPanel() {
               ))}
             </Bar>
             <Bar
+              {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="lost"
               name="Left"
               stackId="r"
@@ -252,6 +256,7 @@ export function CohortPanel() {
                 )}
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
                 <Bar
+                  {...chartAnim(reduceMotion, MOTION.reveal)}
                   dataKey="joined"
                   name="Joined"
                   fill={`url(#${uid}-flow-bar-joined)`}
@@ -262,6 +267,7 @@ export function CohortPanel() {
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
                 <Bar
+                  {...chartAnim(reduceMotion, MOTION.reveal)}
                   dataKey="departed"
                   name="Left"
                   fill={`url(#${uid}-flow-bar-departed)`}
@@ -271,7 +277,7 @@ export function CohortPanel() {
                 >
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
-                <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
+                <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
               </ComposedChart>
             </ResponsiveContainer>
             <Text size="xs" c="dimmed">

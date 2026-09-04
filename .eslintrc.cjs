@@ -19,6 +19,28 @@ module.exports = {
       files: ['scripts/**/*.mjs'],
       env: { node: true, browser: false },
     },
+    {
+      // Recharts tweens a mark whenever its data changes and has no notion of
+      // prefers-reduced-motion, so a mark that says nothing animates on every filter change and
+      // ignores the preference. Seventeen marks across six files had drifted into exactly that
+      // while their neighbours were explicitly gated — convention had already failed here, so the
+      // check is mechanical. Chart files only; scripts/ draws nothing.
+      files: ['src/**/*.tsx'],
+      rules: {
+        'no-restricted-syntax': [
+          'error',
+          {
+            selector:
+              'JSXOpeningElement[name.name=/^(Line|Bar|Area|Scatter|Pie|Radar|RadialBar)$/]' +
+              ':not(:has(JSXAttribute[name.name=isAnimationActive]))' +
+              ':not(:has(JSXSpreadAttribute > CallExpression[callee.name=chartAnim]))',
+            message:
+              'This Recharts mark will tween on every data change and ignore prefers-reduced-motion. ' +
+              'Spread {...chartAnim(reduceMotion)} from src/lib/motion, or pass isAnimationActive explicitly.',
+          },
+        ],
+      },
+    },
   ],
   rules: {
     'no-undef': 'off', // TypeScript handles this

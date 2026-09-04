@@ -30,6 +30,7 @@ import { dropdownProps } from '../lib/selectProps';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { encodeSel, decodeSel } from '../lib/share';
 import { ICON } from '../lib/ui';
+import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
@@ -66,6 +67,7 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
 }
 
 export default function Compare() {
+  const reduceMotion = prefersReducedMotion();
   useDocTitle('Compare');
   const nav = useNavigate();
   const { items, add, remove, clear } = useTray();
@@ -423,6 +425,7 @@ export default function Compare() {
                       const muted = mutedIds.has(p.id);
                       return (
                         <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={2} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
+                          {...chartAnim(reduceMotion, MOTION.figure)}
                           label={persons.length <= 4 && !muted ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
                           onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
                           style={{ cursor: 'pointer' }}
@@ -438,6 +441,7 @@ export default function Compare() {
                     <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} contentStyle={TIP_STYLE} />
                     {persons.map((p) => (
                       <Scatter
+                        {...chartAnim(reduceMotion, MOTION.figure)}
                         key={p.id}
                         name={p.label}
                         data={(perPersonDisplay.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
@@ -483,7 +487,7 @@ export default function Compare() {
               />
               <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls />
+                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -508,7 +512,7 @@ export default function Compare() {
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
               <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls />
+                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -597,7 +601,7 @@ export default function Compare() {
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
               {titles.map((t) => (
-                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls />
+                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
             </LineChart>
           </ResponsiveContainer>

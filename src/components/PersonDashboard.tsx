@@ -19,6 +19,7 @@ import { CardTitle } from './CardTitle';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
+import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 interface Row {
   first_name: string | null;
@@ -67,6 +68,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
  * charts as the /person/:id profile, reflowed for a report.
  */
 export function PersonDashboard({ personKey, metric }: { personKey: string; metric: Metric }) {
+  const reduceMotion = prefersReducedMotion();
   const expr = salaryExpr(metric);
   const generated = fmtDate(new Date());
 
@@ -297,8 +299,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
             <Legend />
-            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />
-            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
+            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
             {trendData.map((t, i) =>
               i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
                 <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />

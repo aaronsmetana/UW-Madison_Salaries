@@ -18,6 +18,7 @@ import { StatCard } from './StatCard';
 import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
 import { ICON } from '../lib/ui';
+import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; school: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
@@ -28,6 +29,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function ChangesPanel() {
+  const reduceMotion = prefersReducedMotion();
   const uid = useId();
   const [hoveredWf, setHoveredWf] = useState<number | null>(null);
   const [hoveredDist, setHoveredDist] = useState<number | null>(null);
@@ -407,6 +409,7 @@ export function ChangesPanel() {
                 label={{ value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
             )}
             <Bar
+              {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="n"
               name="People"
               radius={BAR_RADIUS}

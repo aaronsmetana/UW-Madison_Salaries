@@ -9,7 +9,7 @@ import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num, pct } from '../lib/format';
-import { useMounted } from '../lib/motion';
+import { MOTION, chartAnim, prefersReducedMotion, useMounted } from '../lib/motion';
 import { ChartData } from './ChartData';
 
 /** Below this cohort size, the histogram renders as segmented "brick" bars — a normal bar-chart
@@ -72,6 +72,7 @@ export function SalaryHistogram({
   /** Optional: clicking a bar reports that bin's [lo, hi) salary range (e.g. to filter a people list). */
   onBinClick?: (range: { lo: number; hi: number }) => void;
 }) {
+  const reduceMotion = prefersReducedMotion();
   const uid = useId();
   const mounted = useMounted();
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
@@ -397,6 +398,7 @@ export function SalaryHistogram({
               />
             ))}
             <Bar
+              {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="n"
               radius={BAR_RADIUS}
               onClick={onBinClick ? (d: { lo: number; hi: number }) => onBinClick({ lo: d.lo, hi: d.hi }) : undefined}

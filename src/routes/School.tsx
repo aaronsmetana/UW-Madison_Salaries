@@ -30,6 +30,7 @@ import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { barGradientDefs } from '../components/chartDefs';
 import { ICON } from '../lib/ui';
+import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 /**
  * The tenure/pay scatter plots one dot per person, so a large division would otherwise hand Recharts
@@ -64,6 +65,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export default function School() {
+  const reduceMotion = prefersReducedMotion();
   const uid = useId();
   const [hoveredBin, setHoveredBin] = useState<number | null>(null);
   const { id } = useParams();
@@ -287,6 +289,7 @@ export default function School() {
                 `--bar` is for bars, which are counts, and it is a lighter tone because a bar is a
                 large filled area where a dot is a few pixels. */}
             <Scatter
+              {...chartAnim(reduceMotion, MOTION.figure)}
               data={tenurePay ?? []}
               fill={MARK_PEER}
               fillOpacity={0.5}
@@ -320,7 +323,7 @@ export default function School() {
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip formatter={(v: number) => usd(v)} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
-            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot />
+            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
           </LineChart>
         </ResponsiveContainer>
         <ChartData
@@ -358,6 +361,7 @@ export default function School() {
             />
             <Tooltip formatter={(v: number) => [num(v), 'People']} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
             <Bar
+              {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="n"
               name="People"
               fill={`url(#${uid}-bar-bar)`}
