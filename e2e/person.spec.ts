@@ -79,8 +79,39 @@ for (const { name, width, height } of [
 test('peer strip marks the subject once, with a mark the peers do not use', async ({ page }) => {
   await openPerson(page, 'Aaron Smetana');
   await expect(page.locator('.peer-strip-marker')).toHaveCount(1);
-  await expect(page.locator('.peer-strip-dot')).not.toHaveCount(0);
-  expect(await page.locator('.peer-strip-marker.peer-strip-dot').count()).toBe(0);
+  await expect(page.locator('.peer-strip .chart-dot')).not.toHaveCount(0);
+  expect(await page.locator('.peer-strip-marker.chart-dot').count()).toBe(0);
+});
+
+// Both charts on this tab draw the same cohort, so a reader moving between them has to be able to
+// carry the marking across. They agreed on nothing before: three different teals for "this person"
+// across the app, and the population pale teal in one chart and grey in the other.
+test('the strip and the scatter mark a person the same way', async ({ page }) => {
+  await openPerson(page, 'Aaron Smetana');
+  await expect(page.locator('.recharts-wrapper circle').first()).toBeVisible({ timeout: 60_000 });
+
+  const marks = await page.evaluate(() => {
+    const fill = (el: Element | null) => (el ? getComputedStyle(el).fill : null);
+    const strip = document.querySelector('.peer-strip');
+    const scatter = document.querySelector('.recharts-wrapper');
+    return {
+      stripSelf: fill(strip?.querySelector('.peer-strip-marker') ?? null),
+      stripPeer: fill(strip?.querySelector('.chart-dot') ?? null),
+      scatterPeer: fill(scatter?.querySelector('.chart-dot') ?? null),
+      // The scatter's subject is the only circle it draws with a body-coloured stroke.
+      scatterSelf: fill([...(scatter?.querySelectorAll('circle') ?? [])]
+        .find((c) => getComputedStyle(c).strokeWidth === '1.5px') ?? null),
+      legends: [...document.querySelectorAll('.mantine-Text-root')]
+        .map((e) => (e.textContent ?? '').trim())
+        .filter((t) => t === 'This person' || t === 'Same school' || t === 'Others'),
+    };
+  });
+
+  expect(marks.stripSelf, 'subject fill').toBe(marks.scatterSelf);
+  expect(marks.stripPeer, 'peer fill').toBe(marks.scatterPeer);
+  // Each chart names the same three roles, so the labels appear twice apiece.
+  expect(marks.legends.filter((t) => t === 'This person')).toHaveLength(2);
+  expect(marks.legends.filter((t) => t === 'Others')).toHaveLength(2);
 });
 
 // PeerRangeBar's own p25/median/p75 labels are centered on their ticks, so a long-tailed cohort
