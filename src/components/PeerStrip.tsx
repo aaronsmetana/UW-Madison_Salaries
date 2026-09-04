@@ -191,8 +191,11 @@ export function PeerStrip({
         {/* Subject lane. The label and the dot share one x; the leader line below carries that x down
             to the axis, so nothing about which mark the label names is left to inference. */}
         <div style={{ position: 'relative', height: MARKER_LANE_H }}>
+          {/* `accent7-text` is the app's existing fix for this exact pairing: accent-7 reads 3.08:1
+              against the dark card, under AA, so dark mode swaps it for --text-accent. Without it the
+              a11y gate fails on this label, which is how it was caught. */}
           <Text
-            className="peer-strip-you"
+            className="peer-strip-you accent7-text"
             fw={700}
             style={{
               position: 'absolute',
@@ -206,7 +209,7 @@ export function PeerStrip({
               transition: 'opacity 240ms ease',
             }}
           >
-            {label} <Text span fw={700} style={{ fontSize: 12.5, color: MARK_CURRENT }}>· {usd(value)}</Text>
+            {label} · {usd(value)}
           </Text>
           <div
             aria-hidden
