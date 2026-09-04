@@ -935,18 +935,15 @@ export default function Person() {
 
             {scatterPoints.length >= 4 && (
               <Card withBorder padding="lg">
+                {/* No second cohort toggle here. The card above owns it, both were bound to the same
+                    state, and two controls for one value sitting a few hundred pixels apart read as
+                    two independent settings that happen to move together. This card says which cohort
+                    it is drawing instead. */}
                 <CardTitle
-                  sub={<>Where this person sits against what tenure alone predicts for {latest?.title}.</>}
-                  right={allCount > schoolCount && (
-                    <SegmentedToggle
-                      value={cohort}
-                      onChange={(v) => setCohort(v as 'all' | 'school')}
-                      options={[
-                        { id: 'all', label: `All ${num(allCount)}` },
-                        { id: 'school', label: `Same school ${num(schoolCount)}` },
-                      ]}
-                    />
-                  )}
+                  sub={<>
+                    Where this person sits against what tenure alone predicts for {latest?.title}
+                    {cohort === 'school' ? ` within ${latest?.school}` : ' across UW'}.
+                  </>}
                 >
                   Pay vs. tenure — same title
                 </CardTitle>
