@@ -141,3 +141,35 @@ test('a pinned salary never reaches the URL', async ({ page }) => {
   // The value is still doing its job on the page, just not in the URL.
   await expect(page.getByRole('textbox', { name: /Salary to pin/ })).toHaveValue(/123,?456/);
 });
+
+/**
+ * index.html hard-codes one canonical URL and one social title, and index.html is what every route
+ * loads — so all ~22,000 person pages declared themselves duplicates of the landing page. The head is
+ * updated per route now; this checks the three rules that make that worth doing: a content page points
+ * at itself, a view of the same content (`?tab=`) does not become a second URL, and a parameter that
+ * genuinely selects the content (`?code=`) does.
+ */
+test('canonical URL and social title follow the route', async ({ page }) => {
+  const head = () => page.evaluate(() => ({
+    canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') ?? null,
+    ogUrl: document.querySelector('meta[property="og:url"]')?.getAttribute('content') ?? null,
+    ogTitle: document.querySelector('meta[property="og:title"]')?.getAttribute('content') ?? null,
+    title: document.title,
+  }));
+
+  await page.goto('./data', { waitUntil: 'networkidle' });
+  const about = await head();
+  expect(about.canonical, 'a content page is canonical to itself').toMatch(/\/data$/);
+  expect(about.ogUrl).toBe(about.canonical);
+  expect(about.ogTitle).toBe(about.title);
+  expect(about.ogTitle).toMatch(/About the data/);
+
+  await page.goto('./paycheck?code=IT040', { waitUntil: 'networkidle' });
+  const titled = await head();
+  expect(titled.canonical, 'a parameter that selects the content stays').toMatch(/\/paycheck\?code=IT040$/);
+
+  await page.goto('./paycheck?code=IT040&tab=people', { waitUntil: 'networkidle' });
+  expect((await head()).canonical, 'a view of the same content is not a second URL').toBe(titled.canonical);
+
+  expect(titled.canonical).not.toBe(about.canonical);
+});
