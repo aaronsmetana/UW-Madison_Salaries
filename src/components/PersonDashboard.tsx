@@ -7,13 +7,12 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName, fmtDate } from '../lib/format';
+import { usd, num, pct, fullName, fmtDate, spanLabel } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
-import { span } from './SourceNote';
 import { PercentileNote } from './PercentileNote';
 import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
@@ -308,7 +307,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           </LineChart>
         </ResponsiveContainer>
         <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.</Text>
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} unit="snapshots" period={span(trendData.map((t) => t.label))} />
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))} />
       </Card>
 
       {/* Title & salary history */}

@@ -10,10 +10,9 @@ import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, whereAll, filterKey } from '../lib/queries';
-import { usd, num, pct } from '../lib/format';
+import { usd, num, pct, spanLabel } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { ChartData } from './ChartData';
-import { span } from './SourceNote';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
@@ -197,7 +196,7 @@ export function TrendsPanel() {
         columns={['Snapshot', 'Median', 'YoY %', 'Headcount', 'Renewable']}
         rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])}
         unit="snapshots"
-        period={span(plot.map((d) => d.label))}
+        period={spanLabel(plot.map((d) => d.label))}
       />
     </Card>
   );

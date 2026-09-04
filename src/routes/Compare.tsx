@@ -17,10 +17,9 @@ import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount } from '../lib/queries';
-import { usd, num, pct } from '../lib/format';
+import { usd, num, pct, spanLabel } from '../lib/format';
 import { ordinal } from '../lib/stats';
 import { ChartData } from '../components/ChartData';
-import { span } from '../components/SourceNote';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
 import { SvgPill } from '../components/chart/pills';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -461,7 +460,7 @@ export default function Compare() {
                 columns={['Snapshot', ...persons.map((p) => p.label)]}
                 rows={trajectorySeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
                 unit="snapshots"
-                period={span(trajectorySeries.map((row) => row.label as string))}
+                period={spanLabel(trajectorySeries.map((row) => row.label as string))}
               />
             </>
           )}
@@ -494,7 +493,7 @@ export default function Compare() {
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={gapSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
             unit="snapshots"
-            period={span(gapSeries.map((row) => row.label as string))}
+            period={spanLabel(gapSeries.map((row) => row.label as string))}
           />
         </Card>
       )}
@@ -519,7 +518,7 @@ export default function Compare() {
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={standingSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
             unit="snapshots"
-            period={span(standingSeries.map((row) => row.label as string))}
+            period={spanLabel(standingSeries.map((row) => row.label as string))}
           />
         </Card>
       )}
@@ -608,7 +607,7 @@ export default function Compare() {
             columns={['Snapshot', ...titles.map((t) => t.label)]}
             rows={titleSeries.map((row) => [row.label as string, ...titles.map((t) => row[t.id] ?? null)])}
             unit="snapshots"
-            period={span(titleSeries.map((row) => row.label as string))}
+            period={spanLabel(titleSeries.map((row) => row.label as string))}
           />
         </Card>
       )}

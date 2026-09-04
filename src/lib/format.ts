@@ -18,6 +18,17 @@ export function usdCompact(n: number | null | undefined): string {
   });
 }
 
+/**
+ * "Nov 2021 – Mar 2026" from an ordered series of snapshot labels — the endpoints of what a chart
+ * actually plots, which is not the dataset's full range once a filter or a sparse title narrows it.
+ * Reads the plotted rows for exactly that reason. Feeds `SourceNote`'s `period`.
+ */
+export function spanLabel(labels: Array<string | null | undefined>): string | undefined {
+  const l = labels.filter((x): x is string => !!x);
+  if (!l.length) return undefined;
+  return l.length === 1 ? l[0] : `${l[0]} – ${l[l.length - 1]}`;
+}
+
 export function num(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
   return Number(n).toLocaleString('en-US');

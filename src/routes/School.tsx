@@ -22,10 +22,9 @@ import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, num, fullName } from '../lib/format';
+import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
-import { span } from '../components/SourceNote';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { barGradientDefs } from '../components/chartDefs';
@@ -325,7 +324,7 @@ export default function School() {
           columns={['Snapshot', 'Median', 'Headcount']}
           rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])}
           unit="snapshots"
-          period={span((trend ?? []).map((t) => t.label))}
+          period={spanLabel((trend ?? []).map((t) => t.label))}
         />
       </Card>
 

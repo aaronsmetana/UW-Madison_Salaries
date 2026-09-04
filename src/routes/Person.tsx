@@ -20,7 +20,7 @@ import { sqlStr } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
-import { usd, num, pct, fullName, fmtBasis } from '../lib/format';
+import { usd, num, pct, fullName, fmtBasis, spanLabel } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, ordinal } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
@@ -30,7 +30,6 @@ import { PayBandBar } from '../components/PayBandBar';
 import { PeerRangeBar } from '../components/PeerRangeBar';
 import { SalaryHistogram } from '../components/SalaryHistogram';
 import { ChartData } from '../components/ChartData';
-import { span } from '../components/SourceNote';
 import { PercentileNote } from '../components/PercentileNote';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
@@ -1304,7 +1303,7 @@ export default function Person() {
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}
           rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])}
           unit="snapshots"
-          period={span(trendData.map((t) => t.label))}
+          period={spanLabel(trendData.map((t) => t.label))}
         />
       </Card>
         </Tabs.Panel>

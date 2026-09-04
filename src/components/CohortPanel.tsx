@@ -9,9 +9,8 @@ import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { whereAll, filterKey } from '../lib/queries';
-import { num, pct } from '../lib/format';
+import { num, pct, spanLabel } from '../lib/format';
 import { ChartData } from './ChartData';
-import { span } from './SourceNote';
 import { StatCard } from './StatCard';
 import { StatSkeleton, ChartSkeleton } from './Loading';
 import { SegmentedToggle } from './SegmentedToggle';
@@ -286,7 +285,7 @@ export function CohortPanel() {
               columns={['As of', 'Joined', 'Left', 'Net']}
               rows={turnover.map((x) => [x.label, x.joined, x.departed, x.net])}
               unit="snapshot steps"
-              period={span(turnover.map((x) => x.label))}
+              period={spanLabel(turnover.map((x) => x.label))}
             />
           </>
         )}
