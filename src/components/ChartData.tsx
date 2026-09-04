@@ -1,9 +1,32 @@
 import { useState } from 'react';
-import { VisuallyHidden, ActionIcon, Tooltip, Table, Button } from '@mantine/core';
+import { VisuallyHidden, ActionIcon, Tooltip, Table, Button, Text } from '@mantine/core';
 import { IconTable, IconDownload } from '@tabler/icons-react';
 import { downloadCSV } from '../lib/csv';
 import { ICON } from '../lib/ui';
 import { SourceNote } from './SourceNote';
+
+/** Beyond this the table stops being a fallback and becomes an obstruction — see `cell` and the cap
+ *  note below. The CSV still carries every row, which is what a reader who wants them all should take. */
+const MAX_TABLE_ROWS = 200;
+
+/**
+ * How one cell reads.
+ *
+ * Values arrived here raw, so a tenure printed as `11.266255989048597` and a median as
+ * `63659.200000000004` — fifteen significant digits and visible floating-point noise, in the
+ * screen-reader fallback and on the printed page. Round numbers and group thousands; leave strings
+ * exactly as the caller wrote them, since those are already formatted ("+2.0%", "$120k–$140k").
+ *
+ * Deliberately no currency symbol: this component cannot know a column's unit, and guessing from the
+ * header would be wrong the first time someone adds a column called "Change". The header carries the
+ * unit; the cell carries the number. The CSV is untouched either way — it is the machine-readable
+ * copy, and rounding it would be a regression.
+ */
+function cell(v: string | number | null | undefined): string {
+  if (v == null || v === '') return '';
+  if (typeof v !== 'number' || !Number.isFinite(v)) return String(v);
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
 
 /**
  * A chart's data as a table — a screen-reader/print-only fallback by default, with a toggle to make
@@ -16,6 +39,10 @@ import { SourceNote } from './SourceNote';
  *
  * The CSV button used to appear only *after* the reader opened the table, so the download was
  * hidden behind an affordance most people never pressed. It is always visible now.
+ *
+ * The table renders whether or not it is visible, so its size is a real cost even when nobody opens
+ * it: a 3,000-point scatter put 3,000 rows of raw floats into the accessibility tree and onto the
+ * printed page. It is capped now, and the cap says so.
  */
 export function ChartData({
   caption,
@@ -35,6 +62,11 @@ export function ChartData({
 }) {
   const [visible, setVisible] = useState(false);
   if (!rows.length) return null;
+
+  const shown = rows.length > MAX_TABLE_ROWS ? rows.slice(0, MAX_TABLE_ROWS) : rows;
+  const capNote = shown.length < rows.length
+    ? `Showing the first ${MAX_TABLE_ROWS.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} rows — the CSV has them all.`
+    : null;
 
   const exportCsv = () =>
     downloadCSV(
@@ -88,11 +120,12 @@ export function ChartData({
               <tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={i}>{r.map((v, j) => <td key={j}>{v ?? ''}</td>)}</tr>
+              {shown.map((r, i) => (
+                <tr key={i}>{r.map((v, j) => <td key={j}>{cell(v)}</td>)}</tr>
               ))}
             </tbody>
           </table>
+          {capNote}
         </VisuallyHidden>
       </>
     );
@@ -108,12 +141,13 @@ export function ChartData({
             <Table.Tr>{columns.map((c) => <Table.Th key={c}>{c}</Table.Th>)}</Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {rows.map((r, i) => (
-              <Table.Tr key={i}>{r.map((v, j) => <Table.Td key={j}>{v ?? ''}</Table.Td>)}</Table.Tr>
+            {shown.map((r, i) => (
+              <Table.Tr key={i}>{r.map((v, j) => <Table.Td key={j}>{cell(v)}</Table.Td>)}</Table.Tr>
             ))}
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+      {capNote && <Text size="xs" c="dimmed" mt={4}>{capNote}</Text>}
     </div>
   );
 }
