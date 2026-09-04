@@ -673,6 +673,67 @@ button:active,
   .disc-grid { columns: 2; column-gap: var(--mantine-spacing-xl); }
 }
 
+/* ── The ingestion pipeline (DataPipeline.tsx) ──────────────────────────────────────────────────
+   A numbered vertical flow: a dot column on the left, the step on the right, and a hairline running
+   between consecutive dots so the seven steps read as one path rather than as a list that happens to
+   be numbered.
+
+   Vertical at every width on purpose. A seven-stage horizontal diagram fits the 68ch reading column
+   at about 110px a stage, which is not enough for a sentence, and at 375px it is not enough for a
+   label — so the horizontal version would have had to become this one below `sm` anyway. */
+.pipeline { list-style: none; margin: 0; padding: 0; }
+
+.pipeline-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  column-gap: var(--mantine-spacing-sm);
+  align-items: start;
+  padding-bottom: var(--mantine-spacing-md);
+}
+.pipeline-step:last-child { padding-bottom: 0; }
+
+/* The connector, drawn on the step rather than on the dot: the dot's own box is only 26px tall, so a
+   line anchored to it has nothing to stretch to. Anchored to the step, `bottom: 0` reaches the
+   padding edge — which is exactly where the next step's dot begins. */
+.pipeline-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 30px;
+  bottom: 0;
+  width: 1px;
+  background: var(--hairline-strong);
+}
+
+/* Label left, figure right — but the figure drops to its own line rather than squeezing either of
+   them. Held on one nowrap row at 375px, a right-aligned `22,010 people · Mar 2026` kept its full
+   width and left the label a one-word-per-line column beside it, then ran off the card edge anyway. */
+.pipeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: var(--mantine-spacing-sm);
+  row-gap: 2px;
+}
+.pipeline-head > :first-child { flex: 1 1 auto; min-width: 0; }
+.pipeline-fact { flex: 0 0 auto; white-space: nowrap; }
+
+.pipeline-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--mantine-color-default-border);
+  background-color: var(--surface-sunken);
+  color: var(--mantine-color-dimmed);
+}
+
 /* "Live" freshness dot. Static: it was a 2.4s infinite animation whose only message was that the page
    had loaded, which the text beside it already says. */
 .live-dot {

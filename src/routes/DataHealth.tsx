@@ -11,6 +11,7 @@ import { DuplicateIdentities } from '../components/DuplicateIdentities';
 import { DeltaChip, type DeltaTone } from '../components/Delta';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { CardTitle } from '../components/CardTitle';
+import { DataPipeline } from '../components/DataPipeline';
 import { useDocTitle } from '../lib/useDocTitle';
 import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
@@ -248,6 +249,7 @@ export default function DataHealth() {
     ['#disclaimer', 'Accuracy'],
     ['#privacy', 'Privacy'],
     ['#how-it-works', 'Figures'],
+    ['#pipeline', 'Pipeline'],
     ['#methodology', 'Method'],
     ['#snapshots', 'Snapshots'],
     ['#duplicates', 'Duplicates'],
@@ -393,6 +395,20 @@ export default function DataHealth() {
         title="How it was built"
         blurb="The pipeline from a published spreadsheet to the numbers on this site — auditable, and downloadable in full."
       >
+      <Card id="pipeline" maw={PROSE}>
+        <CardTitle order={3} anchorId="pipeline" sub="Each step is in the open-source ingestion linked below, and every figure here was read from the manifest rather than typed in.">
+          From records request to this page
+        </CardTitle>
+        <DataPipeline
+          snapshots={snaps.length}
+          columnsMapped={latestSnap ? Object.keys(latestSnap.detected_mapping).length || null : null}
+          peopleLatest={latestSnap?.distinct_people ?? null}
+          latestLabel={latestSnap?.snapshot_label ?? null}
+          totalRows={manifest?.total_rows}
+          fileSize={parquetSize}
+        />
+      </Card>
+
       <Card id="methodology" maw={PROSE}>
         <CardTitle order={3} anchorId="methodology">Methodology, reproducibility &amp; downloads</CardTitle>
         <Stack gap="sm">

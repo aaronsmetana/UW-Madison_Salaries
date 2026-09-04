@@ -76,6 +76,36 @@ test.describe('data · about', () => {
       expect(hidden, `#${id} lands behind the sticky nav`).toBeLessThanOrEqual(0);
     }
   });
+
+  /**
+   * The pipeline card states figures — workbooks ingested, rows stored — that the page also states
+   * elsewhere, and that a future edit could easily freeze into the copy. Every one of them is meant to
+   * be read from the manifest at render time, so this asserts them against the manifest itself rather
+   * than against a number written into the test.
+   *
+   * This is the guard the chart labels needed and did not have: two counts shipped in this pass that
+   * described a `LIMIT 3000` render budget as a headcount and a row count as a number of people. Both
+   * were sentences a reader would believe and no test could see.
+   */
+  test('the pipeline quotes the manifest, not a number typed into the copy', async ({ page }) => {
+    const manifest = await (await page.request.get('./data/manifest.json')).json();
+    const ingested = manifest.snapshots.filter((s: { row_count: number }) => s.row_count);
+    const n = (x: number) => x.toLocaleString('en-US');
+
+    const pipeline = page.locator('#pipeline');
+    await expect(pipeline).toContainText(`${n(manifest.total_rows)} rows`);
+    await expect(pipeline).toContainText(
+      `${n(ingested.length)} workbook${ingested.length === 1 ? '' : 's'}`
+    );
+
+    // The two per-report figures name the report they were measured on, so neither can be read as
+    // spanning the whole dataset the way the row total does.
+    const latest = [...ingested].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date)).at(-1);
+    await expect(pipeline).toContainText(
+      `${Object.keys(latest.detected_mapping).length} columns · ${latest.snapshot_label}`
+    );
+    await expect(pipeline).toContainText(`${n(latest.distinct_people)} people · ${latest.snapshot_label}`);
+  });
 });
 
 /**
