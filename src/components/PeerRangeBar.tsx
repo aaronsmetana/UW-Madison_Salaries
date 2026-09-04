@@ -3,7 +3,7 @@ import { Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
-import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
+import { MARK_SELF, MARK_SELF_TEXT, MARK_TARGET, MarkerLegend } from './markers';
 
 /** How many individual peer ticks to draw at most — beyond this, evenly sample so a huge cohort
  *  (e.g. "Professor") doesn't render thousands of overlapping hairlines. */
@@ -140,7 +140,7 @@ export function PeerRangeBar({
             transform: `translateX(${labelTx})`,
             whiteSpace: 'nowrap',
             fontSize: 12.5,
-            color: MARK_CURRENT,
+            color: MARK_SELF_TEXT,
             transition: 'left 600ms ease-out',
           }}
         >
@@ -158,7 +158,7 @@ export function PeerRangeBar({
             height: 0,
             borderLeft: '5px solid transparent',
             borderRight: '5px solid transparent',
-            borderTop: `7px solid ${MARK_CURRENT}`,
+            borderTop: `7px solid ${MARK_SELF}`,
             transition: 'left 600ms ease-out',
           }}
         />
@@ -231,7 +231,7 @@ export function PeerRangeBar({
               width: 18,
               height: 18,
               borderRadius: '50%',
-              background: MARK_CURRENT,
+              background: MARK_SELF,
               border: '2px solid var(--mantine-color-body)',
               boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
               transform: 'translate(-50%, -50%)',

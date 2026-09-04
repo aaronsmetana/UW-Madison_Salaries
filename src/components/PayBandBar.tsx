@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
 import { fmtK } from '../lib/chartStyle';
-import { MARK_CURRENT, MARK_TARGET, MarkerLegend } from './markers';
+import { MARK_SELF, MARK_TARGET, MarkerLegend } from './markers';
 
 /** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line,
  *  optional gray `benchmarks` ticks (e.g. title median / p75), and optional `quartiles` (¼/½/¾ of the
@@ -105,7 +105,7 @@ export function PayBandBar({
               width: 18,
               height: 18,
               borderRadius: '50%',
-              background: MARK_CURRENT,
+              background: MARK_SELF,
               border: '2px solid var(--mantine-color-body)',
               boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
               transform: 'translate(-50%, -50%)',
@@ -146,7 +146,7 @@ export function PayBandBar({
       {target != null && (
         <MarkerLegend
           items={[
-            { color: MARK_CURRENT, round: true, label: `Current ${usd(value)}` },
+            { color: MARK_SELF, round: true, label: `Current ${usd(value)}` },
             { color: MARK_TARGET, label: `Target ${usd(target)}` },
           ]}
         />
