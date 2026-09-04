@@ -174,3 +174,45 @@ for (const width of [1440, 768, 375]) {
     expect(spill!, `control bar spills ${spill}px past the header at ${width}px`).toBeLessThanOrEqual(0);
   });
 }
+
+/**
+ * The histogram draws a label at every bin edge, so ten bins mean eleven labels. On a phone all eleven
+ * adjacent pairs overlapped and the axis rendered as one unreadable run of digits — "$95k$100k$105k…" —
+ * while the median guide's label printed straight through the count above the tallest bar at every
+ * width. Neither is visible to axe or to a presence assertion, and the visual suite masks `.hist-plot`,
+ * so this geometry check is the only guard. IT040 is a 48-person cohort, which is the "one block = one
+ * person" render path; FA020 (Professor, 1,251) is the bar path.
+ */
+for (const code of ['IT040', 'FA020']) {
+  for (const width of [1440, 375]) {
+    test(`histogram axis labels never overlap: ${code} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`./paycheck?code=${code}`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('.hist-plot', { timeout: 60_000 });
+      // Labels are thinned against a measured container width; let the observer settle.
+      await page.waitForTimeout(1_500);
+
+      const collisions = await page.evaluate(() => {
+        const plot = document.querySelector('.hist-plot');
+        if (!plot) return ['no .hist-plot on the page'];
+        const boxes = [...plot.querySelectorAll('*')]
+          .filter((el) => !el.children.length && (el.textContent ?? '').trim())
+          .map((el) => ({ text: (el.textContent ?? '').trim(), r: el.getBoundingClientRect() }));
+        const hits: string[] = [];
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            const a = boxes[i].r, b = boxes[j].r;
+            // The y-axis "0" tick and the "$0k" x-axis tick meet at the origin corner in the Recharts
+            // path. That predates this guard and belongs to the axis component, not the label thinning.
+            const corner = /^\$?0k?$/.test(boxes[i].text) && /^\$?0k?$/.test(boxes[j].text);
+            if (!corner && a.right > b.left && b.right > a.left && a.bottom > b.top && b.bottom > a.top) {
+              hits.push(`"${boxes[i].text}" overlaps "${boxes[j].text}"`);
+            }
+          }
+        }
+        return hits;
+      });
+      expect(collisions, `${code} at ${width}px`).toEqual([]);
+    });
+  }
+}

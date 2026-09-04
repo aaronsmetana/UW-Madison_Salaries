@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
@@ -17,6 +17,14 @@ import { ChartData } from './ChartData';
  *  cohorts (or a computed brick too thin to read) fall back to continuous bars automatically. */
 const MAX_FOR_UNIT_MODE = 60;
 const BRICK_GAP = 2;
+/** Widest a `$147k` edge label gets at 11px, plus breathing room. Labels are thinned to this pitch
+ *  rather than drawn at every bin edge: ten bins mean eleven labels, and on a phone all eleven adjacent
+ *  pairs overlapped into one unreadable run of digits. */
+const EDGE_LABEL_PITCH = 52;
+/** Reserved band above the columns for the median guide's label in unit mode. Without it the label
+ *  printed straight through the count sitting above the tallest bar — measured at 1440px, not just
+ *  at phone width. */
+const MEDIAN_LABEL_BAND = 16;
 /** The tallest stack always fills roughly this plot height — brick height scales to the cohort, so a
  *  3-person maximum and a 12-person maximum both look intentional rather than stubby or towering. */
 const TARGET_PLOT_H = 200;
@@ -66,6 +74,22 @@ export function SalaryHistogram({
   const uid = useId();
   const mounted = useMounted();
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  // Both render paths wrap in `.hist-plot`, so one measurement serves both. Only the axis labels need
+  // it, and only to decide how many of them there is room for.
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [plotW, setPlotW] = useState(0);
+  useLayoutEffect(() => {
+    const el = plotRef.current;
+    if (!el) return;
+    const measure = () => setPlotW((prev) => {
+      const next = el.getBoundingClientRect().width;
+      return Math.abs(next - prev) < 0.5 ? prev : next;
+    });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const bins = binSalaries(values, 10, domain);
   if (values.length < minToShow || bins.length < 2) {
@@ -84,6 +108,16 @@ export function SalaryHistogram({
   // salary scale: each bar is centered in its bin and the edge ticks line up with the bar edges.
   const data = bins.map((b) => ({ x: (b.lo + b.hi) / 2, label: b.label, range: b.range, n: b.n, lo: b.lo, hi: b.hi }));
   const edges = [...bins.map((b) => b.lo), hi];
+  // Keep the first and last — they are the range — and as many evenly-spaced interior edges as fit.
+  const shownEdges = (() => {
+    if (plotW <= 0) return edges;
+    const room = Math.max(2, Math.floor(plotW / EDGE_LABEL_PITCH));
+    if (edges.length <= room) return edges;
+    const step = Math.ceil((edges.length - 1) / (room - 1));
+    const keep = edges.filter((_, i) => i % step === 0);
+    if (keep[keep.length - 1] !== edges[edges.length - 1]) keep.push(edges[edges.length - 1]);
+    return keep;
+  })();
   const total = bins.reduce((s, b) => s + b.n, 0);
   const cumBelow = (binLo: number) => bins.reduce((s, b) => s + (b.hi <= binLo ? b.n : 0), 0);
 
@@ -142,7 +176,9 @@ export function SalaryHistogram({
   }
 
   if (unitMode) {
-    const containerH = PLOT_TOP + stackH + X_AXIS_H;
+    // The counts above each stack live in the band the median label used to share.
+    const UNIT_TOP = PLOT_TOP + (guides.length ? MEDIAN_LABEL_BAND : 0);
+    const containerH = UNIT_TOP + stackH + X_AXIS_H;
     const colH = (n: number) => (n > 0 ? n * (brickH + BRICK_GAP) - BRICK_GAP : 0);
     // Which brick (0-based, from the bottom) represents the marked value within its own bin — computed
     // from the actual values sharing that bin, so the highlighted brick sits at roughly the right rank.
@@ -162,7 +198,7 @@ export function SalaryHistogram({
         {/* `hist-plot` marks the plot area on both render paths. Its geometry comes from a measured
             container, so it lands a pixel or two differently between runs; the visual suite masks it
             (see e2e/visual.spec.ts) rather than widening every page's diff budget to absorb it. */}
-        <div className="hist-plot" style={{ position: 'relative', height: containerH }}>
+        <div ref={plotRef} className="hist-plot" style={{ position: 'relative', height: containerH }}>
           {/* Faint IQR backdrop (p25→p75) — gives the empty plot background structure and ties this
               chart to the range strip above it. */}
           {p25v != null && p75v != null && (
@@ -172,7 +208,7 @@ export function SalaryHistogram({
                 position: 'absolute',
                 left: `${at(p25v) * 100}%`,
                 width: `${(at(p75v) - at(p25v)) * 100}%`,
-                top: PLOT_TOP,
+                top: UNIT_TOP,
                 bottom: X_AXIS_H,
                 background: 'var(--mantine-color-accent-6)',
                 opacity: 0.05,
@@ -188,7 +224,7 @@ export function SalaryHistogram({
               style={{
                 position: 'absolute',
                 left: `${at(g.value) * 100}%`,
-                top: PLOT_TOP - (g.isMedian ? 16 : 0),
+                top: UNIT_TOP - (g.isMedian ? MEDIAN_LABEL_BAND + 14 : 0),
                 bottom: X_AXIS_H,
                 width: 0,
                 borderLeft: `1px dashed var(--mantine-color-gray-5)`,
@@ -225,7 +261,7 @@ export function SalaryHistogram({
                   position: 'absolute',
                   left: `${left}%`,
                   width: `${width}%`,
-                  top: PLOT_TOP,
+                  top: UNIT_TOP,
                   bottom: X_AXIS_H,
                   display: 'flex',
                   flexDirection: 'column-reverse',
@@ -271,7 +307,7 @@ export function SalaryHistogram({
           })}
 
           {/* Bin-edge $ labels along the bottom — counting bricks IS the y-axis, so there's no y-axis to draw. */}
-          {edges.map((e, i) => (
+          {shownEdges.map((e, i) => (
             <Text
               key={i}
               size="xs"
@@ -338,12 +374,12 @@ export function SalaryHistogram({
 
   return (
     <>
-      <div className="hist-plot" style={{ position: 'relative' }}>
+      <div ref={plotRef} className="hist-plot" style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <defs>{barGradientDefs(uid, gradientColors)}</defs>
             <CartesianGrid {...GRID} />
-            <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={edges} tickFormatter={fmtK} tick={AXIS_TICK} />
+            <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tickFormatter={fmtK} tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} />
             <Tooltip content={<BarsHistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             {guides.map((g, i) => (
