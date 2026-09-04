@@ -69,6 +69,20 @@ for (const theme of THEMES) {
     expect(bad).toEqual([]);
   });
 
+  // The palette is closed on every route above, so the sweep would never have scanned it. A dialog
+  // is where focus order, labelling and contrast bugs actually live, and this one is opened by a
+  // keyboard shortcut — the users most likely to reach it are exactly the ones axe speaks for.
+  test(`a11y: command palette (${theme}) has no critical/serious violations`, async ({ page }) => {
+    await page.goto('./data');
+    await setTheme(page, theme);
+    await expect(page.locator('body')).toBeVisible({ timeout: 60_000 });
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.locator('.mantine-Modal-content')).toBeVisible();
+    await page.waitForTimeout(300);
+    const bad = await runAxe(page);
+    expect(bad).toEqual([]);
+  });
+
   test(`a11y: school page (${theme}) has no critical/serious violations`, async ({ page }) => {
     await page.goto(`./school/${encodeURIComponent('School of Medicine and Public Health')}`);
     await setTheme(page, theme);

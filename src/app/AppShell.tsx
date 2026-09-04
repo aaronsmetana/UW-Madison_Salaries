@@ -1,10 +1,7 @@
 import { Suspense, useEffect } from 'react';
 import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import {
-  IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics, IconInfoCircle,
-  IconChevronLeft, IconChevronRight, IconListSearch,
-} from '@tabler/icons-react';
+import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
 import { SelectionTray } from './SelectionTray';
@@ -12,21 +9,8 @@ import { Footer } from './Footer';
 import { ColorSchemeToggle } from '../components/ColorSchemeToggle';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
-
-// Destinations, not instructions. These read as query verbs — "Search Person's Salary", "General
-// Comparisons" — which describe what the software does rather than what the visitor is looking at, and
-// the longest of them ("Compare People, Titles & Schools") wrapped to two lines in the sidebar. A nav
-// label's job is to name the place it goes; the page's own description says what you can do there.
-//
-// Each label is also the h1 of the page it opens, so arriving somewhere confirms the link you clicked.
-const NAV = [
-  { label: 'People', to: '/', icon: IconUserSearch },
-  { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
-  { label: 'Divisions', to: '/explore', icon: IconBuildingBank },
-  { label: 'Compare', to: '/compare', icon: IconArrowsDiff },
-  { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
-  { label: 'Screening', to: '/screening', icon: IconListSearch },
-];
+import { CommandPalette, PaletteTrigger, usePalette } from '../components/CommandPalette';
+import { NAV, ABOUT, type NavItem } from './nav';
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
@@ -37,6 +21,7 @@ export function AppShellLayout() {
   const loc = useLocation();
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure(false);
   const [collapsed, { toggle: toggleDesktop }] = useDisclosure(false);
+  const palette = usePalette();
 
   // Force the light color scheme for the duration of any print. print.css paints the page white, but
   // Mantine's dark-scheme text vars stay light — printing from dark mode would put near-white text on
@@ -62,7 +47,7 @@ export function AppShellLayout() {
   const isActive = (to: string) => (to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to));
   const showControl = CONTROL_PATHS.some((p) => loc.pathname.startsWith(p));
 
-  const renderLink = (n: (typeof NAV)[number], dimmed = false) => {
+  const renderLink = (n: NavItem, dimmed = false) => {
     const Icon = n.icon;
     const active = isActive(n.to);
     const link = (
@@ -154,6 +139,7 @@ export function AppShellLayout() {
               </Anchor>
             </Group>
             <Group gap="md" wrap="nowrap">
+              <PaletteTrigger onClick={palette.open} />
               <ColorSchemeToggle />
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
@@ -175,7 +161,7 @@ export function AppShellLayout() {
         <AppShell.Navbar p="sm">
           <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
           <Divider my="xs" />
-          {renderLink({ label: 'About the data', to: '/data', icon: IconInfoCircle }, true)}
+          {renderLink(ABOUT, true)}
           {/* Collapse/expand toggle anchored at the bottom of the sidebar (desktop only). */}
           <Tooltip label="Expand menu" position="right" withArrow disabled={!collapsed}>
             <Button
@@ -216,6 +202,10 @@ export function AppShellLayout() {
       {/* Floating "cart"-style selection tray — hidden on /compare (selections shown in-page) and on
           /reports (it's a tool, not part of the formal negotiation document). */}
       {!loc.pathname.startsWith('/compare') && !loc.pathname.startsWith('/reports') && <SelectionTray />}
+
+      {/* Mounted outside AppShell so ⌘K reaches it from every route. Modal keeps its children
+          unmounted until opened, so `SearchBox` costs nothing (and boots no DuckDB) until used. */}
+      <CommandPalette opened={palette.opened} close={palette.close} />
     </>
   );
 }

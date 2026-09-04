@@ -819,3 +819,7 @@ button:active,
    so the click affordance appears on intent rather than sitting as permanent underline noise. */
 .evidence-jump:hover .evidence-jump-chevron { opacity: 0.55 !important; }
 .evidence-jump:hover { color: var(--mantine-color-accent-text); }
+
+/* Command-palette destination rows. Hover only — the list is Tab-navigable, and `:focus-visible`
+   already draws Mantine's focus ring, so a second highlight on focus would double it. */
+.palette-row:hover { background: var(--mantine-color-default-hover); }

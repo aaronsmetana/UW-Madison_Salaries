@@ -159,7 +159,10 @@ export function SalaryHistogram({
 
     return (
       <>
-        <div style={{ position: 'relative', height: containerH }}>
+        {/* `hist-plot` marks the plot area on both render paths. Its geometry comes from a measured
+            container, so it lands a pixel or two differently between runs; the visual suite masks it
+            (see e2e/visual.spec.ts) rather than widening every page's diff budget to absorb it. */}
+        <div className="hist-plot" style={{ position: 'relative', height: containerH }}>
           {/* Faint IQR backdrop (p25→p75) — gives the empty plot background structure and ties this
               chart to the range strip above it. */}
           {p25v != null && p75v != null && (
@@ -335,7 +338,7 @@ export function SalaryHistogram({
 
   return (
     <>
-      <div style={{ position: 'relative' }}>
+      <div className="hist-plot" style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <defs>{barGradientDefs(uid, gradientColors)}</defs>

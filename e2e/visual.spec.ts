@@ -39,15 +39,20 @@ const SHOT = {
   // a mostly-white full-page shot, so three pages reported "unchanged" while all three had changed.
   // A ratio scales the blind spot with the page; an absolute count does not.
   //
-  // 250px is calibrated against the two things it has to tell apart. Below it: Person on a 375px
-  // viewport settles with the peer table about two pixels higher or lower between runs, because a
-  // Recharts container above it measures its own height slightly differently at that width — 99
-  // antialiased pixels along two rows of text, no content difference at all (verified by cropping and
-  // magnifying both images). Above it, by orders of magnitude: every real change so far. The radius
-  // and surface pass moved 39 baselines, the heading pass 7, and each of those rewrites thousands of
-  // pixels per page. There is no plausible design change that lands under 250 pixels of a full-page
-  // shot and still matters.
-  maxDiffPixels: 250,
+  // This started at 250, on the reasoning that no design change worth catching could land under it.
+  // That was wrong, and the command palette proved it: adding a 126x30 button to the header of every
+  // page moved *no* baseline. A `variant="default"` button sits on a background it nearly matches, so
+  // the only pixels that actually differ are its 1px border and a few glyphs — and Playwright's
+  // per-pixel `threshold` discards the antialiased edges of even those. A visible, global, permanent
+  // piece of UI came in under a cap sized for a two-pixel scroll wobble.
+  //
+  // The lesson is that a diff budget has to be sized against the *ink* a change moves, not its area.
+  // 20 is the tight default: comfortably above run-to-run antialiasing on a static page, and an order
+  // of magnitude below the border of the smallest control anyone would add on purpose.
+  //
+  // `CHART_NOISE` below is the exception, scoped to the two pages that earn it rather than applied to
+  // all forty-two images — which is what let a global 250 hide the palette button on every page.
+  maxDiffPixels: 20,
 } as const;
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
@@ -105,6 +110,12 @@ async function settle(page: Page) {
       vp.scrollTop += r.top - v.top - vp.clientHeight / 2 + r.height / 2;
     }
   });
+  // Park the pointer off-canvas. Playwright leaves the mouse wherever the last click put it, and a
+  // viewport change reflows the page underneath it — so on the title page, switching to 375px slid a
+  // sortable column header under the cursor and baked its hover state into the mobile baseline on
+  // some runs and not others. 103 pixels of pure pointer position, on a page whose charts were
+  // already masked. A screenshot suite has to own the mouse as much as it owns the clock.
+  await page.mouse.move(-10, -10);
   await page.waitForTimeout(350);
 }
 
@@ -117,7 +128,43 @@ async function settle(page: Page) {
  * desktop image and abort before dark and mobile were even taken — exactly the two that most need
  * looking at. Soft assertions compare all three and still fail the test.
  */
-async function shots(page: Page, name: string, opts: { fullPage?: boolean } = {}) {
+/**
+ * Recharts geometry does not settle to the pixel: bar heights and axis ticks come from a measured
+ * container, and consecutive runs of an unchanged page land 60-90 antialiased pixels apart along the
+ * edges. Where a bar is clipped by the fold it is far worse — a one-pixel shift moves the clip line
+ * across a solid fill and rewrites 2,181 pixels at once, measured on Person.
+ *
+ * `.hist-plot` is masked alongside `.recharts-wrapper` because `SalaryHistogram` has two render
+ * paths and only one of them is Recharts: below a threshold it draws a stack of absolutely-positioned
+ * divs, one per person. Masking only the Recharts selector left the title page still flaking.
+ *
+ * Masking the plots rather than widening the budget. A tolerance big enough to absorb that would have
+ * to be larger than most real changes, and it would apply to the whole image; a mask costs only the
+ * plot area and leaves every heading, card, label and control on those pages under exact comparison.
+ * The charts themselves are not unguarded — `smoke.spec.ts` asserts the distribution renders its
+ * curve and that its quartile labels never overlap, at both widths.
+ */
+const CHARTS = (page: Page) => [page.locator('.recharts-wrapper'), page.locator('.hist-plot')];
+
+/**
+ * One shot earns a wider budget, and only after the diff was decoded pixel by pixel rather than
+ * guessed at: on the title page at 375px, the sortable header row of "People with this title" —
+ * `SALARY`, `NAME` and their sort glyphs — re-rasterises at a sub-pixel horizontal offset between
+ * runs. The glyphs are identical; rendering them half a pixel over changes their antialiasing. It is
+ * confined to ten pixel rows (1581-1590) and never touches the body rows below, which is the
+ * signature of a sticky header on its own compositing layer, not of a layout change.
+ *
+ * Playwright scores it 69-103. 150 clears that with headroom and still sits far below anything with
+ * content in it — the palette button that started this whole exercise would have been caught at any
+ * budget under about 200 on a mobile shot, and this is the only image in the suite above 20.
+ */
+const STICKY_HEADER_JITTER = 150;
+
+async function shots(
+  page: Page,
+  name: string,
+  opts: { fullPage?: boolean; mask?: ReturnType<typeof CHARTS>; maxDiffPixels?: number } = {}
+) {
   await page.setViewportSize(DESKTOP);
   await setTheme(page, 'light');
   await settle(page);
@@ -179,7 +226,7 @@ test('visual: person', async ({ page }) => {
   // the hero, the stat cards, the tab bar, the card treatment and the headings — is all above it and
   // is stable. Shooting the viewport keeps that under exact comparison instead of letting one scroll
   // box make the whole page unreadable as a diff.
-  await shots(page, 'person', { fullPage: false });
+  await shots(page, 'person', { fullPage: false, mask: CHARTS(page) });
 });
 
 test('visual: school', async ({ page }) => {
@@ -205,7 +252,7 @@ test('visual: titles with a title selected', async ({ page }) => {
   await expect(first).toBeVisible({ timeout: 30_000 });
   await first.click();
   await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
-  await shots(page, 'titles-detail');
+  await shots(page, 'titles-detail', { mask: CHARTS(page), maxDiffPixels: STICKY_HEADER_JITTER });
 });
 
 test('visual: reports with a subject', async ({ page }) => {
