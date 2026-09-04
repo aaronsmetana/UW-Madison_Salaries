@@ -8,7 +8,11 @@
 export function percentile(value: number, salaries: number[]): number {
   if (salaries.length <= 1) return 0;
   const below = salaries.reduce((n, s) => n + (s < value ? 1 : 0), 0);
-  return Math.round((below / (salaries.length - 1)) * 100);
+  // The n−1 denominator assumes `value` is one of `salaries`. When a caller passes a figure from
+  // outside the pool — a projection, or a person's total pay against a single-title cohort — every
+  // member can be below it and the share comes out above 100, which is not a percentile. Callers
+  // should compare like with like; this makes the output honest either way.
+  return Math.min(100, Math.round((below / (salaries.length - 1)) * 100));
 }
 
 /**

@@ -43,3 +43,16 @@ describe('leastSquares', () => {
     expect(leastSquares([{ x: 5, y: 1 }, { x: 5, y: 2 }, { x: 5, y: 3 }])).toBeNull();
   });
 });
+
+describe('percentile — values from outside the pool', () => {
+  it('never reports more than 100%', () => {
+    // A person's total pay across two appointments, measured against a cohort of single-appointment
+    // peers: every peer is below them, and n/(n-1) is 101%. That comparison is the caller's bug, but a
+    // percentile above 100 is nonsense whatever caused it.
+    expect(percentile(216_320, Array(173).fill(124_800))).toBe(100);
+  });
+
+  it('still reports 0 when nobody is below', () => {
+    expect(percentile(50_000, [50_000, 60_000, 70_000])).toBe(0);
+  });
+});

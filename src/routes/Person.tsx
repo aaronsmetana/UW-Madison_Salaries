@@ -586,7 +586,17 @@ export default function Person() {
     const i = cohortList.findIndex((p) => p.person_key === key);
     return i >= 0 ? i + 1 : null;
   }, [cohortList, key]);
-  const cohortPct = lastSalary != null && lastSalary > 0 && cohortPays.length > 1 ? percentile(lastSalary, cohortPays) : null;
+  // The subject's pay AS A MEMBER OF THIS COHORT, which is not always their pay overall: 355 people in
+  // the latest snapshot hold more than one appointment, and `lastSalary` sums them. Comparing a summed
+  // figure against a cohort of single-appointment figures inflated their standing — a Crowd Control
+  // Officer who is also a Police Officer read as "paid more than 101% of people with this title",
+  // because he was being measured with both jobs against peers measured with one.
+  const cohortSelfPay = useMemo(
+    () => cohortList.find((p) => p.person_key === key)?.pay ?? lastSalary,
+    [cohortList, key, lastSalary],
+  );
+  const splitAppointment = cohortSelfPay != null && lastSalary != null && Math.round(cohortSelfPay) !== Math.round(lastSalary);
+  const cohortPct = cohortSelfPay != null && cohortSelfPay > 0 && cohortPays.length > 1 ? percentile(cohortSelfPay, cohortPays) : null;
 
   // Pay-vs-tenure scatter points for the active cohort (only peers with a known tenure can be plotted).
   const scatterPoints = useMemo<ScatterPoint[]>(
@@ -909,16 +919,27 @@ export default function Person() {
                       median={cohortStats.med}
                       p75={cohortStats.p75}
                       max={cohortStats.hi}
-                      value={lastSalary}
+                      value={cohortSelfPay ?? lastSalary}
                       values={cohortPays}
                       domain={allPaysDomain}
                       label={latest?.first_name?.trim() || 'This person'}
                     />
-                    <PercentileNote
-                      pct={cohortPct}
-                      pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
-                      mt="sm"
-                    />
+                    {splitAppointment && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Marked at {usd(cohortSelfPay!)} — this person&rsquo;s pay in this title. Their
+                        total across every appointment is {usd(lastSalary!)}.
+                      </Text>
+                    )}
+                    {/* Nothing to be a percentile of when every holder of the title is on the same
+                        figure — "paid more than 0%" is true and useless, and the strip has already
+                        said there is no spread. */}
+                    {cohortStats.hi > cohortStats.lo && (
+                      <PercentileNote
+                        pct={cohortPct}
+                        pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
+                        mt="sm"
+                      />
+                    )}
                   </>
                 ) : (
                   <Text size="sm" c="dimmed">
