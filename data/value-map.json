@@ -8,5 +8,27 @@
     "ET1": "Employees in Training",
     "ET": "Employees in Training",
     "SH": "Student Hourly"
+  },
+  "_school_comment": "Division renames. The source rewrote its division vocabulary between the Apr 2025 and Sep 2025 records requests: 20 names retired, 34 appeared, and 61% of the Apr 2025 rows ended up under a name that no longer exists — which severs every division time series at that boundary. Keys are the retired name, values the name in use now. A pair belongs here only when the two names are the same unit: at least 85% of the people under the old name reappear under the new one in the next snapshot, or the names match once case and punctuation are stripped. Three divisions that lost their names fail that test and are deliberately absent because they reorganized rather than renamed — General Services (27% to Office of Human Resources), Division of Student Life (66%), General Educational Admin (51%); aliasing those would invent history. `npm run data` reports any division that disappears between snapshots, with where its people went, so the next rename shows up as build output.",
+  "school": {
+    "Sch of Med & Public Health": "School of Medicine and Public Health",
+    "Facilities Planning & Mgmt": "Facilities Planning and Management",
+    "College of Ag & Life Science": "College of Agricultural and Life Sciences",
+    "VC for Rsrch & Grad Education": "Office of the Vice Chancellor for Research",
+    "UW - Madison Extension": "Division of Extension",
+    "Information Technology": "Division of Information Technology",
+    "Wi State Laboratory Hygiene": "Wisconsin State Lab of Hygiene",
+    "Enrollment Management": "Division of Enrollment Management",
+    "General Library": "Libraries",
+    "Univ Health Services": "University Health Services",
+    "University Police Dept": "University Police Department",
+    "Business Services": "Associate Vice Chancellor for Finance",
+    "Div for Teaching and Learning": "Division for Teaching and Learning",
+    "Nelson Inst Envrnmntal Study": "IES Institute of Environmental Studies",
+    "Recreation & Wellbeing": "University Recreation and Wellbeing",
+    "Wi Veterinary Diagnostic Lab": "Wisconsin Veterinary Diagnostic Laboratory",
+    "Division of The Arts": "Division of the Arts",
+    "Collab Adv Learning & Teaching": "Division for Teaching and Learning",
+    "Associate Vice Chancellor for Identity and Inclusion": "Associate Vice Chancellor for Student Success and Belonging"
   }
 }

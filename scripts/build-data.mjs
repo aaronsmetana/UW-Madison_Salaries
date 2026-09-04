@@ -127,7 +127,10 @@ function processSheet(file, sheetName, aoa) {
     result.rows.push({
       first_name: clean(first),
       last_name: clean(last),
-      school: clean(get(row, 'school')),
+      // The source rewrote its division vocabulary between two records requests (see value-map.json's
+      // `school` block and the rename detector below), so historical rows carry names that no longer
+      // exist. Harmonize them the same way coded employee categories are harmonized.
+      school: clean(valueMapApply('school', get(row, 'school'))),
       department: clean(get(row, 'department')),
       employee_category_raw: clean(get(row, 'employee_category')),
       employee_category: clean(valueMapApply('employee_category', get(row, 'employee_category'))),
@@ -323,6 +326,63 @@ async function main() {
         if (cur.status === 'ok') cur.status = 'warning';
       }
     }
+  }
+
+  // Division renames. The source rewrote its whole division vocabulary between two records requests —
+  // 20 names retired, 34 introduced — and because nothing canonicalized them, 61% of the older
+  // snapshot's rows were filed under names that no longer existed. That severed every division time
+  // series at the boundary and was invisible until a reader noticed one division under two names in
+  // one person's history table. value-map.json's `school` block fixes the known ones; this reports
+  // whatever it does not cover, so the next rename arrives as build output instead of as a defect.
+  //
+  // "Where did its people go" is the evidence, not the name: matching person keys across the pair
+  // separates a rename (nearly everyone reappears under one new name) from a real reorganization
+  // (they scatter). The threshold is the one value-map.json's `school` block documents.
+  const RENAME_SHARE = 0.85;
+  const schoolsIn = (snapId) => {
+    const m = new Map();
+    for (const r of allRows) {
+      if (r.snapshot_id !== snapId || !r.school) continue;
+      if (!m.has(r.school)) m.set(r.school, new Set());
+      m.get(r.school).add(r.person_key);
+    }
+    return m;
+  };
+  const drift = [];
+  for (let i = 1; i < dataSnaps.length; i++) {
+    const prev = dataSnaps[i - 1], cur = dataSnaps[i];
+    const before = schoolsIn(prev.snapshot_id), after = schoolsIn(cur.snapshot_id);
+    const whereNow = new Map();
+    for (const [school, keys] of after) for (const k of keys) whereNow.set(k, school);
+    for (const [school, keys] of before) {
+      if (after.has(school)) continue;
+      const dest = new Map();
+      let carried = 0;
+      for (const k of keys) {
+        const to = whereNow.get(k);
+        if (!to) continue;
+        carried++;
+        dest.set(to, (dest.get(to) || 0) + 1);
+      }
+      const [topName, topN] = [...dest.entries()].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+      const share = carried ? topN / carried : 0;
+      const line = topName
+        ? `"${school}" is gone; ${Math.round(share * 100)}% of its ${carried} carried-over people are now in "${topName}"`
+        : `"${school}" is gone and none of its ${keys.size} people appear in ${cur.snapshot_id}`;
+      drift.push({ snapshot: cur.snapshot_id, line, rename: share >= RENAME_SHARE });
+      cur.messages.push(
+        share >= RENAME_SHARE
+          ? `${line} — looks like a rename; add it to the "school" block in data/value-map.json`
+          : line
+      );
+      // A reorganization is a fact worth publishing, not a problem to fix, so it gets the message
+      // without the badge. Only an unhandled rename asks someone to do something.
+      if (share >= RENAME_SHARE && cur.status === 'ok') cur.status = 'warning';
+    }
+  }
+  if (drift.length) {
+    console.log('\nDivision names that changed between snapshots:');
+    for (const d of drift) console.log(`  [${d.rename ? 'rename?' : 'reorg'}] ${d.snapshot}: ${d.line}`);
   }
 
   // Hard gate — the NEWEST snapshot only. A >40% paid-headcount swing vs its immediate predecessor is
