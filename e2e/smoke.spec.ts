@@ -328,14 +328,23 @@ test.describe('the landing distribution', () => {
       return { mask, d: (p.bottom - g.top - cy) / ry, end: Number(m[5]) / 100 };
     });
 
+    const { mask, end } = await measure();
+    expect(end, `the dot-grid mask is no longer the ellipse this test knows how to check: ${mask}`)
+      .toBeGreaterThan(0);
+
     for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 760 }]) {
       await page.setViewportSize(viewport);
-      await expect(panel).toBeVisible();
-      const reach = await measure();
-      expect(reach.d, `the dot-grid mask is no longer the ellipse this test knows how to check: ${reach.mask}`)
-        .not.toBeNull();
-      expect(reach.d!, `at ${viewport.width}px the dot grid fades out before the bottom of the panel, so the glass frosts nothing`)
-        .toBeLessThan(reach.end);
+      // Polled, not read once. `setViewportSize` resolves before the browser has finished
+      // re-laying-out, and this is pure geometry taken the moment it returns: measured locally, the
+      // panel reads 1188px below the grid immediately after the resize and settles to 508px a frame
+      // later. A single read raced that — it passed here, where the preceding round-trip happened to
+      // absorb the delay, and failed in CI, where it did not. The stylesheet was never wrong.
+      await expect
+        .poll(async () => (await measure()).d, {
+          message: `at ${viewport.width}px the dot grid fades out before the bottom of the panel, so the glass frosts nothing`,
+          timeout: 10_000,
+        })
+        .toBeLessThan(end);
     }
   });
 });
