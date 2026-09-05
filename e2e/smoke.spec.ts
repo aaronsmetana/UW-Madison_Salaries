@@ -259,8 +259,20 @@ test.describe('the landing distribution', () => {
     const panel = page.locator('.hero-dist');
     await expect(panel).toBeVisible({ timeout: 60_000 });
 
-    // 1. The panel is translucent and filtering. Losing either turns it into a plain card.
-    const style = await panel.evaluate((el) => {
+    // 1. The panel is translucent and filtering — and goes solid when someone has asked for less
+    //    transparency, which is the other half of the same rule.
+    //
+    //    The preference is *emulated* rather than inherited. Asserting glass against whatever the
+    //    host machine reports is not a test of the stylesheet, it is a test of the machine: this
+    //    assertion passed on a developer Mac and failed in CI, because the panel there was correctly
+    //    taking the `prefers-reduced-transparency` branch and the test had no idea that branch
+    //    existed. Emulating both is deterministic everywhere and covers the fallback for free.
+    //    Playwright's `emulateMedia` has no key for this feature yet, hence CDP.
+    const cdp = await page.context().newCDPSession(page);
+    const transparency = (value: 'no-preference' | 'reduce') =>
+      cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value }] });
+
+    const readPanel = () => panel.evaluate((el) => {
       const cs = getComputedStyle(el);
       // `color-mix()` computes to `color(srgb r g b / a)`, not to `rgba()`, so read the alpha out of
       // either form rather than pattern-matching one of them.
@@ -274,9 +286,19 @@ test.describe('the landing distribution', () => {
           : 1;
       return { filter: cs.backdropFilter || cs.getPropertyValue('-webkit-backdrop-filter'), bg, alpha };
     });
-    expect(style.filter, 'the panel stopped filtering its backdrop').toMatch(/blur\(/);
-    expect(style.alpha, `the panel went opaque (${style.bg}), so there is nothing to see through`)
+
+    await transparency('no-preference');
+    const glass = await readPanel();
+    expect(glass.filter, 'the panel stopped filtering its backdrop').toMatch(/blur\(/);
+    expect(glass.alpha, `the panel went opaque (${glass.bg}), so there is nothing to see through`)
       .toBeLessThan(0.9);
+
+    await transparency('reduce');
+    const solid = await readPanel();
+    expect(solid.filter, 'the panel still filters for a visitor who asked for less transparency').toBe('none');
+    expect(solid.alpha, `the reduced-transparency fallback is still translucent (${solid.bg}), which is the washed-out card the fallback exists to avoid`)
+      .toBe(1);
+    await transparency('no-preference');
 
     // 2. There is something behind it to filter. The dot grid is masked to an ellipse that faded out
     //    two-thirds of the way down the panel — which is exactly the state this shipped in — and it

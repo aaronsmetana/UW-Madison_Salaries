@@ -9,7 +9,11 @@ export default defineConfig({
   testDir: 'e2e',
   timeout: 120_000, // DuckDB-WASM init (parquet fetch + wasm boot) is slow on a cold page load
   workers: 1, // each test spins up its own DuckDB-WASM instance — too heavy to parallelize
-  reporter: 'list',
+  // `list` reads well in a terminal. On CI, add `github`: it emits `::error::` workflow annotations,
+  // and annotations are the only part of a failed run that can be read back without repo-admin
+  // rights — the run logs API returns 403. A failure nobody can read is a failure that gets guessed
+  // at, which is exactly what happened to the run that took a whole deploy cycle to diagnose.
+  reporter: process.env.CI ? [['github'], ['list']] : 'list',
   // Two projects so the visual baselines never run in CI. `npm run e2e` (the CI step in
   // .github/workflows/deploy.yml) runs `--project=e2e` only; `npm run e2e:visual` runs the other.
   // Baselines are captured on the developer's machine, and Playwright keys snapshots by platform —
