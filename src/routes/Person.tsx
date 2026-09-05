@@ -161,21 +161,34 @@ function TitleChangeLabel({
 
 /** A metadata pill (label + bold value) surfacing one source column under the name. Renders nothing
  *  when the value is blank, so pills only appear for fields the data actually has. */
+/**
+ * One source-column fact, as a chip: an uppercase label and its value.
+ *
+ * The label is an `Eyebrow` because that is the app's one small-label primitive — its own docstring
+ * records that it replaced "a dozen-plus hand-rolled variants" of exactly the
+ * `<Text size c="dimmed" style={{ fontSize: 11 }}>` this used to be, and this row is the one the
+ * sweep missed. Now the chips read the same way as the stat cards directly beneath them.
+ *
+ * Outlined rather than filled: the old fill was `--mantine-color-default-hover` at 1.03:1 against
+ * the card, so the chips were invisible *and* wearing the token the palette and search rows use to
+ * mean "the cursor is here". A hairline edge is both legible and what every other surface in this
+ * app uses to say "this is a thing".
+ */
 function MetaPill({ label, value }: { label: ReactNode; value: ReactNode }) {
   if (value == null || value === '') return null;
   return (
     <Group
-      gap={5}
+      gap={6}
       wrap="nowrap"
       style={{
         display: 'inline-flex',
-        background: 'var(--mantine-color-default-hover)',
-        borderRadius: 6,
+        border: '1px solid var(--hairline)',
+        borderRadius: 'var(--mantine-radius-sm)',
         padding: '2px 8px',
       }}
     >
-      <Text span c="dimmed" style={{ fontSize: 11 }}>{label}</Text>
-      <Text span fw={500} style={{ fontSize: 11 }}>{value}</Text>
+      <Eyebrow span>{label}</Eyebrow>
+      <Text span fw={500} size="xxs">{value}</Text>
     </Group>
   );
 }
@@ -727,7 +740,7 @@ export default function Person() {
           </Text>
           {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
           {/* Source columns the page otherwise hides, surfaced as a wrapping row of pills (null ones omitted). */}
-          <Group gap={7} wrap="wrap" mt="sm">
+          <Group gap="xs" wrap="wrap" mt="sm">
             <MetaPill label={<GlossaryTerm term="grade">Grade</GlossaryTerm>} value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
             <MetaPill label="Job code" value={latest?.job_code} />
             <MetaPill label={<GlossaryTerm term="flsa">FLSA</GlossaryTerm>} value={latest?.flsa_status} />
