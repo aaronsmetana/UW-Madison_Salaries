@@ -6,7 +6,8 @@ import {
 } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { FTE_MULT } from '../lib/queries';
+import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
+import { smoothBins, type Bin } from '../lib/distribution';
 import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
@@ -68,7 +69,7 @@ const LABEL_ROW_H = 16;
 function Distribution({
   bins, p25, median, p75, cap, overflow, headcount,
 }: {
-  bins: { bucket: number; n: number }[];
+  bins: Bin[];
   p25: number | null;
   median: number | null;
   p75: number | null;
@@ -77,6 +78,11 @@ function Distribution({
   headcount: number | null;
 }) {
   const revealed = useReveal(bins.length >= 3);
+  // What gets drawn is a density estimate over the raw counts, not the counts themselves. At the $1k
+  // buckets this chart now receives, the round-number comb in payroll data (a spike at $35k, $40k,
+  // $50k…) dominates the shape — a plain polyline through them is a picket fence. See
+  // `KERNEL_SIGMA` for how wide the kernel is and what it is required to preserve.
+  const curve = useMemo(() => smoothBins(bins), [bins]);
   const labelRowRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [labelRows, setLabelRows] = useState<number[]>([0, 0, 0]);
@@ -112,13 +118,13 @@ function Distribution({
   if (bins.length < 3) return null;
 
   const W = 1000, H = 120;
-  const maxN = Math.max(...bins.map((b) => b.n), 1);
-  const lo = bins[0].bucket;
-  const hi = bins[bins.length - 1].bucket;
+  const maxN = Math.max(...curve.map((b) => b.n), 1);
+  const lo = curve[0].bucket;
+  const hi = curve[curve.length - 1].bucket;
   const span = hi - lo || 1;
   const X = (v: number) => ((v - lo) / span) * W;
   const Y = (n: number) => H - (n / maxN) * (H - 4) - 2;
-  const pts = bins.map((b) => `${X(b.bucket).toFixed(1)},${Y(b.n).toFixed(1)}`);
+  const pts = curve.map((b) => `${X(b.bucket).toFixed(1)},${Y(b.n).toFixed(1)}`);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
   const area = `M0,${H} ${pts.map((p) => `L${p}`).join(' ')} L${W},${H} Z`;
 
@@ -131,7 +137,9 @@ function Distribution({
   ];
 
   return (
-    <div style={{ marginTop: 'var(--mantine-spacing-lg)' }}>
+    // `card-hover` because the whole panel is a link to /explore, and lifting the border on hover is
+    // the one "this responds" gesture the app uses (see the rule's own note on why it isn't a lift).
+    <div className="hero-dist card-hover">
       <div
         style={{
           transform: revealed ? 'scaleY(1)' : 'scaleY(0.04)',
@@ -293,8 +301,12 @@ export default function Home() {
   // Distribution sparkline + rotating facts (lightweight aggregates over the latest snapshot).
   const { data: binRows } = useSql<{ bucket: number; n: number }>(
     ['home-bins', snap ?? ''],
-    `SELECT floor(salary / 10000) * 10000 AS bucket, count(*) AS n FROM salaries
-     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 AND salary < 250000
+    // $1k buckets, matching the precomputed artifact — and over ACTUAL_PAY, not the raw rate. The
+    // build script fixed that mismatch on its side and left this one: the fallback was binning the
+    // full-time rate while the median marker drawn on top of it came from FTE-adjusted pay, so a
+    // visitor pinned to an older snapshot got a marker sitting off its own curve.
+    `SELECT floor(${ACTUAL_PAY} / 1000) * 1000 AS bucket, count(*) AS n FROM salaries
+     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${ACTUAL_PAY} > 0 AND ${ACTUAL_PAY} < 250000
      GROUP BY bucket ORDER BY bucket`,
     needsSql
   );

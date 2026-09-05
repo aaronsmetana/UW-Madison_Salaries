@@ -1,3 +1,5 @@
+import type { Bin } from './distribution';
+
 export interface SnapshotInfo {
   snapshot_id: string;
   snapshot_label: string;
@@ -44,7 +46,9 @@ export interface HomeStats {
   titles: number | null;
   salary_lo: number | null;
   salary_hi: number | null;
-  bins: { bucket: number; n: number }[];
+  /** Raw histogram counts, one entry per $1k bucket. Drawn as a smoothed density, not as a polyline
+   *  through these points — see `smoothBins` in ./distribution. */
+  bins: Bin[];
   /** Upper edge of the histogram, in dollars — reported so the page can label the cap. */
   bin_cap: number | null;
   /** People at or above `bin_cap`, excluded from `bins` so outliers don't flatten the curve. */

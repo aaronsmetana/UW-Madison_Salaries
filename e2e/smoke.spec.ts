@@ -217,3 +217,103 @@ test('the data error banner still fires when the dataset really fails', async ({
   await page.goto('./explore');
   await expect(page.getByText(/Couldn't load the salary data/i)).toBeVisible({ timeout: 60_000 });
 });
+
+/**
+ * The landing curve is a density estimate over $1k buckets, and three separate things have to hold
+ * for it to look like one. Each is invisible in review and each has a plausible way of quietly
+ * reverting, so each gets an assertion.
+ */
+test.describe('the landing distribution', () => {
+  const CURVE = 'svg[viewBox="0 0 1000 120"] path[stroke]';
+
+  test('is drawn at the resolution the data now carries', async ({ page }) => {
+    await page.goto('./');
+    await expect(page.locator(CURVE).first()).toBeVisible({ timeout: 60_000 });
+    const vertices = await page.locator(CURVE).first().evaluate(
+      (el) => (el.getAttribute('d') ?? '').split('L').length - 1
+    );
+    // 250 buckets, so 249 line segments. Anything near 25 means the $10k buckets came back and the
+    // curve is a faceted polyline again — which is what this whole change was about.
+    expect(vertices, 'the curve lost its resolution').toBeGreaterThan(200);
+  });
+
+  test('is smooth, not a picket fence', async ({ page }) => {
+    await page.goto('./');
+    await expect(page.locator(CURVE).first()).toBeVisible({ timeout: 60_000 });
+    // Mean |second difference| down the drawn y-values. Raw $1k counts score ~0.58 on this snapshot
+    // and the smoothed curve ~0.003; the gap is three orders of magnitude, so any threshold in
+    // between is safe. This is the guard for "someone raised the resolution and dropped the kernel",
+    // which would pass the vertex-count test above while looking far worse than the original.
+    const roughness = await page.locator(CURVE).first().evaluate((el) => {
+      const ys = (el.getAttribute('d') ?? '').split(/[ML]/).slice(1).map((p) => Number(p.split(',')[1]));
+      const mean = ys.reduce((a, b) => a + b, 0) / ys.length;
+      let acc = 0;
+      for (let i = 1; i < ys.length - 1; i++) acc += Math.abs(ys[i - 1] - 2 * ys[i] + ys[i + 1]);
+      return acc / (ys.length - 2) / mean;
+    });
+    expect(roughness, 'the curve is drawing raw counts, not a density').toBeLessThan(0.05);
+  });
+
+  test('is glass over a backdrop that actually reaches it', async ({ page }) => {
+    await page.goto('./');
+    const panel = page.locator('.hero-dist');
+    await expect(panel).toBeVisible({ timeout: 60_000 });
+
+    // 1. The panel is translucent and filtering. Losing either turns it into a plain card.
+    const style = await panel.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      // `color-mix()` computes to `color(srgb r g b / a)`, not to `rgba()`, so read the alpha out of
+      // either form rather than pattern-matching one of them.
+      const bg = cs.backgroundColor;
+      const slash = /\/\s*([\d.]+%?)\s*\)/.exec(bg);
+      const legacy = /rgba?\(([^)]+)\)/.exec(bg);
+      const alpha = slash
+        ? (slash[1].endsWith('%') ? parseFloat(slash[1]) / 100 : Number(slash[1]))
+        : legacy
+          ? ((p) => (p.length > 3 ? Number(p[3]) : 1))(legacy[1].split(/[,\s/]+/).filter(Boolean))
+          : 1;
+      return { filter: cs.backdropFilter || cs.getPropertyValue('-webkit-backdrop-filter'), bg, alpha };
+    });
+    expect(style.filter, 'the panel stopped filtering its backdrop').toMatch(/blur\(/);
+    expect(style.alpha, `the panel went opaque (${style.bg}), so there is nothing to see through`)
+      .toBeLessThan(0.9);
+
+    // 2. There is something behind it to filter. The dot grid is masked to an ellipse that faded out
+    //    two-thirds of the way down the panel — which is exactly the state this shipped in — and it
+    //    did so only above 1024px, because the radius was a percentage of a page whose height nearly
+    //    doubles at 375px. So this is checked at both ends of the range, and derived from the live
+    //    geometry rather than from the numbers in the stylesheet.
+    const measure = () => page.evaluate(() => {
+      const grid = document.querySelector('.hero-dotgrid');
+      const panelEl = document.querySelector('.hero-dist');
+      if (!grid || !panelEl) return { mask: '', d: null as number | null, end: 0 };
+      const cs = getComputedStyle(grid);
+      const mask = cs.maskImage || cs.getPropertyValue('-webkit-mask-image');
+      // The computed value drops the `ellipse` keyword (two radii already imply one) and resolves
+      // `transparent` to `rgba(0, 0, 0, 0)`, so match what the browser reports, not what we wrote.
+      // Either unit is accepted for the vertical terms: what is being checked is the coverage, not
+      // the decision about how to express it.
+      const N = '([\\d.]+)(%|px)';
+      const m = new RegExp(
+        `(?:ellipse\\s+)?[\\d.]+%\\s+${N}\\s+at\\s+[\\d.]+%\\s+${N}` +
+        `.*?(?:transparent|rgba\\(0,\\s*0,\\s*0,\\s*0\\))\\s+([\\d.]+)%`
+      ).exec(mask);
+      if (!m) return { mask, d: null as number | null, end: 0 };
+      const g = grid.getBoundingClientRect(), p = panelEl.getBoundingClientRect();
+      const px = (v: string, unit: string) => (unit === 'px' ? Number(v) : (Number(v) / 100) * g.height);
+      const ry = px(m[1], m[2]), cy = px(m[3], m[4]);
+      // The panel is horizontally centred on the ellipse, so the vertical term is the whole distance.
+      return { mask, d: (p.bottom - g.top - cy) / ry, end: Number(m[5]) / 100 };
+    });
+
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 760 }]) {
+      await page.setViewportSize(viewport);
+      await expect(panel).toBeVisible();
+      const reach = await measure();
+      expect(reach.d, `the dot-grid mask is no longer the ellipse this test knows how to check: ${reach.mask}`)
+        .not.toBeNull();
+      expect(reach.d!, `at ${viewport.width}px the dot grid fades out before the bottom of the panel, so the glass frosts nothing`)
+        .toBeLessThan(reach.end);
+    }
+  });
+});

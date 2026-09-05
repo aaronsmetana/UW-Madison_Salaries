@@ -126,6 +126,11 @@
   --hairline: rgba(16, 24, 32, 0.09);
   --hairline-strong: rgba(16, 24, 32, 0.16);
 
+  /* The lit top edge of a translucent panel — the one cue that separates "glass" from "a weak fill".
+     It is a specular highlight rather than a surface, so it stays white in both schemes and only its
+     strength changes: on a white canvas it is nearly the full highlight, on the dark one a trace. */
+  --glass-sheen: rgba(255, 255, 255, 0.75);
+
   /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
      meaning, corrected once, instead of one class per component. */
@@ -194,6 +199,7 @@ body {
 
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
+  --glass-sheen: rgba(255, 255, 255, 0.07);
 
   /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
      inputs, dark-5 hover, dark-4 borders. Remapping these four onto the ramp is what makes the
@@ -623,19 +629,73 @@ button:active,
 .hero-rise > *:nth-child(4) { animation-delay: 135ms; }
 .hero-rise > *:nth-child(n + 5) { animation-delay: 170ms; }
 
-/* A faint dot-grid behind the hero, masked to fade out toward the edges. */
+/* A faint dot-grid behind the hero, masked to fade out toward the edges.
+   It is also the backdrop `.hero-dist` below filters, which is why both of its numbers moved:
+
+   - The dots were `--mantine-color-default-border` at 0.55 opacity, i.e. 5% ink on a near-white
+     canvas. That is under the threshold of a texture you can see, and blurring something invisible
+     produces nothing — the failure mode that ruled glass out everywhere else in this app.
+   - The vertical half of the ellipse is now in pixels, not percent. `inset: 0` makes this element as
+     tall as the whole page, and the page ranges from ~1190px wide-open to ~1980px at 375px, so a
+     percentage radius meant the grid covered a different amount of hero at every width — it faded
+     out at 27% while the panel ran to 38%, i.e. it died two-thirds of the way down the one element
+     that now uses it, and only on wide viewports. Measured from the top of the page box the panel
+     ends between 450px and 520px at every width from 375 to 2560, which is a number a radius can
+     actually be set against. The horizontal half stays proportional, because width is what it
+     tracks.
+
+     The radius carries deliberate slack past that 520px worst case (375px wide, where the caption
+     wraps to two lines). CI renders on Linux with different font metrics, and one extra wrapped line
+     in the hero paragraph is ~24px — enough to push the panel past a radius fitted exactly. */
 .hero-dotgrid {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: radial-gradient(var(--mantine-color-default-border) 1px, transparent 1.5px);
+  background-image: radial-gradient(var(--hairline-strong) 1px, transparent 1.5px);
   background-size: 22px 22px;
   /* Scoped to the top of the page: this element is a sibling of ALL the content with `inset: 0`, so
      the mask is what keeps it behind the hero rather than tiling the entire page height. */
-  -webkit-mask-image: radial-gradient(ellipse 60% 22% at 50% 12%, #000 0%, transparent 70%);
-  mask-image: radial-gradient(ellipse 60% 22% at 50% 12%, #000 0%, transparent 70%);
-  opacity: 0.55;
+  -webkit-mask-image: radial-gradient(ellipse 62% 560px at 50% 170px, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse 62% 560px at 50% 170px, #000 0%, transparent 72%);
+}
+
+/* The distribution panel — the only place in this app where `backdrop-filter` earns its place.
+   Glass was prototyped on the shell chrome and on the command palette and rejected in both: the
+   first had nothing behind it but more near-white, and the second frosted a dense table into
+   interference behind menu text. The rule those two failures gave is that glass needs a backdrop
+   with structure that is worth softening and that nobody needs to read. The dot grid above is
+   exactly that, and this is the only element sitting on it.
+
+   The panel also does a plain compositional job: the chart used to float on the page with no edges
+   while the search box directly beneath it sat in a bordered field, so the two read as unrelated
+   objects at the same width. */
+.hero-dist {
+  position: relative;
+  margin-top: var(--mantine-spacing-lg);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-sm);
+  border: 1px solid var(--hairline);
+  border-radius: var(--mantine-radius-lg);
+  background: color-mix(in srgb, var(--mantine-color-body) 55%, transparent);
+  backdrop-filter: blur(12px) saturate(1.35);
+  -webkit-backdrop-filter: blur(12px) saturate(1.35);
+  box-shadow: inset 0 1px 0 var(--glass-sheen), var(--mantine-shadow-sm);
+}
+
+/* Both fallbacks land on the same place: the panel goes solid. A translucent surface with nothing
+   filtering it is not a softer version of glass, it is a washed-out card — worse than the opaque one
+   on every count, and the dots behind it stay sharp enough to read through the text. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hero-dist {
+    background: var(--surface);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hero-dist {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* Showcase band below the hero: the arrow slides on hover, matching the stats card's own affordance

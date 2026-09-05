@@ -65,11 +65,13 @@ describe('computeHomeStats shape + derivation', () => {
     expect(stats.salary_lo).toBe(40000);
     expect(stats.salary_hi).toBe(120000);
   });
-  it('bins actual (FTE-scaled) pay into $10k buckets, ascending, each carrying a count', () => {
+  it('bins actual (FTE-scaled) pay into $1k buckets, ascending, each carrying a count', () => {
     // The bins describe the same quantity as the headline median — actual pay — so p3 lands at
     // 50000*0.5 = 25000, not at its 50000 rate. p6 (fte 0, hourly) lands at its full 40000.
+    // At the $10k buckets this used to emit, p3 was rounded down into the 20000 bin; $1k buckets
+    // put it where it actually is, which is the point of the narrower width.
     expect(stats.bins).toEqual([
-      { bucket: 20000, n: 1 },
+      { bucket: 25000, n: 1 },
       { bucket: 40000, n: 1 },
       { bucket: 60000, n: 1 },
       { bucket: 100000, n: 1 },

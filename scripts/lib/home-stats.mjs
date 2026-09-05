@@ -6,6 +6,16 @@ import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
  *  describe where almost everyone actually sits. */
 const BIN_CAP = 250000;
 
+/** Width of one histogram bucket, in dollars.
+ *
+ *  It was $10k, which is 25 points across a ~880px chart — a vertex every 35px, so the "curve" was a
+ *  visibly faceted polyline that flattened the two features actually in the distribution (the
+ *  University Staff shoulder near $57k and the step near $130k where the faculty tail begins) into
+ *  straight runs. $1k resolves both. It is not drawn raw: at this width the round-number comb that
+ *  payroll data carries dominates, so `smoothBins` in src/lib/distribution.ts estimates a density
+ *  from these counts before anything is plotted. The counts shipped here stay raw. */
+const BIN_W = 1000;
+
 /** The measure the landing page describes, matching `earningsExpr('fte')` in src/lib/queries.ts and
  *  the manifest's own `salary_median` (build-data.mjs) — i.e. "Actual pay", the app's default metric.
  *  It has to be the same expression the headline median is computed from: the bins used the raw
@@ -39,7 +49,7 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       // data so the landing page can label the last bin as "and N above" instead of quietly dropping
       // the top tail while its axis still claims to show the distribution.
       const bins = await run(
-        `SELECT floor(${PAY} / 10000) * 10000 AS bucket, count(*) AS n FROM ${src}
+        `SELECT floor(${PAY} / ${BIN_W}) * ${BIN_W} AS bucket, count(*) AS n FROM ${src}
          WHERE snapshot_id = '${snap}' AND ${PAY} > 0 AND ${PAY} < ${BIN_CAP} GROUP BY bucket ORDER BY bucket`
       );
       const [overflowRow] = await run(
