@@ -115,6 +115,11 @@
      apply. The token exists because dark mode genuinely needs the extra step (see below). */
   --surface-raised: #ffffff;
 
+  /* The step *below* the card, for a well sunk into one — the numbered pipeline dots on /data are the
+     only consumer today. It was referenced there and never defined, so those dots rendered with no
+     background at all in both schemes. Light sinks toward the canvas; dark sinks toward the base. */
+  --surface-sunken: #f1f3f5;
+
   /* Hairlines. Alpha rather than a flat grey so a border reads consistently over any surface in the
      ramp instead of going muddy on the tinted ones. Neutral ink, not the old blue-black, for the same
      reason the canvas lost its tint. */
@@ -185,6 +190,7 @@ body {
   --chrome: color-mix(in srgb, var(--lift) 3.5%, var(--base));
   --surface: color-mix(in srgb, var(--lift) 6%, var(--base));
   --surface-raised: color-mix(in srgb, var(--lift) 10%, var(--base));
+  --surface-sunken: color-mix(in srgb, var(--lift) 1.5%, var(--base));
 
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
