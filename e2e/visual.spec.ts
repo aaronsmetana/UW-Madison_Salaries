@@ -88,6 +88,10 @@ async function settle(page: Page) {
     await page.setViewportSize(vp);
   }
   await expect(page.locator('.global-loading-bar')).toHaveCount(0, { timeout: 60_000 });
+  // The loading bar only tracks React Query. `/data` sizes its download buttons from a bare HEAD
+  // request outside that (`useAssetSize` in DataHealth.tsx), so "Manifest (JSON)" gains "· 15 KB"
+  // whenever the probe happens to land before the shutter — which is a coin flip, and was flipping.
+  await page.waitForLoadState('networkidle');
   // Re-run the app's own "centre the subject row" scroll, now that layout is final.
   //
   // Person's peer table centres the highlighted row on mount (Person.tsx) by measuring `rowRect.top`.
@@ -147,6 +151,47 @@ async function settle(page: Page) {
 const CHARTS = (page: Page) => [page.locator('.recharts-wrapper'), page.locator('.hist-plot')];
 
 /**
+ * Pin the build clock.
+ *
+ * The ETL stamps `generated_at` on every build and the footer prints it on all ten routes, so
+ * rebuilding the data re-baselines the ENTIRE suite for one digit — measured: a routine
+ * `npm run data` failed 13 of 14 shots and the only content difference in the diffs was
+ * "Sep 3" -> "Sep 5".
+ *
+ * Pinned at the network boundary rather than masked in the page. A mask would need a hook in the
+ * app's markup, which is a production change made for a test's benefit, and it would only apply once
+ * the element existed — a race, on an element that renders when `summary.json` resolves. Rewriting
+ * the response has neither problem and leaves the app untouched. The suite already owns the mouse
+ * (see the note above); this is the clock.
+ */
+const PINNED_BUILD = '2026-09-04T12:00:00.000Z'; // renders as "Sep 4, 2026" — the date the committed baselines were captured with
+
+test.beforeEach(async ({ page }) => {
+  // Both artifacts carry the stamp, and /data prints the manifest's twice as raw ISO slices
+  // (`DataHealth.tsx`) rather than through `fmtDate` — so pinning only `summary.json` leaves that
+  // page moving. Measured: 5,000 differing pixels on /data, all in its snapshots table.
+  for (const artifact of ['summary.json', 'manifest.json']) {
+    await page.route(`**/data/${artifact}`, async (route, request) => {
+      // GET only. `/data` sizes its download buttons from a HEAD probe's `content-length`
+      // (`DataHealth.tsx`), and fulfilling a HEAD here invents a length the real server does not
+      // send — which silently added "· 15 KB" to the Manifest button and moved that baseline.
+      if (request.method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      // Not every hit carries a parseable body — a revalidated request comes back 304 with none — so
+      // replay the response untouched rather than throwing inside the handler, which kills the page.
+      const body = await response.text();
+      let pinned: unknown;
+      try {
+        pinned = { ...JSON.parse(body), generated_at: PINNED_BUILD };
+      } catch {
+        return route.fulfill({ response });
+      }
+      await route.fulfill({ response, json: pinned });
+    });
+  }
+});
+
+/**
  * One shot earns a wider budget, and only after the diff was decoded pixel by pixel rather than
  * guessed at: on the title page at 375px, the sortable header row of "People with this title" —
  * `SALARY`, `NAME` and their sort glyphs — re-rasterises at a sub-pixel horizontal offset between
@@ -165,19 +210,21 @@ async function shots(
   name: string,
   opts: { fullPage?: boolean; mask?: ReturnType<typeof CHARTS>; maxDiffPixels?: number } = {}
 ) {
+  const shot = { ...SHOT, ...opts };
+
   await page.setViewportSize(DESKTOP);
   await setTheme(page, 'light');
   await settle(page);
-  await expect.soft(page).toHaveScreenshot(`${name}-light-desktop.png`, { ...SHOT, ...opts });
+  await expect.soft(page).toHaveScreenshot(`${name}-light-desktop.png`, shot);
 
   await setTheme(page, 'dark');
   await settle(page);
-  await expect.soft(page).toHaveScreenshot(`${name}-dark-desktop.png`, { ...SHOT, ...opts });
+  await expect.soft(page).toHaveScreenshot(`${name}-dark-desktop.png`, shot);
 
   await setTheme(page, 'light');
   await page.setViewportSize(MOBILE);
   await settle(page);
-  await expect.soft(page).toHaveScreenshot(`${name}-light-mobile.png`, { ...SHOT, ...opts });
+  await expect.soft(page).toHaveScreenshot(`${name}-light-mobile.png`, shot);
 }
 
 /** A route that renders straight from its URL. */
