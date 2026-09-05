@@ -66,6 +66,23 @@ export function densify(bins: Bin[]): Bin[] {
 }
 
 /**
+ * Headcount within `radius` dollars of `center`, read off the RAW counts.
+ *
+ * The curve the chart draws is a smoothed density, so its y-value is not a number of people and must
+ * never be presented as one. A hover readout that says "1,240 people" has to add up buckets that
+ * actually hold 1,240 people, which is what this does — the smoothing decides where the mound is,
+ * the raw bins say how many are standing on it.
+ *
+ * Inclusive at both edges, and it does not care whether `bins` is dense: it filters by dollar
+ * distance rather than walking neighbours by index.
+ */
+export function countWithin(bins: Bin[], center: number, radius: number): number {
+  let total = 0;
+  for (const b of bins) if (Math.abs(b.bucket - center) <= radius) total += b.n;
+  return total;
+}
+
+/**
  * Gaussian-smooth a histogram into the curve the chart draws.
  *
  * A weighted moving average over the buckets — Gaussian weights truncated at 3σ, renormalised by the

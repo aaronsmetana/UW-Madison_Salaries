@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
 import {
@@ -7,7 +7,7 @@ import {
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
-import { smoothBins, type Bin } from '../lib/distribution';
+import { countWithin, smoothBins, KERNEL_SIGMA, type Bin } from '../lib/distribution';
 import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
@@ -86,6 +86,11 @@ function Distribution({
   const labelRowRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [labelRows, setLabelRows] = useState<number[]>([0, 0, 0]);
+  // Index into `curve` under the pointer, or null. A mouse-only enhancement, deliberately: the plot
+  // is `aria-hidden` decoration inside a link to /explore, and putting a second focusable control
+  // inside a link to carry a readout would be worse than not having one. Everything the readout says
+  // is already stated without it — the quartile markers below the curve, and the caption's headcount.
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   // p25 and median sit close together on a right-skewed curve, so their labels overlap and render as
   // one unreadable run — the same failure PeerRangeBar hit. Reuse its pure row-assignment helper
@@ -136,10 +141,27 @@ function Distribution({
     ...(inRange(p75) ? [{ v: p75, label: 'p75', strong: false }] : []),
   ];
 
+  // The curve is a density, so its height is not a headcount and must never be shown as one. The
+  // readout names the bucket under the pointer and counts the RAW bins around it, which is what makes
+  // a mound legible: "this hump is 1,240 people, not a taller line".
+  const hovered = revealed && hoverIdx != null ? curve[hoverIdx] : null;
+  const hoverPct = hovered ? (X(hovered.bucket) / W) * 100 : 0;
+  const onHover = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    if (box.width <= 0) return;
+    const at = lo + Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * span;
+    let best = 0;
+    for (let i = 1; i < curve.length; i++) {
+      if (Math.abs(curve[i].bucket - at) < Math.abs(curve[best].bucket - at)) best = i;
+    }
+    setHoverIdx(best);
+  };
+
   return (
     // `card-hover` because the whole panel is a link to /explore, and lifting the border on hover is
     // the one "this responds" gesture the app uses (see the rule's own note on why it isn't a lift).
     <div className="hero-dist card-hover">
+      <div style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={() => setHoverIdx(null)}>
       <div
         style={{
           transform: revealed ? 'scaleY(1)' : 'scaleY(0.04)',
@@ -167,7 +189,51 @@ function Distribution({
               vectorEffect="non-scaling-stroke"
             />
           ))}
+          {hovered && (
+            <line
+              x1={X(hovered.bucket)} x2={X(hovered.bucket)} y1={0} y2={H}
+              stroke="var(--mantine-color-accent-7)" strokeWidth={1} strokeOpacity={0.55}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
         </svg>
+      </div>
+
+      {/* The dot and the pill are HTML, not SVG, for the same reason the marker labels are:
+          `preserveAspectRatio="none"` stretches the viewBox horizontally, which would turn a circle
+          into an ellipse and the text into a smear. */}
+      {hovered && (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute', left: `${hoverPct}%`, top: Y(hovered.n),
+            transform: 'translate(-50%, -50%)', width: 10, height: 10, borderRadius: '50%',
+            background: 'var(--mantine-color-accent-7)',
+            border: '2px solid var(--mantine-color-body)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      {hovered && (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute', left: `${hoverPct}%`, zIndex: 2, pointerEvents: 'none',
+            // Tracks the dot rather than pinning to the top of the plot: pinned, it sat exactly on
+            // the apex and hid the mound the reader is pointing at. It rides just above the curve,
+            // and flips underneath where the curve is too tall to leave room — which is precisely
+            // where the peaks are.
+            top: Y(hovered.n) < 26 ? Y(hovered.n) + 10 : Y(hovered.n) - 20,
+            // Centred on the crosshair, except near the ends, where centring would push the pill
+            // past the panel's edge — so it anchors to the side it has room on instead.
+            transform: hoverPct < 15 ? 'translateX(0)' : hoverPct > 85 ? 'translateX(-100%)' : 'translateX(-50%)',
+          }}
+        >
+          <span className="chart-value-pill">
+            {fmtK(hovered.bucket)} · {num(countWithin(bins, hovered.bucket, KERNEL_SIGMA))} people ±{fmtK(KERNEL_SIGMA)}
+          </span>
+        </div>
+      )}
       </div>
 
       {/* Marker labels live in HTML, not SVG: `preserveAspectRatio="none"` would stretch SVG text

@@ -254,6 +254,48 @@ test.describe('the landing distribution', () => {
     expect(roughness, 'the curve is drawing raw counts, not a density').toBeLessThan(0.05);
   });
 
+  test('names the mound under the pointer', async ({ page }) => {
+    await page.goto('./');
+    const panel = page.locator('.hero-dist');
+    await expect(panel).toBeVisible({ timeout: 60_000 });
+    const box = (await panel.boundingBox())!;
+    const pill = page.locator('.chart-value-pill').first();
+
+    const readAt = async (frac: number) => {
+      await page.mouse.move(box.x + box.width * frac, box.y + 60);
+      await expect(pill).toBeVisible();
+      const text = (await pill.textContent()) ?? '';
+      // "$75k · 2,848 people ±$5k" — a bucket, a headcount, and the bandwidth it was counted over.
+      expect(text, 'the readout stopped naming a salary and a headcount').toMatch(
+        /^\$[\d,]+k · [\d,]+ people ±\$\d+k$/
+      );
+      return Number(text.replace(/^.*· ([\d,]+) people.*$/, '$1').replace(/,/g, ''));
+    };
+
+    // The readout has to follow the data: the peak of a right-skewed pay distribution holds many
+    // times more people than its tail.
+    const atPeak = await readAt(0.31);
+    const atTail = await readAt(0.93);
+    expect(atPeak, 'the peak reported no one').toBeGreaterThan(0);
+    expect(atPeak, 'the peak of the distribution is not busier than its tail').toBeGreaterThan(atTail * 5);
+
+    // And it has to be a HEADCOUNT, not the curve's y-value. The curve is a smoothed density —
+    // people per $1k bucket — and reporting it as "N people" would be a plain lie about the data.
+    // Scale is what separates them: summing ±$5k around the mode gathers ~13% of everyone, where a
+    // single bucket's density is ~1%. The ratio test above does NOT catch this (verified: it passes
+    // with the density substituted), which is why the population is read out of the caption and
+    // compared against.
+    const caption = (await panel.getByText(/across [\d,]+ employees/).textContent()) ?? '';
+    const population = Number(caption.replace(/^.*across ([\d,]+) employees.*$/s, '$1').replace(/,/g, ''));
+    expect(population, 'could not read the population off the caption').toBeGreaterThan(1000);
+    expect(atPeak, 'the readout is reporting the density, not a count of people')
+      .toBeGreaterThan(population * 0.05);
+
+    // Leaving the plot clears it, rather than stranding a readout over a curve nobody is pointing at.
+    await page.mouse.move(box.x + box.width / 2, box.y - 90);
+    await expect(pill).toBeHidden();
+  });
+
   test('is glass over a backdrop that actually reaches it', async ({ page }) => {
     await page.goto('./');
     const panel = page.locator('.hero-dist');

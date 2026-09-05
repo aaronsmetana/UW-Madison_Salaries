@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binStep, densify, smoothBins, KERNEL_SIGMA, type Bin } from './distribution';
+import { binStep, countWithin, densify, smoothBins, KERNEL_SIGMA, type Bin } from './distribution';
 
 const bins = (step: number, counts: number[], from = 0): Bin[] =>
   counts.map((n, i) => ({ bucket: from + i * step, n }));
@@ -122,5 +122,36 @@ describe('smoothBins', () => {
     const slope = out.slice(1).map((b, i) => b.n - out[i].n);
     const shoulder = slope.slice(45, 70).some((d, i, a) => i > 0 && d < a[i - 1] && d > 0);
     expect(shoulder).toBe(true);
+  });
+});
+
+describe('countWithin', () => {
+  const src = bins(1000, [10, 20, 30, 40, 50]); // buckets 0..4000
+
+  it('adds up every bucket inside the radius, inclusive of both edges', () => {
+    // centre 2000, radius 1000 -> buckets 1000, 2000, 3000
+    expect(countWithin(src, 2000, 1000)).toBe(20 + 30 + 40);
+  });
+
+  it('counts a single bucket at radius 0', () => {
+    expect(countWithin(src, 3000, 0)).toBe(40);
+  });
+
+  it('clips at the ends rather than wrapping or extrapolating', () => {
+    expect(countWithin(src, 0, 1000)).toBe(10 + 20);
+    expect(countWithin(src, 4000, 1000)).toBe(40 + 50);
+  });
+
+  it('reads raw counts, not the smoothed density', () => {
+    // The whole point: the curve says where the mound is, the raw bins say how many are on it.
+    // A comb tooth must survive into the count even though smoothing flattens it in the drawing.
+    const comb = bins(1000, [5, 5, 400, 5, 5]);
+    expect(countWithin(comb, 2000, 1000)).toBe(410);
+    expect(countWithin(smoothBins(comb), 2000, 1000)).toBeLessThan(410);
+  });
+
+  it('is zero when nothing is in range', () => {
+    expect(countWithin(src, 99_000, 1000)).toBe(0);
+    expect(countWithin([], 2000, 1000)).toBe(0);
   });
 });
