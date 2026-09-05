@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight, IconDownload } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
-import { EmptyState } from '../components/EmptyState';
+import { EmptyState, focusControl } from '../components/EmptyState';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
 import { Eyebrow } from '../components/Eyebrow';
@@ -32,6 +32,8 @@ const PAGE_SIZE = 100;
 const DEFAULT_MIN_N = 4;
 
 export default function Screening() {
+  /** The scope card, so the empty state can put the cursor in it. */
+  const scopeRef = useRef<HTMLDivElement | null>(null);
   const nav = useNavigate();
   const { add } = useTray();
   const snap = useActiveSnapshotId();
@@ -228,7 +230,7 @@ export default function Screening() {
         description="Check a whole school or department at once against the UW Salary Administration Guidelines. Everyone is ranked by how strong their case looks across three tests: parity, compression, and the market floor."
       />
 
-      <Card withBorder padding="lg">
+      <Card withBorder padding="lg" ref={scopeRef}>
         <Eyebrow mb={8}>Scope</Eyebrow>
         <Group align="flex-end" gap="md" wrap="wrap">
           <Select
@@ -290,7 +292,8 @@ export default function Screening() {
         <EmptyState
           icon={<IconListSearch size={ICON.feature} />}
           title="No screen run yet"
-          hint="Pick a school or department above, then click Screen to rank everyone in it by case strength."
+          hint="Choose a school or department, then run the screen to rank everyone in it by case strength."
+          action={<Button variant="light" onClick={() => focusControl(scopeRef)}>Choose a scope</Button>}
         />
       ) : loading ? (
         <LoadingState label="Screening…" />

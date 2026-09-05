@@ -31,6 +31,7 @@ import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { encodeSel, decodeSel } from '../lib/share';
 import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { focusControl } from '../components/EmptyState';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
@@ -67,6 +68,8 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
 }
 
 export default function Compare() {
+  /** The three add blocks, so the empty state below can put the cursor in the first one. */
+  const addBlocksRef = useRef<HTMLDivElement | null>(null);
   const reduceMotion = prefersReducedMotion();
   useDocTitle('Compare');
   const nav = useNavigate();
@@ -322,14 +325,18 @@ export default function Compare() {
 
       <ControlBar inline />
 
-      {/* ── Build your comparison: three labeled add blocks ── */}
-      <Card withBorder padding="lg">
+      {/* ── Build your comparison: three labeled add blocks ──
+           The blocks carry no border or shadow of their own. They sit inside a bordered card, and a
+           hairline inside a hairline muddies both — the app's rule is that the border *is* the
+           separation. Reports does the same job (Eyebrow + input in a Card) with no inner Paper at
+           all; this now reads the same way. */}
+      <Card withBorder padding="lg" ref={addBlocksRef}>
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
-          <Paper p="sm" withBorder shadow="sm">
+          <Paper p="sm">
             <Group gap={6} mb={8}><IconUser size={ICON.compact} /><Eyebrow>Add person</Eyebrow></Group>
             <SearchBox placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Paper>
-          <Paper p="sm" withBorder shadow="sm">
+          <Paper p="sm">
             <Group gap={6} mb={8}><IconBriefcase size={ICON.compact} /><Eyebrow>Add title</Eyebrow></Group>
             <Select
               {...dropdownProps('md')}
@@ -345,7 +352,7 @@ export default function Compare() {
               nothingFoundMessage="No matching title"
             />
           </Paper>
-          <Paper p="sm" withBorder shadow="sm">
+          <Paper p="sm">
             <Group gap={6} mb={8}><IconBuildingBank size={ICON.compact} /><Eyebrow>Add school / division</Eyebrow></Group>
             <Select
               {...dropdownProps('md')}
@@ -375,16 +382,17 @@ export default function Compare() {
       </Card>
 
       {items.length === 0 && (
-        <Card withBorder padding="xl">
-          <Stack align="center" gap="sm" py={48}>
-            <ThemeIcon size={64} radius="xl" variant="light" color="accent">
-              <IconArrowsDiff size={32} />
+        <Card withBorder padding="lg">
+          <Stack align="center" gap="sm" py={16}>
+            <ThemeIcon size={48} radius="xl" variant="light" color="accent">
+              <IconArrowsDiff size={26} />
             </ThemeIcon>
             {/* h2: the page's main content under PageHeader's h1 (see EmptyState's note). */}
             <Title order={2} fz="h3" ta="center">Build a side-by-side comparison</Title>
             <Text c="dimmed" ta="center" maw="var(--measure-narrow)">
-              Add people, titles, or schools using the search boxes above — or the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
+              Add people, titles, or schools — or use the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
             </Text>
+            <Button variant="light" onClick={() => focusControl(addBlocksRef)}>Add someone to compare</Button>
           </Stack>
         </Card>
       )}

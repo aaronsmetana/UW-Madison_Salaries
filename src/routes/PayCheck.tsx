@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Stack, Text, Card, Group, Select, NumberInput, type ComboboxItem } from '@mantine/core';
+import { Stack, Text, Card, Group, Select, NumberInput, type ComboboxItem, Button } from '@mantine/core';
 import { IconChevronDown, IconChartHistogram } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { useControls } from '../state/controls';
@@ -10,7 +10,7 @@ import { num } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
-import { EmptyState } from '../components/EmptyState';
+import { EmptyState, focusControl } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { useDocTitle } from '../lib/useDocTitle';
 
@@ -31,6 +31,8 @@ function DropdownCountRow({ option, counts }: { option: ComboboxItem; counts: Ma
 }
 
 export default function PayCheck() {
+  /** The title picker, so the empty state can put the cursor in it. */
+  const pickerRef = useRef<HTMLDivElement | null>(null);
   useDocTitle('Titles');
   const [params, setParams] = useSearchParams();
   const code = params.get('code') || null;
@@ -128,7 +130,7 @@ export default function PayCheck() {
         description="Pick a job title to see what it pays across UW–Madison: the full range, who holds it, and how it varies by school. You can pin your own salary to see where it lands — it stays in your browser and is never sent anywhere."
       />
 
-      <Card padding="lg">
+      <Card padding="lg" ref={pickerRef}>
         <Group align="flex-end" wrap="wrap" gap="xl">
           <Select
             {...dropdownProps('md')}
@@ -182,7 +184,8 @@ export default function PayCheck() {
         <EmptyState
           icon={<IconChartHistogram size={ICON.feature} />}
           title="No title selected"
-          hint="Pick a title above to see its salary distribution, pay by school, and everyone who holds it."
+          hint="Choose a title to see its salary distribution, pay by school, and everyone who holds it."
+          action={<Button variant="light" onClick={() => focusControl(pickerRef)}>Choose a title</Button>}
         />
       ) : (
         <TitleStats jobCode={code} snap={snap} metric={metric} school={school} pinSalary={pinSalary} />
