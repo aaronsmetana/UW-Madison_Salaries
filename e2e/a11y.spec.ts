@@ -105,3 +105,52 @@ for (const theme of THEMES) {
     expect(bad).toEqual([]);
   });
 }
+
+/**
+ * A keyboard or screen-reader user crossed 12 focus stops of masthead and sidebar before reaching
+ * the content on every route — and the shell does not remount, so it was 12 stops on every
+ * navigation, not just the first. `<main>` already existed; only the link was missing.
+ */
+test.describe('skip to content', () => {
+  for (const route of ROUTES) {
+    test(`is the first focusable element and moves focus to main: ${route}`, async ({ page }) => {
+      await page.goto(route, { waitUntil: 'networkidle' });
+
+      // DOM order, not a Tab press: Home deliberately autofocuses its search box, so focus already
+      // sits in the content there and a first Tab correctly moves on from it. Being first in the
+      // document is the property that actually matters, and it holds on every route. The Tab press
+      // itself is asserted below on a route that does not autofocus.
+      const first = await page.evaluate(() => {
+        const sel = 'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+        const all = [...document.querySelectorAll(sel)];
+        return all[0]?.className ?? '(nothing focusable)';
+      });
+      expect(first, 'something comes before the skip link in the tab order').toContain('skip-link');
+
+      const link = page.locator('.skip-link');
+      await link.focus();
+
+      // It has to be legible once focused, not merely present: it lives off-screen until then, and a
+      // link the reader cannot see is a link they cannot use. Polled, not read once — the link
+      // slides in over `--dur-instant`, and a single read catches it mid-transition (measured at
+      // -0.97px, which is a passing design and a failing assertion).
+      const view = page.viewportSize()!;
+      await expect
+        .poll(async () => (await link.boundingBox())!.y, { timeout: 5_000 })
+        .toBeGreaterThanOrEqual(0);
+      const box = (await link.boundingBox())!;
+      expect(box.y + box.height, 'the skip link is focused but not on screen').toBeLessThan(view.height);
+
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#main-content')).toBeFocused();
+    });
+  }
+
+  // The DOM-order check above is a source-of-truth assertion; this one proves the browser agrees,
+  // on a route with nothing autofocused to move the starting point.
+  test('is what the first Tab reaches', async ({ page }) => {
+    await page.goto('./explore', { waitUntil: 'networkidle' });
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.skip-link'), 'the first Tab lands somewhere else').toBeFocused();
+  });
+});

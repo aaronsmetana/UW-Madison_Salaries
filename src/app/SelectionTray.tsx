@@ -8,6 +8,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useTray, type TrayItem } from '../state/tray';
 import { ICON } from '../lib/ui';
+import { Z } from '../lib/layers';
 
 const TYPE_META: Record<TrayItem['type'], { icon: typeof IconUser; one: string; many: string; href: (id: string) => string }> = {
   person: { icon: IconUser, one: 'person', many: 'people', href: (id) => `/person/${encodeURIComponent(id)}` },
@@ -210,7 +211,7 @@ export function SelectionTray() {
       {/* Fixed, centered wrapper so the Transition's own transform (slide-up) doesn't fight the centering. */}
       <div
         className="no-print"
-        style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 200, width: 'max-content', maxWidth: 'min(960px, calc(100vw - 32px))' }}
+        style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: Z.floating, width: 'max-content', maxWidth: 'min(960px, calc(100vw - 32px))' }}
       >
         <Transition mounted={mounted} transition="slide-up" duration={reduce ? 0 : 200} timingFunction="ease">
           {(styles) => body(styles)}

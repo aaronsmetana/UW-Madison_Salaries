@@ -4,6 +4,7 @@ import { usd } from '../lib/format';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import { MARK_SELF, MARK_SELF_TEXT, MARK_TARGET, MarkerLegend } from './markers';
+import { Z } from '../lib/layers';
 
 /** How many individual peer ticks to draw at most — beyond this, evenly sample so a huge cohort
  *  (e.g. "Professor") doesn't render thousands of overlapping hairlines. */
@@ -272,7 +273,7 @@ export function PeerRangeBar({
               bottom: 'calc(100% + 6px)',
               transform: 'translateX(-50%)',
               pointerEvents: 'none',
-              zIndex: 2,
+              zIndex: Z.local,
             }}
           >
             <span className="chart-value-pill">

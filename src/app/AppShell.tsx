@@ -93,6 +93,11 @@ export function AppShellLayout() {
 
   return (
     <>
+      {/* First tab stop on every route. Without it a keyboard or screen-reader user crossed 12 focus
+          stops of masthead and sidebar before reaching the page they navigated to — on every
+          navigation, since the shell does not remount. Visually hidden until focused (see
+          `.skip-link` in app.css). */}
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <GlobalLoadingBar />
       <AppShell
         // The control bar's height is not fixed: its scope/snapshot/metric groups wrap as the viewport
@@ -191,7 +196,14 @@ export function AppShellLayout() {
           </Tooltip>
         </AppShell.Navbar>
 
-        <AppShell.Main style={{ paddingBottom: 'calc(var(--app-shell-footer-offset, 0rem) + 96px)' }}>
+        <AppShell.Main
+          id="main-content"
+          // `<main>` is not focusable on its own, so following the skip link would scroll the page
+          // but leave focus stranded back on the link. -1 makes it a valid focus target without
+          // adding a tab stop of its own.
+          tabIndex={-1}
+          style={{ paddingBottom: 'calc(var(--app-shell-footer-offset, 0rem) + 96px)' }}
+        >
           <OfflineBanner />
           <DataErrorBanner />
           <div key={loc.pathname} className="route-rise">

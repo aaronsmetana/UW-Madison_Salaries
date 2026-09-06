@@ -3,8 +3,6 @@
   display: none;
 }
 
-/* Print only the .print-area (the report); hide the app shell and controls so the PDF reads as a
-   formal, centered, standalone white-paper. */
 @media print {
   @page {
     margin: 0.6in;
@@ -12,14 +10,43 @@
   body {
     background: #fff !important;
   }
-  body * {
+
+  /* ---------------------------------------------------------------------------------------------
+     App chrome never prints, on any route. Left nav, top header, footer, the floating tray and
+     back-to-top button, and anything a page has explicitly opted out with `.no-print`.
+     --------------------------------------------------------------------------------------------- */
+  .mantine-AppShell-navbar,
+  .mantine-AppShell-header,
+  .mantine-AppShell-footer,
+  .back-to-top,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Mantine reserves the navbar's width as inline padding on <main> and the footer's height as
+     bottom padding. With that chrome gone those are just a wide empty gutter down the page. */
+  .mantine-AppShell-main {
+    padding: 0 !important;
+  }
+
+  /* ---------------------------------------------------------------------------------------------
+     A page may declare ONE formal print region. When it does — the report, and only the report —
+     the page prints as a standalone centered white-paper and nothing else comes with it.
+
+     This used to be unconditional, which meant `body *` was hidden on all ten routes while
+     `.print-area` existed on two. Printing any other page produced a blank sheet: /person most
+     visibly, despite PersonDashboard documenting itself as the print-friendly single-page report
+     and printing correctly via /reports?type=person. Everything below is now scoped to pages that
+     actually have a region, so the other eight print their content instead of nothing.
+     --------------------------------------------------------------------------------------------- */
+  body:has(.print-area) * {
     visibility: hidden !important;
   }
-  .print-area,
-  .print-area * {
+  body:has(.print-area) .print-area,
+  body:has(.print-area) .print-area * {
     visibility: visible !important;
   }
-  .print-area {
+  body:has(.print-area) .print-area {
     position: absolute;
     left: 0;
     right: 0;
@@ -29,9 +56,7 @@
     max-width: 7.5in;
     padding: 0;
   }
-  .no-print {
-    display: none !important;
-  }
+
   /* The interactive setup pane (the "Kitchen") never prints; the brief always does, full width. */
   .setup-panel {
     display: none !important;
@@ -40,34 +65,34 @@
     display: block !important;
     width: 100% !important;
   }
-  /* Explicitly collapse the app chrome (left nav + top header) so it never reserves layout space
-     or bleeds into the printed output. */
-  .mantine-AppShell-navbar,
-  .mantine-AppShell-header {
-    display: none !important;
-  }
+
   a[href] {
     text-decoration: none;
     color: inherit;
   }
 
-  /* Keep evidence cards, tables, and charts from splitting across a page boundary, and never orphan a
-     section heading at the bottom of a page. */
-  .report-brief .mantine-Card-root,
-  .report-brief .mantine-Paper-root,
-  .report-brief table,
-  .report-brief .recharts-wrapper {
+  /* ---------------------------------------------------------------------------------------------
+     Pagination and colour, applied to whatever is printing. These were scoped to `.report-brief`
+     back when it was the only thing that could print; every page needs them now.
+     --------------------------------------------------------------------------------------------- */
+
+  /* Keep evidence cards, tables, and charts from splitting across a page boundary, and never orphan
+     a section heading at the bottom of a page. */
+  .mantine-AppShell-main .mantine-Card-root,
+  .mantine-AppShell-main .mantine-Paper-root,
+  .mantine-AppShell-main table,
+  .mantine-AppShell-main .recharts-wrapper {
     break-inside: avoid;
   }
-  .report-brief h1,
-  .report-brief h2,
-  .report-brief h3 {
+  .mantine-AppShell-main h1,
+  .mantine-AppShell-main h2,
+  .mantine-AppShell-main h3 {
     break-after: avoid;
   }
 
   /* Preserve the accent tints, salary bars, and badges — browsers strip element backgrounds in print
      by default, which would blank the peer-table bars and the recommendation hero. */
-  .report-brief {
+  .mantine-AppShell-main {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
@@ -79,7 +104,7 @@
   }
 
   /* ResponsiveContainer can collapse to 0 width in a print context — pin it to full width. */
-  .report-brief .recharts-responsive-container {
+  .mantine-AppShell-main .recharts-responsive-container {
     width: 100% !important;
   }
 

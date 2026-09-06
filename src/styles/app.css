@@ -92,6 +92,16 @@
      subject accent — one rule, every chart. */
   /* Motion ramp — mirrors MOTION in src/lib/motion.ts, which CSS cannot import.
      src/lib/motion.test.ts parses this block and fails if the two ever drift. */
+  /* Stacking scale — mirrored from src/lib/layers.ts; layers.test.ts fails if these drift.
+     Named by what the surface floats over, not by how high it needs to be. */
+  --z-behind: 0;
+  --z-content: 1;
+  --z-local: 2;
+  --z-sticky: 6;
+  --z-floating: 180;
+  --z-modal: 200;
+  --z-loading-bar: 1100;
+
   --dur-instant: 120ms;
   --dur-quick: 240ms;
   --dur-reveal: 600ms;
@@ -403,6 +413,37 @@ path.recharts-tooltip-cursor {
 }
 
 /* Obvious, consistent keyboard focus on every interactive element. */
+/* Skip-to-content link: the first tab stop in the DOM, off-screen until it takes focus, then
+   pinned over the masthead. It moves with `top` rather than being toggled with `display` or
+   `visibility`, because an element in neither of those states cannot receive focus at all — which
+   would defeat the entire point of the link. It sits at the loading-bar layer so the fixed header
+   cannot paint over it. */
+.skip-link {
+  position: fixed;
+  top: -64px;
+  left: 12px;
+  z-index: var(--z-loading-bar);
+  padding: 10px 16px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-accent-7);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--dur-instant) var(--ease-out);
+}
+/* `:focus`, not `:focus-visible`. The link is off-screen and cannot be clicked, so it is only ever
+   reached by keyboard — and `:focus-visible` is a heuristic that a scripted or restored focus can
+   fail, which would leave the reader tabbing to an invisible control. */
+.skip-link:focus {
+  top: 12px;
+}
+/* The <main> target takes focus programmatically when the link is followed. It should not then draw
+   a focus ring around the whole page for a focus the reader never asked to see. */
+main:focus,
+main:focus-visible {
+  outline: none;
+}
+
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible,
@@ -504,7 +545,7 @@ textarea:focus-visible,
   position: fixed;
   inset: 0 0 auto 0;
   height: 3px;
-  z-index: 1100;
+  z-index: var(--z-loading-bar);
   background: var(--mantine-color-accent-1);
   overflow: hidden;
   pointer-events: none;
@@ -592,7 +633,18 @@ textarea:focus-visible,
 
 /* One fade+rise on the whole page when navigating between routes (a single beat, not a stagger —
    the tab-rise cascade above is for sections within one page). */
-.route-rise { animation: section-rise var(--dur-route) ease-out both; }
+/* `backwards`, not `both`, and the difference is load-bearing.
+   `animation-fill-mode: both` keeps the final keyframe's value forever, and any transform other
+   than `none` — including an identity one — makes the element a containing block for `position:
+   fixed` descendants. `.route-rise` wraps every route, so that one word pinned the back-to-top
+   button to the route content box instead of the viewport: it rendered 1192px below the fold and
+   could never be seen or clicked, for everyone EXCEPT reduced-motion users, whose `animation: none`
+   was accidentally the fix. Writing `transform: none` into the `to` keyframe does NOT help — it
+   interpolates to an identity matrix, and getComputedStyle still reports one.
+   `backwards` keeps the only fill this needs (the `from` state during any delay); once the
+   animation is over the element falls back to its base style, which declares no transform at all.
+   The settled appearance is unchanged: the last keyframe was already the base style. */
+.route-rise { animation: section-rise var(--dur-route) ease-out backwards; }
 
 /* A touch of "press" feedback on buttons/action icons app-wide — cheap, universal, and the kind of
    micro-interaction that reads as considered rather than flashy. */
@@ -650,7 +702,7 @@ button:active,
 .hero-dotgrid {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: var(--z-behind);
   pointer-events: none;
   background-image: radial-gradient(var(--hairline-strong) 1px, transparent 1.5px);
   background-size: 22px 22px;
@@ -859,7 +911,7 @@ button:active,
   position: fixed;
   right: 24px;
   bottom: 24px;
-  z-index: 250;
+  z-index: var(--z-floating);
   opacity: 0;
   transform: translateY(8px);
   pointer-events: none;
@@ -877,7 +929,7 @@ button:active,
 .data-jumpnav {
   position: sticky;
   top: 64px;
-  z-index: 6;
+  z-index: var(--z-sticky);
   padding: 8px 0;
   background-color: var(--surface);
   border-bottom: 1px solid var(--hairline);

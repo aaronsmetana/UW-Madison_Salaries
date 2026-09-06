@@ -133,3 +133,36 @@ test('a shared sortable header can be operated from the keyboard', async ({ page
     expect(await firstCell.innerText()).not.toBe(before);
   }).toPass({ timeout: 5_000 });
 });
+
+/**
+ * The back-to-top button must be on the screen it is pinned to.
+ *
+ * It shipped `position: fixed` inside `.route-rise`, whose `animation-fill-mode: both` retains the
+ * final keyframe's transform forever — and any transform other than `none`, an identity one very
+ * much included, makes an element a containing block for fixed descendants. So the button anchored
+ * to the route content box instead of the viewport and rendered ~1200px below the fold: it set its
+ * `data-show` attribute, reported itself visible to any DOM query, and could never be seen or
+ * clicked. Reduced-motion users were the only ones it worked for, because `animation: none` left no
+ * transform behind.
+ *
+ * The assertion is deliberately geometric rather than `toBeVisible()`, which was true throughout.
+ */
+test('the back-to-top button is inside the viewport, and returns the reader to the top', async ({ page }) => {
+  await page.goto('./data', { waitUntil: 'networkidle' });
+  await page.mouse.wheel(0, 3_000);
+
+  const fab = page.locator('.back-to-top');
+  await expect(fab).toHaveAttribute('data-show', /.*/, { timeout: 15_000 });
+
+  const view = page.viewportSize()!;
+  const box = (await fab.boundingBox())!;
+  expect(box, 'the back-to-top button has no box at all').not.toBeNull();
+  expect(box.y, 'the back-to-top button renders below the fold — it is anchored to the route content box, not the viewport')
+    .toBeLessThan(view.height);
+  expect(box.y + box.height, 'the back-to-top button renders above the viewport').toBeGreaterThan(0);
+
+  await fab.click();
+  await expect
+    .poll(async () => page.evaluate(() => Math.round(window.scrollY)), { timeout: 10_000 })
+    .toBe(0);
+});

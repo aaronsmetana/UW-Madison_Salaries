@@ -11,6 +11,7 @@ import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num, pct } from '../lib/format';
 import { MOTION, chartAnim, prefersReducedMotion, useMounted } from '../lib/motion';
 import { ChartData } from './ChartData';
+import { Z } from '../lib/layers';
 
 /** Below this cohort size, the histogram renders as segmented "brick" bars — a normal bar-chart
  *  silhouette where each bar is visibly built from horizontal bricks, 1 brick = 1 person — so small
@@ -364,7 +365,7 @@ export function SalaryHistogram({
                 bottom: X_AXIS_H + Math.max(colH(hoveredBin.n), brickH) + 24,
                 transform: 'translateX(-50%)',
                 pointerEvents: 'none',
-                zIndex: 2,
+                zIndex: Z.local,
               }}
             >
               <HistTipBody d={hoveredBin} total={total} below={cumBelow(hoveredBin.lo)} />

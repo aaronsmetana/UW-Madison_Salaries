@@ -16,6 +16,7 @@ import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
+import { Z } from '../lib/layers';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
 
@@ -254,7 +255,7 @@ function Distribution({
         <div
           aria-hidden
           style={{
-            position: 'absolute', left: `${hoverPct}%`, zIndex: 2, pointerEvents: 'none',
+            position: 'absolute', left: `${hoverPct}%`, zIndex: Z.local, pointerEvents: 'none',
             // Tracks the dot rather than pinning to the top of the plot: pinned, it sat exactly on
             // the apex and hid the mound the reader is pointing at. It rides just above the curve,
             // and flips underneath where the curve is too tall to leave room — which is precisely
@@ -516,7 +517,7 @@ export default function Home() {
   return (
     <Box style={{ paddingBlock: 'clamp(24px, 6vh, 64px)', position: 'relative' }}>
       <div className="hero-dotgrid" aria-hidden />
-      <Stack gap="xl" w="100%" style={{ position: 'relative', zIndex: 1 }}>
+      <Stack gap="xl" w="100%" style={{ position: 'relative', zIndex: Z.content }}>
         {/* The page leads with the site's name. It briefly led with the median instead — a 68px
             "$75,763" — which put the most interesting fact in the largest type, but left a visitor
             landing cold with no statement of what the site is. The median has not gone anywhere: it

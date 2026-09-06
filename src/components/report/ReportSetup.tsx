@@ -11,6 +11,7 @@ import { CardTitle } from '../CardTitle';
 import { usd, pct, fmtYears } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import { ICON } from '../../lib/ui';
+import { Z } from '../../lib/layers';
 import {
   COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, newCustomFactor, type ReportConfig, type CohortMode, type FactorKey,
   type CaseStrength, type BadgeTone, type StrengthKey, type SupervisoryCase,
@@ -621,7 +622,7 @@ export function ReportSetup({
       {recommended != null && basePay != null && (
         <Box
           style={{
-            position: 'sticky', bottom: 0, zIndex: 2,
+            position: 'sticky', bottom: 0, zIndex: Z.local,
             marginInline: 'calc(-1 * var(--mantine-spacing-md))', marginBottom: 'calc(-1 * var(--mantine-spacing-md))',
             padding: '10px var(--mantine-spacing-md)',
             background: 'var(--mantine-color-body)',

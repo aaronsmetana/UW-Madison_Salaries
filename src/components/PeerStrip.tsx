@@ -10,6 +10,7 @@ import {
 import { binSalaries } from '../lib/histogram';
 import { dotRows, rowHeight, MAX_ROWS } from '../lib/swarm';
 import { ChartData } from './ChartData';
+import { Z } from '../lib/layers';
 
 const RIBBON_H = 76;
 /** Headroom above the population for the subject's own mark, which sits on its own lane. */
@@ -403,7 +404,7 @@ export function PeerStrip({
                 bottom: 'calc(100% + 4px)',
                 transform: 'translateX(-50%)',
                 pointerEvents: 'none',
-                zIndex: 4,
+                zIndex: Z.local,
               }}
             >
               <span className="chart-value-pill">

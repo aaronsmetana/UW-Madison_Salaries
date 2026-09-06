@@ -38,6 +38,17 @@ module.exports = {
               'This Recharts mark will tween on every data change and ignore prefers-reduced-motion. ' +
               'Spread {...chartAnim(reduceMotion)} from src/lib/motion, or pass isAnimationActive explicitly.',
           },
+          {
+            // Eleven raw z-index literals had spread across six files and one stylesheet, 0 -> 1100,
+            // and two of them were wrong in a way nothing could catch: the back-to-top button at 250
+            // and the selection tray at 200 both sat at or above Mantine's modal layer, so page
+            // furniture painted over the command palette. Picking a number by looking at a
+            // neighbouring file is how that happens, so the numbers now live in one scale.
+            selector: "Property[key.name='zIndex'] > Literal",
+            message:
+              'Raw z-index. Use a name from the scale in src/lib/layers (Z.local, Z.sticky, ' +
+              'Z.floating, ...) so the layer is chosen against the others rather than guessed.',
+          },
         ],
       },
     },

@@ -31,6 +31,7 @@ import {
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { ICON } from '../lib/ui';
+import { Z } from '../lib/layers';
 
 interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
@@ -1079,7 +1080,7 @@ export default function Reports() {
         ) : (
           <>
             {/* Sticky ledger so the math is always visible while editing on mobile */}
-            <Paper className="no-print" withBorder p="xs" style={{ position: 'sticky', top: 8, zIndex: 5 }}>
+            <Paper className="no-print" withBorder p="xs" style={{ position: 'sticky', top: 8, zIndex: Z.sticky }}>
               <Group justify="space-between" wrap="nowrap">
                 <Text size="sm" c="dimmed">Current {subjectPay != null ? usd(subjectPay) : '—'}</Text>
                 <Text size="sm" fw={800} c={belowTarget ? 'green.7' : undefined}>

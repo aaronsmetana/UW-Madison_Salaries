@@ -3,6 +3,7 @@ import { Group, Text, Badge } from '@mantine/core';
 import { usd } from '../lib/format';
 import { fmtK } from '../lib/chartStyle';
 import { MARK_SELF, MARK_TARGET, MarkerLegend } from './markers';
+import { Z } from '../lib/layers';
 
 /** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line,
  *  optional gray `benchmarks` ticks (e.g. title median / p75), and optional `quartiles` (¼/½/¾ of the
@@ -121,7 +122,7 @@ export function PayBandBar({
               bottom: H + 8,
               transform: 'translateX(-50%)',
               pointerEvents: 'none',
-              zIndex: 2,
+              zIndex: Z.local,
             }}
           >
             <span className="chart-value-pill">~{usd(hoverValue)} · {Math.round(hoverPct)}% through the band</span>
