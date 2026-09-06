@@ -102,3 +102,53 @@ test.describe('the chart tooltip', () => {
     await transparency('no-preference');
   });
 });
+
+/**
+ * SVG `<defs>` ids are document-global. Two charts sharing a literal id would both define
+ * `#trend-area-grad`, and every `url(#…)` in the document would resolve to whichever mounted first —
+ * so one chart would silently paint with the other's gradient, or with nothing.
+ *
+ * `barGradientDefs` was already called with `useId()` at all four of its sites; `lineGlowDefs` was
+ * passed the literals 'trend' and 'expltrend', safe only by the accident of living on different
+ * routes. This asserts the property rather than the fix: every reference resolves, and no id is
+ * defined twice — which stays true however the ids are generated.
+ */
+test.describe('chart gradient ids', () => {
+  for (const [name, route] of [
+    ['explore trends', './explore?tab=trends'],
+    ['explore changes', './explore?tab=changes'],
+    ['explore retention', './explore?tab=cohorts'],
+    // Not /compare or /paycheck: both render an empty state until something is selected, so they
+    // carry no gradients and the vacuity check below (correctly) refuses them.
+    ['school distribution', `./school/${encodeURIComponent('School of Medicine and Public Health')}?tab=dist`],
+  ] as const) {
+    test(`resolve, and none is defined twice: ${name}`, async ({ page }) => {
+      await page.goto(route, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(2_000);
+
+      const report = await page.evaluate(() => {
+        const refs: string[] = [];
+        for (const el of document.querySelectorAll('[fill],[filter],[stroke]')) {
+          for (const attr of ['fill', 'filter', 'stroke']) {
+            const v = el.getAttribute(attr) ?? '';
+            const m = /^url\(#(.+?)\)$/.exec(v.trim());
+            if (m) refs.push(m[1]);
+          }
+        }
+        const ids = [...document.querySelectorAll('linearGradient[id], radialGradient[id], filter[id]')]
+          .map((e) => e.id);
+        const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+        const dangling = [...new Set(refs)].filter((id) => !document.getElementById(id));
+        return { refs: refs.length, ids: ids.length, dupes: [...new Set(dupes)], dangling };
+      });
+
+      // A route with no gradient references would pass both checks vacuously.
+      expect(report.refs, `${name} references no gradients at all — this route cannot prove anything`)
+        .toBeGreaterThan(0);
+      expect(report.dangling, `${name} references gradient ids that do not exist: ${report.dangling.join(', ')}`)
+        .toEqual([]);
+      expect(report.dupes, `${name} defines the same gradient id twice (${report.dupes.join(', ')}) — whichever mounted first wins for the whole document`)
+        .toEqual([]);
+    });
+  }
+});

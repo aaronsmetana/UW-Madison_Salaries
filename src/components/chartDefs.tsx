@@ -3,9 +3,15 @@ import { Fragment } from 'react';
 /**
  * Reusable SVG `<defs>` for the "primary line" hero treatment: a vertical accent gradient (for the area
  * fill under the line) and a soft Gaussian-blur glow (applied to a duplicated underlay line). Place inside
- * an inline `<defs>` in a Recharts chart — `<defs>{lineGlowDefs('trend')}</defs>` — then reference
+ * an inline `<defs>` in a Recharts chart — `<defs>{lineGlowDefs(useId())}</defs>` — then reference
  * `url(#${id}-area-grad)` for the fill and `url(#${id}-line-glow)` for the glow. Kept generic and id-scoped
  * so the exact same look can be dropped into any other single-accent-line chart later.
+ *
+ * Pass `useId()`, never a string literal. An SVG `id` is document-global, so two instances sharing a
+ * literal would both define `#trend-area-grad` and every reference in the document would resolve to
+ * whichever mounted first. `barGradientDefs` below is already called that way at all four of its
+ * sites; these two were the holdouts, and they were safe only by the accident of being on different
+ * routes.
  */
 export function lineGlowDefs(id: string) {
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
@@ -255,6 +255,9 @@ interface PeerRow { person_key: string; fn: string | null; ln: string | null; sc
 type PeerSortKey = 'name' | 'school' | 'department' | 'tenure' | 'salary';
 
 export default function Person() {
+  // Scopes this page's chart <defs>. An SVG id is document-global, so a literal here would collide
+  // with any second instance — see chartDefs.
+  const gradId = useId();
   const { id } = useParams();
   const key = decodeURIComponent(id ?? '');
   const nav = useNavigate();
@@ -1217,7 +1220,7 @@ export default function Person() {
             the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
           <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: titleChanges.length ? 48 : 22, bottom: 0 }}>
-            <defs>{lineGlowDefs('trend')}</defs>
+            <defs>{lineGlowDefs(gradId)}</defs>
             {/* Faint alternating background band per title era. */}
             {eras.length > 1 && eraSpans.map((s) => (
               <ReferenceArea
@@ -1277,7 +1280,7 @@ export default function Person() {
               />
             ))}
             {/* Gradient area fill under the active metric. */}
-            <Area yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="none" fill="url(#trend-area-grad)" isAnimationActive={false} legendType="none" />
+            <Area yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
             {/* Title median, one disconnected dashed segment per era. */}
             {eras.map((e) => (
               <Line
@@ -1296,7 +1299,7 @@ export default function Person() {
               />
             ))}
             {/* Soft glow: a blurred, semi-transparent copy beneath the crisp line. */}
-            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#trend-line-glow)" />
+            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
             {/* Primary line + per-step raise % labels + haloed active dot. */}
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out">
               <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyPill count={trendPlot.length} />} />

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { Card, Text, Loader, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -53,6 +53,9 @@ function TrendTip({ active, payload, label }: {
 }
 
 export function TrendsPanel() {
+  // Scopes this chart's <defs>. An SVG id is document-global, so a literal here would collide with
+  // any second instance — see chartDefs.
+  const gradId = useId();
   const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
   const reduce = prefersReducedMotion();
@@ -130,7 +133,7 @@ export function TrendsPanel() {
           the synced crosshair, matching the same convention as Person's trend+FTE stack. */}
       <ResponsiveContainer width="100%" height={230}>
         <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
-          <defs>{lineGlowDefs('expltrend')}</defs>
+          <defs>{lineGlowDefs(gradId)}</defs>
           <CartesianGrid {...GRID} />
           <XAxis dataKey="label" tick={false} />
           <YAxis tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
@@ -143,8 +146,8 @@ export function TrendsPanel() {
           )}
 
           {/* Median: gradient area + soft-glow underlay + primary line. */}
-          <Area type="monotone" dataKey="med" stroke="none" fill="url(#expltrend-area-grad)" isAnimationActive={false} legendType="none" />
-          <Line type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter="url(#expltrend-line-glow)" />
+          <Area type="monotone" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
+          <Line type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
           <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
 
           {/* YoY % pills, drawn last so they sit above the area fill (legend-less duplicate). */}
