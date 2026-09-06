@@ -317,3 +317,70 @@ test.describe('the chart-card specular', () => {
       .toContain('inset');
   });
 });
+
+/**
+ * Elevation in dark mode.
+ *
+ * All three tiers in theme.ts are `rgba(16, 24, 32, …)` — a dark ink picked against a white page and
+ * never redefined for dark, where the canvas is #08090b. So the selection tray and the back-to-top
+ * button, whose entire job is to read as floating over the page, had no elevation cue at all.
+ *
+ * The assertion is about the INK, not about the strings being unequal: two different-but-equally-
+ * invisible values would pass a string comparison. A shadow only separates a surface from its
+ * background by being darker than it, so that is what gets measured.
+ */
+test.describe('dark-mode elevation', () => {
+  const parseInk = (shadow: string): [number, number, number] | null => {
+    const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(shadow);
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+  };
+  const relLum = ([r, g, b]: [number, number, number]) => {
+    const f = (c: number) => (c /= 255, c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+
+  test('is not ink the canvas swallows', async ({ page }) => {
+    await page.goto('./', { waitUntil: 'networkidle' });
+
+    const read = () => page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      return {
+        lg: cs.getPropertyValue('--mantine-shadow-lg').trim(),
+        md: cs.getPropertyValue('--mantine-shadow-md').trim(),
+        merged: cs.getPropertyValue('--shadow-merged-card').trim(),
+        page: cs.getPropertyValue('--page-bg').trim(),
+      };
+    });
+
+    await setScheme(page, 'light');
+    const light = await read();
+    await setScheme(page, 'dark');
+    const dark = await read();
+
+    expect(dark.lg, 'the dark canvas is still using the light theme shadow')
+      .not.toBe(light.lg);
+    expect(dark.merged, 'the merged input+menu shadow has no dark value, so it is the one floating surface still invisible')
+      .not.toBe(light.merged);
+
+    // The real property: on a #08090b canvas a shadow must be darker than the page to read at all.
+    const pageRgb = await page.evaluate(() => {
+      const c = document.createElement('div');
+      c.style.background = getComputedStyle(document.documentElement).getPropertyValue('--page-bg');
+      document.body.appendChild(c);
+      const v = getComputedStyle(c).backgroundColor;
+      c.remove();
+      const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(v);
+      return m ? [Number(m[1]), Number(m[2]), Number(m[3])] as [number, number, number] : null;
+    });
+    expect(pageRgb, 'could not resolve the dark page background').not.toBeNull();
+
+    for (const [name, value] of [['lg', dark.lg], ['md', dark.md], ['merged', dark.merged]] as const) {
+      const ink = parseInk(value);
+      expect(ink, `could not read an ink colour out of the dark ${name} shadow: ${value}`).not.toBeNull();
+      expect(
+        relLum(ink!),
+        `the dark ${name} shadow (${value}) is not darker than the #08090b canvas it casts on — this is the defect, not a lighter version of it`,
+      ).toBeLessThan(relLum(pageRgb!));
+    }
+  });
+});

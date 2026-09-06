@@ -5,7 +5,9 @@ import type { CSSProperties } from 'react';
 export type DropdownSize = 'sm' | 'md' | 'lg';
 
 const CARD_BORDER = 'var(--mantine-color-default-border)';
-const CARD_SHADOW = '0 8px 24px -4px rgba(0, 0, 0, 0.18)';
+// Defined once in app.css (`--shadow-merged-card`) so the light and dark inks stay together;
+// this was the same literal in three files, and dark ink on the dark canvas showed nothing.
+const CARD_SHADOW = 'var(--shadow-merged-card)';
 
 /**
  * One scale for every search box + dropdown. The menu always matches its trigger: a small trigger

@@ -159,6 +159,11 @@
      schemes finally match each other, which is what makes it one treatment rather than two. */
   --chart-sheen: rgba(14, 110, 131, 0.14);
 
+  /* Shared by the open search input and the menu it projects, so the two read as one card. It had
+     been the same literal typed into three files — app.css, SearchBox.tsx and lib/selectProps.ts —
+     which meant it was also the one floating surface the dark elevation fix would have missed. */
+  --shadow-merged-card: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
+
   /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
      meaning, corrected once, instead of one class per component. */
@@ -240,6 +245,28 @@ body {
   --mantine-color-dark-4: color-mix(in srgb, var(--lift) 16%, var(--base));
   --mantine-color-body: var(--surface);
   --mantine-color-default-border: var(--hairline);
+
+  /* Elevation that survives the dark canvas.
+     All three tiers in theme.ts are `rgba(16, 24, 32, …)` — a dark ink, chosen against a white page
+     and never redefined. On `--base` (#08090b) they resolve to nothing at all, so the selection
+     tray and the back-to-top button had no elevation cue whatsoever in dark mode: two surfaces
+     whose entire job is to read as floating over the page.
+
+     Mantine emits its shadow variables under a bare `:root`, so these win on specificity (0,2,0 vs
+     0,1,0) regardless of injection order — the same mechanism the `--mantine-color-dark-*` remap
+     above already relies on.
+
+     `sm` stays a near-nothing hairline on purpose. theme.ts records it as deliberately almost
+     invisible so the eleven explicit `shadow="sm"` call sites inherit that discipline without being
+     touched; making it visible here would hand seven ReportBrief cards an elevation the light theme
+     deliberately denies them. */
+  /* The merged input+menu shadow, dark half. Its light value is unchanged (see :root) because the
+     geometry — a wide, lifted, negative-spread cast — is what makes an open input and its dropdown
+     read as one card rather than two stacked surfaces; only the ink needed replacing. */
+  --shadow-merged-card: 0 10px 28px -4px rgba(0, 0, 0, 0.7);
+  --mantine-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --mantine-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --mantine-shadow-lg: 0 10px 34px rgba(0, 0, 0, 0.68), 0 2px 6px rgba(0, 0, 0, 0.5);
 
   --text-accent: var(--mantine-color-accent-4);
   --text-pos: var(--mantine-color-pos-4);
@@ -580,7 +607,7 @@ textarea:focus-visible,
   border-bottom-right-radius: 0;
   border-bottom-width: 0;
   border-color: var(--mantine-color-default-border);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-merged-card);
 }
 
 /* Scope/division search header: the input is a contained, muted gray "pill" (icon + text centered). */
