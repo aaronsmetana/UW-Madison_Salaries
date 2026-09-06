@@ -102,7 +102,10 @@ export function StatSkeleton({ size = 'md' }: { size?: 'hero' | 'md' | 'sm' }) {
 /** A chart-shaped placeholder — just a block at the chart's own height, so the card doesn't resize
  *  once the real plot mounts. */
 export function ChartSkeleton({ height = 240 }: { height?: number }) {
-  return <Skeleton height={height} radius="md" />;
+  // `chart-plot` matters here as much as on a real figure: without it a chart card would carry no
+  // specular while loading and grow one the instant data arrived, so the card would appear to change
+  // its own background as you watched it.
+  return <Skeleton className="chart-plot" height={height} radius="md" />;
 }
 
 /** A table-shaped placeholder — evenly-spaced row bars in place of a header + a few data rows. */

@@ -148,8 +148,16 @@
      paper actually reads. The two schemes need different alphas, not one value: measured at the
      rendered peak, light lands dE 3.33 and dark dE 3.51 against their own card faces, both above
      the ~2.3 JND and far below the ~8 where a wash starts reading as a coloured panel. Dark needs
-     MORE alpha than light, not less. */
-  --chart-sheen: rgba(14, 110, 131, 0.1);
+     MORE alpha than light, not less.
+
+     The alphas are 0.14 / 0.09 rather than the 0.10 / 0.06 that computes to a matched dE ~3.3,
+     because a peak dE is not the whole story: measured on a rendered card, 0.10 falls under the JND
+     by 12px down, so it read as a faint edge on a 460px card rather than as a lit face. Reshaping
+     the shadow does not fix that — four geometries from 64px to 110px of blur all peaked at ~3.0
+     and died by 24px, because the ink is fixed by the alpha and spreading it just thins it. At
+     0.14 / 0.09 the peaks are 4.7 and 5.0, the visible band roughly doubles to ~24px, and the two
+     schemes finally match each other, which is what makes it one treatment rather than two. */
+  --chart-sheen: rgba(14, 110, 131, 0.14);
 
   /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
@@ -220,7 +228,7 @@ body {
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
   --glass-sheen: rgba(255, 255, 255, 0.07);
-  --chart-sheen: rgba(255, 255, 255, 0.06);
+  --chart-sheen: rgba(255, 255, 255, 0.09);
 
   /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
      inputs, dark-5 hover, dark-4 borders. Remapping these four onto the ramp is what makes the
@@ -423,6 +431,35 @@ path.recharts-tooltip-cursor {
      field covering a third of a card. The shadow was a literal that bypassed the scale, which meant
      it stayed dark-ink-on-dark after the dark elevation fix. */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--mantine-shadow-md);
+}
+
+/* The lit face of a figure.
+   Scoped to cards that hold a PLOTTED FIGURE, and to nothing else. The inset top highlight that
+   used to sit on all 86 bordered surfaces is gone for good (see the note above
+   `.mantine-Paper-root[data-with-border]`) and this is not a revival of it: that was a 1px white
+   edge line on every card in the app, this is a broad tonal bloom on the ~28 that hold a chart. The
+   distinction has to be visible or it is just decoration.
+
+   Selected rather than announced: one declaration reaches every chart card, where a prop would be
+   something 28 call sites have to remember — the same reasoning the axis-tick rule and `chartStyle`
+   both record, and the same failure mode that left `isAnimationActive` off 22 marks.
+
+   The offset is 6px, not 0. `--accent-grad` is a 135deg gradient, so this app has already declared
+   that its light comes from the top-left; a bloom centred at top-dead-centre would quietly disagree
+   with every accent rail on the page.
+
+   `:not(.report-brief)` because that card WRAPS two chart cards, so an unqualified match would
+   paint the whole report sheet as well as the figures inside it. It is the only such wrapper —
+   Compare's nested Papers are borderless and never match `[data-with-border]` at all.
+
+   The `var(--paper-shadow, 0 0 transparent)` tail is load-bearing: Mantine omits `--paper-shadow`
+   entirely when a card has no `shadow` prop, and `box-shadow: none, inset …` is invalid, whereas
+   `0 0 transparent` is a legal no-op in a list. Without it the two `shadow="sm"` chart cards in
+   ReportBrief would lose their shadow. */
+.mantine-Paper-root[data-with-border]:not(.report-brief):has(
+  :is(.recharts-responsive-container, .hist-plot, .peer-strip, .chart-plot)
+) {
+  box-shadow: inset 6px 64px 64px -64px var(--chart-sheen), var(--paper-shadow, 0 0 transparent);
 }
 
 /* Hover on an interactive card: the border comes forward. It used to lift 2px and grow a shadow —

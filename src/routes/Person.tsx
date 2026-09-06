@@ -204,7 +204,11 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
   const tick = above ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-gray-6)';
   const sweep = `600ms ease-out ${delay}ms`;
   return (
-    <Group wrap="nowrap" gap="md" align="center">
+    // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: this is a plotted
+    // figure that happens to be built from divs rather than SVG, and the chart-card rule in app.css
+    // has no other way to know that. Without it the "Standing" card sat flat beside three lit chart
+    // cards on the neighbouring tab, which reads as a bug rather than as a distinction.
+    <Group className="chart-plot" wrap="nowrap" gap="md" align="center">
       <div style={{ width: 210, flexShrink: 0 }}>
         <Text size="sm" fw={500} lineClamp={2} title={label}>{label}</Text>
         <Text size="xs" c="dimmed">#{num(n - below)} of {num(n)}</Text>

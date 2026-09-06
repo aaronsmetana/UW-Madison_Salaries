@@ -41,7 +41,9 @@ export function PayBandBar({
   };
 
   return (
-    <div>
+    // `chart-plot` marks this as a plotted figure for the chart-card rule in app.css — the same job
+    // `.recharts-responsive-container` does for the Recharts charts, which this one is not.
+    <div className="chart-plot">
       <div
         ref={trackRef}
         onMouseMove={(e) => updateHover(e.clientX)}

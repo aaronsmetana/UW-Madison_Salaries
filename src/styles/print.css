@@ -97,6 +97,12 @@
     -webkit-print-color-adjust: exact;
   }
 
+  /* The chart-card specular is screen elevation. Paper has no light source, and
+     `print-color-adjust: exact` above would otherwise commit the bloom to the page. */
+  .mantine-Paper-root {
+    box-shadow: none !important;
+  }
+
   /* On-screen the glossary terms carry a dotted underline (a hover affordance); in print there is no
      hover, so the dotted line just reads as noise. */
   .glossary-term {
