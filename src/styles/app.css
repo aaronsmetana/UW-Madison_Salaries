@@ -722,6 +722,34 @@ button:active,
    The panel also does a plain compositional job: the chart used to float on the page with no edges
    while the search box directly beneath it sat in a bordered field, so the two read as unrelated
    objects at the same width. */
+/* The hover readout's ±$5k footprint. Glass by the app's own rule — it floats over content (the
+   curve) rather than sitting beside other chrome, which is the one case where backdrop-filter has
+   something with structure to frost. The blur is deliberately light: at 3px the curve stays
+   readable THROUGH the band, which is the whole point of showing a width instead of a line. */
+.hero-dist-band {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--mantine-color-accent-6) 13%, transparent);
+  backdrop-filter: blur(3px) saturate(1.25);
+  -webkit-backdrop-filter: blur(3px) saturate(1.25);
+  border-left: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--glass-sheen);
+}
+/* Same fallback pair every other glass surface carries: without a backdrop-filter the tint alone
+   has to carry the band, so it goes up enough to read on its own. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hero-dist-band {
+    background: color-mix(in srgb, var(--mantine-color-accent-6) 20%, transparent);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hero-dist-band {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: color-mix(in srgb, var(--mantine-color-accent-6) 22%, transparent);
+  }
+}
+
 .hero-dist {
   position: relative;
   margin-top: var(--mantine-spacing-lg);

@@ -304,9 +304,10 @@ test.describe('the landing distribution', () => {
       await page.mouse.move(box.x + box.width * frac, box.y + 60);
       await expect(pill).toBeVisible();
       const text = (await pill.textContent()) ?? '';
-      // "$75k · 2,848 people ±$5k" — a bucket, a headcount, and the bandwidth it was counted over.
+      // "$75k · 2,848 people ±$5k · 50th percentile" — a bucket, a headcount, the bandwidth it was
+      // counted over, and where that bucket falls in the payroll.
       expect(text, 'the readout stopped naming a salary and a headcount').toMatch(
-        /^\$[\d,]+k · [\d,]+ people ±\$\d+k$/
+        /^\$[\d,]+k · [\d,]+ people ±\$\d+k · \d+(st|nd|rd|th) percentile$/
       );
       return Number(text.replace(/^.*· ([\d,]+) people.*$/, '$1').replace(/,/g, ''));
     };
@@ -334,6 +335,93 @@ test.describe('the landing distribution', () => {
     await page.mouse.move(box.x + box.width / 2, box.y - 90);
     await expect(pill).toBeHidden();
   });
+
+  test('marks the width it is counting, not a hairline through the middle of it', async ({ page }) => {
+    await page.goto('./');
+    const panel = page.locator('.hero-dist');
+    await expect(panel).toBeVisible({ timeout: 60_000 });
+    const box = (await panel.boundingBox())!;
+    const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+
+    await page.mouse.move(box.x + box.width * 0.31, box.y + 60);
+    const band = page.locator('.hero-dist-band');
+    await expect(band, 'the hover readout draws no band').toBeVisible();
+
+    // The band has to BE the ±$5k the pill claims, or the drawing and the number describe different
+    // things — which is exactly what a 1px crosshair under a "±$5k" label was doing. The axis runs
+    // $0 to the $250k cap, so $10k of span is 4% of the plot; allow a point either side for the
+    // rounding in the percentage the band is positioned with.
+    const w = (await band.boundingBox())!.width;
+    const share = (w / plot.width) * 100;
+    expect(share, `the band spans ${share.toFixed(1)}% of the plot, which is not the ±$5k it reports`)
+      .toBeGreaterThan(3);
+    expect(share, `the band spans ${share.toFixed(1)}% of the plot, which is wider than the ±$5k it reports`)
+      .toBeLessThan(5);
+
+    // It must frost what is under it rather than hide it: a solid band over the curve would cover
+    // the spikes the reader is pointing at.
+    const bg = await band.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const alpha = Number(bg.match(/[\d.]+\s*\)$/)?.[0].replace(')', '') ?? '1');
+    expect(alpha, 'the band is opaque — it hides the curve it is meant to be highlighting')
+      .toBeLessThan(0.5);
+  });
+
+  // The pill carries four variable-length fields and is ~65% of the panel's width on a phone, so
+  // where it may sit is a pixel question. It was answered with two thresholds (anchor left below
+  // 15%, right above 85%) that assumed a narrower pill, and adding the percentile broke it in the
+  // middle of the range, where neither threshold applies — 2px off the panel at 375px, hovering at
+  // 30%. Sweeping is the point: a spot check at either end passes the bug.
+  for (const { name, width, height } of [
+    { name: 'desktop', width: 1440, height: 900 },
+    { name: 'phone', width: 375, height: 812 },
+  ]) {
+    test(`keeps the readout inside the panel at every hover position (${name})`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto('./', { waitUntil: 'networkidle' });
+      const panel = page.locator('.hero-dist');
+      await expect(panel).toBeVisible({ timeout: 60_000 });
+      const box = (await panel.boundingBox())!;
+      // Swept across the PLOT, not the panel: the panel carries padding, so the first and last few
+      // percent of its width sit beside the chart rather than over it and register no hover at all.
+      const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+
+      for (const frac of [0.01, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85, 0.95, 0.99]) {
+        await page.mouse.move(plot.x + plot.width * frac, plot.y + plot.height * 0.5);
+        const pill = page.locator('.chart-value-pill').first();
+        await expect(pill).toBeVisible();
+        const r = (await pill.boundingBox())!;
+        expect(r.x, `the readout hangs off the left of the panel at ${frac * 100}%`)
+          .toBeGreaterThanOrEqual(box.x - 1);
+        expect(r.x + r.width, `the readout hangs off the right of the panel at ${frac * 100}%`)
+          .toBeLessThanOrEqual(box.x + box.width + 1);
+      }
+    });
+  }
+
+  // The hero column is a reading measure and the figure is not prose. It was drawn at
+  // `--content-prose` while the showcase tiles below it used `--content-max`, so the page's one
+  // chart was 320px narrower than the row of cards under it for no reason a reader could see.
+  // Swept rather than checked at one width, because there are two things to prove and only the
+  // widest viewport shows both: above ~1560px the 1200px cap binds and the chart has to stop
+  // growing WITH the tiles, and below it the chart has to keep pace as the column narrows.
+  for (const width of [1920, 1600, 1280, 992, 768, 375]) {
+    test(`is as wide as the tiles below it (${width}px)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto('./', { waitUntil: 'networkidle' });
+      const panel = page.locator('.hero-dist');
+      await expect(panel).toBeVisible({ timeout: 60_000 });
+      await page.waitForTimeout(500);
+
+      const chart = (await panel.boundingBox())!.width;
+      const tiles = (await page.locator('.mantine-SimpleGrid-root').last().boundingBox())!.width;
+      expect(Math.abs(chart - tiles), `at ${width}px the chart is ${chart}px and the tiles below it are ${tiles}px`)
+        .toBeLessThanOrEqual(1);
+      // And it never outgrows the page it sits on.
+      const overflow = await page.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `at ${width}px the chart pushes the page sideways`).toBe(0);
+    });
+  }
 
   test('is glass over a backdrop that actually reaches it', async ({ page }) => {
     await page.goto('./');

@@ -7,7 +7,7 @@ import {
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
-import { countWithin, smoothBins, READOUT_RADIUS, type Bin } from '../lib/distribution';
+import { countBelow, countWithin, smoothBins, READOUT_RADIUS, type Bin } from '../lib/distribution';
 import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
@@ -17,6 +17,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
+import { ordinal } from '../lib/stats';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
 
@@ -103,6 +104,11 @@ function Distribution({
   // about pixels, not about the dollar range, and answering it from the range alone put "$200k" and
   // "$250k+" flush against each other at 375px.
   const [plotW, setPlotW] = useState(0);
+  // Rendered width of the readout pill. It has to be measured rather than estimated: the text
+  // carries four variable-length fields, and the pill is 65% of the panel's width on a phone, so
+  // where it may sit is a question about pixels that changes as the reader moves the pointer.
+  const pillRef = useRef<HTMLDivElement>(null);
+  const [pillW, setPillW] = useState(0);
 
   // p25 and median sit close together on a right-skewed curve, so their labels overlap and render as
   // one unreadable run — the same failure PeerRangeBar hit. Reuse its pure row-assignment helper
@@ -132,6 +138,16 @@ function Distribution({
     window.addEventListener('resize', measure);
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
   }, [bins, p25, median, p75]);
+
+  // Keyed on everything the pill's text is built from — the bucket under the pointer, and the two
+  // inputs to the count and the percentile. That is the full set: a text that has not changed has
+  // not changed width, and a dependency-less effect that calls setState is one typo away from a
+  // render loop, which is exactly what react-hooks warns about.
+  useLayoutEffect(() => {
+    const el = pillRef.current;
+    if (!el) return;
+    setPillW(el.offsetWidth);
+  }, [hoverIdx, bins, headcount]);
 
   if (bins.length < 3) return null;
 
@@ -183,6 +199,20 @@ function Distribution({
   // a mound legible: "this hump is 1,240 people, not a taller line".
   const hovered = revealed && hoverIdx != null ? curve[hoverIdx] : null;
   const hoverPct = hovered ? (X(hovered.bucket) / W) * 100 : 0;
+  // Clamped to the plotted range: near either end the band would otherwise hang off the panel and
+  // claim to cover salaries the chart does not draw.
+  const bandLo = hovered ? Math.max(lo, hovered.bucket - READOUT_RADIUS) : 0;
+  const bandHi = hovered ? Math.min(hi, hovered.bucket + READOUT_RADIUS) : 0;
+  // Against the full headcount, not the binned total — the people above the $250k cap are still
+  // people, and leaving them out would put the top of the drawn range at the 100th percentile.
+  const share = hovered && headcount ? countBelow(bins, hovered.bucket) / headcount : null;
+  // Centred on the readout, then clamped to the plot's own edges. This replaces a pair of magic
+  // thresholds (anchor left below 15%, right above 85%) that assumed a pill narrower than the one
+  // the percentile made it: at 375px a 224px pill centred at 30% hung 2px off the panel, because
+  // 30% is neither end. Clamping asks the question the thresholds were approximating.
+  const pillLeft = plotW > 0 && pillW > 0
+    ? Math.max(0, Math.min(plotW - pillW, (hoverPct / 100) * plotW - pillW / 2))
+    : null;
   const onHover = (e: ReactPointerEvent<HTMLDivElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
     if (box.width <= 0) return;
@@ -226,15 +256,29 @@ function Distribution({
               vectorEffect="non-scaling-stroke"
             />
           ))}
-          {hovered && (
-            <line
-              x1={X(hovered.bucket)} x2={X(hovered.bucket)} y1={0} y2={H}
-              stroke="var(--mantine-color-accent-7)" strokeWidth={1} strokeOpacity={0.55}
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
         </svg>
       </div>
+
+      {/* The ±$5k band, drawn as the readout's own footprint rather than a hairline.
+          The pill has always reported a count within ±$5k while the mark under it was a 1px line,
+          so the drawing and the number described different things — a reader lining the line up
+          with the axis was reading a width the count never used. The band IS that width, which
+          also makes the radius legible without reading the label: on a $250k axis it is 4% of the
+          plot, and it visibly covers several spikes of the comb at once, which is the point.
+          Glass rather than a flat tint, by the app's own rule — it floats over content (the curve),
+          which is exactly the case backdrop-filter is for. */}
+      {hovered && (
+        <div
+          aria-hidden
+          className="hero-dist-band"
+          style={{
+            position: 'absolute', top: 0, height: H,
+            left: `${(X(bandLo) / W) * 100}%`,
+            width: `${((X(bandHi) - X(bandLo)) / W) * 100}%`,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
 
       {/* The dot and the pill are HTML, not SVG, for the same reason the marker labels are:
           `preserveAspectRatio="none"` stretches the viewBox horizontally, which would turn a circle
@@ -255,19 +299,21 @@ function Distribution({
         <div
           aria-hidden
           style={{
-            position: 'absolute', left: `${hoverPct}%`, zIndex: Z.local, pointerEvents: 'none',
+            position: 'absolute', zIndex: Z.local, pointerEvents: 'none',
+            left: pillLeft != null ? pillLeft : `${hoverPct}%`,
             // Tracks the dot rather than pinning to the top of the plot: pinned, it sat exactly on
             // the apex and hid the mound the reader is pointing at. It rides just above the curve,
             // and flips underneath where the curve is too tall to leave room — which is precisely
             // where the peaks are.
             top: Y(hovered.n) < 26 ? Y(hovered.n) + 10 : Y(hovered.n) - 20,
-            // Centred on the crosshair, except near the ends, where centring would push the pill
-            // past the panel's edge — so it anchors to the side it has room on instead.
-            transform: hoverPct < 15 ? 'translateX(0)' : hoverPct > 85 ? 'translateX(-100%)' : 'translateX(-50%)',
+            // Only before the first measurement lands; after that `pillLeft` is already exact.
+            transform: pillLeft != null ? undefined : 'translateX(-50%)',
           }}
+          ref={pillRef}
         >
           <span className="chart-value-pill">
             {fmtK(hovered.bucket)} · {num(countWithin(bins, hovered.bucket, READOUT_RADIUS))} people ±{fmtK(READOUT_RADIUS)}
+            {share != null && ` · ${ordinal(Math.min(99, Math.max(1, Math.round(share * 100))))} percentile`}
           </span>
         </div>
       )}
@@ -546,7 +592,12 @@ export default function Home() {
 
         {/* The distribution sits directly under the median that labels it, so the marker under the
             headline number is the same number. Then search — the action — then the supporting figures. */}
-        <Stack gap="lg" maw="var(--content-prose)" mx="auto" w="100%" className="hero-rise">
+        {/* Capped at `--content-max`, matching the showcase tiles below, NOT at the `--content-prose`
+            the headline and paragraph use. The narrow hero column is a reading measure, and a figure
+            is not prose: at 880px the plot was a 4.9:1 box, and the two features the $1k buckets
+            exist to resolve read better with the extra 320px than any amount of extra height gives
+            them. The search input keeps the reading measure below — it is an input, not a figure. */}
+        <Stack gap="lg" maw="var(--content-max)" mx="auto" w="100%" className="hero-rise">
           <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
             <Distribution
               bins={bins}
@@ -559,7 +610,9 @@ export default function Home() {
             />
           </Anchor>
 
-          <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
+          <Box maw="var(--content-prose)" mx="auto" w="100%">
+            <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
+          </Box>
 
           {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
               Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}

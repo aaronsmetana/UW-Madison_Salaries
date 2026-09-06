@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binStep, countWithin, densify, smoothBins, KERNEL_SIGMA, type Bin } from './distribution';
+import { binStep, countBelow, countWithin, densify, smoothBins, KERNEL_SIGMA, type Bin } from './distribution';
 
 const bins = (step: number, counts: number[], from = 0): Bin[] =>
   counts.map((n, i) => ({ bucket: from + i * step, n }));
@@ -170,5 +170,31 @@ describe('countWithin', () => {
   it('is zero when nothing is in range', () => {
     expect(countWithin(src, 99_000, 1000)).toBe(0);
     expect(countWithin([], 2000, 1000)).toBe(0);
+  });
+});
+
+describe('countBelow', () => {
+  const bins = [
+    { bucket: 10_000, n: 5 },
+    { bucket: 20_000, n: 10 },
+    { bucket: 30_000, n: 20 },
+  ];
+
+  it('counts everyone strictly below the bucket asked about', () => {
+    expect(countBelow(bins, 10_000)).toBe(0);
+    expect(countBelow(bins, 20_000)).toBe(5);
+    expect(countBelow(bins, 30_000)).toBe(15);
+  });
+
+  /**
+   * The denominator is the caller's, and it matters. The bins stop at the $250k cap while ~546
+   * people earn more, so dividing by the binned total (35 here) would call the top of the drawn
+   * range the 100th percentile. Against a true headcount it cannot reach 100.
+   */
+  it('leaves room above the top bucket when the caller knows the real headcount', () => {
+    const binned = bins.reduce((a, b) => a + b.n, 0);
+    const headcount = binned + 10; // ten people above the cap
+    expect(countBelow(bins, 30_000) / binned).toBeCloseTo(15 / 35);
+    expect(countBelow(bins, 40_000) / headcount).toBeLessThan(1);
   });
 });

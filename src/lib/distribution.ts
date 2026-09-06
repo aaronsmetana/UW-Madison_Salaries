@@ -85,6 +85,23 @@ export function densify(bins: Bin[]): Bin[] {
  * Inclusive at both edges, and it does not care whether `bins` is dense: it filters by dollar
  * distance rather than walking neighbours by index.
  */
+/**
+ * How many people earn less than `center`, counted from the RAW bins.
+ *
+ * Never from the smoothed curve, for the same reason `countWithin` isn't: the kernel moves weight
+ * into neighbouring buckets, so a cumulative sum over it answers a question about the drawing
+ * rather than about the payroll.
+ *
+ * The caller supplies the denominator, because this file cannot know it. The bins stop at the cap
+ * ($250k), and the ~546 people above it are real — dividing by the binned total would call the top
+ * of the drawn range the 100th percentile when it is not.
+ */
+export function countBelow(bins: Bin[], center: number): number {
+  let below = 0;
+  for (const b of bins) if (b.bucket < center) below += b.n;
+  return below;
+}
+
 export function countWithin(bins: Bin[], center: number, radius: number): number {
   let total = 0;
   for (const b of bins) if (Math.abs(b.bucket - center) <= radius) total += b.n;

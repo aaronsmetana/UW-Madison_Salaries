@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd } from '../lib/format';
+import { ordinal } from '../lib/stats';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import { MARK_SELF, MARK_SELF_TEXT, MARK_TARGET, MarkerLegend } from './markers';
@@ -277,7 +278,7 @@ export function PeerRangeBar({
             }}
           >
             <span className="chart-value-pill">
-              ~{usd(hoverValue)}{hoverBelowShare != null ? ` · ${Math.round(hoverBelowShare * 100)}th percentile` : ''}
+              ~{usd(hoverValue)}{hoverBelowShare != null ? ` · ${ordinal(Math.round(hoverBelowShare * 100))} percentile` : ''}
             </span>
           </div>
         )}
