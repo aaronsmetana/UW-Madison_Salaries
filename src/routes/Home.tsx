@@ -7,7 +7,7 @@ import {
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
-import { countWithin, smoothBins, KERNEL_SIGMA, type Bin } from '../lib/distribution';
+import { countWithin, smoothBins, READOUT_RADIUS, type Bin } from '../lib/distribution';
 import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
@@ -67,8 +67,10 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
 const LABEL_ROW_H = 16;
 /** Height of the salary axis row, in px — one `xs` line box. */
 const AXIS_ROW_H = 18;
-/** Pitch one axis label needs, in px: "$250k+" at `xs` is ~48px, plus a gap either side. */
-const AXIS_LABEL_W = 72;
+/** Pitch one axis label is given, in px. Not the label's own width (~48px) — the axis is a frame,
+ *  not a ruler, so this is deliberately generous: at 72px the 848px plot fitted eleven labels, which
+ *  is a densely-tick-marked chart rather than the simple one this is meant to be. */
+const AXIS_LABEL_W = 120;
 /** Candidate axis intervals, coarsest last. The first whose labels fit the plot wins. */
 const TICK_STEPS = [10_000, 25_000, 50_000, 100_000, 250_000];
 
@@ -84,10 +86,9 @@ function Distribution({
   headcount: number | null;
 }) {
   const revealed = useReveal(bins.length >= 3);
-  // What gets drawn is a density estimate over the raw counts, not the counts themselves. At the $1k
-  // buckets this chart now receives, the round-number comb in payroll data (a spike at $35k, $40k,
-  // $50k…) dominates the shape — a plain polyline through them is a picket fence. See
-  // `KERNEL_SIGMA` for how wide the kernel is and what it is required to preserve.
+  // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
+  // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
+  // noise. See `KERNEL_SIGMA` for the measurements the width was chosen against.
   const curve = useMemo(() => smoothBins(bins), [bins]);
   const labelRowRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -151,14 +152,21 @@ function Distribution({
   // Round salary steps for the axis, coarsened until the labels actually fit the rendered width.
   // `AXIS_LABEL_W` is the pitch one label needs to stay legible with a gap either side; before the
   // measurement fed into this, the phone got the desktop's six ticks and the last two collided.
-  const fits = plotW > 0 ? Math.max(2, Math.floor(plotW / AXIS_LABEL_W)) : 5;
+  const fits = Math.max(3, Math.floor(plotW / AXIS_LABEL_W));
   const step = TICK_STEPS.find((s) => span / s <= fits) ?? TICK_STEPS[TICK_STEPS.length - 1];
   // The right edge belongs to the cap label ("$250k+"), which is right-aligned and wider than a
   // plain tick — so a tick that lands underneath it is dropped rather than drawn into it.
-  const rightGuard = plotW > 0 ? 1 - AXIS_LABEL_W / plotW : 0.92;
+  const rightGuard = 1 - AXIS_LABEL_W / plotW;
   const ticks: number[] = [];
-  for (let v = Math.ceil(lo / step) * step; v < hi; v += step) {
-    if (X(v) / W < rightGuard) ticks.push(v);
+  // Nothing until the row has been measured. The alternative — guess a width, then correct it once
+  // the measurement lands — paints one tick set and replaces it with another, and a screenshot taken
+  // in between captures whichever it caught. That is exactly what happened: the same build rendered
+  // six labels in one run and eleven in the next, and the committed baseline had frozen the guess.
+  // `useLayoutEffect` sets `plotW` before the browser paints, so in practice this costs no frame.
+  if (plotW > 0) {
+    for (let v = Math.ceil(lo / step) * step; v < hi; v += step) {
+      if (X(v) / W < rightGuard) ticks.push(v);
+    }
   }
 
   // Only draw a marker that actually falls inside the plotted range.
@@ -258,7 +266,7 @@ function Distribution({
           }}
         >
           <span className="chart-value-pill">
-            {fmtK(hovered.bucket)} · {num(countWithin(bins, hovered.bucket, KERNEL_SIGMA))} people ±{fmtK(KERNEL_SIGMA)}
+            {fmtK(hovered.bucket)} · {num(countWithin(bins, hovered.bucket, READOUT_RADIUS))} people ±{fmtK(READOUT_RADIUS)}
           </span>
         </div>
       )}

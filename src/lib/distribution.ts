@@ -2,23 +2,32 @@
 export interface Bin { bucket: number; n: number }
 
 /**
- * Width of the smoothing kernel, in dollars.
+ * Width of the drawing kernel, in dollars.
  *
- * The landing curve is a *density estimate*, not a polyline through raw counts, because raw counts at
- * a useful resolution are unreadable. Payroll is not a smooth quantity: people are hired onto round
- * numbers, so the histogram carries a comb of spikes at $35k, $40k, $50k and so on. Measured on the
- * 2026-03 snapshot, drawing more points makes the line *worse*, not better — mean |second difference|
- * over the mean count runs 0.19 at $10k buckets, 0.47 at $2.5k and 0.88 at $500. Every extra point
- * resolves more comb.
+ * This was $5,000 — Silverman's rule for this distribution — on the reasoning that the comb of spikes
+ * at $35k, $40k, $50k was noise to be cleared. That reasoning was wrong about what the spikes ARE.
+ * They are not sampling noise: they are people, hired onto round numbers, and a chart that erases
+ * them is hiding a real and legible fact about how pay is set. Silverman's rule assumes a smooth
+ * underlying density; this one genuinely has teeth.
  *
- * Silverman's rule of thumb for this distribution (n=21,837, sd=$44.4k, IQR=$48.3k) gives a bandwidth
- * of ~$4.4k. This is deliberately a little wider: the rule assumes a smooth underlying density and
- * ours has the round-number comb sitting on top of one, so erring wide is the safe direction. It is
- * as wide as it can be and still keep the two features that are actually in the data — the shoulder
- * around $57k where University Staff sit, and the step near $130k where the faculty tail begins. At
- * $10k both are gone and the curve is a featureless lognormal blob.
+ * So the kernel is now only as wide as it takes to stop 250 points becoming pixel noise, and no
+ * wider. Measured on the 2026-03 snapshot at the shipped geometry (mean |second difference| over the
+ * mean count): raw $1k buckets score 0.579 and read as static, $5k scores 0.003 and is a featureless
+ * lognormal blob, and this lands at 0.059 — the round-number spikes intact, the line between them
+ * still a line.
  */
-export const KERNEL_SIGMA = 5000;
+export const KERNEL_SIGMA = 1200;
+
+/**
+ * Radius the hover readout counts over, in dollars — deliberately NOT the drawing kernel.
+ *
+ * These were one constant, which was fine while the kernel was $5k and coincidentally a sensible
+ * neighbourhood to count. It is not one decision: the kernel answers "how much should the line
+ * wobble", and this answers "how far either side of this salary is still "around here" to a reader".
+ * Tying the readout to the kernel would have quietly turned "2,848 people ±$5k" into
+ * "700 people ±$1.2k" the moment the drawing got sharper.
+ */
+export const READOUT_RADIUS = 5000;
 
 /** Above this many buckets a "distribution" is a rendering bug, not data — see `densify`. */
 const MAX_BUCKETS = 2000;

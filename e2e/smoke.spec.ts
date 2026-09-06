@@ -239,13 +239,19 @@ test.describe('the landing distribution', () => {
     expect(vertices, 'the curve lost its resolution').toBeGreaterThan(200);
   });
 
-  test('is smooth, not a picket fence', async ({ page }) => {
+  test('is detailed without being static', async ({ page }) => {
     await page.goto('./');
     await expect(page.locator(CURVE).first()).toBeVisible({ timeout: 60_000 });
-    // Mean |second difference| down the drawn y-values. Raw $1k counts score ~0.58 on this snapshot
-    // and the smoothed curve ~0.003; the gap is three orders of magnitude, so any threshold in
-    // between is safe. This is the guard for "someone raised the resolution and dropped the kernel",
-    // which would pass the vertex-count test above while looking far worse than the original.
+    // Mean |second difference| down the drawn y-values, normalised by their mean. Note that this is
+    // measured in SCREEN coordinates, not bin counts — the two differ by roughly 6x because screen y
+    // is offset by the plot height, so these numbers are not the ones quoted in distribution.ts.
+    //
+    // The assertion is TWO-SIDED because the design decision has two sides. Measured on this snapshot
+    // at the shipped geometry: an unsmoothed $1k curve scores 0.099 and reads as static, the $5k
+    // kernel this used to ship scores 0.0012 and is a featureless blob, and the $1.2k kernel lands at
+    // 0.016 — the round-number spikes at $35k/$40k/$50k intact, the line between them still a line.
+    // The upper bound alone used to be the whole test, which would have waved through smoothing the
+    // spikes away again.
     const roughness = await page.locator(CURVE).first().evaluate((el) => {
       const ys = (el.getAttribute('d') ?? '').split(/[ML]/).slice(1).map((p) => Number(p.split(',')[1]));
       const mean = ys.reduce((a, b) => a + b, 0) / ys.length;
@@ -253,7 +259,9 @@ test.describe('the landing distribution', () => {
       for (let i = 1; i < ys.length - 1; i++) acc += Math.abs(ys[i - 1] - 2 * ys[i] + ys[i + 1]);
       return acc / (ys.length - 2) / mean;
     });
-    expect(roughness, 'the curve is drawing raw counts, not a density').toBeLessThan(0.05);
+    expect(roughness, 'the curve is drawing raw counts — it will read as static').toBeLessThan(0.06);
+    expect(roughness, 'the curve has been over-smoothed back into a featureless blob')
+      .toBeGreaterThan(0.006);
   });
 
   test('keeps its salary axis legible at every width', async ({ page }) => {
@@ -274,10 +282,12 @@ test.describe('the landing distribution', () => {
               const boxes = [...row.children]
                 .map((c) => c.getBoundingClientRect())
                 .sort((a, b) => a.left - b.left);
-              if (boxes.length < 2) return Infinity;
+              // Fewer than two labels is not "no collisions", it is a missing axis — which is the
+              // failure mode of gating the ticks on a measurement that never lands.
+              if (boxes.length < 2) return -1;
               return Math.min(...boxes.slice(1).map((b, i) => b.left - boxes[i].right));
             }),
-          { message: `axis labels crowd each other at ${width}px`, timeout: 10_000 }
+          { message: `axis labels crowd each other, or the axis is missing, at ${width}px`, timeout: 10_000 }
         )
         .toBeGreaterThanOrEqual(8);
     }

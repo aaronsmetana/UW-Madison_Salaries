@@ -54,14 +54,16 @@ describe('densify', () => {
 });
 
 describe('smoothBins', () => {
-  it('flattens the round-number spike that finer buckets expose', () => {
-    // The real failure: a comb tooth at one bucket, ~4x its neighbours, like $35k in the snapshot.
+  it('takes the static off a raw histogram without taking the shape with it', () => {
+    // A comb tooth ~4x its neighbours, like $35k in the snapshot. Raw, this scores ~0.94 and reads as
+    // static at 250 points; the kernel has to bring that down without erasing the tooth, which is the
+    // job the two assertions below split between them.
     const comb = bins(1000, Array.from({ length: 61 }, (_, i) => (i % 10 === 5 ? 400 : 100)));
     const before = roughness(comb);
     const after = roughness(smoothBins(comb));
-    // 0.88 is what $500 buckets measure on the real snapshot; this fixture sits just above it.
     expect(before).toBeGreaterThan(0.8);
-    expect(after).toBeLessThan(before / 20);
+    expect(after).toBeLessThan(before / 3);
+    expect(after, 'the kernel has gone back to erasing the comb').toBeGreaterThan(before / 40);
   });
 
   it('does not sag at the ends for want of neighbours', () => {
@@ -112,8 +114,23 @@ describe('smoothBins', () => {
     }
   });
 
-  it('ships a bandwidth wide enough to clear the comb and narrow enough to keep real structure', () => {
-    // A shoulder like the $57k one: a second, smaller mode $18k below the peak. It must survive.
+  it('ships a bandwidth that keeps the round-number spikes rather than clearing them', () => {
+    // This assertion used to run the other way — it required the comb to be GONE, on the reasoning
+    // that spikes at round salaries were noise. They are not noise; they are people hired onto round
+    // numbers, and the chart is meant to show them. A tooth 4x its neighbours, like $35k in the real
+    // snapshot, has to survive as a clear local maximum.
+    const comb = bins(1000, Array.from({ length: 61 }, (_, i) => (i % 10 === 5 ? 400 : 100)));
+    const out = smoothBins(comb, KERNEL_SIGMA);
+    const tooth = out[25].n; // one of the 400s
+    expect(tooth, 'the kernel flattened a round-number spike into its neighbours')
+      .toBeGreaterThan(out[23].n * 1.5);
+
+    // …and still wide enough that the line is a line. Raw, this fixture scores ~0.94.
+    expect(roughness(out)).toBeLessThan(roughness(comb) / 3);
+  });
+
+  it('keeps a genuine shoulder, which is what a wider kernel used to destroy', () => {
+    // The $57k one: a second, smaller mode $18k below the peak.
     const at = (v: number) => 300 * Math.exp(-((v - 75000) ** 2) / (2 * 12000 ** 2))
                             + 170 * Math.exp(-((v - 57000) ** 2) / (2 * 7000 ** 2));
     const src = Array.from({ length: 200 }, (_, i) => ({ bucket: i * 1000, n: at(i * 1000) }));
