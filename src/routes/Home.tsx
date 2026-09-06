@@ -65,6 +65,12 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
  *  label's own rendered line box (xxs at lh 1.2 ≈ 13px) or two "different" rows still touch, which
  *  looks like the collision the stagger exists to prevent. */
 const LABEL_ROW_H = 16;
+/** Height of the salary axis row, in px — one `xs` line box. */
+const AXIS_ROW_H = 18;
+/** Pitch one axis label needs, in px: "$250k+" at `xs` is ~48px, plus a gap either side. */
+const AXIS_LABEL_W = 72;
+/** Candidate axis intervals, coarsest last. The first whose labels fit the plot wins. */
+const TICK_STEPS = [10_000, 25_000, 50_000, 100_000, 250_000];
 
 function Distribution({
   bins, p25, median, p75, cap, overflow, headcount,
@@ -91,6 +97,10 @@ function Distribution({
   // inside a link to carry a readout would be worse than not having one. Everything the readout says
   // is already stated without it — the quartile markers below the curve, and the caption's headcount.
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Rendered width of the plot, in px. The axis needs it: how many salary labels fit is a question
+  // about pixels, not about the dollar range, and answering it from the range alone put "$200k" and
+  // "$250k+" flush against each other at 375px.
+  const [plotW, setPlotW] = useState(0);
 
   // p25 and median sit close together on a right-skewed curve, so their labels overlap and render as
   // one unreadable run — the same failure PeerRangeBar hit. Reuse its pure row-assignment helper
@@ -110,6 +120,7 @@ function Distribution({
         els.map((el) => el.offsetWidth),
       );
       setLabelRows((prev) => (prev.length === next.length && prev.every((r, i) => r === next[i]) ? prev : next));
+      setPlotW(row.offsetWidth);
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -122,7 +133,11 @@ function Distribution({
 
   if (bins.length < 3) return null;
 
-  const W = 1000, H = 120;
+  // 1000x180, drawn at 180px tall. It was 120, and at the ~848px the panel gives it that is a 7:1
+  // box — wide enough that the two features the $1k buckets exist to resolve (the shoulder near $57k
+  // and the step near $130k) flattened back into the curve they were rescued from. The extra height
+  // is amplitude, not padding: every slope is 50% steeper for the same data.
+  const W = 1000, H = 180;
   const maxN = Math.max(...curve.map((b) => b.n), 1);
   const lo = curve[0].bucket;
   const hi = curve[curve.length - 1].bucket;
@@ -132,6 +147,19 @@ function Distribution({
   const pts = curve.map((b) => `${X(b.bucket).toFixed(1)},${Y(b.n).toFixed(1)}`);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
   const area = `M0,${H} ${pts.map((p) => `L${p}`).join(' ')} L${W},${H} Z`;
+
+  // Round salary steps for the axis, coarsened until the labels actually fit the rendered width.
+  // `AXIS_LABEL_W` is the pitch one label needs to stay legible with a gap either side; before the
+  // measurement fed into this, the phone got the desktop's six ticks and the last two collided.
+  const fits = plotW > 0 ? Math.max(2, Math.floor(plotW / AXIS_LABEL_W)) : 5;
+  const step = TICK_STEPS.find((s) => span / s <= fits) ?? TICK_STEPS[TICK_STEPS.length - 1];
+  // The right edge belongs to the cap label ("$250k+"), which is right-aligned and wider than a
+  // plain tick — so a tick that lands underneath it is dropped rather than drawn into it.
+  const rightGuard = plotW > 0 ? 1 - AXIS_LABEL_W / plotW : 0.92;
+  const ticks: number[] = [];
+  for (let v = Math.ceil(lo / step) * step; v < hi; v += step) {
+    if (X(v) / W < rightGuard) ticks.push(v);
+  }
 
   // Only draw a marker that actually falls inside the plotted range.
   const inRange = (v: number | null): v is number => v != null && v >= lo && v <= hi;
@@ -170,7 +198,7 @@ function Distribution({
           transition: 'transform 700ms ease-out, opacity 500ms ease-out',
         }}
       >
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={120} aria-hidden style={{ display: 'block' }}>
+        <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
           <defs>
             <linearGradient id="home-dist" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.34} />
@@ -264,10 +292,35 @@ function Distribution({
         ))}
       </div>
 
-      <Group justify="space-between" gap={0} mt={2}>
-        <Text size="xs" c="dimmed">{fmtK(lo)}</Text>
-        <Text size="xs" c="dimmed">{cap != null ? `${fmtK(cap)}+` : `${fmtK(hi)}+`}</Text>
-      </Group>
+      {/* A salary axis, not two endpoints. Positioned by value like the marker labels above, so a
+          tick sits exactly under the pay it names — `justify="space-between"` only ever happened to
+          be right for the two extremes. */}
+      <div className="hero-dist-axis" style={{ position: 'relative', height: AXIS_ROW_H, marginTop: 6 }}>
+        {ticks.map((v) => (
+          <Text
+            key={v}
+            size="xs"
+            c="dimmed"
+            style={{
+              position: 'absolute',
+              left: `${(X(v) / W) * 100}%`,
+              // The first tick sits on the left edge, so centring it would hang half the label off
+              // the panel. Every other one centres on its value.
+              transform: v === lo ? undefined : 'translateX(-50%)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {fmtK(v)}
+          </Text>
+        ))}
+        <Text
+          size="xs"
+          c="dimmed"
+          style={{ position: 'absolute', right: 0, whiteSpace: 'nowrap' }}
+        >
+          {cap != null ? `${fmtK(cap)}+` : `${fmtK(hi)}+`}
+        </Text>
+      </div>
       <Text size="xs" c="dimmed" ta="center" mt={4}>
         Actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
         {/* Say what the cap hides rather than truncating the tail silently. */}

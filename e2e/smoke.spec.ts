@@ -100,7 +100,7 @@ for (const { name, width, height } of [
     await page.setViewportSize({ width, height });
     await page.goto('./', { waitUntil: 'networkidle' });
 
-    const svg = page.locator('svg[viewBox="0 0 1000 120"]');
+    const svg = page.locator('.hero-dist-plot');
     await expect(svg).toBeVisible({ timeout: 60_000 });
     // The reveal is a 700ms transform; give it room to finish rather than racing it.
     await page.waitForTimeout(1_200);
@@ -224,7 +224,9 @@ test('the data error banner still fires when the dataset really fails', async ({
  * reverting, so each gets an assertion.
  */
 test.describe('the landing distribution', () => {
-  const CURVE = 'svg[viewBox="0 0 1000 120"] path[stroke]';
+  // Selected by class, not by viewBox: the plot's height is a design decision and changing it
+  // should not silently unhook the tests that guard its contents.
+  const CURVE = '.hero-dist-plot path[stroke]';
 
   test('is drawn at the resolution the data now carries', async ({ page }) => {
     await page.goto('./');
@@ -252,6 +254,33 @@ test.describe('the landing distribution', () => {
       return acc / (ys.length - 2) / mean;
     });
     expect(roughness, 'the curve is drawing raw counts, not a density').toBeLessThan(0.05);
+  });
+
+  test('keeps its salary axis legible at every width', async ({ page }) => {
+    await page.goto('./');
+    await expect(page.locator('.hero-dist-axis')).toBeVisible({ timeout: 60_000 });
+
+    // How many salary labels fit is a question about pixels, and answering it from the dollar range
+    // alone put "$200k" flush against "$250k+" at 375px — touching exactly, so they read as one
+    // string. Measure the real gap; polled, because a resize reflows after `setViewportSize` returns.
+    for (const width of [1440, 1024, 768, 480, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() => {
+              const row = document.querySelector('.hero-dist-axis');
+              if (!row) return -1;
+              const boxes = [...row.children]
+                .map((c) => c.getBoundingClientRect())
+                .sort((a, b) => a.left - b.left);
+              if (boxes.length < 2) return Infinity;
+              return Math.min(...boxes.slice(1).map((b, i) => b.left - boxes[i].right));
+            }),
+          { message: `axis labels crowd each other at ${width}px`, timeout: 10_000 }
+        )
+        .toBeGreaterThanOrEqual(8);
+    }
   });
 
   test('names the mound under the pointer', async ({ page }) => {
