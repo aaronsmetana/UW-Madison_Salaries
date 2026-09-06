@@ -227,7 +227,7 @@ function Distribution({
   return (
     // `card-hover` because the whole panel is a link to /explore, and lifting the border on hover is
     // the one "this responds" gesture the app uses (see the rule's own note on why it isn't a lift).
-    <div className="hero-dist card-hover">
+    <div className="hero-dist glass card-hover">
       <div style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={() => setHoverIdx(null)}>
       <div
         style={{

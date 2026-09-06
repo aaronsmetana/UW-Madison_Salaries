@@ -859,34 +859,47 @@ button:active,
   }
 }
 
-.hero-dist {
-  position: relative;
-  margin-top: var(--mantine-spacing-lg);
-  padding: var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-sm);
-  border: 1px solid var(--hairline);
-  border-radius: var(--mantine-radius-lg);
-  background: color-mix(in srgb, var(--mantine-color-body) 55%, transparent);
+/* One glass, worn by anything that floats over the page.
+   Extracted from `.hero-dist`, which was the only surface with it and is now simply the first
+   wearer — the computed values are unchanged. The rule it obeys is the one the failures recorded
+   above produced: glass needs a backdrop with structure worth softening that nobody needs to read.
+   That is why it goes on the selection tray and the Reports mobile ledger (page content passes
+   beneath both) and not on the back-to-top button, the Reports desktop rail, or the jump nav — see
+   the notes at each of those.
+
+   The tint is a knob rather than a constant so a surface can raise it if its backdrop demands, but
+   55% is right for all three wearers: measured, the fill is never what separates a floating surface
+   from the page here — even a fully OPAQUE white card is only dE ~2.8 from the light canvas. The
+   border and the shadow do the separating (which is why the dark shadow fix had to land first), and
+   the blur is what makes it read as glass rather than as a weak fill. */
+.glass {
+  background: color-mix(in srgb, var(--mantine-color-body) var(--glass-tint, 55%), transparent);
   backdrop-filter: blur(12px) saturate(1.35);
   -webkit-backdrop-filter: blur(12px) saturate(1.35);
   box-shadow: inset 0 1px 0 var(--glass-sheen), var(--mantine-shadow-sm);
 }
-
-/* Both fallbacks land on the same place: the panel goes solid. A translucent surface with nothing
-   filtering it is not a softer version of glass, it is a washed-out card — worse than the opaque one
-   on every count, and the dots behind it stay sharp enough to read through the text. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .hero-dist {
-    background: var(--surface);
-  }
+  .glass { background: var(--surface); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .hero-dist {
+  .glass {
     background: var(--surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 }
 
+.hero-dist {
+  position: relative;
+  margin-top: var(--mantine-spacing-lg);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-sm);
+  border: 1px solid var(--hairline);
+  border-radius: var(--mantine-radius-lg);
+}
+
+/* Both fallbacks land on the same place: the panel goes solid. A translucent surface with nothing
+   filtering it is not a softer version of glass, it is a washed-out card — worse than the opaque one
+   on every count, and the dots behind it stay sharp enough to read through the text. */
 /* Showcase band below the hero: the arrow slides on hover, matching the stats card's own affordance
    so the two read as the same gesture. */
 .showcase-arrow {

@@ -122,7 +122,7 @@ export function SelectionTray() {
     // Cleared → brief Undo affordance.
     if (items.length === 0) {
       return (
-        <Paper className="no-print" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
+        <Paper className="no-print glass" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
           <Group gap="sm" wrap="nowrap">
             <Text size="sm" c="dimmed">Compare set cleared</Text>
             <Button size="xs" variant="subtle" onClick={onUndo}>Undo</Button>
@@ -131,7 +131,7 @@ export function SelectionTray() {
       );
     }
     return (
-      <Paper className="no-print" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
+      <Paper className="no-print glass" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
         <Group gap="sm" wrap="nowrap">
           <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
             Compare set <Text span c="dimmed" fw={500}>· {summarize(items)}</Text>

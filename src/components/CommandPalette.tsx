@@ -90,7 +90,11 @@ export function CommandPalette({ opened, close }: { opened: boolean; close: () =
       padding="md"
       title="Search and go"
       styles={{ title: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' } }}
-      overlayProps={{ backgroundOpacity: 0.4, blur: 2 }}
+      // The SCRIM, not the panel — the distinction matters, because glass on the palette panel was
+      // prototyped and rejected for frosting a dense table into interference behind the menu text.
+      // Blurring what is behind the dialog does the opposite: it takes the page's structure out of
+      // competition with the menu, so 2px (barely anything) goes to 6.
+      overlayProps={{ backgroundOpacity: 0.4, blur: 6 }}
     >
       {/* SearchBox owns its own dropdown, which portals above the modal and covers the destinations
           while results are showing — so the list below is what you see when the box is empty. */}

@@ -384,3 +384,102 @@ test.describe('dark-mode elevation', () => {
     }
   });
 });
+
+/**
+ * Glass on the two surfaces that float over page content.
+ *
+ * The rule the app's own failures produced: glass needs a backdrop with structure worth softening
+ * that nobody needs to read. The selection tray is fixed at `Z.floating` with the page scrolling
+ * beneath it; the Reports mobile ledger is sticky with the setup pane scrolling under it. The
+ * back-to-top button, the Reports desktop rail and the /data jump nav are all deliberately excluded
+ * — see the notes in app.css.
+ *
+ * Contrast is asserted explicitly because axe cannot do it: it has no way to resolve a
+ * `backdrop-filter`ed backdrop, so `color-contrast` on text inside a translucent surface returns
+ * INCOMPLETE, and `runAxe` in a11y.spec.ts reads violations only. The gate would pass on a tray
+ * nobody could read.
+ */
+test.describe('floating glass', () => {
+  const contrast = (a: [number, number, number], b: [number, number, number]) => {
+    const lum = ([r, g, bl]: [number, number, number]) => {
+      const f = (c: number) => (c /= 255, c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(bl);
+    };
+    const [x, y] = [lum(a), lum(b)];
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+
+  /** Put two people in the tray, which is the only way it appears at all. */
+  async function fillTray(page: import('@playwright/test').Page) {
+    await page.goto('./explore', { waitUntil: 'networkidle' });
+    const buttons = page.getByRole('button', { name: /Add to compare set|Compare/ });
+    await expect(buttons.first()).toBeVisible({ timeout: 60_000 });
+    await buttons.nth(0).click();
+    await buttons.nth(1).click().catch(() => {});
+    await expect(page.locator('[aria-label="Compare set"]')).toBeVisible({ timeout: 15_000 });
+  }
+
+  test('the selection tray is glass, and goes solid on request', async ({ page }) => {
+    const transparency = await transparencyEmulator(page);
+    await transparency('no-preference');
+    await fillTray(page);
+
+    const tray = page.locator('[aria-label="Compare set"]').first();
+    const glass = await readSurface(tray);
+    expect(glass.filter, 'the tray is not filtering the page behind it').toMatch(/blur\(/);
+    expect(glass.alpha, `the tray went opaque (${glass.bg})`).toBeLessThan(0.9);
+    expect(glass.shadow, 'the tray lost the specular that separates glass from a weak fill')
+      .toContain('inset');
+
+    await transparency('reduce');
+    const solid = await readSurface(tray);
+    expect(solid.filter, 'the tray still filters for a visitor who asked for less transparency').toBe('none');
+    expect(solid.alpha, `the tray's fallback is still translucent (${solid.bg})`).toBe(1);
+    await transparency('no-preference');
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`the tray's own text stays readable through it (${scheme})`, async ({ page }) => {
+      await fillTray(page);
+      await setScheme(page, scheme);
+
+      await page.waitForTimeout(600);
+      const tray = page.locator('[aria-label="Compare set"]').first();
+      await expect(tray).toBeVisible({ timeout: 15_000 });
+      const box = (await tray.boundingBox())!;
+
+      // Sample the composited surface as rendered — through the blur, over whatever is behind it.
+      const [surface] = await samplePixels(page, [
+        { x: Math.round(box.x + 8), y: Math.round(box.y + box.height / 2) },
+      ]);
+      const textColor = await page.evaluate(() => {
+        const el = document.querySelector('[aria-label="Compare set"]');
+        const probe = [...(el?.querySelectorAll('*') ?? [])].find((n) => n.textContent?.trim());
+        return getComputedStyle(probe ?? el!).color;
+      });
+      const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(textColor)!;
+      const text: [number, number, number] = [Number(m[1]), Number(m[2]), Number(m[3])];
+
+      /**
+       * What this does and does not constrain, measured rather than assumed.
+       *
+       * It guards the TEXT-against-surface pairing — it would catch the tray's label being dimmed,
+       * or a tint drifting toward the text colour. It does NOT constrain the tint: the composited
+       * surface measures 17.05:1 at 55% and 16.47:1 at 3% in light, 15.78:1 and 16.42:1 in dark, so
+       * a threshold low enough to be meaningful cannot be crossed by thinning the glass. (Verified
+       * by thinning it to 3% and watching this pass.) The tint is justified by measurement in the
+       * commit, not by this assertion.
+       *
+       * It is still worth having, because axe will never do it: axe cannot resolve a
+       * backdrop-filtered backdrop, so `color-contrast` inside a translucent surface returns
+       * INCOMPLETE, and a11y.spec.ts reads violations only. Without this the gate would pass on a
+       * tray nobody could read.
+       */
+      const ratio = contrast(text, surface);
+      expect(
+        ratio,
+        `the tray's text measures ${ratio.toFixed(2)}:1 against its own composited surface rgb(${surface}) in ${scheme}`,
+      ).toBeGreaterThan(4.5);
+    });
+  }
+});
