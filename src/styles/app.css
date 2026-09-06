@@ -141,6 +141,16 @@
      strength changes: on a white canvas it is nearly the full highlight, on the dark one a trace. */
   --glass-sheen: rgba(255, 255, 255, 0.75);
 
+  /* The lit face of a FIGURE — a broad tonal bloom at a chart card's top edge, not an edge line.
+     `--glass-sheen` cannot do this job: it is white, and white over the white light card composites
+     to exactly #ffffff (dE 0.00) — the same "blurring something invisible produces nothing" failure
+     recorded further down. So light goes COOLER instead of brighter, which is how glass over white
+     paper actually reads. The two schemes need different alphas, not one value: measured at the
+     rendered peak, light lands dE 3.33 and dark dE 3.51 against their own card faces, both above
+     the ~2.3 JND and far below the ~8 where a wash starts reading as a coloured panel. Dark needs
+     MORE alpha than light, not less. */
+  --chart-sheen: rgba(14, 110, 131, 0.1);
+
   /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
      meaning, corrected once, instead of one class per component. */
@@ -210,6 +220,7 @@ body {
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
   --glass-sheen: rgba(255, 255, 255, 0.07);
+  --chart-sheen: rgba(255, 255, 255, 0.06);
 
   /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
      inputs, dark-5 hover, dark-4 borders. Remapping these four onto the ramp is what makes the
@@ -352,14 +363,33 @@ body {
 
 /* ── Shared chart chrome: one glass tooltip look, soft bar-hover transitions, and a small reusable
    "value pill" for chart hover-readouts (crosshair axis pills, range-bar hover readout). ── */
+/* The tooltip's surface lives in variables, not in the rule, because the same look has to be
+   reachable from CSS-in-JS: Recharts' own `DefaultTooltipContent` writes background/border/padding
+   as INLINE styles, so a class could only win with `!important` three times over. `TIP_STYLE` in
+   lib/chartStyle.ts reads these same four variables, which is what makes the twins one thing
+   instead of two copies — and it is what puts the fallbacks below within reach of both. */
+:root {
+  --tip-bg: color-mix(in srgb, var(--mantine-color-body) 82%, transparent);
+  --tip-blur: blur(10px);
+}
+/* Both fallbacks land on the same place, for the reason the hero panel records: a translucent
+   surface with nothing filtering it is not a softer glass, it is a washed-out card. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --tip-bg: var(--surface); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --tip-bg: var(--surface); --tip-blur: none; }
+}
 .chart-tip {
-  background: color-mix(in srgb, var(--mantine-color-body) 82%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: var(--tip-bg);
+  backdrop-filter: var(--tip-blur);
+  -webkit-backdrop-filter: var(--tip-blur);
   border: 1px solid var(--mantine-color-default-border);
   border-radius: 10px;
   padding: 6px 10px;
-  box-shadow: var(--mantine-shadow-md);
+  /* `--chart-sheen`, not `--glass-sheen`: an 82%-white tip sits on a white plot area in light mode,
+     so a white specular would be a dark-mode-only cue. */
+  box-shadow: inset 0 1px 0 var(--chart-sheen), var(--mantine-shadow-md);
 }
 .recharts-bar-rectangle path {
   transition: fill-opacity var(--dur-instant) ease;
@@ -387,7 +417,12 @@ path.recharts-tooltip-cursor {
   padding: 3px 7px;
   border-radius: 999px;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  /* Unlike every card in the app, this chip is accent-coloured, so a white specular has somewhere to
+     go: 14% white over accent-7 measures dE 8.17. That is far stronger than the chart-card bloom on
+     purpose — this is a 1px line on a 17px chip, where the eye integrates almost no area, against a
+     field covering a third of a card. The shadow was a literal that bypassed the scale, which meant
+     it stayed dark-ink-on-dark after the dark elevation fix. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--mantine-shadow-md);
 }
 
 /* Hover on an interactive card: the border comes forward. It used to lift 2px and grow a shadow —

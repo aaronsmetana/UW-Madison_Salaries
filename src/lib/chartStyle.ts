@@ -25,16 +25,22 @@ export const Y_PAD = { top: 6, bottom: 6 } as const;
 /**
  * One glass-surface look for every Recharts *default* tooltip (i.e. any `<Tooltip formatter=…/>`
  * that doesn't render a bespoke `content=` component) — pass as `contentStyle`. Bespoke tooltips get
- * the same look via the `.chart-tip` class (see `TipSurface` in `components/chart/ChartTooltip.tsx`);
- * this is the CSS-in-JS twin of that class for the cases where Recharts owns the markup.
+ * the same look via the `.chart-tip` class (see `TipSurface` in `components/chart/ChartTooltip.tsx`).
+ *
+ * This has to stay CSS-in-JS: Recharts' `DefaultTooltipContent` writes background, border and
+ * padding as inline styles, so the class could only beat it with `!important` three times over.
+ * But it is no longer a second COPY of the look — every value below reads the same variable the
+ * class does, so the two cannot drift, and the `@supports` / `prefers-reduced-transparency`
+ * fallbacks in app.css reach this object too. A media query is unreachable from here; the variable
+ * it rewrites is not, which is the whole trick.
  */
 export const TIP_STYLE: CSSProperties = {
-  background: 'color-mix(in srgb, var(--mantine-color-body) 82%, transparent)',
-  backdropFilter: 'blur(10px)',
-  WebkitBackdropFilter: 'blur(10px)',
+  background: 'var(--tip-bg)',
+  backdropFilter: 'var(--tip-blur)',
+  WebkitBackdropFilter: 'var(--tip-blur)',
   border: '1px solid var(--mantine-color-default-border)',
   borderRadius: 10,
-  boxShadow: 'var(--mantine-shadow-md)',
+  boxShadow: 'inset 0 1px 0 var(--chart-sheen), var(--mantine-shadow-md)',
   padding: '6px 10px',
 };
 export const TIP_LABEL_STYLE: CSSProperties = { color: 'var(--mantine-color-text)', fontWeight: 600 };

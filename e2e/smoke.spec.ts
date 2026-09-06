@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readSurface, transparencyEmulator } from './glass';
 
 // DuckDB-WASM needs a moment to boot on a cold page load; give assertions room via expect's
 // built-in polling rather than fixed sleeps.
@@ -482,32 +483,11 @@ test.describe('the landing distribution', () => {
     await expect(panel).toBeVisible({ timeout: 60_000 });
 
     // 1. The panel is translucent and filtering — and goes solid when someone has asked for less
-    //    transparency, which is the other half of the same rule.
-    //
-    //    The preference is *emulated* rather than inherited. Asserting glass against whatever the
-    //    host machine reports is not a test of the stylesheet, it is a test of the machine: this
-    //    assertion passed on a developer Mac and failed in CI, because the panel there was correctly
-    //    taking the `prefers-reduced-transparency` branch and the test had no idea that branch
-    //    existed. Emulating both is deterministic everywhere and covers the fallback for free.
-    //    Playwright's `emulateMedia` has no key for this feature yet, hence CDP.
-    const cdp = await page.context().newCDPSession(page);
-    const transparency = (value: 'no-preference' | 'reduce') =>
-      cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value }] });
-
-    const readPanel = () => panel.evaluate((el) => {
-      const cs = getComputedStyle(el);
-      // `color-mix()` computes to `color(srgb r g b / a)`, not to `rgba()`, so read the alpha out of
-      // either form rather than pattern-matching one of them.
-      const bg = cs.backgroundColor;
-      const slash = /\/\s*([\d.]+%?)\s*\)/.exec(bg);
-      const legacy = /rgba?\(([^)]+)\)/.exec(bg);
-      const alpha = slash
-        ? (slash[1].endsWith('%') ? parseFloat(slash[1]) / 100 : Number(slash[1]))
-        : legacy
-          ? ((p) => (p.length > 3 ? Number(p[3]) : 1))(legacy[1].split(/[,\s/]+/).filter(Boolean))
-          : 1;
-      return { filter: cs.backdropFilter || cs.getPropertyValue('-webkit-backdrop-filter'), bg, alpha };
-    });
+    //    transparency, which is the other half of the same rule. Both helpers live in `./glass`
+    //    because every glass surface in the app needs this exact treatment; the comment there
+    //    records why the preference is emulated rather than inherited.
+    const transparency = await transparencyEmulator(page);
+    const readPanel = () => readSurface(panel);
 
     await transparency('no-preference');
     const glass = await readPanel();

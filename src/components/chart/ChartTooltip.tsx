@@ -5,6 +5,11 @@ import { Text, Group } from '@mantine/core';
  * One glass surface for every bespoke chart tooltip in the app — a translucent, blurred card (see
  * `.chart-tip` in `src/styles/app.css`) instead of each tooltip hand-rolling its own Paper/div. Wrap a
  * tooltip's content in this instead of `<Paper withBorder shadow="sm" p="xs">` or a raw styled div.
+ *
+ * Its sibling is `TIP_STYLE` in `lib/chartStyle.ts`, for the tooltips where Recharts owns the markup
+ * and writes inline styles a class cannot beat. The two are no longer copies: both resolve the same
+ * `--tip-bg` / `--tip-blur` tokens, which is also what puts the reduced-transparency fallback within
+ * reach of the CSS-in-JS one. `e2e/glass.spec.ts` fails if they drift.
  */
 export function TipSurface({ children }: { children: ReactNode }) {
   return <div className="chart-tip">{children}</div>;

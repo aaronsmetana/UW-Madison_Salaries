@@ -1,5 +1,12 @@
 /** A body-colored rounded-rect pill behind text, so a label stays legible over whatever chart marks
- *  (bars, lines, reference areas) sit beneath it — the one way this app draws text over marks. */
+ *  (bars, lines, reference areas) sit beneath it — the one way this app draws text over marks.
+ *
+ *  This is the third expression of the tooltip surface, after `.chart-tip` in app.css and `TIP_STYLE`
+ *  in lib/chartStyle.ts — and unlike those two it is deliberately NOT folded into them. It lives in
+ *  SVG, where there is no backdrop to filter and no way to read `--tip-bg` through a `color-mix()`,
+ *  so unifying it would mean re-faking the look with a third set of hardcoded numbers rather than
+ *  sharing the first. The 0.85 fill is its own decision; if the tooltip tint moves, consider whether
+ *  this should follow, but do not assume it can. */
 export function SvgPill({
   x, y, text, color = 'var(--mantine-color-dimmed)', fontWeight = 700, fontSize = 10,
 }: {
