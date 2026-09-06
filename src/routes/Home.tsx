@@ -596,7 +596,9 @@ export default function Home() {
             the headline and paragraph use. The narrow hero column is a reading measure, and a figure
             is not prose: at 880px the plot was a 4.9:1 box, and the two features the $1k buckets
             exist to resolve read better with the extra 320px than any amount of extra height gives
-            them. The search input keeps the reading measure below — it is an input, not a figure. */}
+            them. The search field matches it: it is the page's primary action and the thing the
+            headline tells you to use, so it reads as underweight at anything narrower than the
+            figure it sits under. */}
         <Stack gap="lg" maw="var(--content-max)" mx="auto" w="100%" className="hero-rise">
           <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
             <Distribution
@@ -610,9 +612,7 @@ export default function Home() {
             />
           </Anchor>
 
-          <Box maw="var(--content-prose)" mx="auto" w="100%">
-            <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
-          </Box>
+          <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
 
           {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
               Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}

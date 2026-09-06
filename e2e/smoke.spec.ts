@@ -366,6 +366,59 @@ test.describe('the landing distribution', () => {
       .toBeLessThan(0.5);
   });
 
+  /**
+   * The band marks its two edges and leaves its middle completely alone.
+   *
+   * Tested in pixels rather than in CSS, because the property that matters is not "there is a mask"
+   * but "the reader can see the curve they are pointing at, unaltered". A gradient BACKGROUND would
+   * satisfy any style-based assertion here while the backdrop blur went on softening the middle at
+   * full strength — which is the thing that actually obscured the spikes.
+   *
+   * The comparison is a byte-compare of two tiny screenshots of the same strip, hovered and not.
+   * Identical at the centre; different at the edge. Both halves are asserted, because a band that
+   * changes nothing anywhere would pass the first check on its own.
+   */
+  test('marks its edges and leaves its middle untouched', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('./', { waitUntil: 'networkidle' });
+    await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(600);
+
+    const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+    const hoverAt = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height * 0.6 };
+    const away = { x: plot.x + plot.width / 2, y: plot.y - 80 };
+
+    await page.mouse.move(hoverAt.x, hoverAt.y);
+    const band = page.locator('.hero-dist-band');
+    await expect(band).toBeVisible();
+    const b = (await band.boundingBox())!;
+
+    // Low in the plot, clear of the readout dot (which rides the curve) and the pill above it.
+    const y = plot.y + plot.height - 24;
+    const strip = (x: number) => ({ clip: { x, y, width: 3, height: 8 } });
+    const centre = b.x + b.width / 2 - 1.5;
+    const edge = b.x;
+
+    await page.mouse.move(away.x, away.y);
+    await expect(band).toBeHidden();
+    const centreBefore = await page.screenshot(strip(centre));
+    const edgeBefore = await page.screenshot(strip(edge));
+
+    await page.mouse.move(hoverAt.x, hoverAt.y);
+    await expect(band).toBeVisible();
+    const centreAfter = await page.screenshot(strip(centre));
+    const edgeAfter = await page.screenshot(strip(edge));
+
+    expect(
+      Buffer.compare(centreBefore, centreAfter),
+      'the middle of the band alters the curve underneath it — that is the part the reader is pointing at',
+    ).toBe(0);
+    expect(
+      Buffer.compare(edgeBefore, edgeAfter),
+      'the edge of the band draws nothing, so it marks no ±$5k boundary at all',
+    ).not.toBe(0);
+  });
+
   // The pill carries four variable-length fields and is ~65% of the panel's width on a phone, so
   // where it may sit is a pixel question. It was answered with two thresholds (anchor left below
   // 15%, right above 85%) that assumed a narrower pill, and adding the percentile broke it in the

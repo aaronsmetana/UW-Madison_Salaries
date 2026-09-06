@@ -728,25 +728,35 @@ button:active,
    readable THROUGH the band, which is the whole point of showing a width instead of a line. */
 .hero-dist-band {
   border-radius: 3px;
-  background: color-mix(in srgb, var(--mantine-color-accent-6) 13%, transparent);
+  background: color-mix(in srgb, var(--mantine-color-accent-6) 16%, transparent);
   backdrop-filter: blur(3px) saturate(1.25);
   -webkit-backdrop-filter: blur(3px) saturate(1.25);
   border-left: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
   box-shadow: inset 0 1px 0 var(--glass-sheen);
+  /* Solid at the two edges, nothing at all in the middle.
+     The edges are the information — they are where ±$5k actually falls — and the middle is where
+     the reader is pointing, so frosting it was working against the band's own purpose: it softened
+     the exact spikes the pointer had picked out. A MASK rather than a gradient background, because
+     the mask fades the whole rendering — the tint, the inset sheen, and the backdrop blur together.
+     A gradient background alone would leave the blur covering the middle at full strength, which is
+     the part that actually obscured the curve. The borders sit at 0% and 100%, where the mask is
+     fully opaque, so they stay crisp. */
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 10%, transparent 44%, transparent 56%, #000 90%, #000 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 10%, transparent 44%, transparent 56%, #000 90%, #000 100%);
 }
 /* Same fallback pair every other glass surface carries: without a backdrop-filter the tint alone
    has to carry the band, so it goes up enough to read on its own. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .hero-dist-band {
-    background: color-mix(in srgb, var(--mantine-color-accent-6) 20%, transparent);
+    background: color-mix(in srgb, var(--mantine-color-accent-6) 26%, transparent);
   }
 }
 @media (prefers-reduced-transparency: reduce) {
   .hero-dist-band {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background: color-mix(in srgb, var(--mantine-color-accent-6) 22%, transparent);
+    background: color-mix(in srgb, var(--mantine-color-accent-6) 28%, transparent);
   }
 }
 
