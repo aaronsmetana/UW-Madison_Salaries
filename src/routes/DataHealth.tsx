@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, Switch, ThemeIcon, Select, ScrollArea, VisuallyHidden } from '@mantine/core';
 import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconStack2, IconArrowUp, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
@@ -173,7 +173,9 @@ export default function DataHealth() {
   useDocTitle('About the data');
   const { data: manifest, isLoading, error, refetch } = useManifest();
   const snapId = useActiveSnapshotId();
-  const [compact, setCompact] = useState(false);
+  // `null` until the reader touches the switch, so the measured default below can win before then and
+  // an explicit choice wins forever after — in both directions.
+  const [userCompact, setUserCompact] = useState<boolean | null>(null);
   // 'date' ascending reproduces the chronological default the table always had.
   const [sort, setSort] = useState<SortState<SortKey>>({ key: 'date', dir: 'asc' });
   const [year, setYear] = useState('all');
@@ -182,22 +184,44 @@ export default function DataHealth() {
   const parquetSize = useFileSize(parquetUrl);
   const manifestSize = useFileSize(manifestUrl);
 
-  // The ingestion table's scroll state, measured rather than inferred. Held as state, not a ref, so the
+  // The ingestion table's own box, measured rather than inferred. Held as state, not a ref, so the
   // effect re-runs when the viewport actually mounts — it does not exist during the loading skeleton.
   const [snapViewport, setSnapViewport] = useState<HTMLDivElement | null>(null);
   const [snapOverflowing, setSnapOverflowing] = useState(false);
-  useEffect(() => {
+  const [snapAvailable, setSnapAvailable] = useState(0);
+  // `useLayoutEffect`, like the app's other measured components, so the narrow default is applied
+  // before paint instead of flashing the full table for a frame on a phone.
+  useLayoutEffect(() => {
     if (!snapViewport) return undefined;
-    const measure = () => setSnapOverflowing(snapViewport.scrollWidth > snapViewport.clientWidth + 1);
+    const measure = () => {
+      setSnapOverflowing(snapViewport.scrollWidth > snapViewport.clientWidth + 1);
+      setSnapAvailable(snapViewport.clientWidth);
+    };
     measure();
     // Both boxes matter: the viewport changes with the window and the sidebar, the table changes when
-    // a column is added or dropped. Watching only one leaves the fade stale after the other moves.
+    // a column is added or dropped. Watching only one leaves the reading stale after the other moves.
+    // The window listener is here for the same reason it is on the peer charts — some engines do not
+    // surface viewport resizes through ResizeObserver — and fonts settle after first paint, which
+    // moves every column width in a table sized by its text.
     const ro = new ResizeObserver(measure);
     ro.observe(snapViewport);
     const table = snapViewport.querySelector('table');
     if (table) ro.observe(table);
-    return () => ro.disconnect();
+    document.fonts?.ready.then(measure).catch(() => {});
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, [snapViewport]);
+
+  /** What the full ten-column table needs; below this the reader gets the compact one by default. */
+  const FULL_TABLE_MIN_WIDTH = 920;
+  // Measured, not a media query: the sidebar collapses from 330px to 64px, which moves the viewport
+  // width this threshold corresponds to by 266px. A `(min-width: …)` query would hide columns from a
+  // table that had room for them.
+  const compactByWidth = snapAvailable > 0 && snapAvailable < FULL_TABLE_MIN_WIDTH;
+  const compact = userCompact ?? compactByWidth;
 
 
   // Shimmer skeleton while the static manifest payload is fetched, so the page never flashes empty.
@@ -501,7 +525,7 @@ export default function DataHealth() {
               size="xs" w={120} aria-label="Filter snapshots by year" data={yearOptions}
               value={year} onChange={(v) => setYear(v ?? 'all')} allowDeselect={false}
             />
-            <Switch size="xs" label="Hide technical details" checked={compact} onChange={(e) => setCompact(e.currentTarget.checked)} />
+            <Switch size="xs" label="Hide technical details" checked={compact} onChange={(e) => setUserCompact(e.currentTarget.checked)} />
           </Group>
         </Group>
         <Text size="xs" c="dimmed" mb="md">
@@ -511,20 +535,37 @@ export default function DataHealth() {
             <> · <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" inherit>data dictionary →</Anchor></>
           )}
         </Text>
-        <Box role="region" aria-label="Per-snapshot ingestion table" tabIndex={0} className="data-snap-region">
         {/* `stickyHeaderOffset` resolves against the nearest scrolling ancestor, which inside a
             ScrollContainer is the ScrollArea viewport — not the document. The old 108px offset therefore
             pushed the header 108px DOWN INTO the table, over the first two rows. `ScrollArea.Autosize`
-            with a bounded height and no offset is what the app's seven other sticky tables use. */}
+            with a bounded height and no offset is what the app's seven other sticky tables use.
+
+            The keyboard region goes on the viewport rather than on a Box around it. Arrow keys scroll
+            the nearest scrollable *ancestor* of the focused element, never a scroller nested inside it,
+            so announcing a region on a wrapper gave the reader a focus stop that scrolled the page
+            instead of the table. */}
         <ScrollArea.Autosize
           mah={620}
           type="auto"
           offsetScrollbars="present"
           className="data-snap-scroll"
           viewportRef={setSnapViewport}
+          viewportProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Per-snapshot ingestion table' }}
           data-overflowing={snapOverflowing || undefined}
         >
-      <Table stickyHeader miw={compact ? 680 : 920} className="data-snap-table">
+      {/* `striped={false}` against the theme default (theme.ts:90), because on this table the stripe and
+          the meaning collide: `--table-striped-color` is #f8f9fa, and `--mantine-color-default-hover` —
+          the shade a row with a note carries — is the same #f8f9fa. The caption below tells the reader
+          "a shaded row carries a note worth reading", and with striping on six of the ten rows read as
+          shaded while only three had notes, so the mark it points at was not one you could act on.
+
+          Note that the stylesheet is what actually suppresses the stripe: `.data-snap-table tbody tr`
+          sets an opaque background for the pinned first column to inherit, and being unlayered it beats
+          Mantine's `@layer mantine` stripe rule whatever this prop says. So this is not the mechanism —
+          it is here so the call site asks for what the stylesheet delivers instead of requesting a
+          stripe that is then silently discarded. `highlightOnHover` stays and still paints: its rule
+          outranks that background, and a transient highlight cannot be mistaken for a permanent mark. */}
+      <Table stickyHeader striped={false} miw={compact ? 680 : 920} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>
             <SortableTh sortKey="date" label="Snapshot" sort={sort} onSort={setSort} />
@@ -598,7 +639,6 @@ export default function DataHealth() {
         </Table.Tbody>
       </Table>
         </ScrollArea.Autosize>
-        </Box>
         <Text size="xs" c="dimmed" mt="sm">
           Hover any column heading for its definition. A <b>shaded row</b> carries a note worth reading — the
           Nov-2021 TTC relabel, or the Oct-2023 scope change.

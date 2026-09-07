@@ -219,9 +219,10 @@ body {
 
      These resolve OPAQUE on purpose. A literal rgba() surface would break three things this file has
      already fixed: a Paper nested in a Card (Compare's three add-blocks, ReportBrief's note panel)
-     would stack the overlay and render darker than a card on its own; and both `.data-snap-table
-     thead th` and `.data-jumpnav` below are sticky surfaces that have to occlude the rows scrolling
-     underneath them — see the comment on the table header, which records that exact bug. */
+     would stack the overlay and render darker than a card on its own; and `.data-snap-table thead th`,
+     that table's pinned first column, and `.data-jumpnav` below are all sticky surfaces that have to
+     occlude the rows scrolling underneath them — see the comment on the table header, which records
+     that exact bug. */
   --base: #08090b;
   --lift: #d8e6f5;
   --page-bg: var(--base);
@@ -1105,6 +1106,44 @@ button:active,
    simply showed through the header. Mantine's own `var(--mantine-color-body)` is opaque and correct;
    only the hairline below is ours. */
 .data-snap-table thead th { box-shadow: inset 0 -1px 0 0 var(--hairline-strong); }
+
+/* Pin the Snapshot column. Below roughly a 1324px viewport the table scrolls, and scrolling right used
+   to carry the row label away with it, leaving a screenful of numbers with nothing to say which
+   snapshot any of them belongs to.
+
+   Three details are load-bearing:
+
+   The hairline is an inset `box-shadow`, not a `border-right`. This table is `border-collapse: collapse`,
+   where borders belong to the collapsed grid rather than to the cell, so a border on a sticky cell does
+   not travel with it — the same reason the header hairline above is drawn this way.
+
+   The background has to be opaque or the scrolling columns read straight through the pinned one.
+   `var(--mantine-color-body)` is the card's own background in both schemes, and the dark ramp resolves
+   its surfaces opaque precisely so sticky surfaces like this one can occlude.
+
+   The base colour goes on the ROW, with `inherit` on the cell, so every state the row can be in reaches
+   the pinned column rather than being flattened by it: a noted row sets its background inline and inline
+   beats a stylesheet, and Mantine's `:hover` outranks this rule, so both the permanent mark and the
+   transient highlight carry through. Setting the background on the cell instead would have left the
+   annotated rows looking unshaded in the one column that never scrolls away. */
+.data-snap-table tbody tr { background: var(--mantine-color-body); }
+.data-snap-table thead th:first-child,
+.data-snap-table tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: var(--z-content);
+  background: inherit;
+  box-shadow: inset -1px 0 0 0 var(--hairline-strong);
+}
+/* The corner cell is sticky on both axes, so it has to outrank the column below it and the header
+   cells beside it — Mantine leaves those at `auto`, and a positioned cell beats `auto` whatever the
+   DOM order. Both values stay at the bottom of the scale on purpose: the sticky jump nav sits at
+   `--z-sticky`, and this table must never paint over the page chrome it scrolls beneath. */
+.data-snap-table thead th:first-child {
+  z-index: var(--z-local);
+  background: var(--mantine-color-body);
+  box-shadow: inset -1px 0 0 0 var(--hairline-strong), inset 0 -1px 0 0 var(--hairline-strong);
+}
 
 /* Methodology download buttons. The hover lift is gone for the same reason as `.card-hover`: a
    button that rises off the page is elevation used as decoration. Mantine's own hover fill is the

@@ -163,6 +163,148 @@ test.describe('data · about', () => {
   });
 
   /**
+   * The Snapshot column stays put while the rest of the table scrolls. Below ~1324px the table still
+   * overflows, and scrolling right used to carry the row label away with it — leaving a screenful of
+   * numbers with nothing to say which snapshot any of them belonged to.
+   *
+   * This could not work at all until the table had a single scroll container: `position: sticky`
+   * resolves against the nearest one, and while the Autosize wrapper was doing the scrolling the cell
+   * was pinned to a viewport that never moved, so it slid off at 37 -> -213.
+   *
+   * The background assertions are not decoration. A transparent pinned cell lets the scrolling columns
+   * read straight through it, and a pinned cell that drops the inline shading of a "noted" row makes
+   * those rows look unremarkable in the one column that never scrolls away.
+   */
+  test('the Snapshot column stays put while the rest of the table scrolls', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+
+    const m = await page.evaluate(() => {
+      const vp = document.querySelector<HTMLElement>('.data-snap-scroll .mantine-ScrollArea-viewport')!;
+      const rows = [...vp.querySelectorAll<HTMLElement>('tbody tr')];
+      const isShaded = (r: HTMLElement) => (r.getAttribute('style') ?? '').includes('background');
+      const plain = rows.find((r) => !isShaded(r));
+      const shaded = rows.find(isShaded);
+      const cell = plain?.querySelector<HTMLElement>('td');
+      const vpLeft = Math.round(vp.getBoundingClientRect().left);
+      const before = cell ? Math.round(cell.getBoundingClientRect().left) : null;
+      vp.scrollLeft = 250;
+      const out = {
+        scrolledBy: vp.scrollLeft,
+        vpLeft,
+        before,
+        after: cell ? Math.round(cell.getBoundingClientRect().left) : null,
+        plainBg: cell ? getComputedStyle(cell).backgroundColor : null,
+        shadedBg: shaded?.querySelector('td') ? getComputedStyle(shaded.querySelector('td')!).backgroundColor : null,
+      };
+      vp.scrollLeft = 0;
+      return out;
+    });
+
+    const seen = JSON.stringify(m);
+    expect(m.scrolledBy, `the table did not scroll, so pinning is untested here — ${seen}`).toBeGreaterThan(0);
+    expect(m.after, `the Snapshot column scrolled away with the rest of the table — ${seen}`).toBe(m.before);
+    expect(Math.abs((m.after ?? 0) - m.vpLeft), `the pinned column is not at the scroller's edge — ${seen}`).toBeLessThanOrEqual(2);
+    // A transparent pinned cell is the failure mode that still *looks* pinned until rows slide under it.
+    expect(m.plainBg, `the pinned column is transparent — ${seen}`).not.toBe('rgba(0, 0, 0, 0)');
+    expect(m.shadedBg, `a noted row lost its shading in the pinned column — ${seen}`).not.toBe(m.plainBg);
+  });
+
+  /**
+   * "A shaded row carries a note worth reading" — the caption under this table says so, and it was not
+   * true. The theme sets `striped: true` for every Table (theme.ts:90), and `--table-striped-color` is
+   * #f8f9fa, the *same* colour as `--mantine-color-default-hover`, which is the shade a noted row
+   * carries. Six of the ten rows therefore read as shaded while only three had notes, so the mark the
+   * caption points at was not one a reader could act on. Striping is off for this table now.
+   *
+   * The assertion compares the two sets rather than counting, so the failure names the rows that
+   * disagreed — and it would fail equally if a real note ever stopped being marked.
+   */
+  test('a shaded row is exactly a row carrying a note', async ({ page }) => {
+    // Keep the pointer off the table: `highlightOnHover` is deliberately still on, and a hovered row
+    // is legitimately shaded without carrying a note.
+    await page.mouse.move(0, 0);
+
+    const rows = await page.evaluate(() => {
+      const base = getComputedStyle(document.documentElement).getPropertyValue('--mantine-color-body').trim();
+      const probe = document.createElement('div');
+      probe.style.backgroundColor = base;
+      document.body.appendChild(probe);
+      const unshaded = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+
+      return [...document.querySelectorAll<HTMLElement>('.data-snap-table tbody tr')].map((r) => ({
+        label: (r.querySelector('td')?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 20),
+        shaded: getComputedStyle(r).backgroundColor !== unshaded,
+        // The note is what drives the inline background in DataHealth.tsx, and it is also the only
+        // thing rendered into the STATUS cell in italics, so either would do as the source of truth.
+        carriesNote: (r.getAttribute('style') ?? '').includes('background'),
+      }));
+    });
+
+    const seen = JSON.stringify(rows);
+    expect(rows.length, `no ingestion rows rendered — ${seen}`).toBeGreaterThan(3);
+    const shaded = rows.filter((r) => r.shaded).map((r) => r.label).sort();
+    const noted = rows.filter((r) => r.carriesNote).map((r) => r.label).sort();
+    expect(noted.length, `no row carries a note, so the caption marks nothing — ${seen}`).toBeGreaterThan(0);
+    expect(shaded, `shaded rows and noted rows are not the same set — ${seen}`).toEqual(noted);
+  });
+
+  /**
+   * A narrow table starts compact, and the switch still wins. The threshold is measured off the
+   * scroller rather than a media query on purpose: the sidebar collapses from 330px to 64px, which
+   * moves the viewport width the same card width corresponds to by 266px, so a `(min-width: …)` query
+   * would hide columns from a table that had room for them.
+   */
+  test('a table with no room starts compact, and the reader can still override it', async ({ page }) => {
+    const columns = () => page.locator('.data-snap-table thead th').count();
+    const toggle = page.getByRole('switch', { name: /hide technical details/i });
+
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await expect(async () => {
+      expect(await columns(), 'a table with no room did not drop to the compact column set').toBe(9);
+    }).toPass({ timeout: 5_000 });
+    await expect(toggle, 'the switch does not reflect the compact table the reader is looking at').toBeChecked();
+
+    // The measured default must never trap the reader in it. Mantine keeps the Switch's native input
+    // visually hidden under a styled track, so Playwright's actionability check on the input never
+    // passes — click the label text, exactly as a real reader would (same as reports.spec.ts).
+    await page.getByText('Hide technical details').click();
+    await expect(async () => {
+      expect(await columns(), 'turning technical details back on did not restore the full table').toBe(10);
+    }).toPass({ timeout: 5_000 });
+
+    // And a table with room shows everything without being asked.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.reload();
+    await expect(page.locator('.data-snap-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+    await expect(async () => {
+      expect(await columns(), 'a table with room still hid a column').toBe(10);
+    }).toPass({ timeout: 5_000 });
+  });
+
+  /**
+   * The table can be scrolled from the keyboard. `role="region"` + `tabIndex={0}` sat on a Box that
+   * *contained* the scroller rather than on the scroller itself, and arrow keys act on the nearest
+   * scrollable ancestor of the focused element — never on one nested inside it. So the region was
+   * announced, took a focus stop, and scrolled the page instead of the table.
+   */
+  test('the ingestion table can be scrolled from the keyboard', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    const viewport = page.locator('.data-snap-scroll .mantine-ScrollArea-viewport');
+    await expect(viewport, 'the scrollable region is not the element that scrolls').toHaveAttribute('role', 'region');
+
+    await viewport.focus();
+    await expect(viewport).toBeFocused();
+    const before = await viewport.evaluate((el) => el.scrollLeft);
+    await page.keyboard.press('ArrowRight');
+
+    await expect(async () => {
+      const after = await viewport.evaluate((el) => el.scrollLeft);
+      expect(after, 'ArrowRight moved the page, not the table').toBeGreaterThan(before);
+    }).toPass({ timeout: 3_000 });
+  });
+
+  /**
    * `stickyHeaderOffset` resolves against the nearest scrolling ancestor. Inside a `Table.ScrollContainer`
    * that ancestor is the ScrollArea viewport, not the document, so the offset pushed the header *down
    * into* the table and it rendered over the first rows — the header sat 49px BELOW row 1 on production.
