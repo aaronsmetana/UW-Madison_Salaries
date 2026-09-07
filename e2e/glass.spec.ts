@@ -454,6 +454,52 @@ test.describe('floating glass', () => {
     await expect(page.locator('[aria-label="Compare set"]')).toBeVisible({ timeout: 15_000 });
   }
 
+  /**
+   * Any rule that sets `box-shadow` on a Mantine surface overrides whatever its `shadow=` prop
+   * resolved to. `.glass` hardcoded `--mantine-shadow-sm` and so silently demoted the selection tray
+   * from `shadow="lg"` to the near-invisible hairline tier — on the one surface whose entire job is
+   * to read as floating, in the same change that set out to fix its elevation. `--paper-shadow` is
+   * declared only when a `shadow=` prop is present, so the assertion is: if a surface declared a
+   * tier, its computed shadow still contains it.
+   *
+   * Both directions are covered — the tray, which declares `lg`, and a ReportBrief chart card, which
+   * declares `sm` and gets the specular stacked on top of it.
+   */
+  for (const [name, prepare, find] of [
+    ['the selection tray', fillTray, '[aria-label="Compare set"]'],
+    ['a report chart card', async (p: import('@playwright/test').Page) => {
+      await p.goto('./reports?type=comparison', { waitUntil: 'networkidle' });
+      const search = p.getByPlaceholder('Search yourself by name to begin…');
+      await expect(search).toBeVisible({ timeout: 60_000 });
+      await search.fill('Kenneth Poss');
+      await p.getByRole('option').first().click();
+      await expect(p.locator('.report-brief')).toBeVisible({ timeout: 60_000 });
+      await p.waitForTimeout(1_500);
+    }, '.report-brief .recharts-responsive-container'],
+  ] as const) {
+    test(`keeps the elevation it declared: ${name}`, async ({ page }) => {
+      await prepare(page);
+      const declared = await page.evaluate((sel) => {
+        const hit = document.querySelector(sel);
+        const el = hit?.closest('.mantine-Paper-root') ?? hit;
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return { paper: cs.getPropertyValue('--paper-shadow').trim(), computed: cs.boxShadow };
+      }, find);
+
+      expect(declared, `could not find ${name}`).not.toBeNull();
+      expect(declared!.paper, `${name} declares no shadow tier, so this proves nothing`).not.toBe('');
+
+      // The declared tier is written as `0 8px 32px rgba(…)`; the computed form reorders it to
+      // `rgba(…) 0px 8px 32px 0px`. Compare on the numbers, which survive both spellings.
+      const nums = (v: string) => (v.match(/-?[\d.]+px/g) ?? []).join(' ');
+      expect(
+        nums(declared!.computed),
+        `${name} declared ${declared!.paper} but computes to ${declared!.computed} — a rule setting box-shadow has overridden its elevation`,
+      ).toContain(nums(declared!.paper));
+    });
+  }
+
   test('the selection tray is glass, and goes solid on request', async ({ page }) => {
     const transparency = await transparencyEmulator(page);
     await transparency('no-preference');
