@@ -24,8 +24,6 @@ const STATUS_COLOR: Record<string, string> = { ok: 'pos', warning: 'orange', err
 
 /** The columns one appointment row carries. Kept here rather than inline so the count in the disclosure
  *  label can't drift from the list, and `data-about.spec.ts` can check it against the manifest. */
-const PROSE = 'var(--content-prose)'; // The app-wide reading column (app.css). Without it prose ran to 1440px here.
-
 const RECORD_FIELDS = [
   'name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary',
   'FTE-adjusted salary', 'base pay', 'FTE', 'pay-rate type', 'FLSA status',
@@ -67,7 +65,7 @@ function Zone({ title, blurb, children }: { title: string; blurb: string; childr
     <Stack gap="lg">
       <Box>
         <Title order={2}>{title}</Title>
-        <Text c="dimmed" mt={4} maw={PROSE}>{blurb}</Text>
+        <Text c="dimmed" mt={4} maw="var(--measure)">{blurb}</Text>
       </Box>
       {children}
     </Stack>
@@ -276,7 +274,7 @@ export default function DataHealth() {
         title="What this data is"
         blurb="Who released these records, how far you can trust a number, and what the three pay views actually measure."
       >
-      <Card id="source" maw={PROSE}>
+      <Card id="source">
         <CardTitle order={3} anchorId="source">Data source &amp; acknowledgment</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
@@ -309,7 +307,6 @@ export default function DataHealth() {
         color="gray"
         variant="light"
         radius="lg"
-        maw={PROSE}
         className="alert-warn"
         icon={<IconAlertTriangle size={ICON.feature} />}
         title="Accuracy & disclaimer — these numbers may not reflect reality"
@@ -347,7 +344,7 @@ export default function DataHealth() {
         </details>
       </Alert>
 
-      <Card id="privacy" maw={PROSE}>
+      <Card id="privacy">
         <CardTitle order={3} anchorId="privacy">Privacy &amp; responsible use</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
@@ -368,7 +365,7 @@ export default function DataHealth() {
         </Stack>
       </Card>
 
-      <Card id="how-it-works" maw={PROSE}>
+      <Card id="how-it-works">
         <CardTitle order={3} anchorId="how-it-works">How these figures are calculated</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
@@ -395,7 +392,7 @@ export default function DataHealth() {
         title="How it was built"
         blurb="The pipeline from a published spreadsheet to the numbers on this site — auditable, and downloadable in full."
       >
-      <Card id="pipeline" maw={PROSE}>
+      <Card id="pipeline">
         <CardTitle order={3} anchorId="pipeline" sub="Each step is in the open-source ingestion linked below, and every figure here was read from the manifest rather than typed in.">
           From records request to this page
         </CardTitle>
@@ -409,7 +406,7 @@ export default function DataHealth() {
         />
       </Card>
 
-      <Card id="methodology" maw={PROSE}>
+      <Card id="methodology">
         <CardTitle order={3} anchorId="methodology">Methodology, reproducibility &amp; downloads</CardTitle>
         <Stack gap="sm">
           <Text size="sm">
@@ -502,7 +499,7 @@ export default function DataHealth() {
             ScrollContainer is the ScrollArea viewport — not the document. The old 108px offset therefore
             pushed the header 108px DOWN INTO the table, over the first two rows. `ScrollArea.Autosize`
             with a bounded height and no offset is what the app's seven other sticky tables use. */}
-        <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present" className="data-snap-scroll">
+        <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present" className="data-snap-scroll" data-wide={!compact || undefined}>
       <Table stickyHeader miw={compact ? 680 : 920} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>

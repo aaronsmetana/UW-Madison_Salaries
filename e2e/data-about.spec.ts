@@ -17,6 +17,58 @@ test.describe('data · about', () => {
   });
 
   /**
+   * Every section shares one right edge. The cap used to be applied per child as `maw={PROSE}` at eight
+   * call sites, and being per-child is exactly what made it forgettable: `#snapshots` and `#duplicates`
+   * (the latter in DuplicateIdentities.tsx, a different file) both missed it, so six cards ended at
+   * 880px and two ran to the full 1063 — a 183px step the reader hits mid-scroll with nothing to
+   * explain it. It now lives on `.data-about`, which both the skeleton and the loaded stack carry.
+   *
+   * Desktop-only on purpose: the main region is `viewport - 377px`, so an 880px cap only binds above a
+   * ~1257px viewport. Asserting this at 375 would pass no matter what the cap said.
+   */
+  test('every section is the same width', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const ids = ['source', 'disclaimer', 'privacy', 'how-it-works', 'pipeline', 'methodology', 'snapshots', 'duplicates'];
+
+    const edges = await page.evaluate((sectionIds) =>
+      sectionIds.map((id) => {
+        const el = document.getElementById(id);
+        if (!el) return { id, left: null, right: null };
+        const r = el.getBoundingClientRect();
+        return { id, left: Math.round(r.left), right: Math.round(r.right) };
+      }), ids);
+
+    const missing = edges.filter((e) => e.right === null).map((e) => e.id);
+    expect(missing, 'a section id vanished — update this list or restore the section').toEqual([]);
+
+    // Compare on the set, not pairwise, so the failure message names every edge that disagreed.
+    expect(new Set(edges.map((e) => e.right)), `sections disagree on a right edge: ${JSON.stringify(edges)}`).toHaveProperty('size', 1);
+    expect(new Set(edges.map((e) => e.left)), `sections disagree on a left edge: ${JSON.stringify(edges)}`).toHaveProperty('size', 1);
+  });
+
+  /**
+   * The page never scrolls sideways. Capping the column pushed the 10-column ingestion table (miw 920)
+   * past its 838px card, which is fine — `.data-snap-scroll` clips and scrolls it — but only as long as
+   * that scroller keeps clipping. If it ever stops, the table escapes the card and takes the page with it.
+   */
+  test('the ingestion table scrolls inside its card rather than widening the page', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const m = await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.data-snap-scroll')!;
+      const card = document.getElementById('snapshots')!.getBoundingClientRect();
+      const doc = document.documentElement;
+      return {
+        pageOverflow: doc.scrollWidth - doc.clientWidth,
+        scrollsBy: scroller.scrollWidth - scroller.clientWidth,
+        scrollerWithinCard: Math.round(scroller.getBoundingClientRect().right) <= Math.round(card.right),
+      };
+    });
+    expect(m.pageOverflow, 'the table widened the whole page').toBe(0);
+    expect(m.scrollerWithinCard, 'the table scroller escaped its card').toBe(true);
+    expect(m.scrollsBy, 'the wide table should scroll inside its card, not fit').toBeGreaterThan(0);
+  });
+
+  /**
    * `stickyHeaderOffset` resolves against the nearest scrolling ancestor. Inside a `Table.ScrollContainer`
    * that ancestor is the ScrollArea viewport, not the document, so the offset pushed the header *down
    * into* the table and it rendered over the first rows — the header sat 49px BELOW row 1 on production.
