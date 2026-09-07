@@ -749,14 +749,19 @@ textarea:focus-visible,
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.tab-rise > * { animation: section-rise var(--dur-quick) ease-out both; }
+.tab-rise > * { animation: section-rise var(--dur-quick) ease-out backwards; }
 .tab-rise > *:nth-child(2) { animation-delay: 40ms; }
 .tab-rise > *:nth-child(3) { animation-delay: 80ms; }
 .tab-rise > *:nth-child(n + 4) { animation-delay: 110ms; }
 
 /* One fade+rise on the whole page when navigating between routes (a single beat, not a stagger —
    the tab-rise cascade above is for sections within one page). */
-/* `backwards`, not `both`, and the difference is load-bearing.
+/* `backwards`, not `both`, and the difference is load-bearing. This applies to all three rise rules
+   — `.tab-rise > *` and `.hero-rise > *` above kept `both` long after this was fixed here, leaving
+   every one of their children with a permanent `matrix(1, 0, 0, 1, 0, 0)`. Nothing was broken by it
+   (none of them held a `position: fixed` descendant, and the back-to-top button is a `.route-rise`
+   child, a sibling of the stacks), but it was the same trap re-armed, waiting for the next fixed
+   element added inside a tab panel or Home's hero.
    `animation-fill-mode: both` keeps the final keyframe's value forever, and any transform other
    than `none` — including an identity one — makes the element a containing block for `position:
    fixed` descendants. `.route-rise` wraps every route, so that one word pinned the back-to-top
@@ -798,7 +803,7 @@ button:active,
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */
 
 /* Staggered fade-rise reveal for the hero groups (reuses the section-rise keyframes). */
-.hero-rise > * { animation: section-rise var(--dur-quick) ease-out both; }
+.hero-rise > * { animation: section-rise var(--dur-quick) ease-out backwards; }
 .hero-rise > *:nth-child(2) { animation-delay: 50ms; }
 .hero-rise > *:nth-child(3) { animation-delay: 95ms; }
 .hero-rise > *:nth-child(4) { animation-delay: 135ms; }
