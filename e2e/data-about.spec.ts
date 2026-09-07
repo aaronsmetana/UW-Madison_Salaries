@@ -17,33 +17,55 @@ test.describe('data · about', () => {
   });
 
   /**
-   * Every section shares one right edge. The cap used to be applied per child as `maw={PROSE}` at eight
-   * call sites, and being per-child is exactly what made it forgettable: `#snapshots` and `#duplicates`
-   * (the latter in DuplicateIdentities.tsx, a different file) both missed it, so six cards ended at
-   * 880px and two ran to the full 1063 — a 183px step the reader hits mid-scroll with nothing to
-   * explain it. It now lives on `.data-about`, which both the skeleton and the loaded stack carry.
+   * The page is a reading column with one data breakout, and both halves of that are asserted.
    *
-   * Desktop-only on purpose: the main region is `viewport - 377px`, so an 880px cap only binds above a
-   * ~1257px viewport. Asserting this at 375 would pass no matter what the cap said.
+   * The prose sections share an edge because the cap used to be applied per child as `maw={PROSE}` at
+   * eight call sites, and being per-child is what made it forgettable: `#snapshots` and `#duplicates`
+   * (the latter in DuplicateIdentities.tsx, a different file) both missed it, so six cards ended at
+   * 880px and two ran to the full 1063 — a 183px step the reader hit mid-scroll with nothing to
+   * explain it.
+   *
+   * `#snapshots` is now deliberately wider, because 880px is right for prose and wrong for a
+   * 10-column table: capped, it scrolled 94px at every width. So the assertion is not "all the same"
+   * but "one prose edge, and the table filling the region" — and every section still shares a LEFT
+   * edge, which is what makes the breakout read as deliberate rather than as the ragged widths this
+   * page started with.
+   *
+   * Desktop-only on purpose: the 880px cap only binds above a ~1257px viewport, so asserting it at
+   * 375 would pass no matter what the cap said.
    */
-  test('every section is the same width', async ({ page }) => {
+  test('the prose sections share one edge and the table section fills the region', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const ids = ['source', 'disclaimer', 'privacy', 'how-it-works', 'pipeline', 'methodology', 'snapshots', 'duplicates'];
 
-    const edges = await page.evaluate((sectionIds) =>
-      sectionIds.map((id) => {
-        const el = document.getElementById(id);
-        if (!el) return { id, left: null, right: null };
-        const r = el.getBoundingClientRect();
-        return { id, left: Math.round(r.left), right: Math.round(r.right) };
-      }), ids);
+    const m = await page.evaluate((sectionIds) => {
+      const column = document.querySelector('.data-about')!.getBoundingClientRect();
+      return {
+        columnRight: Math.round(column.right),
+        edges: sectionIds.map((id) => {
+          const el = document.getElementById(id);
+          if (!el) return { id, left: null, right: null };
+          const r = el.getBoundingClientRect();
+          return { id, left: Math.round(r.left), right: Math.round(r.right) };
+        }),
+      };
+    }, ids);
 
+    const { edges } = m;
     const missing = edges.filter((e) => e.right === null).map((e) => e.id);
     expect(missing, 'a section id vanished — update this list or restore the section').toEqual([]);
 
+    const seen = JSON.stringify(m);
+    const prose = edges.filter((e) => e.id !== 'snapshots');
+    const wide = edges.find((e) => e.id === 'snapshots')!;
+
     // Compare on the set, not pairwise, so the failure message names every edge that disagreed.
-    expect(new Set(edges.map((e) => e.right)), `sections disagree on a right edge: ${JSON.stringify(edges)}`).toHaveProperty('size', 1);
-    expect(new Set(edges.map((e) => e.left)), `sections disagree on a left edge: ${JSON.stringify(edges)}`).toHaveProperty('size', 1);
+    expect(new Set(prose.map((e) => e.right)), `prose sections disagree on a right edge: ${seen}`).toHaveProperty('size', 1);
+    expect(new Set(edges.map((e) => e.left)), `sections disagree on a left edge: ${seen}`).toHaveProperty('size', 1);
+
+    // The breakout is the point, so assert it rather than letting a lost `.data-wide` pass quietly.
+    expect(wide.right, `the ingestion table stopped filling the region: ${seen}`).toBe(m.columnRight);
+    expect(wide.right, `the ingestion table is no wider than the prose column: ${seen}`).toBeGreaterThan(prose[0]!.right!);
   });
 
   /**
@@ -59,9 +81,8 @@ test.describe('data · about', () => {
    * Both halves are asserted, because the broken arrangement looks identical until something tries to
    * stick to it.
    */
-  test('the ingestion table scrolls inside its card rather than widening the page', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const m = await page.evaluate(() => {
+  test('the ingestion table stays inside its card at every width', async ({ page }) => {
+    const measure = () => page.evaluate(() => {
       const wrapper = document.querySelector<HTMLElement>('.data-snap-scroll')!;
       const viewport = wrapper.querySelector<HTMLElement>('.mantine-ScrollArea-viewport')!;
       const card = document.getElementById('snapshots')!.getBoundingClientRect();
@@ -74,14 +95,71 @@ test.describe('data · about', () => {
         scrollerWithinCard: Math.round(viewport.getBoundingClientRect().right) <= Math.round(card.right),
       };
     });
-    const seen = JSON.stringify(m);
-    expect(m.pageOverflow, `the table widened the whole page — ${seen}`).toBe(0);
+
+    // Wide: the breakout gives the table room, so it should not need to scroll at all.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const wide = await measure();
+    const wideSeen = JSON.stringify(wide);
+    expect(wide.pageOverflow, `the table widened the whole page at 1440 — ${wideSeen}`).toBe(0);
     expect(
-      m.wrapperScrollsBy,
-      `the Autosize wrapper is scrolling instead of the viewport, so the styled scrollbar is gone and sticky cells cannot stick — ${seen}`,
+      wide.wrapperScrollsBy,
+      `the Autosize wrapper is scrolling instead of the viewport, so the styled scrollbar is gone and sticky cells cannot stick — ${wideSeen}`,
     ).toBe(0);
-    expect(m.viewportScrollsBy, `the wide table should scroll inside its card, not fit — ${seen}`).toBeGreaterThan(0);
-    expect(m.scrollerWithinCard, `the table scroller escaped its card — ${seen}`).toBe(true);
+    expect(wide.scrollerWithinCard, `the table scroller escaped its card at 1440 — ${wideSeen}`).toBe(true);
+    expect(
+      wide.viewportScrollsBy,
+      `the table should FIT at 1440 now that it fills the region — if this is non-zero the breakout is gone: ${wideSeen}`,
+    ).toBe(0);
+
+    // Narrow: it must still clip and scroll inside the card rather than taking the page with it.
+    await page.setViewportSize({ width: 1024, height: 900 });
+    const narrow = await measure();
+    const narrowSeen = JSON.stringify(narrow);
+    expect(narrow.pageOverflow, `the table widened the whole page at 1024 — ${narrowSeen}`).toBe(0);
+    expect(narrow.wrapperScrollsBy, `the wrapper is scrolling at 1024 — ${narrowSeen}`).toBe(0);
+    expect(narrow.scrollerWithinCard, `the table scroller escaped its card at 1024 — ${narrowSeen}`).toBe(true);
+    expect(narrow.viewportScrollsBy, `the table stopped scrolling at 1024 — ${narrowSeen}`).toBeGreaterThan(0);
+  });
+
+  /**
+   * The fade promises there is more table off to the right, and every proxy for that has been wrong at
+   * least once. It was mobile-only while the 880px column made the full table scroll at every width;
+   * then it was keyed to `!compact`, which stopped meaning "too wide" the moment the breakout let that
+   * same table fit with room to spare. Either way it drew a fade over a table with nothing to scroll,
+   * which reads as a rendering fault rather than an affordance.
+   *
+   * It is measured now, so the promise is asserted against the fact at both widths. `toPass` because
+   * the ResizeObserver settles a frame after the viewport changes.
+   */
+  test('the fade appears only when the table actually scrolls', async ({ page }) => {
+    const read = () =>
+      page.evaluate(() => {
+        const wrapper = document.querySelector<HTMLElement>('.data-snap-scroll')!;
+        const viewport = wrapper.querySelector<HTMLElement>('.mantine-ScrollArea-viewport')!;
+        return {
+          scrollsBy: viewport.scrollWidth - viewport.clientWidth,
+          faded: wrapper.hasAttribute('data-overflowing'),
+          masked: getComputedStyle(wrapper).maskImage !== 'none',
+        };
+      });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(async () => {
+      const m = await read();
+      const seen = JSON.stringify(m);
+      expect(m.scrollsBy, `expected the table to fit at 1440 — ${seen}`).toBe(0);
+      expect(m.faded, `the fade is promising columns that are not off-screen — ${seen}`).toBe(false);
+      expect(m.masked, `the mask is painted over a table that fits — ${seen}`).toBe(false);
+    }).toPass({ timeout: 5_000 });
+
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await expect(async () => {
+      const m = await read();
+      const seen = JSON.stringify(m);
+      expect(m.scrollsBy, `expected the table to overflow at 1024 — ${seen}`).toBeGreaterThan(0);
+      expect(m.faded, `the table scrolls with nothing to say so — ${seen}`).toBe(true);
+      expect(m.masked, `data-overflowing is set but no mask is painted — ${seen}`).toBe(true);
+    }).toPass({ timeout: 5_000 });
   });
 
   /**

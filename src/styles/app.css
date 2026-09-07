@@ -966,16 +966,25 @@ button:active,
    scrollspy's `rootMargin` — as 64 / 108 / 112, none of which knew the others existed. */
 :root { --data-chrome-top: 108px; }
 
-/* One reading column for the whole page, on the container rather than on each section.
-   This cap used to live on eight individual children as `maw={PROSE}`, and being per-child is what
-   made it forgettable: `#snapshots`, `#duplicates` (in DuplicateIdentities.tsx, a different file)
-   and the loading skeleton all missed it, so six cards ended at 880px and two ran to the full 1063
-   — a 183px step mid-scroll — and the skeleton rendered full-bleed then snapped to 880 on load.
-   Both the skeleton and the loaded stack already carry `.data-about`, so one rule reaches every
-   section and no new one can escape it. Left-aligned, not centred: the page has no right rail to
-   balance a centred column, so centring only opens a gap beside the nav. Only binds above a
-   ~1257px viewport (the main region is `viewport - 377px`); below that this changes nothing. */
-.data-about { max-width: var(--content-prose); }
+/* A reading column with data breakouts, which is what this page actually is: eight sections of prose
+   and one 10-column ingestion table. 880px is right for the prose and wrong for the table — capped, it
+   scrolled 94px at *every* width, because `miw: 920` cannot fit an 880px column.
+
+   The cap is still expressed on containers rather than on each section, which is the property worth
+   keeping: it used to live on eight children as `maw={PROSE}` and was duly forgotten in three places
+   (`#snapshots`, `#duplicates` in another file, and the loading skeleton). But the cards are not
+   children of `.data-about` — they sit inside the two `Zone` stacks — so holding that property takes
+   both levels. A new section is capped by default and has to opt out with `.data-wide`, which is also
+   why the opt-out is written as a descendant rather than a child: the loading skeleton's blocks sit at
+   the top level, and it needs a wide one too so the page does not reflow when the manifest lands.
+
+   Left-aligned, not centred: the page has no right rail to balance a centred column, so centring only
+   opens a gap beside the nav. `#snapshots` fills the region instead, landing on the same edges as every
+   other route (measured 346 → 1424 at 1440, identical to /explore) and needing no horizontal scroll at
+   all above a ~1324px viewport. */
+.data-about > :not(.data-zone),
+.data-about .data-zone > * { max-width: var(--content-prose); }
+.data-about .data-wide { max-width: none; }
 
 /* Fragment links landed their section at y=0, i.e. behind all of that. */
 .data-about [id] { scroll-margin-top: calc(var(--data-chrome-top) + 12px); }
@@ -1216,26 +1225,20 @@ button:active,
 .data-snap-scroll > *,
 .data-snap-scroll .mantine-ScrollArea-root { min-width: 0; }
 
-/* A right-edge fade on the table's scroll viewport hints that more columns exist off-screen. Two
-   cases need it, which is why it is no longer mobile-only:
-
-   `[data-wide]` is the full table (`miw: 920`), and 920 cannot fit the 880px reading column the page
-   now uses — so it scrolls at EVERY width, not just on a phone. Without the fade its STATUS column
-   simply stops mid-word at the card edge and reads as a rendering fault rather than as something you
-   can scroll to. (Turning off "Hide technical details" drops to `miw: 680`, which does fit, and
-   correctly loses the fade.) The mobile rule below still covers the compact table on a phone, where
-   even 680 overflows. */
-.data-snap-scroll[data-wide] {
+/* A right-edge fade hints that more columns exist off-screen. It keys off measured overflow, because
+   every proxy for "is this too wide" has now been wrong at least once: it was mobile-only until the
+   880px column made the full table scroll at every width, then it was `!compact` until the breakout
+   above let that same table fit with room to spare. `data-overflowing` is set from
+   `scrollWidth > clientWidth` on the viewport, so the fade appears exactly when there is something to
+   scroll to and never over a table that fits. */
+.data-snap-scroll[data-overflowing] {
   -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
   mask-image: linear-gradient(to right, #000 88%, transparent);
 }
 
-/* Mobile: the same hint for the compact table, plus a comfortable 48px tap target on the downloads. */
+/* Mobile: a comfortable 48px tap target on the downloads. The duplicate fade that used to live here is
+   gone — measured overflow covers the phone too, and covers it more honestly. */
 @media (max-width: 768px) {
-  .data-snap-scroll {
-    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
-    mask-image: linear-gradient(to right, #000 88%, transparent);
-  }
   .data-dl-btn { min-height: 48px; padding: 12px 24px; }
 }
 

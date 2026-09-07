@@ -62,7 +62,7 @@ function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'ri
  *  h1 (page) → h2 (subject) → h3 (section) with nothing skipped. */
 function Zone({ title, blurb, children }: { title: string; blurb: string; children: ReactNode }) {
   return (
-    <Stack gap="lg">
+    <Stack gap="lg" className="data-zone">
       <Box>
         <Title order={2}>{title}</Title>
         <Text c="dimmed" mt={4} maw="var(--measure)">{blurb}</Text>
@@ -182,6 +182,23 @@ export default function DataHealth() {
   const parquetSize = useFileSize(parquetUrl);
   const manifestSize = useFileSize(manifestUrl);
 
+  // The ingestion table's scroll state, measured rather than inferred. Held as state, not a ref, so the
+  // effect re-runs when the viewport actually mounts — it does not exist during the loading skeleton.
+  const [snapViewport, setSnapViewport] = useState<HTMLDivElement | null>(null);
+  const [snapOverflowing, setSnapOverflowing] = useState(false);
+  useEffect(() => {
+    if (!snapViewport) return undefined;
+    const measure = () => setSnapOverflowing(snapViewport.scrollWidth > snapViewport.clientWidth + 1);
+    measure();
+    // Both boxes matter: the viewport changes with the window and the sidebar, the table changes when
+    // a column is added or dropped. Watching only one leaves the fade stale after the other moves.
+    const ro = new ResizeObserver(measure);
+    ro.observe(snapViewport);
+    const table = snapViewport.querySelector('table');
+    if (table) ro.observe(table);
+    return () => ro.disconnect();
+  }, [snapViewport]);
+
 
   // Shimmer skeleton while the static manifest payload is fetched, so the page never flashes empty.
   if (isLoading)
@@ -190,7 +207,7 @@ export default function DataHealth() {
         <Skeleton height={56} width="45%" radius="md" />
         <Skeleton height={120} radius="lg" />
         <Skeleton height={220} radius="lg" />
-        <Skeleton height={260} radius="lg" />
+        <Skeleton height={260} radius="lg" className="data-wide" />
       </Stack>
     );
   if (error)
@@ -475,7 +492,7 @@ export default function DataHealth() {
         </Stack>
       </Card>
 
-      <Card id="snapshots">
+      <Card id="snapshots" className="data-wide">
         <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
           <CardTitle order={3} anchorId="snapshots">Per-snapshot ingestion</CardTitle>
           <Group gap="sm" wrap="wrap">
@@ -499,7 +516,14 @@ export default function DataHealth() {
             ScrollContainer is the ScrollArea viewport — not the document. The old 108px offset therefore
             pushed the header 108px DOWN INTO the table, over the first two rows. `ScrollArea.Autosize`
             with a bounded height and no offset is what the app's seven other sticky tables use. */}
-        <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present" className="data-snap-scroll" data-wide={!compact || undefined}>
+        <ScrollArea.Autosize
+          mah={620}
+          type="auto"
+          offsetScrollbars="present"
+          className="data-snap-scroll"
+          viewportRef={setSnapViewport}
+          data-overflowing={snapOverflowing || undefined}
+        >
       <Table stickyHeader miw={compact ? 680 : 920} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>
