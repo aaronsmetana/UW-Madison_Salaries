@@ -1202,6 +1202,20 @@ button:active,
   font-size: 0.94em;
 }
 
+/* One horizontal scroller, not two. `ScrollArea.Autosize` renders its wrapper and an inner div as
+   flex containers, and a flex item's default `min-width: auto` refuses to shrink below its content's
+   min-content width — which here is the table's `miw`. So the ScrollArea root blew out to 692px
+   inside its own 301px wrapper, the wrapper scrolled instead (it carries `overflow-x: auto`), and
+   Mantine's styled scrollbar — the entire reason `ScrollArea` is here — never appeared.
+
+   It also quietly broke anything sticky. `position: sticky` resolves against the nearest scroll
+   container, which for a cell is the ScrollArea viewport — and that viewport never scrolled
+   horizontally, so a pinned first column scrolled straight off the edge (measured 37 → −213) while
+   the wrapper moved beneath it. Letting the root shrink hands the scrolling back to the viewport,
+   where the sticky header already lives. */
+.data-snap-scroll > *,
+.data-snap-scroll .mantine-ScrollArea-root { min-width: 0; }
+
 /* A right-edge fade on the table's scroll viewport hints that more columns exist off-screen. Two
    cases need it, which is why it is no longer mobile-only:
 

@@ -47,25 +47,41 @@ test.describe('data · about', () => {
   });
 
   /**
-   * The page never scrolls sideways. Capping the column pushed the 10-column ingestion table (miw 920)
-   * past its 838px card, which is fine — `.data-snap-scroll` clips and scrolls it — but only as long as
-   * that scroller keeps clipping. If it ever stops, the table escapes the card and takes the page with it.
+   * The page never scrolls sideways, and exactly one element absorbs the table's overflow.
+   *
+   * The second half is not pedantry. `ScrollArea.Autosize` renders its wrapper and an inner div as flex
+   * containers, and a flex item's default `min-width: auto` refuses to shrink below its content's
+   * min-content width — the table's `miw`. So the ScrollArea root blew out to 692px inside its own 301px
+   * wrapper and the *wrapper* scrolled, which left Mantine's viewport inert, its styled scrollbar never
+   * rendered, and `position: sticky` inside the table anchored to a container that never moved: a pinned
+   * first column scrolled clean off the edge, 37 → −213.
+   *
+   * Both halves are asserted, because the broken arrangement looks identical until something tries to
+   * stick to it.
    */
   test('the ingestion table scrolls inside its card rather than widening the page', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const m = await page.evaluate(() => {
-      const scroller = document.querySelector<HTMLElement>('.data-snap-scroll')!;
+      const wrapper = document.querySelector<HTMLElement>('.data-snap-scroll')!;
+      const viewport = wrapper.querySelector<HTMLElement>('.mantine-ScrollArea-viewport')!;
       const card = document.getElementById('snapshots')!.getBoundingClientRect();
       const doc = document.documentElement;
+      const overflowOf = (el: HTMLElement) => el.scrollWidth - el.clientWidth;
       return {
-        pageOverflow: doc.scrollWidth - doc.clientWidth,
-        scrollsBy: scroller.scrollWidth - scroller.clientWidth,
-        scrollerWithinCard: Math.round(scroller.getBoundingClientRect().right) <= Math.round(card.right),
+        pageOverflow: overflowOf(doc),
+        viewportScrollsBy: overflowOf(viewport),
+        wrapperScrollsBy: overflowOf(wrapper),
+        scrollerWithinCard: Math.round(viewport.getBoundingClientRect().right) <= Math.round(card.right),
       };
     });
-    expect(m.pageOverflow, 'the table widened the whole page').toBe(0);
-    expect(m.scrollerWithinCard, 'the table scroller escaped its card').toBe(true);
-    expect(m.scrollsBy, 'the wide table should scroll inside its card, not fit').toBeGreaterThan(0);
+    const seen = JSON.stringify(m);
+    expect(m.pageOverflow, `the table widened the whole page — ${seen}`).toBe(0);
+    expect(
+      m.wrapperScrollsBy,
+      `the Autosize wrapper is scrolling instead of the viewport, so the styled scrollbar is gone and sticky cells cannot stick — ${seen}`,
+    ).toBe(0);
+    expect(m.viewportScrollsBy, `the wide table should scroll inside its card, not fit — ${seen}`).toBeGreaterThan(0);
+    expect(m.scrollerWithinCard, `the table scroller escaped its card — ${seen}`).toBe(true);
   });
 
   /**
