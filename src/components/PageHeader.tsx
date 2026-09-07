@@ -15,7 +15,7 @@ export function PageHeader({
   right?: ReactNode;
 }) {
   const head = (
-    <Box pl="md" style={{ borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
+    <Box className="page-rail">
       {/* Size + letter-spacing come from the shared heading ramp (theme.ts + app.css). */}
       <Title order={1}>{title}</Title>
       {description != null && (

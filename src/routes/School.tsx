@@ -210,7 +210,7 @@ export default function School() {
       {/* Wraps like PageHeader's own action slot — see the note on Person's header. `nowrap` squeezed the
           button until its label clipped ("+ Add to tray" needed 83px in an 80px button). */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-        <div style={{ flex: '1 1 320px', minWidth: 0, paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
+        <div className="page-rail" style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1}>{name}</Title>
         </div>
         <Button

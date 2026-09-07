@@ -727,7 +727,7 @@ export default function Person() {
           across six — and pushing the page 53px wider than the viewport. The flex-basis keeps the
           desktop row unchanged and only drops the actions below once they can no longer both fit. */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-        <div style={{ flex: '1 1 320px', minWidth: 0, paddingLeft: 'var(--mantine-spacing-md)', borderLeft: '3px solid var(--mantine-color-accent-5)' }}>
+        <div className="page-rail" style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (

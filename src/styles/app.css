@@ -335,6 +335,30 @@ body {
 .mantine-Title-root[data-order='2'] { letter-spacing: -0.02em; }
 .mantine-Title-root[data-order='3'] { letter-spacing: -0.01em; }
 
+/* The page title's accent rail, in the shell's gutter rather than indenting the title.
+
+   It used to be `pl="md"` plus a 3px border, which inset the h1 by 19px — so on every page the page
+   title was the one heading that lined up with nothing: the h2s below it and the card borders both
+   sat flush at the content edge, 19px to its left. Pulling back by exactly the AppShell's own
+   `padding="md"` and then padding by that minus the rail lands the title text on the content edge
+   with the rail filling the gutter.
+
+   The pull is `xs` (10px), not the full `md` gutter (16px), and the padding is that minus the rail —
+   so whatever the pull, the text still lands on the content edge. Pulling the full 16px does align
+   the title, but it parks the 3px rail flush against the navbar's own 1px right border (measured:
+   gap 0), and the two read as a single 4px composite edge rather than as a title marker. At 10px
+   the rail sits inside the gutter with 6px clear on both sides — clear of the navbar divider on
+   desktop, and clear of the screen edge on a phone, where the gutter is the same 16px but the
+   sidebar is gone (AppShell.tsx:110).
+
+   Person and School compose this onto a flex item; a negative margin sits outside `flex-basis`, so
+   their `1 1 320px` sizing is unaffected. */
+.page-rail {
+  border-left: 3px solid var(--mantine-color-accent-5);
+  margin-left: calc(-1 * var(--mantine-spacing-xs));
+  padding-left: calc(var(--mantine-spacing-xs) - 3px);
+}
+
 /* Tabular, lining numerals everywhere so columns of money/counts align. */
 body {
   font-variant-numeric: tabular-nums lining-nums;
