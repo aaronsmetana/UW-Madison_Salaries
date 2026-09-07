@@ -162,6 +162,41 @@ test.describe('chart gradient ids', () => {
  * place by being narrower than that — so a test that the ~28 figure cards are lit is only half the
  * contract, and the other half is that nothing else is.
  */
+/**
+ * Home's hero distribution was the one chart bypassing `chartDefs` entirely: hand-written stops
+ * (0.34 -> 0.02 against the factory's 0.28 -> 0) under a hardcoded id. The defect is DIVERGENCE, so
+ * the test is for sameness — it compares the rendered stops on Home against the ones a Recharts
+ * chart gets from the shared factory.
+ */
+test('the hero distribution uses the same area fill as every other chart', async ({ page }) => {
+  const stops = async (route: string, within: string) => {
+    await page.goto(route, { waitUntil: 'networkidle' });
+    await expect(page.locator(within).first()).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(1_500);
+    return page.evaluate((sel) => {
+      const grad = document.querySelector(`${sel} linearGradient[id$="-area-grad"], ${sel} ~ * linearGradient[id$="-area-grad"]`)
+        ?? document.querySelector('linearGradient[id$="-area-grad"]');
+      if (!grad) return null;
+      return [...grad.querySelectorAll('stop')].map((s) => ({
+        offset: s.getAttribute('offset'),
+        opacity: s.getAttribute('stop-opacity') ?? getComputedStyle(s).stopOpacity,
+      }));
+    }, within);
+  };
+
+  const home = await stops('./', '.hero-dist-plot');
+  expect(home, 'the hero distribution has no area gradient at all').not.toBeNull();
+
+  const chart = await stops('./explore?tab=trends', '.recharts-responsive-container');
+  expect(chart, 'no Recharts area gradient to compare against').not.toBeNull();
+
+  expect(home, `the hero distribution's area fill has diverged from the shared one: ${JSON.stringify(home)} vs ${JSON.stringify(chart)}`)
+    .toEqual(chart);
+  // And the fill actually finishes, rather than leaving a hairline of tint on the axis.
+  expect(Number(home![home!.length - 1].opacity), 'the area fill does not reach zero at the baseline')
+    .toBe(0);
+});
+
 test.describe('the chart-card specular', () => {
   const MARKERS = '.recharts-responsive-container, .hist-plot, .peer-strip, .chart-plot';
 

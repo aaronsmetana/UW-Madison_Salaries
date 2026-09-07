@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
 import {
@@ -17,6 +17,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
+import { areaGradDef } from '../components/chartDefs';
 import { ordinal } from '../lib/stats';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
@@ -87,6 +88,9 @@ function Distribution({
   overflow: number | null;
   headcount: number | null;
 }) {
+  // Scopes this chart's <defs>. An SVG id is document-global; the hardcoded 'home-dist' this
+  // replaces was safe only because nothing else used that string.
+  const gradId = useId();
   const revealed = useReveal(bins.length >= 3);
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -238,13 +242,11 @@ function Distribution({
         }}
       >
         <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
-          <defs>
-            <linearGradient id="home-dist" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.34} />
-              <stop offset="100%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <path d={area} fill="url(#home-dist)" />
+          {/* The shared area fill, rather than the private copy this chart used to carry — it was the
+              one gradient in the app bypassing chartDefs, with its own stops (0.34 -> 0.02) and a
+              hardcoded id. */}
+          <defs>{areaGradDef(gradId)}</defs>
+          <path d={area} fill={`url(#${gradId}-area-grad)`} />
           <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
           {marks.map((m) => (
             <line

@@ -13,13 +13,27 @@ import { Fragment } from 'react';
  * sites; these two were the holdouts, and they were safe only by the accident of being on different
  * routes.
  */
+/**
+ * The area fill under an accent line: full-strength at the top, gone at the baseline. Split out of
+ * `lineGlowDefs` so a chart can take the fill without the glow filter it does not use — Home's hero
+ * distribution is drawn by hand and had been carrying its own private copy of these stops.
+ *
+ * `stopOpacity 0` at the base, not a small non-zero value: Home's copy ended at 0.02, which leaves a
+ * hairline of tint lying along the axis where the fill should have finished.
+ */
+export function areaGradDef(id: string) {
+  return (
+    <linearGradient id={`${id}-area-grad`} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.28} />
+      <stop offset="100%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0} />
+    </linearGradient>
+  );
+}
+
 export function lineGlowDefs(id: string) {
   return (
     <Fragment>
-      <linearGradient id={`${id}-area-grad`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.28} />
-        <stop offset="100%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0} />
-      </linearGradient>
+      {areaGradDef(id)}
       <filter id={`${id}-line-glow`} x="-20%" y="-20%" width="140%" height="140%">
         <feGaussianBlur stdDeviation="3" />
       </filter>
