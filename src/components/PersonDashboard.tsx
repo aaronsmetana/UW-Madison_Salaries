@@ -6,6 +6,7 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
+import { matchAppointments, type Raise } from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, fmtDate, spanLabel } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
@@ -148,19 +149,35 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return [...rows].sort((a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date)) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id));
   }, [rows]);
 
-  // Per-snapshot job-code summary so history badges/Δ compare the SAME title across snapshots, not the
-  // adjacent (interleaved) row — avoids bogus "New title"/−100% for people with concurrent appointments.
+  // Which job codes each snapshot holds, so history badges compare the SAME title across snapshots
+  // rather than the adjacent (interleaved) row. Carries no pay: summing per job code here and then
+  // dividing one appointment's pay by that sum is the bug payHistory.ts documents.
   const snapHistory = useMemo(() => {
     const order: string[] = [];
     const index = new Map<string, number>();
-    const bySnap = new Map<string, { date: string; jobs: Map<string, number> }>();
+    const bySnap = new Map<string, { date: string; jobs: Set<string> }>();
     for (const r of historyRows) {
       let s = bySnap.get(r.snapshot_id);
-      if (!s) { s = { date: String(r.snapshot_date), jobs: new Map() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
-      if (r.job_code != null) s.jobs.set(r.job_code, (s.jobs.get(r.job_code) ?? 0) + (r.pay ?? 0));
+      if (!s) { s = { date: String(r.snapshot_date), jobs: new Set() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
+      if (r.job_code != null) s.jobs.add(r.job_code);
     }
     return { order, index, bySnap };
   }, [historyRows]);
+
+  // Per-appointment change, the same rule the /person history tab uses — this report is printed and
+  // handed over, so the two must never disagree about whether someone took a pay cut.
+  const raises = useMemo(
+    () =>
+      matchAppointments(historyRows, (r) => ({
+        snapshotId: r.snapshot_id,
+        jobCode: r.job_code,
+        school: r.school,
+        department: r.department,
+        pay: r.pay ?? 0,
+      })),
+    [historyRows]
+  );
+  const anyCombined = useMemo(() => [...raises.values()].some((r) => r.kind === 'combined'), [raises]);
 
   // As-of the record's own latest snapshot date (not the viewer's "now") — matches the comparison
   // report's tenure calc (Reports.tsx), so the two report types never disagree on the same person's tenure.
@@ -336,8 +353,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
               const isNew = !!priorSnap && !!r.job_code && !inPrior;
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
-              const priorPay = inPrior ? priorSnap!.jobs.get(r.job_code!)! : null;
-              const deltaPct = priorPay ? ((r.pay ?? 0) - priorPay) / priorPay : null;
+              const raise: Raise = raises.get(r) ?? { kind: 'none' };
               return (
               <Table.Tr key={`${r.snapshot_id}-${i}`}>
                 <Table.Td>
@@ -361,9 +377,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 </Table.Td>
                 <Table.Td ta="right">
                   {usd(r.pay)}
-                  {deltaPct != null && deltaPct !== 0 && (
-                    <Text size="xs" c={deltaPct > 0 ? 'pos' : 'red'}>{deltaPct > 0 ? '+' : ''}{pct(deltaPct)}</Text>
+                  {/* This prints, so "combined" has to be legible on paper — no tooltip to fall back
+                      on. The note under the table carries the rest. */}
+                  {(raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
+                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'red'}>
+                      {raise.delta > 0 ? '+' : ''}{pct(raise.delta)}
+                      {raise.kind === 'combined' && <Text span size="xs" c="dimmed"> combined</Text>}
+                    </Text>
                   )}
+                  {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
                 </Table.Td>
                 {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly). */}
                 <Table.Td ta="right">{r.fte || '—'}</Table.Td>
@@ -373,6 +395,13 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           </Table.Tbody>
         </Table>
         </Table.ScrollContainer>
+        {anyCombined && (
+          <Text size="xs" c="dimmed" mt="sm">
+            “Combined” = this person held more than one appointment under that title, and the source
+            carries no appointment id to match them one to one, so the change is shown across them
+            together rather than per appointment.
+          </Text>
+        )}
       </Card>
 
       {/* Same-title comparison (compact) */}

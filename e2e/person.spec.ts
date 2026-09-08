@@ -301,3 +301,59 @@ test('every dash in the trend legend is a dash the chart actually draws', async 
     expect(dashes.drawn, `legend draws ${d}, which the chart never does`).toContain(d);
   }
 });
+
+/**
+ * A person with two concurrent appointments under ONE title. The history table used to sum a
+ * snapshot's rows per job code and then divide each row's own pay by that sum, so both of Gulnara
+ * Glowacki's Lecturer lines reported a pay cut every cycle — −70.1% and −27.9% in Mar 2022, on a
+ * page where each appointment had risen 2.0%. 1,345 cells across the dataset said that.
+ *
+ * The rule now pairs appointments by department and only combines what it cannot match, so this
+ * asserts BOTH halves: no cell in a split snapshot carries the part-over-whole value, and a cell that
+ * cannot be attributed says so rather than quietly presenting a per-line figure.
+ */
+test('a split appointment is never measured against the pair total', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  await page.getByRole('tab', { name: 'History' }).click();
+
+  const rows = await page.locator('table').filter({ hasText: 'Job code' }).locator('tbody tr').all();
+  expect(rows.length).toBeGreaterThan(10);
+
+  const seen: { snapshot: string; split: boolean; raise: string }[] = [];
+  for (const row of rows) {
+    const cells = row.locator('td');
+    const snapshot = (await cells.nth(0).innerText()).replace(/\s+/g, ' ').trim();
+    seen.push({
+      snapshot,
+      split: snapshot.includes('split'),
+      raise: (await cells.nth(6).innerText()).replace(/\s+/g, ' ').trim(),
+    });
+  }
+
+  const splits = seen.filter((r) => r.split);
+  expect(splits.length, 'this person must still have concurrent appointments to be a useful case').toBeGreaterThan(8);
+
+  for (const { raise } of splits) {
+    const pct = Number(raise.match(/-?\d+\.?\d*(?=%)/)?.[0] ?? 0);
+    // The part-over-whole values this page used to print. A 0.333-FTE line divided by the pair total
+    // lands near −70%; nothing real on this page falls below −35% (Sep 2024's genuine FTE reversal).
+    expect(pct, `"${raise}" is a part divided by the pair total`).toBeGreaterThan(-35);
+  }
+
+  // The two appointments track independently where the department identifies them: in Oct 2023 one
+  // line moved 5.1% and the other 2.0%. Comparing WITHIN a snapshot is the only way to see that — a
+  // rule that gave every split row one shared figure still varies from snapshot to snapshot, so a
+  // set of all the values across the page cannot tell the two apart.
+  const bySnapshot = new Map<string, Set<string>>();
+  for (const { snapshot, raise } of splits) {
+    if (!bySnapshot.has(snapshot)) bySnapshot.set(snapshot, new Set());
+    bySnapshot.get(snapshot)!.add(raise);
+  }
+  const differsWithin = [...bySnapshot.values()].filter((v) => v.size > 1).length;
+  expect(differsWithin, 'no snapshot shows its two appointments moving by different amounts').toBeGreaterThan(2);
+
+  // Sep 2025 renamed both departments at once, so those rows cannot be matched one-to-one. They must
+  // carry the label rather than a bare percentage the reader would take as per-appointment.
+  const combined = splits.filter((r) => r.raise.includes('combined'));
+  expect(combined.length, 'the unmatched rows must be labelled, not silently presented as per-line').toBe(2);
+});

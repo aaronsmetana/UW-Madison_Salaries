@@ -18,6 +18,7 @@ import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } fro
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, actualPay } from '../lib/queries';
+import { matchAppointments, combinedReason, type Raise } from '../lib/payHistory';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis, spanLabel } from '../lib/format';
@@ -223,6 +224,37 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
         {ordinal(pct)} <Text span size="xs" fw={500} c="dimmed">pctile</Text>
       </Text>
     </Group>
+  );
+}
+
+/** The history table's "Raise" cell. Three states, because the source cannot always attribute a
+ *  change to a single appointment — see payHistory.ts. `children` is what to show when there is
+ *  nothing to compare against at all: the promotion badge, or an em dash. */
+function RaiseCell({ raise, children }: { raise: Raise; children: ReactNode }) {
+  // A new appointment under a title the person already held. Deliberately not an em dash: that
+  // already means "no prior snapshot", and the two must not read alike.
+  if (raise.kind === 'newAppointment') return <Badge size="xs" variant="light" color="gray">new</Badge>;
+  if (raise.kind === 'none') return <>{children}</>;
+
+  const { delta } = raise;
+  const figure = delta === 0
+    ? <Text size="sm" c="dimmed">0%</Text>
+    : (
+      <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'}>
+        {delta > 0 ? '+' : ''}{pct(delta)}
+      </Text>
+    );
+  if (raise.kind === 'paired') return figure;
+
+  // Two lines of a split carry the same figure, so the label has to say it covers both — otherwise
+  // the repetition reads as each appointment having moved by that much on its own.
+  return (
+    <MantineTooltip label={combinedReason(raise.curCount, raise.priorCount)} withArrow multiline w={300}>
+      <div>
+        {figure}
+        <Text size="xs" c="dimmed">combined</Text>
+      </div>
+    </MantineTooltip>
   );
 }
 
@@ -447,21 +479,35 @@ export default function Person() {
     );
   }, [rows]);
 
-  // Per-snapshot job-code summary so the history badges/Δ compare the SAME title across snapshots
-  // (not the adjacent row, which interleaves concurrent appointments and yields bogus "New title"/−100%).
+  // Which job codes each snapshot holds, so the badges can tell a genuinely new title from a
+  // concurrent appointment (the adjacent row interleaves those and yields bogus "New title"/−100%).
+  // This deliberately carries no pay: an earlier version summed the rows per job code here, and the
+  // Δ below then divided ONE appointment's pay by that sum — see payHistory.ts.
   const snapHistory = useMemo(() => {
     const order: string[] = [];
     const index = new Map<string, number>();
-    const bySnap = new Map<string, { date: string; jobs: Map<string, number> }>();
+    const bySnap = new Map<string, { date: string; jobs: Set<string> }>();
     for (const r of historyRows) {
       let s = bySnap.get(r.snapshot_id);
-      if (!s) { s = { date: String(r.snapshot_date), jobs: new Map() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
-      if (r.job_code != null) {
-        s.jobs.set(r.job_code, (s.jobs.get(r.job_code) ?? 0) + actualPay(r));
-      }
+      if (!s) { s = { date: String(r.snapshot_date), jobs: new Set() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
+      if (r.job_code != null) s.jobs.add(r.job_code);
     }
     return { order, index, bySnap };
   }, [historyRows]);
+
+  // Per-appointment change for every history row. `historyRows` is already in display order, which is
+  // the sequence the matcher compares against.
+  const raises = useMemo(
+    () =>
+      matchAppointments(historyRows, (r) => ({
+        snapshotId: r.snapshot_id,
+        jobCode: r.job_code,
+        school: r.school,
+        department: r.department,
+        pay: actualPay(r),
+      })),
+    [historyRows]
+  );
 
   // As-of the latest snapshot (not today) — matches the peer SQL's tenure basis (Person.tsx peer
   // queries use snapshot_date), so this card, the tenure-curve callout, and the peer table all agree.
@@ -1391,8 +1437,7 @@ export default function Person() {
               const isNew = !!priorSnap && !!r.job_code && !inPrior;
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
               const actual = actualPay(r);
-              const priorActual = inPrior ? priorSnap!.jobs.get(r.job_code!)! : null;
-              const deltaPct = priorActual ? (actual - priorActual) / priorActual : null;
+              const raise: Raise = raises.get(r) ?? { kind: 'none' };
               // Org move = Division/Department changed vs the previous displayed row.
               const prevRow = i > 0 ? historyRows[i - 1] : null;
               const orgMoved = !!prevRow && ((r.school ?? '') !== (prevRow.school ?? '') || (r.department ?? '') !== (prevRow.department ?? ''));
@@ -1429,19 +1474,13 @@ export default function Person() {
                   <Table.Td ta="right">{usd(r.salary)}</Table.Td>
                   <Table.Td ta="right">{usd(actual)}</Table.Td>
                   <Table.Td ta="right">
-                    {deltaPct != null ? (
-                      deltaPct === 0 ? (
-                        <Text size="sm" c="dimmed">0%</Text>
+                    <RaiseCell raise={raise}>
+                      {isNew && !ttcReclass && pos > 0 ? (
+                        <Badge size="xs" variant="light" color="accent">promotion</Badge>
                       ) : (
-                        <Text size="sm" fw={600} c={deltaPct > 0 ? 'pos' : 'orange'}>
-                          {deltaPct > 0 ? '+' : ''}{pct(deltaPct)}
-                        </Text>
-                      )
-                    ) : isNew && !ttcReclass && pos > 0 ? (
-                      <Badge size="xs" variant="light" color="accent">promotion</Badge>
-                    ) : (
-                      <Text size="sm" c="dimmed">—</Text>
-                    )}
+                        <Text size="sm" c="dimmed">—</Text>
+                      )}
+                    </RaiseCell>
                   </Table.Td>
                   {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says. */}
                   <Table.Td ta="right">{r.fte || '—'}</Table.Td>
@@ -1456,7 +1495,9 @@ export default function Person() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
           <Text size="xs" c="dimmed">
             = department changed from the prior snapshot. Orange % = a rate decrease — often a change in
-            FTE or comp basis rather than a pay cut.
+            FTE or comp basis rather than a pay cut. “Combined” = this person held more than one
+            appointment under this title, and the source carries no appointment id to match them one
+            to one, so the change is shown across them together.
           </Text>
         </Group>
       </Card>
