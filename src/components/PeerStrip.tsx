@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd, num } from '../lib/format';
 import { ordinal } from '../lib/stats';
@@ -9,6 +9,8 @@ import {
   MarkerLegend, type PeerPoint,
 } from './markers';
 import { binSalaries } from '../lib/histogram';
+import { smoothBins } from '../lib/distribution';
+import { areaGradDef } from './chartDefs';
 import { dotRows, rowHeight, MAX_ROWS } from '../lib/swarm';
 import { ChartData } from './ChartData';
 import { Z } from '../lib/layers';
@@ -24,6 +26,31 @@ const AXIS_LABEL_ROW_H = 15;
 const HOVER_SNAP_PX = 14;
 /** One source for the dot radius: the packer reserves exactly what the renderer draws. */
 const ROW_H = rowHeight(DOT_R.peer);
+/**
+ * Drawing kernel for the density ribbon, in PIXELS — not dollars, and not bin widths.
+ *
+ * The landing page smooths $1k buckets with a $1,200 kernel, which at its geometry is 4.9px; this is
+ * the same visual kernel, and 5px is what makes the two charts read as the same drawing.
+ *
+ * Pixels because neither alternative survives this chart's inputs. A dollar constant cannot: a title
+ * spanning $8k and one spanning $1.1m are both drawn here, and $1,200 would erase the first and do
+ * nothing to the second. Bin widths cannot either, because `niceStep` rounds the bin count down hard
+ * — ask it for 255 bins and it returns 148 — so "1.2 bin widths" silently lands anywhere from 0.6 to
+ * 1.8 of the kernel actually wanted. Converting from pixels at the end is the only form that holds
+ * the smoothing constant on screen, which is the thing a reader sees.
+ */
+const KERNEL_PX = 5;
+/**
+ * Target width of one ribbon bin, in px. Deliberately finer than the kernel above, so the curve is
+ * resolved by the smoothing rather than by the binning — the landing page draws 4.1px buckets.
+ *
+ * 2, not 2.5, because `niceStep` only emits round widths and so jumps in steps of 2.5x: for the 1,251
+ * Professors it returns $5k bins at a 876px plot and $2k bins at 1021px, which is 5.96px per segment
+ * at one width and 2.75px at the other. Asking for 2px keeps the coarse side of that jump under the
+ * kernel at every width this chart is drawn at — measured 2.3-2.8px per segment from 335px to 1021px,
+ * against 68px before any of this.
+ */
+const RIBBON_BIN_PX = 2;
 
 interface AxisLabel {
   x: number;
@@ -97,6 +124,9 @@ export function PeerStrip({
 
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotW, setPlotW] = useState(0);
+  // An svg id is document-global; two PeerStrips sharing a literal would both define the same
+  // gradient and every reference would resolve to whichever mounted first (see `areaGradDef`).
+  const gradId = useId();
   const [hoverPct, setHoverPct] = useState<number | null>(null);
   const [hoverY, setHoverY] = useState<number | null>(null);
 
@@ -126,42 +156,71 @@ export function PeerStrip({
     return () => ro.disconnect();
   }, []);
 
-  const peers = points
-    .filter((p) => Number.isFinite(p.pay) && p.pay > 0)
-    .sort((a, b) => a.pay - b.pay);
+  // Memoised for the same reason `at` is: hover writes state on every pointer move, so anything left
+  // bare here re-runs on each one — and for a title like Professor that meant re-sorting 1,251 people
+  // to redraw a tooltip. `points` is a stable reference (Person.tsx memoises it), so these deps hold.
+  const peers = useMemo(
+    () => points
+      .filter((p) => Number.isFinite(p.pay) && p.pay > 0)
+      .sort((a, b) => a.pay - b.pay),
+    [points],
+  );
   /** Every pay in the cohort — the subject included, because they are one of the 48. Stats, the
    *  ribbon and the hover readout all describe the whole population. */
-  const sorted = peers.map((p) => p.pay);
+  const sorted = useMemo(() => peers.map((p) => p.pay), [peers]);
   /** The dots actually drawn. The subject is left out because they already have their own mark on the
    *  lane above; drawing them twice puts an unexplained grey dot directly under their leader line, and
    *  makes the legend's "Others" a lie. This is what the scatter does too. */
-  const plotted = peers.filter((p) => !p.isSelf);
-  const hasSameSchool = plotted.some((p) => p.sameSchool);
+  const plotted = useMemo(() => peers.filter((p) => !p.isSelf), [peers]);
+  const hasSameSchool = useMemo(() => plotted.some((p) => p.sameSchool), [plotted]);
 
   // Greedy row packing, sorted by value so the packer fills each row left to right. This is the same
   // helper the chart label staggers use — a dot is a label of constant width, so there is no second
   // algorithm to keep in step with the first.
-  const rows = dotRows(plotted.map((p) => p.pay), at, plotW, DOT_R.peer);
+  const rows = useMemo(
+    () => dotRows(plotted.map((p) => p.pay), at, plotW, DOT_R.peer),
+    [plotted, at, plotW],
+  );
   const rowsNeeded = rows.length ? Math.max(...rows) + 1 : 0;
   const useRibbon = rowsNeeded > MAX_ROWS;
   const swarmH = useRibbon ? RIBBON_H : Math.max(3, rowsNeeded) * ROW_H;
   const plotH = swarmH + SELF_LANE_H;
 
-  // Ribbon: a bin count per x, drawn as one area in the population's own colour. Straight segments
-  // between 24 bin centres read as a curve at this width and stay honest about being binned counts.
-  const ribbonPath = (() => {
-    if (!useRibbon || plotW <= 0) return null;
-    const bins = binSalaries(sorted, 24, [axisMin, axisMax]);
+  /**
+   * The density ribbon: a smoothed curve over the cohort, drawn as an area plus a line the way the
+   * landing page's distribution is.
+   *
+   * It used to ask for 24 bins and join their centres with straight segments. `niceStep` rounds to
+   * round dollar widths, so for the 1,251 Professors it returned $50k bins — fifteen of them — and
+   * the whole mound was three points 68px apart. It read as a jagged sawtooth rather than a
+   * distribution.
+   *
+   * `binSalaries` is kept rather than binning evenly, precisely because it rounds: landing bins on
+   * round dollar edges is what keeps the pay spikes at $50k, $60k, $75k on a single bin instead of
+   * smeared across two. `distribution.ts` argues at length that those spikes are people hired onto
+   * round numbers and not noise to be cleaned up, and the same is true within one title.
+   */
+  const ribbon = useMemo(() => {
+    if (!useRibbon || plotW <= 0 || !(span > 0)) return null;
+    const target = Math.max(40, Math.min(600, Math.round(plotW / RIBBON_BIN_PX)));
+    const bins = binSalaries(sorted, target, [axisMin, axisMax]);
     if (bins.length < 2) return null;
-    const peak = Math.max(1, ...bins.map((b) => b.n));
+
+    const step = bins[1].lo - bins[0].lo;
+    const curve = smoothBins(bins.map((b) => ({ bucket: b.lo, n: b.n })), KERNEL_PX * (span / plotW));
+    // Against the SMOOTHED peak, not the raw one: the kernel moves weight out of the tallest bin, so
+    // normalising to the raw maximum would shrink the whole ribbon by however much it smoothed.
+    const peak = Math.max(...curve.map((c) => c.n));
+    if (!(peak > 0)) return null;
+
     const base = plotH;
-    const pts = bins.map((b) => {
-      const x = at((b.lo + b.hi) / 2) * plotW;
-      const y = base - (b.n / peak) * (swarmH - 2);
+    const pts = curve.map((c) => {
+      const x = at(c.bucket + step / 2) * plotW;
+      const y = base - (c.n / peak) * (swarmH - 2);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
-    return `M0,${base} L${pts.join(' L')} L${plotW},${base} Z`;
-  })();
+    return { area: `M0,${base} L${pts.join(' L')} L${plotW},${base} Z`, line: `M${pts.join(' L')}` };
+  }, [useRibbon, plotW, span, sorted, axisMin, axisMax, at, plotH, swarmH]);
 
   const pos = at(value) * 100;
   const selfX = at(value) * plotW;
@@ -327,7 +386,7 @@ export function PeerStrip({
               style={{ position: 'absolute', inset: 0, overflow: 'visible' }}
               aria-hidden
             >
-              {/* Middle 50% — the band the caption names, and the only fill in the plot. */}
+              {/* Middle 50% — the band the caption names. Painted first so the ribbon's fade sits over it. */}
               <rect
                 x={at(p25) * plotW}
                 width={Math.max(0, (at(p75) - at(p25)) * plotW)}
@@ -346,16 +405,28 @@ export function PeerStrip({
                 strokeWidth={GUIDE_SOFT.width}
               />
 
-              {useRibbon && ribbonPath ? (
-                <path
-                  d={ribbonPath}
-                  fill={MARK_PEER}
-                  fillOpacity={0.55}
-                  stroke={MARK_PEER}
-                  strokeWidth={1}
-                  opacity={mounted ? 1 : 0}
-                  style={{ transition: 'opacity 240ms ease' }}
-                />
+              {useRibbon && ribbon ? (
+                // Area + line, the landing page's treatment, in the population's own grey rather than
+                // the accent — on this chart the accent IS the subject's mark. No
+                // `vectorEffect="non-scaling-stroke"`: Home needs it because it draws into a scaled
+                // viewBox, and this svg is 1:1 pixel space, so the stroke is already 1px.
+                <g opacity={mounted ? 1 : 0} style={{ transition: 'opacity 240ms ease' }}>
+                  {/* 0.65 at the top, not `areaGradDef`'s 0.28 default. That default is tuned for the
+                      accent — a saturated teal that carries at low opacity — and grey-5 at 0.28 over a
+                      white card is about #eaecee, which left the population almost invisible. Compared
+                      0.28 / 0.5 / 0.65 against the flat 0.55 slab this replaces: 0.65 keeps the weight
+                      the old shape had while still fading out at the axis, and the subject's accent
+                      mark still reads as the loudest thing on the chart. */}
+                  <defs>{areaGradDef(gradId, MARK_PEER, 0.65)}</defs>
+                  <path d={ribbon.area} fill={`url(#${gradId}-area-grad)`} />
+                  <path
+                    d={ribbon.line}
+                    fill="none"
+                    stroke={MARK_PEER}
+                    strokeWidth={1.5}
+                    strokeLinejoin="round"
+                  />
+                </g>
               ) : (
                 plotted.map((p, i) => (
                   <circle
@@ -459,7 +530,9 @@ export function PeerStrip({
       />
 
       <Text size="xs" c="dimmed" mt={4}>
-        {useRibbon ? 'Height = how many people earn about that much · ' : '1 dot = 1 person · '}
+        {/* Not "height = how many people": the curve is smoothed, so its height is a density and
+            reading a headcount off it would be wrong — see `smoothBins` in lib/distribution.ts. */}
+        {useRibbon ? 'Taller = more people earn near that salary · ' : '1 dot = 1 person · '}
         shaded band = middle 50% of peers ({fmtK(p25)}–{fmtK(p75)}).
       </Text>
 

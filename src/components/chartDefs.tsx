@@ -14,18 +14,27 @@ import { Fragment } from 'react';
  * routes.
  */
 /**
- * The area fill under an accent line: full-strength at the top, gone at the baseline. Split out of
+ * The area fill under a line: full-strength at the top, gone at the baseline. Split out of
  * `lineGlowDefs` so a chart can take the fill without the glow filter it does not use — Home's hero
  * distribution is drawn by hand and had been carrying its own private copy of these stops.
  *
  * `stopOpacity 0` at the base, not a small non-zero value: Home's copy ended at 0.02, which leaves a
  * hairline of tint lying along the axis where the fill should have finished.
+ *
+ * `color` and `topOpacity` default to the accent treatment every existing caller wants, so this stays
+ * one definition rather than growing a second private copy — which is what this function was split out
+ * to prevent. The peer ribbon passes the population grey instead, because on that chart the accent IS
+ * the subject's own mark and painting the crowd with it would erase the one thing the chart picks out.
  */
-export function areaGradDef(id: string) {
+export function areaGradDef(
+  id: string,
+  color: string = 'var(--mantine-color-accent-6)',
+  topOpacity: number = 0.28,
+) {
   return (
     <linearGradient id={`${id}-area-grad`} x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.28} />
-      <stop offset="100%" stopColor="var(--mantine-color-accent-6)" stopOpacity={0} />
+      <stop offset="0%" stopColor={color} stopOpacity={topOpacity} />
+      <stop offset="100%" stopColor={color} stopOpacity={0} />
     </linearGradient>
   );
 }

@@ -95,6 +95,69 @@ for (const { name, width, height } of [
   });
 }
 
+/**
+ * The density ribbon is drawn at pixel resolution, and is still a distribution when it gets there.
+ *
+ * A cohort too dense to draw as dots falls back to a ribbon, and that ribbon used to ask `binSalaries`
+ * for 24 bins. `niceStep` rounds to round dollar widths, so across the 1,251 Professors' $739k range
+ * it returned $50k bins — fifteen of them — and the whole mound was three points 68px apart. It read
+ * as a sawtooth rather than a distribution, which is what a reader reported.
+ *
+ * Two assertions, because the two ways to get this wrong are opposite. Segment spacing catches
+ * under-binning: the facets coming back. Roughness catches over-smoothing — a kernel wide enough to
+ * iron the distribution into one featureless lognormal blob. Peak height would catch NEITHER, because
+ * the curve is normalised to its own smoothed peak and so reaches the top of the lane whatever the
+ * kernel does.
+ *
+ * The roughness scale is `lib/distribution.ts`'s own, from tuning the landing page's kernel: mean
+ * |second difference| over mean height, where raw $1k buckets score 0.579 and "read as static", $5k
+ * scores 0.003 and is "a featureless lognormal blob", and the shipped kernel lands at 0.059. This
+ * chart measures 0.033 with 12 humps, so the band below is wide enough not to be brittle and narrow
+ * enough that either failure mode falls outside it.
+ */
+test('the peer density ribbon is drawn at pixel resolution', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // Professor — 1,251 people, the cohort dense enough to take the ribbon path at all.
+  await openPerson(page, 'Kenneth Poss');
+
+  const m = await page.evaluate(() => {
+    const svg = document.querySelector<SVGSVGElement>('.peer-strip svg');
+    if (!svg) return { mode: 'no chart' as const };
+    const line = [...svg.querySelectorAll('path')].find((p) => getComputedStyle(p).fill === 'none');
+    if (!line) return { mode: 'dots' as const };
+
+    const d = line.getAttribute('d') ?? '';
+    const nums = (d.match(/-?\d+\.?\d*/g) ?? []).map(Number);
+    const ys = nums.filter((_, i) => i % 2 === 1);
+    const base = Math.max(...ys);
+    const heights = ys.map((y) => base - y);
+    const peak = Math.max(...heights);
+    const meanH = heights.reduce((a, b) => a + b, 0) / heights.length;
+
+    let secondDiff = 0;
+    let humps = 0;
+    for (let i = 1; i < heights.length - 1; i++) {
+      secondDiff += Math.abs(heights[i - 1] - 2 * heights[i] + heights[i + 1]);
+      if (heights[i] > heights[i - 1] && heights[i] >= heights[i + 1] && heights[i] > peak * 0.1) humps++;
+    }
+
+    return {
+      mode: 'ribbon' as const,
+      vertices: ys.length,
+      pxPerSegment: svg.getBoundingClientRect().width / Math.max(1, ys.length - 1),
+      roughness: meanH > 0 ? secondDiff / (heights.length - 2) / meanH : 0,
+      humps,
+    };
+  });
+
+  expect(m.mode, 'this cohort no longer draws the ribbon, so nothing here is tested').toBe('ribbon');
+  const seen = JSON.stringify(m);
+  expect(m.pxPerSegment!, `the ribbon is drawn in coarse facets again — ${seen}`).toBeLessThanOrEqual(5);
+  expect(m.roughness!, `the ribbon has been smoothed into a featureless blob — ${seen}`).toBeGreaterThan(0.008);
+  expect(m.roughness!, `the ribbon is jagged rather than smoothed — ${seen}`).toBeLessThan(0.25);
+  expect(m.humps!, `the distribution has lost its structure — ${seen}`).toBeGreaterThanOrEqual(3);
+});
+
 // The subject used to be marked by recolouring one tile inside a stack of tiles, where the tile's
 // height meant "count" for every other person and "rank within the bin" for them. Being one of the
 // population's own marks is the thing that made it unreadable, so this asserts the separation the
