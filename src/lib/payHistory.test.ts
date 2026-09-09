@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { matchAppointments, byAppointment, acrossLabel, combinedReason, type ApptFields, type Raise } from './payHistory';
+import {
+  matchAppointments, byAppointment, acrossLabel, combinedReason, laneLetter, laneReason, laneSlot,
+  type ApptFields, type Raise,
+} from './payHistory';
 
 /**
  * Fixtures are real rows from `public/data/salaries.parquet`, not invented ones — the bug this module
@@ -9,7 +12,9 @@ interface Row extends ApptFields {
   note?: string;
 }
 const get = (r: Row): ApptFields => r;
-const run = (rows: Row[]) => matchAppointments(rows, get);
+/** Most tests only care about the reported change. `full` is for the lane and pairing maps. */
+const run = (rows: Row[]) => matchAppointments(rows, get).raises;
+const full = (rows: Row[]) => matchAppointments(rows, get);
 
 const L_AND_S = 'College of Letters & Science';
 const INTL = 'International Division';
@@ -327,5 +332,117 @@ describe('acrossLabel', () => {
   it('counts up past two', () => {
     expect(acrossLabel(3, 1)).toBe('across all 3');
     expect(acrossLabel(1, 4)).toBe('across all 4');
+  });
+});
+
+/**
+ * The lane is what lets a reader follow one appointment down the page. It is derived from the
+ * matching, not from the row's position: `1 of 2` was positional, so it renumbered whenever an
+ * appointment ended (2,415 many-to-one transitions across the data) and could swap when two
+ * appointments crossed over in size.
+ */
+describe('appointment lanes', () => {
+  const other = (snapshotId: string, jobCode: string, department: string, pay: number, fte: number): Row => ({
+    snapshotId, jobCode, school: L_AND_S, department, fte, pay,
+  });
+
+  it('holds one lane for an appointment that can be followed', () => {
+    const { lane } = full(glowacki);
+    expect(lane.get(glowacki[2])).toBe(lane.get(glowacki[0]));
+    expect(lane.get(glowacki[3])).toBe(lane.get(glowacki[1]));
+    expect(lane.get(glowacki[0])).not.toBe(lane.get(glowacki[1]));
+  });
+
+  it('never gives two concurrent rows the same lane', () => {
+    const rows = [
+      ...glowacki,
+      other('2022-03', 'AD006', 'Language Institute', 0, 0.00025),
+      other('2022-03', 'RE015', 'Institute on Aging', 30000, 0.5),
+    ];
+    const { lane } = full(rows);
+    const here = rows.filter((r) => r.snapshotId === '2022-03').map((r) => lane.get(r));
+    expect(new Set(here).size).toBe(here.length);
+    expect(here.every((n) => n !== undefined)).toBe(true);
+  });
+
+  it('gives a lane to a row with no job code, which can never pair', () => {
+    const rows = [lecturer('2024-04', L_AND_S, GERMAN, 40000, 0.6), { ...other('2024-04', 'X', 'Medicine', 1000, 0.1), jobCode: null }];
+    const { lane, priorOf } = full(rows);
+    expect(lane.get(rows[1])).toBeDefined();
+    expect(lane.get(rows[1])).not.toBe(lane.get(rows[0]));
+    expect(priorOf.has(rows[1])).toBe(false);
+  });
+
+  /**
+   * The two-pass allocation, and the reason for it. A new appointment can arrive ABOVE a continuing
+   * one — `byAppointment` sorts on size, and a new appointment is often the larger. Allocating in
+   * reading order would hand it lane 1 and leave the appointment that has held lane 1 all along to
+   * collide with it.
+   */
+  it('lets a continuing appointment keep its lane against a larger new one', () => {
+    const held = lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6);
+    const stillHeld = lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6);
+    const arrived = other('2024-04', 'RE015', 'Institute on Aging', 90000, 0.9);
+    const { lane } = full([held, arrived, stillHeld]);
+    expect(lane.get(held)).toBe(1);
+    expect(lane.get(stillHeld)).toBe(1);
+    expect(lane.get(arrived)).toBe(2);
+  });
+
+  it('keeps the survivors in place when an appointment ends', () => {
+    const s1 = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      other('2023-10', 'AD006', 'Language Institute', 0, 0.00025),
+    ];
+    const s2 = [
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+      other('2024-04', 'AD006', 'Language Institute', 0, 0.00025),
+    ];
+    const { lane } = full([...s1, ...s2]);
+    expect([lane.get(s1[0]), lane.get(s1[1]), lane.get(s1[2])]).toEqual([1, 2, 3]);
+    // The middle lane ends. The other two hold their own rather than shuffling up into the gap, so
+    // the reader's eye stays on the line it was following.
+    expect(lane.get(s2[0])).toBe(1);
+    expect(lane.get(s2[1])).toBe(3);
+  });
+
+  it('reports no partner for rows the source cannot tell apart', () => {
+    // Same department, same job code, same appointment percentage: nothing but salary separates
+    // them, and salary is the field that moves. This is the `combined` case, and the table draws its
+    // lane dotted precisely because the lane here is position, not evidence.
+    const s1 = [lecturer('2023-10', L_AND_S, GERMAN, 30000), lecturer('2023-10', L_AND_S, GERMAN, 20000)];
+    const s2 = [lecturer('2024-04', L_AND_S, GERMAN, 31000), lecturer('2024-04', L_AND_S, GERMAN, 21000)];
+    const { raises, priorOf, lane } = full([...s1, ...s2]);
+    expect(raises.get(s2[0])?.kind).toBe('combined');
+    expect(priorOf.has(s2[0])).toBe(false);
+    expect(priorOf.has(s2[1])).toBe(false);
+    // Still laned, so the two lines are still distinguishable within the snapshot.
+    expect(new Set([lane.get(s2[0]), lane.get(s2[1])]).size).toBe(2);
+  });
+
+  it('records the partner even when a zero prior pay leaves no ratio to report', () => {
+    const before = lecturer('2023-10', L_AND_S, GERMAN, 0, 0.6);
+    const after = lecturer('2024-04', L_AND_S, GERMAN, 50000, 0.6);
+    const { raises, priorOf, lane } = full([before, after]);
+    // The appointment was identified; only the percentage is missing. A dotted rail here would say
+    // the opposite.
+    expect(raises.get(after)).toEqual({ kind: 'none' });
+    expect(priorOf.get(after)).toBe(before);
+    expect(lane.get(after)).toBe(lane.get(before));
+  });
+});
+
+describe('lane labelling', () => {
+  it('letters lanes from A and cycles the four rail colours', () => {
+    expect([1, 2, 3, 4, 5].map(laneLetter)).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect([1, 2, 3, 4, 5, 8].map(laneSlot)).toEqual([1, 2, 3, 4, 1, 4]);
+  });
+
+  it('says whether the lane was followed or starts here', () => {
+    expect(laneReason(1, 2, true)).toBe(
+      'Appointment A of 2 in this snapshot. Followed from the same appointment in the previous snapshot.'
+    );
+    expect(laneReason(2, 3, false)).toContain('so its lane starts here');
   });
 });

@@ -18,7 +18,10 @@ import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } fro
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, actualPay } from '../lib/queries';
-import { matchAppointments, acrossLabel, byAppointment, combinedReason, type Raise } from '../lib/payHistory';
+import {
+  matchAppointments, acrossLabel, byAppointment, combinedReason, laneLetter, laneReason, laneSlot,
+  type Raise,
+} from '../lib/payHistory';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis, spanLabel } from '../lib/format';
@@ -505,16 +508,18 @@ export default function Person() {
     return { order, index, bySnap };
   }, [historyRows]);
 
-  // Where each snapshot's first row sits, so a row can name itself "1 of 2" without rescanning.
+  // Where each snapshot's first row sits — the one row of the group that carries the snapshot's
+  // label, now that the label is printed once per snapshot rather than once per line.
   const apptFirstRow = useMemo(() => {
     const m = new Map<string, number>();
     historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
     return m;
   }, [historyRows]);
 
-  // Per-appointment change for every history row. `historyRows` is already in display order, which is
-  // the sequence the matcher compares against.
-  const raises = useMemo(
+  // Per-appointment change for every history row, plus the lane that lets a reader follow ONE
+  // appointment down the page and the prior row each line continues. `historyRows` is already in
+  // display order, which is the sequence the matcher compares against.
+  const matching = useMemo(
     () =>
       matchAppointments(historyRows, (r) => ({
         snapshotId: r.snapshot_id,
@@ -1431,7 +1436,8 @@ export default function Person() {
       <Card withBorder padding="lg">
         <CardTitle>Title & salary history</CardTitle>
         <Table.ScrollContainer minWidth={880}>
-        <Table>
+        {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
+        <Table className="appt-history" striped={false}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Snapshot</Table.Th>
@@ -1455,21 +1461,39 @@ export default function Person() {
               const isNew = !!priorSnap && !!r.job_code && !inPrior;
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
               const actual = actualPay(r);
-              const raise: Raise = raises.get(r) ?? { kind: 'none' };
+              const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
               const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
-              const apptIndex = i - (apptFirstRow.get(r.snapshot_id) ?? i) + 1;
-              // Org move = Division/Department changed vs the previous displayed row.
-              const prevRow = i > 0 ? historyRows[i - 1] : null;
-              const orgMoved = !!prevRow && ((r.school ?? '') !== (prevRow.school ?? '') || (r.department ?? '') !== (prevRow.department ?? ''));
+              const lane = matching.lane.get(r);
+              // The row this line continues. Everything below that claims continuity — the lane's
+              // solid rail, the department-change dot — is answered by this and nothing else.
+              const from = matching.priorOf.get(r);
+              const laned = apptTotal > 1 && lane != null;
+              const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
+              // Org move = this appointment's OWN department a snapshot ago. It used to compare
+              // against the previous displayed row, which on a split page is a different appointment
+              // entirely: 4,787 rows across the data were guaranteed a dot that meant nothing.
+              const orgMoved = !!from && ((r.school ?? '') !== (from.school ?? '') || (r.department ?? '') !== (from.department ?? ''));
               return (
-                <Table.Tr key={`${r.snapshot_id}-${i}`}>
+                <Table.Tr
+                  key={`${r.snapshot_id}-${i}`}
+                  // Banding is by snapshot, not by row: Mantine's own striping put the two lines of
+                  // one snapshot on opposite stripes, pulling apart what belongs together. Parity
+                  // follows nth-of-type(odd) so a person with one line per snapshot is unchanged.
+                  data-band={pos % 2 === 0 ? '1' : '0'}
+                  data-lane={laned ? laneSlot(lane) : undefined}
+                  data-tracked={laned && !from ? 'no' : undefined}
+                  data-group-last={lastOfGroup ? undefined : 'no'}
+                >
                   <Table.Td>
-                    <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                    {apptTotal > 1 && (
-                      /* Which appointment this row is, not merely that there are several. The rows
-                         hold a stable order (byAppointment), so this number identifies the same
-                         appointment down the page. */
-                      <Badge variant="light" color="orange" size="xs" ml={6}>{apptIndex} of {apptTotal}</Badge>
+                    {apptFirstRow.get(r.snapshot_id) === i && (
+                      <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                    )}
+                    {laned && (
+                      /* Which appointment this line is — the same letter and the same coloured rail
+                         every snapshot it survives, so the eye can follow one line down the page. */
+                      <MantineTooltip label={laneReason(lane, apptTotal, !!from)} withArrow multiline w={280}>
+                        <span className="appt-lane-chip">{laneLetter(lane)}</span>
+                      </MantineTooltip>
                     )}
                   </Table.Td>
                   <Table.Td>
@@ -1485,7 +1509,7 @@ export default function Person() {
                     <Text size="sm">{r.school ?? '—'}</Text>
                     <Group gap={6} wrap="nowrap">
                       {orgMoved && (
-                        <MantineTooltip label="Division/Department changed from the prior snapshot" withArrow>
+                        <MantineTooltip label="Division/Department changed since this appointment's previous snapshot" withArrow>
                           <span
                             style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
                           />
@@ -1517,10 +1541,11 @@ export default function Person() {
         <Group gap={6} mt="sm" wrap="wrap">
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
           <Text size="xs" c="dimmed">
-            = department changed from the prior snapshot. Orange % = a rate decrease — often a change in
-            FTE or comp basis rather than a pay cut. “Across both” = two appointments under one title
-            that the source does not distinguish — same department, same appointment percentage — so
-            the change is shown across them together rather than guessed at per line.
+            = department changed since this appointment’s previous snapshot. Orange % = a rate decrease
+            — often a change in FTE or comp basis rather than a pay cut. Where a snapshot holds several
+            appointments, each keeps its own lettered lane and coloured rail down the page; a dotted
+            rail means the source does not connect that line to the previous snapshot, and
+            “across both” means the change could only be measured across the lines together.
           </Text>
         </Group>
       </Card>

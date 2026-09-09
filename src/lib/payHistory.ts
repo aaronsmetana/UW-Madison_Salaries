@@ -49,6 +49,30 @@ export type Raise =
  * null in others for the same appointment, and the `rate × fte` fallback lands cents away, which
  * rendered 867 unchanged salaries as pay CUTS ("−0.0%", in the decrease colour).
  */
+/**
+ * What one pass of the matcher learned about a person's history. `raises` is what the Raise column
+ * renders; the other two are what lets the table draw the same appointment as the same line.
+ */
+export interface Matching<T> {
+  /** Per-row change. */
+  raises: Map<T, Raise>;
+  /**
+   * The previous snapshot's row that this row continues, where the matcher found one. Absent means
+   * the appointment could not be followed — a new title, a new appointment, or a `combined` row the
+   * source does not distinguish. The table draws that difference rather than implying continuity it
+   * cannot support.
+   */
+  priorOf: Map<T, T>;
+  /**
+   * 1-based lane, held by the same appointment for as long as it can be followed. A row that
+   * continues another inherits its lane; anything else takes the lowest lane free in its own
+   * snapshot, so no two concurrent rows ever share one. A lane can be skipped (A and C, because B
+   * ended) and can be reused later by an unrelated appointment — both are honest, and the dotted
+   * rail on an unmatched row is what says the lane starts over.
+   */
+  lane: Map<T, number>;
+}
+
 export const NEGLIGIBLE_CHANGE = 0.0005;
 
 const snap = (d: number): number => (Math.abs(d) < NEGLIGIBLE_CHANGE ? 0 : d);
@@ -98,22 +122,28 @@ export function byAppointment<T>(get: (row: T) => ApptFields): (a: T, b: T) => n
  * compared to the caller's previous snapshot, not to a calendar date, so a person missing from a
  * snapshot is simply skipped rather than reported as a departure.
  *
- * Returns a map keyed by the caller's own row objects.
+ * Returns maps keyed by the caller's own row objects.
  */
-export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFields): Map<T, Raise> {
+export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFields): Matching<T> {
   const out = new Map<T, Raise>();
+  const priorOf = new Map<T, T>();
 
   // Snapshots in the order supplied, each holding its rows grouped by job code.
   const order: string[] = [];
   const bySnapshot = new Map<string, Map<string, T[]>>();
+  // The same rows again, ungrouped and in the order the caller will render them. Lanes are handed
+  // out in reading order, and a row with no job code needs one too even though it can never pair.
+  const shownBySnapshot = new Map<string, T[]>();
   for (const row of rows) {
     const f = get(row);
     let jobs = bySnapshot.get(f.snapshotId);
     if (!jobs) {
       jobs = new Map();
       bySnapshot.set(f.snapshotId, jobs);
+      shownBySnapshot.set(f.snapshotId, []);
       order.push(f.snapshotId);
     }
+    shownBySnapshot.get(f.snapshotId)!.push(row);
     // A row with no job code has no title to compare across snapshots.
     if (f.jobCode == null) {
       out.set(row, { kind: 'none' });
@@ -163,6 +193,7 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
       // many cells as the split-appointment bug this module exists to fix.
       if (cur.length === 1 && pri.length === 1) {
         const before = get(pri[0]).pay;
+        priorOf.set(cur[0], pri[0]);
         out.set(
           cur[0],
           before > 0 ? { kind: 'paired', delta: snap((get(cur[0]).pay - before) / before) } : { kind: 'none' }
@@ -194,6 +225,7 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
           const before = get(theirs[0]).pay;
           // Matched either way; a zero prior pay just leaves no ratio to report.
           matched.add(theirs[0]);
+          priorOf.set(row, theirs[0]);
           out.set(
             row,
             before > 0 ? { kind: 'paired', delta: snap((get(row).pay - before) / before) } : { kind: 'none' }
@@ -241,7 +273,31 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
     }
   }
 
-  return out;
+  // Lanes, in reading order, one snapshot at a time. Two passes on purpose: an inherited lane is
+  // claimed before any unmatched row is allowed to allocate, so a row that CAN be followed never has
+  // its lane taken by one that cannot. A single pass down the rows would hand lane 1 to an unmatched
+  // top row and then find the row below it inheriting the same 1.
+  const lane = new Map<T, number>();
+  for (const id of order) {
+    const shown = shownBySnapshot.get(id)!;
+    const used = new Set<number>();
+    for (const row of shown) {
+      const prev = priorOf.get(row);
+      const inherited = prev === undefined ? undefined : lane.get(prev);
+      if (inherited === undefined || used.has(inherited)) continue;
+      lane.set(row, inherited);
+      used.add(inherited);
+    }
+    for (const row of shown) {
+      if (lane.has(row)) continue;
+      let n = 1;
+      while (used.has(n)) n++;
+      lane.set(row, n);
+      used.add(n);
+    }
+  }
+
+  return { raises: out, priorOf, lane };
 }
 
 /**
@@ -261,5 +317,32 @@ export function combinedReason(curCount: number, priorCount: number): string {
     `${appt(curCount)} under this title here, ${appt(priorCount)} in the previous snapshot, and nothing ` +
     'in the source tells them apart — same department and same appointment percentage. The change is ' +
     'shown across them together rather than guessed at for each line.'
+  );
+}
+
+/** How many lane colours the stylesheet defines; lanes past that cycle, and the letter disambiguates. */
+const LANE_SLOTS = 4;
+
+/** The lane's letter. Identity has to survive being read aloud, and colour alone would fail WCAG 1.4.1. */
+export function laneLetter(lane: number): string {
+  return String.fromCharCode(65 + ((lane - 1) % 26));
+}
+
+/** Which of the stylesheet's lane colours this lane takes. */
+export function laneSlot(lane: number): number {
+  return ((lane - 1) % LANE_SLOTS) + 1;
+}
+
+/**
+ * The tooltip behind a lane letter. `tracked` is whether the matcher found this line in the previous
+ * snapshot — the difference between a solid rail and a dotted one, and the whole reason the lane is
+ * worth trusting when it is solid.
+ */
+export function laneReason(lane: number, count: number, tracked: boolean): string {
+  return (
+    `Appointment ${laneLetter(lane)} of ${count} in this snapshot. ` +
+    (tracked
+      ? 'Followed from the same appointment in the previous snapshot.'
+      : 'Nothing in the source connects this line to the previous snapshot, so its lane starts here.')
   );
 }

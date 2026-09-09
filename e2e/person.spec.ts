@@ -302,39 +302,69 @@ test('every dash in the trend legend is a dash the chart actually draws', async 
   }
 });
 
+/** One history row as the reader sees it, including the lane markers that carry its identity. */
+type HistoryRow = {
+  snapshot: string;
+  /** True on the one row of a snapshot group that prints the snapshot's name. */
+  labelled: boolean;
+  /** The lane letter, or '' where the snapshot holds a single appointment. */
+  lane: string;
+  /** Solid rail: the matcher found this line in the previous snapshot. Dotted: it starts here. */
+  tracked: boolean;
+  dept: string;
+  raise: string;
+};
+
+async function readHistory(page: import('@playwright/test').Page): Promise<HistoryRow[]> {
+  await page.getByRole('tab', { name: 'History' }).click();
+  const rows = await page.locator('table.appt-history tbody tr').all();
+  const out: HistoryRow[] = [];
+  let snapshot = '';
+  for (const row of rows) {
+    const cells = row.locator('td');
+    const badge = cells.nth(0).locator('.mantine-Badge-root');
+    // The snapshot is named once per group, so carry its name down the rest of its own rows.
+    const labelled = (await badge.count()) > 0;
+    if (labelled) snapshot = (await badge.first().innerText()).replace(/\s+/g, ' ').trim();
+    const chip = cells.nth(0).locator('.appt-lane-chip');
+    out.push({
+      snapshot,
+      labelled,
+      lane: (await chip.count()) ? (await chip.first().innerText()).trim() : '',
+      tracked: (await row.getAttribute('data-tracked')) === null,
+      dept: (await cells.nth(3).innerText()).split('\n').pop()!.trim(),
+      raise: (await cells.nth(6).innerText()).replace(/\s+/g, ' ').trim(),
+    });
+  }
+  return out;
+}
+
+const bySnapshot = (rows: HistoryRow[]) => {
+  const m = new Map<string, HistoryRow[]>();
+  for (const r of rows) {
+    if (!m.has(r.snapshot)) m.set(r.snapshot, []);
+    m.get(r.snapshot)!.push(r);
+  }
+  return m;
+};
+
 /**
  * A person with two concurrent appointments under ONE title. The history table used to sum a
  * snapshot's rows per job code and then divide each row's own pay by that sum, so both of Gulnara
  * Glowacki's Lecturer lines reported a pay cut every cycle — −70.1% and −27.9% in Mar 2022, on a
  * page where each appointment had risen 2.0%. 1,345 cells across the dataset said that.
  *
- * The rule now pairs appointments by department and only combines what it cannot match, so this
- * asserts BOTH halves: no cell in a split snapshot carries the part-over-whole value, and a cell that
- * cannot be attributed says so rather than quietly presenting a per-line figure.
+ * The rule now pairs appointments by department, then by appointment percentage, and only combines
+ * what it cannot match — so this asserts BOTH halves: no cell in a split snapshot carries the
+ * part-over-whole value, and a cell that cannot be attributed says so rather than quietly presenting
+ * a per-line figure. On top of that, each line carries a lane that lets it be followed down the page.
  */
-test('concurrent appointments are tracked one by one, in a stable order', async ({ page }) => {
+test('concurrent appointments are tracked one by one, each in its own lane', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
-  await page.getByRole('tab', { name: 'History' }).click();
-
-  const rows = await page.locator('table').filter({ hasText: 'Job code' }).locator('tbody tr').all();
+  const rows = await readHistory(page);
   expect(rows.length).toBeGreaterThan(10);
 
-  const seen: { snapshot: string; appt: string; dept: string; raise: string }[] = [];
-  for (const row of rows) {
-    const cells = row.locator('td');
-    const raw = (await cells.nth(0).innerText()).replace(/\s+/g, ' ').trim();
-    const snapshot = raw;
-    seen.push({
-      // The badge now names the appointment ("1 of 2"), so strip it to get the snapshot itself —
-      // otherwise every row lands in its own group and a within-snapshot comparison sees nothing.
-      snapshot: snapshot.replace(/\d+ of \d+/, '').trim(),
-      appt: snapshot.match(/\d+ of \d+/)?.[0] ?? '',
-      dept: (await cells.nth(3).innerText()).split('\n').pop()!.trim(),
-      raise: (await cells.nth(6).innerText()).replace(/\s+/g, ' ').trim(),
-    });
-  }
-
-  const splits = seen.filter((r) => r.appt);
+  const splits = rows.filter((r) => r.lane);
   expect(splits.length, 'this person must still have concurrent appointments to be a useful case').toBeGreaterThan(8);
 
   for (const { raise } of splits) {
@@ -347,37 +377,91 @@ test('concurrent appointments are tracked one by one, in a stable order', async 
   // The two appointments move by different amounts, and only a WITHIN-snapshot comparison can see
   // it: a rule that gave every split row one shared figure still varies from snapshot to snapshot,
   // so the set of all values down the page cannot tell the two apart.
-  const bySnapshot = new Map<string, Set<string>>();
-  for (const { snapshot, raise } of splits) {
-    if (!bySnapshot.has(snapshot)) bySnapshot.set(snapshot, new Set());
-    bySnapshot.get(snapshot)!.add(raise);
-  }
-  const differsWithin = [...bySnapshot.values()].filter((v) => v.size > 1).length;
+  const groups = bySnapshot(splits);
+  const differsWithin = [...groups.values()].filter((g) => new Set(g.map((r) => r.raise)).size > 1).length;
   expect(differsWithin, 'no snapshot shows its two appointments moving by different amounts').toBeGreaterThan(2);
 
-  /*
-   * The property that makes an appointment followable, and the one no per-row assertion can see: the
-   * larger appointment must occupy the same position in every snapshot. Sorting by date alone left
-   * the order to the query, and this person's 0.667 line was second in Mar 2022 and first in
-   * Sep 2024 — 1,207 transitions across 678 people flipped like that.
-   *
-   * Compared by ordinal rather than by department name on purpose: Sep 2025 renames both departments,
-   * so a name-based check would report a flip where the rows in fact held their places.
-   */
-  const positions = new Map<string, string[]>();
-  for (const { snapshot, appt, dept } of splits) {
-    if (!positions.has(snapshot)) positions.set(snapshot, []);
-    positions.get(snapshot)![Number(appt.split(' ')[0]) - 1] = dept;
+  // The property that makes an appointment followable: one lane letter, one appointment, all the way
+  // down — including through Sep 2025, where the source renames BOTH of this person's departments at
+  // once and only the appointment percentage still connects the lines.
+  const laneToDept = new Map<string, Set<string>>();
+  for (const { lane, dept } of splits) {
+    if (!laneToDept.has(lane)) laneToDept.set(lane, new Set());
+    laneToDept.get(lane)!.add(dept.includes('German') ? 'german' : 'other');
   }
-  const twoUp = [...positions.entries()].filter(([, d]) => d.length === 2 && d.every(Boolean));
-  expect(twoUp.length, 'need several two-appointment snapshots to compare').toBeGreaterThan(4);
-  const firstSlot = twoUp.map(([snap, d]) => `${snap.split(' 20')[0]}=${d[0]}`);
-  // Every snapshot's first row is the 0.667 (or larger) German line; none is the 0.333 line.
-  const slotOne = new Set(twoUp.map(([, d]) => (d[0].includes('German') ? 'larger' : 'smaller')));
-  expect([...slotOne], `first row per snapshot: ${firstSlot.join(', ')}`).toEqual(['larger']);
+  expect([...laneToDept.get('A')!], 'lane A must hold the same appointment in every snapshot').toEqual(['german']);
+  expect([...laneToDept.get('B')!], 'lane B must hold the same appointment in every snapshot').toEqual(['other']);
 
-  // FTE now resolves the renamed-department snapshot, so nothing on this page falls back to the
+  // No two concurrent lines may share a lane, or the letter identifies nothing.
+  for (const [snapshot, g] of groups) {
+    expect(new Set(g.map((r) => r.lane)).size, `${snapshot} reuses a lane letter`).toBe(g.length);
+    // And the snapshot names itself exactly once, on the first row of its group.
+    expect(g.filter((r) => r.labelled).length, `${snapshot} is named more than once`).toBe(1);
+  }
+
+  // Both Lecturer lines are matched to the previous snapshot from Mar 2022 on, so their rails are
+  // solid; a dotted rail there would claim less than the matcher actually established. The two
+  // Nov 2021 snapshots are the only place a lane may restart — the first snapshot has nothing behind
+  // it, and its Post-TTC twin renumbers every job code.
+  //
+  // Stated as an exact set, not as "every dotted row is Nov 2021": that form is vacuously true the
+  // moment nothing is dotted, and a sabotage that drew every rail solid sailed straight through it.
+  const lecturerLanes = splits.filter((r) => r.lane === 'A' || r.lane === 'B');
+  const restarts = [...new Set(lecturerLanes.filter((r) => !r.tracked).map((r) => r.snapshot))].sort();
+  expect(restarts, 'a Lecturer lane restarted somewhere other than the TTC boundary').toEqual([
+    'Nov 2021 (Post-TTC)', 'Nov 2021 (Pre-TTC)',
+  ]);
+
+  // FTE resolves the renamed-department snapshot, so nothing on this page falls back to the
   // across-both label — the reader sees a per-appointment figure on every row.
-  const fellBack = splits.filter((r) => /across/.test(r.raise));
-  expect(fellBack.map((r) => r.snapshot), 'no row here should need the combined fallback').toEqual([]);
+  expect(splits.filter((r) => /across/.test(r.raise)).map((r) => r.snapshot)).toEqual([]);
+});
+
+/**
+ * The hard case, and the one that separates a lane derived from the MATCHING from a lane that is
+ * merely the row's position. Jeanne Harris holds up to six concurrent appointments, every one of them
+ * on the `0.00025`/`0` appointment-percentage sentinels, and two of her Standardized Patient lines
+ * share a job code AND a department — nothing in the source tells those two apart. Her line count
+ * runs 6→6→6→5→5→3→4→4→2, so positions shift underneath her while the appointments do not.
+ */
+test('a lane follows its appointment even as the rows around it disappear', async ({ page }) => {
+  await openPerson(page, 'Jeanne Harris');
+  const rows = await readHistory(page);
+  const groups = bySnapshot(rows.filter((r) => r.lane));
+  expect(Math.max(...[...groups.values()].map((g) => g.length)), 'need her six-line snapshot').toBeGreaterThanOrEqual(6);
+
+  for (const [snapshot, g] of groups) {
+    expect(new Set(g.map((r) => r.lane)).size, `${snapshot} reuses a lane letter`).toBe(g.length);
+    expect(g.filter((r) => r.labelled).length, `${snapshot} is named more than once`).toBe(1);
+  }
+
+  // One appointment whose ROW MOVES UP as the lines above it end. Its letter must not move with it —
+  // that is the whole difference between a lane and an index.
+  //
+  // Nov 2021 is excluded by name rather than by reading the rail: the TTC boundary renumbers every
+  // job code, so nothing pairs across it and the lanes legitimately restart there. Filtering on
+  // `tracked` instead would tie this assertion to the rail's, and a sabotage of one would trip the
+  // other — which is exactly what happened when this was written that way.
+  const cancer = [...groups.entries()]
+    .map(([snapshot, g]) => ({ snapshot, at: g.findIndex((r) => r.dept.includes('Cancer')), g }))
+    .filter((x) => x.at >= 0 && !x.snapshot.startsWith('Nov 2021'))
+    .map((x) => ({ snapshot: x.snapshot, at: x.at, lane: x.g[x.at].lane }));
+  expect(cancer.length, 'need several snapshots holding the Cancer Center appointment').toBeGreaterThan(2);
+  expect(new Set(cancer.map((c) => c.lane)).size, `lane moved: ${JSON.stringify(cancer)}`).toBe(1);
+  expect(new Set(cancer.map((c) => c.at)).size, `position never moved, so this proves nothing: ${JSON.stringify(cancer)}`).toBeGreaterThan(1);
+
+  // The two Academic Affairs lines the source cannot separate report one figure across both, and
+  // their rails are dotted — the lane is position there, not evidence, and must not pretend otherwise.
+  const combined = rows.filter((r) => /across/.test(r.raise));
+  expect(combined.length, 'this person must still have unmatchable lines').toBeGreaterThan(2);
+  expect(combined.filter((r) => r.tracked), 'an unmatched line is drawing a solid rail').toEqual([]);
+});
+
+test('a person with one appointment per snapshot gets no lane markers at all', async ({ page }) => {
+  await openPerson(page, 'Kenneth Poss');
+  const rows = await readHistory(page);
+  expect(rows.length).toBeGreaterThan(2);
+  expect(rows.every((r) => r.lane === ''), 'a single appointment needs no lane').toBe(true);
+  expect(rows.every((r) => r.labelled), 'every row is its own group, so every row names itself').toBe(true);
+  expect(await page.locator('table.appt-history tbody tr[data-lane]').count()).toBe(0);
 });

@@ -111,6 +111,17 @@
   --bar: var(--mantine-color-gray-4);
 
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
+
+  /* Appointment lanes on the person history table. Deliberately NOT from the semantic ramp: orange
+     is `warn` and red is `down` (see SEMANTIC in theme.ts), so a lane painted in either would read as
+     a judgement about the appointment. Two steps of the accent and two neutrals instead — no new hue
+     in an app that runs on one. Lanes 1 and 2 carry 95.8% of the concurrent snapshots in the data and
+     are the pair that has to be unmistakable; 3 and 4 cover the remaining 4.2%, with the lane letter
+     doing the work past that (six person-snapshots in the whole file hold more than four lines). */
+  --lane-1: var(--mantine-color-accent-7);
+  --lane-2: var(--mantine-color-gray-6);
+  --lane-3: var(--mantine-color-accent-4);
+  --lane-4: var(--mantine-color-gray-8);
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
   /* Elevation ramp (light): a near-neutral paper canvas, white cards, white overlays.
@@ -283,6 +294,12 @@ body {
   /* Same-school row tint for dark mode: an explicit, readable dark-green band (the light #edf6f1 washed out
      the text). Comparable strength to the subject row's teal accent-light, but a distinct green hue. */
   --pos-row-bg: rgba(21, 163, 107, 0.16);
+  /* Lane rails, re-picked for a #141619 card: the light set's deep teal and near-black both vanish
+     against it, so each moves up its ramp until it reads as a mark rather than a smudge. */
+  --lane-1: var(--mantine-color-accent-5);
+  --lane-2: var(--mantine-color-gray-5);
+  --lane-3: var(--mantine-color-accent-2);
+  --lane-4: var(--mantine-color-gray-6);
   /* Histogram bars in dark mode: the light-mode pair (pale bar / dark ink highlight) inverts on a dark
      surface — a highlight needs to be LIGHTER than its surroundings to pop, not darker. Both chosen from
      the accent ramp and measured against the card surface (--surface, now #141619): bar-active
@@ -609,6 +626,83 @@ textarea:focus-visible,
 .mantine-Table-tr.row-related td:first-child,
 .peer-same-school td:first-child {
   box-shadow: inset 3px 0 0 0 var(--mantine-color-pos-6);
+}
+
+/* ── Person history: one lane per concurrent appointment ──────────────────────────────────────────
+   The table used to mark concurrent lines with an orange "1 of 2" badge, which is a sentence you have
+   to read and then carry down twenty rows — and orange is the app's `warn`, so it read as a caution
+   flag rather than an identity. A rail is something you can follow with your eye instead.
+
+   Two things fight this and are handled here. Mantine stripes every table by row (theme.ts), so the
+   two rows of ONE snapshot always landed on opposite stripes — the table was pulling apart exactly
+   what belongs together; striping moves to the snapshot group. And the row hover paints the `tr`
+   while a band paints the `td`s on top of it, so hover needs to be restated at the band's weight or
+   it silently stops working. */
+.appt-history tbody tr[data-band='1'] td {
+  background-color: var(--table-striped-color);
+}
+.appt-history tbody tr[data-band]:hover td {
+  background-color: var(--table-hover-color);
+}
+/* Inside a snapshot the separator softens, so several appointments read as one snapshot's worth of
+   lines rather than as unrelated rows. Only ever set on a row that has another row of its own
+   snapshot below it, so a person with one appointment per snapshot keeps the table it has today. */
+.appt-history tbody tr[data-group-last='no'] {
+  border-bottom-color: color-mix(in srgb, var(--table-border-color) 35%, transparent);
+}
+
+/* The rail. An absolutely-positioned pseudo-element rather than the `box-shadow: inset` used by the
+   related-row rules above, for two reasons: a box-shadow cannot be dotted, and a `border-left` would
+   widen the cell and shift the whole column. */
+.appt-history tbody td:first-child {
+  position: relative;
+}
+.appt-history tbody tr[data-lane] td:first-child::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background-color: var(--lane-c);
+}
+.appt-history tbody tr[data-lane='1'] { --lane-c: var(--lane-1); }
+.appt-history tbody tr[data-lane='2'] { --lane-c: var(--lane-2); }
+.appt-history tbody tr[data-lane='3'] { --lane-c: var(--lane-3); }
+.appt-history tbody tr[data-lane='4'] { --lane-c: var(--lane-4); }
+
+/* Dotted = this lane starts or restarts here; the matcher found nothing in the previous snapshot to
+   connect it to. 771 cells are `combined` — rows the source genuinely cannot tell apart — and a solid
+   rail on one of those would claim a continuity the data does not support, which is the exact failure
+   payHistory.ts exists to avoid. The chip's border says the same thing at the same time. */
+.appt-history tbody tr[data-tracked='no'] td:first-child::before {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(to bottom, var(--lane-c) 0 3px, transparent 3px 7px);
+}
+
+/* The lane letter. Colour alone cannot be the identity (WCAG 1.4.1), and the letter is also what the
+   tooltip hangs off. Text stays at the app's own colour so it is legible whatever the lane is — the
+   lane shows in the border and the tint, which do not have to meet text contrast. */
+.appt-lane-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  padding: 0 4px;
+  margin-inline-start: 6px;
+  border: 1px solid var(--lane-c);
+  border-radius: var(--mantine-radius-xs);
+  background-color: color-mix(in srgb, var(--lane-c) 12%, transparent);
+  font-size: var(--mantine-font-size-xxs);
+  font-weight: 700;
+  line-height: 1.45;
+  vertical-align: middle;
+}
+.appt-history tbody tr[data-tracked='no'] .appt-lane-chip {
+  border-style: dashed;
+}
+/* The snapshot label prints once per group, so on every row but the first the chip leads the cell. */
+.appt-lane-chip:first-child {
+  margin-inline-start: 0;
 }
 
 /* Hero search input: a deeper border at rest and a clear ring on focus. The 18px resting shadow it

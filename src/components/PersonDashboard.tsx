@@ -6,7 +6,9 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
-import { matchAppointments, acrossLabel, byAppointment, type Raise } from '../lib/payHistory';
+import {
+  matchAppointments, acrossLabel, byAppointment, laneLetter, laneSlot, type Raise,
+} from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, fmtDate, spanLabel } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
@@ -175,16 +177,18 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return { order, index, bySnap };
   }, [historyRows]);
 
-  // Where each snapshot's first row sits, so a row can name itself "1 of 2" without rescanning.
+  // Where each snapshot's first row sits — the one row of the group that carries the snapshot's
+  // label, now that the label is printed once per snapshot rather than once per line.
   const apptFirstRow = useMemo(() => {
     const m = new Map<string, number>();
     historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
     return m;
   }, [historyRows]);
 
-  // Per-appointment change, the same rule the /person history tab uses — this report is printed and
-  // handed over, so the two must never disagree about whether someone took a pay cut.
-  const raises = useMemo(
+  // Per-appointment change and lane, the same rule the /person history tab uses — this report is
+  // printed and handed over, so the two must never disagree about whether someone took a pay cut, or
+  // about which line is which appointment.
+  const matching = useMemo(
     () =>
       matchAppointments(historyRows, (r) => ({
         snapshotId: r.snapshot_id,
@@ -196,7 +200,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       })),
     [historyRows]
   );
-  const anyCombined = useMemo(() => [...raises.values()].some((r) => r.kind === 'combined'), [raises]);
+  const anyCombined = useMemo(() => [...matching.raises.values()].some((r) => r.kind === 'combined'), [matching]);
+  const anySplit = useMemo(() => [...apptCounts.values()].some((n) => n > 1), [apptCounts]);
 
   // As-of the record's own latest snapshot date (not the viewer's "now") — matches the comparison
   // report's tenure calc (Reports.tsx), so the two report types never disagree on the same person's tenure.
@@ -352,7 +357,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       <Card withBorder padding="lg">
         <CardTitle>Title &amp; salary history</CardTitle>
         <Table.ScrollContainer minWidth={680}>
-        <Table>
+        {/* Striping is per snapshot group (app.css), so the lines of one snapshot stay together. */}
+        <Table className="appt-history" striped={false}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Snapshot</Table.Th>
@@ -372,16 +378,25 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
               const isNew = !!priorSnap && !!r.job_code && !inPrior;
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
-              const raise: Raise = raises.get(r) ?? { kind: 'none' };
+              const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
               const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
-              const apptIndex = i - (apptFirstRow.get(r.snapshot_id) ?? i) + 1;
+              const lane = matching.lane.get(r);
+              const laned = apptTotal > 1 && lane != null;
+              const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
               return (
-              <Table.Tr key={`${r.snapshot_id}-${i}`}>
+              <Table.Tr
+                key={`${r.snapshot_id}-${i}`}
+                data-band={pos % 2 === 0 ? '1' : '0'}
+                data-lane={laned ? laneSlot(lane) : undefined}
+                data-tracked={laned && !matching.priorOf.has(r) ? 'no' : undefined}
+                data-group-last={lastOfGroup ? undefined : 'no'}
+              >
                 <Table.Td>
-                  <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                  {apptTotal > 1 && (
-                    <Badge variant="light" color="orange" size="xs" ml={6}>{apptIndex} of {apptTotal}</Badge>
+                  {apptFirstRow.get(r.snapshot_id) === i && (
+                    <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
                   )}
+                  {/* No tooltip here: this prints, and the note under the table carries the legend. */}
+                  {laned && <span className="appt-lane-chip">{laneLetter(lane)}</span>}
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm">{r.title ?? '—'}</Text>
@@ -418,11 +433,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           </Table.Tbody>
         </Table>
         </Table.ScrollContainer>
-        {anyCombined && (
+        {anySplit && (
           <Text size="xs" c="dimmed" mt="sm">
-            “Across both” = two appointments under one title that the source does not distinguish —
-            same department, same appointment percentage — so the change is shown across them
-            together rather than guessed at per line.
+            A lettered lane and coloured rail mark each concurrent appointment, held down the page for
+            as long as that appointment can be followed; a dotted rail means the source does not
+            connect that line to the previous snapshot.
+            {anyCombined &&
+              ' “Across both” = two appointments under one title that the source does not distinguish' +
+              ' — same department, same appointment percentage — so the change is shown across them' +
+              ' together rather than guessed at per line.'}
           </Text>
         )}
       </Card>
