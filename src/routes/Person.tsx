@@ -18,7 +18,7 @@ import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } fro
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, actualPay } from '../lib/queries';
-import { matchAppointments, combinedReason, type Raise } from '../lib/payHistory';
+import { matchAppointments, acrossLabel, byAppointment, combinedReason, type Raise } from '../lib/payHistory';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, pct, fullName, fmtBasis, spanLabel } from '../lib/format';
@@ -252,7 +252,7 @@ function RaiseCell({ raise, children }: { raise: Raise; children: ReactNode }) {
     <MantineTooltip label={combinedReason(raise.curCount, raise.priorCount)} withArrow multiline w={300}>
       <div>
         {figure}
-        <Text size="xs" c="dimmed">combined</Text>
+        <Text size="xs" c="dimmed">{acrossLabel(raise.curCount, raise.priorCount)}</Text>
       </div>
     </MantineTooltip>
   );
@@ -465,17 +465,27 @@ export default function Person() {
   }, [trendData]);
 
 
-  // Appointment count per snapshot (for the "split" flag in the history table).
+  // Appointment count per snapshot, for the "1 of 2" badge in the history table.
   const apptCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
     return m;
   }, [rows]);
 
-  // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair.
+  // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair, and
+  // concurrent appointments in a STABLE order within each snapshot. Date alone left the order to
+  // whatever the query returned, which flipped a person's two appointments between snapshots — see
+  // byAppointment. Sorting only moves rows; matchAppointments does not depend on their order.
   const historyRows = useMemo(() => {
+    const withinSnapshot = byAppointment<Row>((r) => ({
+      snapshotId: r.snapshot_id, jobCode: r.job_code, school: r.school,
+      department: r.department, fte: r.fte, pay: actualPay(r),
+    }));
     return [...rows].sort(
-      (a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date)) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)
+      (a, b) =>
+        String(a.snapshot_date).localeCompare(String(b.snapshot_date)) ||
+        ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id) ||
+        withinSnapshot(a, b)
     );
   }, [rows]);
 
@@ -495,6 +505,13 @@ export default function Person() {
     return { order, index, bySnap };
   }, [historyRows]);
 
+  // Where each snapshot's first row sits, so a row can name itself "1 of 2" without rescanning.
+  const apptFirstRow = useMemo(() => {
+    const m = new Map<string, number>();
+    historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
+    return m;
+  }, [historyRows]);
+
   // Per-appointment change for every history row. `historyRows` is already in display order, which is
   // the sequence the matcher compares against.
   const raises = useMemo(
@@ -504,6 +521,7 @@ export default function Person() {
         jobCode: r.job_code,
         school: r.school,
         department: r.department,
+        fte: r.fte,
         pay: actualPay(r),
       })),
     [historyRows]
@@ -1438,6 +1456,8 @@ export default function Person() {
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
               const actual = actualPay(r);
               const raise: Raise = raises.get(r) ?? { kind: 'none' };
+              const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
+              const apptIndex = i - (apptFirstRow.get(r.snapshot_id) ?? i) + 1;
               // Org move = Division/Department changed vs the previous displayed row.
               const prevRow = i > 0 ? historyRows[i - 1] : null;
               const orgMoved = !!prevRow && ((r.school ?? '') !== (prevRow.school ?? '') || (r.department ?? '') !== (prevRow.department ?? ''));
@@ -1445,8 +1465,11 @@ export default function Person() {
                 <Table.Tr key={`${r.snapshot_id}-${i}`}>
                   <Table.Td>
                     <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                    {(apptCounts.get(r.snapshot_id) ?? 0) > 1 && (
-                      <Badge variant="light" color="orange" size="xs" ml={6}>split</Badge>
+                    {apptTotal > 1 && (
+                      /* Which appointment this row is, not merely that there are several. The rows
+                         hold a stable order (byAppointment), so this number identifies the same
+                         appointment down the page. */
+                      <Badge variant="light" color="orange" size="xs" ml={6}>{apptIndex} of {apptTotal}</Badge>
                     )}
                   </Table.Td>
                   <Table.Td>
@@ -1495,9 +1518,9 @@ export default function Person() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
           <Text size="xs" c="dimmed">
             = department changed from the prior snapshot. Orange % = a rate decrease — often a change in
-            FTE or comp basis rather than a pay cut. “Combined” = this person held more than one
-            appointment under this title, and the source carries no appointment id to match them one
-            to one, so the change is shown across them together.
+            FTE or comp basis rather than a pay cut. “Across both” = two appointments under one title
+            that the source does not distinguish — same department, same appointment percentage — so
+            the change is shown across them together rather than guessed at per line.
           </Text>
         </Group>
       </Card>

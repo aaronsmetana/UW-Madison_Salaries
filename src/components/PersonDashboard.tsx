@@ -6,7 +6,7 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
-import { matchAppointments, type Raise } from '../lib/payHistory';
+import { matchAppointments, acrossLabel, byAppointment, type Raise } from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, fmtDate, spanLabel } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
@@ -144,9 +144,20 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return m;
   }, [rows]);
 
+  // Same ordering as the /person history tab, including the stable within-snapshot order that lets a
+  // reader follow one appointment down the page. This one prints, so the two must not disagree.
   const historyRows = useMemo(() => {
     const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
-    return [...rows].sort((a, b) => String(a.snapshot_date).localeCompare(String(b.snapshot_date)) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id));
+    const withinSnapshot = byAppointment<Row>((r) => ({
+      snapshotId: r.snapshot_id, jobCode: r.job_code, school: r.school,
+      department: r.department, fte: r.fte, pay: r.pay ?? 0,
+    }));
+    return [...rows].sort(
+      (a, b) =>
+        String(a.snapshot_date).localeCompare(String(b.snapshot_date)) ||
+        ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id) ||
+        withinSnapshot(a, b)
+    );
   }, [rows]);
 
   // Which job codes each snapshot holds, so history badges compare the SAME title across snapshots
@@ -164,6 +175,13 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return { order, index, bySnap };
   }, [historyRows]);
 
+  // Where each snapshot's first row sits, so a row can name itself "1 of 2" without rescanning.
+  const apptFirstRow = useMemo(() => {
+    const m = new Map<string, number>();
+    historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
+    return m;
+  }, [historyRows]);
+
   // Per-appointment change, the same rule the /person history tab uses — this report is printed and
   // handed over, so the two must never disagree about whether someone took a pay cut.
   const raises = useMemo(
@@ -173,6 +191,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         jobCode: r.job_code,
         school: r.school,
         department: r.department,
+        fte: r.fte,
         pay: r.pay ?? 0,
       })),
     [historyRows]
@@ -354,12 +373,14 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const isNew = !!priorSnap && !!r.job_code && !inPrior;
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
               const raise: Raise = raises.get(r) ?? { kind: 'none' };
+              const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
+              const apptIndex = i - (apptFirstRow.get(r.snapshot_id) ?? i) + 1;
               return (
               <Table.Tr key={`${r.snapshot_id}-${i}`}>
                 <Table.Td>
                   <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                  {(apptCounts.get(r.snapshot_id) ?? 0) > 1 && (
-                    <Badge variant="light" color="orange" size="xs" ml={6}>split</Badge>
+                  {apptTotal > 1 && (
+                    <Badge variant="light" color="orange" size="xs" ml={6}>{apptIndex} of {apptTotal}</Badge>
                   )}
                 </Table.Td>
                 <Table.Td>
@@ -382,7 +403,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                   {(raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
                     <Text size="xs" c={raise.delta > 0 ? 'pos' : 'red'}>
                       {raise.delta > 0 ? '+' : ''}{pct(raise.delta)}
-                      {raise.kind === 'combined' && <Text span size="xs" c="dimmed"> combined</Text>}
+                      {raise.kind === 'combined' && (
+                        <Text span size="xs" c="dimmed"> {acrossLabel(raise.curCount, raise.priorCount)}</Text>
+                      )}
                     </Text>
                   )}
                   {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
@@ -397,9 +420,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Table.ScrollContainer>
         {anyCombined && (
           <Text size="xs" c="dimmed" mt="sm">
-            “Combined” = this person held more than one appointment under that title, and the source
-            carries no appointment id to match them one to one, so the change is shown across them
-            together rather than per appointment.
+            “Across both” = two appointments under one title that the source does not distinguish —
+            same department, same appointment percentage — so the change is shown across them
+            together rather than guessed at per line.
           </Text>
         )}
       </Card>

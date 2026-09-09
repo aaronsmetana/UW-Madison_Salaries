@@ -7,14 +7,18 @@
  * rows per job code and then dividing ONE row's pay by that sum reported a 0.333-FTE Lecturer line as
  * a 70% pay cut, on a page where the person's pay had risen every cycle. 1,345 cells said that.
  *
- * What the source does support is the department. 365 of those groups separate cleanly on
- * `(school, department)`; the remaining 687 differ only by salary, which is the one field that moves
- * between snapshots and so cannot identify anything. Where a department pairs one-to-one we report a
- * real per-appointment change; where it does not we report ONE change across the rows that did not
- * match, labelled as such. There is no third tier: matching on the school alone was measured against
- * the whole dataset and paired "Surgery" with "Medicine" and "Mechanical Engineering" with
- * "Computer-Aided Engineering" about as often as it caught a genuine rename, and a plausible wrong
- * number is worse here than an honest combined one.
+ * What the source does support is the department, and after it the appointment percentage. 365 of
+ * those groups separate cleanly on `(school, department)`; FTE then recovers most of the rest,
+ * including the case where the source renames a department and the appointment is unchanged
+ * underneath it. What survives both differs only by salary — the one field that moves between
+ * snapshots, and so identifies nothing — and gets ONE change reported across the rows that did not
+ * match, labelled as such.
+ *
+ * Every tier here pairs only what its key names uniquely on BOTH sides, and every one was measured
+ * against the whole dataset before being admitted. A school tier was written and rejected: it paired
+ * "Surgery" with "Medicine" and "Mechanical Engineering" with "Computer-Aided Engineering" about as
+ * often as it caught a genuine rename. A plausible wrong number is worse here than an honest
+ * combined one, so a tier earns its place by evidence, not by looking reasonable.
  */
 
 /** The fields this module needs from one appointment row, whatever the caller's row type is. */
@@ -23,6 +27,8 @@ export interface ApptFields {
   jobCode: string | null;
   school: string | null;
   department: string | null;
+  /** Appointment percentage, as recorded. See `MIN_TRACKABLE_FTE` for the values that mean nothing. */
+  fte: number | null;
   /** Pay for THIS appointment alone. Callers differ on how they derive it (`actualPay` vs SQL). */
   pay: number;
 }
@@ -46,6 +52,43 @@ export type Raise =
 export const NEGLIGIBLE_CHANGE = 0.0005;
 
 const snap = (d: number): number => (Math.abs(d) < NEGLIGIBLE_CHANGE ? 0 : d);
+
+/**
+ * The smallest appointment percentage that can identify an appointment.
+ *
+ * `fte = 0.00025` is not a percentage — it is the placeholder for "no appointment percentage on
+ * file", used **31,785 times across 10,406 people**, 85.4% of them with `salary = 0`, on titles like
+ * "Honorary Associate/Fellow". It is the same family as the `fte = 0` hourly rows. Matching on it
+ * would pair unrelated honorary appointments to each other on a shared magic number — it produced an
+ * "Emergency Medicine" to "Social Work" pairing when this tier was first measured without the floor.
+ */
+export const MIN_TRACKABLE_FTE = 0.01;
+
+/**
+ * Display order for the appointments inside one snapshot.
+ *
+ * The table used to sort by snapshot date alone, so concurrent appointments came out in whatever
+ * order the query returned — and **1,207 transitions across 678 people presented the same
+ * appointments in a flipped order between one snapshot and the next**, which makes it impossible to
+ * follow one appointment down the page. Ordering by the appointment's own size holds it in place:
+ * measured over all 5,064 comparable transitions, this is stable in **5,020 of them (99.1%)**, and
+ * the 44 exceptions are appointments whose FTE or pay genuinely crossed over.
+ *
+ * This is layout only. `matchAppointments` pairs on keys that are unique on both sides, so it never
+ * depends on the order its rows arrive in, and sorting cannot change a reported figure.
+ */
+export function byAppointment<T>(get: (row: T) => ApptFields): (a: T, b: T) => number {
+  return (a, b) => {
+    const x = get(a);
+    const y = get(b);
+    return (
+      (y.fte ?? 0) - (x.fte ?? 0) ||
+      y.pay - x.pay ||
+      (x.department ?? '').localeCompare(y.department ?? '') ||
+      (x.jobCode ?? '').localeCompare(y.jobCode ?? '')
+    );
+  };
+}
 
 /**
  * Per-row change for a person's appointment history.
@@ -88,10 +131,11 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
     const f = get(row);
     return `${f.school ?? ''}\u0000${f.department ?? ''}`;
   };
-  const groupBy = (list: readonly T[], key: (row: T) => string): Map<string, T[]> => {
+  const groupBy = (list: readonly T[], key: (row: T) => string | null): Map<string, T[]> => {
     const m = new Map<string, T[]>();
     for (const row of list) {
       const k = key(row);
+      if (k == null) continue;
       const g = m.get(k);
       if (g) g.push(row);
       else m.set(k, [row]);
@@ -126,27 +170,53 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
         continue;
       }
 
-      // A department pairs only when it names exactly one row on each side. Two rows sharing a
-      // department are the ambiguous case this module exists to refuse to guess at.
-      const curByDept = groupBy(cur, deptKey);
-      const priByDept = groupBy(pri, deptKey);
       const matched = new Set<T>();
-      const unpairedCur: T[] = [];
-      for (const row of cur) {
-        const here = curByDept.get(deptKey(row))!;
-        const there = priByDept.get(deptKey(row));
-        if (here.length !== 1 || there?.length !== 1) {
-          unpairedCur.push(row);
-          continue;
+      let unpairedCur: T[] = [...cur];
+
+      /**
+       * Pair what `key` names uniquely on BOTH sides, and leave everything else to the next tier.
+       * A key of `null` opts the row out of this tier entirely. Requiring uniqueness on both sides
+       * is what keeps a tier from guessing: two rows sharing a key are never paired on it.
+       */
+      const pass = (key: (row: T) => string | null) => {
+        const priLeft = pri.filter((row) => !matched.has(row));
+        const here = groupBy(unpairedCur, key);
+        const there = groupBy(priLeft, key);
+        const still: T[] = [];
+        for (const row of unpairedCur) {
+          const k = key(row);
+          const mine = k == null ? undefined : here.get(k);
+          const theirs = k == null ? undefined : there.get(k);
+          if (mine?.length !== 1 || theirs?.length !== 1) {
+            still.push(row);
+            continue;
+          }
+          const before = get(theirs[0]).pay;
+          // Matched either way; a zero prior pay just leaves no ratio to report.
+          matched.add(theirs[0]);
+          out.set(
+            row,
+            before > 0 ? { kind: 'paired', delta: snap((get(row).pay - before) / before) } : { kind: 'none' }
+          );
         }
-        const before = get(there[0]).pay;
-        // Matched either way; a zero prior pay just leaves no ratio to report.
-        matched.add(there[0]);
-        out.set(
-          row,
-          before > 0 ? { kind: 'paired', delta: snap((get(row).pay - before) / before) } : { kind: 'none' }
-        );
-      }
+        unpairedCur = still;
+      };
+
+      // Strongest key first. The department is what the source actually uses to distinguish a
+      // person's concurrent appointments.
+      pass(deptKey);
+      // Then the appointment percentage, which survives a department being renamed — the case that
+      // sent two correctly-tracked appointments to the combined fallback. Held out against the groups
+      // the department already pairs, FTE picks the same partner 82 times out of 82; auditing all 373
+      // pairings it adds, the cross-department ones read as renames ("Max Kade Inst" to "Max Kade
+      // Institute") and produce ordinary raises rather than the wild ratios a mis-pairing would.
+      // Deliberately NOT a school tier: that was measured too, and paired "Surgery" with "Medicine"
+      // about as often as it caught a rename.
+      pass((row) => {
+        const { fte } = get(row);
+        return fte != null && fte >= MIN_TRACKABLE_FTE ? `fte:${fte}` : null;
+      });
+
       if (unpairedCur.length === 0) continue;
 
       const unpairedPri = pri.filter((row) => !matched.has(row));
@@ -174,12 +244,22 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
   return out;
 }
 
-/** The tooltip behind a `combined` cell. Reads correctly at any count, including one on each side. */
+/**
+ * The label on a cell whose change spans appointments. Sized by the LARGER side: a lone row measured
+ * against the two appointments that preceded it still covers both of them, and reporting its own
+ * count read "across all 1".
+ */
+export function acrossLabel(curCount: number, priorCount: number): string {
+  const n = Math.max(curCount, priorCount);
+  return n === 2 ? 'across both' : `across all ${n}`;
+}
+
+/** The tooltip behind an "across both" cell. Reads correctly at any count, including one per side. */
 export function combinedReason(curCount: number, priorCount: number): string {
   const appt = (n: number) => `${n} appointment${n === 1 ? '' : 's'}`;
   return (
-    `This title's appointments could not be matched one-to-one between snapshots — ${appt(curCount)} here, ` +
-    `${appt(priorCount)} before — because the source carries no appointment id and these share a department. ` +
-    'The change is shown across them together.'
+    `${appt(curCount)} under this title here, ${appt(priorCount)} in the previous snapshot, and nothing ` +
+    'in the source tells them apart — same department and same appointment percentage. The change is ' +
+    'shown across them together rather than guessed at for each line.'
   );
 }

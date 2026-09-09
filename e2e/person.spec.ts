@@ -312,25 +312,29 @@ test('every dash in the trend legend is a dash the chart actually draws', async 
  * asserts BOTH halves: no cell in a split snapshot carries the part-over-whole value, and a cell that
  * cannot be attributed says so rather than quietly presenting a per-line figure.
  */
-test('a split appointment is never measured against the pair total', async ({ page }) => {
+test('concurrent appointments are tracked one by one, in a stable order', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
   await page.getByRole('tab', { name: 'History' }).click();
 
   const rows = await page.locator('table').filter({ hasText: 'Job code' }).locator('tbody tr').all();
   expect(rows.length).toBeGreaterThan(10);
 
-  const seen: { snapshot: string; split: boolean; raise: string }[] = [];
+  const seen: { snapshot: string; appt: string; dept: string; raise: string }[] = [];
   for (const row of rows) {
     const cells = row.locator('td');
-    const snapshot = (await cells.nth(0).innerText()).replace(/\s+/g, ' ').trim();
+    const raw = (await cells.nth(0).innerText()).replace(/\s+/g, ' ').trim();
+    const snapshot = raw;
     seen.push({
-      snapshot,
-      split: snapshot.includes('split'),
+      // The badge now names the appointment ("1 of 2"), so strip it to get the snapshot itself —
+      // otherwise every row lands in its own group and a within-snapshot comparison sees nothing.
+      snapshot: snapshot.replace(/\d+ of \d+/, '').trim(),
+      appt: snapshot.match(/\d+ of \d+/)?.[0] ?? '',
+      dept: (await cells.nth(3).innerText()).split('\n').pop()!.trim(),
       raise: (await cells.nth(6).innerText()).replace(/\s+/g, ' ').trim(),
     });
   }
 
-  const splits = seen.filter((r) => r.split);
+  const splits = seen.filter((r) => r.appt);
   expect(splits.length, 'this person must still have concurrent appointments to be a useful case').toBeGreaterThan(8);
 
   for (const { raise } of splits) {
@@ -340,10 +344,9 @@ test('a split appointment is never measured against the pair total', async ({ pa
     expect(pct, `"${raise}" is a part divided by the pair total`).toBeGreaterThan(-35);
   }
 
-  // The two appointments track independently where the department identifies them: in Oct 2023 one
-  // line moved 5.1% and the other 2.0%. Comparing WITHIN a snapshot is the only way to see that — a
-  // rule that gave every split row one shared figure still varies from snapshot to snapshot, so a
-  // set of all the values across the page cannot tell the two apart.
+  // The two appointments move by different amounts, and only a WITHIN-snapshot comparison can see
+  // it: a rule that gave every split row one shared figure still varies from snapshot to snapshot,
+  // so the set of all values down the page cannot tell the two apart.
   const bySnapshot = new Map<string, Set<string>>();
   for (const { snapshot, raise } of splits) {
     if (!bySnapshot.has(snapshot)) bySnapshot.set(snapshot, new Set());
@@ -352,8 +355,29 @@ test('a split appointment is never measured against the pair total', async ({ pa
   const differsWithin = [...bySnapshot.values()].filter((v) => v.size > 1).length;
   expect(differsWithin, 'no snapshot shows its two appointments moving by different amounts').toBeGreaterThan(2);
 
-  // Sep 2025 renamed both departments at once, so those rows cannot be matched one-to-one. They must
-  // carry the label rather than a bare percentage the reader would take as per-appointment.
-  const combined = splits.filter((r) => r.raise.includes('combined'));
-  expect(combined.length, 'the unmatched rows must be labelled, not silently presented as per-line').toBe(2);
+  /*
+   * The property that makes an appointment followable, and the one no per-row assertion can see: the
+   * larger appointment must occupy the same position in every snapshot. Sorting by date alone left
+   * the order to the query, and this person's 0.667 line was second in Mar 2022 and first in
+   * Sep 2024 — 1,207 transitions across 678 people flipped like that.
+   *
+   * Compared by ordinal rather than by department name on purpose: Sep 2025 renames both departments,
+   * so a name-based check would report a flip where the rows in fact held their places.
+   */
+  const positions = new Map<string, string[]>();
+  for (const { snapshot, appt, dept } of splits) {
+    if (!positions.has(snapshot)) positions.set(snapshot, []);
+    positions.get(snapshot)![Number(appt.split(' ')[0]) - 1] = dept;
+  }
+  const twoUp = [...positions.entries()].filter(([, d]) => d.length === 2 && d.every(Boolean));
+  expect(twoUp.length, 'need several two-appointment snapshots to compare').toBeGreaterThan(4);
+  const firstSlot = twoUp.map(([snap, d]) => `${snap.split(' 20')[0]}=${d[0]}`);
+  // Every snapshot's first row is the 0.667 (or larger) German line; none is the 0.333 line.
+  const slotOne = new Set(twoUp.map(([, d]) => (d[0].includes('German') ? 'larger' : 'smaller')));
+  expect([...slotOne], `first row per snapshot: ${firstSlot.join(', ')}`).toEqual(['larger']);
+
+  // FTE now resolves the renamed-department snapshot, so nothing on this page falls back to the
+  // across-both label — the reader sees a per-appointment figure on every row.
+  const fellBack = splits.filter((r) => /across/.test(r.raise));
+  expect(fellBack.map((r) => r.snapshot), 'no row here should need the combined fallback').toEqual([]);
 });
