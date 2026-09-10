@@ -647,8 +647,19 @@ textarea:focus-visible,
 /* Inside a snapshot the separator softens, so several appointments read as one snapshot's worth of
    lines rather than as unrelated rows. Only ever set on a row that has another row of its own
    snapshot below it, so a person with one appointment per snapshot keeps the table it has today. */
+/* The border hierarchy that makes a snapshot read as one block. It used to soften the INNER rule to
+   35% and leave the boundary at the default row border — so the inner line was weakened but the outer
+   one was never strengthened, and the background band was carrying the grouping nearly alone. It is
+   subtle in light mode and subtler in dark.
+
+   Both rules are emitted only for a person who actually holds concurrent appointments; for everyone
+   else `data-group-last` is absent and the table keeps the borders it has always had. Mantine paints
+   this border on the `tr`, not the `td` (measured), which is why these select the row. */
 .appt-history tbody tr[data-group-last='no'] {
-  border-bottom-color: color-mix(in srgb, var(--table-border-color) 35%, transparent);
+  border-bottom-color: transparent;
+}
+.appt-history tbody tr[data-group-last='yes'] {
+  border-bottom-color: var(--hairline-strong);
 }
 
 /* The appointment gutter: one vertical track per concurrent appointment, each in a fixed slot, so a
@@ -686,6 +697,7 @@ textarea:focus-visible,
   position: relative;
 }
 .appt-gutter-track {
+  /* Absolute, so its own ::after cap resolves against the track rather than the cell. */
   position: absolute;
   inset-block: 0;
   inset-inline-start: calc(var(--slot) * 9px);
@@ -705,6 +717,20 @@ textarea:focus-visible,
 .appt-gutter-track[data-continues='yes'] {
   inset-block-end: calc(-1 * var(--table-border-width, 1px));
 }
+/* The appointment ended: a cap across the foot of the track, so a line that stops reads as an
+   appointment finishing rather than as the table running out. Keyed to `ends`, never to `continues` —
+   every track in the LAST snapshot also fails to continue, and those are the appointments the person
+   holds today. */
+.appt-gutter-track[data-ends='yes']::after {
+  content: '';
+  position: absolute;
+  inset-inline: -2px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background-color: var(--lane-c);
+}
+
 .appt-gutter-node {
   position: absolute;
   top: 50%;
@@ -740,6 +766,18 @@ textarea:focus-visible,
 }
 .appt-lane-chip[data-start='yes'] {
   border-style: dashed;
+}
+
+/* The rate note. The percentage above it is the change in ACTUAL pay, which moves when the
+   appointment percentage moves — so on those rows the figure alone can say "-32.0%" about someone
+   whose rate went up 2%. This is the number they actually came for, and it only renders where the
+   pair's FTE or comp basis differs. */
+.appt-rate-note {
+  display: block;
+  font-size: var(--mantine-font-size-xxs);
+  line-height: 1.3;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
 }
 
 /* The snapshot label must never truncate. Mantine's Badge caps itself at `max-width: 100%` and

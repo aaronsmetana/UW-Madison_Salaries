@@ -319,6 +319,15 @@ type HistoryRow = {
   nodeX: number;
   dept: string;
   raise: string;
+  /** The "rate +2.0%" line under a percentage, where the pair's FTE or comp basis moved. */
+  note: string;
+  /** Segments on this row marked as an appointment ending. */
+  caps: number;
+  /** `data-group-last`, and the row border that follows from it. */
+  groupLast: string;
+  border: string;
+  /** The department-change dot's accessible name, '' when there is no dot. */
+  dotLabel: string;
 };
 
 async function readHistory(page: import('@playwright/test').Page): Promise<HistoryRow[]> {
@@ -345,6 +354,12 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
       nodeX = box && cellBox ? Math.round(box.x - cellBox.x) : -1;
       tracked = (await node.first().getAttribute('data-start')) === 'no';
     }
+    const noteEl = row.locator('.appt-rate-note');
+    const note = (await noteEl.count()) ? (await noteEl.first().innerText()).trim() : '';
+    const dot = cells.nth(off + 3).locator('[role="img"]');
+    // The percentage cell now also holds the note; strip it so the two are asserted separately and
+    // a guard on one cannot pass on the other's text.
+    const raiseCell = (await cells.nth(off + 6).innerText()).replace(/\s+/g, ' ').trim();
     out.push({
       snapshot,
       labelled,
@@ -352,7 +367,12 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
       tracked,
       nodeX,
       dept: (await cells.nth(off + 3).innerText()).split('\n').pop()!.trim(),
-      raise: (await cells.nth(off + 6).innerText()).replace(/\s+/g, ' ').trim(),
+      raise: note ? raiseCell.replace(note, '').trim() : raiseCell,
+      note,
+      caps: await row.locator(".appt-gutter-track[data-ends='yes']").count(),
+      groupLast: (await row.getAttribute('data-group-last')) ?? '',
+      border: await row.evaluate((el) => getComputedStyle(el).borderBottomColor),
+      dotLabel: (await dot.count()) ? ((await dot.first().getAttribute('aria-label')) ?? '') : '',
     });
   }
   return out;
@@ -475,6 +495,18 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   expect(combined.length, 'this person must still have unmatchable lines').toBeGreaterThan(2);
   expect(combined.filter((r) => r.tracked), 'an unmatched line is drawing a filled node').toEqual([]);
 
+  // And no rate note: there is no single prior row to compare a rate against, so attributing one
+  // would be the guess this module refuses to make.
+  //
+  // This is a structural invariant rather than a behavioural guard, and it is worth saying so.
+  // `priorOf` is only ever set on a MATCHED row (payHistory.ts), and a combined row is by definition
+  // the unmatched remainder — so the note cannot reach a combined row however the trigger is written.
+  // A sabotage that removed the `kind === 'paired'` check failed nothing for exactly that reason.
+  // What can regress is the note being computed from the ADJACENT row instead of the matched one —
+  // the shape of the old department-dot bug, which put a false mark on 4,787 rows — and that is
+  // caught by the exact-set assertion in the Gulnara note test, not here.
+  expect(combined.map((r) => r.note), 'a combined row cannot claim what one rate did').toEqual(combined.map(() => ''));
+
   // The rendered half of rule 1, and the reason the gutter exists: a letter can only be followed if
   // the track it names holds one x-position for the whole table. Her line count collapses from six to
   // two, so any scheme that slotted tracks by the row's position within its snapshot would slide the
@@ -493,6 +525,81 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   expect(new Set(allX).size, 'two lanes are drawn in the same slot').toBe(allX.length);
 });
 
+/**
+ * The history table's percentage is the change in ACTUAL pay — rate x FTE — so an appointment
+ * percentage move lands in it looking like a pay change. Gulnara Glowacki is the case: her rate rose
+ * 4.0% in Apr 2024 and 2.0% in Sep 2024, and the column showed +55.9% and -32.0% because her FTE went
+ * 0.667 -> 1.0 and back. Across the data 2,519 figures carry a sign that contradicts what the rate
+ * did. The note is what stops the number lying on its own.
+ */
+test('a percentage moved by FTE says what the rate actually did', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  const rows = await readHistory(page);
+
+  // An exact set, not `some`/`every`: this fails both when a note goes missing and when one appears
+  // on a row whose pair never moved.
+  const noted = rows.filter((r) => r.note).map((r) => `${r.snapshot} ${r.note}`).sort();
+  expect(noted).toEqual(['Apr 2024 rate +4.0%', 'Sep 2024 rate +2.0%']);
+
+  // The figure and its explanation must be in the same cell — a note one row away explains nothing.
+  const sep24 = rows.find((r) => r.snapshot === 'Sep 2024' && r.note)!;
+  expect(sep24.raise).toContain('-32.0%');
+  expect(sep24.note).toBe('rate +2.0%');
+});
+
+/**
+ * The department-change dot used to be a 6px orange square of colour with a hover tooltip and nothing
+ * else — invisible to a screen reader, unreachable by keyboard, and it left the reader to scroll up
+ * and diff two rows to find out what changed.
+ */
+test('the department-change dot names what it was', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  const rows = await readHistory(page);
+  const dotted = rows.filter((r) => r.dotLabel);
+  // Only Sep 2025, where the source really did rename both of her units.
+  expect(dotted.map((r) => r.snapshot)).toEqual(['Sep 2025', 'Sep 2025']);
+  for (const r of dotted) {
+    expect(r.dotLabel, 'the dot must carry an accessible name').not.toBe('');
+    expect(r.dotLabel, 'and it must name the previous value, not just say something changed')
+      .toMatch(/was: .+/);
+  }
+  // The column itself is labelled, rather than being an unexplained strip down the left.
+  const gutterTh = page.locator('table.appt-history thead th.appt-gutter-th');
+  expect(await gutterTh.getAttribute('aria-label')).toBe('Appointment');
+});
+
+/**
+ * A line that stops is only an appointment ENDING when the next snapshot does not hold that lane at
+ * all. Two other shapes must not be capped: the final snapshot (those are the appointments the person
+ * holds now, the data simply stops) and a lane that RESTARTS below (at the Nov 2021 TTC boundary every
+ * job code was renumbered, so the matcher loses the thread while the appointments carry on — the
+ * hollow node already says that, and a terminus would upgrade it to a claim).
+ */
+test('only an appointment the next snapshot does not hold is marked as ended', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  const rows = await readHistory(page);
+
+  const capped = rows.filter((r) => r.caps > 0).map((r) => `${r.snapshot} x${r.caps}`);
+  expect(capped).toEqual(['Aug 2022 x1', 'Sep 2025 x1']);
+
+  // Stated separately, and selected by position rather than by `caps`, so this cannot pass merely
+  // because the assertion above did.
+  expect(rows[rows.length - 1].caps, 'the final snapshot holds current appointments, not ended ones').toBe(0);
+  const ttc = rows.filter((r) => r.snapshot.startsWith('Nov 2021'));
+  expect(ttc.map((r) => r.caps), 'a TTC reclassification is not an ending').toEqual(ttc.map(() => 0));
+});
+
+/** A snapshot's rows are one block: no rule inside it, the strongest rule in the table around it. */
+test('a snapshot with two appointments reads as one block', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  const rows = await readHistory(page);
+  const seen = rows.map((r) => `${r.groupLast}:${/rgba\(0, 0, 0, 0\)/.test(r.border) ? 'none' : 'rule'}`);
+  // Every inner row draws nothing and every closing row draws a rule — as a mapping, so it fails in
+  // both directions rather than counting.
+  expect(new Set(seen)).toEqual(new Set(['no:none', 'yes:rule']));
+  expect(seen.filter((x) => x === 'no:none').length, 'this person must still have grouped rows').toBeGreaterThan(5);
+});
+
 test('a person with one appointment per snapshot gets no lane markers at all', async ({ page }) => {
   await openPerson(page, 'Kenneth Poss');
   const rows = await readHistory(page);
@@ -502,4 +609,7 @@ test('a person with one appointment per snapshot gets no lane markers at all', a
   // The column is absent, not merely empty — otherwise every person page would carry a blank gutter.
   expect(await page.locator('table.appt-history thead th.appt-gutter-th').count()).toBe(0);
   expect(await page.locator('table.appt-history .appt-gutter-node').count()).toBe(0);
+  // And the snapshot-grouping rules never reach a table that has no groups to mark: every row here is
+  // the last of its own snapshot, so an ungated rule would restyle all of them.
+  expect(rows.map((r) => r.groupLast)).toEqual(rows.map(() => ''));
 });

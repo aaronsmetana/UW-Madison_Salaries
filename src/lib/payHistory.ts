@@ -384,6 +384,18 @@ export interface LaneSegment {
    * which is a continuity claim in miniature.
    */
   continues: boolean;
+  /**
+   * The appointment ends here: the next snapshot exists and does not hold this lane at all.
+   *
+   * Deliberately narrower than `!continues`, twice over. Every segment in the LAST snapshot also
+   * fails to continue — but nothing has ended there; those are the appointments the person holds now
+   * and the data simply stops at the most recent snapshot. And a lane that RESTARTS below also fails
+   * to continue, yet "ended" is more than is known: at the Nov 2021 TTC boundary every job code was
+   * renumbered, so the matcher loses every thread while the appointments themselves carry straight
+   * on. That case is already said honestly by the hollow node on the row below — this line could not
+   * be followed — and a terminus would upgrade it to a claim the source does not support.
+   */
+  ends: boolean;
 }
 
 /** What one row's gutter cell draws. */
@@ -475,13 +487,17 @@ export function laneGutter<T>(
         if (capped && i < at) continue;
         const next = plans[g + 1];
         const nextAt = next?.nodeAt.get(lane);
+        // Inside a group the next row always draws the lanes this row draws. At the last row it
+        // depends on the next snapshot — and a lane that RESTARTS there does not connect to this
+        // one whatever its node index, so the segment must not bridge into it.
+        const continues =
+          i < group.length - 1 ? true : nextAt !== undefined && !next!.starts.has(lane);
         segments.push({
           lane,
           draw: capped && i === at ? 'from-node' : 'full',
-          // Inside a group the next row always draws the lanes this row draws. At the last row it
-          // depends on the next snapshot — and a lane that RESTARTS there does not connect to this
-          // one whatever its node index, so the segment must not bridge into it.
-          continues: i < group.length - 1 ? true : nextAt !== undefined && !next!.starts.has(lane),
+          continues,
+          // Absent below, not merely uncontinued. See the field's own note.
+          ends: next !== undefined && nextAt === undefined && i === group.length - 1,
         });
       }
       byRow.set(row, { lane: own, start: matching.laneStart.has(row), segments });

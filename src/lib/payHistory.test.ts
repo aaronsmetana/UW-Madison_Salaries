@@ -576,6 +576,43 @@ describe('lane gutter', () => {
     ).toEqual({ 1: true, 2: false });
   });
 
+  /**
+   * `ends` is NOT `!continues`, and this covers both branches in one test so a sabotage cannot pass
+   * by satisfying the easy half. A lane the history carries on without has ended; a lane still held
+   * in the final snapshot has not, however abruptly the table stops.
+   */
+  it('marks only an appointment the next snapshot does not hold', () => {
+    const ends = (g: ReturnType<typeof gutter>, row: Row) =>
+      Object.fromEntries((g.byRow.get(row)?.segments ?? []).map((sg) => [sg.lane, sg.ends]));
+
+    // (a) Gone below, and the history carries on: ended.
+    const gone = gutter([
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+    ]);
+    expect(ends(gone, gone && [...gone.byRow.keys()][1])).toEqual({ 1: false, 2: true });
+
+    // (b) A different appointment takes the lane below. The run stops — `continues` is false — but
+    // "ended" is more than is known, and the hollow node below already says the line could not be
+    // followed. This is the TTC boundary's shape, where nothing ends and everything is renumbered.
+    const restart = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+      other('2024-04', 'RE015', 'Institute on Aging', 90000, 0.9),
+    ];
+    const gr = gutter(restart);
+    expect(ends(gr, restart[1])).toEqual({ 1: false, 2: false });
+    expect(
+      (gr.byRow.get(restart[1])?.segments ?? []).map((sg) => sg.continues),
+      'lane 2 must still report no continuation here — ends is narrower than !continues, not equal'
+    ).toEqual([true, false]);
+
+    // (c) The final snapshot: fails to continue, has not ended — the person holds these now.
+    expect(ends(gr, restart[3])).toEqual({ 1: false, 2: false });
+  });
+
   it('keeps drawing the line through a snapshot where only one appointment is left', () => {
     const rows = [
       lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),

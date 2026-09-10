@@ -44,6 +44,7 @@ export function LaneGutter({ cell, count, withTooltip = true }: {
             className="appt-gutter-track"
             data-draw={seg.draw}
             data-continues={seg.continues ? 'yes' : 'no'}
+            data-ends={seg.ends ? 'yes' : 'no'}
             style={{
               ['--slot' as string]: seg.lane - 1,
               ['--lane-c' as string]: `var(--lane-${laneSlot(seg.lane)})`,

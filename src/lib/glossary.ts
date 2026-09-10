@@ -9,6 +9,7 @@ export const GLOSSARY = {
   percentile: 'The share of a comparison group this person is paid more than. Being at the 75th percentile means being paid more than 75% of that group.',
   actualPay: 'What was actually paid for the appointment — the full-time rate scaled by FTE (appointment %).',
   rate: 'The full-time-equivalent salary for the role, before scaling by FTE — what a full-time (100% FTE) appointment would pay.',
+  payChange: 'The change in actual pay since this appointment\'s previous snapshot. Because actual pay is the rate scaled by FTE, a change in appointment percentage or comp basis moves this figure on its own — a fall here is not always a pay cut, and a rise is not always a raise. Where that has happened, the change in the full-time rate is shown underneath.',
   tenure: 'Years since this person was hired, based on their recorded date of hire.',
   compaRatio: "Compa-ratio = pay ÷ the pay grade's midpoint. 1.00 (or 100%) means paid exactly at midpoint; below 1.00 means paid below it. UW treats 0.85–1.15 as the market-competitive range.",
   pir: "Position in Range (PIR) = how far a salary sits between the grade's minimum (0%) and maximum (100%). UW treats 25%–75% as the market-competitive range.",

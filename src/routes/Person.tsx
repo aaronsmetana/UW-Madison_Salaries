@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
-  Tooltip as MantineTooltip, ThemeIcon, VisuallyHidden,
+  Tooltip as MantineTooltip, ThemeIcon,
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -17,7 +17,7 @@ import { TipSurface } from '../components/chart/ChartTooltip';
 import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, actualPay } from '../lib/queries';
+import { personPay, actualPay, sameBasis } from '../lib/queries';
 import {
   matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter,
   type Raise,
@@ -234,7 +234,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
 /** The history table's "Raise" cell. Three states, because the source cannot always attribute a
  *  change to a single appointment — see payHistory.ts. `children` is what to show when there is
  *  nothing to compare against at all: the promotion badge, or an em dash. */
-function RaiseCell({ raise, children }: { raise: Raise; children: ReactNode }) {
+function RaiseCell({ raise, note, children }: { raise: Raise; note?: string | null; children: ReactNode }) {
   // A new appointment under a title the person already held. Deliberately not an em dash: that
   // already means "no prior snapshot", and the two must not read alike.
   if (raise.kind === 'newAppointment') return <Badge size="xs" variant="light" color="gray">new</Badge>;
@@ -248,7 +248,12 @@ function RaiseCell({ raise, children }: { raise: Raise; children: ReactNode }) {
         {delta > 0 ? '+' : ''}{pct(delta)}
       </Text>
     );
-  if (raise.kind === 'paired') return figure;
+  if (raise.kind === 'paired') {
+    // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
+    // in it looking like a pay change. Where that has happened the note says what the RATE did —
+    // the number the reader came for, and the only one they cannot get elsewhere on the page.
+    return note ? (<>{figure}<span className="appt-rate-note">{note}</span></>) : figure;
+  }
 
   // Two lines of a split carry the same figure, so the label has to say it covers both — otherwise
   // the repetition reads as each appointment having moved by that much on its own.
@@ -1455,17 +1460,18 @@ export default function Person() {
           <Table.Thead>
             <Table.Tr>
               {gutter.slots > 0 && (
-                <Table.Th className="appt-gutter-th">
-                  <VisuallyHidden>Appointment</VisuallyHidden>
-                </Table.Th>
+                /* Visible, not hidden: an unlabelled column reads as a rendering accident. The
+                   column is 71px and "APPOINTMENT" runs ~90px at the header's 11px uppercase, so the
+                   visible text is the abbreviation and the full word is the accessible name. */
+                <Table.Th className="appt-gutter-th" aria-label="Appointment">Appt</Table.Th>
               )}
               <Table.Th className="appt-snapshot">Snapshot</Table.Th>
               <Table.Th>Title</Table.Th>
               <Table.Th>Job code</Table.Th>
               <Table.Th>School / Dept</Table.Th>
-              <Table.Th ta="right">Rate</Table.Th>
-              <Table.Th ta="right">Actual pay</Table.Th>
-              <Table.Th ta="right">Raise</Table.Th>
+              <Table.Th ta="right"><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
+              <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
+              <Table.Th ta="right"><GlossaryTerm term="payChange">Change</GlossaryTerm></Table.Th>
               <Table.Th ta="right">FTE</Table.Th>
               <Table.Th>Basis</Table.Th>
             </Table.Tr>
@@ -1491,6 +1497,32 @@ export default function Person() {
               // against the previous displayed row, which on a split page is a different appointment
               // entirely: 4,787 rows across the data were guaranteed a dot that meant nothing.
               const orgMoved = !!from && ((r.school ?? '') !== (from.school ?? '') || (r.department ?? '') !== (from.department ?? ''));
+                  const orgMovedLabel = orgMoved
+                    ? `Division/Department changed since this appointment's previous snapshot — was: ${[from!.school, from!.department].filter(Boolean).join(' · ') || 'not recorded'}`
+                    : '';
+                  // Why the Change column may not mean what it looks like. It reports the change in ACTUAL pay
+                  // (rate x FTE), so an appointment-percentage or comp-basis move shows up as if it were a pay
+                  // change: 4,159 figures across the data coincide with an FTE change, and 2,519 carry a sign
+                  // that contradicts what the rate did.
+                  const rateNote = ((): string | null => {
+                    if (!from || raise.kind !== 'paired') return null;
+                    // `sameBasis`, never `!==`. The source renamed its own vocabulary — Annual to 12 Month,
+                    // Academic to 9 Month — and left the column null before it existed, so a literal comparison
+                    // calls 35,313 pairs a basis change when 2,720 of them are.
+                    const basisMoved = !sameBasis(r.comp_basis, from.comp_basis);
+                    // Matches FTE_MULT: a zero or missing FTE counts as full-time.
+                    const fteMoved = (r.fte || 1) !== (from.fte || 1);
+                    if (!basisMoved && !fteMoved) return null;
+                    // A 9-month rate and a 12-month rate are not the same quantity, so no percentage is drawn
+                    // across that boundary — the Basis column already says what it is now.
+                    if (basisMoved) return 'basis changed';
+                    // `fte = 0` is the hourly family, where `salary` is an hourly rate in the early snapshots and
+                    // an annual figure later. A rate delta there is one of the 959 nonsense figures, so it is
+                    // suppressed rather than printed.
+                    if (!r.fte || !from.fte || !r.salary || !from.salary || from.salary <= 0) return null;
+                    const d = r.salary / from.salary - 1;
+                    return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
+                  })();
               return (
                 <Table.Tr
                   key={`${r.snapshot_id}-${i}`}
@@ -1498,7 +1530,10 @@ export default function Person() {
                   // one snapshot on opposite stripes, pulling apart what belongs together. Parity
                   // follows nth-of-type(odd) so a person with one line per snapshot is unchanged.
                   data-band={pos % 2 === 0 ? '1' : '0'}
-                  data-group-last={lastOfGroup ? undefined : 'no'}
+                  // Only for a person who actually holds concurrent appointments. Otherwise every
+                  // row is the last of its own group and the strengthened boundary rule would land
+                  // on the 93.2% of tables this is not about.
+                  data-group-last={gutter.slots > 0 ? (lastOfGroup ? 'yes' : 'no') : undefined}
                 >
                   {gutter.slots > 0 && (
                     <Table.Td className="appt-gutter-td">
@@ -1523,8 +1558,14 @@ export default function Person() {
                     <Text size="sm">{r.school ?? '—'}</Text>
                     <Group gap={6} wrap="nowrap">
                       {orgMoved && (
-                        <MantineTooltip label="Division/Department changed since this appointment's previous snapshot" withArrow>
+                        /* The dot was colour plus a hover tooltip and nothing else: invisible to a screen
+                           reader, unreachable by keyboard, and it left the reader to scroll up and
+                           diff two rows themselves. Both the label and the tooltip now name what it
+                           was. */
+                        <MantineTooltip label={orgMovedLabel} withArrow multiline w={280}>
                           <span
+                            role="img"
+                            aria-label={orgMovedLabel}
                             style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
                           />
                         </MantineTooltip>
@@ -1535,7 +1576,7 @@ export default function Person() {
                   <Table.Td ta="right">{usd(r.salary)}</Table.Td>
                   <Table.Td ta="right">{usd(actual)}</Table.Td>
                   <Table.Td ta="right">
-                    <RaiseCell raise={raise}>
+                    <RaiseCell raise={raise} note={rateNote}>
                       {isNew && !ttcReclass && pos > 0 ? (
                         <Badge size="xs" variant="light" color="accent">promotion</Badge>
                       ) : (
@@ -1555,12 +1596,14 @@ export default function Person() {
         <Group gap={6} mt="sm" wrap="wrap">
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
           <Text size="xs" c="dimmed">
-            = department changed since this appointment’s previous snapshot. Orange % = a rate decrease
-            — often a change in FTE or comp basis rather than a pay cut. Where a person holds several
-            appointments at once, each runs as its own lettered track down the left of the table; a
-            filled dot marks the line that row belongs to, and a hollow one means the source does not
-            connect that line to the previous snapshot, so it starts there. “Across both” means the
-            change could only be measured across the lines together.
+            = department changed since this appointment’s previous snapshot. “Change” is the change in
+            actual pay, so a change in appointment percentage or comp basis moves it on its own — where
+            that has happened, what the full-time rate did is printed underneath. Where a person holds
+            several appointments at once, each runs as its own lettered track down the left of the
+            table; a filled dot marks the line that row belongs to, a hollow one means the source does
+            not connect that line to the previous snapshot, and a line that stops with a bar is an
+            appointment that ended. “Across both” means the change could only be measured across the
+            lines together.
           </Text>
         </Group>
       </Card>

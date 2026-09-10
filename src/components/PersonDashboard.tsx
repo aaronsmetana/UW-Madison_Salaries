@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert, VisuallyHidden } from '@mantine/core';
+import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, sameBasis } from '../lib/queries';
 import {
   matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
@@ -38,6 +38,7 @@ interface Row {
   pay: number | null;
   earn: number | null;
   rate_raw: number | null;
+  comp_basis: string | null;
   fte: number | null;
   date_of_hire: string | null;
   grade_number: number | null;
@@ -79,7 +80,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],
     `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
-            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, fte, date_of_hire, grade_number, grade_basis
+            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, comp_basis, fte, date_of_hire, grade_number, grade_basis
      FROM salaries WHERE person_key = ${sqlStr(personKey)} ORDER BY snapshot_date`,
     !!personKey
   );
@@ -372,15 +373,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           <Table.Thead>
             <Table.Tr>
               {gutter.slots > 0 && (
-                <Table.Th className="appt-gutter-th">
-                  <VisuallyHidden>Appointment</VisuallyHidden>
-                </Table.Th>
+                /* Visible here too: on paper a VisuallyHidden label is no label at all, and this
+                   report is read as a document. */
+                <Table.Th className="appt-gutter-th" aria-label="Appointment">Appt</Table.Th>
               )}
               <Table.Th className="appt-snapshot">Snapshot</Table.Th>
               <Table.Th>Title</Table.Th>
               <Table.Th>Job code</Table.Th>
               <Table.Th>School / Dept</Table.Th>
-              <Table.Th ta="right">Salary</Table.Th>
+              <Table.Th ta="right">Actual pay</Table.Th>
               <Table.Th ta="right">FTE</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -396,12 +397,27 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
               const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
               const cell = gutter.byRow.get(r);
+              // Same rule as the interactive table (Person.tsx), for the same reason: this column shows the
+              // change in ACTUAL pay, so an FTE or comp-basis move reads as a pay change. Same wording, so
+              // the printed report and the page cannot tell the reader different things.
+              const from = matching.priorOf.get(r);
+              const rateNote = ((): string | null => {
+                const paired = matching.raises.get(r);
+                if (!from || paired?.kind !== 'paired') return null;
+                if (!sameBasis(r.comp_basis, from.comp_basis)) return 'basis changed';
+                if ((r.fte || 1) === (from.fte || 1)) return null;
+                if (!r.fte || !from.fte || !r.rate_raw || !from.rate_raw || from.rate_raw <= 0) return null;
+                const d = r.rate_raw / from.rate_raw - 1;
+                return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
+              })();
               const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
               return (
               <Table.Tr
                 key={`${r.snapshot_id}-${i}`}
                 data-band={pos % 2 === 0 ? '1' : '0'}
-                data-group-last={lastOfGroup ? undefined : 'no'}
+                // Gated the same way as the page: only a person who actually holds concurrent
+                // appointments gets the strengthened snapshot boundary.
+                data-group-last={gutter.slots > 0 ? (lastOfGroup ? 'yes' : 'no') : undefined}
               >
                 {gutter.slots > 0 && (
                   <Table.Td className="appt-gutter-td">
@@ -430,9 +446,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 <Table.Td ta="right">
                   {usd(r.pay)}
                   {/* This prints, so "combined" has to be legible on paper — no tooltip to fall back
-                      on. The note under the table carries the rest. */}
+                      on. The note under the table carries the rest.
+
+                      `orange` (warn), not `red` (down): this figure is the change in ACTUAL pay, so
+                      an appointment-percentage move lands in it looking like a pay cut. The
+                      interactive table has always painted it warn; the printed report — the copy
+                      someone carries into a meeting — was asserting a cut in the strongest colour
+                      the palette has. */}
                   {(raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
-                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'red'}>
+                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'}>
                       {raise.delta > 0 ? '+' : ''}{pct(raise.delta)}
                       {raise.kind === 'combined' && (
                         <Text span size="xs" c="dimmed"> {acrossLabel(raise.curCount, raise.priorCount)}</Text>
@@ -440,6 +462,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                     </Text>
                   )}
                   {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
+                  {rateNote && <span className="appt-rate-note">{rateNote}</span>}
                 </Table.Td>
                 {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly). */}
                 <Table.Td ta="right">{r.fte || '—'}</Table.Td>
@@ -453,8 +476,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           <Text size="xs" c="dimmed" mt="sm">
             Each concurrent appointment runs as its own lettered track down the left of the table, held
             for as long as that appointment can be followed; a filled dot marks the line a row belongs
-            to, and a hollow one means the source does not connect that line to the previous snapshot,
-            so it starts there.
+            to, a hollow one means the source does not connect that line to the previous snapshot, and
+            a line that stops with a bar is an appointment that ended.
             {anyCombined &&
               ' “Across both” = two appointments under one title that the source does not distinguish' +
               ' — same department, same appointment percentage — so the change is shown across them' +
