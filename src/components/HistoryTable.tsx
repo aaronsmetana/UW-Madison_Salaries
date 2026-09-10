@@ -1,0 +1,318 @@
+import { useMemo, useState, type ReactNode } from 'react';
+import { Card, Table, Badge, Text, Group, Tooltip as MantineTooltip } from '@mantine/core';
+import { CardTitle } from './CardTitle';
+import { GlossaryTerm } from './GlossaryTerm';
+import { LaneGutter } from './LaneGutter';
+import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
+import { actualPay, sameBasis } from '../lib/queries';
+import { usd, pct, fmtBasis } from '../lib/format';
+import { ttcRank } from '../lib/snapshotOrder';
+
+/**
+ * The person page's title & salary history table.
+ *
+ * Its own component for one reason: it holds hover state, and the page it lives on keeps every tab
+ * panel mounted (Mantine's `keepMounted` default). Measured while the History tab is showing, the
+ * hidden panels hold 504 peer-table rows — so state kept in the page would have React reconcile all
+ * of them on every row the cursor crosses. Here a hover re-renders this table and nothing else.
+ */
+
+/** The fields this table reads. Declared here rather than imported from the route, so a component
+ *  does not depend on a page; the page's own row type satisfies it structurally. */
+export interface HistoryRow {
+  snapshot_id: string;
+  snapshot_label: string;
+  snapshot_date: string;
+  school: string | null;
+  department: string | null;
+  title: string | null;
+  job_code: string | null;
+  salary: number | null;
+  salary_fte_adjusted: number | null;
+  fte: number | null;
+  comp_basis: string | null;
+}
+
+/** The history table's "Raise" cell. Three states, because the source cannot always attribute a
+ *  change to a single appointment — see payHistory.ts. `children` is what to show when there is
+ *  nothing to compare against at all: the promotion badge, or an em dash. */
+function RaiseCell({ raise, note, children }: { raise: Raise; note?: string | null; children: ReactNode }) {
+  // A new appointment under a title the person already held. Deliberately not an em dash: that
+  // already means "no prior snapshot", and the two must not read alike.
+  if (raise.kind === 'newAppointment') return <Badge size="xs" variant="light" color="gray">new</Badge>;
+  if (raise.kind === 'none') return <>{children}</>;
+
+  const { delta } = raise;
+  const figure = delta === 0
+    ? <Text size="sm" c="dimmed">0%</Text>
+    : (
+      <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'}>
+        {delta > 0 ? '+' : ''}{pct(delta)}
+      </Text>
+    );
+  if (raise.kind === 'paired') {
+    // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
+    // in it looking like a pay change. Where that has happened the note says what the RATE did —
+    // the number the reader came for, and the only one they cannot get elsewhere on the page.
+    return note ? (<>{figure}<span className="appt-rate-note">{note}</span></>) : figure;
+  }
+
+  // Two lines of a split carry the same figure, so the label has to say it covers both — otherwise
+  // the repetition reads as each appointment having moved by that much on its own.
+  return (
+    <MantineTooltip label={combinedReason(raise.curCount, raise.priorCount)} withArrow multiline w={300}>
+      <div>
+        {figure}
+        <Text size="xs" c="dimmed">{acrossLabel(raise.curCount, raise.priorCount)}</Text>
+      </div>
+    </MantineTooltip>
+  );
+}
+
+export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
+  // Appointment count per snapshot: gates the lane letter, which says nothing at "A of 1".
+  const apptCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
+    return m;
+  }, [rows]);
+
+  // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair, and
+  // concurrent appointments in a STABLE order within each snapshot. Date alone left the order to
+  // whatever the query returned, which flipped a person's two appointments between snapshots — see
+  // byAppointment. Sorting only moves rows; matchAppointments does not depend on their order.
+  const historyRows = useMemo(() => {
+    const withinSnapshot = byAppointment<HistoryRow>((r) => ({
+      snapshotId: r.snapshot_id, jobCode: r.job_code, school: r.school,
+      department: r.department, fte: r.fte, pay: actualPay(r),
+    }));
+    return [...rows].sort(
+      (a, b) =>
+        String(a.snapshot_date).localeCompare(String(b.snapshot_date)) ||
+        ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id) ||
+        withinSnapshot(a, b)
+    );
+  }, [rows]);
+
+  // Which job codes each snapshot holds, so the badges can tell a genuinely new title from a
+  // concurrent appointment (the adjacent row interleaves those and yields bogus "New title"/−100%).
+  // This deliberately carries no pay: an earlier version summed the rows per job code here, and the
+  // Δ below then divided ONE appointment's pay by that sum — see payHistory.ts.
+  const snapHistory = useMemo(() => {
+    const order: string[] = [];
+    const index = new Map<string, number>();
+    const bySnap = new Map<string, { date: string; jobs: Set<string> }>();
+    for (const r of historyRows) {
+      let s = bySnap.get(r.snapshot_id);
+      if (!s) { s = { date: String(r.snapshot_date), jobs: new Set() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
+      if (r.job_code != null) s.jobs.add(r.job_code);
+    }
+    return { order, index, bySnap };
+  }, [historyRows]);
+
+  // Where each snapshot's first row sits — the one row of the group that carries the snapshot's
+  // label, now that the label is printed once per snapshot rather than once per line.
+  const apptFirstRow = useMemo(() => {
+    const m = new Map<string, number>();
+    historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
+    return m;
+  }, [historyRows]);
+
+  // Per-appointment change for every history row, plus the lane that lets a reader follow ONE
+  // appointment down the page and the prior row each line continues. `historyRows` is already in
+  // display order, which is the sequence the matcher compares against.
+  const matching = useMemo(
+    () =>
+      matchAppointments(historyRows, (r) => ({
+        snapshotId: r.snapshot_id,
+        jobCode: r.job_code,
+        school: r.school,
+        department: r.department,
+        fte: r.fte,
+        pay: actualPay(r),
+      })),
+    [historyRows]
+  );
+
+  /**
+   * The appointment tracks. Empty for anyone who never holds two appointments at once, which is most
+   * people — and that is the gate for the whole column, so their table renders as it always has.
+   */
+  const gutter = useMemo(
+    () => laneGutter(historyRows, (r) => r.snapshot_id, matching),
+    [historyRows, matching]
+  );
+
+  // The run under the cursor. Hover-only, so it is an enhancement: the letter, the slot and the
+  // tooltip already say which appointment a row is, to keyboard and screen-reader users too.
+  const [activeRun, setActiveRun] = useState<number | null>(null);
+
+  return (
+    <Card withBorder padding="lg">
+      <CardTitle>Title & salary history</CardTitle>
+      <Table.ScrollContainer minWidth={gutter.slots ? 980 : 880}>
+      {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
+      <Table
+        className="appt-history"
+        striped={false}
+        style={gutter.slots ? ({ ['--lane-slots' as string]: gutter.slots }) : undefined}
+      >
+        <Table.Thead>
+          <Table.Tr>
+            {gutter.slots > 0 && (
+              /* Visible, not hidden: an unlabelled column reads as a rendering accident. The
+                 column is 71px and "APPOINTMENT" runs ~90px at the header's 11px uppercase, so the
+                 visible text is the abbreviation and the full word is the accessible name. */
+              <Table.Th className="appt-gutter-th" aria-label="Appointment">Appt</Table.Th>
+            )}
+            <Table.Th className="appt-snapshot">Snapshot</Table.Th>
+            <Table.Th>Title</Table.Th>
+            <Table.Th>Job code</Table.Th>
+            <Table.Th>School / Dept</Table.Th>
+            <Table.Th ta="right"><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
+            <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
+            <Table.Th ta="right"><GlossaryTerm term="payChange">Change</GlossaryTerm></Table.Th>
+            <Table.Th ta="right">FTE</Table.Th>
+            <Table.Th>Basis</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody onMouseLeave={() => setActiveRun(null)}>
+          {historyRows.map((r, i) => {
+            // Compare to the SAME job code in the prior snapshot (not the adjacent interleaved row).
+            const pos = snapHistory.index.get(r.snapshot_id) ?? 0;
+            const priorId = pos > 0 ? snapHistory.order[pos - 1] : null;
+            const priorSnap = priorId ? snapHistory.bySnap.get(priorId) : null;
+            const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
+            const isNew = !!priorSnap && !!r.job_code && !inPrior;
+            const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
+            const actual = actualPay(r);
+            const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
+            const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
+            const cell = gutter.byRow.get(r);
+            // Which appointment this row is, as far as the matcher can follow it. The RUN, not the lane:
+            // a lane is reused once an appointment ends, so keying on it would light up unrelated rows.
+            const runId = matching.run.get(r);
+            // The row this line continues. Everything below that claims continuity — the lane's
+            // solid rail, the department-change dot — is answered by this and nothing else.
+            const from = matching.priorOf.get(r);
+            const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
+            // Org move = this appointment's OWN department a snapshot ago. It used to compare
+            // against the previous displayed row, which on a split page is a different appointment
+            // entirely: 4,787 rows across the data were guaranteed a dot that meant nothing.
+            const orgMoved = !!from && ((r.school ?? '') !== (from.school ?? '') || (r.department ?? '') !== (from.department ?? ''));
+                const orgMovedLabel = orgMoved
+                  ? `Division/Department changed since this appointment's previous snapshot — was: ${[from!.school, from!.department].filter(Boolean).join(' · ') || 'not recorded'}`
+                  : '';
+                // Why the Change column may not mean what it looks like. It reports the change in ACTUAL pay
+                // (rate x FTE), so an appointment-percentage or comp-basis move shows up as if it were a pay
+                // change: 4,159 figures across the data coincide with an FTE change, and 2,519 carry a sign
+                // that contradicts what the rate did.
+                const rateNote = ((): string | null => {
+                  if (!from || raise.kind !== 'paired') return null;
+                  // `sameBasis`, never `!==`. The source renamed its own vocabulary — Annual to 12 Month,
+                  // Academic to 9 Month — and left the column null before it existed, so a literal comparison
+                  // calls 35,313 pairs a basis change when 2,720 of them are.
+                  const basisMoved = !sameBasis(r.comp_basis, from.comp_basis);
+                  // Matches FTE_MULT: a zero or missing FTE counts as full-time.
+                  const fteMoved = (r.fte || 1) !== (from.fte || 1);
+                  if (!basisMoved && !fteMoved) return null;
+                  // A 9-month rate and a 12-month rate are not the same quantity, so no percentage is drawn
+                  // across that boundary — the Basis column already says what it is now.
+                  if (basisMoved) return 'basis changed';
+                  // `fte = 0` is the hourly family, where `salary` is an hourly rate in the early snapshots and
+                  // an annual figure later. A rate delta there is one of the 959 nonsense figures, so it is
+                  // suppressed rather than printed.
+                  if (!r.fte || !from.fte || !r.salary || !from.salary || from.salary <= 0) return null;
+                  const d = r.salary / from.salary - 1;
+                  return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
+                })();
+            return (
+              <Table.Tr
+                key={`${r.snapshot_id}-${i}`}
+                // Banding is by snapshot, not by row: Mantine's own striping put the two lines of
+                // one snapshot on opposite stripes, pulling apart what belongs together. Parity
+                // follows nth-of-type(odd) so a person with one line per snapshot is unchanged.
+                data-band={pos % 2 === 0 ? '1' : '0'}
+                // Only for a person who actually holds concurrent appointments. Otherwise every
+                // row is the last of its own group and the strengthened boundary rule would land
+                // on the 93.2% of tables this is not about.
+                data-group-last={gutter.slots > 0 ? (lastOfGroup ? 'yes' : 'no') : undefined}
+                // Only for someone who holds concurrent appointments: with one line per snapshot there is
+                // nothing to follow, and every other person's table keeps the plain hover it always had.
+                onMouseEnter={gutter.slots > 0 ? () => setActiveRun(runId ?? null) : undefined}
+                data-appt-active={gutter.slots > 0 && runId != null && runId === activeRun ? 'yes' : undefined}
+              >
+                {gutter.slots > 0 && (
+                  <Table.Td className="appt-gutter-td">
+                    {cell && <LaneGutter cell={cell} count={apptTotal} />}
+                  </Table.Td>
+                )}
+                <Table.Td className="appt-snapshot">
+                  {apptFirstRow.get(r.snapshot_id) === i && (
+                    <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                  )}
+                </Table.Td>
+                <Table.Td>
+                  {r.title ?? '—'}
+                  {isNew && (
+                    <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'accent'}>
+                      {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
+                    </Badge>
+                  )}
+                </Table.Td>
+                <Table.Td>{r.job_code ?? '—'}</Table.Td>
+                <Table.Td>
+                  <Text size="sm">{r.school ?? '—'}</Text>
+                  <Group gap={6} wrap="nowrap">
+                    {orgMoved && (
+                      /* The dot was colour plus a hover tooltip and nothing else: invisible to a screen
+                         reader, unreachable by keyboard, and it left the reader to scroll up and
+                         diff two rows themselves. Both the label and the tooltip now name what it
+                         was. */
+                      <MantineTooltip label={orgMovedLabel} withArrow multiline w={280}>
+                        <span
+                          role="img"
+                          aria-label={orgMovedLabel}
+                          style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
+                        />
+                      </MantineTooltip>
+                    )}
+                    <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
+                  </Group>
+                </Table.Td>
+                <Table.Td ta="right">{usd(r.salary)}</Table.Td>
+                <Table.Td ta="right">{usd(actual)}</Table.Td>
+                <Table.Td ta="right">
+                  <RaiseCell raise={raise} note={rateNote}>
+                    {isNew && !ttcReclass && pos > 0 ? (
+                      <Badge size="xs" variant="light" color="accent">promotion</Badge>
+                    ) : (
+                      <Text size="sm" c="dimmed">—</Text>
+                    )}
+                  </RaiseCell>
+                </Table.Td>
+                {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says. */}
+                <Table.Td ta="right">{r.fte || '—'}</Table.Td>
+                <Table.Td><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+      </Table.ScrollContainer>
+      <Group gap={6} mt="sm" wrap="wrap">
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
+        <Text size="xs" c="dimmed">
+          = department changed since this appointment’s previous snapshot. “Change” is the change in
+          actual pay, so a change in appointment percentage or comp basis moves it on its own — where
+          that has happened, what the full-time rate did is printed underneath. Where a person holds
+          several appointments at once, each runs as its own lettered track down the left of the
+          table; a filled dot marks the line that row belongs to, a hollow one means the source does
+          not connect that line to the previous snapshot, and a line that stops with a bar is an
+          appointment that ended. “Across both” means the change could only be measured across the
+          lines together.
+        </Text>
+      </Group>
+    </Card>
+  );
+}

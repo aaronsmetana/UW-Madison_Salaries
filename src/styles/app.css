@@ -118,9 +118,21 @@
      in an app that runs on one. Lanes 1 and 2 carry 95.8% of the concurrent snapshots in the data and
      are the pair that has to be unmistakable; 3 and 4 cover the remaining 4.2%, with the lane letter
      doing the work past that (six person-snapshots in the whole file hold more than four lines). */
+  /* Every lane must clear 3:1 (WCAG 1.4.11) against every background a track sits on — the card, the
+     snapshot band, the hovered row, and the tint an appointment's rows take on hover. Measured, not
+     assumed: gray-6 cleared the band at 3.15 and fell to 2.99 on hover, and accent-4 topped out at
+     2.28 at full opacity. The lowest pairing now is 3.79.
+
+     On a near-white row with a hover state, every grey that passes is darker than lane 1's teal, so a
+     lighter "minor" lane is not available at all. gray-9 separated best from its neighbours (2.47)
+     and was tried first; rendered, lane B became a near-black line that dominated the two-lane page —
+     95.8% of split snapshots — and read as a table rule rather than an appointment. gray-7 reads as a
+     peer track beside the first, at the cost of adjacent separation (1.39). That is accepted because
+     identity here never rests on colour: the slot and the letter carry it, and teal/grey is the only
+     hue pair the up/warn/down ramp leaves free. */
   --lane-1: var(--mantine-color-accent-7);
-  --lane-2: var(--mantine-color-gray-6);
-  --lane-3: var(--mantine-color-accent-4);
+  --lane-2: var(--mantine-color-gray-7);
+  --lane-3: var(--mantine-color-accent-6);
   --lane-4: var(--mantine-color-gray-8);
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
@@ -644,6 +656,20 @@ textarea:focus-visible,
 .appt-history tbody tr[data-band]:hover td {
   background-color: var(--table-hover-color);
 }
+/* Every row of the hovered row's appointment — its RUN, not its lane, since a lane is reused after an
+   appointment ends (the reported page has 3 lanes but 5 runs). The hovered row takes it too: the point
+   is "these rows are one appointment", and the reader already knows where their own cursor is.
+
+   This tint is DARKER than plain hover, not bounded by it. A tint no darker than hover sits within
+   1.03 of the snapshot band and cannot be seen; this one is 1.17 from it (plain hover, which the app
+   already accepts as visible, is 1.06), and it leans toward the accent so it does not read as the
+   table re-striping. What keeps it safe is measured margin, not a bound: the lowest-contrast lane on
+   it is 3.79 in light and 4.15 in dark, and the e2e contrast matrix reads it by actually hovering.
+   The second selector exists to out-rank the plain `:hover` rule above on the hovered row itself. */
+.appt-history tbody tr[data-appt-active='yes'] td,
+.appt-history tbody tr[data-appt-active='yes']:hover td {
+  background-color: color-mix(in srgb, var(--mantine-color-accent-5) 10%, var(--table-hover-color));
+}
 /* Inside a snapshot the separator softens, so several appointments read as one snapshot's worth of
    lines rather than as unrelated rows. Only ever set on a row that has another row of its own
    snapshot below it, so a person with one appointment per snapshot keeps the table it has today. */
@@ -703,8 +729,10 @@ textarea:focus-visible,
   inset-inline-start: calc(var(--slot) * 9px);
   width: 3px;
   border-radius: 1px;
-  /* Quiet enough that six of them do not shout, while the nodes stay solid. */
-  background-color: color-mix(in srgb, var(--lane-c) 45%, transparent);
+  /* Solid. This was 45% so six tracks would stay quiet on the one page that has six, and at 45% seven
+     of the eight lane/scheme pairs failed 3:1 — the tracks are the mechanism for telling one
+     appointment from another, so they have to be visible to everyone, not calm. */
+  background-color: var(--lane-c);
 }
 /* The line begins at this row's node: there is nothing above it in the source to connect it to. */
 .appt-gutter-track[data-draw='from-node'] {
