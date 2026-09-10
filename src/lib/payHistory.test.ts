@@ -445,6 +445,15 @@ describe('lane labelling', () => {
     );
     expect(laneReason(2, 3, false)).toContain('so its line starts here');
   });
+
+  // Every row of a split history is lettered now, including a snapshot that holds only one line, and
+  // "A of 1" reads as a count rather than a name.
+  it('names a lone appointment without counting it', () => {
+    const text = laneReason(1, 1, true);
+    expect(text).toContain('Appointment A, the only one in this snapshot.');
+    expect(text).not.toMatch(/of 1\b/);
+    expect(text).toContain('Followed from the same appointment');
+  });
 });
 
 /**
@@ -594,7 +603,7 @@ describe('lane gutter', () => {
     expect(ends(gone, gone && [...gone.byRow.keys()][1])).toEqual({ 1: false, 2: true });
 
     // (b) A different appointment takes the lane below. The run stops — `continues` is false — but
-    // "ended" is more than is known, and the hollow node below already says the line could not be
+    // "ended" is more than is known, and the dashed station below already says the line could not be
     // followed. This is the TTC boundary's shape, where nothing ends and everything is renumbered.
     const restart = [
       lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),

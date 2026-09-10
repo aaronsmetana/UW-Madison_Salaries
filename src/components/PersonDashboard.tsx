@@ -19,7 +19,7 @@ import { ChartData } from './ChartData';
 import { PercentileNote } from './PercentileNote';
 import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
-import { LaneGutter } from './LaneGutter';
+import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
@@ -363,7 +363,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {/* Title & salary history */}
       <Card withBorder padding="lg">
         <CardTitle>Title &amp; salary history</CardTitle>
-        <Table.ScrollContainer minWidth={gutter.slots ? 780 : 680}>
+        {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
+        <Table.ScrollContainer minWidth={gutter.slots ? 700 + gutter.slots * 22 : 680}>
         {/* Striping is per snapshot group (app.css), so the lines of one snapshot stay together. */}
         <Table
           className="appt-history"
@@ -474,10 +475,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Table.ScrollContainer>
         {anySplit && (
           <Text size="xs" c="dimmed" mt="sm">
-            Each concurrent appointment runs as its own lettered track down the left of the table, held
-            for as long as that appointment can be followed; a filled dot marks the line a row belongs
-            to, a hollow one means the source does not connect that line to the previous snapshot, and
-            a line that stops with a bar is an appointment that ended.
+            Each concurrent appointment runs as its own line down the left of the table, held for as
+            long as that appointment can be followed, and each row is a letter on its line.{' '}
+            <LaneStationSample /> continues the same appointment from the snapshot above;{' '}
+            <LaneStationSample start /> means the source does not connect it to the previous snapshot, so
+            its line starts there; a line that stops with a bar is an appointment that ended.
             {anyCombined &&
               ' “Across both” = two appointments under one title that the source does not distinguish' +
               ' — same department, same appointment percentage — so the change is shown across them' +

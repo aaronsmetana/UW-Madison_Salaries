@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { Card, Table, Badge, Text, Group, Tooltip as MantineTooltip } from '@mantine/core';
 import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
-import { LaneGutter } from './LaneGutter';
+import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
 import { actualPay, sameBasis } from '../lib/queries';
 import { usd, pct, fmtBasis } from '../lib/format';
@@ -69,7 +69,7 @@ function RaiseCell({ raise, note, children }: { raise: Raise; note?: string | nu
 }
 
 export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
-  // Appointment count per snapshot: gates the lane letter, which says nothing at "A of 1".
+  // Appointment count per snapshot, for the station's tooltip ("A of 2", or "the only one").
   const apptCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
@@ -145,7 +145,8 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
   return (
     <Card withBorder padding="lg">
       <CardTitle>Title & salary history</CardTitle>
-      <Table.ScrollContainer minWidth={gutter.slots ? 980 : 880}>
+      {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
+      <Table.ScrollContainer minWidth={gutter.slots ? 900 + gutter.slots * 22 : 880}>
       {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
       <Table
         className="appt-history"
@@ -292,14 +293,21 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
         <Text size="xs" c="dimmed">
           = department changed since this appointment’s previous snapshot. “Change” is the change in
           actual pay, so a change in appointment percentage or comp basis moves it on its own — where
-          that has happened, what the full-time rate did is printed underneath. Where a person holds
-          several appointments at once, each runs as its own lettered track down the left of the
-          table; a filled dot marks the line that row belongs to, a hollow one means the source does
-          not connect that line to the previous snapshot, and a line that stops with a bar is an
-          appointment that ended. “Across both” means the change could only be measured across the
-          lines together.
+          that has happened, what the full-time rate did is printed underneath. “Across both” means the
+          change could only be measured across the lines together.
         </Text>
       </Group>
+      {gutter.slots > 0 && (
+        /* Only where there is a gutter to explain. The samples are the gutter's own class, so the key
+           cannot drift from what it describes. */
+        <Text size="xs" c="dimmed" mt={6}>
+          Where a person holds several appointments at once, each runs as its own line down the left of
+          the table, and each row is a letter on its line.{' '}
+          <LaneStationSample /> continues the same appointment from the snapshot above;{' '}
+          <LaneStationSample start /> means the source does not connect it to the previous snapshot, so
+          its line starts there; a line that stops with a bar is an appointment that ended.
+        </Text>
+      )}
     </Card>
   );
 }

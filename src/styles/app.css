@@ -121,7 +121,8 @@
   /* Every lane must clear 3:1 (WCAG 1.4.11) against every background a track sits on — the card, the
      snapshot band and the hovered row, which is the darkest. Measured, not assumed: gray-6 cleared the
      band at 3.15 and fell to 2.99 on hover, and accent-4 topped out at 2.28 at full opacity. The lowest
-     pairing now is 4.19, lane 3 on a hovered row.
+     pairing now is 4.19, lane 3 on a hovered row. The letter on a filled station is text on the lane
+     colour, so it has its own ink (`--lane-ink`) and its own bar of 4.5:1.
 
      On a near-white row with a hover state, every grey that passes is darker than lane 1's teal, so a
      lighter "minor" lane is not available at all. gray-9 separated best from its neighbours (2.47)
@@ -134,6 +135,9 @@
   --lane-2: var(--mantine-color-gray-7);
   --lane-3: var(--mantine-color-accent-6);
   --lane-4: var(--mantine-color-gray-8);
+  /* The letter on a filled station, which sits on the lane colour itself. White clears 4.5:1 on all
+     four light lanes; the lowest is lane 3 (accent-6) at 4.66. */
+  --lane-ink: #fff;
   --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
   /* Elevation ramp (light): a near-neutral paper canvas, white cards, white overlays.
@@ -312,6 +316,8 @@ body {
   --lane-2: var(--mantine-color-gray-5);
   --lane-3: var(--mantine-color-accent-2);
   --lane-4: var(--mantine-color-gray-6);
+  /* Dark ink on the lighter dark-mode lanes: the card colour itself, 5.22:1 at the lowest (accent-5). */
+  --lane-ink: var(--surface);
   /* Histogram bars in dark mode: the light-mode pair (pale bar / dark ink highlight) inverts on a dark
      surface — a highlight needs to be LIGHTER than its surroundings to pop, not darker. Both chosen from
      the accent ramp and measured against the card surface (--surface, now #141619): bar-active
@@ -671,36 +677,41 @@ textarea:focus-visible,
   border-bottom-color: var(--hairline-strong);
 }
 
-/* The appointment gutter: one vertical track per concurrent appointment, each in a fixed slot, so a
-   line can be followed down the page by eye. This replaces a 3px rail that sat at the table's left
-   edge on every row — because rows of different appointments interleave, it alternated colour at one
-   x-position and so marked each row without ever drawing a line to follow.
+/* The appointment gutter: one vertical line per concurrent appointment, each in a fixed slot, and on
+   it the row's own appointment as a lettered station — so every A sits in one column and every B in
+   the next, joined by their line (the metro-map / git-graph shape). This replaces a 3px rail that sat at
+   the table's left edge on every row, and then a pair of tracks 9px apart with a 7px dot on the row's
+   own line and the letter parked in a column of its own after them. Measured on the deployed page,
+   that letter sat at the same x on all twenty rows and the dot moved 9px on a 100px row, so the lines
+   carried no row-level information at all and read as a double rule.
 
-   The letter used to live in the snapshot cell beside the date badge. Measured on the deployed page,
-   that cell is 109.5px wide with 10px of padding either side, and the two "Nov 2021 (Pre/Post-TTC)"
-   badges are 89.5px — the content box exactly. The chip had nowhere to go and wrapped; even the
-   shortest label left 2.2px of slack. The column was full, so the letter moved here. */
+   Everything in the cell is absolute against the td, so a line runs the row's full height whatever
+   the other cells hold. The three sizes are here so the geometry can be retuned in one place. */
+.appt-history,
+.appt-station--sample {
+  /* One slot: the station plus clearance to the next line. Must stay wider than the station, or
+     neighbouring appointments' letters overlap. */
+  --lane-pitch: 22px;
+  --lane-station: 18px;
+  --lane-track: 2px;
+}
 .appt-gutter {
-  /* Deliberately NOT positioned: the tracks inside it are absolute and must resolve against the
-     table CELL, so a line runs the row's full height. Making this the containing block confines them
-     to the flex box's own ~24px and the "continuous line" becomes a row of stubs. */
-  display: flex;
-  align-items: center;
-  /* Slots, then the gap and the chip. Both callers set --lane-slots on the table. */
+  /* Deliberately NOT positioned: the lines and the station must resolve against the table CELL, so a
+     line runs the row's full height. Making this the containing block confines them to its own box
+     and the "continuous line" becomes a row of stubs. This element only reserves the width. */
   min-height: 1.5rem;
-  padding-inline-start: calc(var(--lane-slots, 2) * 9px + 6px);
+  width: calc(var(--lane-slots, 2) * var(--lane-pitch));
 }
 .appt-gutter-tracks {
   position: absolute;
   inset-block: 0;
   /* Offset by the cell's own inline padding. Absolute positioning resolves against the td's PADDING
-     box, so `0` puts the first track — and half of its node — outside the content edge and under the
-     table's left border, where it reads as clipped. This lands it on the same edge as every other
-     cell's text, and on the same origin as the chip below, which is padded from the content box. */
+     box, so `0` would put the first slot under the table's left border. This lands the gutter on the
+     same edge as every other cell's text. */
   inset-inline-start: var(--table-horizontal-spacing, 10px);
-  width: calc(var(--lane-slots, 2) * 9px);
+  width: calc(var(--lane-slots, 2) * var(--lane-pitch));
 }
-/* The td is the positioning context, not this span, so a track can run the row's full height
+/* The td is the positioning context, not the gutter, so a line can run the row's full height
    regardless of how tall the cell's content is. */
 .appt-history tbody td:first-child {
   position: relative;
@@ -709,74 +720,83 @@ textarea:focus-visible,
   /* Absolute, so its own ::after cap resolves against the track rather than the cell. */
   position: absolute;
   inset-block: 0;
-  inset-inline-start: calc(var(--slot) * 9px);
-  width: 3px;
+  /* Centred in its slot, which is where the station centres too — the letter sits ON its line. */
+  inset-inline-start: calc(var(--slot) * var(--lane-pitch) + (var(--lane-pitch) - var(--lane-track)) / 2);
+  width: var(--lane-track);
   border-radius: 1px;
   /* Solid. This was 45% so six tracks would stay quiet on the one page that has six, and at 45% seven
-     of the eight lane/scheme pairs failed 3:1 — the tracks are the mechanism for telling one
-     appointment from another, so they have to be visible to everyone, not calm. */
+     of the eight lane/scheme pairs failed 3:1. Thinner than the 3px it was, now that the station
+     carries the identity and the line only has to connect. */
   background-color: var(--lane-c);
 }
-/* The line begins at this row's node: there is nothing above it in the source to connect it to. */
+/* The line begins at this row's station: there is nothing above it in the source to connect it to. */
 .appt-gutter-track[data-draw='from-node'] {
   inset-block-start: 50%;
 }
 /* An absolutely-positioned segment spans the padding box, so the row border leaves a 1px nick
    between one row's track and the next. Bridge it only where the lane is actually drawn on the row
    below — bridging unconditionally paints a stub of an appointment that has ENDED into the snapshot
-   beneath it, which is a continuity claim in miniature. */
+   beneath it, which is a continuity claim in miniature. One pixel past the border, not flush with it:
+   row edges land on fractional y (168.52px on Gulnara's page), and two segments meeting exactly there
+   each anti-alias their edge to half coverage, which a 1x screen shows as a break in the line — worst
+   in dark mode. The overlap is the same colour on the same lane, so it draws nothing of its own. */
 .appt-gutter-track[data-continues='yes'] {
-  inset-block-end: calc(-1 * var(--table-border-width, 1px));
+  inset-block-end: calc(-1 * var(--table-border-width, 1px) - 1px);
 }
-/* The appointment ended: a cap across the foot of the track, so a line that stops reads as an
+/* The appointment ended: a cap across the foot of the line, so a line that stops reads as an
    appointment finishing rather than as the table running out. Keyed to `ends`, never to `continues` —
-   every track in the LAST snapshot also fails to continue, and those are the appointments the person
+   every line in the LAST snapshot also fails to continue, and those are the appointments the person
    holds today. */
 .appt-gutter-track[data-ends='yes']::after {
   content: '';
   position: absolute;
-  inset-inline: -2px;
+  inset-inline: -4px;
   bottom: 0;
   height: 2px;
   border-radius: 1px;
   background-color: var(--lane-c);
 }
 
-.appt-gutter-node {
+/* The station: the row's own appointment, lettered, on its own line. Colour alone cannot be the
+   identity (WCAG 1.4.1), so the letter and the slot carry it too, and the letter is what the tooltip
+   and the aria-label hang off. Opaque in both states and drawn over the tracks, so the line runs into
+   it and out of it but never through the letter. Over them by DOM order alone — it follows the track
+   layer in the cell — so it needs no z-index and opens no stacking context of its own. */
+.appt-station {
   position: absolute;
   top: 50%;
-  inset-inline-start: calc(var(--slot) * 9px - 2px);
-  width: 7px;
-  height: 7px;
-  margin-top: -3.5px;
-  border-radius: 50%;
-  background-color: var(--lane-c);
-}
-/* Hollow = this line starts here. Paired with the track's missing upper half and the chip's dashed
-   border, so the fact is carried three ways and never by colour alone. */
-.appt-gutter-node[data-start='yes'] {
-  background-color: transparent;
-  box-shadow: inset 0 0 0 2px var(--lane-c);
-}
-
-/* The lane letter. Colour alone cannot be the identity (WCAG 1.4.1), and the letter is also what the
-   tooltip and the aria-label hang off. Text stays at the app's own colour so it is legible whatever
-   the lane is — the lane shows in the border and the tint, which do not have to meet text contrast. */
-.appt-lane-chip {
+  inset-inline-start: calc(
+    var(--table-horizontal-spacing, 10px) + var(--slot) * var(--lane-pitch) + (var(--lane-pitch) - var(--lane-station)) / 2
+  );
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.125rem;
-  padding: 0 4px;
-  border: 1px solid var(--lane-c);
-  border-radius: var(--mantine-radius-xs);
-  background-color: color-mix(in srgb, var(--lane-c) 12%, transparent);
+  width: var(--lane-station);
+  height: var(--lane-station);
+  margin-top: calc(var(--lane-station) / -2);
+  border: 1.5px solid var(--lane-c);
+  border-radius: 50%;
+  background-color: var(--lane-c);
+  color: var(--lane-ink);
   font-size: var(--mantine-font-size-xxs);
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1;
 }
-.appt-lane-chip[data-start='yes'] {
+/* Dashed = this line starts here. Paired with the track's missing upper half, so the fact is carried
+   two ways and never by colour alone. The fill is the card, not transparent: in the first snapshot the
+   line runs the full row, and a see-through station would put it through the letter. The letter goes
+   back to the app's own text colour, which is legible on the card whatever the lane is. */
+.appt-station[data-start='yes'] {
   border-style: dashed;
+  background-color: var(--surface);
+  color: var(--mantine-color-text);
+}
+/* The same station inline, for the key under the table. */
+.appt-station--sample {
+  position: static;
+  vertical-align: middle;
+  margin: 0 2px;
 }
 
 /* The rate note. The percentage above it is the change in ACTUAL pay, which moves when the

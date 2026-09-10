@@ -307,12 +307,12 @@ type HistoryRow = {
   snapshot: string;
   /** True on the one row of a snapshot group that prints the snapshot's name. */
   labelled: boolean;
-  /** The lane letter, or '' where the snapshot holds a single appointment. */
+  /** The lane letter on the row's station, or '' where the person has no gutter at all. */
   lane: string;
-  /** Filled node: the matcher found this line in the previous snapshot. Hollow: it starts here. */
+  /** Filled station: the matcher found this line in the previous snapshot. Dashed: it starts here. */
   tracked: boolean;
   /**
-   * Where the node actually sits, in px from the left of the gutter cell. The rendered proof of the
+   * Where the station actually sits, in px from the left of the gutter cell. The rendered proof of the
    * rule the letters only assert: a lane's slot is keyed to the lane, so an appointment ending never
    * slides the lines below it sideways.
    */
@@ -345,14 +345,14 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
     // The snapshot is named once per group, so carry its name down the rest of its own rows.
     const labelled = (await badge.count()) > 0;
     if (labelled) snapshot = (await badge.first().innerText()).replace(/\s+/g, ' ').trim();
-    const chip = row.locator('.appt-lane-chip');
-    const node = row.locator('.appt-gutter-node');
+    // The station is the row's letter and its mark on the line in one element.
+    const station = row.locator('.appt-station');
     let nodeX = -1;
     let tracked = true;
-    if (await node.count()) {
-      const [box, cellBox] = [await node.first().boundingBox(), await cells.nth(0).boundingBox()];
+    if (await station.count()) {
+      const [box, cellBox] = [await station.first().boundingBox(), await cells.nth(0).boundingBox()];
       nodeX = box && cellBox ? Math.round(box.x - cellBox.x) : -1;
-      tracked = (await node.first().getAttribute('data-start')) === 'no';
+      tracked = (await station.first().getAttribute('data-start')) === 'no';
     }
     const noteEl = row.locator('.appt-rate-note');
     const note = (await noteEl.count()) ? (await noteEl.first().innerText()).trim() : '';
@@ -363,7 +363,7 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
     out.push({
       snapshot,
       labelled,
-      lane: (await chip.count()) ? (await chip.first().innerText()).trim() : '',
+      lane: (await station.count()) ? (await station.first().innerText()).trim() : '',
       tracked,
       nodeX,
       dept: (await cells.nth(off + 3).innerText()).split('\n').pop()!.trim(),
@@ -403,7 +403,10 @@ test('concurrent appointments are tracked one by one, each in its own lane', asy
   const rows = await readHistory(page);
   expect(rows.length).toBeGreaterThan(10);
 
-  const splits = rows.filter((r) => r.lane);
+  // Rows of snapshots that hold more than one appointment. Not "rows with a letter": every row of a
+  // split history is lettered, including Mar 2026, where she holds one.
+  const perSnapshot = bySnapshot(rows);
+  const splits = rows.filter((r) => perSnapshot.get(r.snapshot)!.length > 1);
   expect(splits.length, 'this person must still have concurrent appointments to be a useful case').toBeGreaterThan(8);
 
   for (const { raise } of splits) {
@@ -490,10 +493,10 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   expect(new Set(cancer.map((c) => c.at)).size, `position never moved, so this proves nothing: ${JSON.stringify(cancer)}`).toBeGreaterThan(1);
 
   // The two Academic Affairs lines the source cannot separate report one figure across both, and
-  // their nodes are hollow — the lane is position there, not evidence, and must not pretend otherwise.
+  // their stations are dashed — the lane is position there, not evidence, and must not pretend otherwise.
   const combined = rows.filter((r) => /across/.test(r.raise));
   expect(combined.length, 'this person must still have unmatchable lines').toBeGreaterThan(2);
-  expect(combined.filter((r) => r.tracked), 'an unmatched line is drawing a filled node').toEqual([]);
+  expect(combined.filter((r) => r.tracked), 'an unmatched line is drawing a filled station').toEqual([]);
 
   // And no rate note: there is no single prior row to compare a rate against, so attributing one
   // would be the guess this module refuses to make.
@@ -510,7 +513,7 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   // The rendered half of rule 1, and the reason the gutter exists: a letter can only be followed if
   // the track it names holds one x-position for the whole table. Her line count collapses from six to
   // two, so any scheme that slotted tracks by the row's position within its snapshot would slide the
-  // survivors left here. Asserted on the painted node, not on the data — the CSS has to agree too.
+  // survivors left here. Asserted on the painted station, not on the data — the CSS has to agree too.
   const xByLane = new Map<string, Set<number>>();
   for (const { lane, nodeX } of rows.filter((r) => r.lane && r.nodeX >= 0)) {
     if (!xByLane.has(lane)) xByLane.set(lane, new Set());
@@ -523,6 +526,13 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   // ...and distinct lanes must not share a slot, or the tracks are drawn on top of one another.
   const allX = [...xByLane.values()].map((xs) => [...xs][0]);
   expect(new Set(allX).size, 'two lanes are drawn in the same slot').toBe(allX.length);
+  // ...and far enough apart that neighbouring letters do not overlap. The station IS the line's mark,
+  // so two drawn over each other leave neither letter readable — a slot narrower than the station
+  // still keeps every x distinct, which is why distinctness alone does not cover this.
+  const width = await page.locator('table.appt-history .appt-station').first().evaluate((e) => e.getBoundingClientRect().width);
+  const sorted = [...allX].sort((a, b) => a - b);
+  const gaps = sorted.slice(1).map((x, i) => x - sorted[i]);
+  expect(Math.min(...gaps), `neighbouring stations overlap: ${JSON.stringify(sorted)} at ${width}px`).toBeGreaterThanOrEqual(width);
 });
 
 /**
@@ -573,7 +583,7 @@ test('the department-change dot names what it was', async ({ page }) => {
  * all. Two other shapes must not be capped: the final snapshot (those are the appointments the person
  * holds now, the data simply stops) and a lane that RESTARTS below (at the Nov 2021 TTC boundary every
  * job code was renumbered, so the matcher loses the thread while the appointments carry on — the
- * hollow node already says that, and a terminus would upgrade it to a claim).
+ * dashed station already says that, and a terminus would upgrade it to a claim).
  */
 test('only an appointment the next snapshot does not hold is marked as ended', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
@@ -598,6 +608,71 @@ test('a snapshot with two appointments reads as one block', async ({ page }) => 
   // both directions rather than counting.
   expect(new Set(seen)).toEqual(new Set(['no:none', 'yes:rule']));
   expect(seen.filter((x) => x === 'no:none').length, 'this person must still have grouped rows').toBeGreaterThan(5);
+});
+
+/**
+ * The claim the gutter is built on: a row's letter is not a label beside the lines, it is ON its own
+ * line. It used to sit in a column of its own, at the same x on all twenty of Gulnara's rows, with a
+ * 7px dot on the line doing the work — so the lines carried nothing a reader could see and read as a
+ * double rule. Measured against the painted track of the station's OWN lane on the same row, which
+ * every row draws (laneGutter), matched by slot rather than by position in the cell.
+ */
+test('each row sits on its own appointment line as a letter', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  await page.getByRole('tab', { name: 'History' }).click();
+  await page.locator('table.appt-history tbody tr').first().waitFor();
+  const seen = await page.locator('table.appt-history tbody tr').evaluateAll((trs) => trs.flatMap((tr) => {
+    const td = tr.querySelector('td')!;
+    const station = td.querySelector<HTMLElement>('.appt-station');
+    if (!station) return [];
+    const slot = station.style.getPropertyValue('--slot');
+    const own = [...td.querySelectorAll<HTMLElement>('.appt-gutter-track')]
+      .find((t) => t.style.getPropertyValue('--slot') === slot);
+    const centre = (e: Element) => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
+    return [{ letter: station.textContent ?? '', station: centre(station), line: own ? centre(own) : null }];
+  }));
+  expect(seen.length, 'this person must still have a gutter to measure').toBeGreaterThan(10);
+  const off = seen
+    .filter((r) => r.line === null || Math.abs(r.station - r.line) > 0.5)
+    .map((r) => `${r.letter}: station at ${r.station.toFixed(1)}, its line at ${r.line?.toFixed(1) ?? 'none'}`);
+  expect(off, 'a letter sits beside its line rather than on it').toEqual([]);
+});
+
+/**
+ * A snapshot that holds one appointment, inside a history that elsewhere holds two, still letters its
+ * row. The letter used to be hidden there ("A of 1" says nothing), but it is the line's name now: a
+ * bare mark at the foot of the table would leave the reader tracing the line up to learn which one it
+ * is. Gulnara's Mar 2026 is the only such snapshot on her page, and it continues her German line.
+ */
+test('the only appointment in a snapshot still names its line', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  const rows = await readHistory(page);
+  const lone = [...bySnapshot(rows).entries()]
+    .filter(([, g]) => g.length === 1)
+    .map(([snapshot, g]) => `${snapshot}: ${g[0].lane || '(no letter)'} ${g[0].tracked ? 'filled' : 'dashed'}`);
+  expect(lone).toEqual(['Mar 2026: A filled']);
+});
+
+/**
+ * Dashed and filled are a state, not a style: dashed is exactly "the source cannot connect this line
+ * to the snapshot above", which `data-start` records. Asserted as a mapping on the COMPUTED style, so
+ * it fails in both directions — the attribute alone was already guarded, and CSS that painted the two
+ * states the wrong way round would have passed every test that reads it.
+ */
+test('a dashed letter is exactly the line the source could not follow', async ({ page }) => {
+  await openPerson(page, 'Gulnara Glowacki');
+  await page.getByRole('tab', { name: 'History' }).click();
+  await page.locator('table.appt-history tbody tr').first().waitFor();
+  const seen = await page.locator('table.appt-history .appt-station').evaluateAll((els) => els.map((e) => {
+    const cs = getComputedStyle(e);
+    return { start: (e as HTMLElement).dataset.start ?? '', border: cs.borderTopStyle, fill: cs.backgroundColor, ring: cs.borderTopColor };
+  }));
+  expect(new Set(seen.map((s) => `${s.start}:${s.border}`))).toEqual(new Set(['yes:dashed', 'no:solid']));
+  // Filled means filled with its own line's colour, and dashed means not. Compared with the station's
+  // own ring rather than with the card, so whether the dashed fill is opaque stays the contrast test's
+  // property and cannot fail this one.
+  expect(seen.filter((s) => s.start === 'no' && s.fill !== s.ring).length, 'a followed station is not filled with its line').toBe(0);
+  expect(seen.filter((s) => s.start === 'yes' && s.fill === s.ring).length, 'a starting station is filled as if followed').toBe(0);
 });
 
 /**
@@ -666,17 +741,15 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(backgrounds.hover, 'hover must repaint the row, not leave the card').not.toEqual(backgrounds.card);
     expect(backgrounds.hover, 'hover must repaint the row, not leave the band').not.toEqual(backgrounds.band);
 
-    // Every lane-coloured object on the page: track, filled node, hollow ring, end cap, chip border.
+    // Every lane-coloured object on the page: track, station ring, end cap. The ring is read on EVERY
+    // station rather than choosing fill-or-ring by `data-start`: selecting by state would make this
+    // test fail whenever the two states were painted the wrong way round, which is the next test's
+    // property, not this one's. A filled station's fill is its ring colour, so nothing is missed.
     const inks = await page.locator('table.appt-history').evaluate((t) => {
       const out: string[] = [];
       t.querySelectorAll('.appt-gutter-track').forEach((e) => out.push(getComputedStyle(e).backgroundColor));
-      t.querySelectorAll(".appt-gutter-node[data-start='no']").forEach((e) => out.push(getComputedStyle(e).backgroundColor));
-      t.querySelectorAll(".appt-gutter-node[data-start='yes']").forEach((e) => {
-        const m = getComputedStyle(e).boxShadow.match(/(rgba?\([^)]*\)|color\([^)]*\))/);
-        if (m) out.push(m[1]);
-      });
+      t.querySelectorAll('.appt-station').forEach((e) => out.push(getComputedStyle(e).borderTopColor));
       t.querySelectorAll(".appt-gutter-track[data-ends='yes']").forEach((e) => out.push(getComputedStyle(e, '::after').backgroundColor));
-      t.querySelectorAll('.appt-lane-chip').forEach((e) => out.push(getComputedStyle(e).borderTopColor));
       return [...new Set(out)];
     });
     expect(inks.length, 'need several distinct lane colours on this page').toBeGreaterThan(3);
@@ -691,6 +764,22 @@ for (const scheme of ['light', 'dark'] as const) {
       }
     }
     expect(failures).toEqual([]);
+
+    // The letter is TEXT, on the station's own fill, so its bar is 4.5:1 — and the fill must be opaque,
+    // because the first snapshot draws its lines the full height of the row and a see-through station
+    // would put the line through the letter.
+    const letters = await page.locator('table.appt-history .appt-station').evaluateAll((els) =>
+      [...new Set(els.map((e) => { const cs = getComputedStyle(e); return `${cs.color}|${cs.backgroundColor}`; }))]);
+    expect(letters.length, 'need both station states on this page').toBeGreaterThan(1);
+    const textFailures: string[] = [];
+    for (const pair of letters) {
+      const [ink, fill] = pair.split('|');
+      const f = parseColor(fill);
+      expect(f[3], `${fill}: a station must be opaque, or its line shows through the letter`).toBe(1);
+      const r = contrast(parseColor(ink), f);
+      if (r < 4.5) textFailures.push(`${ink} on ${fill}: ${r.toFixed(2)}`);
+    }
+    expect(textFailures, 'a station letter is below 4.5:1 on its own fill').toEqual([]);
   });
 }
 
@@ -712,7 +801,7 @@ test('hovering a row highlights that row alone', async ({ page }) => {
     return rs.findIndex((r) => {
       const b = r.querySelectorAll('td')[1]?.querySelector('.mantine-Badge-root');
       if (b) snap = b.textContent!.trim();
-      return snap === 'Mar 2022' && r.querySelector('.appt-lane-chip')?.textContent === 'A';
+      return snap === 'Mar 2022' && r.querySelector('.appt-station')?.textContent === 'A';
     });
   });
   expect(target).toBeGreaterThan(0);
@@ -730,7 +819,7 @@ test('a person with one appointment per snapshot gets no lane markers at all', a
   expect(rows.every((r) => r.labelled), 'every row is its own group, so every row names itself').toBe(true);
   // The column is absent, not merely empty — otherwise every person page would carry a blank gutter.
   expect(await page.locator('table.appt-history thead th.appt-gutter-th').count()).toBe(0);
-  expect(await page.locator('table.appt-history .appt-gutter-node').count()).toBe(0);
+  expect(await page.locator('table.appt-history .appt-station').count()).toBe(0);
   // And the snapshot-grouping rules never reach a table that has no groups to mark: every row here is
   // the last of its own snapshot, so an ungated rule would restyle all of them.
   expect(rows.map((r) => r.groupLast)).toEqual(rows.map(() => ''));

@@ -353,12 +353,16 @@ export function laneSlot(lane: number): number {
 
 /**
  * The tooltip behind a lane letter. `tracked` is whether the matcher found this line in the previous
- * snapshot — the difference between a filled node and a hollow one, and the whole reason the line is
- * worth following when it is filled.
+ * snapshot — the difference between a filled station and a dashed one, and the whole reason the line
+ * is worth following when it is filled.
  */
 export function laneReason(lane: number, count: number, tracked: boolean): string {
+  // At one appointment the letter still names the line, but "A of 1" would read as a count.
+  const which = count === 1
+    ? `Appointment ${laneLetter(lane)}, the only one in this snapshot. `
+    : `Appointment ${laneLetter(lane)} of ${count} in this snapshot. `;
   return (
-    `Appointment ${laneLetter(lane)} of ${count} in this snapshot. ` +
+    which +
     (tracked
       ? 'Followed from the same appointment in the previous snapshot.'
       : 'Nothing in the source connects this line to the previous snapshot, so its line starts here.')
@@ -375,7 +379,7 @@ export interface LaneSegment {
    */
   lane: number;
   /**
-   * `full` runs the height of the row. `from-node` starts halfway down, at this row's node: the line
+   * `full` runs the height of the row. `from-node` starts halfway down, at this row's station: the line
    * begins here and there is nothing above it to connect to.
    */
   draw: 'full' | 'from-node';
@@ -393,17 +397,17 @@ export interface LaneSegment {
    * and the data simply stops at the most recent snapshot. And a lane that RESTARTS below also fails
    * to continue, yet "ended" is more than is known: at the Nov 2021 TTC boundary every job code was
    * renumbered, so the matcher loses every thread while the appointments themselves carry straight
-   * on. That case is already said honestly by the hollow node on the row below — this line could not
-   * be followed — and a terminus would upgrade it to a claim the source does not support.
+   * on. That case is already said honestly by the dashed station on the row below — this line could
+   * not be followed — and a terminus would upgrade it to a claim the source does not support.
    */
   ends: boolean;
 }
 
 /** What one row's gutter cell draws. */
 export interface GutterCell {
-  /** This row's own lane — which slot carries its node. */
+  /** This row's own lane — which slot carries its station. */
   lane: number;
-  /** Hollow node: this row did not inherit its lane, so its line starts here. */
+  /** Dashed station: this row did not inherit its lane, so its line starts here. */
   start: boolean;
   /** Every lane drawing something on this row, in slot order. Lanes drawing nothing are omitted. */
   segments: LaneSegment[];
