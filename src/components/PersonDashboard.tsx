@@ -397,7 +397,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
               const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
               const cell = gutter.byRow.get(r);
-              // Same rule as the interactive table (Person.tsx), for the same reason: this column shows the
+              // Same rule as the interactive table (HistoryTable.tsx), for the same reason: this column shows the
               // change in ACTUAL pay, so an FTE or comp-basis move reads as a pay change. Same wording, so
               // the printed report and the page cannot tell the reader different things.
               const from = matching.priorOf.get(r);
@@ -406,7 +406,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 if (!from || paired?.kind !== 'paired') return null;
                 if (!sameBasis(r.comp_basis, from.comp_basis)) return 'basis changed';
                 if ((r.fte || 1) === (from.fte || 1)) return null;
-                if (!r.fte || !from.fte || !r.rate_raw || !from.rate_raw || from.rate_raw <= 0) return null;
+                if (!r.rate_raw || !from.rate_raw || from.rate_raw <= 0) return null;
                 const d = r.rate_raw / from.rate_raw - 1;
                 return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
               })();

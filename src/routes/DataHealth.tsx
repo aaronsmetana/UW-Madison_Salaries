@@ -412,7 +412,9 @@ export default function DataHealth() {
           <Text size="sm">
             Each source row is one <b>appointment</b>, carrying a full-time annual rate and an FTE — the
             appointment percentage, where 0.5 is half-time. Hourly appointments report no FTE at all; they are
-            counted at their full listed rate rather than as zero. The "Pay" control switches between three views:
+            counted at their full listed rate rather than as zero. The 2021 and 2022 reports list some hourly
+            pay as the hourly rate itself; those rates are annualized at 2,080 hours, the way every later
+            report states them. The "Pay" control switches between three views:
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
             <DefCard icon={<IconCash size={ICON.control} />} title="Actual pay">Rate × FTE (or the full rate, for hourly staff with no FTE on file) — closest to what the person was actually paid.</DefCard>

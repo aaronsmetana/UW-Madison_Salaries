@@ -211,10 +211,9 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                   // A 9-month rate and a 12-month rate are not the same quantity, so no percentage is drawn
                   // across that boundary — the Basis column already says what it is now.
                   if (basisMoved) return 'basis changed';
-                  // `fte = 0` is the hourly family, where `salary` is an hourly rate in the early snapshots and
-                  // an annual figure later. A rate delta there is one of the 959 nonsense figures, so it is
-                  // suppressed rather than printed.
-                  if (!r.fte || !from.fte || !r.salary || !from.salary || from.salary <= 0) return null;
+                  // Drawn when one side is `fte = 0` too (no percentage on file). Actual pay there is the full
+                  // rate, so the Change column swings by the other side's FTE and the rate is the figure to read.
+                  if (!r.salary || !from.salary || from.salary <= 0) return null;
                   const d = r.salary / from.salary - 1;
                   return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
                 })();

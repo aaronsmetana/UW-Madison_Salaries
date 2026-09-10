@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   norm, excelSerialToISO, parseDate, parseMoney, parseNum, parseGrade,
   makePersonKey, snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median,
-  latestGradeBands,
+  latestGradeBands, harmonizeHourly, isAnnualizedRate, prepareSheet, HOURS_PER_YEAR, FTE_PLACEHOLDER,
 } from './lib/normalize.mjs';
 
 describe('dates', () => {
@@ -130,5 +130,85 @@ describe('pay-band reference dedupe', () => {
   it('treats a null basis as its own key rather than dropping the row', () => {
     const out = latestGradeBands([band(15, null, 2025, 34000), band(15, 'annual_12mo', 2025, 35360)]);
     expect(out).toHaveLength(2);
+  });
+});
+
+/**
+ * One property per test, and the keep/clear decision is tested from both sides with figures whose
+ * shape is asserted in the same test, so a test cannot pass because its fixture happened to be the
+ * other kind of number.
+ */
+describe('hourly pay in the early workbooks', () => {
+  const row = (salary, fte) => ({ salary, fte, _flags: [] });
+
+  it('recognises an annualized hourly rate to the cent and rounded to the dollar', () => {
+    expect(isAnnualizedRate(39332.8)).toBe(true); // $18.91 x 2,080, as the later workbooks print it
+    expect(isAnnualizedRate(86570)).toBe(true);   // $41.62 x 2,080 = $86,569.60, as the early ones do
+    expect(isAnnualizedRate(36400)).toBe(true);
+  });
+
+  it('does not mistake an ordinary salary for one', () => {
+    expect([202000, 154595, 86580].map(isAnnualizedRate)).toEqual([false, false, false]);
+  });
+
+  it('annualizes an hourly rate at 2,080 hours and flags it', () => {
+    const { rows, annualized } = harmonizeHourly([row(19, 1), row(105, 0.5)]);
+    expect(rows.map((r) => r.salary)).toEqual([19 * HOURS_PER_YEAR, 105 * HOURS_PER_YEAR]);
+    expect(rows.map((r) => r._flags)).toEqual([['hourly_rate_annualized'], ['hourly_rate_annualized']]);
+    expect(annualized).toBe(2);
+  });
+
+  it('leaves annual salaries and $0 rows alone, down to the smallest annual figure in the data', () => {
+    const { rows, annualized } = harmonizeHourly([row(1683, 1), row(36400, 1), row(0, 1), row(null, 1)]);
+    expect(rows.map((r) => r.salary)).toEqual([1683, 36400, 0, null]);
+    expect(annualized).toBe(0);
+  });
+
+  it('reads the placeholder FTE as none on file beside an hourly figure, or no figure at all', () => {
+    const { rows, cleared } = harmonizeHourly([row(36400, FTE_PLACEHOLDER), row(86570, FTE_PLACEHOLDER), row(0, FTE_PLACEHOLDER)]);
+    expect(rows.map((r) => r.fte)).toEqual([0, 0, 0]);
+    expect(rows.map((r) => r._flags)).toEqual([['fte_placeholder'], ['fte_placeholder'], ['fte_placeholder']]);
+    expect(cleared).toBe(3);
+  });
+
+  it('keeps the placeholder beside a figure that is not an hourly rate', () => {
+    // An associate dean's line and a professor emeritus: nominal titles, Non-Paid in later workbooks.
+    const { rows, kept, cleared } = harmonizeHourly([row(202000, FTE_PLACEHOLDER), row(154595, FTE_PLACEHOLDER)]);
+    expect(rows.map((r) => r.fte)).toEqual([FTE_PLACEHOLDER, FTE_PLACEHOLDER]);
+    expect(rows.map((r) => r._flags)).toEqual([[], []]);
+    expect([kept, cleared]).toEqual([2, 0]);
+  });
+
+  it('applies both rewrites to a row that needs both', () => {
+    const [r] = harmonizeHourly([row(19, FTE_PLACEHOLDER)]).rows;
+    expect([r.salary, r.fte]).toEqual([19 * HOURS_PER_YEAR, 0]);
+    expect(r._flags).toEqual(['hourly_rate_annualized', 'fte_placeholder']);
+  });
+
+  it('leaves a real small appointment percentage alone', () => {
+    const { rows, cleared } = harmonizeHourly([row(47132.8, 0.0065)]);
+    expect(rows[0].fte).toBe(0.0065);
+    expect(cleared).toBe(0);
+  });
+
+  it('does not mutate its input', () => {
+    const input = [row(19, FTE_PLACEHOLDER)];
+    harmonizeHourly(input);
+    expect([input[0].salary, input[0].fte, input[0]._flags]).toEqual([19, FTE_PLACEHOLDER, []]);
+  });
+});
+
+describe('preparing a sheet', () => {
+  const line = (salary, fte) => ({ person: 'kj', job_code: 'PD013', title: 'Research Intern', salary, fte, _flags: [] });
+  const prep = (rows) => prepareSheet(rows, (r) => r.person).rows;
+
+  it('drops exact duplicate rows', () => {
+    expect(prep([line(31200, 1), line(31200, 1)])).toHaveLength(1);
+  });
+
+  it('keeps an hourly line whose annualized rate equals a second appointment\'s figure', () => {
+    // $15 x 2,080 = $31,200: two appointments, one written as a rate and one as an annual figure.
+    const rows = prep([line(15, 0.25), line(31200, FTE_PLACEHOLDER)]);
+    expect(rows.map((r) => [r.salary, r.fte])).toEqual([[31200, 0.25], [31200, 0]]);
   });
 });

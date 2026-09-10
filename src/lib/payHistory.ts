@@ -93,11 +93,12 @@ const snap = (d: number): number => (Math.abs(d) < NEGLIGIBLE_CHANGE ? 0 : d);
 /**
  * The smallest appointment percentage that can identify an appointment.
  *
- * `fte = 0.00025` is not a percentage — it is the placeholder for "no appointment percentage on
- * file", used **31,785 times across 10,406 people**, 85.4% of them with `salary = 0`, on titles like
- * "Honorary Associate/Fellow". It is the same family as the `fte = 0` hourly rows. Matching on it
- * would pair unrelated honorary appointments to each other on a shared magic number — it produced an
- * "Emergency Medicine" to "Social Work" pairing when this tier was first measured without the floor.
+ * `fte = 0` is not a percentage. It means "no appointment percentage on file". The early workbooks
+ * wrote the same thing as `fte = 0.00025`, **31,785 times across 10,406 people**, 85.4% of them with
+ * `salary = 0`, on titles like "Honorary Associate/Fellow". The ETL now rewrites all but 42 of those to
+ * 0 (`harmonizeHourly`), and the 42 it keeps are nominal titles. Matching on either value would pair
+ * unrelated honorary appointments to each other on a shared magic number: it produced an "Emergency
+ * Medicine" to "Social Work" pairing when this tier was first measured without the floor.
  */
 export const MIN_TRACKABLE_FTE = 0.01;
 

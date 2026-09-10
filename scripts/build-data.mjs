@@ -21,6 +21,7 @@ import duckdb from 'duckdb';
 import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
   snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, latestGradeBands,
+  prepareSheet,
 } from './lib/normalize.mjs';
 import { computeHomeStats } from './lib/home-stats.mjs';
 
@@ -249,19 +250,20 @@ async function main() {
       }
       seenSnapshotIds.set(id, `${file} :: ${name}`);
 
-      // person dedupe within snapshot (exact duplicate rows)
-      const seen = new Set();
+      // corrections overlay: unify known-duplicate identities
+      const personOf = (row) => {
+        const k = makePersonKey(row._first, row._last, row.date_of_hire);
+        return MERGE[k] || k;
+      };
+      // Exact duplicates dropped, then the early workbooks' hourly pay put on the later footing.
+      const hourly = prepareSheet(res.rows, personOf);
+
       const salaries = [];
       const people = new Set();
       const paidPeople = new Set(); // people with ≥1 positive-salary appointment = the employee headcount
       let zeroNull = 0;
-      for (const row of res.rows) {
-        const hireISO = row.date_of_hire;
-        const pkey0 = makePersonKey(row._first, row._last, hireISO);
-        const pkey = MERGE[pkey0] || pkey0; // corrections overlay: unify known-duplicate identities
-        const dedupeKey = `${pkey}|${row.job_code || ''}|${row.title || ''}|${row.salary ?? ''}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
+      for (const row of hourly.rows) {
+        const pkey = personOf(row);
         delete row._first; delete row._last;
         const flags = row._flags; delete row._flags;
         // Median/min/max are on ACTUAL pay (FTE-adjusted) — matches what the app shows; "paid" is still
@@ -297,7 +299,7 @@ async function main() {
         ttc_variant: meta.variant,
         source_file: file,
         source_sheet: name,
-        row_count: seen.size,
+        row_count: hourly.rows.length,
         distinct_people: people.size,
         distinct_people_paid: paidPeople.size,
         zero_or_null_salary: zeroNull,
@@ -309,7 +311,10 @@ async function main() {
         status,
         messages,
       });
-      console.log(`  ${file} :: ${name} -> ${id} (${meta.label}) rows=${seen.size} people=${people.size} median=${med}`);
+      console.log(`  ${file} :: ${name} -> ${id} (${meta.label}) rows=${hourly.rows.length} people=${people.size} median=${med}`);
+      if (hourly.annualized || hourly.cleared || hourly.kept) {
+        console.log(`      hourly: ${hourly.annualized} rates annualized, ${hourly.cleared} placeholder FTEs cleared, ${hourly.kept} kept as nominal`);
+      }
     }
   }
 

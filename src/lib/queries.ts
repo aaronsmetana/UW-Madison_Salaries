@@ -24,7 +24,9 @@ const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
  * percentiles, and Screening runs this tool exists to produce.
  *
  * `NULLIF(fte, 0)` maps that zero to "unknown" so the annualized rate stands as the best available
- * estimate. Keep every actual-pay expression going through this constant — the bug was one literal
+ * estimate. The Nov 2021 to Aug 2022 workbooks wrote the same "unknown" as 0.00025, and listed some
+ * hourly pay as the rate itself ($19 rather than $39,520). The ETL's `harmonizeHourly` puts both on
+ * this footing before the data ships, so the rule here holds for every snapshot. Keep every actual-pay expression going through this constant — the bug was one literal
  * multiply copied to seven call sites, and it only takes one more copy to reintroduce it.
  */
 export const FTE_MULT = 'COALESCE(NULLIF(fte, 0), 1)';
