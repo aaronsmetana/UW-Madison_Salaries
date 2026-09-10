@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
-  Tooltip as MantineTooltip, ThemeIcon,
+  Tooltip as MantineTooltip, ThemeIcon, VisuallyHidden,
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -19,7 +19,7 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, actualPay } from '../lib/queries';
 import {
-  matchAppointments, acrossLabel, byAppointment, combinedReason, laneLetter, laneReason, laneSlot,
+  matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter,
   type Raise,
 } from '../lib/payHistory';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
@@ -38,6 +38,7 @@ import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
 import { CardTitle } from '../components/CardTitle';
+import { LaneGutter } from '../components/LaneGutter';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
@@ -530,6 +531,15 @@ export default function Person() {
         pay: actualPay(r),
       })),
     [historyRows]
+  );
+
+  /**
+   * The appointment tracks. Empty for anyone who never holds two appointments at once, which is most
+   * people — and that is the gate for the whole column, so their table renders as it always has.
+   */
+  const gutter = useMemo(
+    () => laneGutter(historyRows, (r) => r.snapshot_id, matching),
+    [historyRows, matching]
   );
 
   // As-of the latest snapshot (not today) — matches the peer SQL's tenure basis (Person.tsx peer
@@ -1435,12 +1445,21 @@ export default function Person() {
         <Tabs.Panel value="history" pt="md">
       <Card withBorder padding="lg">
         <CardTitle>Title & salary history</CardTitle>
-        <Table.ScrollContainer minWidth={880}>
+        <Table.ScrollContainer minWidth={gutter.slots ? 980 : 880}>
         {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
-        <Table className="appt-history" striped={false}>
+        <Table
+          className="appt-history"
+          striped={false}
+          style={gutter.slots ? ({ ['--lane-slots' as string]: gutter.slots }) : undefined}
+        >
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Snapshot</Table.Th>
+              {gutter.slots > 0 && (
+                <Table.Th className="appt-gutter-th">
+                  <VisuallyHidden>Appointment</VisuallyHidden>
+                </Table.Th>
+              )}
+              <Table.Th className="appt-snapshot">Snapshot</Table.Th>
               <Table.Th>Title</Table.Th>
               <Table.Th>Job code</Table.Th>
               <Table.Th>School / Dept</Table.Th>
@@ -1463,11 +1482,10 @@ export default function Person() {
               const actual = actualPay(r);
               const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
               const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
-              const lane = matching.lane.get(r);
+              const cell = gutter.byRow.get(r);
               // The row this line continues. Everything below that claims continuity — the lane's
               // solid rail, the department-change dot — is answered by this and nothing else.
               const from = matching.priorOf.get(r);
-              const laned = apptTotal > 1 && lane != null;
               const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
               // Org move = this appointment's OWN department a snapshot ago. It used to compare
               // against the previous displayed row, which on a split page is a different appointment
@@ -1480,20 +1498,16 @@ export default function Person() {
                   // one snapshot on opposite stripes, pulling apart what belongs together. Parity
                   // follows nth-of-type(odd) so a person with one line per snapshot is unchanged.
                   data-band={pos % 2 === 0 ? '1' : '0'}
-                  data-lane={laned ? laneSlot(lane) : undefined}
-                  data-tracked={laned && !from ? 'no' : undefined}
                   data-group-last={lastOfGroup ? undefined : 'no'}
                 >
-                  <Table.Td>
+                  {gutter.slots > 0 && (
+                    <Table.Td className="appt-gutter-td">
+                      {cell && <LaneGutter cell={cell} count={apptTotal} />}
+                    </Table.Td>
+                  )}
+                  <Table.Td className="appt-snapshot">
                     {apptFirstRow.get(r.snapshot_id) === i && (
                       <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                    )}
-                    {laned && (
-                      /* Which appointment this line is — the same letter and the same coloured rail
-                         every snapshot it survives, so the eye can follow one line down the page. */
-                      <MantineTooltip label={laneReason(lane, apptTotal, !!from)} withArrow multiline w={280}>
-                        <span className="appt-lane-chip">{laneLetter(lane)}</span>
-                      </MantineTooltip>
                     )}
                   </Table.Td>
                   <Table.Td>
@@ -1542,10 +1556,11 @@ export default function Person() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
           <Text size="xs" c="dimmed">
             = department changed since this appointment’s previous snapshot. Orange % = a rate decrease
-            — often a change in FTE or comp basis rather than a pay cut. Where a snapshot holds several
-            appointments, each keeps its own lettered lane and coloured rail down the page; a dotted
-            rail means the source does not connect that line to the previous snapshot, and
-            “across both” means the change could only be measured across the lines together.
+            — often a change in FTE or comp basis rather than a pay cut. Where a person holds several
+            appointments at once, each runs as its own lettered track down the left of the table; a
+            filled dot marks the line that row belongs to, and a hollow one means the source does not
+            connect that line to the previous snapshot, so it starts there. “Across both” means the
+            change could only be measured across the lines together.
           </Text>
         </Group>
       </Card>

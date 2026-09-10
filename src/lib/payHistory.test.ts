@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  matchAppointments, byAppointment, acrossLabel, combinedReason, laneLetter, laneReason, laneSlot,
-  type ApptFields, type Raise,
+  matchAppointments, byAppointment, acrossLabel, combinedReason, laneGutter, laneLetter, laneReason,
+  laneSlot, type ApptFields, type Raise,
 } from './payHistory';
 
 /**
@@ -443,6 +443,164 @@ describe('lane labelling', () => {
     expect(laneReason(1, 2, true)).toBe(
       'Appointment A of 2 in this snapshot. Followed from the same appointment in the previous snapshot.'
     );
-    expect(laneReason(2, 3, false)).toContain('so its lane starts here');
+    expect(laneReason(2, 3, false)).toContain('so its line starts here');
+  });
+});
+
+/**
+ * The gutter turns the lanes into parallel vertical tracks. Each test below owns ONE rule, and each
+ * selects its rows without using the property another test verifies — a guard whose subject is
+ * chosen by the thing its neighbour checks is not a second guard, it is the same one twice.
+ */
+describe('lane gutter', () => {
+  const other = (snapshotId: string, jobCode: string, department: string, pay: number, fte: number): Row => ({
+    snapshotId, jobCode, school: L_AND_S, department, fte, pay,
+  });
+  const gutter = (rows: Row[]) => laneGutter(rows, (r) => r.snapshotId, matchAppointments(rows, get));
+  /** The slots a row draws, in order — the shape every assertion here is written against. */
+  const drawn = (g: ReturnType<typeof gutter>, row: Row) =>
+    (g.byRow.get(row)?.segments ?? []).map((sg) => `${sg.lane}:${sg.draw}`);
+
+  it('renders no gutter at all for a history that never holds two appointments at once', () => {
+    const solo = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+    ];
+    const g = gutter(solo);
+    expect(g.slots).toBe(0);
+    expect([...g.byRow.keys()]).toEqual([]);
+  });
+
+  /**
+   * Rule 1, and the whole reason a slot is keyed to the lane NUMBER. Lane 2 ends; lane 3 must stay in
+   * slot 3. Keying slots to the row's position would slide it into slot 2 and the line a reader was
+   * following would jog sideways — the renumbering that made "1 of 2" useless in the first place.
+   */
+  it('leaves an ended appointment\'s slot empty instead of shifting the survivor left', () => {
+    const rows = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      other('2023-10', 'AD006', 'Language Institute', 0, 0.00025),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+      other('2024-04', 'AD006', 'Language Institute', 0, 0.00025),
+    ];
+    const g = gutter(rows);
+    expect(drawn(g, rows[3])).toEqual(['1:full', '3:full']);
+    expect(drawn(g, rows[4])).toEqual(['1:full', '3:full']);
+  });
+
+  it('sizes the gutter by the largest lane number, not the most appointments at once', () => {
+    const rows = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      other('2023-10', 'AD006', 'Language Institute', 0, 0.00025),
+      other('2024-04', 'AD006', 'Language Institute', 0, 0.00025),
+    ];
+    // One row in the last snapshot, but it is lane 3 and has to draw in slot 3.
+    expect(gutter(rows).slots).toBe(3);
+  });
+
+  it('draws a line the matcher followed at full height through every row of the snapshot', () => {
+    const g = gutter(glowacki);
+    expect(drawn(g, glowacki[2])).toEqual(['1:full', '2:full']);
+    expect(drawn(g, glowacki[3])).toEqual(['1:full', '2:full']);
+  });
+
+  /**
+   * Rule 3. `pre` and `post` share no job code, so nothing pairs across them and every lane in `post`
+   * restarts — the Nov 2021 TTC boundary. Lane 2's line must begin at its own row and draw NOTHING on
+   * the row above it, where it would otherwise imply a continuity the matcher refused.
+   */
+  it('starts a restarted line at its own row, with nothing above it', () => {
+    const rows = [
+      lecturer('2021-11-pre', L_AND_S, GERMAN, 40079),
+      lecturer('2021-11-pre', INTL, SLAVIC, 16650),
+      other('2021-11-post', 'TL999', GERMAN, 40079, 0.5),
+      other('2021-11-post', 'TL999', SLAVIC, 16650, 0.3),
+    ];
+    const g = gutter(rows);
+    expect(drawn(g, rows[2])).toEqual(['1:from-node']);
+    expect(drawn(g, rows[3])).toEqual(['1:full', '2:from-node']);
+  });
+
+  /**
+   * Rule 3b. The same restart, one snapshot earlier, carries no information: there is nothing above
+   * the first group for a line to be read as continuing from. Both halves live in ONE test so the
+   * exemption cannot quietly widen to later groups without failing here.
+   */
+  it('exempts only the first snapshot from capping, not every all-new one', () => {
+    const rows = [
+      lecturer('2021-11-pre', L_AND_S, GERMAN, 40079),
+      lecturer('2021-11-pre', INTL, SLAVIC, 16650),
+      other('2021-11-post', 'TL999', GERMAN, 40079, 0.5),
+      other('2021-11-post', 'TL999', SLAVIC, 16650, 0.3),
+    ];
+    const g = gutter(rows);
+    // First group: full height even though both lines start here.
+    expect(drawn(g, rows[0])).toEqual(['1:full', '2:full']);
+    expect(drawn(g, rows[1])).toEqual(['1:full', '2:full']);
+    // Second group: capped, because there the break is the information.
+    expect(g.byRow.get(rows[3])?.segments.map((sg) => sg.draw)).toEqual(['full', 'from-node']);
+  });
+
+  /** Rule 2's bridging flag: a segment may only cross the row border into a line that continues. */
+  it('stops a segment bridging where its appointment ends or restarts below', () => {
+    const rows = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+      other('2024-04', 'RE015', 'Institute on Aging', 90000, 0.9),
+    ];
+    const g = gutter(rows);
+    const last = (row: Row) =>
+      Object.fromEntries((g.byRow.get(row)?.segments ?? []).map((sg) => [sg.lane, sg.continues]));
+    // Bottom of the first snapshot: lane 1 carries on below, lane 2's appointment does not — the
+    // 0.3 FTE Slavic line ends and lane 2 is re-used by a brand new appointment.
+    expect(last(rows[1])).toEqual({ 1: true, 2: false });
+    // Inside a snapshot the row below always draws the same lanes.
+    expect(last(rows[0])).toEqual({ 1: true, 2: true });
+    // Last row of the table: nothing below it at all.
+    expect(last(rows[3])).toEqual({ 1: false, 2: false });
+
+    // The other half of the rule, and the one a sabotage slipped past when this guard only covered
+    // the restart branch: a lane that simply ENDS. Nothing below draws lane 2 at all, so the segment
+    // above it must not bridge into the snapshot below either.
+    const ends = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+    ];
+    const ge = gutter(ends);
+    expect(
+      Object.fromEntries((ge.byRow.get(ends[1])?.segments ?? []).map((sg) => [sg.lane, sg.continues]))
+    ).toEqual({ 1: true, 2: false });
+  });
+
+  it('keeps drawing the line through a snapshot where only one appointment is left', () => {
+    const rows = [
+      lecturer('2023-10', L_AND_S, GERMAN, 40000, 0.6),
+      lecturer('2023-10', INTL, SLAVIC, 20000, 0.3),
+      lecturer('2024-04', L_AND_S, GERMAN, 42000, 0.6),
+    ];
+    const g = gutter(rows);
+    expect(drawn(g, rows[2])).toEqual(['1:full']);
+    expect(g.byRow.get(rows[2])?.start).toBe(false);
+  });
+
+  /**
+   * `laneStart` is the fact the cap is drawn from, and `!priorOf` is what the view used to infer it
+   * from. They agree on today's matcher only because its `used.has(inherited)` fallback is
+   * unreachable. Assert the equivalence here, so that if it ever stops holding it fails in one
+   * obvious place rather than as a wrong line on a page.
+   */
+  it('marks exactly the rows that could not be followed as starting a line', () => {
+    const rows = [
+      ...glowacki,
+      other('2022-08', 'AD006', 'Language Institute', 0, 0.00025),
+      lecturer('2022-08', L_AND_S, GERMAN, 40880),
+      lecturer('2022-08', INTL, SLAVIC, 16983),
+    ];
+    const m = matchAppointments(rows, get);
+    expect(rows.filter((r) => m.laneStart.has(r))).toEqual(rows.filter((r) => !m.priorOf.has(r)));
   });
 });

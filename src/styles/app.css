@@ -651,58 +651,115 @@ textarea:focus-visible,
   border-bottom-color: color-mix(in srgb, var(--table-border-color) 35%, transparent);
 }
 
-/* The rail. An absolutely-positioned pseudo-element rather than the `box-shadow: inset` used by the
-   related-row rules above, for two reasons: a box-shadow cannot be dotted, and a `border-left` would
-   widen the cell and shift the whole column. */
+/* The appointment gutter: one vertical track per concurrent appointment, each in a fixed slot, so a
+   line can be followed down the page by eye. This replaces a 3px rail that sat at the table's left
+   edge on every row — because rows of different appointments interleave, it alternated colour at one
+   x-position and so marked each row without ever drawing a line to follow.
+
+   The letter used to live in the snapshot cell beside the date badge. Measured on the deployed page,
+   that cell is 109.5px wide with 10px of padding either side, and the two "Nov 2021 (Pre/Post-TTC)"
+   badges are 89.5px — the content box exactly. The chip had nowhere to go and wrapped; even the
+   shortest label left 2.2px of slack. The column was full, so the letter moved here. */
+.appt-gutter {
+  /* Deliberately NOT positioned: the tracks inside it are absolute and must resolve against the
+     table CELL, so a line runs the row's full height. Making this the containing block confines them
+     to the flex box's own ~24px and the "continuous line" becomes a row of stubs. */
+  display: flex;
+  align-items: center;
+  /* Slots, then the gap and the chip. Both callers set --lane-slots on the table. */
+  min-height: 1.5rem;
+  padding-inline-start: calc(var(--lane-slots, 2) * 9px + 6px);
+}
+.appt-gutter-tracks {
+  position: absolute;
+  inset-block: 0;
+  /* Offset by the cell's own inline padding. Absolute positioning resolves against the td's PADDING
+     box, so `0` puts the first track — and half of its node — outside the content edge and under the
+     table's left border, where it reads as clipped. This lands it on the same edge as every other
+     cell's text, and on the same origin as the chip below, which is padded from the content box. */
+  inset-inline-start: var(--table-horizontal-spacing, 10px);
+  width: calc(var(--lane-slots, 2) * 9px);
+}
+/* The td is the positioning context, not this span, so a track can run the row's full height
+   regardless of how tall the cell's content is. */
 .appt-history tbody td:first-child {
   position: relative;
 }
-.appt-history tbody tr[data-lane] td:first-child::before {
-  content: '';
+.appt-gutter-track {
   position: absolute;
   inset-block: 0;
-  inset-inline-start: 0;
+  inset-inline-start: calc(var(--slot) * 9px);
   width: 3px;
+  border-radius: 1px;
+  /* Quiet enough that six of them do not shout, while the nodes stay solid. */
+  background-color: color-mix(in srgb, var(--lane-c) 45%, transparent);
+}
+/* The line begins at this row's node: there is nothing above it in the source to connect it to. */
+.appt-gutter-track[data-draw='from-node'] {
+  inset-block-start: 50%;
+}
+/* An absolutely-positioned segment spans the padding box, so the row border leaves a 1px nick
+   between one row's track and the next. Bridge it only where the lane is actually drawn on the row
+   below — bridging unconditionally paints a stub of an appointment that has ENDED into the snapshot
+   beneath it, which is a continuity claim in miniature. */
+.appt-gutter-track[data-continues='yes'] {
+  inset-block-end: calc(-1 * var(--table-border-width, 1px));
+}
+.appt-gutter-node {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: calc(var(--slot) * 9px - 2px);
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
   background-color: var(--lane-c);
 }
-.appt-history tbody tr[data-lane='1'] { --lane-c: var(--lane-1); }
-.appt-history tbody tr[data-lane='2'] { --lane-c: var(--lane-2); }
-.appt-history tbody tr[data-lane='3'] { --lane-c: var(--lane-3); }
-.appt-history tbody tr[data-lane='4'] { --lane-c: var(--lane-4); }
-
-/* Dotted = this lane starts or restarts here; the matcher found nothing in the previous snapshot to
-   connect it to. 771 cells are `combined` — rows the source genuinely cannot tell apart — and a solid
-   rail on one of those would claim a continuity the data does not support, which is the exact failure
-   payHistory.ts exists to avoid. The chip's border says the same thing at the same time. */
-.appt-history tbody tr[data-tracked='no'] td:first-child::before {
+/* Hollow = this line starts here. Paired with the track's missing upper half and the chip's dashed
+   border, so the fact is carried three ways and never by colour alone. */
+.appt-gutter-node[data-start='yes'] {
   background-color: transparent;
-  background-image: repeating-linear-gradient(to bottom, var(--lane-c) 0 3px, transparent 3px 7px);
+  box-shadow: inset 0 0 0 2px var(--lane-c);
 }
 
 /* The lane letter. Colour alone cannot be the identity (WCAG 1.4.1), and the letter is also what the
-   tooltip hangs off. Text stays at the app's own colour so it is legible whatever the lane is — the
-   lane shows in the border and the tint, which do not have to meet text contrast. */
+   tooltip and the aria-label hang off. Text stays at the app's own colour so it is legible whatever
+   the lane is — the lane shows in the border and the tint, which do not have to meet text contrast. */
 .appt-lane-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 1.125rem;
   padding: 0 4px;
-  margin-inline-start: 6px;
   border: 1px solid var(--lane-c);
   border-radius: var(--mantine-radius-xs);
   background-color: color-mix(in srgb, var(--lane-c) 12%, transparent);
   font-size: var(--mantine-font-size-xxs);
   font-weight: 700;
   line-height: 1.45;
-  vertical-align: middle;
 }
-.appt-history tbody tr[data-tracked='no'] .appt-lane-chip {
+.appt-lane-chip[data-start='yes'] {
   border-style: dashed;
 }
-/* The snapshot label prints once per group, so on every row but the first the chip leads the cell. */
-.appt-lane-chip:first-child {
-  margin-inline-start: 0;
+
+/* The snapshot label must never truncate. Mantine's Badge caps itself at `max-width: 100%` and
+   ellipsises its own text, so once the gutter took its share of a fixed-width table the widest label
+   ("Nov 2021 (Post-TTC)") silently became "Nov 2021 (...". Letting the cell keep its text on one line
+   and the badge size to its content makes the column claim the width it needs, rather than depending
+   on a hardcoded px that auto table layout is free to ignore. */
+.appt-history .appt-snapshot {
+  white-space: nowrap;
+}
+.appt-history .appt-snapshot .mantine-Badge-root {
+  max-width: none;
+}
+/* And the part that actually does it: the Badge's label is a FLEX item with `overflow: hidden`,
+   which gives it a min-content width of zero. So the column had no reason to grow no matter how much
+   room the table had — `max-width: none` on the root alone changed nothing. Let the label refuse to
+   shrink and auto table layout gives the column the width the text needs. */
+.appt-history .appt-snapshot .mantine-Badge-label {
+  overflow: visible;
+  min-width: max-content;
 }
 
 /* Hero search input: a deeper border at rest and a clear ring on focus. The 18px resting shadow it

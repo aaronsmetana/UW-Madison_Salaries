@@ -309,31 +309,50 @@ type HistoryRow = {
   labelled: boolean;
   /** The lane letter, or '' where the snapshot holds a single appointment. */
   lane: string;
-  /** Solid rail: the matcher found this line in the previous snapshot. Dotted: it starts here. */
+  /** Filled node: the matcher found this line in the previous snapshot. Hollow: it starts here. */
   tracked: boolean;
+  /**
+   * Where the node actually sits, in px from the left of the gutter cell. The rendered proof of the
+   * rule the letters only assert: a lane's slot is keyed to the lane, so an appointment ending never
+   * slides the lines below it sideways.
+   */
+  nodeX: number;
   dept: string;
   raise: string;
 };
 
 async function readHistory(page: import('@playwright/test').Page): Promise<HistoryRow[]> {
   await page.getByRole('tab', { name: 'History' }).click();
+  await page.locator('table.appt-history tbody tr').first().waitFor();
+  // The gutter column only exists for a person who holds concurrent appointments, so every other
+  // column shifts by one for them. Detect it once rather than hard-coding two sets of indices.
+  const off = await page.locator('table.appt-history thead th.appt-gutter-th').count();
   const rows = await page.locator('table.appt-history tbody tr').all();
   const out: HistoryRow[] = [];
   let snapshot = '';
   for (const row of rows) {
     const cells = row.locator('td');
-    const badge = cells.nth(0).locator('.mantine-Badge-root');
+    const badge = cells.nth(off).locator('.mantine-Badge-root');
     // The snapshot is named once per group, so carry its name down the rest of its own rows.
     const labelled = (await badge.count()) > 0;
     if (labelled) snapshot = (await badge.first().innerText()).replace(/\s+/g, ' ').trim();
-    const chip = cells.nth(0).locator('.appt-lane-chip');
+    const chip = row.locator('.appt-lane-chip');
+    const node = row.locator('.appt-gutter-node');
+    let nodeX = -1;
+    let tracked = true;
+    if (await node.count()) {
+      const [box, cellBox] = [await node.first().boundingBox(), await cells.nth(0).boundingBox()];
+      nodeX = box && cellBox ? Math.round(box.x - cellBox.x) : -1;
+      tracked = (await node.first().getAttribute('data-start')) === 'no';
+    }
     out.push({
       snapshot,
       labelled,
       lane: (await chip.count()) ? (await chip.first().innerText()).trim() : '',
-      tracked: (await row.getAttribute('data-tracked')) === null,
-      dept: (await cells.nth(3).innerText()).split('\n').pop()!.trim(),
-      raise: (await cells.nth(6).innerText()).replace(/\s+/g, ' ').trim(),
+      tracked,
+      nodeX,
+      dept: (await cells.nth(off + 3).innerText()).split('\n').pop()!.trim(),
+      raise: (await cells.nth(off + 6).innerText()).replace(/\s+/g, ' ').trim(),
     });
   }
   return out;
@@ -451,17 +470,36 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   expect(new Set(cancer.map((c) => c.at)).size, `position never moved, so this proves nothing: ${JSON.stringify(cancer)}`).toBeGreaterThan(1);
 
   // The two Academic Affairs lines the source cannot separate report one figure across both, and
-  // their rails are dotted — the lane is position there, not evidence, and must not pretend otherwise.
+  // their nodes are hollow — the lane is position there, not evidence, and must not pretend otherwise.
   const combined = rows.filter((r) => /across/.test(r.raise));
   expect(combined.length, 'this person must still have unmatchable lines').toBeGreaterThan(2);
-  expect(combined.filter((r) => r.tracked), 'an unmatched line is drawing a solid rail').toEqual([]);
+  expect(combined.filter((r) => r.tracked), 'an unmatched line is drawing a filled node').toEqual([]);
+
+  // The rendered half of rule 1, and the reason the gutter exists: a letter can only be followed if
+  // the track it names holds one x-position for the whole table. Her line count collapses from six to
+  // two, so any scheme that slotted tracks by the row's position within its snapshot would slide the
+  // survivors left here. Asserted on the painted node, not on the data — the CSS has to agree too.
+  const xByLane = new Map<string, Set<number>>();
+  for (const { lane, nodeX } of rows.filter((r) => r.lane && r.nodeX >= 0)) {
+    if (!xByLane.has(lane)) xByLane.set(lane, new Set());
+    xByLane.get(lane)!.add(nodeX);
+  }
+  expect(xByLane.size, 'need several distinct lanes on this page').toBeGreaterThan(4);
+  for (const [lane, xs] of xByLane) {
+    expect([...xs], `lane ${lane}'s track moved sideways`).toHaveLength(1);
+  }
+  // ...and distinct lanes must not share a slot, or the tracks are drawn on top of one another.
+  const allX = [...xByLane.values()].map((xs) => [...xs][0]);
+  expect(new Set(allX).size, 'two lanes are drawn in the same slot').toBe(allX.length);
 });
 
 test('a person with one appointment per snapshot gets no lane markers at all', async ({ page }) => {
   await openPerson(page, 'Kenneth Poss');
   const rows = await readHistory(page);
   expect(rows.length).toBeGreaterThan(2);
-  expect(rows.every((r) => r.lane === ''), 'a single appointment needs no lane').toBe(true);
+  expect(rows.map((r) => r.lane), 'a single appointment needs no lane').toEqual(rows.map(() => ''));
   expect(rows.every((r) => r.labelled), 'every row is its own group, so every row names itself').toBe(true);
-  expect(await page.locator('table.appt-history tbody tr[data-lane]').count()).toBe(0);
+  // The column is absent, not merely empty — otherwise every person page would carry a blank gutter.
+  expect(await page.locator('table.appt-history thead th.appt-gutter-th').count()).toBe(0);
+  expect(await page.locator('table.appt-history .appt-gutter-node').count()).toBe(0);
 });

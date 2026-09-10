@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
+import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert, VisuallyHidden } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
@@ -7,7 +7,7 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay } from '../lib/queries';
 import {
-  matchAppointments, acrossLabel, byAppointment, laneLetter, laneSlot, type Raise,
+  matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, fmtDate, spanLabel } from '../lib/format';
@@ -19,6 +19,7 @@ import { ChartData } from './ChartData';
 import { PercentileNote } from './PercentileNote';
 import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
+import { LaneGutter } from './LaneGutter';
 import { StatCard } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
@@ -202,6 +203,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   );
   const anyCombined = useMemo(() => [...matching.raises.values()].some((r) => r.kind === 'combined'), [matching]);
   const anySplit = useMemo(() => [...apptCounts.values()].some((n) => n > 1), [apptCounts]);
+  // Same tracks as the interactive table. Shared so the printed report cannot disagree with it.
+  const gutter = useMemo(
+    () => laneGutter(historyRows, (r) => r.snapshot_id, matching),
+    [historyRows, matching]
+  );
 
   // As-of the record's own latest snapshot date (not the viewer's "now") — matches the comparison
   // report's tenure calc (Reports.tsx), so the two report types never disagree on the same person's tenure.
@@ -356,12 +362,21 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {/* Title & salary history */}
       <Card withBorder padding="lg">
         <CardTitle>Title &amp; salary history</CardTitle>
-        <Table.ScrollContainer minWidth={680}>
+        <Table.ScrollContainer minWidth={gutter.slots ? 780 : 680}>
         {/* Striping is per snapshot group (app.css), so the lines of one snapshot stay together. */}
-        <Table className="appt-history" striped={false}>
+        <Table
+          className="appt-history"
+          striped={false}
+          style={gutter.slots ? ({ ['--lane-slots' as string]: gutter.slots }) : undefined}
+        >
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Snapshot</Table.Th>
+              {gutter.slots > 0 && (
+                <Table.Th className="appt-gutter-th">
+                  <VisuallyHidden>Appointment</VisuallyHidden>
+                </Table.Th>
+              )}
+              <Table.Th className="appt-snapshot">Snapshot</Table.Th>
               <Table.Th>Title</Table.Th>
               <Table.Th>Job code</Table.Th>
               <Table.Th>School / Dept</Table.Th>
@@ -380,23 +395,24 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
               const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
               const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
-              const lane = matching.lane.get(r);
-              const laned = apptTotal > 1 && lane != null;
+              const cell = gutter.byRow.get(r);
               const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
               return (
               <Table.Tr
                 key={`${r.snapshot_id}-${i}`}
                 data-band={pos % 2 === 0 ? '1' : '0'}
-                data-lane={laned ? laneSlot(lane) : undefined}
-                data-tracked={laned && !matching.priorOf.has(r) ? 'no' : undefined}
                 data-group-last={lastOfGroup ? undefined : 'no'}
               >
-                <Table.Td>
+                {gutter.slots > 0 && (
+                  <Table.Td className="appt-gutter-td">
+                    {/* No tooltip: this prints, and the note under the table carries the legend. */}
+                    {cell && <LaneGutter cell={cell} count={apptTotal} withTooltip={false} />}
+                  </Table.Td>
+                )}
+                <Table.Td className="appt-snapshot">
                   {apptFirstRow.get(r.snapshot_id) === i && (
                     <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
                   )}
-                  {/* No tooltip here: this prints, and the note under the table carries the legend. */}
-                  {laned && <span className="appt-lane-chip">{laneLetter(lane)}</span>}
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm">{r.title ?? '—'}</Text>
@@ -435,9 +451,10 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Table.ScrollContainer>
         {anySplit && (
           <Text size="xs" c="dimmed" mt="sm">
-            A lettered lane and coloured rail mark each concurrent appointment, held down the page for
-            as long as that appointment can be followed; a dotted rail means the source does not
-            connect that line to the previous snapshot.
+            Each concurrent appointment runs as its own lettered track down the left of the table, held
+            for as long as that appointment can be followed; a filled dot marks the line a row belongs
+            to, and a hollow one means the source does not connect that line to the previous snapshot,
+            so it starts there.
             {anyCombined &&
               ' “Across both” = two appointments under one title that the source does not distinguish' +
               ' — same department, same appointment percentage — so the change is shown across them' +

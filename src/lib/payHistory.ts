@@ -67,10 +67,23 @@ export interface Matching<T> {
    * 1-based lane, held by the same appointment for as long as it can be followed. A row that
    * continues another inherits its lane; anything else takes the lowest lane free in its own
    * snapshot, so no two concurrent rows ever share one. A lane can be skipped (A and C, because B
-   * ended) and can be reused later by an unrelated appointment — both are honest, and the dotted
-   * rail on an unmatched row is what says the lane starts over.
+   * ended) and can be reused later by an unrelated appointment — both are honest, and `laneStart` is
+   * what says the lane starts over.
    */
   lane: Map<T, number>;
+  /**
+   * The rows that did NOT inherit their lane — the lane begins, or begins again, at this row.
+   *
+   * This is the fact the gutter draws a line's start from, and it is recorded here rather than
+   * re-derived in the view as "has no `priorOf`". The two are equivalent on today's matcher, but
+   * only via three separate invariants: two rows in a snapshot always hold distinct lanes, `matched`
+   * blocks double-matching inside a job-code group, and a prior row belongs to exactly one such
+   * group. Together those make the `used.has(inherited)` fallback below unreachable. If any of them
+   * ever shifts, a row that took a fresh lane while holding a `priorOf` would quietly draw a
+   * continuous line into whatever held its slot before — the one claim this module exists not to
+   * make. Cheaper to return the fact than to keep the proof.
+   */
+  laneStart: Set<T>;
 }
 
 export const NEGLIGIBLE_CHANGE = 0.0005;
@@ -278,6 +291,7 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
   // its lane taken by one that cannot. A single pass down the rows would hand lane 1 to an unmatched
   // top row and then find the row below it inheriting the same 1.
   const lane = new Map<T, number>();
+  const laneStart = new Set<T>();
   for (const id of order) {
     const shown = shownBySnapshot.get(id)!;
     const used = new Set<number>();
@@ -294,10 +308,13 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
       while (used.has(n)) n++;
       lane.set(row, n);
       used.add(n);
+      // Allocated, not inherited: whatever this lane meant in the previous snapshot, it does not
+      // mean it here.
+      laneStart.add(row);
     }
   }
 
-  return { raises: out, priorOf, lane };
+  return { raises: out, priorOf, lane, laneStart };
 }
 
 /**
@@ -335,14 +352,141 @@ export function laneSlot(lane: number): number {
 
 /**
  * The tooltip behind a lane letter. `tracked` is whether the matcher found this line in the previous
- * snapshot — the difference between a solid rail and a dotted one, and the whole reason the lane is
- * worth trusting when it is solid.
+ * snapshot — the difference between a filled node and a hollow one, and the whole reason the line is
+ * worth following when it is filled.
  */
 export function laneReason(lane: number, count: number, tracked: boolean): string {
   return (
     `Appointment ${laneLetter(lane)} of ${count} in this snapshot. ` +
     (tracked
       ? 'Followed from the same appointment in the previous snapshot.'
-      : 'Nothing in the source connects this line to the previous snapshot, so its lane starts here.')
+      : 'Nothing in the source connects this line to the previous snapshot, so its line starts here.')
   );
+}
+
+/** One appointment's vertical segment through one row of the table. */
+export interface LaneSegment {
+  /**
+   * The lane the segment belongs to, which is also the slot it draws in. Keyed to the lane number
+   * and never to the row's position: if slots were handed out in row order, then the moment an
+   * appointment ended every line below it would jog sideways into the freed slot — the same
+   * renumbering that made the old "1 of 2" badge useless. An ended appointment leaves its slot empty.
+   */
+  lane: number;
+  /**
+   * `full` runs the height of the row. `from-node` starts halfway down, at this row's node: the line
+   * begins here and there is nothing above it to connect to.
+   */
+  draw: 'full' | 'from-node';
+  /**
+   * Whether the next row draws this lane too. A segment may only bridge the 1px row border when this
+   * is true — bridging unconditionally paints a stub of a dead appointment into the snapshot below,
+   * which is a continuity claim in miniature.
+   */
+  continues: boolean;
+}
+
+/** What one row's gutter cell draws. */
+export interface GutterCell {
+  /** This row's own lane — which slot carries its node. */
+  lane: number;
+  /** Hollow node: this row did not inherit its lane, so its line starts here. */
+  start: boolean;
+  /** Every lane drawing something on this row, in slot order. Lanes drawing nothing are omitted. */
+  segments: LaneSegment[];
+}
+
+export interface Gutter<T> {
+  /** Per row. Empty when no snapshot in this history holds concurrent appointments. */
+  byRow: Map<T, GutterCell>;
+  /**
+   * How many slots the gutter needs: the largest lane NUMBER anywhere in the history, not the
+   * largest number of concurrent appointments. A line can only be followed down the page if it sits
+   * at the same x on every row, so a lane 3 surviving alone still occupies slot 3.
+   */
+  slots: number;
+}
+
+/**
+ * Lay out the lanes as parallel vertical tracks, one slot each, so a reader can follow one
+ * appointment down the table instead of re-reading which line is which at every snapshot.
+ *
+ * Every row draws a segment for every lane alive in its own snapshot — that is what makes a line
+ * continuous, since lane A is painted through lane B's rows as well. A lane absent from the next
+ * snapshot simply stops at the group boundary.
+ *
+ * `rows` must be in the caller's display order; it is grouped by snapshot the way the table renders.
+ */
+export function laneGutter<T>(
+  rows: readonly T[],
+  snapshotOf: (row: T) => string,
+  matching: Pick<Matching<T>, 'lane' | 'laneStart'>
+): Gutter<T> {
+  const byRow = new Map<T, GutterCell>();
+
+  // Groups in display order.
+  const groups: T[][] = [];
+  for (const row of rows) {
+    const last = groups[groups.length - 1];
+    if (last && snapshotOf(last[0]) === snapshotOf(row)) last.push(row);
+    else groups.push([row]);
+  }
+
+  // Nothing to tell apart anywhere in this history: no gutter, and the table renders exactly as it
+  // did before lanes existed. That is most person pages.
+  if (!groups.some((group) => group.length > 1)) return { byRow, slots: 0 };
+
+  let slots = 0;
+  // Per group: which row index each lane's node sits on, and whether that lane begins there.
+  const plans = groups.map((group) => {
+    const nodeAt = new Map<number, number>();
+    const starts = new Set<number>();
+    group.forEach((row, i) => {
+      const lane = matching.lane.get(row);
+      if (lane == null) return;
+      nodeAt.set(lane, i);
+      if (matching.laneStart.has(row)) starts.add(lane);
+      slots = Math.max(slots, lane);
+    });
+    return { nodeAt, starts };
+  });
+
+  // Single-appointment snapshots inside a split history draw their one track too. The person still
+  // holds that appointment; stopping the line at the last snapshot that happened to have two would
+  // read as the appointment ending, and the collapse from two lines to one is worth seeing. The
+  // LETTER is still gated on the snapshot holding more than one row — "appointment A of 1" says
+  // nothing — which the caller decides.
+  groups.forEach((group, g) => {
+    const { nodeAt, starts } = plans[g];
+    const lanes = [...nodeAt.keys()].sort((a, b) => a - b);
+
+    group.forEach((row, i) => {
+      const own = matching.lane.get(row);
+      if (own == null) return;
+      const segments: LaneSegment[] = [];
+      for (const lane of lanes) {
+        const at = nodeAt.get(lane)!;
+        // A line only needs capping where it could otherwise be read as continuing across a snapshot
+        // boundary. The FIRST group has no boundary above it, so capping there says nothing and only
+        // leaves every split person's table starting on a row of stubs. Later restarts — the Nov 2021
+        // TTC pair, where every job code was renumbered — keep their cap: there the break IS the
+        // information.
+        const capped = g > 0 && starts.has(lane);
+        if (capped && i < at) continue;
+        const next = plans[g + 1];
+        const nextAt = next?.nodeAt.get(lane);
+        segments.push({
+          lane,
+          draw: capped && i === at ? 'from-node' : 'full',
+          // Inside a group the next row always draws the lanes this row draws. At the last row it
+          // depends on the next snapshot — and a lane that RESTARTS there does not connect to this
+          // one whatever its node index, so the segment must not bridge into it.
+          continues: i < group.length - 1 ? true : nextAt !== undefined && !next!.starts.has(lane),
+        });
+      }
+      byRow.set(row, { lane: own, start: matching.laneStart.has(row), segments });
+    });
+  });
+
+  return { byRow, slots };
 }
