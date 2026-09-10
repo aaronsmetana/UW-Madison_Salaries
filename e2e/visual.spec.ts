@@ -303,6 +303,11 @@ test('visual: titles with a title selected', async ({ page }) => {
 });
 
 test('visual: reports with a subject', async ({ page }) => {
+  // The report prints the day it was generated (`fmtDate(new Date())` in Reports.tsx), so without a
+  // fixed clock this baseline went stale on its own: it failed on Sep 10 with no code change, when a
+  // second digit reflowed the provenance line. `setFixedTime` pins only Date; timers still run, so
+  // DuckDB and the page load exactly as they otherwise would.
+  await page.clock.setFixedTime(new Date('2026-09-10T12:00:00'));
   await page.goto('./reports?type=comparison');
   const search = page.getByPlaceholder('Search yourself by name to begin…');
   await expect(search).toBeVisible({ timeout: 60_000 });
