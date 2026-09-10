@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Card, Table, Badge, Text, Group, Tooltip as MantineTooltip } from '@mantine/core';
 import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
@@ -11,10 +11,9 @@ import { ttcRank } from '../lib/snapshotOrder';
 /**
  * The person page's title & salary history table.
  *
- * Its own component for one reason: it holds hover state, and the page it lives on keeps every tab
- * panel mounted (Mantine's `keepMounted` default). Measured while the History tab is showing, the
- * hidden panels hold 504 peer-table rows — so state kept in the page would have React reconcile all
- * of them on every row the cursor crosses. Here a hover re-renders this table and nothing else.
+ * Any interactive state for this table belongs here, not in the page: the page keeps every tab panel
+ * mounted (Mantine's `keepMounted` default), and while the History tab is showing the hidden panels
+ * hold 504 peer-table rows, so state kept up there would have React reconcile all of them.
  */
 
 /** The fields this table reads. Declared here rather than imported from the route, so a component
@@ -143,10 +142,6 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
     [historyRows, matching]
   );
 
-  // The run under the cursor. Hover-only, so it is an enhancement: the letter, the slot and the
-  // tooltip already say which appointment a row is, to keyboard and screen-reader users too.
-  const [activeRun, setActiveRun] = useState<number | null>(null);
-
   return (
     <Card withBorder padding="lg">
       <CardTitle>Title & salary history</CardTitle>
@@ -176,7 +171,7 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
             <Table.Th>Basis</Table.Th>
           </Table.Tr>
         </Table.Thead>
-        <Table.Tbody onMouseLeave={() => setActiveRun(null)}>
+        <Table.Tbody>
           {historyRows.map((r, i) => {
             // Compare to the SAME job code in the prior snapshot (not the adjacent interleaved row).
             const pos = snapHistory.index.get(r.snapshot_id) ?? 0;
@@ -189,9 +184,6 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
             const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
             const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
             const cell = gutter.byRow.get(r);
-            // Which appointment this row is, as far as the matcher can follow it. The RUN, not the lane:
-            // a lane is reused once an appointment ends, so keying on it would light up unrelated rows.
-            const runId = matching.run.get(r);
             // The row this line continues. Everything below that claims continuity — the lane's
             // solid rail, the department-change dot — is answered by this and nothing else.
             const from = matching.priorOf.get(r);
@@ -237,10 +229,6 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                 // row is the last of its own group and the strengthened boundary rule would land
                 // on the 93.2% of tables this is not about.
                 data-group-last={gutter.slots > 0 ? (lastOfGroup ? 'yes' : 'no') : undefined}
-                // Only for someone who holds concurrent appointments: with one line per snapshot there is
-                // nothing to follow, and every other person's table keeps the plain hover it always had.
-                onMouseEnter={gutter.slots > 0 ? () => setActiveRun(runId ?? null) : undefined}
-                data-appt-active={gutter.slots > 0 && runId != null && runId === activeRun ? 'yes' : undefined}
               >
                 {gutter.slots > 0 && (
                   <Table.Td className="appt-gutter-td">

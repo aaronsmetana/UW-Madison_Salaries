@@ -633,7 +633,7 @@ function contrast(x: number[], y: number[]): number {
  * they shipped with, seven of eight lane/scheme pairs failed. Asserted as a full matrix — every
  * lane-coloured object against every background a row can have — because checking one background is
  * exactly how a lane that passed at rest (3.15) and failed on hover (2.99) got through the first time.
- * Hover and the appointment tint are read by actually hovering, never from a token.
+ * Hover is read by actually hovering, never from a token.
  */
 for (const scheme of ['light', 'dark'] as const) {
   test(`every appointment track meets 3:1 against every background (${scheme})`, async ({ page }) => {
@@ -659,12 +659,12 @@ for (const scheme of ['light', 'dark'] as const) {
     const backgrounds: Record<string, number[]> = {
       card: flatten(card, card), band: await bgOf(banded), plain: await bgOf(plain),
     };
-    // Hover a row that has partners in its run, then read both the hovered row and a lit sibling.
+    // The hovered row is the darkest background a track meets. It must come out as a third colour: a
+    // hover that silently stopped applying would re-measure the card or the band and pass on those.
     await rows.nth(n - 1).hover();
-    const lit = await rows.evaluateAll((rs) => rs.findIndex((r, i) => i !== rs.length - 1 && (r as HTMLElement).dataset.apptActive === 'yes'));
     backgrounds.hover = await bgOf(n - 1);
-    expect(lit, 'hovering must light at least one other row, or the tint is untested').toBeGreaterThanOrEqual(0);
-    backgrounds.tint = await bgOf(lit);
+    expect(backgrounds.hover, 'hover must repaint the row, not leave the card').not.toEqual(backgrounds.card);
+    expect(backgrounds.hover, 'hover must repaint the row, not leave the band').not.toEqual(backgrounds.band);
 
     // Every lane-coloured object on the page: track, filled node, hollow ring, end cap, chip border.
     const inks = await page.locator('table.appt-history').evaluate((t) => {
@@ -695,41 +695,31 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 /**
- * Hovering a row lights the rest of that appointment — its RUN, not its lane. Gulnara Glowacki has 3
- * lanes but 5 runs: lanes A and B both restart at the Nov 2021 TTC boundary, where every job code was
- * renumbered and nothing pairs. Highlighting by lane would join her pre-TTC "Senior Lecturer" row to
- * the Lecturer line after it, asserting a continuity the matcher explicitly refuses.
+ * Hover marks the row under the cursor and nothing else. A version that also lit the rest of the
+ * appointment's rows down the page was tried and taken out as too much: the lane track already draws
+ * that connection, at rest, for every reader.
  */
-test('hovering a row lights its appointment, and only as far as it can be followed', async ({ page }) => {
+test('hovering a row highlights that row alone', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
   await page.getByRole('tab', { name: 'History' }).click();
   const rows = page.locator('table.appt-history tbody tr');
   await rows.first().waitFor();
-  const label = () => rows.evaluateAll((rs) => {
+  const backgrounds = () => rows.evaluateAll((rs) => rs.map((r) => getComputedStyle(r.querySelector('td')!).backgroundColor));
+  const resting = await backgrounds();
+  // A row deep inside one appointment's run, so a multi-row highlight would have partners to light.
+  const target = await rows.evaluateAll((rs) => {
     let snap = '';
-    return rs.map((r) => {
+    return rs.findIndex((r) => {
       const b = r.querySelectorAll('td')[1]?.querySelector('.mantine-Badge-root');
       if (b) snap = b.textContent!.trim();
-      return { snap, lane: r.querySelector('.appt-lane-chip')?.textContent ?? '', lit: (r as HTMLElement).dataset.apptActive === 'yes',
-               opacity: getComputedStyle(r).opacity };
+      return snap === 'Mar 2022' && r.querySelector('.appt-lane-chip')?.textContent === 'A';
     });
   });
-  const before = await label();
-  const target = before.findIndex((r) => r.snap === 'Mar 2022' && r.lane === 'A');
+  expect(target).toBeGreaterThan(0);
   await rows.nth(target).hover();
-  const after = await label();
-
-  // The German line from the point the matcher picked it up, down to her one remaining appointment.
-  expect(after.filter((r) => r.lit).map((r) => `${r.snap} ${r.lane || '·'}`)).toEqual([
-    'Nov 2021 (Post-TTC) A', 'Mar 2022 A', 'Aug 2022 A', 'Oct 2023 A', 'Apr 2024 A',
-    'Sep 2024 A', 'Apr 2025 A', 'Sep 2025 A', 'Mar 2026 ·',
-  ]);
-  // Stated on its own, and selected by label rather than by the highlight, so it cannot pass because
-  // the assertion above did: the same letter before the boundary is a different appointment.
-  const preTtcA = after.find((r) => r.snap === 'Nov 2021 (Pre-TTC)' && r.lane === 'A')!;
-  expect(preTtcA.lit, 'lane A before the TTC boundary is a different run').toBe(false);
-  // And nothing is dimmed to make the rest stand out.
-  expect(after.map((r) => r.opacity)).toEqual(after.map(() => '1'));
+  const hovered = await backgrounds();
+  const changed = hovered.flatMap((bg, i) => (bg !== resting[i] ? [i] : []));
+  expect(changed).toEqual([target]);
 });
 
 test('a person with one appointment per snapshot gets no lane markers at all', async ({ page }) => {
@@ -744,7 +734,4 @@ test('a person with one appointment per snapshot gets no lane markers at all', a
   // And the snapshot-grouping rules never reach a table that has no groups to mark: every row here is
   // the last of its own snapshot, so an ungated rule would restyle all of them.
   expect(rows.map((r) => r.groupLast)).toEqual(rows.map(() => ''));
-  // And no appointment highlight: with one line per snapshot there is nothing to follow.
-  await page.locator('table.appt-history tbody tr').first().hover();
-  expect(await page.locator("table.appt-history tbody tr[data-appt-active='yes']").count()).toBe(0);
 });

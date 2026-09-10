@@ -84,17 +84,6 @@ export interface Matching<T> {
    * make. Cheaper to return the fact than to keep the proof.
    */
   laneStart: Set<T>;
-  /**
-   * Which appointment this row is, as far as the matcher can follow it: rows chained by `priorOf`
-   * share a run, and a row with no partner starts a new one.
-   *
-   * Deliberately not the lane. A lane is REUSED once its run ends, so one lane can hold several
-   * unrelated appointments down a page — the reported page has 3 lanes but 5 runs, because both of
-   * its lanes restart at the Nov 2021 TTC boundary, and the six-lane outlier has 28. Anything that
-   * means "the same appointment" (highlighting its rows, say) must key off the run, or it asserts the
-   * continuity across a restart that this whole module exists to refuse.
-   */
-  run: Map<T, number>;
 }
 
 export const NEGLIGIBLE_CHANGE = 0.0005;
@@ -325,19 +314,7 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
     }
   }
 
-  // Runs, in the same reading order. A row carries on its partner's run or opens a fresh one; since
-  // no prior row is ever matched twice, every run is a simple chain.
-  const run = new Map<T, number>();
-  let nextRun = 0;
-  for (const id of order) {
-    for (const row of shownBySnapshot.get(id)!) {
-      const prev = priorOf.get(row);
-      const carried = prev === undefined ? undefined : run.get(prev);
-      run.set(row, carried ?? ++nextRun);
-    }
-  }
-
-  return { raises: out, priorOf, lane, laneStart, run };
+  return { raises: out, priorOf, lane, laneStart };
 }
 
 /**
