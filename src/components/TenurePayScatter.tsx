@@ -12,7 +12,7 @@ import { TipSurface } from './chart/ChartTooltip';
 import { CrosshairLayer } from './chart/CrosshairLayer';
 import { ChartData } from './ChartData';
 import {
-  MARK_SELF, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_STRONG, MarkerLegend, type PeerPoint,
+  MARK_SELF, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_STRONG, peerDot, MarkerLegend, type PeerPoint,
 } from './markers';
 
 /** A peer plus the tenure this chart needs. Everything about *marking* them lives in PeerPoint, so the
@@ -22,7 +22,7 @@ export interface ScatterPoint extends PeerPoint {
 }
 
 interface DotProps {
-  cx?: number; cy?: number; r?: number; fill?: string; stroke?: string;
+  cx?: number; cy?: number; r?: number; fill?: string; fillOpacity?: number; stroke?: string; mark?: string;
   payload?: ScatterPoint; onHover?: (p: ScatterPoint) => void; onLeave?: () => void;
 }
 
@@ -30,12 +30,12 @@ interface DotProps {
  *  hit circle behind the visible dot gives a "proximity" hover target so you don't have to land on the
  *  dot exactly; the visible circle grows a touch on hover (see `.scatter-dot` in app.css) and reports
  *  itself to the parent's crosshair via `onHover`/`onLeave`. */
-function PeerDot({ cx, cy, r = DOT_R.peer, fill, stroke, payload, onHover, onLeave }: DotProps) {
+function PeerDot({ cx, cy, r = DOT_R.peer, fill, fillOpacity = 0.9, stroke, mark, payload, onHover, onLeave }: DotProps) {
   if (cx == null || cy == null) return <g />;
   return (
     <g onMouseEnter={() => payload && onHover?.(payload)} onMouseLeave={onLeave}>
       <circle cx={cx} cy={cy} r={15} fill="transparent" />
-      <circle className="chart-dot" cx={cx} cy={cy} r={r} fill={fill} fillOpacity={0.9} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />
+      <circle className="chart-dot" data-mark={mark} cx={cx} cy={cy} r={r} fill={fill} fillOpacity={fillOpacity} stroke={stroke} strokeWidth={stroke ? 1.5 : 0} />
     </g>
   );
 }
@@ -171,6 +171,7 @@ export function TenurePayScatter({
           <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<ScatterTip />} />
           {reg && (
             <ReferenceLine
+              className="tenure-fit"
               stroke={GUIDE_STRONG.stroke}
               strokeDasharray={GUIDE_STRONG.dasharray}
               strokeWidth={GUIDE_STRONG.width}
@@ -178,8 +179,8 @@ export function TenurePayScatter({
               segment={[{ x: 0, y: reg.intercept }, { x: xMax, y: reg.intercept + reg.slope * xMax }]}
             />
           )}
-          <Scatter data={others} shape={<PeerDot fill={MARK_PEER} onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
-          <Scatter data={schoolPts} shape={<PeerDot fill={MARK_PEER_SAME_SCHOOL} onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={others} shape={<PeerDot fill={MARK_PEER} mark="peer" {...peerDot(false, others.length + schoolPts.length)} onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
+          <Scatter data={schoolPts} shape={<PeerDot fill={MARK_PEER_SAME_SCHOOL} mark="same-school" {...peerDot(true, others.length + schoolPts.length)} onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} onClick={goToPeer} cursor="pointer" />
           <Scatter data={selfPts} shape={<SelfDot onHover={onHover} onLeave={onLeave} />} isAnimationActive={false} />
           {active && (
             <Customized

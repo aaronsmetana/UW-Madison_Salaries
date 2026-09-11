@@ -5,7 +5,7 @@ import { ordinal } from '../lib/stats';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import {
-  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_SOFT,
+  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_SOFT, BAND_IQR, peerDot,
   MarkerLegend, type PeerPoint,
 } from './markers';
 import { binSalaries } from '../lib/histogram';
@@ -229,8 +229,10 @@ export function PeerStrip({
   // Three labels, never twelve — and deliberately not a fourth for the subject. The marker prints the
   // exact figure at the same x and the leader line lands on the axis under it, so an axis tick would
   // only restate it; it was also the one pair that ever collided (a subject near the median).
+  // The band says what it is where it is: "middle 50%" at its centre, packed with the other labels.
   const axisLabels: AxisLabel[] = [
     { x: axisMin, text: usd(axisMin) },
+    { x: (p25 + p75) / 2, text: BAND_IQR.label },
     { x: median, text: `median ${fmtK(median)}`, strong: true },
     { x: axisMax, text: usd(axisMax) },
   ];
@@ -267,7 +269,7 @@ export function PeerStrip({
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [axisMin, axisMax, median, value]);
+  }, [axisMin, axisMax, median, value, p25, p75]);
 
   const labelRowCount = Math.max(1, ...labelRows.map((r) => r + 1));
 
@@ -386,15 +388,28 @@ export function PeerStrip({
               style={{ position: 'absolute', inset: 0, overflow: 'visible' }}
               aria-hidden
             >
-              {/* Middle 50% — the band the caption names. Painted first so the ribbon's fade sits over it. */}
+              {/* Middle 50% (BAND_IQR) — painted first so the ribbon's fade sits over it, with an edge at
+                  each end a reader can find. */}
               <rect
+                className="band-iqr"
                 x={at(p25) * plotW}
                 width={Math.max(0, (at(p75) - at(p25)) * plotW)}
                 y={0}
                 height={plotH}
-                fill="var(--mantine-color-accent-6)"
-                opacity={0.08}
+                fill={BAND_IQR.fill}
               />
+              {[p25, p75].map((q) => (
+                <line
+                  key={q}
+                  className="band-iqr-edge"
+                  x1={at(q) * plotW}
+                  x2={at(q) * plotW}
+                  y1={0}
+                  y2={plotH}
+                  stroke={BAND_IQR.edge}
+                  strokeWidth={BAND_IQR.edgeWidth}
+                />
+              ))}
               <line
                 x1={at(median) * plotW}
                 x2={at(median) * plotW}
@@ -428,19 +443,23 @@ export function PeerStrip({
                   />
                 </g>
               ) : (
-                plotted.map((p, i) => (
-                  <circle
-                    key={p.personKey || i}
-                    className="chart-dot"
-                    cx={at(p.pay) * plotW}
-                    cy={plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
-                    r={hoveredPeer?.p === p ? DOT_R.peer + 2 : DOT_R.peer}
-                    fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
-                    fillOpacity={hoveredPeer && hoveredPeer.p !== p ? 0.45 : 0.9}
-                    opacity={mounted ? 1 : 0}
-                    style={{ transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms` }}
-                  />
-                ))
+                plotted.map((p, i) => {
+                  const dot = peerDot(p.sameSchool, plotted.length);
+                  return (
+                    <circle
+                      key={p.personKey || i}
+                      className="chart-dot"
+                      data-mark={p.sameSchool ? 'same-school' : 'peer'}
+                      cx={at(p.pay) * plotW}
+                      cy={plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
+                      r={hoveredPeer?.p === p ? dot.r + 2 : dot.r}
+                      fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
+                      fillOpacity={hoveredPeer && hoveredPeer.p !== p ? 0.45 : dot.fillOpacity}
+                      opacity={mounted ? 1 : 0}
+                      style={{ transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms` }}
+                    />
+                  );
+                })
               )}
 
               {/* Leader line + the subject's mark, drawn exactly as the tenure scatter draws it. */}
@@ -533,7 +552,7 @@ export function PeerStrip({
         {/* Not "height = how many people": the curve is smoothed, so its height is a density and
             reading a headcount off it would be wrong — see `smoothBins` in lib/distribution.ts. */}
         {useRibbon ? 'Taller = more people earn near that salary · ' : '1 dot = 1 person · '}
-        shaded band = middle 50% of peers ({fmtK(p25)}–{fmtK(p75)}).
+        middle 50% of peers {fmtK(p25)}–{fmtK(p75)}.
       </Text>
 
       {summaryTable}

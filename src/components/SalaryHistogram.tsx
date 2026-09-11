@@ -5,7 +5,7 @@ import {
 import { AXIS_TICK, GRID, fmtK, BAR_RADIUS } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { barGradientDefs } from './chartDefs';
-import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT } from './markers';
+import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT, BAND_IQR } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num, pct } from '../lib/format';
@@ -205,19 +205,19 @@ export function SalaryHistogram({
             container, so it lands a pixel or two differently between runs; the visual suite masks it
             (see e2e/visual.spec.ts) rather than widening every page's diff budget to absorb it. */}
         <div ref={plotRef} className="hist-plot" style={{ position: 'relative', height: containerH }}>
-          {/* Faint IQR backdrop (p25→p75) — gives the empty plot background structure and ties this
-              chart to the range strip above it. */}
+          {/* The middle 50% (p25→p75), drawn as on every chart (BAND_IQR); its two edges are the p25 and
+              p75 guides below. */}
           {p25v != null && p75v != null && (
             <div
               aria-hidden
+              className="band-iqr"
               style={{
                 position: 'absolute',
                 left: `${at(p25v) * 100}%`,
                 width: `${(at(p75v) - at(p25v)) * 100}%`,
                 top: UNIT_TOP,
                 bottom: X_AXIS_H,
-                background: 'var(--mantine-color-accent-6)',
-                opacity: 0.05,
+                background: BAND_IQR.fill,
                 pointerEvents: 'none',
               }}
             />
@@ -233,9 +233,10 @@ export function SalaryHistogram({
                 top: UNIT_TOP - (g.isMedian ? MEDIAN_LABEL_BAND + 14 : 0),
                 bottom: X_AXIS_H,
                 width: 0,
-                borderLeft: `${GUIDE_SOFT.width}px dashed ${GUIDE_SOFT.stroke}`,
-                borderLeftWidth: g.isMedian ? 1.5 : 1,
-                opacity: 0.7,
+                // p25 and p75 are the band's edges, so they carry its edge colour (>=3:1); the median
+                // stays the quiet guide it is on every other chart.
+                borderLeft: `${g.isMedian ? 1.5 : BAND_IQR.edgeWidth}px dashed ${g.isMedian ? GUIDE_SOFT.stroke : BAND_IQR.edge}`,
+                opacity: g.isMedian ? 0.7 : 1,
               }}
             >
               {g.isMedian && (

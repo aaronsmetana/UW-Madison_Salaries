@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { parseColor, flatten, contrast } from './color';
 
 test('search finds a person and navigates to their profile', async ({ page }) => {
   await page.goto('./');
@@ -287,8 +288,12 @@ test('every dash in the trend legend is a dash the chart actually draws', async 
   const dashes = await page.evaluate(() => {
     const norm = (el: Element) => getComputedStyle(el).strokeDasharray.replace(/px|\s/g, '');
     const chartRoot = document.querySelector('.recharts-wrapper')!;
-    // Legend swatches are small standalone <svg> elements, not part of the Recharts surface.
-    const swatches = [...document.querySelectorAll('svg:not(.recharts-surface) line')]
+    // Legend swatches are small standalone <svg> elements, not part of the Recharts surface — and only
+    // this chart's own, in its card. Collected page-wide, the tenure scatter's legend on the (still
+    // mounted) Overview tab was compared with this chart, and passed only while the two charts happened
+    // to share a dash.
+    const card = chartRoot.closest('.mantine-Card-root')!;
+    const swatches = [...card.querySelectorAll('svg:not(.recharts-surface) line')]
       .filter((l) => !chartRoot.contains(l))
       .map(norm)
       .filter((d) => d && d !== 'none');
@@ -680,33 +685,6 @@ test('a dashed letter is exactly the line the source could not follow', async ({
   expect(seen.filter((s) => s.start === 'no' && s.fill !== s.ring).length, 'a followed station is not filled with its line').toBe(0);
   expect(seen.filter((s) => s.start === 'yes' && s.fill === s.ring).length, 'a starting station is filled as if followed').toBe(0);
 });
-
-/**
- * Parse any colour Chrome returns from getComputedStyle into 0-255 RGB plus alpha. It must handle
- * `color(srgb r g b / a)`, whose channels are 0-1 FLOATS — which is what Chrome returns for several of
- * this table's backgrounds in dark mode. Reading those as 0-255 is the mistake that once reported
- * four different lane colours as the same grey and every dark background as black.
- */
-function parseColor(css: string): [number, number, number, number] {
-  const c = css.trim();
-  let m = c.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/);
-  if (m) return [Number(m[1]) * 255, Number(m[2]) * 255, Number(m[3]) * 255, m[4] === undefined ? 1 : Number(m[4])];
-  m = c.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/);
-  if (m) return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
-  m = c.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  if (m) return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16), 1];
-  throw new Error(`unparsed colour: ${css}`);
-}
-const flatten = ([r, g, b, a]: number[], [br, bg, bb]: number[]) =>
-  [r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a)];
-function contrast(x: number[], y: number[]): number {
-  const L = ([r, g, b]: number[]) => {
-    const f = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
-    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
-  };
-  const [a, b] = [L(x) + 0.05, L(y) + 0.05];
-  return Math.max(a, b) / Math.min(a, b);
-}
 
 /**
  * WCAG 1.4.11: a graphical object needed to understand the content must reach 3:1 against what it sits

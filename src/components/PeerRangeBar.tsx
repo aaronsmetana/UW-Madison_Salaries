@@ -182,16 +182,18 @@ export function PeerRangeBar({
             background: 'linear-gradient(90deg, var(--mantine-color-gray-2), var(--mantine-color-gray-4))',
           }}
         >
-          {/* interquartile range — grows from 0 width on mount */}
+          {/* The middle 50% — grows from 0 width on mount. The band sits on this pill's track, which is
+              light in both schemes, so it takes BAND_IQR's light-scheme wash (a shade darker, to show
+              on grey rather than white) and its p25/p75 ticks below take the dark end of the ramp. */}
           <div
+            className="band-iqr"
             style={{
               position: 'absolute',
               left: `${at(p25)}%`,
               width: mounted ? `${iqrWidthPct}%` : 0,
               top: 0,
               bottom: 0,
-              background: 'var(--mantine-color-accent-3)',
-              opacity: 0.5,
+              background: 'rgba(73, 80, 87, 0.16)',
               transition: 'width 600ms ease-out',
             }}
           />
@@ -205,7 +207,8 @@ export function PeerRangeBar({
                 top: t.strong ? 3 : 5,
                 bottom: t.strong ? 3 : 5,
                 width: t.strong ? 2 : 1.5,
-                background: t.strong ? 'var(--mantine-color-gray-7)' : 'var(--mantine-color-gray-6)',
+                // gray-7, not gray-6: on the grey track gray-6 was 2.55:1, under the 3:1 a band edge needs.
+                background: 'var(--mantine-color-gray-7)',
                 transform: 'translateX(-50%)',
               }}
             />

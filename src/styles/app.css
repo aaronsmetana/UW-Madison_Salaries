@@ -110,6 +110,22 @@
   --ease-out: cubic-bezier(.22, .8, .3, 1);
   --bar: var(--mantine-color-gray-4);
 
+  /* Chart marks (markers.tsx), one per meaning and per scheme, each measured against the card.
+     The scatter and the strip used the button's teal for "this person" and gray-5 for everyone
+     else, which on the dark card inverted the hierarchy: others read at 7.3:1 and the subject at
+     3.9. Now the subject is always loudest (>=4.5:1), a same-school peer is a mark you can find
+     (>=3:1, and 3.9 at the dots' 0.9 opacity), everyone else is context (1.5-2.5:1), and a trend
+     line clears 3:1. Light: 5.87 / 4.38 / 2.07 / 3.32. */
+  --mark-self: var(--mantine-color-accent-7);
+  --mark-peer-same-school: var(--mantine-color-pos-7);
+  --mark-peer: var(--mantine-color-gray-5);
+  --guide-strong: var(--mantine-color-gray-6);
+  /* The middle 50% of a group (p25-p75), one look everywhere: a neutral wash — teal means "this
+     person" — bounded by two edges a reader can see (3.32:1). The wash it replaces was the accent at
+     8%, 1.11:1, with no edges at all. */
+  --band-fill: rgba(73, 80, 87, 0.1);
+  --band-edge: var(--mantine-color-gray-6);
+
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
 
   /* Appointment lanes on the person history table. Deliberately NOT from the semantic ramp: orange
@@ -325,6 +341,13 @@ body {
      text but is a chart fill, and is relieved by the histogram's tooltip and its data table. */
   --bar: var(--mantine-color-gray-6);
   --series-accent: #4f93a4;
+  /* Chart marks on the #141619 card: 5.22 / 4.14 / 2.22 / 5.46 (see :root). */
+  --mark-self: var(--mantine-color-accent-5);
+  --mark-peer-same-school: var(--mantine-color-pos-7);
+  --mark-peer: var(--mantine-color-gray-7);
+  --guide-strong: var(--mantine-color-gray-6);
+  --band-fill: rgba(222, 226, 230, 0.1);
+  --band-edge: var(--mantine-color-gray-6);
 }
 
 :root[data-mantine-color-scheme='light'] {

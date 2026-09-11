@@ -12,6 +12,7 @@ import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
 import { EmptyState } from './EmptyState';
 import { TrayButton } from './TrayButton';
+import { BAND_IQR } from './markers';
 import { SortableTh, type SortState } from './SortableTh';
 import { ICON } from '../lib/ui';
 
@@ -31,9 +32,11 @@ function MiniRange({ lo, p25, med, p75, hi, width = 150, height = 16 }: {
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden style={{ display: 'block', marginTop: 3 }}>
       <line x1={x(lo)} y1={mid} x2={x(hi)} y2={mid} stroke="var(--mantine-color-default-border)" strokeWidth={2} />
-      <rect x={x(p25)} y={mid - 5} width={Math.max(1, x(p75) - x(p25))} height={10} rx={2}
-        fill="var(--mantine-color-accent-2)" stroke="var(--mantine-color-accent-5)" strokeWidth={0.75} />
-      <line x1={x(med)} y1={mid - 6} x2={x(med)} y2={mid + 6} stroke="var(--mantine-color-accent-7)" strokeWidth={2} />
+      {/* The middle 50% as it is drawn on every chart (BAND_IQR); the median in the text colour —
+          teal is "this person", and there is no one person on a title's row. */}
+      <rect className="band-iqr" x={x(p25)} y={mid - 5} width={Math.max(1, x(p75) - x(p25))} height={10} rx={2}
+        fill={BAND_IQR.fill} stroke={BAND_IQR.edge} strokeWidth={BAND_IQR.edgeWidth} />
+      <line x1={x(med)} y1={mid - 6} x2={x(med)} y2={mid + 6} stroke="var(--mantine-color-dimmed)" strokeWidth={2} />
     </svg>
   );
 }

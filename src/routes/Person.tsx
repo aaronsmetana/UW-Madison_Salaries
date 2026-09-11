@@ -17,7 +17,7 @@ import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../li
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconTrendingDown, IconMinus, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, actualPay, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
@@ -509,6 +509,9 @@ export default function Person() {
   const partTime = lastRate != null && lastSalary != null && Math.round(lastRate) !== Math.round(lastSalary);
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
   const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
+  // Below the precision the card prints, a change is flat — the same threshold as fmtChange's "0%".
+  const growthTrend: 'up' | 'down' | 'flat' | 'none' =
+    totalChange == null ? 'none' : Math.abs(totalChange) < 0.0005 ? 'flat' : totalChange < 0 ? 'down' : 'up';
   // The reporting changes this history crosses. Their factor is inside `totalChange` and none of it
   // is pay: a 9-month member's growth jumped by ×11/9 in Sep 2025 without a dollar more.
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
@@ -883,8 +886,15 @@ export default function Person() {
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('trends'); } }}
               >
                 <Group gap={6} wrap="nowrap">
-                  <ThemeIcon size={20} radius="md" variant="light" color={totalChange == null ? 'gray' : totalChange < 0 ? 'red' : 'pos'}>
-                    <IconTrendingUp size={ICON.inline} />
+                  {/* The arrow follows the sign, as DeltaChip's does: a pay cut drew an up arrow in red. */}
+                  <ThemeIcon
+                    size={20}
+                    radius="md"
+                    variant="light"
+                    color={growthTrend === 'none' || growthTrend === 'flat' ? 'gray' : growthTrend === 'down' ? 'red' : 'pos'}
+                    data-trend={growthTrend}
+                  >
+                    {growthTrend === 'down' ? <IconTrendingDown size={ICON.inline} /> : growthTrend === 'up' ? <IconTrendingUp size={ICON.inline} /> : <IconMinus size={ICON.inline} />}
                   </ThemeIcon>
                   <Eyebrow>Salary growth</Eyebrow>
                 </Group>
