@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { query, getDB } from './duckdb';
-import { fetchData, type HomeStats, type Manifest, type Summary } from './manifest';
+import { fetchData, type HomeStats, type Manifest, type RaiseSteps, type Summary } from './manifest';
 import { useControls } from '../state/controls';
 
 /**
@@ -23,6 +23,12 @@ export function useDbReady(enabled = true) {
 /** Headline KPIs + snapshot list (static JSON — works even if DuckDB/Parquet fail to load). */
 export function useSummary() {
   return useQuery({ queryKey: ['summary'], queryFn: () => fetchData<Summary>('summary.json') });
+}
+
+/** Every step's continuing raises, campus-wide (scripts/lib/raise-steps.mjs) — what a person's raises
+ *  are compared against. Static and small, so it never waits on DuckDB. */
+export function useRaiseSteps() {
+  return useQuery({ queryKey: ['raise-steps'], queryFn: () => fetchData<RaiseSteps>('raise-steps.json'), staleTime: Infinity, retry: false });
 }
 
 export function useManifest() {

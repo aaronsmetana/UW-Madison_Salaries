@@ -48,7 +48,12 @@ function ChangeFigure({ delta }: { delta: number }) {
  * moved title, and nothing to compare. `children` is the last of those. `reporting` names a reporting
  * change between the two snapshots — no figure is drawn across one, because it is not a change in pay.
  */
-function RaiseCell({ raise, note, reporting, children }: { raise: Raise; note?: string | null; reporting?: string | null; children: ReactNode }) {
+function RaiseCell({ raise, note, reporting, compare, children }: {
+  raise: Raise; note?: string | null; reporting?: string | null;
+  /** How a continuing raise compares with that step's raises campus-wide, or why this one is not compared. */
+  compare?: { text: string; compared: boolean } | null;
+  children: ReactNode;
+}) {
   // A new appointment under a title the person already held. Deliberately not an em dash: that
   // already means "no prior snapshot", and the two must not read alike.
   if (raise.kind === 'newAppointment') return <Badge size="xs" variant="light" color="gray">new</Badge>;
@@ -84,7 +89,10 @@ function RaiseCell({ raise, note, reporting, children }: { raise: Raise; note?: 
     // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
     // in it looking like a pay change. Where that has happened the note says what the RATE did —
     // the number the reader came for, and the only one they cannot get elsewhere on the page.
-    return note ? (<>{figure}<span className="appt-rate-note">{note}</span></>) : figure;
+    const context = compare && (
+      <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} style={{ whiteSpace: 'nowrap' }}>{compare.text}</Text>
+    );
+    return note ? (<>{figure}<span className="appt-rate-note">{note}</span>{context}</>) : (<>{figure}{context}</>);
   }
 
   // Two lines of a split carry the same figure, so the label has to say it covers both — otherwise
@@ -99,7 +107,12 @@ function RaiseCell({ raise, note, reporting, children }: { raise: Raise; note?: 
   );
 }
 
-export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
+export function HistoryTable({ rows, comparisons }: {
+  rows: readonly HistoryRow[];
+  /** Each continuing raise's comparison with that step's raises campus-wide (lib/raiseContext),
+   *  keyed by the snapshot it ends at. Absent until loaded. */
+  comparisons?: ReadonlyMap<string, { text: string }>;
+}) {
   // Appointment count per snapshot, for the station's tooltip ("A of 2", or "the only one").
   const apptCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -273,6 +286,22 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                 // A reporting change between this row and the one it is measured against: the
                 // appointment's own prior row where the matcher found one, else any prior row under
                 // the same title (a combined figure spans those).
+                // A paired change that is not a continuing raise says why it is not compared — the rule
+                // itself is continuingRaisesSql, which is what `comparisons` came from.
+                const compare = ((): { text: string; compared: boolean } | null => {
+                  if (!comparisons || raise.kind !== 'paired') return null;
+                  const c = comparisons.get(r.snapshot_id);
+                  if (c) return { text: c.text, compared: true };
+                  if (!from) return null;
+                  const why = (apptCounts.get(r.snapshot_id) ?? 1) > 1 || (apptCounts.get(from.snapshot_id) ?? 1) > 1
+                    ? 'several appointments'
+                    : (r.fte || 1) !== (from.fte || 1)
+                      ? 'FTE changed'
+                      : !sameBasis(r.comp_basis, from.comp_basis) || reportingChange(from.comp_basis, r.comp_basis)
+                        ? 'pay basis changed'
+                        : 'a snapshot is missing between';
+                  return { text: `not compared: ${why}`, compared: false };
+                })();
                 const reporting = ((): string | null => {
                   const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
                   const hit = priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean);
@@ -338,7 +367,7 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                 {!onePay && <Table.Td ta="right" data-fold>{usd(r.salary)}</Table.Td>}
                 <Table.Td ta="right">{usd(actual)}</Table.Td>
                 <Table.Td ta="right">
-                  <RaiseCell raise={raise} note={rateNote} reporting={reporting}>
+                  <RaiseCell raise={raise} note={rateNote} reporting={reporting} compare={compare}>
                     {/* A new title the matcher could not pair — the person held more than one
                         appointment on a side. It is new; whether it was a promotion is unknowable. */}
                     {isNew && !ttcReclass && pos > 0 ? (

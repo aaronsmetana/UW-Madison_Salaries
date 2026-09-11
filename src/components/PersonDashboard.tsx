@@ -7,6 +7,8 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
+import { useRaiseContext } from '../lib/raiseContext';
+import { GapBreakdown } from './GapBreakdown';
 import {
   matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
@@ -125,7 +127,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.pay ?? 0) > (best.pay ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -146,15 +148,18 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   }, [trend, titleMedRows]);
   // The same date axis and the same reporting breaks as /person: a gap row where the pay basis
   // changes footing, so the Sep 2025 9-month change is not drawn as a rise.
+  // The same raise context as /person (lib/raiseContext), on the report's metric: how each raise
+  // compares, the "if raises had been typical" line, and where the difference came from.
+  const raiseCtx = useRaiseContext(personKey, trend, metric);
   const trendPlot = useMemo(() => {
     const breaks = new Set(reportingBreaks(trendData));
     return trendData.flatMap((t, i) => {
-      const row = { ...t, x: snapX(t.date, t.id), salary: t.salary as number | null, med: t.med, gap: false };
+      const row = { ...t, x: snapX(t.date, t.id), salary: t.salary as number | null, med: t.med, typical: raiseCtx.typical.get(t.id) ?? null, gap: false };
       if (!breaks.has(i)) return [row];
       const prev = trendData[i - 1];
-      return [{ ...prev, x: (snapX(prev.date, prev.id) + row.x) / 2, salary: null, med: null, gap: true }, row];
+      return [{ ...prev, x: (snapX(prev.date, prev.id) + row.x) / 2, salary: null, med: null, typical: null, gap: true }, row];
     });
-  }, [trendData]);
+  }, [trendData, raiseCtx.typical]);
   const trendAxis = useMemo(() => snapAxisProps(trendData), [trendData]);
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
 
@@ -380,6 +385,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <Tooltip content={<TrendTooltip />} />
             <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.figure)} />
+            {raiseCtx.typical.size > 1 && (
+              <Line type="monotone" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
+            )}
             <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
             {trendData.map((t, i) =>
               i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
@@ -392,8 +400,18 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.
           {reporting.changes[0] ? ` The line breaks at ${reporting.changes[0].sinceLabel}, the change in ${reporting.changes[0].what} (×${reporting.changes[0].ratio}).` : ''}
         </Text>
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))} />
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median', 'If raises had been typical']} rows={trendData.map((t) => [t.label, t.salary, t.med, raiseCtx.typical.get(t.id) ?? null])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))} />
       </Card>
+
+      {raiseCtx.breakdown && raiseCtx.breakdown.shares.length > 0 && (
+        <Card withBorder padding="lg">
+          <CardTitle>Where the difference from typical raises came from</CardTitle>
+          <Text size="xs" c="dimmed" mb="sm">
+            Each step's share of the difference between pay and pay had every raise been the campus median; the shares add up to the whole difference.
+          </Text>
+          <GapBreakdown breakdown={raiseCtx.breakdown} />
+        </Card>
+      )}
 
       {/* Title & salary history */}
       <Card withBorder padding="lg">
@@ -513,6 +531,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                   {reporting && raise.kind !== 'titleChange' && <span className="appt-reporting-note">{reporting}</span>}
                   {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
                   {rateNote && <span className="appt-rate-note">{rateNote}</span>}
+                  {raise.kind === 'paired' && !reporting && raiseCtx.comparisons.get(r.snapshot_id) && (
+                    <Text size="xs" c="dimmed" data-raise-compare="yes">{raiseCtx.comparisons.get(r.snapshot_id)!.text}</Text>
+                  )}
                 </Table.Td>
                 {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly). */}
                 <Table.Td ta="right">{r.fte || '—'}</Table.Td>

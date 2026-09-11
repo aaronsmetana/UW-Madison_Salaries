@@ -49,3 +49,64 @@ export function annualized(steps: readonly { from: string; to: string; rate: num
   const years = ms / YEAR_MS;
   return years >= 0.5 ? Math.pow(growth, 1 / years) - 1 : null;
 }
+
+/**
+ * The logarithmic mean of two positive amounts: (a − b) / (ln a − ln b), and a itself when a = b —
+ * the limit, not a special case. It is the one weight that splits a gap between two compounded
+ * paths into per-step shares that add up to exactly the gap (see `whereTheDifferenceCameFrom`).
+ */
+export function logMean(a: number, b: number): number {
+  if (!(a > 0) || !(b > 0)) return NaN;
+  if (Math.abs(a - b) <= 1e-9 * Math.max(a, b)) return a;
+  return (a - b) / (Math.log(a) - Math.log(b));
+}
+
+/** One step of a person's pay path and of the "typical" path beside it. */
+export interface PathStep {
+  /** The snapshot this step ends at. */
+  toId: string;
+  /** Actual pay before and after. */
+  from: number;
+  to: number;
+  /** The typical path's growth over the same stretch: every campus step compounded, including any
+   *  snapshot the person was not in. */
+  typical: number;
+  /** A reporting change's factor on this step (×11/9 across Sep 2025 for 9-month pay), applied to both
+   *  paths so it never reads as a raise. 1 when there is none. */
+  reporting: number;
+}
+
+/** Each step's share of the gap between actual and typical pay, plus the reporting rows. */
+export interface GapShare {
+  toId: string;
+  kind: 'step' | 'reporting';
+  amount: number;
+}
+
+/**
+ * Where the difference between a person's pay and the "if raises had been typical" line came from.
+ *
+ * Both paths start at the same pay. The actual one ends at a = from0 × Π(1 + r), the typical one at
+ * b = from0 × Π(1 + m); so ln(a/b) = Σ ln((1 + r)/(1 + m)), and multiplying through by the
+ * logarithmic mean L(a, b) turns that sum of logs into a sum of dollars that is exactly a − b. The
+ * naive split — each step's gap over the total — divides by a number that goes to zero when the two
+ * paths happen to end close together. A reporting change is its own row: it sits inside both r and m,
+ * so it contributes nothing to the gap, and saying so is the point of the row.
+ */
+export function whereTheDifferenceCameFrom(steps: readonly PathStep[]): { actual: number; typical: number; shares: GapShare[] } {
+  if (!steps.length) return { actual: NaN, typical: NaN, shares: [] };
+  let a = steps[0].from;
+  let b = steps[0].from;
+  for (const s of steps) {
+    a *= s.to / s.from;
+    b *= s.typical;
+  }
+  const L = logMean(a, b);
+  const shares: GapShare[] = [];
+  for (const s of steps) {
+    if (s.reporting !== 1) shares.push({ toId: s.toId, kind: 'reporting', amount: 0 });
+    // The reporting factor is in both, so it cancels out of the ratio exactly.
+    shares.push({ toId: s.toId, kind: 'step', amount: L * Math.log(s.to / s.from / s.typical) });
+  }
+  return { actual: a, typical: b, shares };
+}

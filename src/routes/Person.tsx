@@ -13,6 +13,8 @@ import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
 import { packLabelRows, measureText } from '../lib/labelLayout';
 import { useWidth } from '../lib/useWidth';
+import { useRaiseContext } from '../lib/raiseContext';
+import { GapBreakdown } from '../components/GapBreakdown';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
@@ -23,7 +25,7 @@ import { sqlStr } from '../lib/duckdb';
 import { personPay, actualPay, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
-import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis } from '../lib/format';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, ordinal } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
@@ -46,7 +48,7 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   // A gap row only breaks the line at a reporting change; there is no snapshot there to describe.
@@ -60,6 +62,8 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       {partTime && <Text size="xs" c="dimmed">Full-time rate: {usd(d.rate)}</Text>}
       {d.fte != null && <Text size="xs" c="dimmed">Appointment: {Math.round(d.fte * 100)}% FTE</Text>}
       {d.med != null && <Text size="xs" c="dimmed">Title median: {usd(d.med)}</Text>}
+      {d.compare && <Text size="xs" c="dimmed">This raise: {d.compare}</Text>}
+      {d.typical != null && <Text size="xs" c="dimmed">If raises had been typical: {usd(d.typical)}</Text>}
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
@@ -103,9 +107,9 @@ function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
  * title-era divider as "2 3" against "2 4". A legend that doesn't match the line it labels is worse
  * than no legend — it teaches the reader a key that is wrong. Only the grade band happened to agree.
  */
-const TREND_DASH = { median: '6 4', gradeBand: '4 4', era: '2 4' } as const;
+const TREND_DASH = { median: '6 4', gradeBand: '4 4', era: '2 4', typical: '2 3' } as const;
 
-function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode }: { hasTitleChange: boolean; hasFte: boolean; gradeBand: { grade: number | null; min: number; max: number } | null; mode: 'actual' | 'rate' }) {
+function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = false }: { hasTitleChange: boolean; hasFte: boolean; gradeBand: { grade: number | null; min: number; max: number } | null; mode: 'actual' | 'rate'; hasTypical?: boolean }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
       {swatch}
@@ -121,6 +125,10 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode }: { hasTitleChan
       {item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray={TREND_DASH.median} /></svg>,
         'Title median — resets at each title change',
+      )}
+      {hasTypical && item(
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} /></svg>,
+        'If raises had been typical',
       )}
       {gradeBand && item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} /></svg>,
@@ -343,10 +351,14 @@ export default function Person() {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.salary ?? 0) > (best.salary ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
+
+  // Each continuing raise against that step's raises campus-wide, the path pay would have taken had
+  // every raise been typical, and where the difference came from (lib/raiseContext) — on actual pay.
+  const raiseCtx = useRaiseContext(key, trend, 'fte');
 
   // Median pay for the title the person held at each snapshot (market context for the trend).
   const { data: titleMedRows } = useSql<{ snapshot_id: string; med: number | null; med_rate: number | null }>(
@@ -369,7 +381,10 @@ export default function Person() {
       if (i > 0 && t.job_code !== trend[i - 1].job_code) era++;
       const medRaw = med.get(t.id) ?? null;
       const medRateRaw = medRate.get(t.id) ?? null;
-      if (dollarMode !== 'real') return { ...t, med: medRaw, medRate: medRateRaw, era };
+      const typRaw = raiseCtx.typical.get(t.id) ?? null;
+      const cmp = raiseCtx.comparisons.get(t.id);
+      const compare = cmp ? `${cmp.text}${cmp.title ? ` · for this title ${fmtChange(cmp.title.med)} (${num(cmp.title.n)} people)` : ''}` : null;
+      if (dollarMode !== 'real') return { ...t, med: medRaw, medRate: medRateRaw, era, typical: typRaw, compare };
       // Real mode: convert every dollar figure to REAL_BASE_YEAR purchasing power using this snapshot's year.
       const year = Number(String(t.date).slice(0, 4)) || REAL_BASE_YEAR;
       return {
@@ -379,9 +394,11 @@ export default function Person() {
         med: medRaw != null ? toReal(medRaw, year) : null,
         medRate: medRateRaw != null ? toReal(medRateRaw, year) : null,
         era,
+        typical: typRaw != null ? toReal(typRaw, year) : null,
+        compare,
       };
     });
-  }, [trend, titleMedRows, dollarMode]);
+  }, [trend, titleMedRows, dollarMode, raiseCtx]);
 
   // Distinct title eras (for disconnected median segments) and the points where the title changes.
   const eras = useMemo(() => [...new Set(trendData.map((t) => t.era))], [trendData]);
@@ -396,8 +413,8 @@ export default function Person() {
   // different footings. There a gap row sits between the sides, so the line, its fill and its glow all
   // stop instead of drawing the ×11/9 of the Sep 2025 9-month change as a rise.
   type TrendPoint = (typeof trendData)[number];
-  type PlotRow = Omit<TrendPoint, 'salary' | 'rate' | 'fte' | 'med' | 'medRate'> & {
-    x: number; salary: number | null; rate: number | null; fte: number | null; med: number | null; medRate: number | null;
+  type PlotRow = Omit<TrendPoint, 'salary' | 'rate' | 'fte' | 'med' | 'medRate' | 'typical'> & {
+    x: number; salary: number | null; rate: number | null; fte: number | null; med: number | null; medRate: number | null; typical: number | null;
     yoyActual: number | null; yoyRate: number | null; gap?: boolean;
   };
   const trendBreaks = useMemo(() => reportingBreaks(trendData), [trendData]);
@@ -413,7 +430,7 @@ export default function Person() {
       if (prev && breaks.has(i)) {
         out.push({
           ...prev, x: (snapX(prev.date, prev.id) + x) / 2, gap: true,
-          salary: null, rate: null, fte: null, med: null, medRate: null, yoyActual: null, yoyRate: null,
+          salary: null, rate: null, fte: null, med: null, medRate: null, typical: null, yoyActual: null, yoyRate: null,
         });
       }
       out.push({
@@ -660,6 +677,13 @@ export default function Person() {
     const s = cohortList.find((p) => p.person_key === key);
     return s && s.tenure != null && Number.isFinite(s.tenure) ? { tenure: Math.max(0, s.tenure), pay: s.pay } : null;
   }, [cohortList, key]);
+
+  const typicalGrowth = useMemo(() => {
+    const canon = trend.filter((t) => !t.id.endsWith('-pre') && t.salary > 0);
+    const first = canon[0] && raiseCtx.typical.get(canon[0].id);
+    const last = canon.length > 1 ? raiseCtx.typical.get(canon[canon.length - 1].id) : undefined;
+    return first && last ? last / first - 1 : null;
+  }, [trend, raiseCtx.typical]);
 
   const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
   const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
@@ -914,6 +938,11 @@ export default function Person() {
                 {oldestLabel && (
                   <Text size="xs" c="dimmed" mt={4}>
                     {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
+                  </Text>
+                )}
+                {typicalGrowth != null && (
+                  <Text size="xs" c="dimmed" mt={2} data-typical-growth>
+                    typical raises alone: {sgnPct(typicalGrowth)}
                   </Text>
                 )}
                 {reporting.changes.length > 0 && totalChange != null && (
@@ -1358,6 +1387,11 @@ export default function Person() {
                 isAnimationActive={false}
               />
             ))}
+            {/* If every raise had been the campus median (lib/raiseContext) — a hypothetical, so dotted,
+                in the strong-guide grey (>=3:1), and only on actual pay, which is what it compounds. */}
+            {trendMode === 'actual' && raiseCtx.typical.size > 1 && (
+              <Line yAxisId="pay" className="typical-line" type="monotone" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
+            )}
             {/* Soft glow: a blurred, semi-transparent copy beneath the crisp line. */}
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
             {/* Primary line + haloed active dot. */}
@@ -1436,7 +1470,7 @@ export default function Person() {
             the step across it is not a raise.
           </Text>
         )}
-        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={band ? { grade: latest?.grade_number ?? null, min: band.min, max: band.max } : null} mode={trendMode} />
+        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={band ? { grade: latest?.grade_number ?? null, min: band.min, max: band.max } : null} mode={trendMode} hasTypical={trendMode === 'actual' && raiseCtx.typical.size > 1} />
         <ChartData
           caption={dollarMode === 'real' ? `Salary over time (in ${REAL_BASE_YEAR} dollars)` : 'Salary over time'}
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}
@@ -1445,10 +1479,18 @@ export default function Person() {
           period={spanLabel(trendData.map((t) => t.label))}
         />
       </Card>
+      {raiseCtx.breakdown && raiseCtx.breakdown.shares.length > 0 && (
+        <Card withBorder padding="lg" mt="lg">
+          <CardTitle sub="Each step's share of the difference between actual pay and pay had every raise been the campus median. The shares add up to the whole difference.">
+            Where the difference from typical raises came from
+          </CardTitle>
+          <GapBreakdown breakdown={raiseCtx.breakdown} />
+        </Card>
+      )}
         </Tabs.Panel>
 
         <Tabs.Panel value="history" pt="md">
-      <HistoryTable rows={rows} />
+      <HistoryTable rows={rows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} />
         </Tabs.Panel>
       </Tabs>
     </Stack>

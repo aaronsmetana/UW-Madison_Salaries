@@ -74,7 +74,7 @@ export default defineConfig({
             options: { cacheName: 'wasm-cache', expiration: { maxEntries: 4 } },
           },
           {
-            // The parquet + manifest/summary/grades/home-stats JSON: serve instantly from cache,
+            // The parquet + manifest/summary/grades/home-stats/raise-steps JSON: serve instantly from cache,
             // refresh in the background so a stale visit still gets this deploy's data next time.
             urlPattern: ({ url }) => url.pathname.includes('/data/'),
             handler: 'StaleWhileRevalidate',

@@ -48,7 +48,7 @@ Node 20+ required.
 
 ```bash
 npm install
-npm run data     # ETL: data/raw/* → public/data/{salaries.parquet,manifest.json,summary.json,home-stats.json}
+npm run data     # ETL: data/raw/* → public/data/{salaries.parquet,manifest.json,summary.json,home-stats.json,raise-steps.json}
 npm run dev      # http://localhost:5173/UW-Madison_Salaries/
 npm run build    # typecheck + production build
 npm run test     # vitest — pure-function + ETL unit tests
@@ -66,10 +66,11 @@ since only the newest pair is checked.
 - `data/raw/` — source-of-truth salary dumps (committed).
 - `data/column-map.json`, `data/value-map.json` — ingestion config.
 - `scripts/build-data.mjs` — the ETL (XLSX via SheetJS → Parquet via DuckDB); `scripts/lib/` holds
-  its normalization and `home-stats.json` helpers.
+  its normalization, `home-stats.json` and `raise-steps.json` helpers.
 - `src/` — the app (`lib/duckdb.ts` data layer, `lib/queries.ts`, `routes/`, `app/` shell).
 - `public/data/` — generated artifacts, incl. `home-stats.json` (landing-page stats, precomputed so
-  Home never boots DuckDB) — git-ignored; built in CI.
+  Home never boots DuckDB) and `raise-steps.json` (every step's continuing raises campus-wide, which
+  a person's raise comparisons and "typical raises" line read) — git-ignored; built in CI.
 
 Data is a Wisconsin public record. Person identity is best-effort (name + hire date); see the
 Data · About page for methodology and known caveats.

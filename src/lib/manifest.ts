@@ -41,6 +41,23 @@ export interface Summary {
 }
 
 /** Precomputed landing-page stats for the latest snapshot (see scripts/build-data.mjs). */
+/** One step's continuing raises, campus-wide (scripts/lib/raise-steps.mjs). `hist` is [k, count]
+ *  with the raise = k × `hist_step` (0.1%), tails lumped at −50% and +100%. */
+export interface RaiseStepStats {
+  from_id: string;
+  to_id: string;
+  from_date: string;
+  to_date: string;
+  n: number;
+  med: number | null;
+  p90: number | null;
+  hist: [number, number][];
+}
+export interface RaiseSteps {
+  hist_step: number;
+  metrics: Record<'fte' | 'full' | 'base', RaiseStepStats[]>;
+}
+
 export interface HomeStats {
   snapshot_id: string;
   payroll_total: number | null;

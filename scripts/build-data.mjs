@@ -24,6 +24,7 @@ import {
   prepareSheet,
 } from './lib/normalize.mjs';
 import { computeHomeStats } from './lib/home-stats.mjs';
+import { computeRaiseSteps } from './lib/raise-steps.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RAW_DIR = path.join(ROOT, 'data', 'raw');
@@ -478,6 +479,11 @@ async function main() {
     const homeStats = await computeHomeStats(path.join(OUT_DIR, 'salaries.parquet'), latest.snapshot_id);
     fs.writeFileSync(path.join(OUT_DIR, 'home-stats.json'), JSON.stringify(homeStats, null, 2));
   }
+
+  // Every step's continuing raises, campus-wide (scripts/lib/raise-steps.mjs) — what a person's page
+  // compares each raise against, without scanning every raise on campus in the browser.
+  const raiseSteps = await computeRaiseSteps(path.join(OUT_DIR, 'salaries.parquet'));
+  fs.writeFileSync(path.join(OUT_DIR, 'raise-steps.json'), JSON.stringify(raiseSteps));
 
   const latestYear = dataSnaps.length ? dataSnaps[dataSnaps.length - 1].snapshot_year : null;
   const maxEff = grades.reduce((m, g) => (g.effective_year != null && g.effective_year > m ? g.effective_year : m), 0) || null;
