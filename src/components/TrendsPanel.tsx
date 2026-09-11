@@ -2,9 +2,10 @@ import { useId, useMemo } from 'react';
 import { Card, Text, Loader, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
-  ReferenceLine, LabelList,
+  ReferenceLine, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
+import { snapX, snapAxisProps } from '../lib/snapTime';
 import { lineGlowDefs } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
@@ -16,11 +17,11 @@ import { ChartData } from './ChartData';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
-import { YoyPill } from './chart/pills';
+import { YoyChips } from './chart/pills';
 import { usePref } from '../lib/prefs';
 
 interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
-interface Plot extends Row { yoy: number | null }
+interface Plot extends Row { x: number; yoy: number | null }
 
 /** Hover marker for the median line: an accent dot with a soft halo. */
 function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
@@ -33,14 +34,15 @@ function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
   );
 }
 
-function TrendTip({ active, payload, label }: {
-  active?: boolean; label?: string; payload?: { payload: Plot }[];
+function TrendTip({ active, payload }: {
+  active?: boolean; payload?: { payload: Plot }[];
 }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
     <TipSurface>
-      <Text size="sm" fw={600}>{label}</Text>
+      {/* The row's label, not Recharts' \`label\`: on a date axis that is the x value, a timestamp. */}
+      <Text size="sm" fw={600}>{p.label}</Text>
       <Text size="sm">
         Median {usd(p.med)}{' '}
         {p.yoy != null && <Text span c={p.yoy >= 0 ? 'pos' : 'red'}>({p.yoy >= 0 ? '+' : ''}{pct(p.yoy)})</Text>}
@@ -87,24 +89,25 @@ export function TrendsPanel() {
       const yoy = prev && prev.date !== r.date && prev.med != null && r.med != null && prev.med !== 0
         ? (r.med - prev.med) / prev.med
         : null;
-      return { ...r, yoy };
+      return { ...r, x: snapX(r.date, r.id), yoy };
     });
   }, [data, dollarMode]);
+  const axis = useMemo(() => snapAxisProps(plot), [plot]);
 
   // The TTC reclassification boundary (the post-TTC Nov-2021 snapshot) and the snapshot with the largest
   // headcount drop (a data-coverage change, not mass departures) — annotated so neither is misread.
-  const ttcLabel = plot.find((r) => r.id?.endsWith('-post'))?.label;
-  const coverageLabel = useMemo(() => {
+  const ttcX = plot.find((r) => r.id?.endsWith('-post'))?.x;
+  const coverageX = useMemo(() => {
     let worst = 0.12;
-    let lbl: string | undefined;
+    let x: number | undefined;
     plot.forEach((r, i) => {
       const prev = plot[i - 1];
       if (prev && prev.hc > 0 && r.hc != null) {
         const drop = (prev.hc - r.hc) / prev.hc;
-        if (drop > worst) { worst = drop; lbl = r.label; }
+        if (drop > worst) { worst = drop; x = r.x; }
       }
     });
-    return lbl;
+    return x;
   }, [plot]);
 
   if (isFetching && !data) return <Loader />;
@@ -138,13 +141,13 @@ export function TrendsPanel() {
         <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
           <defs>{lineGlowDefs(gradId)}</defs>
           <CartesianGrid {...GRID} />
-          <XAxis dataKey="label" tick={false} />
+          <XAxis {...axis} tick={false} />
           <YAxis tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
             label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip content={<TrendTip />} />
 
-          {ttcLabel && (
-            <ReferenceLine x={ttcLabel} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
+          {ttcX != null && (
+            <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
               label={{ value: 'TTC reclassification', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
           )}
 
@@ -153,10 +156,9 @@ export function TrendsPanel() {
           <Line type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
           <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
 
-          {/* YoY % pills, drawn last so they sit above the area fill (legend-less duplicate). */}
-          <Line type="monotone" dataKey="med" stroke="none" dot={false} legendType="none" isAnimationActive={false}>
-            <LabelList dataKey="yoy" content={<YoyPill topThreshold={40} offset={20} count={plot.length} />} />
-          </Line>
+          {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
+              another where the date axis puts snapshots close. */}
+          <Customized component={<YoyChips chipRows={plot} chipValueKey="med" chipYoyKey="yoy" chipAxis="0" chipBelow />} />
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -165,7 +167,7 @@ export function TrendsPanel() {
       <ResponsiveContainer width="100%" height={130}>
         <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 0, bottom: 0 }}>
           <CartesianGrid {...GRID} />
-          <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} tickMargin={10} height={34} />
+          <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
           <YAxis
             width={92}
             tick={AXIS_TICK}
@@ -178,8 +180,8 @@ export function TrendsPanel() {
           <Tooltip content={() => null} />
           <Legend />
 
-          {coverageLabel && (
-            <ReferenceLine x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
+          {coverageX != null && (
+            <ReferenceLine x={coverageX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
               label={{ value: 'coverage change', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
           )}
 

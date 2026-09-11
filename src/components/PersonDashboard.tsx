@@ -5,7 +5,8 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile } from '../lib/queries';
+import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
 import {
   matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
@@ -47,9 +48,11 @@ interface Row {
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
 
 /** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; appts?: number; med?: number | null } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; appts?: number; med?: number | null; gap?: boolean } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  // A gap row only breaks the line at a reporting change; there is no snapshot there.
+  if (d.gap || d.salary == null) return null;
   return (
     <TipSurface>
       <Text size="sm" fw={600}>{d.full}</Text>
@@ -122,7 +125,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.pay ?? 0) > (best.pay ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, title: primary.title, job_code: primary.job_code, appts };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -141,6 +144,19 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     const med = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med]));
     return trend.map((t) => ({ ...t, med: med.get(t.id) ?? null }));
   }, [trend, titleMedRows]);
+  // The same date axis and the same reporting breaks as /person: a gap row where the pay basis
+  // changes footing, so the Sep 2025 9-month change is not drawn as a rise.
+  const trendPlot = useMemo(() => {
+    const breaks = new Set(reportingBreaks(trendData));
+    return trendData.flatMap((t, i) => {
+      const row = { ...t, x: snapX(t.date, t.id), salary: t.salary as number | null, med: t.med, gap: false };
+      if (!breaks.has(i)) return [row];
+      const prev = trendData[i - 1];
+      return [{ ...prev, x: (snapX(prev.date, prev.id) + row.x) / 2, salary: null, med: null, gap: true }, row];
+    });
+  }, [trendData]);
+  const trendAxis = useMemo(() => snapAxisProps(trendData), [trendData]);
+  const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
 
   const apptCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -260,15 +276,21 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   }, [latest, grades]);
 
   const lastSnap = latest?.snapshot_id ?? '';
-  const { data: standingRows } = useSql<{ uw: number; sch: number | null }>(
+  // standingSql: the query /person uses, so the printed report cannot rank this person differently.
+  // It used to count people paid the same or less against the whole pool, where the page counts the
+  // others paid strictly less — so a tie read "more than 50%" here and the 33rd percentile there.
+  const { data: standingRows } = useSql<{ n_all: number; b_all: number; n_div: number; b_div: number }>(
     ['dash-standing', personKey, lastSnap, lastSalary ?? 0, metric],
-    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
-     SELECT round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END), 0) uw,
-            round(100.0 * avg(CASE WHEN pay <= ${lastSalary ?? 0} THEN 1 ELSE 0 END) FILTER (WHERE school = ${sqlStr(latest?.school ?? '')}), 0) sch
-     FROM pp WHERE pay > 0`,
+    standingSql({
+      snapshotId: lastSnap, pay: lastSalary ?? 0, metric, school: latest?.school, department: latest?.department,
+      grade: latest?.grade_number, gradeBasis: latest?.grade_basis, jobCode: latest?.job_code,
+    }),
     !!latest && lastSalary != null && lastSalary > 0
   );
-  const standing = standingRows?.[0];
+  const standing = useMemo(() => {
+    const r = standingRows?.[0];
+    return r ? { uw: poolPercentile(r.b_all, r.n_all), sch: latest?.school ? poolPercentile(r.b_div, r.n_div) : null } : null;
+  }, [standingRows, latest]);
 
   const jobCode = latest?.job_code ?? null;
   const { data: peerStatsRows } = useSql<PeerStats>(
@@ -330,14 +352,20 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         <Stat label="Current salary" value={usd(lastSalary)} />
         <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
-        <Stat label="Total growth (first→latest)" value={totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`} />
+        <Stat
+          label="Total growth (first→latest)"
+          value={totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}
+          sub={totalChange != null && reporting.changes.length
+            ? `${fmtChange((1 + totalChange) / reporting.factor - 1)} without the ${reporting.changes[0].sinceLabel} change in ${reporting.changes[0].what}`
+            : undefined}
+        />
         <Stat
           label="Salary snapshots on record"
           value={num(trend.length)}
           sub={oldestLabel ? `oldest ${oldestLabel}${oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}` : undefined}
         />
         <Stat label="Among title peers" value={peerPct != null ? `more than ${peerPct}%` : '—'} />
-        <Stat label="All-UW standing" value={standing ? `more than ${standing.uw}%` : '—'} />
+        <Stat label="All-UW standing" value={standing?.uw != null ? `more than ${standing.uw}%` : '—'} />
         {standing?.sch != null && <Stat label={`Within ${latest?.school ?? 'school'}`} value={`more than ${standing.sch}%`} />}
       </SimpleGrid>
 
@@ -345,22 +373,25 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       <Card withBorder padding="lg">
         <CardTitle>Salary over time</CardTitle>
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
+          <LineChart data={trendPlot} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
-            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <XAxis {...trendAxis} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
             <Legend />
-            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.figure)} />
             <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
             {trendData.map((t, i) =>
               i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
-                <ReferenceDot key={`tc-${t.id}`} x={t.label} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
+                <ReferenceDot key={`tc-${t.id}`} x={snapX(t.date, t.id)} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
               ) : null
             )}
           </LineChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed" mt={4}>Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.</Text>
+        <Text size="xs" c="dimmed" mt={4}>
+          Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.
+          {reporting.changes[0] ? ` The line breaks at ${reporting.changes[0].sinceLabel}, the change in ${reporting.changes[0].what} (×${reporting.changes[0].ratio}).` : ''}
+        </Text>
         <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median']} rows={trendData.map((t) => [t.label, t.salary, t.med])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))} />
       </Card>
 

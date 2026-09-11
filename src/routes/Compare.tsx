@@ -6,7 +6,8 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, fmtSnapTick } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES } from '../lib/chartStyle';
+import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { PageHeader } from '../components/PageHeader';
 import { CardTitle } from '../components/CardTitle';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -55,6 +56,13 @@ function seriesRows(payload: TooltipPayloadItem[] | undefined, labels: Map<strin
     name: labels.get(String(p.dataKey)) ?? String(p.dataKey ?? ''),
     value: fmt(Number(Array.isArray(p.value) ? p.value[0] : p.value)),
   }));
+}
+
+/** The snapshot a tooltip is over, from its row. Recharts' own \`label\` is the x value, which on a date
+ *  axis is a timestamp. */
+function rowLabel(payload: readonly { payload?: unknown }[] | undefined): string | undefined {
+  const row = payload?.[0]?.payload as { label?: unknown } | undefined;
+  return row?.label != null ? String(row.label) : undefined;
 }
 
 /** Direct end-of-line label on a person's final point — only the last point renders (recharts calls
@@ -210,7 +218,7 @@ export default function Compare() {
       row[r.person_key] = r.pctile;
       byLabel.set(r.label, row);
     }
-    return [...byLabel.values()].sort(cmpSnap);
+    return withSnapX([...byLabel.values()].sort(cmpSnap));
   }, [standingData, cmpSnap]);
 
   const perPerson = useMemo(() => {
@@ -233,7 +241,7 @@ export default function Compare() {
       byLabel.set(r.label, row);
       latestByPerson.set(r.person_key, r.pay);
     }
-    const series = [...byLabel.values()].sort(cmpSnap);
+    const series = withSnapX([...byLabel.values()].sort(cmpSnap));
     return { series, latest: latestByPerson };
   }, [pdata, cmpSnap]);
 
@@ -243,7 +251,7 @@ export default function Compare() {
     if (dollarMode !== 'real') return series;
     return series.map((row) => {
       const year = Number(String(row.date).slice(0, 4)) || REAL_BASE_YEAR;
-      const out: Record<string, string | number> = { label: row.label, date: row.date };
+      const out: Record<string, string | number> = { label: row.label, date: row.date, x: row.x };
       for (const p of persons) {
         const v = row[p.id];
         if (typeof v === 'number') out[p.id] = toReal(v, year);
@@ -268,14 +276,14 @@ export default function Compare() {
       row[r.job_code] = r.med;
       byLabel.set(r.label, row);
     }
-    return [...byLabel.values()].sort(cmpSnap);
+    return withSnapX([...byLabel.values()].sort(cmpSnap));
   }, [ttrend, cmpSnap]);
 
   // gap to the top earner in the group, per snapshot
   const gapSeries = useMemo(
     () =>
       series.map((row) => {
-        const o: Record<string, string | number> = { label: row.label as string };
+        const o: Record<string, string | number> = { label: row.label as string, date: row.date, x: row.x };
         const vals = persons.map((p) => row[p.id]).filter((v): v is number => typeof v === 'number');
         const max = vals.length ? Math.max(...vals) : null;
         if (max != null) persons.forEach((p) => { const v = row[p.id]; if (typeof v === 'number') o[p.id] = v - max; });
@@ -426,9 +434,9 @@ export default function Compare() {
                 {xMode === 'date' ? (
                   <LineChart data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
                     <CartesianGrid {...GRID} />
-                    <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
+                    <XAxis {...snapAxisProps(trajectorySeries)} tick={AXIS_TICK} />
                     <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-                    <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
+                    <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, usd)} /> : null} />
                     {persons.map((p) => {
                       const color = CHART_SERIES[p.colorIdx % CHART_SERIES.length];
                       const muted = mutedIds.has(p.id);
@@ -486,7 +494,7 @@ export default function Compare() {
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
+              <XAxis {...snapAxisProps(gapSeries)} tick={AXIS_TICK} />
               <YAxis
                 tickFormatter={fmtK}
                 ticks={gapTicks}
@@ -494,7 +502,7 @@ export default function Compare() {
                 width={80}
                 tick={AXIS_TICK}
               />
-              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, usd)} /> : null} />
+              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, usd)} /> : null} />
               {persons.map((p) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
@@ -517,9 +525,9 @@ export default function Compare() {
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
+              <XAxis {...snapAxisProps(standingSeries)} tick={AXIS_TICK} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
-              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
+              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
               {persons.map((p) => (
                 <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
@@ -606,9 +614,9 @@ export default function Compare() {
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
+              <XAxis {...snapAxisProps(titleSeries)} tick={AXIS_TICK} />
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-              <Tooltip content={({ active, payload, label }) => active ? <ChartTooltip label={label} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
+              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
               {titles.map((t) => (
                 <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}

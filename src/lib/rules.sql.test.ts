@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
 import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, sameQuantitySql, scopeWhere } from './queries';
+import { raiseStepsSql } from './raises';
 
 /**
  * The shared SQL rules, executed. A string test says a query CONTAINS a clause; only running it says
@@ -9,11 +10,11 @@ import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, sameQuanti
 
 type Row = Record<string, string | number | null>;
 
-const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'school', 'department', 'job_code', 'grade_number', 'salary', 'salary_fte_adjusted', 'fte', 'comp_basis'] as const;
+const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'school', 'department', 'job_code', 'grade_number', 'grade_basis', 'salary', 'salary_fte_adjusted', 'fte', 'comp_basis'] as const;
 
 const r = (snap: string, date: string, person: string, job: string | null, salary: number, extra: Partial<Row> = {}): Row => ({
   snapshot_id: snap, snapshot_date: date, person_key: person, school: 'A', department: 'D1', job_code: job,
-  grade_number: 20, salary, salary_fte_adjusted: null, fte: 1, comp_basis: 'Annual', ...extra,
+  grade_number: 20, grade_basis: 'annual_12mo', salary, salary_fte_adjusted: null, fte: 1, comp_basis: 'Annual', ...extra,
 });
 
 // Three canonical steps: the TTC twins (pre and post share a date), then s1 → s2 → s3.
@@ -43,6 +44,8 @@ const ROWS: Row[] = [
   r('s2', '2022-08-01', 'nobasis', 'J1', 72100, { comp_basis: null }),
   // Same department name in another school — must not join school A's "D1".
   r('s3', '2023-10-01', 'other', 'J1', 99000, { school: 'B' }),
+  // Grade 20 on the hourly schedule — the same number, not the same grade.
+  r('s3', '2023-10-01', 'hourly', 'H1', 40000, { grade_basis: 'hourly', department: 'D9' }),
 ];
 
 let db: duckdb.Database;
@@ -54,7 +57,7 @@ beforeAll(async () => {
   const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
   const values = ROWS.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n');
   await all(`CREATE TABLE salaries (snapshot_id VARCHAR, snapshot_date DATE, person_key VARCHAR, school VARCHAR,
-    department VARCHAR, job_code VARCHAR, grade_number INTEGER, salary DOUBLE, salary_fte_adjusted DOUBLE,
+    department VARCHAR, job_code VARCHAR, grade_number INTEGER, grade_basis VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE,
     fte DOUBLE, comp_basis VARCHAR)`);
   await all(`INSERT INTO salaries VALUES ${values}`);
 });
@@ -72,6 +75,13 @@ describe('continuingRaisesSql', () => {
     expect(rows.find((x) => x.person_key === 'stay' && x.from_id === 's1')!.r).toBeCloseTo(0.04, 6);
   });
 
+  it("carries each step's snapshot dates as text", async () => {
+    const rows = await all<{ from_date: string; to_date: string }>(
+      `SELECT from_date, to_date FROM (${continuingRaisesSql({ metric: 'fte', pair: { from: 's1', to: 's2' } })}) LIMIT 1`
+    );
+    expect(rows[0]).toEqual({ from_date: '2022-03-01', to_date: '2022-08-01' });
+  });
+
   it('never makes the TTC twins a step', async () => {
     const rows = await all<{ from_id: string }>(`SELECT from_id FROM (${continuingRaisesSql({ metric: 'fte' })})`);
     expect(rows.some((x) => x.from_id === '2021-11-pre')).toBe(false);
@@ -82,6 +92,23 @@ describe('continuingRaisesSql', () => {
       `SELECT person_key FROM (${continuingRaisesSql({ metric: 'fte', pair: { from: 's1', to: 's2' } })}) ORDER BY 1`
     );
     expect(rows.map((x) => x.person_key)).toEqual(['nobasis', 'stay']);
+  });
+});
+
+describe('raiseStepsSql', () => {
+  it('gives each step its continuing raises, campus-wide and for one title', async () => {
+    const rows = await all<{ from_id: string; to_id: string; from_date: string; n: number; med: number; n_title: number; med_title: number }>(
+      raiseStepsSql({ metric: 'fte', jobCode: 'J1' })
+    );
+    expect(rows.map((x) => [x.from_id, x.to_id, Number(x.n), Number(x.n_title)])).toEqual([
+      ['2021-11-post', 's1', 1, 1],
+      ['s1', 's2', 2, 2],
+      ['s2', 's3', 1, 1],
+    ]);
+    // s1 → s2: stay +4% and nobasis +3%. The promotion, the FTE change, the split and the 9-month
+    // relabel are not raises, so none of them moves the median.
+    expect(rows[1].med).toBeCloseTo(0.035, 6);
+    expect(rows[1].from_date).toBe('2022-03-01');
   });
 });
 
@@ -113,7 +140,15 @@ describe('standingSql', () => {
     // School B's "D1" (the 99,000 row) is a different unit with the same name.
     expect(Number(x.n_dept)).toBe(2);
     expect(Number(x.b_dept)).toBe(1);
-    expect(Number(x.n_div)).toBe(2);
+    expect(Number(x.n_div)).toBe(3);
+  });
+
+  it('builds the grade pool from one pay schedule', async () => {
+    const [x] = await all<{ n_grade: number }>(
+      standingSql({ snapshotId: 's3', pay: 90000, metric: 'fte', grade: 20, gradeBasis: 'annual_12mo', jobCode: 'J1' })
+    );
+    // s3 holds nine, twelve and other on the 12-month schedule at grade 20; the hourly grade 20 is out.
+    expect(Number(x.n_grade)).toBe(3);
   });
 });
 

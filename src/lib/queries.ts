@@ -209,7 +209,7 @@ export function sameBasis(a: string | null | undefined, b: string | null | undef
  * `from`/`to` are normalized-lowercase labels in the order the snapshots run.
  */
 export const REPORTING_CHANGES = [
-  { from: 'academic', to: '9 month', factor: 11 / 9, since: '2025-09', note: '9-month pay reported differently' },
+  { from: 'academic', to: '9 month', factor: 11 / 9, ratio: '11/9', since: '2025-09', sinceLabel: 'Sep 2025', what: 'how 9-month pay is reported', note: '9-month pay reported differently' },
 ] as const;
 
 export type ReportingChange = (typeof REPORTING_CHANGES)[number];
@@ -223,6 +223,19 @@ export function reportingChange(
   const b = later?.trim().toLowerCase();
   if (!a || !b) return null;
   return REPORTING_CHANGES.find((c) => c.from === a && c.to === b) ?? null;
+}
+
+/**
+ * The reporting changes a run of snapshots crosses, in order, and their combined factor — the part of
+ * any first-to-last change across the run that is how pay was reported, not what it was.
+ */
+export function reportingAcross(bases: readonly (string | null | undefined)[]): { factor: number; changes: ReportingChange[] } {
+  const changes: ReportingChange[] = [];
+  for (let i = 1; i < bases.length; i++) {
+    const c = reportingChange(bases[i - 1], bases[i]);
+    if (c) changes.push(c);
+  }
+  return { factor: changes.reduce((f, c) => f * c.factor, 1), changes };
 }
 
 /**
@@ -259,7 +272,8 @@ export function sameQuantitySql(a: string, b: string): string {
  * canonical order with the pre-TTC twin dropped, so the TTC reclassification is never a step; with
  * `pair`, the step is exactly `from` → `to` instead (the Changes panel lets a reader pick both ends).
  *
- * Columns: from_id, to_id, person_key, job_code, pay_from, pay_to, r (the raise as a fraction).
+ * Columns: from_id, to_id, from_date, to_date ('YYYY-MM-DD'), person_key, job_code, pay_from, pay_to,
+ * r (the raise as a fraction).
  */
 export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: { from: string; to: string } }): string {
   const where = o.where ?? 'TRUE';
@@ -268,7 +282,8 @@ export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: 
     ? `a.snapshot_id = ${sqlStr(o.pair.from)} AND b.snapshot_id = ${sqlStr(o.pair.to)}`
     : `sb.i = sa.i + 1`;
   return `WITH cr_snaps AS (
-      SELECT snapshot_id, row_number() OVER (ORDER BY min(snapshot_date), snapshot_id) i
+      SELECT snapshot_id, CAST(min(snapshot_date) AS VARCHAR) d,
+             row_number() OVER (ORDER BY min(snapshot_date), snapshot_id) i
       FROM salaries WHERE snapshot_id NOT LIKE '%-pre' GROUP BY snapshot_id
     ),
     cr_one AS (
@@ -277,7 +292,7 @@ export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: 
       FROM salaries WHERE salary > 0 AND ${where}
       GROUP BY snapshot_id, person_key HAVING count(*) = 1
     )
-    SELECT a.snapshot_id from_id, b.snapshot_id to_id, b.person_key, b.job_code,
+    SELECT a.snapshot_id from_id, b.snapshot_id to_id, sa.d from_date, sb.d to_date, b.person_key, b.job_code,
            a.pay pay_from, b.pay pay_to, b.pay / a.pay - 1 r
     FROM cr_one a JOIN cr_snaps sa ON sa.snapshot_id = a.snapshot_id
     JOIN cr_one b ON b.person_key = a.person_key AND b.job_code = a.job_code AND b.fte = a.fte
@@ -294,7 +309,7 @@ export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: 
  */
 export function standingSql(o: {
   snapshotId: string; pay: number; metric: Metric;
-  school?: string | null; department?: string | null; grade?: number | null; jobCode?: string | null;
+  school?: string | null; department?: string | null; grade?: number | null; gradeBasis?: string | null; jobCode?: string | null;
 }): string {
   const lit = (v: string | null | undefined) => sqlStr(v ?? '');
   // Membership is "holds an appointment in the pool" (bool_or), not whichever row `any_value` picked:
@@ -302,7 +317,9 @@ export function standingSql(o: {
   return `WITH pp AS (SELECT person_key, ${personPay(o.metric)} pay,
         bool_or(school = ${lit(o.school)}) in_div,
         bool_or(school = ${lit(o.school)} AND department = ${lit(o.department)}) in_dept,
-        bool_or(grade_number = ${o.grade ?? -1}) in_grade,
+        -- A grade number is only a grade on its own schedule: grade 18 is hourly, 12-month and 9-month
+        -- pay at once, and an hourly rate annualized is not the same quantity as a salary.
+        bool_or(grade_number = ${o.grade ?? -1} AND grade_basis IS NOT DISTINCT FROM ${o.gradeBasis == null ? 'NULL' : lit(o.gradeBasis)}) in_grade,
         bool_or(job_code = ${lit(o.jobCode)}) in_title
       FROM salaries WHERE snapshot_id = ${sqlStr(o.snapshotId)} GROUP BY person_key)
      SELECT

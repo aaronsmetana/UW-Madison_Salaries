@@ -109,3 +109,10 @@ export function formatName(s: string | null | undefined): string {
 export function fullName(fn?: string | null, ln?: string | null): string {
   return formatName(`${fn ?? ''} ${ln ?? ''}`.trim());
 }
+
+/** A `grade_basis` as a reader says it: the schedule a grade number belongs to. */
+export function fmtGradeBasis(b: string | null | undefined): string | null {
+  if (!b) return null;
+  const known: Record<string, string> = { annual_12mo: '12-month', annual_9mo: '9-month', hourly: 'hourly' };
+  return known[b.trim().toLowerCase()] ?? b.replace(/_/g, ' ');
+}

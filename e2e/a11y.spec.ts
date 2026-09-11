@@ -100,7 +100,11 @@ for (const theme of THEMES) {
     await expect(hit).toBeVisible({ timeout: 15_000 });
     await hit.click();
     await setTheme(page, theme);
-    await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
+    // The person page itself, settled: "any $ figure" was satisfied by whatever rendered first, and
+    // axe then measured the Overview mid-fade, where every colour is part-way to its background.
+    await expect(page.getByRole('heading', { level: 1, name: 'Kenneth Poss' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.stat-lead')).toContainText(/\$[\d,]+/);
+    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity));
     const bad = await runAxe(page);
     expect(bad).toEqual([]);
   });

@@ -8,6 +8,7 @@ import {
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown, IconArrowsMinimize, IconRuler2 } from '@tabler/icons-react';
 import { usd, pct, plural } from '../../lib/format';
 import { AXIS_TICK, GRID, fmtUsd } from '../../lib/chartStyle';
+import { snapX, snapAxisProps } from '../../lib/snapTime';
 import { PeerRangeBar } from '../PeerRangeBar';
 import { TenurePayScatter } from '../TenurePayScatter';
 import { ChartTooltip } from '../chart/ChartTooltip';
@@ -20,12 +21,14 @@ import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind } from '.
 import { ordinal } from '../../lib/stats';
 import { ICON } from '../../lib/ui';
 
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2024-03-15" → "Mar '24" for a compact x-axis on the pay-history chart. */
 function fmtHistTick(d: string): string {
-  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const m = Number(d.slice(5, 7));
   return `${MON[m - 1] ?? ''} '${d.slice(2, 4)}`;
 }
+/** "2024-03-15" → "Mar 2024", a snapshot label the shared date axis can tick. */
+const histLabel = (d: string): string => `${MON[Number(d.slice(5, 7)) - 1] ?? ''} ${d.slice(0, 4)}`;
 
 /** Smoothly tween a number toward its target (respects reduced-motion). */
 function useAnimatedNumber(target: number, duration = 500) {
@@ -90,10 +93,11 @@ export function ReportBrief({ model, hovered, onHover }: {
   const has = (s: string) => sections.includes(s);
   const showReceipt = receipt.length > 1; // base + at least one add-on / negotiated line
   const aMax = divergence ? Math.max(divergence.avgAbs, divergence.subjAbs, 1) : 1;
-  // The detailed-format tenure scatter reuses the shared TenurePayScatter component as-is (same
-  // self-inclusive fit line as the Person page) — its callout may read a hair different from the
-  // proof card above, which fits peers only for a stricter, self-independent evidence claim.
+  // The detailed-format tenure scatter reuses the shared TenurePayScatter component as-is. It and the
+  // proof card above read one fit (tenureFit: peers only, at least 8, a 2% band), so they agree.
   const selfScatterPt = tenureScatterPoints.find((p) => p.isSelf);
+  // Pay history on the shared date axis. One job code, so never the TTC twins (their codes differ).
+  const historyRows = history.map((h) => ({ ...h, label: histLabel(h.date), x: snapX(h.date, '') }));
   const raiseDistMax = raiseCycle ? Math.max(1, ...raiseCycle.dist.map((d) => d.n)) : 1;
 
   // ── Section numbering — sequential, based on what actually renders (a toggled-off section leaves
@@ -472,16 +476,16 @@ export function ReportBrief({ model, hovered, onHover }: {
               <Text size="sm" fw={700}>Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
-                <ComposedChart data={history} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
+                <ComposedChart data={historyRows} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
                   <CartesianGrid {...GRID} />
-                  <XAxis dataKey="date" tickFormatter={fmtHistTick} tick={AXIS_TICK} tickMargin={8} />
+                  <XAxis {...snapAxisProps(historyRows)} tick={AXIS_TICK} tickMargin={8} />
                   <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />
-                  <Tooltip content={({ active, payload, label }) => {
+                  <Tooltip content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
                     const tRows = payload
                       .filter((it) => it.value != null)
                       .map((it) => ({ color: it.stroke as string, name: it.name, value: usd(it.value as number) }));
-                    return <ChartTooltip label={fmtHistTick(String(label))} rows={tRows} />;
+                    return <ChartTooltip label={fmtHistTick(String((payload[0].payload as { date: string }).date))} rows={tRows} />;
                   }} />
                   <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
                   <Line type="monotone" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />

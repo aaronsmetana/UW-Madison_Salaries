@@ -32,6 +32,14 @@ export function snapX(date: string, idOrLabel: string): number {
   return dayOf(date) + ttcSide(idOrLabel) * TTC_OFFSET_DAYS * DAY;
 }
 
+/** Any row that names its snapshot by date and label (pivoted chart rows type them loosely). */
+export type SnapRow = { date?: unknown; label?: unknown; x?: unknown };
+
+/** `rows`, each with its `x` on the date axis from its own date and label. */
+export function withSnapX<T extends SnapRow>(rows: readonly T[]): (T & { x: number })[] {
+  return rows.map((r) => ({ ...r, x: snapX(String(r.date ?? ''), String(r.label ?? '')) }));
+}
+
 export interface SnapTick {
   x: number;
   label: string;
@@ -41,11 +49,11 @@ export interface SnapTick {
  * One tick per snapshot DATE. The TTC twins share one tick, "Nov '21", at their common date: two
  * ticks 30 days apart sit ~17px apart on a laptop-width axis and print on top of each other.
  */
-export function snapTicks(rows: readonly { date: string; label: string }[]): SnapTick[] {
+export function snapTicks(rows: readonly SnapRow[]): SnapTick[] {
   const byDate = new Map<number, string>();
   for (const r of rows) {
-    const x = dayOf(r.date);
-    if (!byDate.has(x)) byDate.set(x, fmtSnapTick(r.label).replace(/·(pre|post)$/i, ''));
+    const x = dayOf(String(r.date));
+    if (!byDate.has(x)) byDate.set(x, fmtSnapTick(String(r.label)).replace(/·(pre|post)$/i, ''));
   }
   return [...byDate.entries()].sort((a, b) => a[0] - b[0]).map(([x, label]) => ({ x, label }));
 }
@@ -55,9 +63,9 @@ export function snapTicks(rows: readonly { date: string; label: string }[]): Sna
  * `interval="preserveStartEnd"` with `minTickGap` lets Recharts drop the ticks whose measured labels
  * would collide at the chart's real width, keeping the first and last.
  */
-export function snapAxisProps(rows: readonly { date: string; label: string }[], dataKey = 'x') {
+export function snapAxisProps(rows: readonly SnapRow[], dataKey = 'x') {
   const ticks = snapTicks(rows);
-  const xs = rows.map((r) => snapX(r.date, r.label));
+  const xs = rows.map((r) => snapX(String(r.date), String(r.label)));
   const lo = xs.length ? Math.min(...xs) : 0;
   const hi = xs.length ? Math.max(...xs) : 1;
   const labelAt = (v: number) => ticks.find((t) => Math.abs(t.x - v) < DAY)?.label ?? '';

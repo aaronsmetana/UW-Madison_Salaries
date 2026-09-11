@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useElementSize } from '@mantine/hooks';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
@@ -6,21 +7,23 @@ import {
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
-  ReferenceDot, ReferenceLine, ReferenceArea, LabelList,
+  ReferenceDot, ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
 import { AXIS_TICK, GRID, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
-import { wrapChartTitle } from '../lib/chartText';
-import { YoyPill } from '../components/chart/pills';
+import { YoyChips, MARK_HALO } from '../components/chart/pills';
+import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
+import { packLabelRows, measureText } from '../lib/labelLayout';
+import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, actualPay } from '../lib/queries';
+import { personPay, actualPay, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
-import { usd, num, fullName, fmtBasis, spanLabel } from '../lib/format';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, ordinal } from '../lib/stats';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
@@ -43,9 +46,11 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number; rate?: number; fte?: number; appts?: number; med?: number | null } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  // A gap row only breaks the line at a reporting change; there is no snapshot there to describe.
+  if (d.gap || d.salary == null) return null;
   const partTime = d.rate != null && Math.round(d.rate) !== Math.round(d.salary);
   return (
     <TipSurface>
@@ -68,7 +73,7 @@ function TitleChangeDot({ cx, cy }: { cx?: number; cy?: number }) {
   const s = 6;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={11} fill="var(--mantine-color-accent-6)" opacity={0.15} />
+      <circle className="title-change-halo" cx={cx} cy={cy} r={MARK_HALO} fill="var(--mantine-color-accent-6)" opacity={0.15} />
       <path
         d={`M${cx},${cy - s} L${cx + s},${cy} L${cx},${cy + s} L${cx - s},${cy} Z`}
         fill="var(--mantine-color-accent-7)"
@@ -100,7 +105,7 @@ function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
  */
 const TREND_DASH = { median: '6 4', gradeBand: '4 4', era: '2 4' } as const;
 
-function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleChange: boolean; hasFte: boolean; hasGradeBand: boolean; mode: 'actual' | 'rate' }) {
+function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode }: { hasTitleChange: boolean; hasFte: boolean; gradeBand: { grade: number | null; min: number; max: number } | null; mode: 'actual' | 'rate' }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
       {swatch}
@@ -117,9 +122,11 @@ function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleC
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray={TREND_DASH.median} /></svg>,
         'Title median — resets at each title change',
       )}
-      {hasGradeBand && item(
+      {gradeBand && item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} /></svg>,
-        'Grade band min / max',
+        // The values used to sit on the lines themselves, right-aligned — exactly where the latest
+        // snapshot's chip lands, so "grade min $70,720" printed through "+3.0%".
+        `${gradeBand.grade != null ? `Grade ${gradeBand.grade}` : 'Grade'} band ${usd(gradeBand.min)} – ${usd(gradeBand.max)}`,
       )}
       {hasFte && item(
         <svg width={22} height={12} aria-hidden>
@@ -140,22 +147,16 @@ function TrendLegend({ hasTitleChange, hasFte, hasGradeBand, mode }: { hasTitleC
   );
 }
 
-/** Custom label for a title era: the full (wrapped) title, stacked just above the plot. Recharts injects
- *  `viewBox` ({ x, y }) for the vertical reference line. `anchor='start'`/`'end'` edge-align it — used for
- *  the leftmost/rightmost era, which sit at the chart's edges and have no divider on that side. `row=1`
- *  drops the label a further 24px so two eras whose dividers land close together don't overlap. */
+/** A title era's label above the plot: one line, starting at the era's divider so it reads as "from
+ *  here", on row 0 or (14px higher) row 1. `shift` pulls a label that would run off the right edge back
+ *  inside it. Recharts injects `viewBox` ({ x, y }) for the vertical reference line it hangs from. */
 function TitleChangeLabel({
-  viewBox, title, anchor = 'middle', row = 0,
-}: { viewBox?: { x?: number; y?: number }; title?: string | null; anchor?: 'middle' | 'start' | 'end'; row?: 0 | 1 }) {
+  viewBox, title, row = 0, shift = 0,
+}: { viewBox?: { x?: number; y?: number }; title?: string | null; row?: 0 | 1; shift?: number }) {
   if (!viewBox || viewBox.x == null || viewBox.y == null || !title) return null;
-  const lines = wrapChartTitle(title);
-  const { x, y } = viewBox;
-  const rowOffset = row === 1 ? 24 : 0;
   return (
-    <text textAnchor={anchor} fontSize={10} fill="var(--mantine-color-dimmed)">
-      {lines.map((ln, i) => (
-        <tspan key={i} x={x} y={y - 5 - rowOffset - (lines.length - 1 - i) * 11}>{ln}</tspan>
-      ))}
+    <text className="trend-era-label" x={viewBox.x + shift} y={viewBox.y - 5 - (row === 1 ? 14 : 0)} textAnchor="start" fontSize={10} fill="var(--mantine-color-dimmed)">
+      {title}
     </text>
   );
 }
@@ -342,7 +343,7 @@ export default function Person() {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.salary ?? 0) > (best.salary ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, appts };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -384,57 +385,100 @@ export default function Person() {
 
   // Distinct title eras (for disconnected median segments) and the points where the title changes.
   const eras = useMemo(() => [...new Set(trendData.map((t) => t.era))], [trendData]);
-  // Each title-change divider label, staggered onto a second row when it lands close (in x-category
-  // index) to the previous labeled boundary — otherwise adjacent short eras' labels overlap. Also
-  // edge-anchors a divider that falls at (or one shy of) the last category, so it doesn't clip the
-  // right margin.
-  const titleChanges = useMemo(() => {
-    const N = trendData.length;
-    const hasLeftLabel = eras.length > 1 && !!trendData[0]?.title;
-    const list = trendData
-      .map((t, idx) => ({ ...t, idx }))
-      .filter((t, i) => i > 0 && t.era !== trendData[i - 1].era);
-    const minGap = list.length > 0 ? Math.ceil(N / (list.length + (hasLeftLabel ? 1 : 0) + 1)) : Infinity;
-    let prevIdx = hasLeftLabel ? 0 : -Infinity;
-    let prevRow: 0 | 1 = 0;
-    return list.map((t) => {
-      const row: 0 | 1 = t.idx - prevIdx < minGap ? (prevRow === 0 ? 1 : 0) : 0;
-      prevIdx = t.idx;
-      prevRow = row;
-      const anchor: 'middle' | 'end' = N - 1 - t.idx <= 1 ? 'end' : 'middle';
-      return { ...t, row, anchor };
-    });
-  }, [trendData, eras.length]);
-  // Plot rows: carry each metric's year-over-year change (vs the previous snapshot) so the line can label
-  // every step with its raise %.
-  const trendPlot = useMemo(
-    () => trendData.map((t, i) => {
-      const prev = i > 0 ? trendData[i - 1] : null;
-      return {
-        ...t,
-        yoyActual: prev && prev.salary ? (t.salary - prev.salary) / prev.salary : null,
-        yoyRate: prev && prev.rate ? (t.rate - prev.rate) / prev.rate : null,
-      };
-    }),
+  const titleChanges = useMemo(
+    () => trendData.map((t, idx) => ({ ...t, idx })).filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
     [trendData],
   );
+  // Plot rows, on the date axis (snapTime): x is the snapshot's own date, so the same-day TTC relabel
+  // is a sliver and the fourteen months from Aug 2022 to Oct 2023 are fourteen months wide. Each row
+  // carries its change from the previous snapshot for the chips — except where there is no change to
+  // show: the TTC twins are one date relabelled, and across a reporting break the two figures are on
+  // different footings. There a gap row sits between the sides, so the line, its fill and its glow all
+  // stop instead of drawing the ×11/9 of the Sep 2025 9-month change as a rise.
+  type TrendPoint = (typeof trendData)[number];
+  type PlotRow = Omit<TrendPoint, 'salary' | 'rate' | 'fte' | 'med' | 'medRate'> & {
+    x: number; salary: number | null; rate: number | null; fte: number | null; med: number | null; medRate: number | null;
+    yoyActual: number | null; yoyRate: number | null; gap?: boolean;
+  };
+  const trendBreaks = useMemo(() => reportingBreaks(trendData), [trendData]);
+  // The change the first break is, named from the break itself (not from the growth card's tally).
+  const breakChange = trendBreaks.length ? reportingChange(trendData[trendBreaks[0] - 1].basis, trendData[trendBreaks[0]].basis) : null;
+  const trendPlot = useMemo(() => {
+    const breaks = new Set(trendBreaks);
+    const out: PlotRow[] = [];
+    trendData.forEach((t, i) => {
+      const prev = i > 0 ? trendData[i - 1] : null;
+      const x = snapX(t.date, t.id);
+      const measurable = !!prev && String(prev.date) !== String(t.date) && !breaks.has(i);
+      if (prev && breaks.has(i)) {
+        out.push({
+          ...prev, x: (snapX(prev.date, prev.id) + x) / 2, gap: true,
+          salary: null, rate: null, fte: null, med: null, medRate: null, yoyActual: null, yoyRate: null,
+        });
+      }
+      out.push({
+        ...t,
+        x,
+        yoyActual: measurable && prev!.salary ? (t.salary - prev!.salary) / prev!.salary : null,
+        yoyRate: measurable && prev!.rate ? (t.rate - prev!.rate) / prev!.rate : null,
+      });
+    });
+    return out;
+  }, [trendData, trendBreaks]);
+  // Plot rows that carry a title-change marker: the chips keep clear of them.
+  const markIdx = useMemo(
+    () => trendPlot.flatMap((r, i) => (i > 0 && !r.gap && r.era !== trendPlot[i - 1].era ? [i] : [])),
+    [trendPlot],
+  );
+  const trendAxis = useMemo(() => snapAxisProps(trendData), [trendData]);
   // Hide the FTE sub-chart entirely when the appointment never changes — a flat 100% line is pure noise.
   const fteVaries = useMemo(
     () => new Set(trendData.map((t) => Math.round((t.fte ?? 1) * 100))).size > 1,
     [trendData],
   );
-  // First/last x-label of each title era → faint alternating background bands behind the line.
+  // Each title era's faint background band, from its first snapshot to the next era's (or the end),
+  // so the bands meet at the divider rather than leaving the gap between two eras unshaded.
   const eraSpans = useMemo(() => {
-    const m = new Map<number, { x1: string; x2: string }>();
+    const firsts: { era: number; x: number }[] = [];
     for (const t of trendData) {
-      const cur = m.get(t.era);
-      if (!cur) m.set(t.era, { x1: t.label, x2: t.label });
-      else cur.x2 = t.label;
+      if (!firsts.length || firsts[firsts.length - 1].era !== t.era) firsts.push({ era: t.era, x: snapX(t.date, t.id) });
     }
-    return [...m.entries()].map(([era, s]) => ({ era, ...s }));
+    const end = trendData.length ? snapX(trendData[trendData.length - 1].date, trendData[trendData.length - 1].id) : 0;
+    return firsts.map((f, i) => ({ era: f.era, x1: f.x, x2: i + 1 < firsts.length ? firsts[i + 1].x : end }));
   }, [trendData]);
 
-
+  // The title-era labels above the chart, laid out at the chart's real width: each starts at its own
+  // divider (the first at the left edge, which has none), on one of two rows. Centred on the divider,
+  // a label straddled both eras it separates. When they cannot all fit — a phone, several short eras,
+  // long titles — they are listed under the chart instead: drawn anyway, they printed on each other.
+  const { ref: trendBoxRef, width: trendWidth } = useElementSize();
+  const eraLayout = useMemo(() => {
+    const labels = [
+      ...(eras.length > 1 && trendData[0]?.title ? [{ key: 'first', x: snapX(trendData[0].date, trendData[0].id), title: trendData[0].title, from: trendData[0].label }] : []),
+      ...titleChanges.map((t) => ({ key: t.id, x: snapX(t.date, t.id), title: t.title, from: t.label })),
+    ].filter((l): l is typeof l & { title: string } => !!l.title);
+    const none = { labels: [] as (typeof labels[number] & { row: 0 | 1; shift: number })[], fold: false, rows: 0 };
+    if (!labels.length) return none;
+    // Unmeasured (the first render, or a hidden tab): nothing to place yet, and the chart is not
+    // drawn at width 0 either. Listing the titles only to pull them back into the chart would flash.
+    if (!trendWidth) return none;
+    const [lo, hi] = trendAxis.domain;
+    const left = 12 + 80 + 16; // margin + y-axis + axis padding
+    const right = trendWidth - 30 - 16;
+    const px = (x: number) => left + (hi > lo ? ((x - lo) / (hi - lo)) * (right - left) : 0);
+    const placed = labels.map((l) => {
+      const at = px(l.x);
+      const w = measureText(l.title, 10);
+      const shift = Math.min(0, trendWidth - 2 - (at + w));
+      return { ...l, shift, span: { left: at + shift, right: at + shift + w } };
+    });
+    // Packed from the right edge, so where two labels collide it is the earlier one that rises: read
+    // top to bottom, a stack runs in date order.
+    const fromRight = packLabelRows([...placed].reverse().map((p) => ({ left: -p.span.right, right: -p.span.left })), { left: -trendWidth, right: 0 }, 2, 10);
+    const rows = fromRight && [...fromRight].reverse();
+    if (!rows) return { labels: placed.map((p) => ({ ...p, row: 0 as 0 | 1 })), fold: true, rows: 0 };
+    return { labels: placed.map((p, i) => ({ ...p, row: rows[i] as 0 | 1 })), fold: false, rows: Math.max(...rows) + 1 };
+  }, [eras.length, trendData, titleChanges, trendWidth, trendAxis]);
 
   // As-of the latest snapshot (not today) — matches the peer SQL's tenure basis (Person.tsx peer
   // queries use snapshot_date), so this card, the tenure-curve callout, and the peer table all agree.
@@ -465,6 +509,9 @@ export default function Person() {
   const partTime = lastRate != null && lastSalary != null && Math.round(lastRate) !== Math.round(lastSalary);
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
   const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
+  // The reporting changes this history crosses. Their factor is inside `totalChange` and none of it
+  // is pay: a 9-month member's growth jumped by ×11/9 in Sep 2025 without a dollar more.
+  const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
 
   // One-line career summary under the header. Only surface a prior title when it's a genuine *pre-TTC* title
   // (the person's earliest record is the pre-TTC snapshot and the title differs from now) — we can't assume the
@@ -489,49 +536,35 @@ export default function Person() {
   }, [latest, grades]);
 
   const lastSnap = latest?.snapshot_id ?? '';
-  // Percentile pools (latest snapshot): per-pool counts of people and how many earn less than the
-  // subject, so each percentile can be computed with the shared (n − 1) definition in JS.
+  // Where this pay stands in each pool the person belongs to (standingSql — the one query the printed
+  // report uses too): per person, the department inside its school, a grade on its own schedule.
   const mine = lastSalary ?? 0;
-  const selfSchool = sqlStr(latest?.school ?? '');
-  const selfDept = sqlStr(latest?.department ?? '');
-  const selfJob = sqlStr(latest?.job_code ?? '');
-  const selfGrade = latest?.grade_number ?? -1;
   const { data: standingRows } = useSql<{
     n_all: number; b_all: number; n_div: number; b_div: number; n_dept: number; b_dept: number;
     n_grade: number; b_grade: number; n_title: number; b_title: number;
   }>(
     ['standing', key, lastSnap, mine],
-    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay, any_value(school) school,
-        any_value(department) department, any_value(grade_number) grade_number, any_value(job_code) job_code
-      FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} GROUP BY person_key)
-     SELECT
-       count(*) FILTER (WHERE pay > 0) n_all,
-       count(*) FILTER (WHERE pay > 0 AND pay < ${mine}) b_all,
-       count(*) FILTER (WHERE pay > 0 AND school = ${selfSchool}) n_div,
-       count(*) FILTER (WHERE pay > 0 AND school = ${selfSchool} AND pay < ${mine}) b_div,
-       count(*) FILTER (WHERE pay > 0 AND department = ${selfDept}) n_dept,
-       count(*) FILTER (WHERE pay > 0 AND department = ${selfDept} AND pay < ${mine}) b_dept,
-       count(*) FILTER (WHERE pay > 0 AND grade_number = ${selfGrade}) n_grade,
-       count(*) FILTER (WHERE pay > 0 AND grade_number = ${selfGrade} AND pay < ${mine}) b_grade,
-       count(*) FILTER (WHERE pay > 0 AND job_code = ${selfJob}) n_title,
-       count(*) FILTER (WHERE pay > 0 AND job_code = ${selfJob} AND pay < ${mine}) b_title
-     FROM pp`,
+    standingSql({
+      snapshotId: lastSnap, pay: mine, metric: 'fte', school: latest?.school, department: latest?.department,
+      grade: latest?.grade_number, gradeBasis: latest?.grade_basis, jobCode: latest?.job_code,
+    }),
     !!latest && lastSalary != null && lastSalary > 0
   );
   const standingPools = useMemo(() => {
     const r = standingRows?.[0];
     if (!r) return [];
-    const pctOf = (below: number, n: number) => (n <= 1 ? null : Math.round((below / (n - 1)) * 100));
+    const sched = fmtGradeBasis(latest?.grade_basis);
     const raw = [
       { label: 'All UW–Madison', n: r.n_all, below: r.b_all, ok: true },
       { label: latest?.school ?? 'Division', n: r.n_div, below: r.b_div, ok: !!latest?.school },
-      { label: latest?.department ?? 'Department', n: r.n_dept, below: r.b_dept, ok: !!latest?.department },
-      { label: latest?.grade_number != null ? `Salary grade ${latest.grade_number}` : 'Salary grade', n: r.n_grade, below: r.b_grade, ok: latest?.grade_number != null },
+      // Named with its school: "Administration" alone is twelve different units.
+      { label: [latest?.department, latest?.school].filter(Boolean).join(' · ') || 'Department', n: r.n_dept, below: r.b_dept, ok: !!latest?.department },
+      { label: latest?.grade_number != null ? `Salary grade ${latest.grade_number}${sched ? ` (${sched})` : ''}` : 'Salary grade', n: r.n_grade, below: r.b_grade, ok: latest?.grade_number != null },
       { label: latest?.title ?? 'Title', n: r.n_title, below: r.b_title, ok: !!latest?.job_code },
     ];
     return raw
       .filter((x) => x.ok && x.n >= 2)
-      .map((x) => ({ label: x.label, n: x.n, below: x.below, pct: pctOf(x.below, x.n)! }));
+      .map((x) => ({ label: x.label, n: x.n, below: x.below, pct: poolPercentile(x.below, x.n)! }));
   }, [standingRows, latest]);
 
   // Same-title peers = everyone sharing this person's job_code at the latest snapshot.
@@ -670,15 +703,37 @@ export default function Person() {
   const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
 
-  // Raise presets: the person's own historical CAGR (rate) and the title-median's CAGR — annualized
-  // over the available span so they read as a sensible "%/yr".
-  const cagr = (first: number | null | undefined, last: number | null | undefined) =>
-    first != null && last != null && first > 0 && spanYears != null && spanYears >= 0.5
-      ? (Math.pow(last / first, 1 / spanYears) - 1) * 100
-      : null;
-  const recentAvgPct = cagr(firstRate, lastRate);
-  const medRateSeries = trendData.map((t) => t.medRate).filter((x): x is number => x != null);
-  const titleGrowthPct = medRateSeries.length >= 2 ? cagr(medRateSeries[0], medRateSeries[medRateSeries.length - 1]) : null;
+  // Raise presets, each a rate of CONTINUING raises (continuingRaisesSql — same title, same FTE, same
+  // pay basis) on the full-time rate, compounded over this person's time in the data and annualized.
+  // The old "My recent avg" was first-to-last growth, so it projected a promotion forward as if it
+  // came every year; "Title median growth" chained the medians of three different titles.
+  // Only once the Pay tab is opened: every raise on campus is ~6× the standing query, and DuckDB runs
+  // one query at a time, so fetched with the page it held back the Overview's peer cards by a second
+  // for presets the reader may never open.
+  const payOpen = tab === 'pay';
+  const { data: raiseSteps } = useSql<RaiseStep>(
+    ['raise-steps', latest?.job_code ?? ''],
+    raiseStepsSql({ metric: 'full', jobCode: latest?.job_code }),
+    !!latest && payOpen
+  );
+  const { data: ownRaises } = useSql<{ from_date: string; to_date: string; r: number }>(
+    ['own-raises', key],
+    `SELECT from_date, to_date, r FROM (${continuingRaisesSql({ metric: 'full', where: `person_key = ${sqlStr(key)}` })}) ORDER BY from_date`,
+    !!key && payOpen
+  );
+  const presets = useMemo(() => {
+    // This person's span in the data, from their first snapshot after the TTC relabel.
+    const canon = trend.filter((t) => !t.id.endsWith('-pre'));
+    const from = canon[0]?.date;
+    const to = canon[canon.length - 1]?.date;
+    const inSpan = (raiseSteps ?? []).filter((st) => from && to && st.from_date >= String(from).slice(0, 10) && st.to_date <= String(to).slice(0, 10));
+    const uw = annualized(inSpan.filter((st) => st.med != null).map((st) => ({ from: st.from_date, to: st.to_date, rate: st.med! })));
+    const title = annualized(
+      inSpan.filter((st) => st.n_title >= MIN_TITLE_STEP && st.med_title != null).map((st) => ({ from: st.from_date, to: st.to_date, rate: st.med_title! }))
+    );
+    const own = annualized((ownRaises ?? []).map((x) => ({ from: x.from_date, to: x.to_date, rate: x.r })));
+    return { uw, title, own };
+  }, [trend, raiseSteps, ownRaises]);
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const projectedRate = lastRate != null ? lastRate * Math.pow(1 + pctRaise / 100, years) : null;
   // Quick-target presets: the annualized %/yr needed to reach a target rate over the current `years`.
@@ -849,6 +904,12 @@ export default function Person() {
                 {oldestLabel && (
                   <Text size="xs" c="dimmed" mt={4}>
                     {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
+                  </Text>
+                )}
+                {reporting.changes.length > 0 && totalChange != null && (
+                  <Text size="xs" c="dimmed" mt={2} data-reporting-note>
+                    {sgnPct((1 + totalChange) / reporting.factor - 1)} without the {reporting.changes[0].sinceLabel} change
+                    in {reporting.changes[0].what} (×{reporting.changes[0].ratio}).
                   </Text>
                 )}
               </Card>
@@ -1114,20 +1175,28 @@ export default function Person() {
           </CardTitle>
           <Group gap="xs" mb="md" wrap="wrap">
             {[
-              { label: 'Flat 2%', val: 2 },
-              ...(recentAvgPct != null && recentAvgPct > 0 ? [{ label: `My recent avg ≈${r1(recentAvgPct)}%`, val: r1(recentAvgPct) }] : []),
-              ...(titleGrowthPct != null && titleGrowthPct > 0 ? [{ label: `Title median growth ≈${r1(titleGrowthPct)}%`, val: r1(titleGrowthPct) }] : []),
-              ...(medTargetPct != null ? [{ label: `Reach title median (${medTargetPct}%/yr)`, val: medTargetPct }] : []),
-              ...(maxTargetPct != null ? [{ label: `Reach band max (${maxTargetPct}%/yr)`, val: maxTargetPct }] : []),
+              { id: 'flat', label: 'Flat 2%', val: 2 },
+              ...(presets.uw != null && presets.uw >= 0 ? [{ id: 'uw', label: `Typical UW raise ≈${r1(presets.uw * 100)}%/yr`, val: r1(presets.uw * 100) }] : []),
+              ...(presets.title != null && presets.title >= 0 ? [{ id: 'title', label: `Typical for this title ≈${r1(presets.title * 100)}%/yr`, val: r1(presets.title * 100) }] : []),
+              ...(presets.own != null && presets.own >= 0 ? [{ id: 'own', label: `This person, excluding title changes ≈${r1(presets.own * 100)}%/yr`, val: r1(presets.own * 100) }] : []),
+              ...(medTargetPct != null ? [{ id: 'median', label: `Reach title median (${medTargetPct}%/yr)`, val: medTargetPct }] : []),
+              ...(maxTargetPct != null ? [{ id: 'bandmax', label: `Reach band max (${maxTargetPct}%/yr)`, val: maxTargetPct }] : []),
             ].map((c) => {
               const sel = Math.abs(pctRaise - c.val) < 0.05;
               return (
-                <Button key={c.label} size="compact-sm" radius="xl" variant={sel ? 'light' : 'default'} color="accent" onClick={() => setPctRaise(c.val)}>
+                <Button key={c.id} data-raise-preset={c.id} size="compact-sm" radius="xl" variant={sel ? 'light' : 'default'} color="accent" onClick={() => setPctRaise(c.val)}>
                   {c.label}
                 </Button>
               );
             })}
           </Group>
+          {(presets.uw != null || presets.title != null || presets.own != null) && (
+            <Text size="xs" c="dimmed" mt={-8} mb="md">
+              Typical is the median raise among people who kept the same title and FTE from one snapshot to the next,
+              compounded over this person's time in the data; titles need at least {MIN_TITLE_STEP} such people at a step.
+              Promotions and title changes are not raises, so they are left out of all three.
+            </Text>
+          )}
           <Group align="flex-end" wrap="wrap">
             <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={150} step={0.5} min={0} suffix="%" />
             <NumberInput label="Years" value={years} onChange={(v) => setYears(typeof v === 'number' ? v : 0)} w={120} min={0} max={40} />
@@ -1193,19 +1262,21 @@ export default function Person() {
           Salary over time
         </CardTitle>
         {/* Hero salary chart: a ComposedChart with a gradient area + soft-glow line, faint title-era bands,
-            grade-band reference lines, and per-step raise % labels. The FTE sub-chart below appears only when
-            the appointment actually varies; when it's hidden, the date labels move onto this chart's x-axis. */}
+            grade-band reference lines, and per-step change chips, on a date axis. The FTE sub-chart below
+            appears only when the appointment actually varies; when it's hidden, the date labels move onto
+            this chart's x-axis. */}
+        <div ref={trendBoxRef} className="person-trend">
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: titleChanges.length ? 48 : 22, bottom: 0 }}>
+          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
             <defs>{lineGlowDefs(gradId)}</defs>
             {/* Faint alternating background band per title era. */}
-            {eras.length > 1 && eraSpans.map((s) => (
+            {eras.length > 1 && eraSpans.map((sp) => (
               <ReferenceArea
-                key={`era-${s.era}`}
+                key={`era-${sp.era}`}
                 yAxisId="pay"
-                x1={s.x1}
-                x2={s.x2}
-                fill={s.era % 2 === 1 ? 'var(--mantine-color-accent-6)' : 'transparent'}
+                x1={sp.x1}
+                x2={sp.x2}
+                fill={sp.era % 2 === 1 ? 'var(--mantine-color-accent-6)' : 'transparent'}
                 fillOpacity={0.05}
                 stroke="none"
                 ifOverflow="extendDomain"
@@ -1213,47 +1284,41 @@ export default function Person() {
             ))}
             <CartesianGrid {...GRID} />
             <XAxis
-              dataKey="label"
+              {...trendAxis}
               tick={fteVaries ? false : AXIS_TICK}
-              tickFormatter={fmtSnapTick}
               tickLine={false}
               tickMargin={fteVaries ? undefined : 10}
               height={fteVaries ? 8 : 34}
             />
             <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
             <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
-            {/* Official grade pay-band floor / ceiling for context (kept as separate siblings — Recharts does
-                not traverse a Fragment's children). */}
-            {/* Grade pay-band floor/ceiling, labelled on the RIGHT — next to the current (latest) salary,
-                the band that's actually in effect today (the band can shift as the grade changes over time). */}
+            {/* The grade's official band, floor and ceiling (kept as separate siblings — Recharts does not
+                traverse a Fragment's children). Their values are in the legend. */}
             {band && (
-              <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain"
-                label={{ value: `grade min ${usd(band.min)}`, position: 'insideBottomRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+              <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
             )}
             {band && (
-              <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain"
-                label={{ value: `grade max ${usd(band.max)}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+              <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
             )}
-            {/* Label the leftmost title era too (e.g. a pre-TTC title) — it begins at the chart's left edge
-                and so has no divider; left-anchored so it isn't clipped. */}
-            {eras.length > 1 && trendData[0]?.title && (
-              <ReferenceLine
-                yAxisId="pay"
-                x={trendData[0].label}
-                stroke="none"
-                label={<TitleChangeLabel title={trendData[0].title} anchor="start" />}
-              />
-            )}
-            {/* Title-change dividers segment the chart into title eras. */}
+            {/* Title-change dividers segment the chart into title eras; each era's title sits above it
+                (the first at the left edge, which has no divider), unless they could not all fit. */}
             {titleChanges.map((t) => (
               <ReferenceLine
                 key={`div-${t.id}`}
                 yAxisId="pay"
-                x={t.label}
+                x={snapX(t.date, t.id)}
                 stroke="var(--mantine-color-gray-4)"
                 strokeWidth={1}
                 strokeDasharray={TREND_DASH.era}
-                label={<TitleChangeLabel title={t.title} row={t.row} anchor={t.anchor} />}
+              />
+            ))}
+            {!eraLayout.fold && eraLayout.labels.map((l) => (
+              <ReferenceLine
+                key={`era-label-${l.key}`}
+                yAxisId="pay"
+                x={l.x}
+                stroke="none"
+                label={<TitleChangeLabel title={l.title} row={l.row} shift={l.shift} />}
               />
             ))}
             {/* Gradient area fill under the active metric. */}
@@ -1264,7 +1329,7 @@ export default function Person() {
                 key={`med-${e}`}
                 yAxisId="pay"
                 type="monotone"
-                dataKey={(d) => (d.era === e ? (trendMode === 'actual' ? d.med : d.medRate) : null)}
+                dataKey={(d: PlotRow) => (d.era === e ? (trendMode === 'actual' ? d.med : d.medRate) : null)}
                 name="Title median"
                 stroke="var(--mantine-color-gray-5)"
                 strokeWidth={2}
@@ -1277,16 +1342,26 @@ export default function Person() {
             ))}
             {/* Soft glow: a blurred, semi-transparent copy beneath the crisp line. */}
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
-            {/* Primary line + per-step raise % labels + haloed active dot. */}
-            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out">
-              <LabelList dataKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'} content={<YoyPill count={trendPlot.length} />} />
-            </Line>
+            {/* Primary line + haloed active dot. */}
+            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (
-                <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={t.label} y={y} shape={<TitleChangeDot />} />
+                <ReferenceDot key={`tc-${t.id}`} yAxisId="pay" x={snapX(t.date, t.id)} y={y} shape={<TitleChangeDot />} />
               ) : null;
             })}
+            {/* Every step's change, placed together so no chip covers another or a title-change marker. */}
+            <Customized
+              component={
+                <YoyChips
+                  chipRows={trendPlot}
+                  chipValueKey={trendMode === 'actual' ? 'salary' : 'rate'}
+                  chipYoyKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'}
+                  chipAxis="pay"
+                  chipMarks={markIdx}
+                />
+              }
+            />
           </ComposedChart>
         </ResponsiveContainer>
 
@@ -1297,7 +1372,7 @@ export default function Person() {
             <ResponsiveContainer width="100%" height={108}>
               <AreaChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: 0, bottom: 0 }}>
                 <CartesianGrid {...GRID} />
-                <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} tickMargin={10} height={34} />
+                <XAxis {...trendAxis} tick={AXIS_TICK} tickMargin={10} height={34} />
                 <YAxis
                   yAxisId="fte"
                   domain={[0, 1]}
@@ -1325,7 +1400,25 @@ export default function Person() {
             </ResponsiveContainer>
           </>
         )}
-        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} hasGradeBand={!!band} mode={trendMode} />
+        </div>
+        {eraLayout.fold && (
+          <Group gap={6} mt="xs" wrap="wrap" className="trend-era-list">
+            <Text size="xs" c="dimmed">Titles:</Text>
+            {eraLayout.labels.map((l, i) => (
+              <Text key={l.key} size="xs">
+                {i > 0 && <Text span size="xs" c="dimmed" aria-hidden>→ </Text>}
+                {l.title} <Text span size="xs" c="dimmed">from {fmtSnapTick(l.from)}</Text>
+              </Text>
+            ))}
+          </Group>
+        )}
+        {breakChange && (
+          <Text size="xs" c="dimmed" mt="xs" data-reporting-break>
+            The line breaks at {breakChange.sinceLabel}, the change in {breakChange.what} (×{breakChange.ratio}):
+            the step across it is not a raise.
+          </Text>
+        )}
+        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={band ? { grade: latest?.grade_number ?? null, min: band.min, max: band.max } : null} mode={trendMode} />
         <ChartData
           caption={dollarMode === 'real' ? `Salary over time (in ${REAL_BASE_YEAR} dollars)` : 'Salary over time'}
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}

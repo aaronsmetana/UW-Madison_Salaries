@@ -17,6 +17,7 @@ import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
+import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
@@ -147,6 +148,7 @@ export default function School() {
      FROM pe GROUP BY snapshot_id ORDER BY date`,
     !!name
   );
+  const trendRows = useMemo(() => withSnapX(trend ?? []), [trend]);
 
   const { data: bandRows } = useSql<{ banded: number; graded: number; avg_pos: number | null; over_max: number; below_min: number }>(
     ['school-band', name, snap ?? '', metric, fk],
@@ -320,11 +322,12 @@ export default function School() {
       <Card withBorder padding="lg">
         <CardTitle>Median salary over time</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={trend ?? []} margin={{ left: 12, right: 12 }}>
+          <LineChart data={trendRows} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
-            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <XAxis {...snapAxisProps(trendRows)} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-            <Tooltip formatter={(v: number) => usd(v)} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
+            {/* The row's own label: on a date axis Recharts' label is the x value, a timestamp. */}
+            <Tooltip formatter={(v: number) => usd(v)} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
           </LineChart>
         </ResponsiveContainer>

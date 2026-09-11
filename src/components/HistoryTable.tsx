@@ -177,11 +177,18 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
     [historyRows, matching]
   );
 
+  // One pay column when the rate IS the pay on every row (full-time, or no FTE on file): two columns
+  // repeating the same figure made the reader compare them for a difference that is never there.
+  const onePay = useMemo(
+    () => historyRows.every((r) => Math.round(r.salary ?? 0) === Math.round(actualPay(r))),
+    [historyRows]
+  );
+
   return (
     <Card withBorder padding="lg">
       <CardTitle>Title & salary history</CardTitle>
       {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
-      <Table.ScrollContainer minWidth={gutter.slots ? 900 + gutter.slots * 22 : 880}>
+      <Table.ScrollContainer minWidth={(gutter.slots ? 900 + gutter.slots * 22 : 880) - (onePay ? 90 : 0)}>
       {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
       <Table
         className="appt-history"
@@ -200,8 +207,14 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
             <Table.Th>Title</Table.Th>
             <Table.Th>Job code</Table.Th>
             <Table.Th>School / Dept</Table.Th>
-            <Table.Th ta="right"><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
-            <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
+            {onePay ? (
+              <Table.Th ta="right"><GlossaryTerm term="actualPay">Pay</GlossaryTerm></Table.Th>
+            ) : (
+              <>
+                <Table.Th ta="right"><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
+                <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
+              </>
+            )}
             <Table.Th ta="right"><GlossaryTerm term="payChange">Change</GlossaryTerm></Table.Th>
             <Table.Th ta="right">FTE</Table.Th>
             <Table.Th>Basis</Table.Th>
@@ -228,6 +241,10 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
             // against the previous displayed row, which on a split page is a different appointment
             // entirely: 4,787 rows across the data were guaranteed a dot that meant nothing.
             const orgMoved = !!from && ((r.school ?? '') !== (from.school ?? '') || (r.department ?? '') !== (from.department ?? ''));
+            // With one appointment per snapshot the rows are one continuous line, so the school is
+            // printed where it starts and where it changes; the rows between repeated it to no end.
+            // A split history keeps it on every row — the line above may be another appointment.
+            const showSchool = gutter.slots > 0 || i === 0 || (r.school ?? '') !== (historyRows[i - 1].school ?? '');
                 const orgMovedLabel = orgMoved
                   ? `Division/Department changed since this appointment's previous snapshot — was: ${[from!.school, from!.department].filter(Boolean).join(' · ') || 'not recorded'}`
                   : '';
@@ -293,7 +310,7 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                 </Table.Td>
                 <Table.Td>{r.job_code ?? '—'}</Table.Td>
                 <Table.Td>
-                  <Text size="sm">{r.school ?? '—'}</Text>
+                  {showSchool && <Text size="sm" className="appt-school">{r.school ?? '—'}</Text>}
                   <Group gap={6} wrap="nowrap">
                     {orgMoved && (
                       /* The dot was colour plus a hover tooltip and nothing else: invisible to a screen
@@ -311,7 +328,7 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                     <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
                   </Group>
                 </Table.Td>
-                <Table.Td ta="right">{usd(r.salary)}</Table.Td>
+                {!onePay && <Table.Td ta="right">{usd(r.salary)}</Table.Td>}
                 <Table.Td ta="right">{usd(actual)}</Table.Td>
                 <Table.Td ta="right">
                   <RaiseCell raise={raise} note={rateNote} reporting={reporting}>

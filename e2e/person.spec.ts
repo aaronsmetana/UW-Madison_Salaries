@@ -333,15 +333,21 @@ type HistoryRow = {
 async function readHistory(page: import('@playwright/test').Page): Promise<HistoryRow[]> {
   await page.getByRole('tab', { name: 'History' }).click();
   await page.locator('table.appt-history tbody tr').first().waitFor();
-  // The gutter column only exists for a person who holds concurrent appointments, so every other
-  // column shifts by one for them. Detect it once rather than hard-coding two sets of indices.
-  const off = await page.locator('table.appt-history thead th.appt-gutter-th').count();
+  // Columns by their headers, not their positions: the gutter exists only for a person who holds
+  // concurrent appointments, and Rate and Actual pay are one "Pay" column when they never differ.
+  const headers = (await page.locator('table.appt-history thead th').allInnerTexts()).map((h) => h.replace(/\s+/g, ' ').trim().toLowerCase());
+  const col = (name: string) => {
+    const i = headers.indexOf(name);
+    if (i < 0) throw new Error(`no "${name}" column in: ${headers.join(' | ')}`);
+    return i;
+  };
+  const [snapCol, orgCol, changeCol] = [col('snapshot'), col('school / dept'), col('change')];
   const rows = await page.locator('table.appt-history tbody tr').all();
   const out: HistoryRow[] = [];
   let snapshot = '';
   for (const row of rows) {
     const cells = row.locator('td');
-    const badge = cells.nth(off).locator('.mantine-Badge-root');
+    const badge = cells.nth(snapCol).locator('.mantine-Badge-root');
     // The snapshot is named once per group, so carry its name down the rest of its own rows.
     const labelled = (await badge.count()) > 0;
     if (labelled) snapshot = (await badge.first().innerText()).replace(/\s+/g, ' ').trim();
@@ -356,17 +362,17 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
     }
     const noteEl = row.locator('.appt-rate-note');
     const note = (await noteEl.count()) ? (await noteEl.first().innerText()).trim() : '';
-    const dot = cells.nth(off + 3).locator('[role="img"]');
+    const dot = cells.nth(orgCol).locator('[role="img"]');
     // The percentage cell now also holds the note; strip it so the two are asserted separately and
     // a guard on one cannot pass on the other's text.
-    const raiseCell = (await cells.nth(off + 6).innerText()).replace(/\s+/g, ' ').trim();
+    const raiseCell = (await cells.nth(changeCol).innerText()).replace(/\s+/g, ' ').trim();
     out.push({
       snapshot,
       labelled,
       lane: (await station.count()) ? (await station.first().innerText()).trim() : '',
       tracked,
       nodeX,
-      dept: (await cells.nth(off + 3).innerText()).split('\n').pop()!.trim(),
+      dept: (await cells.nth(orgCol).innerText()).split('\n').pop()!.trim(),
       raise: note ? raiseCell.replace(note, '').trim() : raiseCell,
       note,
       caps: await row.locator(".appt-gutter-track[data-ends='yes']").count(),
