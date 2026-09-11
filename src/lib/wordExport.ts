@@ -4,7 +4,7 @@
 // plain HTML (no Mantine, no CSS vars): those only resolve in the live app's stylesheet, and Word
 // ignores classes/external CSS anyway, so hand-rolled inline styles are the only way to keep the
 // exported look under our control.
-import { fmtYearsToParity, type BriefModel } from '../components/report/model';
+import { fmtYearsToParity, SECTION_ORDER, type BriefModel } from '../components/report/model';
 import { usd, pct } from './format';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
 
@@ -77,7 +77,7 @@ export function briefToWordHtml(model: BriefModel): string {
     history: sections.includes('history') && history.length >= 2,
     risk: sections.includes('risk'),
   };
-  const order: (keyof typeof sectionShow)[] = ['guidelineBasis', 'highlights', 'standing', 'factors', 'peers', 'history', 'risk'];
+  const order: (keyof typeof sectionShow)[] = [...SECTION_ORDER];
   const num: Partial<Record<keyof typeof sectionShow, number>> = {};
   { let n = 1; for (const k of order) if (sectionShow[k]) num[k] = ++n; }
   const notesNum = order.filter((k) => sectionShow[k]).length + 2;
@@ -118,21 +118,6 @@ export function briefToWordHtml(model: BriefModel): string {
     ));
   }
 
-  // ── Basis under the UW Salary Administration Guidelines ──
-  if (sectionShow.guidelineBasis) {
-    body.push(h2(`${num.guidelineBasis}. Basis under the UW Salary Administration Guidelines`));
-    for (const g of guidelineProvisions) {
-      body.push(p(`<b>${esc(g.name)}</b>${g.selfReported ? ' <i style="color:#888;">(self-reported)</i>' : ''}`, `${P}margin-bottom:2pt;`));
-      body.push(p(`&ldquo;${esc(g.quote)}&rdquo;`, `${SMALL}${DIM}font-style:italic;margin:0 0 2pt 0;`));
-      body.push(p(`Supported here by: ${esc(g.supportedBy)}.`, `${SMALL}margin:0 0 10pt 0;`));
-    }
-    body.push(p(
-      `Terms follow the guideline: this is a request for a <b>parity / compression adjustment</b>, not an ` +
-      `&ldquo;equity adjustment&rdquo; (a term the guideline reserves for protected-category inequities).`,
-      `${SMALL}${DIM}`,
-    ));
-  }
-
   // ── Grounds for a parity / compression adjustment (proofs) ──
   if (sectionShow.highlights) {
     body.push(h2(`${num.highlights}. Grounds for a parity / compression adjustment`));
@@ -150,6 +135,21 @@ export function briefToWordHtml(model: BriefModel): string {
         `${P}${DIM}`,
       ));
     }
+  }
+
+  // ── Basis under the UW Salary Administration Guidelines ──
+  if (sectionShow.guidelineBasis) {
+    body.push(h2(`${num.guidelineBasis}. Basis under the UW Salary Administration Guidelines`));
+    for (const g of guidelineProvisions) {
+      body.push(p(`<b>${esc(g.name)}</b>${g.selfReported ? ' <i style="color:#888;">(self-reported)</i>' : ''}`, `${P}margin-bottom:2pt;`));
+      body.push(p(`&ldquo;${esc(g.quote)}&rdquo;`, `${SMALL}${DIM}font-style:italic;margin:0 0 2pt 0;`));
+      body.push(p(`Supported here by: ${esc(g.supportedBy)}.`, `${SMALL}margin:0 0 10pt 0;`));
+    }
+    body.push(p(
+      `Terms follow the guideline: this is a request for a <b>parity / compression adjustment</b>, not an ` +
+      `&ldquo;equity adjustment&rdquo; (a term the guideline reserves for protected-category inequities).`,
+      `${SMALL}${DIM}`,
+    ));
   }
 
   // ── Market standing ──

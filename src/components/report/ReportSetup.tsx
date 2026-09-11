@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import {
   Stack, Card, Text, Select, Group, Badge, Button, TextInput, NumberInput, Switch, Radio,
-  SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box,
+  SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
 import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
@@ -255,11 +255,14 @@ export function ReportSetup({
       {/* Justification factors */}
       <Card withBorder padding="md">
         <SectionLabel>Justification factors</SectionLabel>
+        {/* Only the factors in use are listed, with their note and amount; the rest wait in one menu
+            below, the way comparators are added. Eleven switches, nearly all off, made the reader
+            scroll past the unused ones to reach the one they had. */}
         <Stack gap="sm" mt={8}>
-          {FACTOR_DEFS.map((f) => {
+          {FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => {
             const st = config.factors[f.key];
             return (
-              <Box key={f.key} onMouseEnter={() => onHover(`factor:${f.key}`)} onMouseLeave={() => onHover(null)}>
+              <Box key={f.key} data-factor={f.key} onMouseEnter={() => onHover(`factor:${f.key}`)} onMouseLeave={() => onHover(null)}>
                 <Switch
                   label={f.label}
                   checked={st.on}
@@ -437,15 +440,22 @@ export function ReportSetup({
             ))}
           </Stack>
         )}
-        <Button
-          size="xs"
-          variant="subtle"
-          mt="sm"
-          leftSection={<IconPlus size={ICON.compact} />}
-          onClick={() => set({ customFactors: [...config.customFactors, newCustomFactor()] })}
-        >
-          Add custom factor
-        </Button>
+        <Menu position="bottom-start" shadow="md" withinPortal>
+          <Menu.Target>
+            <Button size="xs" variant="subtle" mt="sm" leftSection={<IconPlus size={ICON.compact} />}>
+              Add a justification factor
+            </Button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {FACTOR_DEFS.filter((f) => !config.factors[f.key].on).map((f) => (
+              <Menu.Item key={f.key} onClick={() => setFactor(f.key, { on: true })}>{f.label}</Menu.Item>
+            ))}
+            <Menu.Divider />
+            <Menu.Item onClick={() => set({ customFactors: [...config.customFactors, newCustomFactor()] })}>
+              Custom factor…
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
       </Card>
 
       {/* Outcome override */}

@@ -1041,7 +1041,7 @@ export default function Reports() {
             </Group>
           }
         />
-        <ReportFlow type={type === 'comparison' ? 'comparison' : 'person'} />
+        <ReportFlow type={type === 'comparison' ? 'comparison' : 'person'} hasSubject={type === 'comparison' ? !!subjectKey : !!selPerson} />
       </div>
 
       {type === 'person' && (

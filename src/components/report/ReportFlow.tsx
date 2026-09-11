@@ -1,9 +1,10 @@
-import { Fragment } from 'react';
-import { Box, Paper, Text } from '@mantine/core';
-import { IconChevronRight } from '@tabler/icons-react';
+import { Fragment, useId } from 'react';
+import { Box, Paper, Text, UnstyledButton, Group } from '@mantine/core';
+import { IconChevronRight, IconChevronDown } from '@tabler/icons-react';
 import { Eyebrow } from '../Eyebrow';
 import { CardTitle } from '../CardTitle';
 import { ICON } from '../../lib/ui';
+import { usePref } from '../../lib/prefs';
 
 /**
  * What you give → what it checks → what you get, as three bordered columns.
@@ -48,13 +49,32 @@ const FLOW: Record<'person' | 'comparison', [Step, Step, Step]> = {
   ],
 };
 
-export function ReportFlow({ type }: { type: 'person' | 'comparison' }) {
+/**
+ * In full until a subject is picked — the moment the page is an empty pane and the strip is what
+ * explains it — then one line, "How this report works", that opens it again in place. Whether it is
+ * open is remembered per viewer: someone who wants the strip keeps it; everyone else gets the brief
+ * a screen higher.
+ */
+export function ReportFlow({ type, hasSubject }: { type: 'person' | 'comparison'; hasSubject: boolean }) {
+  const [open, setOpen] = usePref<boolean>('reportFlowOpen', false);
+  const id = useId();
+  const expanded = !hasSubject || open;
   return (
     // `mt` rather than a Stack gap: the strip shares the page header's `no-print` wrapper, so the
     // route's `Stack gap="lg"` spaces that whole wrapper and not the two things inside it.
-    <Box className="no-print" mt="lg">
-      <CardTitle mb="sm">How this works</CardTitle>
-      <div className="report-flow">
+    <Box className="no-print report-flow-wrap" mt="lg" data-expanded={expanded ? 'yes' : 'no'}>
+      {hasSubject ? (
+        <UnstyledButton aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} mb={open ? 'sm' : 0}>
+          <Group gap={6} wrap="nowrap">
+            {open ? <IconChevronDown size={ICON.compact} aria-hidden /> : <IconChevronRight size={ICON.compact} aria-hidden />}
+            <Text size="sm" fw={600}>How this report works</Text>
+          </Group>
+        </UnstyledButton>
+      ) : (
+        <CardTitle mb="sm">How this works</CardTitle>
+      )}
+      {expanded && (
+      <div className="report-flow" id={id}>
         {FLOW[type].map((s, i) => (
           <Fragment key={s.eyebrow}>
             {i > 0 && (
@@ -67,6 +87,7 @@ export function ReportFlow({ type }: { type: 'person' | 'comparison' }) {
           </Fragment>
         ))}
       </div>
+      )}
     </Box>
   );
 }

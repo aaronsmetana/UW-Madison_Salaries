@@ -17,7 +17,7 @@ import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
-import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind } from './model';
+import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
 import { ordinal } from '../../lib/stats';
 import { ICON } from '../../lib/ui';
 
@@ -111,7 +111,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     history: has('history') && history.length >= 2,
     risk: has('risk'),
   };
-  const sectionOrder: (keyof typeof sectionShow)[] = ['guidelineBasis', 'highlights', 'standing', 'factors', 'peers', 'history', 'risk'];
+  const sectionOrder: (keyof typeof sectionShow)[] = [...SECTION_ORDER];
   const sectionNum: Partial<Record<keyof typeof sectionShow, number>> = {};
   {
     let n = 1; // "1." is always the Recommendation, which renders whenever subjectPay != null
@@ -219,6 +219,8 @@ export function ReportBrief({ model, hovered, onHover }: {
                       return (
                         <Group
                           key={line.id}
+                          data-receipt={line.id}
+                          data-lit={lit ? 'yes' : undefined}
                           justify="space-between"
                           wrap="nowrap"
                           px={6}
@@ -256,7 +258,39 @@ export function ReportBrief({ model, hovered, onHover }: {
             <Text size="sm" c="dimmed" mb="lg">No job code on record for {subjectName} in this snapshot, so title-market benchmarking is limited.</Text>
           )}
 
-          {/* Basis under the UW Salary Administration Guidelines — the specific provisions this document's
+          {/* Why — the proofs. This is objective, salary+tenure-derived evidence, distinct from (and
+              ordered before) the self-reported value-adds in "Documented qualifications" below. */}
+          {sectionShow.highlights && (
+            <>
+              <SectionHeading id="highlights" num={sectionNum.highlights} annotation="objective evidence">Grounds for a parity / compression adjustment</SectionHeading>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
+                {/* The hairline and nothing else — elevation here was decoration (see theme.ts) — with the
+                    icon beside the figure it classifies rather than stacked above it. */}
+                {proofs.map((p) => (
+                  <Card key={p.kind} withBorder padding="lg" h="100%" className="evidence-card">
+                    <Group gap="sm" wrap="nowrap" align="flex-start">
+                      <ThemeIcon variant="light" color="accent" size={34} radius="md" style={{ flexShrink: 0 }}>{PROOF_ICON[p.kind]}</ThemeIcon>
+                      <div style={{ minWidth: 0 }}>
+                        <Text fw={800} fz={26} lh={1.1}>{p.value}</Text>
+                        <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
+                      </div>
+                    </Group>
+                    {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}{PROOF_NOTE[p.kind] && <Sup n={fn(PROOF_NOTE[p.kind]!)} />}</Text>}
+                  </Card>
+                ))}
+              </SimpleGrid>
+            </>
+          )}
+
+          {has('highlights') && realErosion && (
+            <Text size="sm" c="dimmed" mb="lg">
+              Since {realErosion.firstYear}, {subjectFirst}'s pay rose {pct(realErosion.nominalPct)} nominally — a{' '}
+              <Text span fw={600}>{pct(Math.abs(realErosion.realPct))} decline</Text> in real (CPI-adjusted) purchasing power.<Sup n={fn('cpi')} />
+            </Text>
+          )}
+
+          {/* Basis under the UW Salary Administration Guidelines (after the grounds it rests on — see
+              SECTION_ORDER) — the specific provisions this document's
               evidence supports, in the guideline's own vocabulary (parity / compression / market request),
               so the request speaks HR's language rather than an ad-hoc framing. */}
           {sectionShow.guidelineBasis && (
@@ -281,31 +315,6 @@ export function ReportBrief({ model, hovered, onHover }: {
                 </Text>
               </Card>
             </>
-          )}
-
-          {/* Why — the proofs. This is objective, salary+tenure-derived evidence, distinct from (and
-              ordered before) the self-reported value-adds in "Documented qualifications" below. */}
-          {sectionShow.highlights && (
-            <>
-              <SectionHeading id="highlights" num={sectionNum.highlights} annotation="objective evidence">Grounds for a parity / compression adjustment</SectionHeading>
-              <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
-                {proofs.map((p) => (
-                  <Card key={p.kind} withBorder shadow="sm" padding="lg" h="100%">
-                    <ThemeIcon variant="light" color="accent" size={38} radius="md">{PROOF_ICON[p.kind]}</ThemeIcon>
-                    <Text fw={800} fz={26} mt="sm" lh={1.1}>{p.value}</Text>
-                    <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
-                    {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}{PROOF_NOTE[p.kind] && <Sup n={fn(PROOF_NOTE[p.kind]!)} />}</Text>}
-                  </Card>
-                ))}
-              </SimpleGrid>
-            </>
-          )}
-
-          {has('highlights') && realErosion && (
-            <Text size="sm" c="dimmed" mb="lg">
-              Since {realErosion.firstYear}, {subjectFirst}'s pay rose {pct(realErosion.nominalPct)} nominally — a{' '}
-              <Text span fw={600}>{pct(Math.abs(realErosion.realPct))} decline</Text> in real (CPI-adjusted) purchasing power.<Sup n={fn('cpi')} />
-            </Text>
           )}
 
           {/* Market standing — a distribution view of the active benchmark cohort + how the subject

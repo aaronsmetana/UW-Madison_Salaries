@@ -57,15 +57,24 @@ export function newCustomFactor(): CustomFactor {
   return { id: `custom-${Math.random().toString(36).slice(2, 10)}`, label: '', amount: '', note: '' };
 }
 
-export const SECTION_DEFS = [
-  { value: 'highlights', label: 'Evidence & proof points' },
-  { value: 'guidelineBasis', label: 'Basis under UW salary guidelines' },
-  { value: 'standing', label: 'Market standing' },
-  { value: 'factors', label: 'Documented qualifications & responsibilities' },
-  { value: 'peers', label: 'Peer comparison' },
-  { value: 'history', label: 'Pay history' },
-  { value: 'risk', label: 'Retention & replacement cost' },
-];
+/**
+ * The order the brief's sections appear in — on screen, in print and in the .doc — one list, so the
+ * three cannot drift. The brief and the export each kept their own copy, and both put the guideline
+ * basis ahead of the evidence it rests on: the grounds come first, then the provisions they support.
+ */
+export const SECTION_ORDER = ['highlights', 'guidelineBasis', 'standing', 'factors', 'peers', 'history', 'risk'] as const;
+export type SectionKey = (typeof SECTION_ORDER)[number];
+
+const SECTION_LABEL: Record<SectionKey, string> = {
+  highlights: 'Evidence & proof points',
+  guidelineBasis: 'Basis under UW salary guidelines',
+  standing: 'Market standing',
+  factors: 'Documented qualifications & responsibilities',
+  peers: 'Peer comparison',
+  history: 'Pay history',
+  risk: 'Retention & replacement cost',
+};
+export const SECTION_DEFS: { value: SectionKey; label: string }[] = SECTION_ORDER.map((value) => ({ value, label: SECTION_LABEL[value] }));
 
 /** Bump when `ReportConfig`'s shape or defaults change in a way that needs one-time migration of
  *  already-saved (localStorage) configs — see `migrateConfig`. */
