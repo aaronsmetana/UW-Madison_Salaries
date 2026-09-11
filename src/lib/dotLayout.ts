@@ -28,13 +28,16 @@ export interface DotLayoutInput {
   /** Dot radius: every dot is kept at least this far inside the curve and above the baseline. */
   r: number;
   seed?: number;
+  /** Optional stacking key per dot: within each column the lower keys take the lower slots, so a
+   *  column of several kinds reads as bands. The x of each dot is unaffected. */
+  stack?: ArrayLike<number>;
 }
 
 /**
  * The dots as [x0, y0, x1, y1, …]. Each x moves at most half a pixel from its value; each y is between
  * the baseline and the curve, a radius inside both.
  */
-export function layoutDots({ xs, heightAt, baseY, r, seed = 1 }: DotLayoutInput): Float32Array {
+export function layoutDots({ xs, heightAt, baseY, r, seed = 1, stack }: DotLayoutInput): Float32Array {
   const n = xs.length;
   const out = new Float32Array(n * 2);
   const rand = seeded(seed);
@@ -52,6 +55,8 @@ export function layoutDots({ xs, heightAt, baseY, r, seed = 1 }: DotLayoutInput)
       const j = Math.floor(rand() * (i + 1));
       [list[i], list[j]] = [list[j], list[i]];
     }
+    // Stacked: kinds in key order from the baseline up, still shuffled within each kind (a stable sort).
+    if (stack) list.sort((a, b) => stack[a] - stack[b]);
     const k = list.length;
     const usable = Math.max(0, heightAt(c + 0.5) - 2 * r);
     for (let j = 0; j < k; j++) {
@@ -82,4 +87,60 @@ export function paysFromCounts(lo100: number, counts: readonly number[]): Float6
     for (let i = 0; i < c; i++) out[k++] = (lo100 + b) * 100 + ((i + 0.5) / c) * 100;
   }
   return out;
+}
+
+/**
+ * The people behind per-$100 counts, as pays in ascending order (`paysFromCounts`), and — when the
+ * counts are also given by category — each person's category index, in the categories' order. Within a
+ * $100 the categories take its people in order, so every pay is the one `paysFromCounts` gives. Without
+ * categories, or if theirs do not sum to `counts` bin by bin, `kinds` is null.
+ */
+export function peopleFromCounts(
+  lo100: number,
+  counts: readonly number[],
+  categories?: readonly { counts: readonly number[] }[] | null,
+): { pays: Float64Array; kinds: Uint8Array | null } {
+  const pays = paysFromCounts(lo100, counts);
+  if (!categories?.length) return { pays, kinds: null };
+  const kinds = new Uint8Array(pays.length);
+  let k = 0;
+  for (let b = 0; b < counts.length; b++) {
+    let seen = 0;
+    for (let c = 0; c < categories.length; c++) {
+      const m = categories[c].counts[b] ?? 0;
+      for (let i = 0; i < m; i++) kinds[k + seen + i] = c;
+      seen += m;
+    }
+    if (seen !== counts[b]) return { pays, kinds: null };
+    k += seen;
+  }
+  return { pays, kinds };
+}
+
+/** How far the pointer's wake reaches either side, how far up or down it can move a dot, the vertical
+ *  reach, and the pointer speed (CSS px per ms) at which it is at full strength. */
+export const WAKE_REACH = 28;
+export const WAKE_LIFT = 8;
+export const WAKE_REACH_Y = 44;
+export const WAKE_FULL_SPEED = 1.2;
+
+/**
+ * A dot's vertical offset in a moving pointer's wake: away from the pointer — up for a dot above it,
+ * down for one below — strongest at the pointer's column and speed, nothing beyond reach or at rest.
+ * `room` is how far the dot may go each way and stay inside the curve and above the baseline. Only y
+ * moves: a dot's x is its pay.
+ */
+export function wakeOffset({ dx, dy, speed, room }: {
+  /** The dot's x and y minus the pointer's, CSS px (y down). */
+  dx: number;
+  dy: number;
+  /** The pointer's speed, CSS px per ms. */
+  speed: number;
+  room: { up: number; down: number };
+}): number {
+  if (!(speed > 0) || Math.abs(dx) >= WAKE_REACH || Math.abs(dy) >= WAKE_REACH_Y) return 0;
+  const across = 1 - (dx / WAKE_REACH) ** 2;
+  const along = 1 - Math.abs(dy) / WAKE_REACH_Y;
+  const mag = WAKE_LIFT * across * across * along * Math.min(1, speed / WAKE_FULL_SPEED);
+  return dy < 0 ? -Math.min(mag, Math.max(0, room.up)) : Math.min(mag, Math.max(0, room.down));
 }

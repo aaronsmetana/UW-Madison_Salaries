@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import duckdb from 'duckdb';
-import { computeHomeStats } from './lib/home-stats.mjs';
+import { computeHomeStats, serializeHomeStats, HOME_STATS_BUDGET } from './lib/home-stats.mjs';
 
 // Six synthetic appointments across two schools/titles/categories, all in one snapshot — enough to
 // exercise every aggregate computeHomeStats derives without depending on the real (large) dataset.
@@ -191,5 +191,60 @@ describe('computeHomeStats pay_counts: one count per $100, the dots the landing 
   it('holds everyone under the cap and no one at or above it', () => {
     expect(s.pay_counts.counts.reduce((a, b) => a + b, 0)).toBe(rows.length - 1);
     expect(s.bins_overflow).toBe(1);
+  });
+});
+
+// The "By category" dots: each person is one dot, so they wear one category — the one of their
+// highest-paid appointment — and the categories' counts are the dots' counts, bin by bin.
+describe('computeHomeStats pay_counts.categories: one category per person', () => {
+  let c;
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-cat-'));
+    const base = { snapshot_id: 's', school: 'A', title: 'T', salary_fte_adjusted: null, date_of_hire: '2020-01-01', snapshot_date: '2026-01-01' };
+    c = await computeHomeStats(await writeParquet(dir, [
+      // Two categories: the lower-paid appointment first, so "the first row's category" is wrong.
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'two', salary: 60000, fte: 1, salary_fte_adjusted: 60000 },
+      { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'two', salary: 200000, fte: 0.5 },
+      // A tie between two categories goes to the name that sorts first.
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'tie', salary: 50000, fte: 1 },
+      { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'tie', salary: 50000, fte: 1 },
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 's1', salary: 40000, fte: 1 },
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 's2', salary: 45000, fte: 1 },
+      { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'top', salary: 300000, fte: 1 },
+    ]), 's');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const cat = (name) => c.pay_counts.categories.find((x) => x.name === name);
+
+  it("counts a person once, in their highest-paid appointment's category, ties to the name", () => {
+    // two: Faculty (100,000 of their 160,000); tie: Faculty; s1, s2: Staff; top: Faculty, above the cap.
+    expect(cat('Faculty').n).toBe(3);
+    expect(cat('Staff').n).toBe(2);
+    expect(c.pay_counts.categories.map((x) => x.name)).toEqual(['Faculty', 'Staff']);
+  });
+
+  it("sums, bin by bin, to the dots' counts, and above the cap to the overflow", () => {
+    c.pay_counts.counts.forEach((n, i) => {
+      expect(c.pay_counts.categories.reduce((t, x) => t + x.counts[i], 0)).toBe(n);
+    });
+    expect(c.pay_counts.categories.reduce((t, x) => t + x.over, 0)).toBe(c.bins_overflow);
+    expect(cat('Faculty').over).toBe(1);
+  });
+
+  it("puts each person's total pay in their category's median", () => {
+    // Faculty: two at 160,000, tie at 100,000, top at 300,000.
+    expect(cat('Faculty').median).toBe(160000);
+    expect(c.category_medians[0]).toEqual({ category: 'Faculty', median: 160000 });
+  });
+});
+
+describe('serializeHomeStats', () => {
+  it('writes compact JSON under its budget, and refuses a file over it', () => {
+    const small = serializeHomeStats({ a: [1, 2, 3] });
+    expect(small.json).toBe('{"a":[1,2,3]}');
+    expect(small.gz).toBeLessThan(HOME_STATS_BUDGET);
+    let x = 1;
+    const noise = Array.from({ length: 20000 }, () => (x = (x * 48271) % 2147483647));
+    expect(() => serializeHomeStats({ noise })).toThrow(/budget/);
   });
 });

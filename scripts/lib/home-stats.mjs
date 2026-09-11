@@ -1,5 +1,21 @@
+import zlib from 'node:zlib';
 import duckdb from 'duckdb';
 import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
+
+/** What home-stats.json may weigh gzipped. The landing page fetches it on every visit, before anything
+ *  else can draw; the per-category counts behind the "By category" dots are most of it. */
+export const HOME_STATS_BUDGET = 12 * 1024;
+
+/** home-stats.json's bytes, compact — the per-$100 counts are thousands of small numbers, and pretty-
+ *  printed each took a line of its own — refused over its gzipped budget rather than shipped. */
+export function serializeHomeStats(stats) {
+  const json = JSON.stringify(stats);
+  const gz = zlib.gzipSync(json).length;
+  if (gz > HOME_STATS_BUDGET) {
+    throw new Error(`home-stats.json is ${gz} bytes gzipped, over its ${HOME_STATS_BUDGET}-byte budget — the landing page loads it on every visit`);
+  }
+  return { json, gz };
+}
 
 /** Upper edge of the landing-page histogram, in dollars. Salaries at or above this are counted into
  *  `bins_overflow` rather than binned, so a handful of extreme outliers don't compress the bars that
@@ -32,6 +48,18 @@ const PAY = ACTUAL_PAY_SQL;
  */
 const people = (src, snap) =>
   `(SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)`;
+
+/**
+ * The same people, each with one staff category: the category of their highest-paid appointment,
+ * ties to the category's name. A dot on the landing page is a person at their total pay, so it can
+ * wear one colour only — and 83 people hold appointments in two categories. The "Median pay by group"
+ * fact is taken over this too, so the legend beside the dots and the fact can never disagree.
+ */
+const peopleByCategory = (src, snap) =>
+  `(SELECT person_key, sum(rp) AS pay, first(cat ORDER BY rp DESC, cat) AS cat
+    FROM (SELECT person_key, coalesce(employee_category, 'Other') AS cat, ${PAY} AS rp
+          FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0)
+    GROUP BY person_key)`;
 
 // Mirrors the six useSql queries in src/routes/Home.tsx so the landing page can render from a
 // ~2KB static JSON instead of booting DuckDB-WASM + downloading the full parquet.
@@ -71,6 +99,17 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
         `SELECT floor(pay / 100) AS b, count(*) AS n FROM ${people(src, snap)}
          WHERE pay > 0 AND pay < ${BIN_CAP} GROUP BY b ORDER BY b`
       );
+      // The same counts split by category (peopleByCategory), for the "By category" dots — plus each
+      // category's headcount, median and count at or above the cap, over everyone paid (as the
+      // headline is), not only the people under the cap.
+      const per100Cat = await run(
+        `SELECT cat, floor(pay / 100) AS b, count(*) AS n FROM ${peopleByCategory(src, snap)}
+         WHERE pay > 0 AND pay < ${BIN_CAP} GROUP BY cat, b ORDER BY cat, b`
+      );
+      const catRows = await run(
+        `SELECT cat, count(*) AS n, median(pay) AS med, count(*) FILTER (WHERE pay >= ${BIN_CAP}) AS over
+         FROM ${peopleByCategory(src, snap)} WHERE pay > 0 GROUP BY cat ORDER BY n DESC, cat`
+      );
       const [overflowRow] = await run(
         `SELECT count(*) AS n FROM ${people(src, snap)} WHERE pay >= ${BIN_CAP}`
       );
@@ -98,14 +137,9 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
                 median(date_diff('day', CAST(doh AS DATE), CAST(sd AS DATE)) / 365.25) FILTER (WHERE doh IS NOT NULL) AS tenure
          FROM p`
       );
-      // Per person within each category, on actual pay — the measure every other landing figure uses.
-      const byCat = await run(
-        `WITH p AS (SELECT employee_category AS cat, person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay
-                    FROM ${src} WHERE snapshot_id = '${snap}' AND employee_category IS NOT NULL
-                    GROUP BY employee_category, person_key)
-         SELECT cat, median(pay) FILTER (WHERE pay > 0) AS med, count(*) FILTER (WHERE pay > 0) AS n
-         FROM p GROUP BY cat ORDER BY n DESC LIMIT 3`
-      );
+      // The three largest categories and their medians, each person once, at their total actual pay, in
+      // the category of their highest-paid appointment — the rule the "By category" dots use.
+      const byCat = catRows.filter((c) => c.cat !== 'Other').slice(0, 3);
 
       con.close();
       db.close(() => {
@@ -123,7 +157,14 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
             const lo100 = toNum(per100[0].b);
             const counts = new Array(toNum(per100[per100.length - 1].b) - lo100 + 1).fill(0);
             for (const r of per100) counts[toNum(r.b) - lo100] = toNum(r.n);
-            return { lo100, counts };
+            // In stacking order, the largest category first (at the bottom of every column). Each
+            // category's counts sit on the same $100 grid, and bin by bin they sum to `counts`.
+            const categories = catRows.map((c) => {
+              const own = new Array(counts.length).fill(0);
+              for (const r of per100Cat) if (r.cat === c.cat) own[toNum(r.b) - lo100] = toNum(r.n);
+              return { name: c.cat, n: toNum(c.n), median: toNum(c.med), over: toNum(c.over), counts: own };
+            });
+            return { lo100, counts, categories };
           })(),
           bins_overflow: toNum(overflowRow?.n) ?? 0,
           p25: toNum(quartRow?.p25),

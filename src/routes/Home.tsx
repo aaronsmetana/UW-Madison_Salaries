@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
 import {
@@ -11,14 +11,17 @@ import { countBelow, countWithin, smoothBins, READOUT_RADIUS, type Bin } from '.
 import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
-import { useCountUp, useReveal, prefersReducedMotion } from '../lib/motion';
+import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
-import { DotField } from '../components/chart/DotField';
-import { paysFromCounts } from '../lib/dotLayout';
+import { DotField, SPREAD_MS, useEntranceOnce } from '../components/chart/DotField';
+import { peopleFromCounts } from '../lib/dotLayout';
+import { usePref } from '../lib/prefs';
+import { SegmentedToggle } from '../components/SegmentedToggle';
+import type { HomeStats } from '../lib/manifest';
 import { ordinal } from '../lib/stats';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
@@ -77,21 +80,44 @@ const AXIS_ROW_H = 18;
 const AXIS_LABEL_W = 120;
 /** Candidate axis intervals, coarsest last. The first whose labels fit the plot wins. */
 const TICK_STEPS = [10_000, 25_000, 50_000, 100_000, 250_000];
+/** One histogram bin, in dollars: the readout counts whole bins. */
+const BIN_DOLLARS = 1000;
+/** The break between the plot and the pile of people above the cap, and the pile's least width. */
+const PILE_GAP = 14;
+const PILE_MIN_W = 10;
+/** Every dot in the pile (its values run 0 to 1). */
+const PILE_ALL: [number, number] = [0, 2];
+/** The plot's width: the panel's, less the break and the pile. */
+const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
+
+type PayCounts = NonNullable<HomeStats['pay_counts']>;
+
+/** Each staff category's ink (app.css, one per scheme, each a lone dot at 3:1 or better against the
+ *  card). By name, so a category keeps its colour if the stacking order changes. */
+const CATEGORY_INK: Record<string, string> = {
+  'Academic Staff': 'var(--cat-academic)',
+  'University Staff': 'var(--cat-university)',
+  Faculty: 'var(--cat-faculty)',
+  'Employees in Training': 'var(--cat-training)',
+  Limited: 'var(--cat-limited)',
+};
+const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';
 
 function Distribution({
-  bins, payCounts, p25, median, p75, cap, overflow, headcount,
+  bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
-  payCounts?: { lo100: number; counts: number[] } | null;
+  payCounts?: PayCounts | null;
   p25: number | null;
   median: number | null;
   p75: number | null;
   cap: number | null;
   overflow: number | null;
   headcount: number | null;
+  /** Colour the dots by staff category, each column stacked into bands. */
+  byCategory: boolean;
 }) {
-  const revealed = useReveal(bins.length >= 3);
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
   // noise. See `KERNEL_SIGMA` for the measurements the width was chosen against.
@@ -104,10 +130,16 @@ function Distribution({
   // inside a link to carry a readout would be worse than not having one. Everything the readout says
   // is already stated without it — the quartile markers below the curve, and the caption's headcount.
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // The pile of people above the cap is under the pointer.
+  const [hoverPile, setHoverPile] = useState(false);
   // Rendered width of the plot, in px. The axis needs it: how many salary labels fit is a question
   // about pixels, not about the dollar range, and answering it from the range alone put "$200k" and
   // "$250k+" flush against each other at 375px.
   const [plotW, setPlotW] = useState(0);
+  // The pile's label under it ("574 at $250k+"), measured: it reaches left past the pile into the
+  // plot's own axis, and a tick there is dropped rather than drawn into it.
+  const pileLabelRef = useRef<HTMLDivElement>(null);
+  const [pileLabelW, setPileLabelW] = useState(0);
   // Rendered width of the readout pill. It has to be measured rather than estimated: the text
   // carries four variable-length fields, and the pill is 65% of the panel's width on a phone, so
   // where it may sit is a question about pixels that changes as the reader moves the pointer.
@@ -115,15 +147,43 @@ function Distribution({
   const [pillW, setPillW] = useState(0);
   // Where the lens is, for a mouse; a tap on a phone belongs to the link around the chart.
   const [lensAt, setLensAt] = useState<{ x: number; y: number } | null>(null);
+  // Once a session, for both fields together: the pile lands after the curve's last dots.
+  const entrance = useEntranceOnce();
 
   // One dot per person, under the curve (DotField). Everyone the bins describe: the counts per $100
-  // when the artifact carries them, otherwise each $1k bin's people spread across its thousand.
-  const people = useMemo(() => {
-    if (payCounts?.counts.length) return paysFromCounts(payCounts.lo100, payCounts.counts);
+  // when the artifact carries them, otherwise each $1k bin's people spread across its thousand — and,
+  // by category, each person's category, largest first.
+  const categories = payCounts?.categories?.length ? payCounts.categories : null;
+  const { people, cats } = useMemo(() => {
+    if (payCounts?.counts.length) {
+      const { pays, kinds } = peopleFromCounts(payCounts.lo100, payCounts.counts, categories);
+      return { people: pays, cats: kinds };
+    }
     const out: number[] = [];
     for (const b of bins) for (let i = 0; i < b.n; i++) out.push(b.bucket + ((i + 0.5) / b.n) * 1000);
-    return Float64Array.from(out);
-  }, [payCounts, bins]);
+    return { people: Float64Array.from(out), cats: null };
+  }, [payCounts, categories, bins]);
+  const colour = byCategory && !!cats && !!categories;
+  const inks = useMemo(() => (categories ?? []).map((c) => categoryInk(c.name)), [categories]);
+
+  // The people at or above the cap: a pile past a break at the right, so every person is a dot. Its
+  // place along x means only "above the cap"; stacked by category like the rest.
+  const over = overflow ?? 0;
+  const pile = useMemo(() => {
+    const n = over;
+    // Spread along the pile's width by a golden-ratio stride rather than in order, so each category's
+    // people are across every column and stack into bands — in order, each took a strip of its own.
+    const values = new Float64Array(n);
+    for (let i = 0; i < n; i++) values[i] = (i * 0.6180339887498949 + 0.5 / n) % 1;
+    let kinds: Uint8Array | null = null;
+    if (categories && categories.reduce((t, c) => t + (c.over ?? 0), 0) === n) {
+      kinds = new Uint8Array(n);
+      let k = 0;
+      categories.forEach((c, ci) => { for (let i = 0; i < (c.over ?? 0); i++) kinds![k++] = ci; });
+    }
+    return { values, kinds };
+  }, [over, categories]);
+
   const curveLo = curve[0]?.bucket ?? 0;
   const curveSpan = (curve[curve.length - 1]?.bucket ?? 1) - curveLo || 1;
   const curveMax = useMemo(() => Math.max(1, ...curve.map((b) => b.n)), [curve]);
@@ -139,6 +199,18 @@ function Distribution({
     const n = a.n + (b.n - a.n) * f;
     return (n / curveMax) * (180 - 4) + 2;
   }, [curve, curveLo, curveSpan, curveMax]);
+  // The pile is packed as densely as the field: its height is the curve's mean height, and its width
+  // the plot's times the share of people it holds, so each dot has the same room as one under the curve.
+  const pileH = useMemo(() => {
+    if (curve.length < 2) return 0;
+    let t = 0;
+    for (const b of curve) t += (b.n / curveMax) * (180 - 4) + 2;
+    return Math.round(t / curve.length);
+  }, [curve, curveMax]);
+  const pileShare = people.length > 0 ? over / people.length : 0;
+  const hasPile = over > 0 && pileH > 0;
+  const pileX = useCallback((v: number, width: number) => v * width, []);
+  const pileHeight = useCallback(() => pileH, [pileH]);
 
   // p25 and median sit close together on a right-skewed curve, so their labels overlap and render as
   // one unreadable run — the same failure PeerRangeBar hit. Reuse its pure row-assignment helper
@@ -159,11 +231,13 @@ function Distribution({
       );
       setLabelRows((prev) => (prev.length === next.length && prev.every((r, i) => r === next[i]) ? prev : next));
       setPlotW(row.offsetWidth);
+      setPileLabelW(pileLabelRef.current?.offsetWidth ?? 0);
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(row);
     labelRefs.current.forEach((el) => el && ro.observe(el));
+    if (pileLabelRef.current) ro.observe(pileLabelRef.current);
     document.fonts?.ready.then(measure).catch(() => {});
     window.addEventListener('resize', measure);
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
@@ -178,6 +252,14 @@ function Distribution({
     if (!el) return;
     setPillW(el.offsetWidth);
   }, [hoverIdx, bins, headcount]);
+
+  // The people the readout counts, drawn in a stronger ink: the highlight is exactly the pill's count
+  // (the $1k bins within ±$5k of the bucket under the pointer).
+  const hoveredBucket = hoverIdx != null ? curve[hoverIdx]?.bucket ?? null : null;
+  const highlight = useMemo<[number, number] | null>(
+    () => (hoveredBucket != null ? [hoveredBucket - READOUT_RADIUS, hoveredBucket + READOUT_RADIUS + BIN_DOLLARS] : null),
+    [hoveredBucket],
+  );
 
   if (bins.length < 3) return null;
 
@@ -202,7 +284,10 @@ function Distribution({
   const step = TICK_STEPS.find((s) => span / s <= fits) ?? TICK_STEPS[TICK_STEPS.length - 1];
   // The right edge belongs to the cap label ("$250k+"), which is right-aligned and wider than a
   // plain tick — so a tick that lands underneath it is dropped rather than drawn into it.
-  const rightGuard = 1 - AXIS_LABEL_W / plotW;
+  // With a pile, its label reaches left past the pile into the plot's axis by `reachIn` px.
+  const pileAside = hasPile ? PILE_GAP + Math.max(PILE_MIN_W, plotW * pileShare) : 0;
+  const reachIn = hasPile ? Math.max(0, pileLabelW - pileAside) : 0;
+  const rightGuard = 1 - (hasPile ? reachIn + AXIS_LABEL_W / 2 + 8 : AXIS_LABEL_W) / plotW;
   const ticks: number[] = [];
   // Nothing until the row has been measured. The alternative — guess a width, then correct it once
   // the measurement lands — paints one tick set and replaces it with another, and a screenshot taken
@@ -226,12 +311,13 @@ function Distribution({
   // The curve is a density, so its height is not a headcount and must never be shown as one. The
   // readout names the bucket under the pointer and counts the RAW bins around it, which is what makes
   // a mound legible: "this hump is 1,240 people, not a taller line".
-  const hovered = revealed && hoverIdx != null ? curve[hoverIdx] : null;
+  const hovered = hoverIdx != null ? curve[hoverIdx] : null;
   const hoverPct = hovered ? (X(hovered.bucket) / W) * 100 : 0;
-  // Clamped to the plotted range: near either end the band would otherwise hang off the panel and
-  // claim to cover salaries the chart does not draw.
+  // The band covers the dollars the count covers: the $1k bins within ±$5k of the bucket, so from
+  // $5k below it to the end of the bin $5k above. Clamped to the plotted range: near either end the
+  // band would otherwise hang off the panel and claim to cover salaries the chart does not draw.
   const bandLo = hovered ? Math.max(lo, hovered.bucket - READOUT_RADIUS) : 0;
-  const bandHi = hovered ? Math.min(hi, hovered.bucket + READOUT_RADIUS) : 0;
+  const bandHi = hovered ? Math.min(hi, hovered.bucket + READOUT_RADIUS + BIN_DOLLARS) : 0;
   // Against the full headcount, not the binned total — the people above the $250k cap are still
   // people, and leaving them out would put the top of the drawn range at the 100th percentile.
   const share = hovered && headcount ? countBelow(bins, hovered.bucket) / headcount : null;
@@ -250,43 +336,45 @@ function Distribution({
     for (let i = 1; i < curve.length; i++) {
       if (Math.abs(curve[i].bucket - at) < Math.abs(curve[best].bucket - at)) best = i;
     }
+    setHoverPile(false);
     setHoverIdx(best);
     setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
+  const onLeave = () => { setHoverIdx(null); setLensAt(null); };
+  const pileHighlight = hoverPile ? PILE_ALL : null;
+  const inkList = colour ? inks : undefined;
 
   return (
     // `card-hover` because the whole panel is a link to /explore, and lifting the border on hover is
     // the one "this responds" gesture the app uses (see the rule's own note on why it isn't a lift).
-    <div className="hero-dist glass card-hover">
-      <div style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={() => { setHoverIdx(null); setLensAt(null); }}>
+    <div
+      className="hero-dist glass card-hover"
+      style={{ '--pile-gap': `${hasPile ? PILE_GAP : 0}px`, '--pile-w': hasPile ? `max(${PILE_MIN_W}px, calc((100% - ${PILE_GAP}px) * ${(pileShare / (1 + pileShare)).toFixed(5)}))` : '0px' } as CSSProperties}
+    >
+      <div className="hero-dist-row">
+      <div className="hero-dist-main" style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={onLeave}>
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
           curve used to carry is these people; the line, the markers and the readout stay on top. */}
       <div style={{ position: 'absolute', inset: 0, height: H }}>
-        <DotField className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H} entrance lensAt={lensAt} />
+        <DotField
+          className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
+          kinds={colour ? cats : null} inks={inkList} stack={colour}
+          entrance={entrance} lensAt={lensAt} wake highlight={highlight}
+        />
       </div>
-      <div
-        style={{
-          transform: revealed ? 'scaleY(1)' : 'scaleY(0.04)',
-          transformOrigin: 'bottom',
-          opacity: revealed ? 1 : 0,
-          transition: 'transform 700ms ease-out, opacity 500ms ease-out',
-        }}
-      >
-        <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
-          <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-          {marks.map((m) => (
-            <line
-              key={m.label}
-              x1={X(m.v)} x2={X(m.v)} y1={m.strong ? 4 : 26} y2={H}
-              stroke={m.strong ? 'var(--mantine-color-accent-7)' : 'var(--mantine-color-gray-5)'}
-              strokeWidth={m.strong ? 1.5 : 1}
-              strokeDasharray={m.strong ? undefined : '2 3'}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </svg>
-      </div>
-
+      <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
+        <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        {marks.map((m) => (
+          <line
+            key={m.label}
+            x1={X(m.v)} x2={X(m.v)} y1={m.strong ? 4 : 26} y2={H}
+            stroke={m.strong ? 'var(--mantine-color-accent-7)' : 'var(--mantine-color-gray-5)'}
+            strokeWidth={m.strong ? 1.5 : 1}
+            strokeDasharray={m.strong ? undefined : '2 3'}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
       {/* The ±$5k band, drawn as the readout's own footprint rather than a hairline.
           The pill has always reported a count within ±$5k while the mark under it was a 1px line,
           so the drawing and the number described different things — a reader lining the line up
@@ -347,11 +435,43 @@ function Distribution({
       )}
       </div>
 
+
+      {/* The people at or above the cap: past a break, a pile packed as densely as the field. */}
+      {hasPile && (
+        <>
+          <svg className="hero-dist-break" width={PILE_GAP} height={H} aria-hidden style={{ display: 'block', alignSelf: 'end' }}>
+            <path
+              d={`M1 ${H - 1} L${PILE_GAP * 0.3} ${H - 1} L${PILE_GAP * 0.42} ${H - 7} L${PILE_GAP * 0.58} ${H + 5} L${PILE_GAP * 0.7} ${H - 1} L${PILE_GAP - 1} ${H - 1}`}
+              fill="none" stroke="var(--mantine-color-gray-5)" strokeWidth={1}
+            />
+          </svg>
+          <div
+            className="hero-dist-pile" style={{ position: 'relative', height: H }}
+            onPointerMove={() => { setHoverIdx(null); setLensAt(null); setHoverPile(true); }}
+            onPointerLeave={() => setHoverPile(false)}
+          >
+            <DotField
+              className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
+              kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
+              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame"
+            />
+            {hoverPile && headcount != null && (
+              <div aria-hidden style={{ position: 'absolute', right: 0, top: H - pileH - 30, zIndex: Z.local, pointerEvents: 'none' }}>
+                <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>
+                  {num(over)} people at {fmtK(cap ?? hi)} or more · the top {(Math.max(0.1, (over / headcount) * 100)).toFixed(1)}%
+                </span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+      </div>
+
       {/* Marker labels live in HTML, not SVG: `preserveAspectRatio="none"` would stretch SVG text
           horizontally by whatever factor the box is scaled by. */}
       <div
         ref={labelRowRef}
-        style={{ position: 'relative', height: Math.max(1, ...labelRows.map((r) => r + 1)) * LABEL_ROW_H, marginTop: 2 }}
+        style={{ position: 'relative', height: Math.max(1, ...labelRows.map((r) => r + 1)) * LABEL_ROW_H, marginTop: 2, width: PLOT_WIDTH }}
       >
         {marks.map((m, i) => (
           <Text
@@ -377,7 +497,8 @@ function Distribution({
 
       {/* A salary axis, not two endpoints. Positioned by value like the marker labels above, so a
           tick sits exactly under the pay it names — `justify="space-between"` only ever happened to
-          be right for the two extremes. */}
+          be right for the two extremes. Positions are shares of the plot's width, which stops short
+          of the pile. */}
       <div className="hero-dist-axis" style={{ position: 'relative', height: AXIS_ROW_H, marginTop: 6 }}>
         {ticks.map((v) => (
           <Text
@@ -386,7 +507,7 @@ function Distribution({
             c="dimmed"
             style={{
               position: 'absolute',
-              left: `${(X(v) / W) * 100}%`,
+              left: `calc(${PLOT_WIDTH} * ${(X(v) / W).toFixed(5)})`,
               // The first tick sits on the left edge, so centring it would hang half the label off
               // the panel. Every other one centres on its value.
               transform: v === lo ? undefined : 'translateX(-50%)',
@@ -397,17 +518,31 @@ function Distribution({
           </Text>
         ))}
         <Text
+          ref={pileLabelRef}
           size="xs"
           c="dimmed"
+          className="hero-dist-pile-label"
           style={{ position: 'absolute', right: 0, whiteSpace: 'nowrap' }}
         >
-          {cap != null ? `${fmtK(cap)}+` : `${fmtK(hi)}+`}
+          {hasPile ? `${num(over)} at ${fmtK(cap ?? hi)}+` : cap != null ? `${fmtK(cap)}+` : `${fmtK(hi)}+`}
         </Text>
       </div>
+      {colour && categories && (
+        <div className="hero-dist-legend">
+          <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">By highest-paid appointment, from the baseline up:</Text>
+          {categories.map((c, i) => (
+            <span key={c.name} className="hero-dist-legend-item" data-category={c.name} data-n={c.n}>
+              <span className="hero-dist-swatch" style={{ background: inks[i] }} aria-hidden />
+              <Text span size="xs" fw={600}>{c.name}</Text>
+              <Text span size="xs" c="dimmed">{num(c.n)}<span className="hero-dist-legend-median"> · median {fmtK(c.median)}</span></Text>
+            </span>
+          ))}
+        </div>
+      )}
       <Text size="xs" c="dimmed" ta="center" mt={4}>
         Each dot is one person · actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
-        {/* Say what the cap hides rather than truncating the tail silently. */}
-        {overflow ? ` · ${num(overflow)} above ${fmtK(cap ?? 0)} not shown` : ''}
+        {/* Say where the people above the cap are rather than truncating the tail silently. */}
+        {hasPile ? ` · ${num(over)} at ${fmtK(cap ?? hi)}+ in the pile` : overflow ? ` · ${num(overflow)} above ${fmtK(cap ?? 0)} not shown` : ''}
       </Text>
     </div>
   );
@@ -476,6 +611,10 @@ export default function Home() {
   // the page isn't pinned to some other (older) snapshot — in which case we fall back to live SQL.
   const { data: homeStats, isError: homeStatsFailed } = useHomeStats();
   const artifactUsable = !!homeStats && (snap == null || snap === homeStats.snapshot_id);
+  // "All" or "By category" for the dots, remembered per viewer. Offered only when the artifact carries
+  // the categories: the live-SQL fallback draws the dots from the bins alone.
+  const [colourBy, setColourBy] = usePref<'all' | 'category'>('home-dots-colour', 'all');
+  const canColour = artifactUsable && !!homeStats.pay_counts?.categories?.length;
   const needsSql = !!snap && (homeStatsFailed || (!!homeStats && !artifactUsable));
 
   const { data: payrollRows } = useSql<{ total: number | null }>(
@@ -545,11 +684,13 @@ export default function Home() {
   const tenure = artifactUsable ? homeStats.median_tenure_years : (factStats?.[0]?.tenure ?? null);
   const { data: byCat } = useSql<{ cat: string; med: number }>(
     ['home-bycat', snap ?? ''],
-    `WITH p AS (SELECT employee_category cat, person_key, sum(${ACTUAL_PAY}) FILTER (WHERE salary > 0) pay
-                FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND employee_category IS NOT NULL
-                GROUP BY employee_category, person_key)
+    // Each person once, at their total pay, in the category of their highest-paid appointment — the
+    // rule home-stats.json uses (scripts/lib/home-stats.mjs), so the fact reads the same either way.
+    `WITH r AS (SELECT person_key, employee_category cat, ${ACTUAL_PAY} rp FROM salaries
+                WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0),
+          p AS (SELECT person_key, sum(rp) pay, first(cat ORDER BY rp DESC, cat) cat FROM r GROUP BY person_key)
      SELECT cat, median(pay) FILTER (WHERE pay > 0) med, count(*) FILTER (WHERE pay > 0) n
-     FROM p GROUP BY cat ORDER BY n DESC LIMIT 3`,
+     FROM p WHERE cat IS NOT NULL GROUP BY cat ORDER BY n DESC, cat LIMIT 3`,
     needsSql
   );
   const categoryMedians = artifactUsable
@@ -633,18 +774,33 @@ export default function Home() {
             headline tells you to use, so it reads as underweight at anything narrower than the
             figure it sits under. */}
         <Stack gap="lg" maw="var(--content-max)" mx="auto" w="100%" className="hero-rise">
-          <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
-            <Distribution
-              bins={bins}
-              payCounts={artifactUsable ? homeStats.pay_counts ?? null : null}
-              p25={artifactUsable ? homeStats.p25 : null}
-              median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
-              p75={artifactUsable ? homeStats.p75 : null}
-              cap={artifactUsable ? homeStats.bin_cap : null}
-              overflow={artifactUsable ? homeStats.bins_overflow : null}
-              headcount={summary?.latest?.headcount ?? null}
-            />
-          </Anchor>
+          {/* The toggle sits over the panel's top-right corner but outside its link: HTML allows no
+              interactive content inside an <a>, and a click on it would also have navigated away (the
+              guard in e2e/dots.spec; axe's nested-interactive rule does not cover links). */}
+          <div className="hero-dist-wrap">
+            <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
+              <Distribution
+                bins={bins}
+                payCounts={artifactUsable ? homeStats.pay_counts ?? null : null}
+                p25={artifactUsable ? homeStats.p25 : null}
+                median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
+                p75={artifactUsable ? homeStats.p75 : null}
+                cap={artifactUsable ? homeStats.bin_cap : null}
+                overflow={artifactUsable ? homeStats.bins_overflow : null}
+                headcount={summary?.latest?.headcount ?? null}
+                byCategory={colourBy === 'category'}
+              />
+            </Anchor>
+            {canColour && (
+              <div className="hero-dist-toggle">
+                <SegmentedToggle
+                  options={[{ id: 'all', label: 'All' }, { id: 'category', label: 'By category' }]}
+                  value={colourBy}
+                  onChange={(v) => setColourBy(v === 'category' ? 'category' : 'all')}
+                />
+              </div>
+            )}
+          </div>
 
           <SearchBox size="lg" autoFocus />
 

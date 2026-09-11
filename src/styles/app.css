@@ -120,6 +120,16 @@
   --dot-ink: var(--mantine-color-accent-6);
   --mark-peer-same-school: var(--mantine-color-pos-7);
   --mark-peer: var(--mantine-color-gray-5);
+  /* The landing dots by staff category, one ink each, every one a lone dot at 3:1 or better against the
+     card at the dots' 0.85 alpha (e2e/dots.spec). Hues far apart, and neighbouring bands (Academic /
+     University Staff, University Staff / Employees in Training, Academic Staff / Faculty, Faculty /
+     Limited) differ in lightness too. Light, on white: 3.58 / 3.67 / 4.5 / 4.22 / 5.47. */
+  --cat-academic: var(--mantine-color-accent-6);
+  --cat-university: #b35c00;
+  --cat-faculty: var(--mantine-color-pink-8);
+  --cat-training: var(--mantine-color-violet-7);
+  --cat-limited: var(--mantine-color-gray-7);
+  --cat-other: var(--mantine-color-gray-6);
   --guide-strong: var(--mantine-color-gray-6);
   /* The middle 50% of a group (p25-p75), one look everywhere: a neutral wash — teal means "this
      person" — bounded by two edges a reader can see (3.32:1). The wash it replaces was the accent at
@@ -347,6 +357,13 @@ body {
   --dot-ink: var(--mantine-color-accent-5);
   --mark-peer-same-school: var(--mantine-color-pos-7);
   --mark-peer: var(--mantine-color-gray-7);
+  /* On the #141619 card: 4.1 / 7.17 / 5.8 / 4.23 / 6.61. */
+  --cat-academic: var(--mantine-color-accent-5);
+  --cat-university: var(--mantine-color-orange-4);
+  --cat-faculty: var(--mantine-color-pink-4);
+  --cat-training: var(--mantine-color-violet-4);
+  --cat-limited: var(--mantine-color-gray-5);
+  --cat-other: var(--mantine-color-gray-6);
   --guide-strong: var(--mantine-color-gray-6);
   --band-fill: rgba(222, 226, 230, 0.1);
   --band-edge: var(--mantine-color-gray-6);
@@ -1114,8 +1131,16 @@ button:active,
   background-size: 22px 22px;
   /* Scoped to the top of the page: this element is a sibling of ALL the content with `inset: 0`, so
      the mask is what keeps it behind the hero rather than tiling the entire page height. */
-  -webkit-mask-image: radial-gradient(ellipse 62% 560px at 50% 170px, #000 0%, transparent 72%);
-  mask-image: radial-gradient(ellipse 62% 560px at 50% 170px, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 600px at 50% 170px, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse 62% 600px at 50% 170px, #000 0%, transparent 72%);
+}
+/* Reaching past the bottom of the distribution panel in both of its modes — "By category" adds a
+   legend — at every width; on a phone the panel is much taller for its width (e2e/smoke.spec). */
+@media screen and (max-width: 30em) {
+  .hero-dotgrid {
+    -webkit-mask-image: radial-gradient(ellipse 62% 760px at 50% 170px, #000 0%, transparent 72%);
+    mask-image: radial-gradient(ellipse 62% 760px at 50% 170px, #000 0%, transparent 72%);
+  }
 }
 
 /* The distribution panel — the only place in this app where `backdrop-filter` earns its place.
@@ -1735,7 +1760,35 @@ button:active,
 /* Dots, one per person (DotField). On the landing page they take the accent, lighter in dark mode so a
    lone dot still clears 3:1 against the card at the alpha it is drawn with; in a person's peer strip
    they take the population's greys, the same-school peers their own. */
-.hero-dots { color: var(--dot-ink); }
+.hero-dots, .hero-dots-over { color: var(--dot-ink); }
+/* The plot, a break, and the pile of people above the cap, sharing one baseline. */
+.hero-dist-row { display: flex; align-items: flex-end; }
+.hero-dist-main { flex: 1 1 0; min-width: 0; }
+.hero-dist-break { flex: 0 0 var(--pile-gap); }
+.hero-dist-pile { flex: 0 0 var(--pile-w); }
+/* The "All · By category" toggle, over the panel's top-right corner (outside its link). */
+.hero-dist-wrap { position: relative; }
+.hero-dist-toggle {
+  position: absolute;
+  top: calc(var(--mantine-spacing-lg) + 8px);
+  right: 10px;
+  z-index: var(--z-local, 2);
+}
+.hero-dist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin-top: 6px;
+}
+.hero-dist-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.hero-dist-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+/* On a phone the legend keeps each category's count and leaves its median to wider screens: five
+   medians made it five lines long. */
+@media screen and (max-width: 30em) {
+  .hero-dist-legend-median { display: none; }
+  .hero-dist-legend-lead { flex-basis: 100%; text-align: center; }
+}
 .strip-dots { color: var(--mark-peer); }
 .strip-dots .dot-field-accent { color: var(--mark-peer-same-school); }
 .dot-field-lens {

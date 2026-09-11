@@ -23,7 +23,7 @@ import {
   snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, latestGradeBands,
   prepareSheet,
 } from './lib/normalize.mjs';
-import { computeHomeStats } from './lib/home-stats.mjs';
+import { computeHomeStats, serializeHomeStats } from './lib/home-stats.mjs';
 import { computeRaiseSteps } from './lib/raise-steps.mjs';
 import { computeSearchIndex, serializeSearchIndex } from './lib/search-index.mjs';
 
@@ -478,7 +478,10 @@ async function main() {
   // DuckDB-WASM or downloading the multi-MB parquet at all; falls back to live SQL if missing.
   if (latest) {
     const homeStats = await computeHomeStats(path.join(OUT_DIR, 'salaries.parquet'), latest.snapshot_id);
-    fs.writeFileSync(path.join(OUT_DIR, 'home-stats.json'), JSON.stringify(homeStats, null, 2));
+    // Over its gzipped budget, the data build fails rather than slow every landing.
+    const { json, gz } = serializeHomeStats(homeStats);
+    fs.writeFileSync(path.join(OUT_DIR, 'home-stats.json'), json);
+    console.log(`home-stats.json: ${gz} bytes gzipped`);
   }
 
   // Every step's continuing raises, campus-wide (scripts/lib/raise-steps.mjs) — what a person's page

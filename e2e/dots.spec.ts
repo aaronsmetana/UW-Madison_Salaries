@@ -3,8 +3,9 @@ import { oracle, PAY, latestSnapshot } from './oracle';
 import { parseColor, flatten, contrast } from './color';
 
 /**
- * Every employee as a dot (src/components/chart/DotField.tsx): the landing page's distribution and a
- * large peer strip. Expected values from SQL written here.
+ * Every employee as a dot (src/components/chart/DotField.tsx): the landing page's distribution — with
+ * its pile of people above the cap, its "By category" colouring, the pointer's wake and the readout's
+ * highlight — and a large peer strip. Expected values from SQL written here.
  */
 
 const KENNETH = 'kennethposs|2024-07-01';
@@ -116,3 +117,174 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(contrast(flatten([ink[0], ink[1], ink[2], ink[3] * alpha], ground), ground)).toBeGreaterThanOrEqual(3);
   });
 }
+
+/** Everyone paid in the latest snapshot, each once, at their total pay, in the category of their
+ *  highest-paid appointment (ties to the category's name) — largest category first. */
+async function categories() {
+  const snap = await latestSnapshot();
+  return oracle<{ cat: string; und: number; ovr: number; n: number }>(
+    `WITH r AS (SELECT person_key, coalesce(employee_category, 'Other') ct, ${PAY} rp FROM $SAL
+                WHERE snapshot_id = '${snap}' AND salary > 0),
+          p AS (SELECT person_key, sum(rp) pay, first(ct ORDER BY rp DESC, ct) ct FROM r GROUP BY person_key)
+     SELECT ct cat, count(*) FILTER (WHERE pay < 250000) und, count(*) FILTER (WHERE pay >= 250000) ovr, count(*) n
+     FROM p WHERE pay > 0 GROUP BY ct ORDER BY n DESC, ct`
+  );
+}
+const kindsOf = (counts: number[]) => counts.map((n, k) => [k, n]).filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(',');
+
+async function settledHome(page: Page) {
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+}
+async function byCategory(page: Page) {
+  await page.locator('.hero-dist-toggle').getByText('By category').click();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+}
+
+test('every person paid is a dot: the field under the cap and the pile above it', async ({ page }) => {
+  const cats = await categories();
+  const under = cats.reduce((t, c) => t + c.und, 0);
+  const over = cats.reduce((t, c) => t + c.ovr, 0);
+  await settledHome(page);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-dots', String(under));
+  await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-dots', String(over));
+  await expect(page.locator('.hero-dist-pile-label')).toHaveText(`${over.toLocaleString('en-US')} at $250k+`);
+});
+
+test("By category colours each person by their highest-paid appointment's category, and the toggle stays put", async ({ page }) => {
+  const cats = await categories();
+  await settledHome(page);
+  const under = await page.locator('.hero-dots').getAttribute('data-dots');
+  await byCategory(page);
+  // A control, not part of the link around the chart.
+  await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-kinds', kindsOf(cats.map((c) => c.und)));
+  await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-kinds', kindsOf(cats.map((c) => c.ovr)));
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-dots', under!);
+  for (const c of cats) await expect(page.locator(`.hero-dist-legend-item[data-category="${c.cat}"]`)).toHaveAttribute('data-n', String(c.n));
+  // Remembered for this viewer.
+  await page.reload();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on', { timeout: 30_000 });
+});
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`every category's ink clears 3:1 as a lone dot, and its highlight differs visibly (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await settledHome(page);
+    await byCategory(page);
+    const dots = page.locator('.hero-dots');
+    const ground = await groundBehind(page, '.hero-dots');
+    const alpha = Number(await dots.getAttribute('data-alpha'));
+    const inks = (await dots.getAttribute('data-inks'))!.split('|').map(parseColor);
+    const strong = (await dots.getAttribute('data-strong-inks'))!.split('|').map(parseColor);
+    expect(inks.length).toBe((await categories()).length);
+    inks.forEach((ink, k) => {
+      const lone = flatten([ink[0], ink[1], ink[2], ink[3] * alpha], ground);
+      expect(contrast(lone, ground), `category ${k} as a lone dot`).toBeGreaterThanOrEqual(3);
+      expect(contrast(strong[k].slice(0, 3), ink.slice(0, 3)), `category ${k}'s highlight against its ink`).toBeGreaterThanOrEqual(1.4);
+    });
+  });
+}
+
+test('the re-stack moves in frames under 8ms, and not at all under reduced motion', async ({ browser }) => {
+  const moving = await browser.newContext({ reducedMotion: 'no-preference' });
+  const p = await moving.newPage();
+  await settledHome(p);
+  await p.evaluate(() => performance.clearMeasures());
+  await byCategory(p);
+  const frames = await p.evaluate(() => performance.getEntriesByName('dot-frame').map((e) => e.duration).sort((a, b) => a - b));
+  expect(frames.length, 'the re-stack played').toBeGreaterThan(5);
+  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
+  await moving.close();
+
+  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  const q = await still.newPage();
+  await settledHome(q);
+  await byCategory(q);
+  expect(await q.evaluate(() => performance.getEntriesByName('dot-frame').length), 'frames were animated').toBe(0);
+  await still.close();
+});
+
+/** Sweeps the mouse across the plot's lower half at a steady pace. */
+async function sweep(page: Page) {
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const y = plot.y + plot.height * 0.8;
+  for (let i = 0; i <= 30; i++) {
+    await page.mouse.move(plot.x + plot.width * (0.2 + (0.4 * i) / 30), y);
+    await page.waitForTimeout(12);
+  }
+}
+
+test('the wake follows a moving mouse in frames under 8ms, and settles once it stops', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  await page.evaluate(() => performance.clearMeasures());
+  await sweep(page);
+  const frames = await page.evaluate(() => performance.getEntriesByName('wake-frame').map((e) => e.duration).sort((a, b) => a - b));
+  expect(frames.length, 'the wake moved no dots').toBeGreaterThan(5);
+  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
+  // A resting pointer leaves a calm field.
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 600 });
+  await ctx.close();
+});
+
+test('no wake under reduced motion, or for a finger', async ({ browser }) => {
+  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  const p = await still.newPage();
+  await settledHome(p);
+  await sweep(p);
+  expect(await p.evaluate(() => performance.getEntriesByName('wake-frame').length), 'the wake ran under reduced motion').toBe(0);
+  await still.close();
+
+  const touch = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference' });
+  const q = await touch.newPage();
+  await settledHome(q);
+  const plot = (await q.locator('.hero-dist-plot').boundingBox())!;
+  await q.locator('.hero-dist-plot').evaluate((el, b) => {
+    for (let i = 0; i <= 20; i++) {
+      el.parentElement!.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'touch', clientX: b.x + b.width * (0.2 + i / 50), clientY: b.y + b.height * 0.8 }));
+    }
+  }, plot);
+  await q.waitForTimeout(300);
+  expect(await q.evaluate(() => performance.getEntriesByName('wake-frame').length), 'the wake ran for a finger').toBe(0);
+  await touch.close();
+});
+
+test('the highlighted dots are the people the readout counts', async ({ page }) => {
+  await settledHome(page);
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const dots = page.locator('.hero-dots');
+  const pill = page.locator('.chart-value-pill').first();
+  const counted = async () => Number((((await pill.textContent()) ?? '').match(/([\d,]+) people/)?.[1] ?? '').replace(/,/g, ''));
+  for (const frac of [0.25, 0.45, 0.8]) {
+    await page.mouse.move(plot.x + plot.width * frac, plot.y + plot.height * 0.7);
+    await expect(pill).toBeVisible();
+    await expect(dots).toHaveAttribute('data-highlight', String(await counted()));
+  }
+  // Over the pile: all of it, and the pill says so.
+  const pile = (await page.locator('.hero-dist-pile').boundingBox())!;
+  await page.mouse.move(pile.x + pile.width / 2, pile.y + pile.height - 6);
+  await expect(pill).toContainText('people at $250k or more');
+  await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-highlight', String(await counted()));
+  await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-highlight', (await page.locator('.hero-dots-over').getAttribute('data-dots'))!);
+});
+
+test('pointing changes nothing away from the pointer: no dot elsewhere dims', async ({ browser }) => {
+  // Reduced motion, so no wake: what could change far from the pointer is only a dimming.
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  // A strip of dots at 12% of the plot, well clear of the band, the pill and the lens at 65%.
+  const strip = { clip: { x: plot.x + plot.width * 0.12, y: plot.y + plot.height - 40, width: 24, height: 36 } };
+  await page.mouse.move(plot.x + plot.width * 0.5, plot.y - 120);
+  const before = await page.screenshot(strip);
+  await page.mouse.move(plot.x + plot.width * 0.65, plot.y + plot.height * 0.7);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-highlight', /^[1-9]/);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-alpha', '0.85');
+  const after = await page.screenshot(strip);
+  expect(Buffer.compare(before, after), 'dots far from the pointer changed while it pointed').toBe(0);
+  await ctx.close();
+});

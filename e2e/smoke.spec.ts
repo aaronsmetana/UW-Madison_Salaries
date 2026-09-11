@@ -85,13 +85,11 @@ for (const { name, width, height } of [
 }
 
 /**
- * The distribution is the landing page's centrepiece and the thing the hero's headline number labels,
- * but it reveals itself with a `scaleY(0.04) -> scaleY(1)` transition. A chart that never finishes that
- * transition renders as a 5px sliver and looks like an empty card — and it is invisible to the label
- * test above, which only reads the HTML labels beneath the SVG.
- *
- * (This is also the one thing that cannot be checked from a hidden browser tab: rAF is throttled to
- * zero there, so the reveal never advances and every measurement reads as stuck.)
+ * The distribution is the landing page's centrepiece and the thing the hero's headline number labels.
+ * Its curve and quartile lines used to grow up from the baseline (`scaleY(0.04) -> scaleY(1)`) while
+ * the dots fell from the top — two motions in opposite directions — and a chart that never finished
+ * that transition rendered as a 5px sliver. The lines are now simply there: full height on the first
+ * frame, with no transform or transition, whatever the motion preference.
  */
 for (const { name, width, height } of [
   { name: 'desktop', width: 1440, height: 900 },
@@ -103,12 +101,23 @@ for (const { name, width, height } of [
 
     const svg = page.locator('.hero-dist-plot');
     await expect(svg).toBeVisible({ timeout: 60_000 });
-    // The reveal is a 700ms transform; give it room to finish rather than racing it.
-    await page.waitForTimeout(1_200);
+    // No reveal: measured at once, the lines stand at full height with nothing transforming them.
+    const { transforms, transitions } = await svg.evaluate((el) => {
+      const t: string[] = [];
+      const tr: string[] = [];
+      for (let e: Element | null = el; e && !e.classList.contains('hero-dist'); e = e.parentElement) {
+        const cs = getComputedStyle(e);
+        if (cs.transform !== 'none') t.push(cs.transform);
+        if (/transform|scale/.test(cs.transitionProperty) && cs.transitionDuration !== '0s') tr.push(cs.transitionProperty);
+      }
+      return { transforms: t, transitions: tr };
+    });
+    expect(transforms, 'the curve is transformed — the bottom-to-top reveal is back').toEqual([]);
+    expect(transitions, 'the curve transitions its transform — the bottom-to-top reveal is back').toEqual([]);
 
     const box = await svg.boundingBox();
     expect(box, 'the distribution should have a layout box').not.toBeNull();
-    expect(box!.height, 'the distribution collapsed — its reveal transform never completed').toBeGreaterThan(60);
+    expect(box!.height, 'the distribution is not at its full height').toBeGreaterThanOrEqual(170);
     expect(box!.width, 'the distribution has no width').toBeGreaterThan(200);
 
     // A curve, not a flat line: the area path has to describe real vertical variation.
@@ -389,7 +398,6 @@ test.describe('the landing distribution', () => {
 
     const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
     const hoverAt = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height * 0.6 };
-    const away = { x: plot.x + plot.width / 2, y: plot.y - 80 };
 
     await page.mouse.move(hoverAt.x, hoverAt.y);
     const band = page.locator('.hero-dist-band');
@@ -402,13 +410,15 @@ test.describe('the landing distribution', () => {
     const centre = b.x + b.width / 2 - 1.5;
     const edge = b.x;
 
-    await page.mouse.move(away.x, away.y);
-    await expect(band).toBeHidden();
+    // Both pictures are taken hovering, so the dots under the band are the same in each: the people
+    // the readout counts are drawn in a stronger ink while it shows (DotField's highlight), which is a
+    // change the band's own rendering must not add to. One with the band hidden, one with it shown.
+    const setBand = (v: 'hidden' | 'visible') => band.evaluate((el, vis) => { (el as HTMLElement).style.visibility = vis; }, v);
+    await setBand('hidden');
     const centreBefore = await page.screenshot(strip(centre));
     const edgeBefore = await page.screenshot(strip(edge));
 
-    await page.mouse.move(hoverAt.x, hoverAt.y);
-    await expect(band).toBeVisible();
+    await setBand('visible');
     const centreAfter = await page.screenshot(strip(centre));
     const edgeAfter = await page.screenshot(strip(edge));
 
@@ -536,8 +546,13 @@ test.describe('the landing distribution', () => {
     expect(end, `the dot-grid mask is no longer the ellipse this test knows how to check: ${mask}`)
       .toBeGreaterThan(0);
 
-    for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 760 }]) {
+    // In both of the panel's modes: "By category" adds a legend, so the panel is taller.
+    for (const [viewport, mode] of [
+      [{ width: 1280, height: 720 }, 'All'], [{ width: 375, height: 760 }, 'All'],
+      [{ width: 1280, height: 720 }, 'By category'], [{ width: 375, height: 760 }, 'By category'],
+    ] as const) {
       await page.setViewportSize(viewport);
+      await page.locator('.hero-dist-toggle').getByText(mode, { exact: true }).click();
       // Polled, not read once. `setViewportSize` resolves before the browser has finished
       // re-laying-out, and this is pure geometry taken the moment it returns: measured locally, the
       // panel reads 1188px below the grid immediately after the resize and settles to 508px a frame
