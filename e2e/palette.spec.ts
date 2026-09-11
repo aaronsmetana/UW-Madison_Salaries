@@ -19,7 +19,7 @@ test('mod+K opens the palette and puts the cursor in the search box', async ({ p
   await page.keyboard.press('ControlOrMeta+k');
 
   await expect(page.locator(DIALOG)).toBeVisible();
-  await expect(page.getByPlaceholder('Search a person…')).toBeFocused();
+  await expect(page.getByPlaceholder('Search people, titles or divisions…')).toBeFocused();
 });
 
 test('Escape closes it and hands focus back', async ({ page }) => {
@@ -61,7 +61,7 @@ test('picking a person navigates and closes the palette', async ({ page }) => {
   // The reason the palette exists. Everything else in this file guards the shell around it.
   await ready(page);
   await page.keyboard.press('ControlOrMeta+k');
-  await page.getByPlaceholder('Search a person…').fill('Kenneth Poss');
+  await page.getByPlaceholder('Search people, titles or divisions…').fill('Kenneth Poss');
   const hit = page.getByRole('option').first();
   await expect(hit).toBeVisible({ timeout: 30_000 });
   await hit.click();

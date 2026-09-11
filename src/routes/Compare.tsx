@@ -343,7 +343,7 @@ export default function Compare() {
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
           <Paper p="sm">
             <Group gap={6} mb={8}><IconUser size={ICON.compact} /><Eyebrow>Add person</Eyebrow></Group>
-            <SearchBox placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
+            <SearchBox kinds={['people']} placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Paper>
           <Paper p="sm">
             <Group gap={6} mb={8}><IconBriefcase size={ICON.compact} /><Eyebrow>Add title</Eyebrow></Group>

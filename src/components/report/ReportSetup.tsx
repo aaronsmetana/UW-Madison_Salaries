@@ -149,7 +149,7 @@ export function ReportSetup({
           ))}
           {/* Docked input — typing here injects a comparator into the list above. */}
           <Box px={8} py={6}>
-            <SearchBox placeholder="Add a comparator by name…" onPick={(h) => onAddPerson({ key: h.person_key, name: h.name })} />
+            <SearchBox kinds={['people']} placeholder="Add a comparator by name…" onPick={(h) => onAddPerson({ key: h.person_key, name: h.name })} />
           </Box>
         </Box>
 
@@ -307,6 +307,7 @@ export function ReportSetup({
                       <Box mt={8} pt={8} style={{ borderTop: '1px dashed var(--mantine-color-default-border)' }}>
                         <Text size="xs" fw={600} c="dimmed" mb={4}>Direct reports (optional — checks for a supervisory pay inversion)</Text>
                         <SearchBox
+                          kinds={['people']}
                           size="sm"
                           placeholder="Name a direct report you supervise…"
                           onPick={(h) => onAddSupervisee({ key: h.person_key, name: h.name })}

@@ -83,6 +83,20 @@ for (const theme of THEMES) {
     expect(bad).toEqual([]);
   });
 
+  // The grouped results: a listbox of labelled groups, each holding options. The routes above scan
+  // the box closed, so its list — people, titles and divisions together — is only checked here.
+  test(`a11y: grouped search results (${theme}) have no critical/serious violations`, async ({ page }) => {
+    await page.goto('./');
+    await setTheme(page, theme);
+    const search = page.getByRole('combobox', { name: 'Search a person, title or division' });
+    await expect(search).toBeVisible({ timeout: 60_000 });
+    await search.fill('smith');
+    await expect(page.locator('[role="option"][data-kind="person"]').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('[role="listbox"] [role="group"]')).toHaveCount(2);
+    const bad = await runAxe(page);
+    expect(bad).toEqual([]);
+  });
+
   test(`a11y: school page (${theme}) has no critical/serious violations`, async ({ page }) => {
     await page.goto(`./school/${encodeURIComponent('School of Medicine and Public Health')}`);
     await setTheme(page, theme);

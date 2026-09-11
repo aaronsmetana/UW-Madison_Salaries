@@ -25,6 +25,7 @@ import {
 } from './lib/normalize.mjs';
 import { computeHomeStats } from './lib/home-stats.mjs';
 import { computeRaiseSteps } from './lib/raise-steps.mjs';
+import { computeSearchIndex, serializeSearchIndex } from './lib/search-index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RAW_DIR = path.join(ROOT, 'data', 'raw');
@@ -484,6 +485,14 @@ async function main() {
   // compares each raise against, without scanning every raise on campus in the browser.
   const raiseSteps = await computeRaiseSteps(path.join(OUT_DIR, 'salaries.parquet'));
   fs.writeFileSync(path.join(OUT_DIR, 'raise-steps.json'), JSON.stringify(raiseSteps));
+
+  // Titles and divisions for search (scripts/lib/search-index.mjs), so they answer before the
+  // database loads. Over its gzipped budget, the data build fails rather than slow every landing.
+  if (latest) {
+    const { json, gz } = serializeSearchIndex(await computeSearchIndex(path.join(OUT_DIR, 'salaries.parquet'), latest));
+    fs.writeFileSync(path.join(OUT_DIR, 'search-index.json'), json);
+    console.log(`search-index.json: ${gz} bytes gzipped`);
+  }
 
   const latestYear = dataSnaps.length ? dataSnaps[dataSnaps.length - 1].snapshot_year : null;
   const maxEff = grades.reduce((m, g) => (g.effective_year != null && g.effective_year > m ? g.effective_year : m), 0) || null;

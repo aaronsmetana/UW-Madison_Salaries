@@ -1048,7 +1048,7 @@ export default function Reports() {
         <>
           <Card withBorder padding="lg" className="no-print" ref={reportOnRef}>
             <Eyebrow mb={6}>Report on</Eyebrow>
-            <SearchBox placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
+            <SearchBox kinds={['people']} placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
             {selPerson && <Text size="sm" mt="sm">Showing report for <b>{selPerson.name}</b>.</Text>}
           </Card>
           {selPerson ? (
@@ -1069,7 +1069,7 @@ export default function Reports() {
           <Card withBorder padding="xl" className="no-print">
             <Text fw={600} mb={4}>Start your equity review</Text>
             <Text c="dimmed" size="sm" mb="md">Add yourself (the subject), then add the peers you want to be compared against.</Text>
-            <SearchBox placeholder="Search yourself by name to begin…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
+            <SearchBox kinds={['people']} placeholder="Search yourself by name to begin…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Card>
         ) : isDesktop ? (
           <div style={{ display: 'flex', gap: 'var(--mantine-spacing-lg)', alignItems: 'flex-start' }}>

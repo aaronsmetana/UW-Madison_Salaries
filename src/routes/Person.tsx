@@ -820,6 +820,7 @@ export default function Person() {
             </Popover.Target>
             <Popover.Dropdown>
               <SearchBox
+                kinds={['people']}
                 placeholder="Search a person to compare…"
                 size="sm"
                 autoFocus

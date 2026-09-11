@@ -1609,3 +1609,58 @@ button:active,
   .fold-table .tray-label { display: none; }
   .fold-table .peer-add .mantine-Button-section { margin: 0; }
 }
+
+/* A job code beside its title: small, monospace, on the hairline — the code is an identifier to
+   match against a pay plan, not a word to read. */
+.code-pill {
+  flex-shrink: 0;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--hairline-strong, var(--mantine-color-default-border));
+  border-radius: 4px;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+
+/* Search group headings, tracked like the table headers. */
+.search-group-label {
+  letter-spacing: 0.06em;
+}
+
+/* Grouped search results: one column, or — in a box wide enough for two readable rows — people on
+   the left and titles and divisions on the right, so a title that matches is not below the fold.
+   The dropdown is the container; the listbox inside it is what changes layout. */
+.search-dropdown {
+  container-type: inline-size;
+}
+.search-groups > * + * {
+  margin-top: 4px;
+}
+/* On a phone the name needs the room: the pay stays, its sparkline goes. */
+@container (max-width: 479px) {
+  .search-dropdown .sparkline {
+    display: none;
+  }
+}
+@container (min-width: 760px) {
+  .search-groups {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: start;
+  }
+  .search-groups > * + * {
+    margin-top: 0;
+  }
+  .search-groups > .search-side {
+    border-left: 1px solid var(--hairline);
+    padding-left: 12px;
+  }
+  .search-groups > :only-child {
+    grid-column: 1 / -1;
+    border-left: 0;
+    padding-left: 0;
+  }
+}

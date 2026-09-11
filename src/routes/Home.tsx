@@ -619,7 +619,7 @@ export default function Home() {
             />
           </Anchor>
 
-          <SearchBox size="lg" autoFocus placeholder="Search for an employee by name…" />
+          <SearchBox size="lg" autoFocus />
 
           {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
               Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}

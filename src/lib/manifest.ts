@@ -88,3 +88,16 @@ export async function fetchData<T>(file: string): Promise<T> {
   if (!resp.ok) throw new Error(`Failed to load ${file} (HTTP ${resp.status})`);
   return (await resp.json()) as T;
 }
+
+/**
+ * What search offers before the database loads (scripts/lib/search-index.mjs): every title and
+ * division in the latest snapshot, with the headcount and median their own pages state.
+ */
+export interface SearchIndex {
+  snapshot: string;
+  label: string;
+  /** [job code, title, headcount, median actual pay] */
+  titles: [string, string | null, number, number | null][];
+  /** [division, headcount, median actual pay] */
+  divisions: [string, number, number | null][];
+}

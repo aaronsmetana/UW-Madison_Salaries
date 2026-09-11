@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { query, getDB } from './duckdb';
-import { fetchData, type HomeStats, type Manifest, type RaiseSteps, type Summary } from './manifest';
+import { fetchData, type HomeStats, type Manifest, type RaiseSteps, type SearchIndex, type Summary } from './manifest';
 import { useControls } from '../state/controls';
 
 /**
@@ -29,6 +29,12 @@ export function useSummary() {
  *  are compared against. Static and small, so it never waits on DuckDB. */
 export function useRaiseSteps() {
   return useQuery({ queryKey: ['raise-steps'], queryFn: () => fetchData<RaiseSteps>('raise-steps.json'), staleTime: Infinity, retry: false });
+}
+
+/** Titles and divisions for search (scripts/lib/search-index.mjs), fetched when a search box is first
+ *  focused so they answer before the database loads. */
+export function useSearchIndex(enabled: boolean) {
+  return useQuery({ queryKey: ['search-index'], queryFn: () => fetchData<SearchIndex>('search-index.json'), staleTime: Infinity, retry: false, enabled });
 }
 
 export function useManifest() {
