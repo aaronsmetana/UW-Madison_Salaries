@@ -12,34 +12,19 @@ import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
 import { EmptyState } from './EmptyState';
 import { TrayButton } from './TrayButton';
-import { BAND_IQR } from './markers';
+import { MiniRange } from './MiniRange';
+import { rangeScale } from '../lib/rangeScale';
+import { fmtK } from '../lib/chartStyle';
 import { SortableTh, type SortState } from './SortableTh';
 import { ICON } from '../lib/ui';
 
 interface TitleRow {
   job_code: string; title: string; n: number; med: number | null;
   p25: number | null; p75: number | null; lo: number | null; hi: number | null;
+  /** The employee category most of the title's holders are in (Faculty, Academic Staff, …). */
+  cat: string | null;
 }
 type SortKey = 'title' | 'job_code' | 'n' | 'med';
-
-/** Compact box plot for a title's pay spread: lo–hi whisker, p25–p75 box, median tick. */
-function MiniRange({ lo, p25, med, p75, hi, width = 150, height = 16 }: {
-  lo: number; p25: number; med: number; p75: number; hi: number; width?: number; height?: number;
-}) {
-  const span = hi - lo || 1;
-  const x = (v: number) => ((v - lo) / span) * (width - 2) + 1;
-  const mid = height / 2;
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden style={{ display: 'block', marginTop: 3 }}>
-      <line x1={x(lo)} y1={mid} x2={x(hi)} y2={mid} stroke="var(--mantine-color-default-border)" strokeWidth={2} />
-      {/* The middle 50% as it is drawn on every chart (BAND_IQR); the median in the text colour —
-          teal is "this person", and there is no one person on a title's row. */}
-      <rect className="band-iqr" x={x(p25)} y={mid - 5} width={Math.max(1, x(p75) - x(p25))} height={10} rx={2}
-        fill={BAND_IQR.fill} stroke={BAND_IQR.edge} strokeWidth={BAND_IQR.edgeWidth} />
-      <line x1={x(med)} y1={mid - 6} x2={x(med)} y2={mid + 6} stroke="var(--mantine-color-dimmed)" strokeWidth={2} />
-    </svg>
-  );
-}
 
 /** Bold the matched span of a title (case-insensitive, first occurrence). */
 function Highlight({ text, q }: { text: string; q: string }) {
@@ -60,13 +45,16 @@ export function TitlesPanel() {
 
   const { data: titles } = useSql<TitleRow>(
     ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
-    `WITH pe AS (${peopleSql({ metric, where: `${where} AND job_code IS NOT NULL`, by: ['job_code'], extra: 'arg_max(title, salary) t' })})
+    `WITH pe AS (${peopleSql({ metric, where: `${where} AND job_code IS NOT NULL`, by: ['job_code'], extra: 'arg_max(title, salary) t, arg_max(employee_category, salary) cat' })}),
+          cats AS (SELECT job_code, cat, count(*) c FROM pe WHERE cat IS NOT NULL GROUP BY job_code, cat),
+          main AS (SELECT job_code, first(cat ORDER BY c DESC, cat) cat FROM cats GROUP BY job_code)
      SELECT job_code, arg_max(t, pay) title, count(*) FILTER (WHERE pay > 0) n,
         median(pay) FILTER (WHERE pay > 0) med,
         quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
         quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
-        min(pay) FILTER (WHERE pay > 0) lo, max(pay) FILTER (WHERE pay > 0) hi
-     FROM pe GROUP BY job_code ORDER BY n DESC`,
+        min(pay) FILTER (WHERE pay > 0) lo, max(pay) FILTER (WHERE pay > 0) hi,
+        any_value(main.cat) cat
+     FROM pe LEFT JOIN main USING (job_code) GROUP BY job_code ORDER BY n DESC`,
     !!snap
   );
 
@@ -102,6 +90,8 @@ export function TitlesPanel() {
   }, [titles, q, minN, sortKey, sortDir]);
 
   const maxN = useMemo(() => Math.max(1, ...(titles ?? []).map((t) => t.n)), [titles]);
+  // One scale for the whole column, so equal widths are equal dollars on every row.
+  const scale = useMemo(() => rangeScale((titles ?? []).map((t) => t.p75)), [titles]);
 
   const exportCsv = () =>
     downloadCSV(
@@ -160,7 +150,7 @@ export function TitlesPanel() {
               <SortableTh sortKey="job_code" label="Job code" sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="n" label="People" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
-              <Table.Th ta="right" data-fold>Range (p25–p75)</Table.Th>
+              <Table.Th ta="right" data-fold w={216} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -170,39 +160,41 @@ export function TitlesPanel() {
               const canPlot = t.lo != null && t.p25 != null && t.med != null && t.p75 != null && t.hi != null && t.hi > t.lo;
               return (
                 <Fragment key={t.job_code}>
+                  {/* A click anywhere on the row opens the title; the keyboard gets there by the title's
+                      link. The row was a button around a link and a button, which a screen reader cannot
+                      read as either. */}
                   <Table.Tr
                     className="peer-row"
                     style={{ cursor: 'pointer' }}
                     onClick={() => nav(`/paycheck?code=${encodeURIComponent(t.job_code)}`)}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/paycheck?code=${encodeURIComponent(t.job_code)}`); } }}
                   >
                     <Table.Td>
                       <div>
                         <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(t.job_code)}`} onClick={(e) => e.stopPropagation()}>
                           <Highlight text={t.title} q={q.trim()} />
                         </Anchor>
+                        {t.cat && <span className="cat-tag">{t.cat}</span>}
                       </div>
                       <Text className="fold-under" size="xs" c="dimmed">
                         {t.job_code} · {num(t.n)} people{t.p25 != null && t.p75 != null ? ` · ${usd(t.p25)} – ${usd(t.p75)}` : ''}
                       </Text>
                     </Table.Td>
-                    <Table.Td c="dimmed" data-fold>{t.job_code}</Table.Td>
+                    <Table.Td data-fold><span className="code-pill">{t.job_code}</span></Table.Td>
                     <Table.Td ta="right" data-fold>
                       {num(t.n)}
                       <MiniBar frac={t.n / maxN} />
                     </Table.Td>
                     <Table.Td ta="right">{usd(t.med)}</Table.Td>
                     <Table.Td ta="right" data-fold>
-                      <Text span size="sm" c="dimmed">{t.p25 != null && t.p75 != null ? `${usd(t.p25)} – ${usd(t.p75)}` : '—'}</Text>
-                      {canPlot && (
+                      {canPlot ? (
                         <Tooltip
                           withArrow multiline
                           label={`min ${usd(t.lo)} · p25 ${usd(t.p25)} · median ${usd(t.med)} · p75 ${usd(t.p75)} · max ${usd(t.hi)}`}
                         >
-                          <div><MiniRange lo={t.lo!} p25={t.p25!} med={t.med!} p75={t.p75!} hi={t.hi!} /></div>
+                          <div><MiniRange scale={scale} lo={t.lo!} p25={t.p25!} med={t.med!} p75={t.p75!} hi={t.hi!} /></div>
                         </Tooltip>
+                      ) : (
+                        <Text span size="sm" c="dimmed">—</Text>
                       )}
                     </Table.Td>
                     <Table.Td ta="right">
@@ -221,8 +213,10 @@ export function TitlesPanel() {
       </ScrollArea.Autosize>
       )}
       <Text size="xs" c="dimmed" mt="xs">
-        Range shows the middle 50% (p25–p75); the bar is a mini box plot of the full min–max spread with the
-        median tick. Hover the bar for the exact five-number summary.
+        Each spread is on one scale, printed in the header, so equal widths are equal dollars on every row:
+        the line runs from the lowest to the highest pay, the box is the middle 50%, and the tick the median.
+        A spread that runs past the scale is cut at the edge and marked with an arrow. Hover for the exact
+        five-number summary.
       </Text>
     </>
   );

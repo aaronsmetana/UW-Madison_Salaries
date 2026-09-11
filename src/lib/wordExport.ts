@@ -4,6 +4,7 @@
 // plain HTML (no Mantine, no CSS vars): those only resolve in the live app's stylesheet, and Word
 // ignores classes/external CSS anyway, so hand-rolled inline styles are the only way to keep the
 // exported look under our control.
+import { raiseBucketLabel } from './raiseBuckets';
 import { fmtYearsToParity, SECTION_ORDER, type BriefModel } from '../components/report/model';
 import { usd, pct } from './format';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
@@ -124,7 +125,8 @@ export function briefToWordHtml(model: BriefModel): string {
     for (const pr of proofs) {
       body.push(p(
         `<b style="font-size:13pt;">${esc(pr.value)}</b> &mdash; ${esc(String(pr.label))}` +
-        (pr.detail ? `<br/><span style="${SMALL}${DIM}">${esc(String(pr.detail))}</span>` : ''),
+        (pr.detail ? `<br/><span style="${SMALL}${DIM}">${esc(String(pr.detail))}</span>` : '') +
+        ((pr.kind === 'gradeband' || pr.kind === 'marketFloor') && model.payBandNote ? `<br/><span style="${SMALL}${DIM}">${esc(model.payBandNote)}</span>` : ''),
         `${P}margin-bottom:10pt;`,
       ));
     }
@@ -225,7 +227,7 @@ export function briefToWordHtml(model: BriefModel): string {
       body.push(p(`Raise distribution (${esc(raiseCycle.fromLabel)} &rarr; ${esc(raiseCycle.toLabel)})`, 'font-weight:700;font-size:10.5pt;margin:0 0 4pt 0;'));
       body.push(table(
         ['Bucket', 'n'],
-        raiseCycle.dist.map((d) => [`${d.bucket > 0 ? '+' : ''}${d.bucket}%${d.bucket === raiseCycle.subjectBucket ? ` (${subjectFirst})` : ''}`, String(d.n)]),
+        raiseCycle.dist.map((d) => [`${esc(raiseBucketLabel(d.bucket))}${d.bucket === raiseCycle.subjectBucket ? ` (${subjectFirst})` : ''}`, String(d.n)]),
         ['l', 'r'],
       ));
     }

@@ -18,6 +18,7 @@ import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
 import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
+import { raiseBucketLabel } from '../../lib/raiseBuckets';
 import { ordinal } from '../../lib/stats';
 import { ICON } from '../../lib/ui';
 
@@ -276,6 +277,9 @@ export function ReportBrief({ model, hovered, onHover }: {
                       </div>
                     </Group>
                     {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}{PROOF_NOTE[p.kind] && <Sup n={fn(PROOF_NOTE[p.kind]!)} />}</Text>}
+                    {(p.kind === 'gradeband' || p.kind === 'marketFloor') && model.payBandNote && (
+                      <Text size="xs" c="dimmed" mt={6} className="payband-note" data-payband-note>{model.payBandNote}</Text>
+                    )}
                   </Card>
                 ))}
               </SimpleGrid>
@@ -530,12 +534,15 @@ export function ReportBrief({ model, hovered, onHover }: {
                         <div
                           style={{
                             width: '100%', maxWidth: 22,
-                            height: `${Math.max(3, (d.n / raiseDistMax) * 70)}px`,
+                            height: d.n ? `${Math.max(3, (d.n / raiseDistMax) * 70)}px` : 0,
                             background: d.bucket === raiseCycle.subjectBucket ? 'var(--mantine-color-accent-6)' : 'var(--mantine-color-gray-4)',
                             borderRadius: '3px 3px 0 0',
                           }}
                         />
-                        <Text fz={9} c="dimmed" mt={2}>{d.bucket > 0 ? '+' : ''}{d.bucket}%</Text>
+                        {/* 1% bins are narrow: label no change, the ends, every 5%, and the subject's own bin. */}
+                        <Text fz={9} c="dimmed" mt={2} style={{ whiteSpace: 'nowrap' }}>
+                          {d.bucket === 0 || d.bucket % 5 === 0 || d.bucket === raiseCycle.subjectBucket || d === raiseCycle.dist[0] || d === raiseCycle.dist[raiseCycle.dist.length - 1] ? raiseBucketLabel(d.bucket) : '\u00a0'}
+                        </Text>
                       </div>
                     ))}
                   </Group>

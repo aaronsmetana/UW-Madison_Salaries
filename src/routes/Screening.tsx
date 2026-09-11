@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea } from '@mantine/core';
+import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight, IconDownload } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState, focusControl } from '../components/EmptyState';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
 import { Eyebrow } from '../components/Eyebrow';
+import { PayBandNote } from '../components/PayBandNote';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { usd, num, fmtYears, fullName } from '../lib/format';
@@ -361,6 +362,13 @@ export default function Screening() {
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
+          {/* "Below market floor" is a pay-band figure, so it carries what the loaded bands cover. */}
+          {results.some((r) => r.belowMarket) && (
+            <Box px="md" pt="xs" className="below-market-note">
+              <Text size="xs" c="dimmed">"Below market floor" compares pay with 85% of the grade's official band midpoint.</Text>
+              <PayBandNote mt={2} />
+            </Box>
+          )}
           {!showAll && results.length > PAGE_SIZE && (
             <Group justify="center" p="md">
               <Button variant="default" onClick={() => setShowAll(true)}>Show all {results.length}</Button>

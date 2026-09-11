@@ -19,6 +19,8 @@ import { SvgPill } from './chart/pills';
 import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { knownBreak } from '../lib/snapTime';
+import { monthsBetween } from '../lib/cadence';
 
 /** Hover card: capitalized "Retention" plus the underlying counts so the % is grounded. */
 function RetentionTip({ active, payload, label }: {
@@ -95,7 +97,7 @@ export function CohortPanel() {
   const t = tenureRows?.[0];
 
   // Turnover: paid staff joining vs leaving between consecutive snapshots (Pre-TTC duplicate excluded).
-  const { data: flow, isFetching: flowFetching } = useSql<{ lbl: string; joined: number; departed: number }>(
+  const { data: flow, isFetching: flowFetching } = useSql<{ sid: string; lbl: string; dt: string; prev_dt: string; start_n: number; joined: number; departed: number }>(
     ['turnover', scope.kind, scopeVal, filterKey(filters)],
     `WITH ord AS (
         SELECT snapshot_id, any_value(snapshot_label) "label", any_value(snapshot_date) dt,
@@ -115,7 +117,9 @@ export function CohortPanel() {
           ON c.rn = p.rn AND c.person_key = p.person_key
         GROUP BY coalesce(c.rn, p.rn)
      )
-     SELECT o."label" lbl, f.joined, f.departed FROM flow f JOIN ord o ON o.rn = f.rn
+     SELECT o.snapshot_id sid, o."label" lbl, o.dt, o0.dt prev_dt, s0.n start_n, f.joined, f.departed
+     FROM flow f JOIN ord o ON o.rn = f.rn JOIN ord o0 ON o0.rn = f.rn - 1
+     JOIN (SELECT rn, count(*) n FROM paid GROUP BY rn) s0 ON s0.rn = f.rn - 1
      WHERE f.rn > 1 ORDER BY o.dt`,
     !!latest
   );
@@ -128,13 +132,20 @@ export function CohortPanel() {
     return sortMode === 'retention' ? [...rows].sort((a, b) => b.retention - a.retention) : rows;
   }, [data, sortMode]);
 
-  const turnover = useMemo(() => (flow ?? []).map((r) => ({ label: r.lbl, joined: r.joined, departed: r.departed, net: r.joined - r.departed })), [flow]);
-  // Snapshot with the most churn (joined + left) — usually a data-coverage change rather than real turnover.
-  const coverageLabel = useMemo(() => {
-    let max = 0; let lbl: string | undefined;
-    turnover.forEach((r) => { const tot = r.joined + r.departed; if (tot > max) { max = tot; lbl = r.label; } });
-    return lbl;
-  }, [turnover]);
+  // Steps run 4 to 14 months, so "left" is also given as a share of the staff at the start of the step,
+  // per month — the one figure that compares across them.
+  const turnover = useMemo(() => (flow ?? []).map((r) => {
+    const months = Math.max(1, monthsBetween(String(r.prev_dt), String(r.dt)));
+    const leftShare = r.start_n > 0 ? r.departed / r.start_n : null;
+    return {
+      id: r.sid, label: r.lbl, joined: r.joined, departed: r.departed, net: r.joined - r.departed,
+      startN: r.start_n, months, leftShare, leftPerMonth: leftShare != null ? leftShare / months : null,
+    };
+  }), [flow]);
+  // The Oct 2023 scope change (snapTime's KNOWN_BREAKS), when the source's coverage changed. It used to
+  // be guessed as the step with the most churn, which in some divisions is another step entirely.
+  const scope23 = knownBreak('scope2023');
+  const coverageLabel = turnover.find((r) => r.id === scope23.snapshotId)?.label;
 
   if (isFetching && !data) {
     return (
@@ -237,14 +248,23 @@ export function CohortPanel() {
           <ChartSkeleton height={280} />
         ) : (
           <>
+            <div className="turnover" data-coverage-at={coverageLabel ?? ''}>
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={turnover} margin={{ left: 12, right: 12, top: 8 }}>
                 <defs>{barGradientDefs(`${uid}-flow`, { joined: 'var(--mantine-color-pos-6)', departed: 'var(--mantine-color-red-6)' })}</defs>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
                 <YAxis width={56} tick={AXIS_TICK} />
+                {/* Recharts' own tooltip (TIP_STYLE), with the step's share in its label: those who left, as
+                    a share of the staff at the start, and per month, since steps run 4 to 14 months. */}
                 <Tooltip
                   formatter={(v: number, key) => [num(v), key === 'joined' ? 'Joined' : key === 'departed' ? 'Left' : 'Net']}
+                  labelFormatter={(label, payload) => {
+                    const d = payload?.[0]?.payload as (typeof turnover)[number] | undefined;
+                    return d && d.leftShare != null && d.leftPerMonth != null
+                      ? `${label} · left ${pct(d.leftShare)} of the ${num(d.startN)} at the start, over ${d.months} months — ${pct(d.leftPerMonth, 2)} a month`
+                      : label;
+                  }}
                   cursor={{ fill: 'var(--mantine-color-default-hover)' }}
                   contentStyle={TIP_STYLE}
                   labelStyle={TIP_LABEL_STYLE}
@@ -252,7 +272,8 @@ export function CohortPanel() {
                 <Legend />
                 {coverageLabel && (
                   <ReferenceLine x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
-                    label={{ value: 'coverage change', position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+                    className="coverage-marker"
+                    label={{ value: scope23.label, position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
                 )}
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
                 <Bar
@@ -280,16 +301,20 @@ export function CohortPanel() {
                 <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
               </ComposedChart>
             </ResponsiveContainer>
+            </div>
             <Text size="xs" c="dimmed">
               Paid employees who joined vs left between each snapshot and the one before it; the accent line is the
               net change. Counts paid staff only (unpaid $0 affiliates excluded); the duplicate Pre-TTC snapshot is
-              omitted. The dashed marker flags the snapshot with the most churn — usually a source-coverage change,
-              not a real hiring/exit wave.
+              omitted. The dashed marker is Oct 2023, when the source's coverage changed (some reports excluded
+              students and trainees): joiners and leavers across it partly reflect coverage, not hiring or
+              attrition. The tooltip and the table also give those who left as a share of the staff at the start
+              of each step, per month, since steps run 4 to 14 months.
             </Text>
             <ChartData
               caption="Workforce turnover"
-              columns={['As of', 'Joined', 'Left', 'Net']}
-              rows={turnover.map((x) => [x.label, x.joined, x.departed, x.net])}
+              columns={['As of', 'Joined', 'Left', 'Net', 'Staff at start', 'Months', 'Left, % of staff at start', 'Left, % a month']}
+              rows={turnover.map((x) => [x.label, x.joined, x.departed, x.net, x.startN, x.months,
+                x.leftShare != null ? pct(x.leftShare) : null, x.leftPerMonth != null ? pct(x.leftPerMonth, 2) : null])}
               unit="snapshot steps"
               period={spanLabel(turnover.map((x) => x.label))}
             />

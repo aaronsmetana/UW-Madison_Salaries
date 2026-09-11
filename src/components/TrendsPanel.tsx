@@ -5,7 +5,8 @@ import {
   ReferenceLine, Customized,
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
-import { snapX, snapAxisProps } from '../lib/snapTime';
+import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
+import { BreakLabel } from './chart/BreakLabel';
 import { lineGlowDefs } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
@@ -94,21 +95,17 @@ export function TrendsPanel() {
   }, [data, dollarMode]);
   const axis = useMemo(() => snapAxisProps(plot), [plot]);
 
-  // The TTC reclassification boundary (the post-TTC Nov-2021 snapshot) and the snapshot with the largest
-  // headcount drop (a data-coverage change, not mass departures) — annotated so neither is misread.
-  const ttcX = plot.find((r) => r.id?.endsWith('-post'))?.x;
-  const coverageX = useMemo(() => {
-    let worst = 0.12;
-    let x: number | undefined;
-    plot.forEach((r, i) => {
-      const prev = plot[i - 1];
-      if (prev && prev.hc > 0 && r.hc != null) {
-        const drop = (prev.hc - r.hc) / prev.hc;
-        if (drop > worst) { worst = drop; x = r.x; }
-      }
-    });
-    return x;
-  }, [plot]);
+  // The breaks that are not changes in pay or staff, from the one list every chart marks (snapTime's
+  // KNOWN_BREAKS): the TTC relabel and the Sep 2025 change in 9-month reporting on the pay chart, the Oct
+  // 2023 scope change on the headcount chart. The last used to be guessed as "the biggest headcount drop",
+  // which in some divisions lands on a different step entirely.
+  const inRange = (x: number) => plot.length > 1 && x >= plot[0].x && x <= plot[plot.length - 1].x;
+  const ttc = knownBreak('ttc');
+  const scope23 = knownBreak('scope2023');
+  const nine = knownBreak('nineMonth2025');
+  const ttcX = inRange(snapX(ttc.date, ttc.snapshotId)) ? snapX(ttc.date, ttc.snapshotId) : undefined;
+  const coverageX = inRange(snapX(scope23.date, scope23.snapshotId)) ? snapX(scope23.date, scope23.snapshotId) : undefined;
+  const nineX = inRange(snapX(nine.date, nine.snapshotId)) ? snapX(nine.date, nine.snapshotId) : undefined;
 
   if (isFetching && !data) return <Loader />;
 
@@ -148,8 +145,9 @@ export function TrendsPanel() {
 
           {ttcX != null && (
             <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
-              label={{ value: 'TTC reclassification', position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
+              label={{ value: ttc.label, position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
           )}
+          {nineX != null && <ReferenceLine x={nineX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
 
           {/* Median: gradient area + soft-glow underlay + primary line. */}
           <Area type="monotone" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
@@ -159,13 +157,14 @@ export function TrendsPanel() {
           {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
               another where the date axis puts snapshots close. */}
           <Customized component={<YoyChips chipRows={plot} chipValueKey="med" chipYoyKey="yoy" chipAxis="0" chipBelow />} />
+          {nineX != null && <Customized component={<BreakLabel at={nineX} texts={[nine.label, nine.short]} />} />}
         </ComposedChart>
       </ResponsiveContainer>
 
       <div style={{ height: 16 }} />
 
       <ResponsiveContainer width="100%" height={130}>
-        <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 0, bottom: 0 }}>
+        <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 16, bottom: 0 }}>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
           <YAxis
@@ -180,10 +179,8 @@ export function TrendsPanel() {
           <Tooltip content={() => null} />
           <Legend />
 
-          {coverageX != null && (
-            <ReferenceLine x={coverageX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
-              label={{ value: 'coverage change', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
-          )}
+          {coverageX != null && <ReferenceLine x={coverageX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
+          {coverageX != null && <Customized component={<BreakLabel at={coverageX} texts={[scope23.label, scope23.short]} />} />}
 
           <Line type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-pos-6)" strokeWidth={2} dot strokeDasharray="4 2" isAnimationActive={!reduce} />
           <Line type="monotone" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--mantine-color-orange-6)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
@@ -196,8 +193,10 @@ export function TrendsPanel() {
         Headcount = people with a paid appointment; unpaid $0 affiliate
         appointments are excluded. <b>Ongoing (renewable)</b> = staff on a continuing (&ldquo;Regular&rdquo;)
         appointment — excludes terminal and temporary ones; appointment type is only recorded from Sep 2025 on,
-        so that line starts there. The dashed <b>coverage change</b> marker flags a snapshot whose source covered
-        fewer staff, not a real headcount cliff.
+        so that line starts there. The dashed markers are changes in the data, not in pay or staff: at Oct 2023
+        the source's coverage changed (some reports excluded students and trainees), so headcount across it
+        partly reflects coverage, not hiring or leaving; from Sep 2025 9-month pay is reported ×11/9, which
+        moves the median of a group with 9-month faculty.
       </Text>
       <ChartData
         caption={dollarMode === 'real' ? `Median salary, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : 'Median salary, headcount & renewable staff over time'}

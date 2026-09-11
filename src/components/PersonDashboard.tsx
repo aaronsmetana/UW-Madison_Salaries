@@ -4,6 +4,7 @@ import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
+import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
@@ -594,12 +595,13 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Card withBorder padding="lg">
           <CardTitle>Pay band — grade {latest?.grade_number} (full-time rate vs the official range)</CardTitle>
           <PayBandBar min={band.min} max={band.max} value={lastRate} />
+          <PayBandNote />
         </Card>
       )}
 
       <Text size="xs" c="dimmed" mt="md">
         Figures shown are {METRIC_LABEL[metric]}. Title comparison uses everyone sharing this person's job code in their
-        latest snapshot. Pay-band ranges are best-effort and only partially seeded. Person identity is matched on
+        latest snapshot. Person identity is matched on
         name + date of hire and is best-effort.
       </Text>
     </Stack>

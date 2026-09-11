@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button } from '@mantine/core';
-import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList, Customized } from 'recharts';
 import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
 import { CardTitle } from './CardTitle';
@@ -19,6 +19,7 @@ import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
 import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { raiseBucket, raiseBucketSql, raiseBucketLabel, raiseBuckets } from '../lib/raiseBuckets';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; school: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
@@ -26,6 +27,35 @@ interface SummaryRow { stayers: number; joiners: number; leavers: number; title_
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
+}
+
+type BandScale = ((v: string) => number | undefined) & { bandwidth?: () => number };
+
+/**
+ * A dashed rule from each waterfall bar's end to where the next one starts: the running total the eye
+ * would otherwise carry across the gap. Bars fill the middle 80% of their band (Recharts' default
+ * 10% category gap on each side), so the rule spans the gap between them.
+ */
+function WaterfallConnectors({ steps, xAxisMap, yAxisMap }: {
+  steps: { name: string; end: number }[];
+  xAxisMap?: Record<string, { scale: BandScale }>;
+  yAxisMap?: Record<string, { scale: (v: number) => number }>;
+}) {
+  const xa = xAxisMap ? Object.values(xAxisMap)[0] : undefined;
+  const ya = yAxisMap ? Object.values(yAxisMap)[0] : undefined;
+  if (!xa || !ya) return null;
+  const bw = xa.scale.bandwidth?.() ?? 0;
+  return (
+    <g className="wf-connectors">
+      {steps.slice(0, -1).map((st, i) => {
+        const a = xa.scale(st.name);
+        const b = xa.scale(steps[i + 1].name);
+        if (a == null || b == null) return null;
+        const y = ya.scale(st.end);
+        return <line key={st.name} x1={a + bw * 0.9} x2={b + bw * 0.1} y1={y} y2={y} stroke="var(--mantine-color-dimmed)" strokeWidth={1} strokeDasharray="3 3" />;
+      })}
+    </g>
+  );
 }
 
 export function ChangesPanel() {
@@ -148,13 +178,18 @@ export function ChangesPanel() {
   );
   const d = decompData?.[0];
 
-  const { data: raiseDist } = useSql<{ pct_bucket: number; n: number }>(
+  // 1% bins with open tails and a bin of its own for no change (lib/raiseBuckets, shared with the
+  // Reports raise cycle). Every bin takes its place on the axis, empty or not.
+  const { data: raiseCounts } = useSql<{ bucket: number; n: number }>(
     ['chg-dist', fromId, toId, scopeKey, metric],
-    `SELECT bucket * 5 AS pct_bucket, count(*) n FROM (
-       SELECT floor(least(greatest(r, -0.25), 0.5) * 100 / 5) AS bucket FROM ${crs}
-     ) GROUP BY bucket ORDER BY bucket`,
+    `SELECT ${raiseBucketSql('r')} AS bucket, count(*) n FROM ${crs} GROUP BY 1 ORDER BY 1`,
     enabled
   );
+  const raiseDist = useMemo(() => {
+    if (!raiseCounts) return undefined;
+    const by = new Map(raiseCounts.map((r) => [Number(r.bucket), r.n]));
+    return raiseBuckets().map((k) => ({ bucket: k, label: raiseBucketLabel(k), n: by.get(k) ?? 0 }));
+  }, [raiseCounts]);
 
   const { data: mobility } = useSql<{ person_key: string; fn: string; ln: string; a_school: string | null; b_school: string | null; delta: number }>(
     ['chg-mobility', fromId, toId, scopeKey, metric],
@@ -231,12 +266,13 @@ export function ChangesPanel() {
     if (!d) return [];
     const r = d.raises, h = d.hires, dep = d.departures, tot = d.total_change;
     const s2 = r + h;
-    const step = (name: string, base: number, amount: number, kind: 'pos' | 'red' | 'net') => ({ name, base, bar: Math.abs(amount), amount, kind });
+    // `end` is the running total after the step, where the connector to the next bar is drawn.
+    const step = (name: string, base: number, amount: number, kind: 'pos' | 'red' | 'net', end: number) => ({ name, base, bar: Math.abs(amount), amount, kind, end });
     return [
-      step('Raises', Math.min(0, r), r, r >= 0 ? 'pos' : 'red'),
-      step('New hires', Math.min(r, s2), h, h >= 0 ? 'pos' : 'red'),
-      step('Departures', Math.min(s2, tot), dep, 'red'),
-      step('Net change', Math.min(0, tot), tot, 'net'),
+      step('Raises', Math.min(0, r), r, r >= 0 ? 'pos' : 'red', r),
+      step('New hires', Math.min(r, s2), h, h >= 0 ? 'pos' : 'red', s2),
+      step('Departures', Math.min(s2, tot), dep, 'red', tot),
+      step('Net change', Math.min(0, tot), tot, 'net', tot),
     ];
   }, [d]);
   // Slot name into the waterfall chart's own gradient <defs> (see wfGradientColors below) — kept
@@ -250,13 +286,12 @@ export function ChangesPanel() {
   const distGradientColors = {
     red5: 'var(--mantine-color-red-5)', gray4: 'var(--mantine-color-gray-4)', pos5: 'var(--mantine-color-pos-5)',
   };
+  // Down below 0, up above it, and the no-change bar neutral.
   const distColorSlot = (bucket: number) => (bucket < 0 ? 'red5' : bucket === 0 ? 'gray4' : 'pos5');
 
   // Share of continuing staff who got any raise, and the bucket the median raise lands in (histogram marker).
   const raisedPct = equity?.n_raised != null && s?.n_continuing ? equity.n_raised / s.n_continuing : null;
-  const medBucketLabel = s?.median_raise != null
-    ? `${Math.floor(Math.max(-0.25, Math.min(0.5, s.median_raise)) * 100 / 5) * 5}%`
-    : null;
+  const medBucketLabel = s?.median_raise != null ? raiseBucketLabel(raiseBucket(s.median_raise)) : null;
 
   const exportMovers = () =>
     downloadCSV(`uw-pay-changes-${fromId}-to-${toId}.csv`, [...(raises ?? []), ...(cuts ?? [])].map((m) => ({
@@ -381,6 +416,7 @@ export function ChangesPanel() {
                 }}
               />
               <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
+              <Customized component={<WaterfallConnectors steps={waterfall} />} />
               <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
               <Bar
                 dataKey="bar"
@@ -408,13 +444,19 @@ export function ChangesPanel() {
         )}
       </Card>
 
-      <Card withBorder padding="lg">
+      <Card
+        withBorder
+        padding="lg"
+        className="raise-dist-card"
+        data-raise-bins={(raiseDist ?? []).map((r) => r.bucket).join(',')}
+        data-raise-counts={(raiseDist ?? []).filter((r) => r.n > 0).map((r) => `${r.bucket}:${r.n}`).join(',')}
+      >
         <CardTitle mb="sm">Raise distribution (% change, continuing staff)</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={(raiseDist ?? []).map((r) => ({ label: `${r.pct_bucket}%`, n: r.n }))} margin={{ left: 12, right: 12, top: 24 }}>
+          <BarChart data={raiseDist ?? []} margin={{ left: 12, right: 12, top: 24 }} className="raise-dist">
             <defs>{barGradientDefs(`${uid}-dist`, distGradientColors)}</defs>
             <CartesianGrid {...GRID} />
-            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <XAxis dataKey="label" tick={AXIS_TICK} interval="preserveStartEnd" minTickGap={8} />
             <YAxis width={48} tick={AXIS_TICK} />
             <Tooltip formatter={(v: number) => [num(v), 'People']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} contentStyle={TIP_STYLE} />
             {medBucketLabel && (
@@ -432,18 +474,34 @@ export function ChangesPanel() {
               {(raiseDist ?? []).map((r, i) => (
                 <Cell
                   key={i}
-                  fill={`url(#${uid}-dist-bar-${distColorSlot(r.pct_bucket)})`}
+                  className={`raise-bin raise-bin-${r.bucket < 0 ? 'down' : r.bucket === 0 ? 'zero' : 'up'}`}
+                  fill={`url(#${uid}-dist-bar-${distColorSlot(r.bucket)})`}
                   fillOpacity={hoveredDist != null && hoveredDist !== i ? 0.45 : 1}
                 />
               ))}
+              {/* The no-change bar says how many: under the continuing-raise rule these are people whose
+                  pay did not move at all. */}
+              <LabelList
+                dataKey="n"
+                position="top"
+                content={(props) => {
+                  const { x, y, width, value, index } = props as { x: number; y: number; width: number; value: number; index: number };
+                  if (raiseDist?.[index]?.bucket !== 0 || !value) return null;
+                  return <text className="raise-zero-label" x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
+                }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed">5% bins; values clamped to [−25%, +50%]. Green = raise, red = cut, grey = no change; the dashed line marks the median.</Text>
+        <Text size="xs" c="dimmed">
+          1% bins: "+3%" is a raise above 2% up to 3%, and "0%" is pay that did not move at all. Changes past
+          −10% or +20% are gathered at the ends. Green = raise, red = cut, grey = no change; the dashed line
+          marks the median.
+        </Text>
         <ChartData
           caption="Raise distribution (% change)"
           columns={['% bin', 'People']}
-          rows={(raiseDist ?? []).map((r) => [`${r.pct_bucket}%`, r.n])}
+          rows={(raiseDist ?? []).map((r) => [r.label, r.n])}
           n={(raiseDist ?? []).reduce((s, r) => s + r.n, 0)}
           unit="people"
           period={`${fromLabel} → ${toLabel}`}

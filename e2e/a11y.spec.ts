@@ -97,6 +97,18 @@ for (const theme of THEMES) {
     expect(bad).toEqual([]);
   });
 
+  // The route sweep scans Divisions half a second after it loads, before its tables arrive, so the
+  // rows — 1,329 of them on Titles — had never been scanned. Here each table is scanned once it is in.
+  test(`a11y: Divisions tables, loaded (${theme}), have no critical/serious violations`, async ({ page }) => {
+    for (const [tab, row] of [['schools', '.school-row'], ['titles', 'svg.mini-range'], ['earners', '.earner-row']] as const) {
+      await page.goto(`./explore?tab=${tab}`);
+      await setTheme(page, theme);
+      await expect(page.locator(row).first()).toBeAttached({ timeout: 60_000 });
+      const bad = await runAxe(page);
+      expect(bad, tab).toEqual([]);
+    }
+  });
+
   test(`a11y: school page (${theme}) has no critical/serious violations`, async ({ page }) => {
     await page.goto(`./school/${encodeURIComponent('School of Medicine and Public Health')}`);
     await setTheme(page, theme);

@@ -369,6 +369,9 @@ export interface StandingModel {
 
 export interface BriefModel {
   subjectName: string; subjectFirst: string; subjectPay: number | null;
+  /** How much of UW the loaded pay-band ranges cover, beside the grade-band and market-floor grounds
+   *  (PayBandNote); null when the reference is complete. */
+  payBandNote?: string | null;
   headerMeta: string;
   generated: string; snapLabel: string; // for the provenance line ("Data through {snapLabel} · generated {generated}")
   recommended: number | null; belowTarget: boolean; targetDelta: number; targetPct: number;

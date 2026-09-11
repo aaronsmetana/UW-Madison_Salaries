@@ -14,7 +14,7 @@ import { TitlesPanel } from '../components/TitlesPanel';
 import { TrendsPanel } from '../components/TrendsPanel';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { CohortPanel } from '../components/CohortPanel';
-import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
+import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -146,7 +146,6 @@ export default function Explore() {
   useDocTitle('Divisions');
   const { data: summary, isLoading } = useSummary();
   const { data: manifest } = useManifest();
-  const { data: refStatus } = useReferenceStatus();
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
@@ -232,28 +231,6 @@ export default function Explore() {
       <ControlBar inline />
 
       <SearchBox />
-
-      {/* `.alert-warn` (gray surface, orange rule + icon) rather than an orange Alert: the orange
-          variant renders its bold title at 2.5:1 on its own tint, which axe flags as serious. Neither
-          of these alerts had ever rendered before, so the suite had never caught it. */}
-      {refStatus && refStatus.status !== 'ok' && (
-        <Alert
-          variant="light"
-          color="gray"
-          className={refStatus.status === 'missing' ? undefined : 'alert-warn'}
-          icon={refStatus.status === 'missing' ? undefined : <IconAlertTriangle size={ICON.control} />}
-          title="Pay-band reference"
-        >
-          {/* Each branch tells a reader what the figures on this page can and cannot be trusted to
-              say. None of them tells that reader to go and edit a file in the repository — that
-              instruction is in the README's pay-band section, addressed to whoever can act on it. */}
-          {refStatus.status === 'missing'
-            ? 'No official pay-band ranges are loaded, so pay-band views are unavailable across the site.'
-            : refStatus.status === 'sparse'
-              ? `Official pay-band ranges are loaded for only ${refStatus.grades_count} of UW's grades, covering ${num(refStatus.matched_rows)} of ${num(refStatus.graded_rows)} graded appointments (${Math.round((refStatus.coverage ?? 0) * 100)}%). Pay-band figures describe that slice, not the whole population.`
-              : `Pay-band ranges are from ${refStatus.max_effective_year}, but the latest salary data is from ${refStatus.latest_snapshot_year}, so the ranges may be out of date.`}
-        </Alert>
-      )}
 
       {flagged.length > 0 && (
         <Alert

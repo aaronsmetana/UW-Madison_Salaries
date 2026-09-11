@@ -16,6 +16,7 @@ import { useWidth } from '../lib/useWidth';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from '../components/GapBreakdown';
 import { StartingGroup } from '../components/StartingGroup';
+import { PayBandNote } from '../components/PayBandNote';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
@@ -1203,6 +1204,7 @@ export default function Person() {
             Pay band — grade {latest?.grade_number} · official HR range
           </CardTitle>
           <PayBandBar min={band.min} max={band.max} value={lastRate} quartiles />
+          <PayBandNote mt="sm" />
           {lastRate >= band.max ? (
             <Text size="sm" mt="md">
               At or above the top of grade {latest?.grade_number}'s band (max {usd(band.max)}) — effectively maxed out.

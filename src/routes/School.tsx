@@ -462,11 +462,6 @@ export default function School() {
                       className="peer-row"
                       style={{ cursor: 'pointer' }}
                       onClick={() => nav(`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`)}
-                      tabIndex={0}
-                      role="button"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`); }
-                      }}
                     >
                       <Table.Td>
                         <Anchor component={Link} to={`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>

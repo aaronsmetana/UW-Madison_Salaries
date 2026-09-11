@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { salaryExpr, personPay, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { sqlStr } from '../lib/duckdb';
+import { useTray } from '../state/tray';
+import { TrayButton } from './TrayButton';
+import { dropdownProps } from '../lib/selectProps';
 import { usd, num, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { SegmentedToggle } from './SegmentedToggle';
@@ -18,7 +22,13 @@ import { ICON } from '../lib/ui';
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
   school: string | null; department: string | null; fte: number | null; pay: number;
+  /** The full-time rate (salary before FTE), shown for a single part-time appointment. */
+  rate: number | null;
+  appts: number;
 }
+
+/** One click away, since it is the division most often set aside: its coaches top any list of UW pay. */
+const ATHLETICS = 'Intercollegiate Athletics';
 
 type SortKey = 'name' | 'title' | 'school' | 'fte' | 'pay';
 
@@ -32,17 +42,28 @@ export function EarnersPanel() {
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const [limit, setLimit] = useState(100);
+  const { add, has } = useTray();
+  // Divisions set aside. Nothing by default, so the list stays neutral; applied in SQL before the
+  // LIMIT, so what remains still fills the list.
+  const [exclude, setExclude] = useState<string[]>([]);
+  const excludeSql = exclude.length ? `HAVING arg_max(school, salary) NOT IN (${exclude.map(sqlStr).join(', ')})` : '';
+  const { data: schoolOpts } = useSql<{ school: string }>(
+    ['earners-schools', snap ?? '', scope.kind, scopeVal, fk],
+    `SELECT DISTINCT school FROM salaries WHERE ${where} AND school IS NOT NULL ORDER BY school`,
+    !!snap
+  );
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<SortState<SortKey>>({ key: 'pay', dir: 'desc' });
 
   const { data: earnersRaw } = useSql<EarnerRow>(
-    ['top-earners', snap ?? '', scope.kind, scopeVal, metric, fk, limit],
+    ['top-earners', snap ?? '', scope.kind, scopeVal, metric, fk, limit, exclude.join('|')],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         arg_max(title, salary) title, arg_max(job_code, salary) job_code,
         arg_max(school, salary) school, arg_max(department, salary) department,
-        sum(fte) FILTER (WHERE salary > 0) fte, ${personPay(metric)} pay
+        sum(fte) FILTER (WHERE salary > 0) fte, ${personPay(metric)} pay,
+        sum(salary) FILTER (WHERE salary > 0) rate, count(*) FILTER (WHERE salary > 0) appts
      FROM salaries WHERE ${where} AND ${expr} > 0
-     GROUP BY person_key ORDER BY pay DESC LIMIT ${limit}`,
+     GROUP BY person_key ${excludeSql} ORDER BY pay DESC LIMIT ${limit}`,
     !!snap
   );
   const earners = useMemo(() => earnersRaw ?? [], [earnersRaw]);
@@ -52,9 +73,10 @@ export function EarnersPanel() {
   const cur = snapsAsc.find((s) => s.id === snap);
   const prevSnap = cur ? [...snapsAsc].filter((s) => s.date < cur.date).at(-1) : undefined;
   const { data: prevRanks } = useSql<{ person_key: string; rnk: number }>(
-    ['earners-prevrank', prevSnap?.id ?? '', scope.kind, scopeVal, metric, fk],
+    ['earners-prevrank', prevSnap?.id ?? '', scope.kind, scopeVal, metric, fk, exclude.join('|')],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
-        WHERE ${snapWhere(prevSnap?.id ?? '')} AND ${whereAll(scope, filters)} GROUP BY person_key HAVING ${personPay(metric)} > 0)
+        WHERE ${snapWhere(prevSnap?.id ?? '')} AND ${whereAll(scope, filters)} GROUP BY person_key
+        HAVING ${personPay(metric)} > 0${exclude.length ? ` AND arg_max(school, salary) NOT IN (${exclude.map(sqlStr).join(', ')})` : ''})
      SELECT person_key, rnk FROM (SELECT person_key, row_number() OVER (ORDER BY pay DESC) rnk FROM pp) WHERE rnk <= 2000`,
     !!snap && !!prevSnap
   );
@@ -101,7 +123,24 @@ export function EarnersPanel() {
           size="md" w={300} placeholder="Search name or title…"
           leftSection={<IconSearch size={ICON.control} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
         />
-        <Group gap="sm" wrap="nowrap">
+        <Group gap="sm" wrap="wrap">
+          <MultiSelect
+            {...dropdownProps('sm')}
+            aria-label="Exclude divisions"
+            placeholder={exclude.length ? undefined : 'Exclude divisions…'}
+            data={(schoolOpts ?? []).map((o) => o.school)}
+            value={exclude}
+            onChange={setExclude}
+            searchable
+            clearable
+            w={260}
+            className="exclude-divisions"
+          />
+          {!exclude.includes(ATHLETICS) && (schoolOpts ?? []).some((o) => o.school === ATHLETICS) && (
+            <Button size="compact-xs" variant="default" radius="xl" onClick={() => setExclude((x) => [...x, ATHLETICS])} className="exclude-athletics">
+              Without Athletics
+            </Button>
+          )}
           <SegmentedToggle
             size="xs" label="Show top" value={String(limit)} onChange={(v) => setLimit(Number(v))}
             options={[{ id: '25', label: '25' }, { id: '100', label: '100' }, { id: '500', label: '500' }]}
@@ -130,13 +169,14 @@ export function EarnersPanel() {
               <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
               <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" />
               <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
+              <Table.Th />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {view.map((e) => {
               const realRank = payRank.get(e.person_key) ?? 0;
               return (
-                <Table.Tr key={e.person_key}>
+                <Table.Tr key={e.person_key} className="peer-row earner-row" data-school={e.school ?? ''}>
                   <Table.Td ta="right">
                     <Text span c="dimmed">{realRank}</Text>
                     {prevSnap && <div style={{ lineHeight: 1.1 }}><RankDeltaChip prev={prevRankMap.get(e.person_key)} cur={realRank} /></div>}
@@ -151,7 +191,7 @@ export function EarnersPanel() {
                       : (e.title ?? '—')}
                   </Table.Td>
                   <Table.Td><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>
-                  <Table.Td ta="right" c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
+                  <Table.Td ta="right" c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'} className={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange-light-text' : undefined}>
                     {e.fte == null ? '—' : Math.abs(e.fte - 1) > 0.005 ? (
                       <Tooltip label={e.fte < 1 ? 'Part-time appointment' : 'Combined FTE across multiple appointments'} withArrow>
                         <span>{e.fte.toFixed(2)}</span>
@@ -160,7 +200,17 @@ export function EarnersPanel() {
                   </Table.Td>
                   <Table.Td ta="right">
                     {usd(e.pay)}
+                    {/* Part-time: what the job pays full-time, as on the person page. */}
+                    {metric === 'fte' && e.appts === 1 && e.fte != null && e.fte < 0.995 && e.rate != null && e.rate > e.pay && (
+                      <Text size="xs" c="dimmed" className="earner-rate">full-time {usd(e.rate)}</Text>
+                    )}
                     <MiniBar frac={e.pay / maxPay} />
+                  </Table.Td>
+                  <Table.Td ta="right">
+                    <TrayButton
+                      inTray={has(e.person_key)}
+                      onAdd={() => add({ type: 'person', id: e.person_key, label: fullName(e.fn, e.ln) })}
+                    />
                   </Table.Td>
                 </Table.Tr>
               );
@@ -172,7 +222,7 @@ export function EarnersPanel() {
 
       <Stack gap={2} mt="xs">
         <Text size="xs" c="dimmed">
-          Showing the top {num(view.length)}{q ? ` of ${num(earners.length)}` : ''} by pay in this scope. Pay is each
+          Showing the top {num(view.length)}{q ? ` of ${num(earners.length)}` : ''} by pay in this scope{exclude.length ? `, without ${exclude.join(', ')}` : ''}. Pay is each
           person's annual rate for the snapshot (FTE-blended actual earnings when someone holds multiple appointments);
           an FTE ≠ 1.00 (amber) means a part-time appointment or a combined FTE across multiple roles.
         </Text>

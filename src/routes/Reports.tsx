@@ -5,7 +5,9 @@ import { useMediaQuery } from '@mantine/hooks';
 import { IconDownload, IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck } from '@tabler/icons-react';
 import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
 import { useControls, METRIC_LABEL } from '../state/controls';
-import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useGrades, useReferenceStatus } from '../lib/hooks';
+import { payBandNote } from '../components/PayBandNote';
+import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql } from '../lib/queries';
 import { useTray } from '../state/tray';
@@ -338,11 +340,15 @@ export default function Reports() {
       ? Math.max(1, (new Date(snapDate).getTime() - new Date(prevSnapInfo.date).getTime()) / (30.44 * 864e5))
       : 12;
     const annualRate = Math.pow(1 + medianPct, 12 / monthsBetween) - 1;
-    // 5-point-wide % bins, clamped to [-25%, +50%] — matches ChangesPanel's raise-distribution convention.
-    const bucketOf = (p: number) => Math.floor(Math.min(Math.max(p, -0.25), 0.5) * 100 / 5) * 5;
+    // The site's raise bins (lib/raiseBuckets, as Divisions → Changes draws them): 1%, no change on its
+    // own, open tails. Every bin from the lowest to the highest in use takes its place, empty or not.
+    const bucketOf = raiseBucket;
     const distMap = new Map<number, number>();
     for (const r of raises) distMap.set(bucketOf(r), (distMap.get(bucketOf(r)) ?? 0) + 1);
-    const dist = [...distMap.entries()].sort((a, b) => a[0] - b[0]).map(([bucket, n]) => ({ bucket, n }));
+    const used = [...distMap.keys()];
+    const dist = raiseBuckets()
+      .filter((k) => used.length > 0 && k >= Math.min(...used) && k <= Math.max(...used))
+      .map((bucket) => ({ bucket, n: distMap.get(bucket) ?? 0 }));
     return {
       n: rows.length, medianPct, subjectPct,
       fromLabel: prevSnapInfo.label, toLabel: snapLabel,
@@ -816,8 +822,10 @@ export default function Reports() {
           : `to reach the ${medianKind} of ${docCohortLabel}${valueAddTail}`)
     : '';
 
+  const { data: refStatus } = useReferenceStatus();
   const model: BriefModel = {
     subjectName, subjectFirst, subjectPay, headerMeta, generated, snapLabel,
+    payBandNote: payBandNote(refStatus),
     recommended, belowTarget, targetDelta, targetPct,
     basisLabel: config.headline.trim() || basisLabel,
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure,

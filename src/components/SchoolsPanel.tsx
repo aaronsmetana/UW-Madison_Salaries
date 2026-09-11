@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader } from '@mantine/core';
-import { Link } from 'react-router-dom';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Tooltip } from '@mantine/core';
+import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconSearchOff, IconChevronRight, IconDownload } from '@tabler/icons-react';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
@@ -14,8 +14,11 @@ import { TrayButton } from './TrayButton';
 import { SortableTh } from './SortableTh';
 import { EmptyState } from './EmptyState';
 import { ICON } from '../lib/ui';
+import { MiniRange } from './MiniRange';
+import { rangeScale } from '../lib/rangeScale';
+import { fmtK } from '../lib/chartStyle';
 
-interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null }
+interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
 interface DeptRow { department: string; headcount: number; med: number | null }
 
 type SortKey = 'school' | 'headcount' | 'med';
@@ -44,9 +47,19 @@ function DeptRows({ where, school, metric, colSpan }: {
   return (
     <>
       {data.map((d) => (
-        <Table.Tr key={d.department} style={{ background: 'var(--mantine-color-default-hover)' }}>
-          <Table.Td style={{ paddingLeft: 44 }}>
-            <Text size="sm" c="dimmed" lineClamp={1}>{d.department}</Text>
+        <Table.Tr key={d.department} className="dept-row">
+          <Table.Td className="dept-cell">
+            <Anchor
+              component={Link}
+              to={`/explore?${new URLSearchParams({ school, dept: d.department })}`}
+              size="sm"
+              c="var(--mantine-color-text)"
+              underline="hover"
+              lineClamp={1}
+              className="dept-link"
+            >
+              {d.department}
+            </Anchor>
             <Text className="fold-under" size="xs" c="dimmed">{num(d.headcount)} people</Text>
           </Table.Td>
           <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} /></Table.Td>
@@ -63,6 +76,7 @@ export function SchoolsPanel() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
   const { add, has } = useTray();
+  const nav = useNavigate();
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const { data: schools } = useSql<SchoolRow>(
@@ -71,7 +85,8 @@ export function SchoolsPanel() {
      SELECT school, count(*) FILTER (WHERE pay > 0) headcount,
         median(pay) FILTER (WHERE pay > 0) med,
         quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
-        quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75
+        quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
+        min(pay) FILTER (WHERE pay > 0) lo, max(pay) FILTER (WHERE pay > 0) hi
      FROM pe GROUP BY school ORDER BY headcount DESC`,
     !!snap
   );
@@ -103,6 +118,8 @@ export function SchoolsPanel() {
     const meds = (schools ?? []).map((s) => s.med).filter((v): v is number => v != null);
     return meds.length ? { min: Math.min(...meds), max: Math.max(...meds) } : { min: 0, max: 1 };
   }, [schools]);
+  const scale = useMemo(() => rangeScale((schools ?? []).map((s) => s.p75)), [schools]);
+  const open = (school: string) => nav(`/school/${encodeURIComponent(school)}`);
   const medFrac = (m: number | null) =>
     m == null ? 0 : medExtent.max === medExtent.min ? 1 : (m - medExtent.min) / (medExtent.max - medExtent.min);
 
@@ -151,28 +168,38 @@ export function SchoolsPanel() {
               <SortableTh sortKey="school" label="School / Division" sort={sort} onSort={setSort} />
               <SortableTh sortKey="headcount" label="Headcount" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
-              <Table.Th ta="right" data-fold>Range (p25–p75)</Table.Th>
+              <Table.Th ta="right" data-fold w={216} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {view.map((s) => {
-              const open = expanded.has(s.school);
+              const isOpen = expanded.has(s.school);
               const inTray = has(s.school);
+              const canPlot = s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && s.hi > s.lo;
               return (
                 <Fragment key={s.school}>
-                  <Table.Tr className="peer-row">
+                  {/* A click anywhere on the row opens the division; the chevron and the add button do
+                      their own thing and stop there. The row is not itself a control — it holds three —
+                      so the keyboard reaches the division by its name, which is the link. */}
+                  <Table.Tr
+                    className="peer-row school-row"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => open(s.school)}
+                  >
                     <Table.Td>
                       <Group gap={6} wrap="nowrap">
                         <ActionIcon
                           variant="subtle" color="gray" size="sm"
-                          aria-label={open ? `Collapse ${s.school}` : `Expand ${s.school} departments`}
-                          onClick={() => toggle(s.school)}
+                          className="school-expand"
+                          aria-label={isOpen ? `Collapse ${s.school}` : `Expand ${s.school} departments`}
+                          aria-expanded={isOpen}
+                          onClick={(e) => { e.stopPropagation(); toggle(s.school); }}
                         >
-                          <IconChevronRight size={ICON.compact} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }} />
+                          <IconChevronRight size={ICON.compact} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }} />
                         </ActionIcon>
                         <div style={{ minWidth: 0 }}>
-                          <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500} lineClamp={2}>
+                          <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500} lineClamp={2} onClick={(e) => e.stopPropagation()}>
                             {s.school}
                           </Anchor>
                           <Text className="fold-under" size="xs" c="dimmed">
@@ -189,14 +216,18 @@ export function SchoolsPanel() {
                       {usd(s.med)}
                       <MiniBar frac={medFrac(s.med)} color="var(--mantine-color-pos-5)" />
                     </Table.Td>
-                    <Table.Td ta="right" c="dimmed" data-fold>
-                      {s.p25 != null && s.p75 != null ? `${usd(s.p25)} – ${usd(s.p75)}` : '—'}
+                    <Table.Td ta="right" data-fold>
+                      {canPlot ? (
+                        <Tooltip withArrow multiline label={`min ${usd(s.lo)} · p25 ${usd(s.p25)} · median ${usd(s.med)} · p75 ${usd(s.p75)} · max ${usd(s.hi)}`}>
+                          <div><MiniRange scale={scale} lo={s.lo!} p25={s.p25!} med={s.med!} p75={s.p75!} hi={s.hi!} /></div>
+                        </Tooltip>
+                      ) : <Text span size="sm" c="dimmed">—</Text>}
                     </Table.Td>
                     <Table.Td ta="right">
-                      <TrayButton inTray={inTray} onAdd={() => add({ type: 'school', id: s.school, label: s.school })} />
+                      <TrayButton inTray={inTray} stopPropagation onAdd={() => add({ type: 'school', id: s.school, label: s.school })} />
                     </Table.Td>
                   </Table.Tr>
-                  {open && <DeptRows where={where} school={s.school} metric={metric} colSpan={5} />}
+                  {isOpen && <DeptRows where={where} school={s.school} metric={metric} colSpan={5} />}
                 </Fragment>
               );
             })}

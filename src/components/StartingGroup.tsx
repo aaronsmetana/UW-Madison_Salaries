@@ -124,7 +124,7 @@ export function StartingGroup({ personKey, first }: {
         {start.pct != null && now.pct != null ? ` Started at the ${ordinal(start.pct)} percentile; now ${ordinal(now.pct)}.` : ''}
       </Text>
       <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={plot} margin={{ left: 12, right: 30, top: 12, bottom: 0 }}>
+        <ComposedChart data={plot} margin={{ left: 12, right: 30, top: 16, bottom: 0 }}>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
           <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} />

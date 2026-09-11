@@ -5,10 +5,11 @@ type Scale = ((v: number) => number) & { domain?: () => number[] };
 const FONT = 10;
 
 /**
- * The words beside a known-break marker (snapTime's KNOWN_BREAKS), kept inside the plot: after the
- * line when there is room, before it near the right edge, the short wording on a narrow chart. Put it
- * in a `<Customized component={<BreakLabel … />} />` next to the marker's ReferenceLine, which draws
- * the line itself.
+ * The words beside a known-break marker (snapTime's KNOWN_BREAKS), kept inside the plot's width: after
+ * the line when there is room, before it near the right edge, the short wording on a narrow chart. They
+ * sit just above the plot, where no series runs — inside it they crossed whatever line ran near the top
+ * — so the chart needs a top margin of about 14px. Put it in a `<Customized component={<BreakLabel … />} />`
+ * next to the marker's ReferenceLine, which draws the line itself.
  */
 export function BreakLabel(props: {
   /** The marker's position on the x axis, in axis units (snapX). */
@@ -28,7 +29,7 @@ export function BreakLabel(props: {
     <text
       className="break-label"
       x={placed.x}
-      y={offset.top + FONT + 2}
+      y={offset.top - 4}
       textAnchor={placed.anchor}
       fontSize={FONT}
       fill="var(--mantine-color-dimmed)"

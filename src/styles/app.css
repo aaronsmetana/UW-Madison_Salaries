@@ -962,15 +962,40 @@ textarea:focus-visible,
   }
 }
 
-/* Peer table: the "Add to tray" button stays recessive until its row is hovered/focused, so a long
-   list isn't a wall of repeated buttons (it pops accent on hover) — but 0.6 rather than near-invisible,
-   so it still reads as an available action rather than a disabled one. Touch has no hover state, so it
-   stays fully visible there. */
-.peer-row .peer-add { opacity: 0.6; transition: opacity var(--dur-instant) ease; }
-.peer-row:hover .peer-add,
-.peer-row:focus-within .peer-add { opacity: 1; }
+/* Row add buttons (Schools, Titles, Top earners, a title's people, a person's peers): quiet until
+   their row is hovered or focused, so a long list isn't a wall of repeated accent buttons, and full
+   on touch, which has no hover. Quieted by colour and weight, never by opacity: at rest the icon and
+   label take the muted ink (7.5:1 light, 10:1 dark) on a hairline outline. The 60% fade they used to
+   wear put them under 3:1 on dark rows. */
+.peer-row .peer-add.accent-adaptive-text,
+.peer-row .peer-add.accent-adaptive-text .mantine-Button-label {
+  color: var(--mantine-color-dimmed) !important;
+  font-weight: 500;
+}
+.peer-row .peer-add.accent-adaptive-text {
+  --button-bd: 1px solid var(--hairline-strong) !important; /* Mantine sets it inline */
+  transition: color var(--dur-instant) ease, border-color var(--dur-instant) ease;
+}
+.peer-row:hover .peer-add.accent-adaptive-text,
+.peer-row:hover .peer-add.accent-adaptive-text .mantine-Button-label,
+.peer-row:focus-within .peer-add.accent-adaptive-text,
+.peer-row:focus-within .peer-add.accent-adaptive-text .mantine-Button-label {
+  color: var(--text-accent) !important;
+  font-weight: 600;
+}
+.peer-row:hover .peer-add.accent-adaptive-text,
+.peer-row:focus-within .peer-add.accent-adaptive-text {
+  --button-bd: 1px solid var(--mantine-color-accent-6) !important;
+}
 @media (hover: none) {
-  .peer-row .peer-add { opacity: 1; }
+  .peer-row .peer-add.accent-adaptive-text,
+  .peer-row .peer-add.accent-adaptive-text .mantine-Button-label {
+    color: var(--text-accent) !important;
+    font-weight: 600;
+  }
+  .peer-row .peer-add.accent-adaptive-text {
+    --button-bd: 1px solid var(--mantine-color-accent-6) !important;
+  }
 }
 
 /* ── Tasteful motion layer (all reduced-motion guarded at the bottom of this file). ── */
@@ -1672,4 +1697,35 @@ button:active,
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+/* A title's main employee category, beside its name on Divisions → Titles. */
+.cat-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 4px;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+/* Departments opened under a division: indented under a guide line, so they read as its children. */
+.dept-row {
+  background: var(--surface-sunken);
+}
+.dept-row > .dept-cell {
+  padding-left: 44px;
+  position: relative;
+}
+.dept-row > .dept-cell::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--hairline-strong);
 }
