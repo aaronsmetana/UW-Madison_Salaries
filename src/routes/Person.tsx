@@ -1,5 +1,4 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useElementSize } from '@mantine/hooks';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
@@ -13,6 +12,7 @@ import { AXIS_TICK, GRID, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
 import { packLabelRows, measureText } from '../lib/labelLayout';
+import { useWidth } from '../lib/useWidth';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
@@ -451,7 +451,7 @@ export default function Person() {
   // divider (the first at the left edge, which has none), on one of two rows. Centred on the divider,
   // a label straddled both eras it separates. When they cannot all fit — a phone, several short eras,
   // long titles — they are listed under the chart instead: drawn anyway, they printed on each other.
-  const { ref: trendBoxRef, width: trendWidth } = useElementSize();
+  const [trendBoxRef, trendWidth] = useWidth<HTMLDivElement>();
   const eraLayout = useMemo(() => {
     const labels = [
       ...(eras.length > 1 && trendData[0]?.title ? [{ key: 'first', x: snapX(trendData[0].date, trendData[0].id), title: trendData[0].title, from: trendData[0].label }] : []),
