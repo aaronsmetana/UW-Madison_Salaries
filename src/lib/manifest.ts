@@ -72,6 +72,9 @@ export interface HomeStats {
   bin_cap: number | null;
   /** People at or above `bin_cap`, excluded from `bins` so outliers don't flatten the curve. */
   bins_overflow: number | null;
+  /** Everyone under the cap as a count per $100 of pay (floored), from `lo100` × $100 up — the dots
+   *  the landing page draws, one per person. Re-binned by $1k it is `bins`. */
+  pay_counts?: { lo100: number; counts: number[] } | null;
   /** Quartiles over the same actual-pay measure `bins` describes (and the headline median uses). */
   p25: number | null;
   p50: number | null;

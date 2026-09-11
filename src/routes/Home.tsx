@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
 import {
@@ -17,7 +17,8 @@ import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
-import { areaGradDef } from '../components/chartDefs';
+import { DotField } from '../components/chart/DotField';
+import { paysFromCounts } from '../lib/dotLayout';
 import { ordinal } from '../lib/stats';
 
 interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
@@ -78,9 +79,11 @@ const AXIS_LABEL_W = 120;
 const TICK_STEPS = [10_000, 25_000, 50_000, 100_000, 250_000];
 
 function Distribution({
-  bins, p25, median, p75, cap, overflow, headcount,
+  bins, payCounts, p25, median, p75, cap, overflow, headcount,
 }: {
   bins: Bin[];
+  /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
+  payCounts?: { lo100: number; counts: number[] } | null;
   p25: number | null;
   median: number | null;
   p75: number | null;
@@ -88,9 +91,6 @@ function Distribution({
   overflow: number | null;
   headcount: number | null;
 }) {
-  // Scopes this chart's <defs>. An SVG id is document-global; the hardcoded 'home-dist' this
-  // replaces was safe only because nothing else used that string.
-  const gradId = useId();
   const revealed = useReveal(bins.length >= 3);
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -113,6 +113,32 @@ function Distribution({
   // where it may sit is a question about pixels that changes as the reader moves the pointer.
   const pillRef = useRef<HTMLDivElement>(null);
   const [pillW, setPillW] = useState(0);
+  // Where the lens is, for a mouse; a tap on a phone belongs to the link around the chart.
+  const [lensAt, setLensAt] = useState<{ x: number; y: number } | null>(null);
+
+  // One dot per person, under the curve (DotField). Everyone the bins describe: the counts per $100
+  // when the artifact carries them, otherwise each $1k bin's people spread across its thousand.
+  const people = useMemo(() => {
+    if (payCounts?.counts.length) return paysFromCounts(payCounts.lo100, payCounts.counts);
+    const out: number[] = [];
+    for (const b of bins) for (let i = 0; i < b.n; i++) out.push(b.bucket + ((i + 0.5) / b.n) * 1000);
+    return Float64Array.from(out);
+  }, [payCounts, bins]);
+  const curveLo = curve[0]?.bucket ?? 0;
+  const curveSpan = (curve[curve.length - 1]?.bucket ?? 1) - curveLo || 1;
+  const curveMax = useMemo(() => Math.max(1, ...curve.map((b) => b.n)), [curve]);
+  const dotX = useCallback((v: number, width: number) => ((v - curveLo) / curveSpan) * width, [curveLo, curveSpan]);
+  // The curve's height above the baseline at a pixel, as the line draws it: the same interpolation
+  // between the smoothed $1k points, in the same 180px box.
+  const dotHeight = useCallback((x: number, width: number) => {
+    if (curve.length < 2) return 0;
+    const v = curveLo + (x / width) * curveSpan;
+    const i = Math.min(curve.length - 2, Math.max(0, Math.floor((v - curveLo) / 1000)));
+    const a = curve[i], b = curve[i + 1];
+    const f = Math.min(1, Math.max(0, (v - a.bucket) / ((b.bucket - a.bucket) || 1)));
+    const n = a.n + (b.n - a.n) * f;
+    return (n / curveMax) * (180 - 4) + 2;
+  }, [curve, curveLo, curveSpan, curveMax]);
 
   // p25 and median sit close together on a right-skewed curve, so their labels overlap and render as
   // one unreadable run — the same failure PeerRangeBar hit. Reuse its pure row-assignment helper
@@ -168,7 +194,6 @@ function Distribution({
   const Y = (n: number) => H - (n / maxN) * (H - 4) - 2;
   const pts = curve.map((b) => `${X(b.bucket).toFixed(1)},${Y(b.n).toFixed(1)}`);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
-  const area = `M0,${H} ${pts.map((p) => `L${p}`).join(' ')} L${W},${H} Z`;
 
   // Round salary steps for the axis, coarsened until the labels actually fit the rendered width.
   // `AXIS_LABEL_W` is the pitch one label needs to stay legible with a gap either side; before the
@@ -226,13 +251,19 @@ function Distribution({
       if (Math.abs(curve[i].bucket - at) < Math.abs(curve[best].bucket - at)) best = i;
     }
     setHoverIdx(best);
+    setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
 
   return (
     // `card-hover` because the whole panel is a link to /explore, and lifting the border on hover is
     // the one "this responds" gesture the app uses (see the rule's own note on why it isn't a lift).
     <div className="hero-dist glass card-hover">
-      <div style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={() => setHoverIdx(null)}>
+      <div style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={() => { setHoverIdx(null); setLensAt(null); }}>
+      {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
+          curve used to carry is these people; the line, the markers and the readout stay on top. */}
+      <div style={{ position: 'absolute', inset: 0, height: H }}>
+        <DotField className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H} entrance lensAt={lensAt} />
+      </div>
       <div
         style={{
           transform: revealed ? 'scaleY(1)' : 'scaleY(0.04)',
@@ -242,11 +273,6 @@ function Distribution({
         }}
       >
         <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
-          {/* The shared area fill, rather than the private copy this chart used to carry — it was the
-              one gradient in the app bypassing chartDefs, with its own stops (0.34 -> 0.02) and a
-              hardcoded id. */}
-          <defs>{areaGradDef(gradId)}</defs>
-          <path d={area} fill={`url(#${gradId}-area-grad)`} />
           <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
           {marks.map((m) => (
             <line
@@ -379,7 +405,7 @@ function Distribution({
         </Text>
       </div>
       <Text size="xs" c="dimmed" ta="center" mt={4}>
-        Actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
+        Each dot is one person · actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
         {/* Say what the cap hides rather than truncating the tail silently. */}
         {overflow ? ` · ${num(overflow)} above ${fmtK(cap ?? 0)} not shown` : ''}
       </Text>
@@ -610,6 +636,7 @@ export default function Home() {
           <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
             <Distribution
               bins={bins}
+              payCounts={artifactUsable ? homeStats.pay_counts ?? null : null}
               p25={artifactUsable ? homeStats.p25 : null}
               median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
               p75={artifactUsable ? homeStats.p75 : null}

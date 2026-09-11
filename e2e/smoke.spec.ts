@@ -383,6 +383,8 @@ test.describe('the landing distribution', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('./', { waitUntil: 'networkidle' });
     await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
+    // The dots fall into place on a first visit; compare pixels once they have landed.
+    await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
     await page.waitForTimeout(600);
 
     const plot = (await page.locator('.hero-dist-plot').boundingBox())!;

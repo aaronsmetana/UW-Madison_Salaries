@@ -63,6 +63,14 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
         `SELECT floor(pay / ${BIN_W}) * ${BIN_W} AS bucket, count(*) AS n FROM ${people(src, snap)}
          WHERE pay > 0 AND pay < ${BIN_CAP} GROUP BY bucket ORDER BY bucket`
       );
+      // Everyone under the cap as a count per $100 of pay, floored — what the landing page draws one
+      // dot per person from. Floored, not rounded: rounding would move a $59,960 earner into the $60k
+      // bin, and re-binned by $1k these counts must be bins exactly. ~2,500 small numbers; ~3 KB
+      // gzipped.
+      const per100 = await run(
+        `SELECT floor(pay / 100) AS b, count(*) AS n FROM ${people(src, snap)}
+         WHERE pay > 0 AND pay < ${BIN_CAP} GROUP BY b ORDER BY b`
+      );
       const [overflowRow] = await run(
         `SELECT count(*) AS n FROM ${people(src, snap)} WHERE pay >= ${BIN_CAP}`
       );
@@ -110,6 +118,13 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
           salary_hi: toNum(dimsRow?.hi),
           bins: bins.map((b) => ({ bucket: toNum(b.bucket), n: toNum(b.n) })),
           bin_cap: BIN_CAP,
+          pay_counts: (() => {
+            if (!per100.length) return null;
+            const lo100 = toNum(per100[0].b);
+            const counts = new Array(toNum(per100[per100.length - 1].b) - lo100 + 1).fill(0);
+            for (const r of per100) counts[toNum(r.b) - lo100] = toNum(r.n);
+            return { lo100, counts };
+          })(),
           bins_overflow: toNum(overflowRow?.n) ?? 0,
           p25: toNum(quartRow?.p25),
           p50: toNum(quartRow?.p50),

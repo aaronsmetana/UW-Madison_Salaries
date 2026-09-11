@@ -164,37 +164,15 @@ test.describe('chart gradient ids', () => {
  */
 /**
  * Home's hero distribution was the one chart bypassing `chartDefs` entirely: hand-written stops
- * (0.34 -> 0.02 against the factory's 0.28 -> 0) under a hardcoded id. The defect is DIVERGENCE, so
- * the test is for sameness — it compares the rendered stops on Home against the ones a Recharts
- * chart gets from the shared factory.
+ * (0.34 -> 0.02 against the factory's 0.28 -> 0) under a hardcoded id. Its fill is now the people
+ * themselves, one dot each (DotField), so it carries no area gradient at all — and what this holds is
+ * that it never grows a private one again, beside the dots or instead of them.
  */
-test('the hero distribution uses the same area fill as every other chart', async ({ page }) => {
-  const stops = async (route: string, within: string) => {
-    await page.goto(route, { waitUntil: 'networkidle' });
-    await expect(page.locator(within).first()).toBeVisible({ timeout: 60_000 });
-    await page.waitForTimeout(1_500);
-    return page.evaluate((sel) => {
-      const grad = document.querySelector(`${sel} linearGradient[id$="-area-grad"], ${sel} ~ * linearGradient[id$="-area-grad"]`)
-        ?? document.querySelector('linearGradient[id$="-area-grad"]');
-      if (!grad) return null;
-      return [...grad.querySelectorAll('stop')].map((s) => ({
-        offset: s.getAttribute('offset'),
-        opacity: s.getAttribute('stop-opacity') ?? getComputedStyle(s).stopOpacity,
-      }));
-    }, within);
-  };
-
-  const home = await stops('./', '.hero-dist-plot');
-  expect(home, 'the hero distribution has no area gradient at all').not.toBeNull();
-
-  const chart = await stops('./explore?tab=trends', '.recharts-responsive-container');
-  expect(chart, 'no Recharts area gradient to compare against').not.toBeNull();
-
-  expect(home, `the hero distribution's area fill has diverged from the shared one: ${JSON.stringify(home)} vs ${JSON.stringify(chart)}`)
-    .toEqual(chart);
-  // And the fill actually finishes, rather than leaving a hairline of tint on the axis.
-  expect(Number(home![home!.length - 1].opacity), 'the area fill does not reach zero at the baseline')
-    .toBe(0);
+test('the hero distribution draws its people as dots, with no private area fill', async ({ page }) => {
+  await page.goto('./', { waitUntil: 'networkidle' });
+  await expect(page.locator('.hero-dist-plot')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.hero-dots canvas.dot-field-ink')).toHaveCount(1);
+  expect(await page.locator('.hero-dist linearGradient').count(), 'the hero distribution defines an area gradient of its own').toBe(0);
 });
 
 test.describe('the chart-card specular', () => {

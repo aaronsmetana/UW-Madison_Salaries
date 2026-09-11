@@ -263,6 +263,13 @@ test('visual: person', async ({ page }) => {
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
   await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
+  // Load the page itself before the shutter. Arriving by client-side navigation from Home left a stale
+  // compositor tile of the landing page in a corner of the dark shot — twice now, the second time with
+  // Home's dot canvas — and a fresh load has nothing to carry over. The search that got us here is the
+  // e2e suite's to test.
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1, name: 'Kenneth Poss' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
   // Viewport-only, not full-page — the one test in this file that is.
   //
   // Person is the densest page in the app and has two regions that will not settle to the pixel: a
@@ -276,7 +283,11 @@ test('visual: person', async ({ page }) => {
   // the hero, the stat cards, the tab bar, the card treatment and the headings — is all above it and
   // is stable. Shooting the viewport keeps that under exact comparison instead of letting one scroll
   // box make the whole page unreadable as a diff.
-  await shots(page, 'person', { fullPage: false, mask: CHARTS(page) });
+  // The fixed footer is masked here, and only here. In this scene's dark shot, in-suite, its left third
+  // came back as a stale tile from an earlier page in the same browser (the landing page's "22,009",
+  // then a phone-width legend) — never when the scene runs alone, and after a reload as well. The footer
+  // is identical on every route and every other scene still shoots it.
+  await shots(page, 'person', { fullPage: false, mask: [...CHARTS(page), page.locator('.mantine-AppShell-footer')] });
 });
 
 test('visual: school', async ({ page }) => {

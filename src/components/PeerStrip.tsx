@@ -1,4 +1,4 @@
-import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd, num } from '../lib/format';
 import { ordinal } from '../lib/stats';
@@ -10,9 +10,9 @@ import {
 } from './markers';
 import { binSalaries } from '../lib/histogram';
 import { smoothBins } from '../lib/distribution';
-import { areaGradDef } from './chartDefs';
 import { dotRows, rowHeight, MAX_ROWS } from '../lib/swarm';
 import { ChartData } from './ChartData';
+import { DotField } from './chart/DotField';
 import { Z } from '../lib/layers';
 
 const RIBBON_H = 76;
@@ -124,9 +124,6 @@ export function PeerStrip({
 
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotW, setPlotW] = useState(0);
-  // An svg id is document-global; two PeerStrips sharing a literal would both define the same
-  // gradient and every reference would resolve to whichever mounted first (see `areaGradDef`).
-  const gradId = useId();
   const [hoverPct, setHoverPct] = useState<number | null>(null);
   const [hoverY, setHoverY] = useState<number | null>(null);
 
@@ -214,13 +211,25 @@ export function PeerStrip({
     if (!(peak > 0)) return null;
 
     const base = plotH;
-    const pts = curve.map((c) => {
-      const x = at(c.bucket + step / 2) * plotW;
-      const y = base - (c.n / peak) * (swarmH - 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    });
-    return { area: `M0,${base} L${pts.join(' L')} L${plotW},${base} Z`, line: `M${pts.join(' L')}` };
+    const xy = curve.map((c) => ({ x: at(c.bucket + step / 2) * plotW, h: (c.n / peak) * (swarmH - 2) }));
+    const pts = xy.map((p) => `${p.x.toFixed(1)},${(base - p.h).toFixed(1)}`);
+    return { line: `M${pts.join(' L')}`, xy };
   }, [useRibbon, plotW, span, sorted, axisMin, axisMax, at, plotH, swarmH]);
+
+  // One dot per peer under the ribbon's curve (DotField), where they are too many for a swarm: the
+  // curve's height at a pixel, by the same interpolation the line is drawn with.
+  const dotValues = useMemo(() => Float64Array.from(plotted.map((p) => p.pay)), [plotted]);
+  const dotKinds = useMemo(() => Uint8Array.from(plotted.map((p) => (p.sameSchool ? 1 : 0))), [plotted]);
+  const dotX = useCallback((v: number, w: number) => at(v) * w, [at]);
+  const dotHeight = useCallback((x: number) => {
+    const xy = ribbon?.xy;
+    if (!xy || xy.length < 2) return 0;
+    let i = 0;
+    while (i < xy.length - 2 && xy[i + 1].x < x) i++;
+    const a = xy[i], b = xy[i + 1];
+    const f = Math.min(1, Math.max(0, (x - a.x) / ((b.x - a.x) || 1)));
+    return Math.max(0, a.h + (b.h - a.h) * f);
+  }, [ribbon]);
 
   const pos = at(value) * 100;
   const selfX = at(value) * plotW;
@@ -381,6 +390,11 @@ export function PeerStrip({
           onMouseLeave={() => { setHoverPct(null); setHoverY(null); }}
           style={{ position: 'relative', height: plotH, cursor: sorted.length ? 'crosshair' : undefined }}
         >
+          {plotW > 0 && useRibbon && ribbon && (
+            <div style={{ position: 'absolute', inset: 0, height: plotH, opacity: mounted ? 1 : 0, transition: 'opacity 240ms ease' }}>
+              <DotField className="strip-dots" values={dotValues} kinds={dotKinds} toX={dotX} heightAt={dotHeight} height={plotH} />
+            </div>
+          )}
           {plotW > 0 && (
             <svg
               width={plotW}
@@ -425,15 +439,9 @@ export function PeerStrip({
                 // the accent — on this chart the accent IS the subject's mark. No
                 // `vectorEffect="non-scaling-stroke"`: Home needs it because it draws into a scaled
                 // viewBox, and this svg is 1:1 pixel space, so the stroke is already 1px.
+                // The people are the dots under it (DotField, drawn beneath this svg); the line is their
+                // outline.
                 <g opacity={mounted ? 1 : 0} style={{ transition: 'opacity 240ms ease' }}>
-                  {/* 0.65 at the top, not `areaGradDef`'s 0.28 default. That default is tuned for the
-                      accent — a saturated teal that carries at low opacity — and grey-5 at 0.28 over a
-                      white card is about #eaecee, which left the population almost invisible. Compared
-                      0.28 / 0.5 / 0.65 against the flat 0.55 slab this replaces: 0.65 keeps the weight
-                      the old shape had while still fading out at the axis, and the subject's accent
-                      mark still reads as the loudest thing on the chart. */}
-                  <defs>{areaGradDef(gradId, MARK_PEER, 0.65)}</defs>
-                  <path d={ribbon.area} fill={`url(#${gradId}-area-grad)`} />
                   <path
                     d={ribbon.line}
                     fill="none"

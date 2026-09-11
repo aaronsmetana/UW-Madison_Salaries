@@ -163,3 +163,33 @@ describe('computeHomeStats counts people, not appointments', () => {
     expect(split.salary_lo).toBe(50000);
   });
 });
+
+describe('computeHomeStats pay_counts: one count per $100, the dots the landing page draws', () => {
+  // $59,960 floors to $59,900 and stays in the $59k bin; rounded, it would land in $60k.
+  // One row carries a numeric salary_fte_adjusted (its own pay), so the column types as DOUBLE — see
+  // the note on ROWS above.
+  const rows = [59960, 59999, 60000, 60001, 1234, 249999, 250000, 88888].map((pay, i) => ({
+    snapshot_id: 's', school: 'A', job_code: 'J', title: 'T', employee_category: 'C', person_key: `q${i}`,
+    salary: pay, salary_fte_adjusted: i === 0 ? pay : null, fte: 1, date_of_hire: '2020-01-01', snapshot_date: '2026-01-01',
+  }));
+  let s;
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-per100-'));
+    s = await computeHomeStats(await writeParquet(dir, rows), 's');
+  });
+
+  it('re-binned by $1k, is the histogram exactly', () => {
+    const byK = new Map();
+    s.pay_counts.counts.forEach((n, i) => {
+      if (!n) return;
+      const k = Math.floor(((s.pay_counts.lo100 + i) * 100) / 1000) * 1000;
+      byK.set(k, (byK.get(k) ?? 0) + n);
+    });
+    expect([...byK.entries()].sort((a, b) => a[0] - b[0])).toEqual(s.bins.map((b) => [b.bucket, b.n]));
+  });
+
+  it('holds everyone under the cap and no one at or above it', () => {
+    expect(s.pay_counts.counts.reduce((a, b) => a + b, 0)).toBe(rows.length - 1);
+    expect(s.bins_overflow).toBe(1);
+  });
+});

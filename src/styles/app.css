@@ -117,6 +117,7 @@
      (>=3:1, and 3.9 at the dots' 0.9 opacity), everyone else is context (1.5-2.5:1), and a trend
      line clears 3:1. Light: 5.87 / 4.38 / 2.07 / 3.32. */
   --mark-self: var(--mantine-color-accent-7);
+  --dot-ink: var(--mantine-color-accent-6);
   --mark-peer-same-school: var(--mantine-color-pos-7);
   --mark-peer: var(--mantine-color-gray-5);
   --guide-strong: var(--mantine-color-gray-6);
@@ -343,6 +344,7 @@ body {
   --series-accent: #4f93a4;
   /* Chart marks on the #141619 card: 5.22 / 4.14 / 2.22 / 5.46 (see :root). */
   --mark-self: var(--mantine-color-accent-5);
+  --dot-ink: var(--mantine-color-accent-5);
   --mark-peer-same-school: var(--mantine-color-pos-7);
   --mark-peer: var(--mantine-color-gray-7);
   --guide-strong: var(--mantine-color-gray-6);
@@ -1728,4 +1730,17 @@ button:active,
   top: 0;
   bottom: 0;
   border-left: 2px solid var(--hairline-strong);
+}
+
+/* Dots, one per person (DotField). On the landing page they take the accent, lighter in dark mode so a
+   lone dot still clears 3:1 against the card at the alpha it is drawn with; in a person's peer strip
+   they take the population's greys, the same-school peers their own. */
+.hero-dots { color: var(--dot-ink); }
+.strip-dots { color: var(--mark-peer); }
+.strip-dots .dot-field-accent { color: var(--mark-peer-same-school); }
+.dot-field-lens {
+  border-radius: 50%;
+  background: var(--surface, var(--mantine-color-body));
+  border: 1px solid var(--hairline-strong);
+  box-shadow: var(--shadow-merged-card);
 }
