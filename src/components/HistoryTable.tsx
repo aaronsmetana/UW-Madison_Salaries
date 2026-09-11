@@ -188,10 +188,10 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
     <Card withBorder padding="lg">
       <CardTitle>Title & salary history</CardTitle>
       {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
-      <Table.ScrollContainer minWidth={(gutter.slots ? 900 + gutter.slots * 22 : 880) - (onePay ? 90 : 0)}>
+      <Table.ScrollContainer className="fold-scroll" minWidth={(gutter.slots ? 900 + gutter.slots * 22 : 880) - (onePay ? 90 : 0)}>
       {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
       <Table
-        className="appt-history"
+        className="appt-history fold-table"
         striped={false}
         style={gutter.slots ? ({ ['--lane-slots' as string]: gutter.slots }) : undefined}
       >
@@ -203,21 +203,21 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                  visible text is the abbreviation and the full word is the accessible name. */
               <Table.Th className="appt-gutter-th" aria-label="Appointment">Appt</Table.Th>
             )}
-            <Table.Th className="appt-snapshot">Snapshot</Table.Th>
+            <Table.Th className="appt-snapshot" data-fold>Snapshot</Table.Th>
             <Table.Th>Title</Table.Th>
-            <Table.Th>Job code</Table.Th>
-            <Table.Th>School / Dept</Table.Th>
+            <Table.Th data-fold>Job code</Table.Th>
+            <Table.Th data-fold>School / Dept</Table.Th>
             {onePay ? (
               <Table.Th ta="right"><GlossaryTerm term="actualPay">Pay</GlossaryTerm></Table.Th>
             ) : (
               <>
-                <Table.Th ta="right"><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
+                <Table.Th ta="right" data-fold><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
                 <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
               </>
             )}
             <Table.Th ta="right"><GlossaryTerm term="payChange">Change</GlossaryTerm></Table.Th>
-            <Table.Th ta="right">FTE</Table.Th>
-            <Table.Th>Basis</Table.Th>
+            <Table.Th ta="right" data-fold>FTE</Table.Th>
+            <Table.Th data-fold>Basis</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -295,21 +295,28 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                     {cell && <LaneGutter cell={cell} count={apptTotal} />}
                   </Table.Td>
                 )}
-                <Table.Td className="appt-snapshot">
+                <Table.Td className="appt-snapshot" data-fold>
                   {apptFirstRow.get(r.snapshot_id) === i && (
                     <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
                   )}
                 </Table.Td>
                 <Table.Td>
+                  {/* On a phone the snapshot, the title and the department are one cell. */}
+                  {apptFirstRow.get(r.snapshot_id) === i && (
+                    <div className="fold-under"><Badge variant="light" size="sm" mb={4}>{r.snapshot_label}</Badge></div>
+                  )}
                   {r.title ?? '—'}
                   {isNew && (
                     <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'accent'}>
                       {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
                     </Badge>
                   )}
+                  <Text className="fold-under" size="xs" c="dimmed">
+                    {[r.department, showSchool ? r.school : null].filter(Boolean).join(' · ') || '—'}
+                  </Text>
                 </Table.Td>
-                <Table.Td>{r.job_code ?? '—'}</Table.Td>
-                <Table.Td>
+                <Table.Td data-fold>{r.job_code ?? '—'}</Table.Td>
+                <Table.Td data-fold>
                   {showSchool && <Text size="sm" className="appt-school">{r.school ?? '—'}</Text>}
                   <Group gap={6} wrap="nowrap">
                     {orgMoved && (
@@ -328,7 +335,7 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                     <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
                   </Group>
                 </Table.Td>
-                {!onePay && <Table.Td ta="right">{usd(r.salary)}</Table.Td>}
+                {!onePay && <Table.Td ta="right" data-fold>{usd(r.salary)}</Table.Td>}
                 <Table.Td ta="right">{usd(actual)}</Table.Td>
                 <Table.Td ta="right">
                   <RaiseCell raise={raise} note={rateNote} reporting={reporting}>
@@ -342,8 +349,8 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                   </RaiseCell>
                 </Table.Td>
                 {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says. */}
-                <Table.Td ta="right">{r.fte || '—'}</Table.Td>
-                <Table.Td><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
+                <Table.Td ta="right" data-fold>{r.fte || '—'}</Table.Td>
+                <Table.Td data-fold><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
               </Table.Tr>
             );
           })}

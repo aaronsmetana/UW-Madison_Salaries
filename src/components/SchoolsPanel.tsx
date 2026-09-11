@@ -45,10 +45,13 @@ function DeptRows({ where, school, metric, colSpan }: {
     <>
       {data.map((d) => (
         <Table.Tr key={d.department} style={{ background: 'var(--mantine-color-default-hover)' }}>
-          <Table.Td style={{ paddingLeft: 44 }}><Text size="sm" c="dimmed" lineClamp={1}>{d.department}</Text></Table.Td>
-          <Table.Td ta="right"><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} /></Table.Td>
+          <Table.Td style={{ paddingLeft: 44 }}>
+            <Text size="sm" c="dimmed" lineClamp={1}>{d.department}</Text>
+            <Text className="fold-under" size="xs" c="dimmed">{num(d.headcount)} people</Text>
+          </Table.Td>
+          <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} /></Table.Td>
           <Table.Td ta="right"><Text size="sm" c="dimmed">{usd(d.med)}</Text></Table.Td>
-          <Table.Td />
+          <Table.Td data-fold />
           <Table.Td />
         </Table.Tr>
       ))}
@@ -142,13 +145,13 @@ export function SchoolsPanel() {
         />
       ) : (
       <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-        <Table stickyHeader miw={680}>
+        <Table stickyHeader miw={680} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="school" label="School / Division" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="headcount" label="Headcount" sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="headcount" label="Headcount" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
-              <Table.Th ta="right">Range (p25–p75)</Table.Th>
+              <Table.Th ta="right" data-fold>Range (p25–p75)</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -168,12 +171,17 @@ export function SchoolsPanel() {
                         >
                           <IconChevronRight size={ICON.compact} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }} />
                         </ActionIcon>
-                        <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500} lineClamp={1}>
-                          {s.school}
-                        </Anchor>
+                        <div style={{ minWidth: 0 }}>
+                          <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500} lineClamp={2}>
+                            {s.school}
+                          </Anchor>
+                          <Text className="fold-under" size="xs" c="dimmed">
+                            {num(s.headcount)} people{s.p25 != null && s.p75 != null ? ` · ${usd(s.p25)} – ${usd(s.p75)}` : ''}
+                          </Text>
+                        </div>
                       </Group>
                     </Table.Td>
-                    <Table.Td ta="right">
+                    <Table.Td ta="right" data-fold>
                       {num(s.headcount)}
                       <MiniBar frac={s.headcount / maxHc} />
                     </Table.Td>
@@ -181,7 +189,7 @@ export function SchoolsPanel() {
                       {usd(s.med)}
                       <MiniBar frac={medFrac(s.med)} color="var(--mantine-color-pos-5)" />
                     </Table.Td>
-                    <Table.Td ta="right" c="dimmed">
+                    <Table.Td ta="right" c="dimmed" data-fold>
                       {s.p25 != null && s.p75 != null ? `${usd(s.p25)} – ${usd(s.p75)}` : '—'}
                     </Table.Td>
                     <Table.Td ta="right">

@@ -1053,16 +1053,16 @@ export default function Person() {
                   Others with this title{cohort === 'school' ? ` · ${latest?.school}` : ''}
                 </CardTitle>
                 <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
-                  <Table stickyHeader miw={760}>
+                  <Table stickyHeader miw={760} className="fold-table">
                     <Table.Thead>
                       <Table.Tr>
-                        <Table.Th w={48} ta="right">#</Table.Th>
+                        <Table.Th w={48} ta="right" data-fold>#</Table.Th>
                         <SortableTh sortKey="name" label="Name" sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="school" label="School" sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="department" label="Department" sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="tenure" label="Tenure" tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
+                        <SortableTh sortKey="school" label="School" fold sort={peerSort} onSort={setPeerSort} />
+                        <SortableTh sortKey="department" label="Department" fold sort={peerSort} onSort={setPeerSort} />
+                        <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
                         <SortableTh sortKey="salary" label="Salary" sort={peerSort} onSort={setPeerSort} align="right" />
-                        <Table.Th w={132} />
+                        <Table.Th w={132} className="tray-col" />
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -1081,22 +1081,30 @@ export default function Person() {
                             onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
                             style={{ cursor: isYou ? 'default' : 'pointer', background: isYou ? 'var(--mantine-color-accent-light)' : undefined }}
                           >
-                            <Table.Td ta="right" c="dimmed">{i + 1}</Table.Td>
+                            <Table.Td ta="right" c="dimmed" data-fold>{i + 1}</Table.Td>
                             <Table.Td>
-                              {isYou ? (
-                                <Text span size="sm" fw={700}>{fullName(p.fn, p.ln) || '—'}</Text>
-                              ) : (
-                                <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} size="sm" c="accent" underline="hover" onClick={(e) => e.stopPropagation()}>
-                                  {fullName(p.fn, p.ln) || '—'}
-                                </Anchor>
-                              )}
-                              {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
+                              {/* Its own block, so the name is a line by itself and not a link inside the
+                                  folded text below it (which axe then required to differ by more than colour). */}
+                              <div>
+                                {isYou ? (
+                                  <Text span size="sm" fw={700}>{fullName(p.fn, p.ln) || '—'}</Text>
+                                ) : (
+                                  <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} size="sm" c="accent" underline="hover" onClick={(e) => e.stopPropagation()}>
+                                    {fullName(p.fn, p.ln) || '—'}
+                                  </Anchor>
+                                )}
+                                {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
+                              </div>
+                              {/* On a phone: rank, name and school in one cell, then the salary. */}
+                              <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
+                                #{i + 1} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
+                              </Text>
                             </Table.Td>
-                            <Table.Td title={sameSchool ? `Same school as ${name}` : undefined}>
+                            <Table.Td data-fold title={sameSchool ? `Same school as ${name}` : undefined}>
                               <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
                             </Table.Td>
-                            <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
-                            <Table.Td ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
+                            <Table.Td data-fold><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
+                            <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
                             <Table.Td ta="right">
                               <TrayButton

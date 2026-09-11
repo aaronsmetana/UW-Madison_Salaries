@@ -124,7 +124,8 @@ export function TitlesPanel() {
           size="md" w={340} placeholder="Search titles or job codes…"
           leftSection={<IconSearch size={ICON.control} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
         />
-        <Group gap="sm" wrap="nowrap">
+        {/* Wraps: on a phone the CSV button ran past the screen's edge. */}
+        <Group gap="sm" wrap="wrap">
           <Group gap={6} wrap="nowrap">
             <Eyebrow>Min people</Eyebrow>
             <Button.Group>
@@ -149,14 +150,14 @@ export function TitlesPanel() {
         />
       ) : (
       <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-        <Table stickyHeader miw={820}>
+        <Table stickyHeader miw={820} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="job_code" label="Job code" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="n" label="People" sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="job_code" label="Job code" sort={sort} onSort={setSort} fold />
+              <SortableTh sortKey="n" label="People" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
-              <Table.Th ta="right">Range (p25–p75)</Table.Th>
+              <Table.Th ta="right" data-fold>Range (p25–p75)</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -175,17 +176,22 @@ export function TitlesPanel() {
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/paycheck?code=${encodeURIComponent(t.job_code)}`); } }}
                   >
                     <Table.Td>
-                      <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(t.job_code)}`} onClick={(e) => e.stopPropagation()}>
-                        <Highlight text={t.title} q={q.trim()} />
-                      </Anchor>
+                      <div>
+                        <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(t.job_code)}`} onClick={(e) => e.stopPropagation()}>
+                          <Highlight text={t.title} q={q.trim()} />
+                        </Anchor>
+                      </div>
+                      <Text className="fold-under" size="xs" c="dimmed">
+                        {t.job_code} · {num(t.n)} people{t.p25 != null && t.p75 != null ? ` · ${usd(t.p25)} – ${usd(t.p75)}` : ''}
+                      </Text>
                     </Table.Td>
-                    <Table.Td c="dimmed">{t.job_code}</Table.Td>
-                    <Table.Td ta="right">
+                    <Table.Td c="dimmed" data-fold>{t.job_code}</Table.Td>
+                    <Table.Td ta="right" data-fold>
                       {num(t.n)}
                       <MiniBar frac={t.n / maxN} />
                     </Table.Td>
                     <Table.Td ta="right">{usd(t.med)}</Table.Td>
-                    <Table.Td ta="right">
+                    <Table.Td ta="right" data-fold>
                       <Text span size="sm" c="dimmed">{t.p25 != null && t.p75 != null ? `${usd(t.p25)} – ${usd(t.p75)}` : '—'}</Text>
                       {canPlot && (
                         <Tooltip

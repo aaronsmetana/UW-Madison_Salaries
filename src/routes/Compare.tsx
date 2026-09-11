@@ -578,27 +578,32 @@ export default function Compare() {
           {tLoading ? (
             <Loader />
           ) : (
-            <Table.ScrollContainer minWidth={560}>
-            <Table>
+            <Table.ScrollContainer minWidth={560} className="fold-scroll">
+            <Table className="fold-table">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Title</Table.Th>
-                  <Table.Th ta="right">People</Table.Th>
+                  <Table.Th ta="right" data-fold>People</Table.Th>
                   <Table.Th ta="right">Median</Table.Th>
-                  <Table.Th ta="right">25th</Table.Th>
-                  <Table.Th ta="right">75th</Table.Th>
-                  <Table.Th ta="right">90th</Table.Th>
+                  <Table.Th ta="right" data-fold>25th</Table.Th>
+                  <Table.Th ta="right" data-fold>75th</Table.Th>
+                  <Table.Th ta="right" data-fold>90th</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {(tdata ?? []).map((t) => (
                   <Table.Tr key={t.job_code}>
-                    <Table.Td>{titleLabelMap.get(t.job_code) ?? t.job_code}</Table.Td>
-                    <Table.Td ta="right">{num(t.headcount)}</Table.Td>
+                    <Table.Td>
+                      {titleLabelMap.get(t.job_code) ?? t.job_code}
+                      <Text className="fold-under" size="xs" c="dimmed">
+                        {num(t.headcount)} people · {usd(t.p25)} – {usd(t.p75)} · 90th {usd(t.p90)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td ta="right" data-fold>{num(t.headcount)}</Table.Td>
                     <Table.Td ta="right">{usd(t.med)}</Table.Td>
-                    <Table.Td ta="right">{usd(t.p25)}</Table.Td>
-                    <Table.Td ta="right">{usd(t.p75)}</Table.Td>
-                    <Table.Td ta="right">{usd(t.p90)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{usd(t.p25)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{usd(t.p75)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{usd(t.p90)}</Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -639,25 +644,30 @@ export default function Compare() {
           {sLoading ? (
             <Loader />
           ) : (
-            <Table.ScrollContainer minWidth={520}>
-            <Table>
+            <Table.ScrollContainer minWidth={520} className="fold-scroll">
+            <Table className="fold-table">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>School</Table.Th>
-                  <Table.Th ta="right">Headcount</Table.Th>
+                  <Table.Th ta="right" data-fold>Headcount</Table.Th>
                   <Table.Th ta="right">Median</Table.Th>
-                  <Table.Th ta="right">90th pctile</Table.Th>
-                  <Table.Th ta="right">Total payroll</Table.Th>
+                  <Table.Th ta="right" data-fold>90th pctile</Table.Th>
+                  <Table.Th ta="right" data-fold>Total payroll</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {(sdata ?? []).map((s) => (
                   <Table.Tr key={s.school}>
-                    <Table.Td>{s.school}</Table.Td>
-                    <Table.Td ta="right">{num(s.headcount)}</Table.Td>
+                    <Table.Td>
+                      {s.school}
+                      <Text className="fold-under" size="xs" c="dimmed">
+                        {num(s.headcount)} people · 90th {usd(s.p90)} · payroll {usd(s.payroll)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td ta="right" data-fold>{num(s.headcount)}</Table.Td>
                     <Table.Td ta="right">{usd(s.med)}</Table.Td>
-                    <Table.Td ta="right">{usd(s.p90)}</Table.Td>
-                    <Table.Td ta="right">{usd(s.payroll)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{usd(s.p90)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{usd(s.payroll)}</Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>

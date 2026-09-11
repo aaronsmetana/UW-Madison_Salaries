@@ -429,3 +429,67 @@ test.describe('The person page reports the reporting change and trims what repea
     await expect(page.locator('table.appt-history .appt-school', { hasText: SMPH })).toHaveCount(1);
   });
 });
+
+test.describe('Phones — the figure sits beside the name', () => {
+  const PHONE = { width: 375, height: 812 };
+
+  /** The first row's cell under `header` ends inside the screen, without scrolling sideways. */
+  async function figureInView(table: import('@playwright/test').Locator, header: RegExp) {
+    await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 });
+    const heads = (await table.locator('thead th').allTextContents()).map((h) => h.replace(/\s+/g, ' ').trim());
+    const idx = heads.findIndex((h) => header.test(h));
+    expect(idx, `a "${header}" column in: ${heads.join(' | ')}`).toBeGreaterThanOrEqual(0);
+    const box = await table.locator('tbody tr').first().locator('td').nth(idx).boundingBox();
+    expect(box, 'the figure is drawn').not.toBeNull();
+    expect(box!.x + box!.width, `the "${header}" cell ends at ${Math.round(box!.x + box!.width)}px`).toBeLessThanOrEqual(PHONE.width);
+    // And nothing after it runs off the screen either: a row that fits bar its last button still
+    // needs a sideways scroll to reach it.
+    const lastRight = await table.locator('tbody tr').first().evaluate((tr) =>
+      Math.max(...[...tr.querySelectorAll('td')].filter((td) => getComputedStyle(td).display !== 'none').map((td) => td.getBoundingClientRect().right))
+    );
+    expect(Math.round(lastRight), 'the row ends inside the screen').toBeLessThanOrEqual(PHONE.width);
+  }
+
+  test('History: snapshot, title and department in one cell, then the pay', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(`./person/${encodeURIComponent(AARON)}?tab=history`);
+    await figureInView(page.locator('table.appt-history'), /^(Pay|Actual pay)$/i);
+    // The folded context is still there, under the title.
+    await expect(page.locator('table.appt-history tbody tr').first().locator('.fold-under').last()).toBeVisible();
+  });
+
+  test('Peers: the salary is on screen', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(`./person/${encodeURIComponent(AARON)}`);
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Salary' }) }), /^Salary$/i);
+  });
+
+  test("A title's people: the salary is on screen", async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./paycheck?code=IT040');
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Salary' }) }), /^Salary$/i);
+  });
+
+  test('Divisions: the median is on screen', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./explore');
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Median' }) }), /^Median$/i);
+  });
+
+  test('Divisions → Titles: the median is on screen, however long a title', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./explore?tab=titles');
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Median' }) }), /^Median$/i);
+  });
+
+  test('printing keeps every column, even at a phone-like printable width', async ({ page }) => {
+    // A4 portrait with margins prints ~700px wide — narrower than the phone breakpoint (48em).
+    await page.setViewportSize({ width: 700, height: 1000 });
+    await page.emulateMedia({ media: 'print' });
+    await page.goto(`./person/${encodeURIComponent(AARON)}?tab=history`);
+    const table = page.locator('table.appt-history');
+    await expect(table.locator('tbody tr').first()).toBeAttached({ timeout: 60_000 });
+    const hidden = await table.locator('[data-fold]').evaluateAll((els) => els.filter((e) => getComputedStyle(e).display === 'none').length);
+    expect(hidden, 'no column folds on paper').toBe(0);
+  });
+});

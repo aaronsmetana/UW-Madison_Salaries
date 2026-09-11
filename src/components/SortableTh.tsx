@@ -33,6 +33,7 @@ export function SortableTh<K extends string>({
   onSort,
   align,
   tip,
+  fold,
 }: {
   sortKey: K;
   label: ReactNode;
@@ -42,6 +43,8 @@ export function SortableTh<K extends string>({
   onSort: (next: SortState<K>) => void;
   align?: 'right';
   tip?: string;
+  /** Hidden on a phone, its column's content shown under the row's name instead (see `.fold-table`). */
+  fold?: boolean;
 }) {
   const active = sort.key === sortKey;
   const nextDir: 'asc' | 'desc' = active && sort.dir === 'desc' ? 'asc' : 'desc';
@@ -64,6 +67,7 @@ export function SortableTh<K extends string>({
   return (
     <Table.Th
       ta={align}
+      data-fold={fold ? '' : undefined}
       aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
       style={{ whiteSpace: 'nowrap' }}
     >

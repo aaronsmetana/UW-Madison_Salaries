@@ -228,10 +228,13 @@ async function shots(
 }
 
 /** A route that renders straight from its URL. */
-const DIRECT: Array<[name: string, route: string]> = [
+const DIRECT: Array<[name: string, route: string, opts?: { maxDiffPixels?: number }]> = [
   ['home', './'],
   ['titles-empty', './paycheck'],
-  ['divisions', './explore'],
+  // The same sticky-header re-raster as titles-detail, decoded the same way: now that the Schools
+  // table fits a phone, its sticky header row is in the mobile shot, and "MEDIAN" with its sort glyph
+  // (rows 1499-1505, x 232-271) re-rasterises half a pixel over in-suite — 70 px, no body row touched.
+  ['divisions', './explore', { maxDiffPixels: STICKY_HEADER_JITTER }],
   ['divisions-titles-tab', './explore?tab=titles'],
   ['compare-empty', './compare'],
   ['data-about', './data'],
@@ -240,14 +243,14 @@ const DIRECT: Array<[name: string, route: string]> = [
   ['not-found', './this-route-does-not-exist'],
 ];
 
-for (const [name, route] of DIRECT) {
+for (const [name, route, opts] of DIRECT) {
   test(`visual: ${name}`, async ({ page }) => {
     await page.goto(route);
     await expect(page.locator('body')).toBeVisible({ timeout: 60_000 });
     // The shell paints before DuckDB has answered; wait for the first real figure so the baseline is
     // of the loaded page rather than of its skeletons.
     await page.getByText(/\$[\d,]+/).first().waitFor({ timeout: 60_000 }).catch(() => {});
-    await shots(page, name);
+    await shots(page, name, opts);
   });
 }
 

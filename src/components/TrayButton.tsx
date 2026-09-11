@@ -28,12 +28,14 @@ export function TrayButton({
       radius="xl"
       leftSection={inTray ? <IconCheck size={ICON.inline} /> : <IconPlus size={ICON.inline} />}
       disabled={inTray}
+      // The name, so a phone that shows only the icon (`.fold-table .tray-label`) still says what it does.
+      aria-label={inTray ? 'In tray' : addLabel}
       onClick={(e) => {
         if (stopPropagation) e.stopPropagation();
         onAdd();
       }}
     >
-      {inTray ? 'In tray' : addLabel}
+      <span className="tray-label">{inTray ? 'In tray' : addLabel}</span>
     </Button>
   );
 }

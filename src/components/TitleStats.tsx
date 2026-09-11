@@ -264,16 +264,16 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           onChange={(e) => setQ(e.currentTarget.value)}
         />
         <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present">
-          <Table stickyHeader miw={760}>
+          <Table stickyHeader miw={760} className="fold-table">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th w={48} ta="right">#</Table.Th>
+                <Table.Th w={48} ta="right" data-fold>#</Table.Th>
                 <SortableTh sortKey="name" label="Name" sort={peopleSort} onSort={setPeopleSort} />
-                <SortableTh sortKey="school" label="School" sort={peopleSort} onSort={setPeopleSort} />
-                <SortableTh sortKey="department" label="Department" sort={peopleSort} onSort={setPeopleSort} />
-                <SortableTh sortKey="tenure" label="Tenure" tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
+                <SortableTh sortKey="school" label="School" fold sort={peopleSort} onSort={setPeopleSort} />
+                <SortableTh sortKey="department" label="Department" fold sort={peopleSort} onSort={setPeopleSort} />
+                <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
-                <Table.Th w={132} />
+                <Table.Th w={132} className="tray-col" />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -290,11 +290,17 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/person/${encodeURIComponent(p.person_key)}`); } }}
                     style={{ cursor: 'pointer' }}
                   >
-                    <Table.Td ta="right" c="dimmed">{realRank}</Table.Td>
-                    <Table.Td><Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} onClick={(e) => e.stopPropagation()}>{fullName(p.fn, p.ln) || '—'}</Anchor></Table.Td>
-                    <Table.Td><Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text></Table.Td>
-                    <Table.Td><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
-                    <Table.Td ta="right">{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
+                    <Table.Td ta="right" c="dimmed" data-fold>{realRank}</Table.Td>
+                    <Table.Td>
+                      <div><Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} onClick={(e) => e.stopPropagation()}>{fullName(p.fn, p.ln) || '—'}</Anchor></div>
+                      {/* On a phone: rank, name and school in one cell, then the salary. */}
+                      <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
+                        #{realRank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td data-fold><Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text></Table.Td>
+                    <Table.Td data-fold><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
+                    <Table.Td data-fold ta="right">{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
                     <Table.Td ta="right">{usd(p.pay)}</Table.Td>
                     <Table.Td ta="right">
                       <TrayButton

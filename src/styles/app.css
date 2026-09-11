@@ -1552,3 +1552,37 @@ button:active,
 @media (prefers-reduced-motion: reduce) {
   .peer-strip * { transition: none !important; }
 }
+
+/* ── Phone tables: fold the context columns under the row's name ─────────────────────────────────
+   On a phone every table here put its figure — the pay, the median, the change — hundreds of pixels
+   to the right, behind a sideways scroll: the history table was 880px wide on a 375px screen and the
+   peer table's Salary sat at x=586. Below `sm`, a cell marked `data-fold` hides and its content shows
+   again inside the row's name or title cell (`.fold-under`), so the figure sits beside the name.
+   `screen` only: A4 portrait is ~49.6em, and a printed table keeps every column where it was. */
+/* Hidden everywhere but a phone screen. Stated this way round, rather than hidden by default and set
+   to `display: block` on a phone, so a folded line keeps its own display there — Mantine's
+   `lineClamp` is `display: -webkit-box`, and `block` let a long school name run to seven lines. */
+@media print, screen and (min-width: 48.001em) {
+  .fold-table .fold-under { display: none; }
+}
+@media screen and (max-width: 48em) {
+  .fold-table [data-fold] { display: none; }
+  /* The tray column is sized for the word; on a phone it holds only the icon. */
+  .fold-table .tray-col { width: 44px !important; }
+  /* Mantine's `miw` and ScrollContainer's `--table-min-width` are inline; the fold is what makes the
+     narrower table possible, so it lifts them. */
+  .fold-table { min-width: 0 !important; }
+  .fold-scroll { --table-min-width: 0px !important; }
+  /* ScrollArea wraps its content in an inline \`display: table\` box that grows to the content's
+     unwrapped width, so a long folded line ("FA020 · 1,251 people · $185,306 – …") pushed the table
+     past the screen. As a block, the table takes the screen's width and the line wraps inside it. */
+  .mantine-ScrollArea-viewport > div:has(.fold-table) { display: block !important; }
+  /* ScrollArea.Autosize also wraps the scroller in a flex box, and a flex item will not shrink below
+     its content's longest unbreakable word — "Administrative/Program" and the like held the Titles
+     table 34px past the screen. The name cell may break anywhere; the flex box may shrink. */
+  .fold-table td:has(.fold-under) { overflow-wrap: anywhere; }
+  div:has(> .mantine-ScrollArea-root .fold-table) { min-width: 0; }
+  /* The tray button keeps its icon and its accessible name, and drops the word. */
+  .fold-table .tray-label { display: none; }
+  .fold-table .peer-add .mantine-Button-section { margin: 0; }
+}
