@@ -90,9 +90,9 @@ export function snapAxisProps(rows: readonly SnapRow[], dataKey = 'x') {
  * is a different step entirely.
  */
 export const KNOWN_BREAKS = [
-  { id: 'ttc', snapshotId: '2021-11-post', date: '2021-11-01', label: 'TTC reclassification', kind: 'relabel' },
-  { id: 'scope2023', snapshotId: '2023-10', date: '2023-10-01', label: 'Oct 2023 scope change', kind: 'coverage' },
-  { id: 'nineMonth2025', snapshotId: '2025-09', date: '2025-09-01', label: '9-month pay reported differently', kind: 'reporting' },
+  { id: 'ttc', snapshotId: '2021-11-post', date: '2021-11-01', label: 'TTC reclassification', short: 'TTC', kind: 'relabel' },
+  { id: 'scope2023', snapshotId: '2023-10', date: '2023-10-01', label: 'Oct 2023 scope change', short: 'scope change', kind: 'coverage' },
+  { id: 'nineMonth2025', snapshotId: '2025-09', date: '2025-09-01', label: '9-month pay reported differently', short: '9-month reporting', kind: 'reporting' },
 ] as const;
 
 export type KnownBreak = (typeof KNOWN_BREAKS)[number];

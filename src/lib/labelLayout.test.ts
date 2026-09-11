@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overlaps, packLabelRows, placeChips, type Box } from './labelLayout';
+import { overlaps, packLabelRows, placeChips, placeSideLabel, type Box } from './labelLayout';
 
 const plot: Box = { left: 0, right: 400, top: 0, bottom: 200 };
 
@@ -60,5 +60,22 @@ describe('placeChips', () => {
     const placed = placeChips(chips, [], plot);
     expect(placed.map((p) => p.id)).toEqual([1, 2]);
     expect(overlaps(placed[0].box, placed[1].box)).toBe(false);
+  });
+});
+
+describe('placeSideLabel', () => {
+  const w = (t: string) => t.length * 5;
+  const plot = { left: 0, right: 200 };
+  it('sits after the line when it fits', () => {
+    expect(placeSideLabel(20, plot, ['abcdefghij'], w)).toEqual({ text: 'abcdefghij', anchor: 'start', x: 24 });
+  });
+  it('moves before the line near the right edge, keeping the full wording', () => {
+    expect(placeSideLabel(180, plot, ['abcdefghij', 'ab'], w)).toEqual({ text: 'abcdefghij', anchor: 'end', x: 176 });
+  });
+  it('shortens only when the full wording fits on neither side', () => {
+    expect(placeSideLabel(100, plot, ['a'.repeat(30), 'ab'], w)).toEqual({ text: 'ab', anchor: 'start', x: 104 });
+  });
+  it('draws nothing rather than overflow', () => {
+    expect(placeSideLabel(100, plot, ['a'.repeat(30)], w)).toBeNull();
   });
 });

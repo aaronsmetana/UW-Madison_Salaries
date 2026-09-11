@@ -116,3 +116,32 @@ export function measureText(text: string, fontSize = 10): number {
   measureCtx.font = `${fontSize}px ${getComputedStyle(document.body).fontFamily}`;
   return measureCtx.measureText(text).width;
 }
+
+export interface SideLabel {
+  text: string;
+  /** SVG text-anchor: 'start' sits after the line, 'end' before it. */
+  anchor: 'start' | 'end';
+  x: number;
+}
+
+/**
+ * A label beside a vertical marker at `x`: after the line when it fits inside the plot, else before
+ * it; the short wording only when the full one fits on neither side; nothing when neither does. A
+ * marker near the right edge used to run its label off the chart ("…reported differentl").
+ */
+export function placeSideLabel(
+  x: number,
+  plot: { left: number; right: number },
+  texts: readonly string[],
+  width: (t: string) => number,
+  gap = 4
+): SideLabel | null {
+  const after = plot.right - (x + gap);
+  const before = x - gap - plot.left;
+  for (const text of texts) {
+    const w = width(text);
+    if (w <= after) return { text, anchor: 'start', x: x + gap };
+    if (w <= before) return { text, anchor: 'end', x: x - gap };
+  }
+  return null;
+}

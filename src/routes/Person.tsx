@@ -15,6 +15,7 @@ import { packLabelRows, measureText } from '../lib/labelLayout';
 import { useWidth } from '../lib/useWidth';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from '../components/GapBreakdown';
+import { StartingGroup } from '../components/StartingGroup';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
 import { ttcRank } from '../lib/snapshotOrder';
 import { lineGlowDefs } from '../components/chartDefs';
@@ -1486,6 +1487,14 @@ export default function Person() {
           </CardTitle>
           <GapBreakdown breakdown={raiseCtx.breakdown} />
         </Card>
+      )}
+      {/* Mounted only on this tab: its query follows a whole cohort through every snapshot, and DuckDB
+          runs one query at a time, so it must not queue ahead of the overview's. */}
+      {tab === 'trends' && trend[0]?.job_code && (
+        <StartingGroup
+          personKey={key}
+          first={{ snapshotId: trend[0].id, label: trend[0].label, jobCode: trend[0].job_code, title: trend[0].title ?? trend[0].job_code }}
+        />
       )}
         </Tabs.Panel>
 
