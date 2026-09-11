@@ -145,3 +145,48 @@ export function placeSideLabel(
   }
   return null;
 }
+
+export interface PlacedSideLabel extends SideLabel {
+  /** 0 on the line beside the plot; 1 a row further out, where two would otherwise touch. */
+  row: number;
+}
+
+/**
+ * Several markers' labels on one edge of a plot, kept apart. Each is placed as `placeSideLabel` would
+ * place it alone; where two would sit closer than `apart` px, both take their shortest wording; any
+ * still touching after that, the later one (along x) moves out a row. On a phone the TTC relabel and
+ * the Sep 2025 reporting change printed as one run, "TTC reclassification9-month reporting".
+ */
+export function placeSideLabels(
+  marks: readonly { x: number; texts: readonly string[] }[],
+  plot: { left: number; right: number },
+  width: (t: string) => number,
+  gap = 4,
+  apart = 6
+): (PlacedSideLabel | null)[] {
+  const span = (p: SideLabel) => {
+    const w = width(p.text);
+    return p.anchor === 'start' ? [p.x, p.x + w] : [p.x - w, p.x];
+  };
+  const touch = (a: PlacedSideLabel | null, b: PlacedSideLabel | null) => {
+    if (!a || !b || a.row !== b.row) return false;
+    const [a0, a1] = span(a);
+    const [b0, b1] = span(b);
+    return a0 < b1 + apart && b0 < a1 + apart;
+  };
+  const place = (pick: (i: number) => readonly string[]) =>
+    marks.map((m, i) => {
+      const p = placeSideLabel(m.x, plot, pick(i), width, gap);
+      return p ? { ...p, row: 0 } : null;
+    });
+  let out = place((i) => marks[i].texts);
+  const clashing = new Set<number>();
+  for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) if (touch(out[i], out[j])) { clashing.add(i); clashing.add(j); }
+  if (!clashing.size) return out;
+  out = place((i) => (clashing.has(i) ? marks[i].texts.slice(-1) : marks[i].texts));
+  const order = marks.map((_, i) => i).sort((a, b) => marks[a].x - marks[b].x);
+  order.forEach((i, k) => {
+    for (const j of order.slice(0, k)) if (touch(out[i], out[j]) && out[i]) out[i] = { ...out[i]!, row: 1 };
+  });
+  return out;
+}

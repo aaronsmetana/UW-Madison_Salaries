@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annualized, logMean, whereTheDifferenceCameFrom } from './raises';
+import { annualized, breakdownLines, logMean, whereTheDifferenceCameFrom } from './raises';
 
 describe('annualized', () => {
   it('compounds the steps and spreads them over the time they span', () => {
@@ -71,5 +71,25 @@ describe('whereTheDifferenceCameFrom', () => {
     expect(r.shares.map((s) => s.kind)).toEqual(['reporting', 'step']);
     expect(r.shares[0].amount).toBe(0);
     expect(r.shares[1].amount).toBeCloseTo(0, 6);
+  });
+});
+
+describe('breakdownLines', () => {
+  const share = (toId: string, amount: number, kind: 'step' | 'reporting' = 'step') => ({ toId, kind, amount, label: `${toId} · raise` });
+  it('lists the large steps, largest first, and a reporting change after them', () => {
+    const lines = breakdownLines([share('a', 900), share('r', 0, 'reporting'), share('b', -2400)]);
+    expect(lines.map((l) => l.key)).toEqual(['step-b', 'step-a', 'reporting-r']);
+  });
+  it('says the steps at the typical raise are, apart from the small differences', () => {
+    const lines = breakdownLines([share('a', 15693), share('b', 0), share('c', 0.2), share('d', 120), share('e', -60)]);
+    expect(lines.map((l) => [l.label, Math.round(l.amount)])).toEqual([
+      ['a · raise', 15693],
+      ['2 smaller steps (under $500 each)', 60],
+      ['2 steps at the typical raise', 0],
+    ]);
+    expect(lines[2].kind).toBe('typical');
+  });
+  it('says "step" for one', () => {
+    expect(breakdownLines([share('b', 0)])[0].label).toBe('1 step at the typical raise');
   });
 });

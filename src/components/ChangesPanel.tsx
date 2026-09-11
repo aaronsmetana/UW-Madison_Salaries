@@ -20,6 +20,8 @@ import { barGradientDefs } from './chartDefs';
 import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 import { raiseBucket, raiseBucketSql, raiseBucketLabel, raiseBuckets } from '../lib/raiseBuckets';
+import { niceCeil, niceStep } from '../lib/rangeScale';
+import { useWidth } from '../lib/useWidth';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; school: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
@@ -57,6 +59,9 @@ function WaterfallConnectors({ steps, xAxisMap, yAxisMap }: {
     </g>
   );
 }
+
+/** The raise distribution's top margin, where a capped no-change bar is cut. */
+const DIST_TOP = 24;
 
 export function ChangesPanel() {
   const reduceMotion = prefersReducedMotion();
@@ -289,6 +294,27 @@ export function ChangesPanel() {
   // Down below 0, up above it, and the no-change bar neutral.
   const distColorSlot = (bucket: number) => (bucket < 0 ? 'red5' : bucket === 0 ? 'gray4' : 'pos5');
 
+  // Between two snapshots with no pay-plan raise in them almost everyone's pay stands still: from Sep
+  // 2025 to Mar 2026, 18,122 of 19,273 were at 0% and the largest raise bin held 391, so on one scale
+  // every raise was a sliver under a single grey bar. Past 3× the largest other bin, the axis stops at
+  // that bin (×1.25) and the no-change bar runs off its top, broken, with its count written on it.
+  const distCap = useMemo(() => {
+    const d = raiseDist ?? [];
+    const zero = d.find((r) => r.bucket === 0)?.n ?? 0;
+    const other = Math.max(0, ...d.filter((r) => r.bucket !== 0).map((r) => r.n));
+    return other > 0 && zero > 3 * other ? niceCeil(other * 1.25) : null;
+  }, [raiseDist]);
+  // Labels every 2% (5% on a narrow card) and always at 0%, which the automatic thinning dropped — the
+  // one bin the note below names. The ends are the open tails, "< −10%" and "> +20%".
+  const [distBoxRef, distW] = useWidth<HTMLDivElement>();
+  const distTicks = useMemo(() => {
+    const d = raiseDist ?? [];
+    if (d.length < 3) return undefined;
+    const step = distW > 0 && distW < 560 ? 5 : 2;
+    const first = d[0].bucket, last = d[d.length - 1].bucket;
+    return d.filter((r) => r.bucket === first || r.bucket === last || (r.bucket % step === 0 && r.bucket > first + 1 && r.bucket < last - 1)).map((r) => r.label);
+  }, [raiseDist, distW]);
+
   // Share of continuing staff who got any raise, and the bucket the median raise lands in (histogram marker).
   const raisedPct = equity?.n_raised != null && s?.n_continuing ? equity.n_raised / s.n_continuing : null;
   const medBucketLabel = s?.median_raise != null ? raiseBucketLabel(raiseBucket(s.median_raise)) : null;
@@ -450,14 +476,19 @@ export function ChangesPanel() {
         className="raise-dist-card"
         data-raise-bins={(raiseDist ?? []).map((r) => r.bucket).join(',')}
         data-raise-counts={(raiseDist ?? []).filter((r) => r.n > 0).map((r) => `${r.bucket}:${r.n}`).join(',')}
+        data-raise-cap={distCap ?? ''}
+        ref={distBoxRef}
       >
         <CardTitle mb="sm">Raise distribution (% change, continuing staff)</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={raiseDist ?? []} margin={{ left: 12, right: 12, top: 24 }} className="raise-dist">
+          {/* Right margin for the last label, "> +20%", centred on the last bin at the plot's edge. */}
+          <BarChart data={raiseDist ?? []} margin={{ left: 12, right: 24, top: DIST_TOP }} className="raise-dist">
             <defs>{barGradientDefs(`${uid}-dist`, distGradientColors)}</defs>
             <CartesianGrid {...GRID} />
-            <XAxis dataKey="label" tick={AXIS_TICK} interval="preserveStartEnd" minTickGap={8} />
-            <YAxis width={48} tick={AXIS_TICK} />
+            <XAxis dataKey="label" tick={AXIS_TICK} ticks={distTicks} interval={0} />
+            <YAxis width={48} tick={AXIS_TICK} domain={distCap ? [0, distCap] : [0, 'auto']} allowDataOverflow={!!distCap}
+              ticks={distCap ? Array.from({ length: Math.round(distCap / niceStep(distCap / 5)) + 1 }, (_, i) => i * niceStep(distCap / 5)) : undefined}
+              tickFormatter={(v: number) => num(v)} />
             <Tooltip formatter={(v: number) => [num(v), 'People']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} contentStyle={TIP_STYLE} />
             {medBucketLabel && (
               <ReferenceLine x={medBucketLabel} stroke="var(--mantine-color-accent-6)" strokeDasharray="3 3"
@@ -487,7 +518,16 @@ export function ChangesPanel() {
                 content={(props) => {
                   const { x, y, width, value, index } = props as { x: number; y: number; width: number; value: number; index: number };
                   if (raiseDist?.[index]?.bucket !== 0 || !value) return null;
-                  return <text className="raise-zero-label" x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
+                  if (!distCap) return <text className="raise-zero-label" x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
+                  // Capped: the bar is cut at the top of the plot (DIST_TOP, the chart's top margin), so
+                  // it gets a break across it and its count just under the break.
+                  const top = DIST_TOP;
+                  return (
+                    <g>
+                      <path className="raise-zero-break" d={`M${x - 2} ${top + 7} L${x + width + 2} ${top + 2} M${x - 2} ${top + 12} L${x + width + 2} ${top + 7}`} stroke="var(--mantine-color-body)" strokeWidth={2.5} />
+                      <text className="raise-zero-label" x={x + width / 2} y={top + 26} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)" stroke="var(--mantine-color-body)" strokeWidth={3} paintOrder="stroke">{num(value)}</text>
+                    </g>
+                  );
                 }}
               />
             </Bar>
@@ -496,7 +536,7 @@ export function ChangesPanel() {
         <Text size="xs" c="dimmed">
           1% bins: "+3%" is a raise above 2% up to 3%, and "0%" is pay that did not move at all. Changes past
           −10% or +20% are gathered at the ends. Green = raise, red = cut, grey = no change; the dashed line
-          marks the median.
+          marks the median.{distCap ? ' The no-change bar runs past the top of the scale, broken, so the raises are not slivers beside it; its count is written on it.' : ''}
         </Text>
         <ChartData
           caption="Raise distribution (% change)"

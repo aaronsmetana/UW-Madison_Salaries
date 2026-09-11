@@ -1797,3 +1797,9 @@ button:active,
   border: 1px solid var(--hairline-strong);
   box-shadow: var(--shadow-merged-card);
 }
+
+/* The app footer is fixed from sm up only (AppShell.tsx); on a phone it ends the page instead. */
+@media screen and (max-width: 47.99em) {
+  .mantine-AppShell-footer { display: none; }
+}
+.footer-inflow { padding-block: var(--mantine-spacing-sm); }

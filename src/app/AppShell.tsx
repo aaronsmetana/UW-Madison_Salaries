@@ -106,7 +106,10 @@ export function AppShellLayout() {
         // values plus a little slack, per breakpoint.
         header={{ height: showControl ? { base: 136, sm: 116 } : 64 }}
         navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
-        footer={{ height: 40 }}
+        // Fixed only from `sm` up. On a phone a fixed 40px band took the bottom of every screen, its text
+        // wrapped to three lines so "Source on GitHub" was clipped, and the tray sat on top of it; there
+        // the same footer ends the page instead (below, and `.mantine-AppShell-footer` in app.css).
+        footer={{ height: { base: 0, sm: 40 } }}
         padding="md"
       >
         <AppShell.Header>
@@ -213,6 +216,9 @@ export function AppShellLayout() {
               </Suspense>
             </ErrorBoundary>
           </div>
+          <Box hiddenFrom="sm" className="footer-inflow" mt="xl">
+            <Footer />
+          </Box>
         </AppShell.Main>
 
         <AppShell.Footer>

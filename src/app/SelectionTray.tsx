@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Group, Button, Text, Paper, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden } from '@mantine/core';
-import { useReducedMotion } from '@mantine/hooks';
+import { useMediaQuery, useReducedMotion } from '@mantine/hooks';
 import {
   IconArrowsLeftRight, IconUser, IconBriefcase, IconBuildingBank, IconX, IconReportAnalytics,
   IconChevronDown, IconChevronUp, IconStar, IconStarFilled,
@@ -83,6 +83,10 @@ function Chip({ item, isPrimary, onPrimary, onRemove }: {
 export function SelectionTray() {
   const { items, remove, clear, add, primaryId, setPrimary } = useTray();
   const reduce = useReducedMotion();
+  // On a phone the one-line tray ran off the screen: "Compare" was cut in half and "Equity Report" out
+  // of reach. There it takes two rows — the count and Clear, then the two actions — with the chips
+  // behind "Show all".
+  const phone = useMediaQuery('(max-width: 48em)', false, { getInitialValueInEffect: false }) ?? false;
   const [expanded, setExpanded] = useState(false);
   const [undoable, setUndoable] = useState<TrayItem[] | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -116,7 +120,7 @@ export function SelectionTray() {
   const mounted = items.length > 0 || undoable != null;
   const hasPerson = items.some((i) => i.type === 'person');
   const canCompare = items.length >= 2;
-  const collapsed = items.length > 5 && !expanded;
+  const collapsed = phone ? !expanded : items.length > 5 && !expanded;
 
   const body = (styles: React.CSSProperties) => {
     // Cleared → brief Undo affordance.
@@ -131,14 +135,15 @@ export function SelectionTray() {
       );
     }
     return (
-      <Paper className="no-print glass" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
-        <Group gap="sm" wrap="nowrap">
-          <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
-            Compare set <Text span c="dimmed" fw={500}>· {summarize(items)}</Text>
+      <Paper className="no-print glass" shadow="lg" withBorder radius={phone ? 'lg' : 'xl'} px="md" py={8} style={styles} role="region" aria-label="Compare set">
+        <Group gap="sm" wrap={phone ? 'wrap' : 'nowrap'} className="tray-row">
+          <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap', flex: phone ? '1 1 0' : undefined, minWidth: 0 }} truncate={phone ? 'end' : undefined}>
+            {/* On a phone the count alone: the region is already named "Compare set". */}
+            {phone ? summarize(items) : <>Compare set <Text span c="dimmed" fw={500}>· {summarize(items)}</Text></>}
           </Text>
 
           {!collapsed && (
-            <Group gap={6} wrap="nowrap" style={{ overflowX: 'auto', maxWidth: 'min(46vw, 520px)' }}>
+            <Group gap={6} wrap={phone ? 'wrap' : 'nowrap'} style={phone ? { order: 3, flexBasis: '100%' } : { overflowX: 'auto', maxWidth: 'min(46vw, 520px)' }}>
               {TYPE_ORDER.flatMap((t) => {
                 const group = items.filter((i) => i.type === t);
                 // Pin the subject to the front of the people so the "primary" slot is visibly first.
@@ -155,7 +160,7 @@ export function SelectionTray() {
               ))}
             </Group>
           )}
-          {items.length > 5 && (
+          {(items.length > 5 || phone) && (
             <Button
               size="compact-xs"
               variant="subtle"
@@ -170,6 +175,7 @@ export function SelectionTray() {
 
           <Button size="xs" variant="outline" color="gray" onClick={onClear} style={{ flexShrink: 0 }}>Clear</Button>
 
+          <Group gap="xs" wrap="nowrap" className="tray-actions" style={phone ? { order: 4, flexBasis: '100%' } : undefined}>
           <Tooltip label="Add one more to compare" disabled={canCompare} withArrow>
             <Button
               size="xs"
@@ -178,7 +184,7 @@ export function SelectionTray() {
               data-disabled={!canCompare || undefined}
               onClick={(e) => { if (!canCompare) e.preventDefault(); }}
               leftSection={<IconArrowsLeftRight size={ICON.control} />}
-              style={{ flexShrink: 0 }}
+              style={{ flexShrink: 0, flex: phone ? 1 : undefined }}
             >
               Compare
             </Button>
@@ -192,11 +198,12 @@ export function SelectionTray() {
               data-disabled={!hasPerson || undefined}
               onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
               leftSection={<IconReportAnalytics size={ICON.control} />}
-              style={{ flexShrink: 0 }}
+              style={{ flexShrink: 0, flex: phone ? 1 : undefined }}
             >
               Equity Report
             </Button>
           </Tooltip>
+          </Group>
         </Group>
         {items.length >= 8 && (
           <Text size="xs" c="dimmed" mt={4} ta="center">That's a lot selected — ready to compare?</Text>
@@ -211,7 +218,7 @@ export function SelectionTray() {
       {/* Fixed, centered wrapper so the Transition's own transform (slide-up) doesn't fight the centering. */}
       <div
         className="no-print"
-        style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: Z.floating, width: 'max-content', maxWidth: 'min(960px, calc(100vw - 32px))' }}
+        style={{ position: 'fixed', bottom: phone ? 12 : 20, left: '50%', transform: 'translateX(-50%)', zIndex: Z.floating, width: phone ? 'calc(100vw - 24px)' : 'max-content', maxWidth: phone ? 'calc(100vw - 24px)' : 'min(960px, calc(100vw - 32px))' }}
       >
         <Transition mounted={mounted} transition="slide-up" duration={reduce ? 0 : 200} timingFunction="ease">
           {(styles) => body(styles)}

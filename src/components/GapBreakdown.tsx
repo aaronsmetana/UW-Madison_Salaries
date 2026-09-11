@@ -3,10 +3,8 @@ import { Group, Stack, Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { ChartData } from './ChartData';
 import type { RaiseContext } from '../lib/raiseContext';
+import { breakdownLines } from '../lib/raises';
 
-/** Past this, a step gets its own row; under it, steps are folded into one — twenty rows of $40 hide
- *  the three that explain the gap. */
-const SMALL = 500;
 
 const money = (x: number) => (Math.round(Math.abs(x)) === 0 ? '$0' : `${x >= 0 ? '+' : '−'}${usd(Math.abs(x))}`);
 
@@ -16,18 +14,9 @@ const money = (x: number) => (Math.round(Math.abs(x)) === 0 ? '$0' : `${x >= 0 ?
  * page and the printed report, so the two list the same steps in the same way.
  */
 export function GapBreakdown({ breakdown }: { breakdown: NonNullable<RaiseContext['breakdown']> }) {
-  const lines = useMemo(() => {
-    const big = breakdown.shares.filter((x) => x.kind === 'reporting' || Math.abs(x.amount) >= SMALL);
-    const small = breakdown.shares.filter((x) => x.kind === 'step' && Math.abs(x.amount) < SMALL);
-    const out = big
-      .map((x) => ({ key: `${x.kind}-${x.toId}`, kind: x.kind, label: x.label, amount: x.amount }))
-      // Largest first; a reporting change, which moves both lines alike, after the steps that differ.
-      .sort((p, q) => (p.kind === 'reporting' ? 1 : 0) - (q.kind === 'reporting' ? 1 : 0) || Math.abs(q.amount) - Math.abs(p.amount));
-    if (small.length) {
-      out.push({ key: 'small', kind: 'step', label: `${small.length} smaller step${small.length === 1 ? '' : 's'} (under $500 each)`, amount: small.reduce((t, x) => t + x.amount, 0) });
-    }
-    return out;
-  }, [breakdown]);
+  // Past $500 a step gets its own row; under it, steps are folded — twenty rows of $40 hide the three
+  // that explain the gap — and the steps at exactly the typical raise are said to be (lib/raises).
+  const lines = useMemo(() => breakdownLines(breakdown.shares), [breakdown]);
   const gap = breakdown.actual - breakdown.typical;
   return (
     <div className="gap-breakdown">

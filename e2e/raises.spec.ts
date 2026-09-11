@@ -166,3 +166,35 @@ test("the trend tooltip says the same about a raise, and adds the title's own ty
   await expect(tip).toContainText(sentence);
   await expect(tip).toContainText(`for this title ${pct(t.med)} (${t.n.toLocaleString('en-US')} people)`);
 });
+
+test("a 9-month member's growth card gives typical raises without the reporting change too", async ({ page }) => {
+  const meds = await oracle<{ med: number }>(`${RAISES} SELECT median(r) med FROM cr GROUP BY fr, dfr ORDER BY dfr`);
+  // In every canonical snapshot, one appointment each, 9-month pay reported the new way from Sep 2025.
+  const [p] = await oracle<{ pk: string }>(
+    `WITH s AS (SELECT person_key, snapshot_id, count(*) k, any_value(comp_basis) b, any_value(job_code) j FROM $SAL WHERE salary > 0 GROUP BY 1, 2),
+          f AS (SELECT person_key FROM s WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(*) = 9 AND max(k) = 1)
+     SELECT a.person_key pk FROM s a JOIN s b USING (person_key)
+     WHERE a.snapshot_id = '2025-04' AND b.snapshot_id = '2025-09' AND a.b = 'Academic' AND b.b = '9 Month' AND a.j = b.j
+       AND person_key IN (SELECT person_key FROM f) ORDER BY pk LIMIT 1`
+  );
+  const typical = meds.reduce((t, m) => t * (1 + m.med), 1) - 1;
+  await page.goto(`./person/${encodeURIComponent(p.pk)}`);
+  const note = page.locator('[data-reporting-note]');
+  await expect(note).toBeVisible({ timeout: 60_000 });
+  await expect(note.locator('[data-typical-growth]')).toHaveText(`${typical > 0 ? '+' : ''}${(typical * 100).toFixed(1)}%`);
+  // One statement of typical growth, on the footing the note gives: not a second one carrying ×11/9.
+  await expect(page.locator('[data-typical-growth]')).toHaveCount(1);
+});
+
+test('steps at exactly the typical raise are said to be, not folded into "smaller steps"', async ({ page }) => {
+  const [o] = await oracle<{ n: number }>(
+    `${RAISES}, m AS (SELECT fr, median(r) med FROM cr GROUP BY fr)
+     SELECT count(*) n FROM cr JOIN m USING (fr) WHERE person_key = '${AARON}' AND abs(r - med) < 0.0005`
+  );
+  await page.goto(`./person/${encodeURIComponent(AARON)}?tab=trends`);
+  const row = page.locator('.gap-breakdown [data-gap-row="typical"]');
+  await expect(row).toBeVisible({ timeout: 60_000 });
+  await expect(row).toContainText(`${o.n} steps at the typical raise`);
+  await expect(row).toContainText('$0');
+  await expect(page.locator('.gap-breakdown')).not.toContainText(/smaller steps?.*\$0$/m);
+});

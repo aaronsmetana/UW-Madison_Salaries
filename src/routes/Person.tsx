@@ -10,7 +10,9 @@ import {
 } from 'recharts';
 import { AXIS_TICK, GRID, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
-import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
+import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
+import { titleEras, sameTitleText } from '../lib/payHistory';
+import { BreakLabels } from '../components/chart/BreakLabel';
 import { packLabelRows, measureText } from '../lib/labelLayout';
 import { useWidth } from '../lib/useWidth';
 import { useRaiseContext } from '../lib/raiseContext';
@@ -377,10 +379,11 @@ export default function Person() {
   const trendData = useMemo(() => {
     const med = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med]));
     const medRate = new Map((titleMedRows ?? []).map((r) => [r.snapshot_id, r.med_rate]));
-    // `era` increments at each title change so the median can be drawn as disconnected per-title segments.
-    let era = 0;
+    // `era` increments at each title change so the median can be drawn as disconnected per-title segments
+    // (lib/payHistory `titleEras`: the TTC relabel that only re-spells a title is not one).
+    const eraOf = titleEras(trend);
     return trend.map((t, i) => {
-      if (i > 0 && t.job_code !== trend[i - 1].job_code) era++;
+      const era = eraOf[i];
       const medRaw = med.get(t.id) ?? null;
       const medRateRaw = medRate.get(t.id) ?? null;
       const typRaw = raiseCtx.typical.get(t.id) ?? null;
@@ -444,6 +447,15 @@ export default function Person() {
     });
     return out;
   }, [trendData, trendBreaks]);
+  // Where the line breaks at a reporting change: a marker at the gap and the change named beside it,
+  // as Trends and the starting-group chart mark it (snapTime's KNOWN_BREAKS). Its words go along the
+  // baseline: the top margin is the title eras'.
+  const breakMarks = useMemo(() => trendPlot.flatMap((r, i) => {
+    if (!r.gap) return [];
+    const next = trendPlot[i + 1];
+    const kb = KNOWN_BREAKS.find((k) => k.kind === 'reporting' && k.snapshotId === next?.id);
+    return [{ key: next?.id ?? String(i), x: r.x, texts: kb ? [kb.label, kb.short] : ['pay reported differently'] }];
+  }), [trendPlot]);
   // Plot rows that carry a title-change marker: the chips keep clear of them.
   const markIdx = useMemo(
     () => trendPlot.flatMap((r, i) => (i > 0 && !r.gap && r.era !== trendPlot[i - 1].era ? [i] : [])),
@@ -473,7 +485,7 @@ export default function Person() {
   const [trendBoxRef, trendWidth] = useWidth<HTMLDivElement>();
   const eraLayout = useMemo(() => {
     const labels = [
-      ...(eras.length > 1 && trendData[0]?.title ? [{ key: 'first', x: snapX(trendData[0].date, trendData[0].id), title: trendData[0].title, from: trendData[0].label }] : []),
+      ...(eras.length > 1 && trendData[0]?.title ? [{ key: 'first', x: snapX(trendData[0].date, trendData[0].id), title: trendData.filter((t) => t.era === trendData[0].era).slice(-1)[0]?.title ?? trendData[0].title, from: trendData[0].label }] : []),
       ...titleChanges.map((t) => ({ key: t.id, x: snapX(t.date, t.id), title: t.title, from: t.label })),
     ].filter((l): l is typeof l & { title: string } => !!l.title);
     const none = { labels: [] as (typeof labels[number] & { row: 0 | 1; shift: number })[], fold: false, rows: 0 };
@@ -544,7 +556,7 @@ export default function Person() {
     if (!latestTitle || trend.length === 0) return null;
     const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? null;
     const at = hireYear ? `At UW since ${hireYear}` : null;
-    const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && firstTitle !== latestTitle;
+    const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && !sameTitleText(firstTitle, latestTitle);
     if (hasPreTTC) {
       const lead = at ? `${at} · Title before TTC` : 'Title before TTC';
       return `${lead}: ${firstTitle}; now ${latestTitle}.`;
@@ -943,15 +955,19 @@ export default function Person() {
                     {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
                   </Text>
                 )}
-                {typicalGrowth != null && (
+                {typicalGrowth != null && reporting.changes.length === 0 && (
                   <Text size="xs" c="dimmed" mt={2} data-typical-growth>
                     typical raises alone: {sgnPct(typicalGrowth)}
                   </Text>
                 )}
+                {/* Across a reporting change both figures carry its factor; given without it, they are
+                    given on the same footing — "+19.4% without it" beside "typical: +40.7%" (with it) read
+                    as if typical raises had outrun this person's. */}
                 {reporting.changes.length > 0 && totalChange != null && (
                   <Text size="xs" c="dimmed" mt={2} data-reporting-note>
                     {sgnPct((1 + totalChange) / reporting.factor - 1)} without the {reporting.changes[0].sinceLabel} change
-                    in {reporting.changes[0].what} (×{reporting.changes[0].ratio}).
+                    in {reporting.changes[0].what} (×{reporting.changes[0].ratio})
+                    {typicalGrowth != null && <>; typical raises alone: <span data-typical-growth>{sgnPct((1 + typicalGrowth) / reporting.factor - 1)}</span></>}.
                   </Text>
                 )}
               </Card>
@@ -1372,6 +1388,10 @@ export default function Person() {
                 label={<TitleChangeLabel title={l.title} row={l.row} shift={l.shift} />}
               />
             ))}
+            {breakMarks.map((b) => (
+              <ReferenceLine key={`brk-${b.key}`} yAxisId="pay" x={b.x} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="reporting-marker" />
+            ))}
+            {breakMarks.length > 0 && <Customized component={<BreakLabels edge="bottom" marks={breakMarks.map((b) => ({ at: b.x, texts: b.texts }))} />} />}
             {/* Gradient area fill under the active metric. */}
             <Area yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
             {/* Title median, one disconnected dashed segment per era. */}

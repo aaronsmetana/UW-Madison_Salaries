@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
-import { BreakLabel } from './chart/BreakLabel';
+import { BreakLabel, BreakLabels } from './chart/BreakLabel';
 import { lineGlowDefs } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
@@ -143,10 +143,7 @@ export function TrendsPanel() {
             label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip content={<TrendTip />} />
 
-          {ttcX != null && (
-            <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3"
-              label={{ value: ttc.label, position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
-          )}
+          {ttcX != null && <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3" />}
           {nineX != null && <ReferenceLine x={nineX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
 
           {/* Median: gradient area + soft-glow underlay + primary line. */}
@@ -157,7 +154,18 @@ export function TrendsPanel() {
           {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
               another where the date axis puts snapshots close. */}
           <Customized component={<YoyChips chipRows={plot} chipValueKey="med" chipYoyKey="yoy" chipAxis="0" chipBelow />} />
-          {nineX != null && <Customized component={<BreakLabel at={nineX} texts={[nine.label, nine.short]} />} />}
+          {/* The TTC relabel's words and the reporting change's, placed together: on a phone they ran
+              into one another. */}
+          <Customized
+            component={
+              <BreakLabels
+                marks={[
+                  ...(ttcX != null ? [{ at: ttcX, texts: [ttc.label, ttc.short], fill: 'var(--mantine-color-accent-7)' }] : []),
+                  ...(nineX != null ? [{ at: nineX, texts: [nine.label, nine.short] }] : []),
+                ]}
+              />
+            }
+          />
         </ComposedChart>
       </ResponsiveContainer>
 

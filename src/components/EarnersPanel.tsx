@@ -160,16 +160,16 @@ export function EarnersPanel() {
         />
       ) : (
       <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
-        <Table stickyHeader miw={760}>
+        <Table stickyHeader miw={760} className="fold-table">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th w={56} ta="right">#</Table.Th>
+              <Table.Th w={56} ta="right" data-fold>#</Table.Th>
               <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
-              <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} fold />
+              <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} fold />
+              <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
-              <Table.Th />
+              <Table.Th className="tray-col" />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -177,21 +177,26 @@ export function EarnersPanel() {
               const realRank = payRank.get(e.person_key) ?? 0;
               return (
                 <Table.Tr key={e.person_key} className="peer-row earner-row" data-school={e.school ?? ''}>
-                  <Table.Td ta="right">
+                  <Table.Td ta="right" data-fold>
                     <Text span c="dimmed">{realRank}</Text>
                     {prevSnap && <div style={{ lineHeight: 1.1 }}><RankDeltaChip prev={prevRankMap.get(e.person_key)} cur={realRank} /></div>}
                   </Table.Td>
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>{fullName(e.fn, e.ln)}</Anchor>
                     {e.department && <Text size="xs" c="dimmed" lineClamp={1}>{e.department}</Text>}
+                    {/* On a phone: rank, title, school and a part-time FTE under the name, then the pay. */}
+                    <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
+                      #{realRank} · {e.title ?? '—'} · {e.school ?? '—'}
+                      {e.fte != null && Math.abs(e.fte - 1) > 0.005 ? ` · FTE ${e.fte.toFixed(2)}` : ''}
+                    </Text>
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td data-fold>
                     {e.job_code
                       ? <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(e.job_code)}`} c="var(--mantine-color-text)" underline="hover">{e.title ?? '—'}</Anchor>
                       : (e.title ?? '—')}
                   </Table.Td>
-                  <Table.Td><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>
-                  <Table.Td ta="right" c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'} className={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange-light-text' : undefined}>
+                  <Table.Td data-fold><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>
+                  <Table.Td ta="right" data-fold c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'} className={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange-light-text' : undefined}>
                     {e.fte == null ? '—' : Math.abs(e.fte - 1) > 0.005 ? (
                       <Tooltip label={e.fte < 1 ? 'Part-time appointment' : 'Combined FTE across multiple appointments'} withArrow>
                         <span>{e.fte.toFixed(2)}</span>
@@ -206,7 +211,7 @@ export function EarnersPanel() {
                     )}
                     <MiniBar frac={e.pay / maxPay} />
                   </Table.Td>
-                  <Table.Td ta="right">
+                  <Table.Td ta="right" className="tray-col">
                     <TrayButton
                       inTray={has(e.person_key)}
                       onAdd={() => add({ type: 'person', id: e.person_key, label: fullName(e.fn, e.ln) })}

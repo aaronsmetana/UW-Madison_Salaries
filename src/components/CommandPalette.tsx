@@ -98,7 +98,7 @@ export function CommandPalette({ opened, close }: { opened: boolean; close: () =
     >
       {/* SearchBox owns its own dropdown, which portals above the modal and covers the destinations
           while results are showing — so the list below is what you see when the box is empty. */}
-      <SearchBox autoFocus onSelect={close} />
+      <SearchBox autoFocus onSelect={close} peopleInGroup={4} />
       <Divider my="sm" />
       <Text size="xxs" fw={700} tt="uppercase" c="dimmed" lts="0.08em" mb={6}>Go to</Text>
       <Stack gap={2}>

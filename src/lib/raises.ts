@@ -110,3 +110,27 @@ export function whereTheDifferenceCameFrom(steps: readonly PathStep[]): { actual
   }
   return { actual: a, typical: b, shares };
 }
+
+/** A step's share under this many dollars is a step at the typical raise, not a small difference. */
+export const AT_TYPICAL = 1;
+
+/**
+ * The rows "where the difference came from" lists: each step whose share is `small` or more on its own,
+ * largest first, a reporting change after them; the rest folded into two rows — the small differences
+ * ("3 smaller steps (under $500 each)"), and the steps at exactly the typical raise, which contributed
+ * nothing and are said to have. Folded together, four steps at the typical raise read "4 smaller steps
+ * (under $500 each) · $0", which sounds like differences that cancelled out.
+ */
+export function breakdownLines(shares: readonly (GapShare & { label: string })[], small = 500) {
+  const big = shares.filter((x) => x.kind === 'reporting' || Math.abs(x.amount) >= small);
+  const minor = shares.filter((x) => x.kind === 'step' && Math.abs(x.amount) >= AT_TYPICAL && Math.abs(x.amount) < small);
+  const typical = shares.filter((x) => x.kind === 'step' && Math.abs(x.amount) < AT_TYPICAL);
+  const out: { key: string; kind: GapShare['kind'] | 'typical'; label: string; amount: number }[] = big
+    .map((x) => ({ key: `${x.kind}-${x.toId}`, kind: x.kind, label: x.label, amount: x.amount }))
+    // Largest first; a reporting change, which moves both lines alike, after the steps that differ.
+    .sort((p, q) => (p.kind === 'reporting' ? 1 : 0) - (q.kind === 'reporting' ? 1 : 0) || Math.abs(q.amount) - Math.abs(p.amount));
+  const s = (n: number) => (n === 1 ? '' : 's');
+  if (minor.length) out.push({ key: 'small', kind: 'step', label: `${minor.length} smaller step${s(minor.length)} (under $${small} each)`, amount: minor.reduce((t, x) => t + x.amount, 0) });
+  if (typical.length) out.push({ key: 'typical', kind: 'typical', label: `${typical.length} step${s(typical.length)} at the typical raise`, amount: 0 });
+  return out;
+}

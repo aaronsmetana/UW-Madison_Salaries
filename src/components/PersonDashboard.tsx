@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
 import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, Legend } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine, Legend, Customized } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile } from '../lib/queries';
-import { snapX, snapAxisProps, reportingBreaks } from '../lib/snapTime';
+import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
+import { titleEras } from '../lib/payHistory';
+import { BreakLabels } from './chart/BreakLabel';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from './GapBreakdown';
 import {
@@ -162,6 +164,14 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     });
   }, [trendData, raiseCtx.typical]);
   const trendAxis = useMemo(() => snapAxisProps(trendData), [trendData]);
+  // Title changes as /person draws them (lib/payHistory `titleEras`), and the reporting break's marker.
+  const trendEras = useMemo(() => titleEras(trendData), [trendData]);
+  const breakMarks = useMemo(() => trendPlot.flatMap((r, i) => {
+    if (!r.gap) return [];
+    const next = trendPlot[i + 1];
+    const kb = KNOWN_BREAKS.find((k) => k.kind === 'reporting' && k.snapshotId === next?.id);
+    return [{ key: next?.id ?? String(i), x: r.x, texts: kb ? [kb.label, kb.short] : ['pay reported differently'] }];
+  }), [trendPlot]);
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
 
   const apptCounts = useMemo(() => {
@@ -390,8 +400,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               <Line type="monotone" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
             )}
             <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
+            {breakMarks.map((b) => (
+              <ReferenceLine key={`brk-${b.key}`} x={b.x} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="reporting-marker" />
+            ))}
+            {breakMarks.length > 0 && <Customized component={<BreakLabels edge="bottom" marks={breakMarks.map((b) => ({ at: b.x, texts: b.texts }))} />} />}
             {trendData.map((t, i) =>
-              i > 0 && t.job_code !== trendData[i - 1].job_code && t.salary != null ? (
+              i > 0 && trendEras[i] !== trendEras[i - 1] && t.salary != null ? (
                 <ReferenceDot key={`tc-${t.id}`} x={snapX(t.date, t.id)} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
               ) : null
             )}

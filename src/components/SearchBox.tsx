@@ -89,7 +89,8 @@ function toPeople(rows: HitRow[] | undefined): PersonHit[] {
 }
 
 const CARD_BORDER = 'var(--mantine-color-default-border)';
-const GROUPED_MAX_HEIGHT: Record<DropdownSize, number> = { sm: 300, md: 420, lg: 560 };
+// md holds the palette's four people and a title without a scroll; the room on screen caps them all.
+const GROUPED_MAX_HEIGHT: Record<DropdownSize, number> = { sm: 300, md: 460, lg: 560 };
 // Defined once in app.css (`--shadow-merged-card`) so the light and dark inks stay together;
 // this was the same literal in three files, and dark ink on the dark canvas showed nothing.
 const CARD_SHADOW = 'var(--shadow-merged-card)';
@@ -120,6 +121,7 @@ export function SearchBox({
   onPickDivision,
   kinds = ALL_KINDS,
   size = 'md',
+  peopleInGroup = GROUP_LIMIT.people,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -133,6 +135,9 @@ export function SearchBox({
   kinds?: readonly SearchKind[];
   /** One of the three standard sizes — the menu scales to match (lg = the centered landing box). */
   size?: DropdownSize;
+  /** How many people a grouped list shows before "More people match" — fewer in the ⌘K palette, whose
+   *  list sits lower on the screen, so its titles and divisions are not below the fold. */
+  peopleInGroup?: number;
 }) {
   const t = DROPDOWN_TIERS[size];
   const large = size === 'lg';
@@ -142,7 +147,7 @@ export function SearchBox({
   const [debounced] = useDebouncedValue(term, 200);
   const q = debounced.trim().toLowerCase();
   const enabled = q.length >= 2;
-  const peopleLimit = grouped ? GROUP_LIMIT.people + 1 : 25;
+  const peopleLimit = grouped ? peopleInGroup + 1 : 25;
 
   // Fetched on first focus — on the landing page that is the page load, since its box is autofocused.
   const [focused, setFocused] = useState(autoFocus);
@@ -226,8 +231,8 @@ export function SearchBox({
   const nav = useNavigate();
 
   const people = useMemo(() => (usingFuzzy ? fuzzyHits : (primaryHits ?? [])), [usingFuzzy, fuzzyHits, primaryHits]);
-  const peopleShown = grouped ? people.slice(0, GROUP_LIMIT.people) : people;
-  const morePeople = grouped && people.length > GROUP_LIMIT.people;
+  const peopleShown = grouped ? people.slice(0, peopleInGroup) : people;
+  const morePeople = grouped && people.length > peopleInGroup;
 
   // Keyboard navigation for the autocomplete (combobox semantics): one flat list across the groups,
   // in the order they are drawn.
@@ -415,6 +420,19 @@ export function SearchBox({
       returnFocus={false}
       closeOnClickOutside={false}
       closeOnEscape
+      // The list is never taller than the room below (or above) the box: in the ⌘K palette on a 720px
+      // screen it ran past the modal and the screen's bottom, and its titles were off-screen. The room
+      // is handed to the style below as a variable, so the tier's own cap still applies where it is lower.
+      middlewares={{
+        flip: true,
+        shift: true,
+        size: {
+          padding: 12,
+          apply({ availableHeight, elements }) {
+            elements.floating.style.setProperty('--search-room', `${Math.max(180, Math.floor(availableHeight))}px`);
+          },
+        },
+      }}
     >
       <Popover.Target>
         <div style={{ width: '100%', maxWidth: large ? '100%' : 720, margin: large ? '0 auto' : undefined }}>
@@ -463,7 +481,7 @@ export function SearchBox({
         style={{
           // Grouped, the list holds up to 13 rows in two columns; the tier's height would cut the
           // people column off above its sixth row on the landing box.
-          maxHeight: grouped ? Math.max(t.maxDropdown, GROUPED_MAX_HEIGHT[size]) : t.maxDropdown,
+          maxHeight: `min(${grouped ? Math.max(t.maxDropdown, GROUPED_MAX_HEIGHT[size]) : t.maxDropdown}px, var(--search-room, 100vh))`,
           overflowY: 'auto',
           // Flat top flush against the input; bottom radius pairs with the input; one continuous card.
           borderTopLeftRadius: 0,

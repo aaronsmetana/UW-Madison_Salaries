@@ -1,9 +1,10 @@
 import { useId, useMemo, useState } from 'react';
 import { Stack, Card, Text, SimpleGrid } from '@mantine/core';
 import {
-  ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+  ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Customized,
   ReferenceArea, ReferenceLine,
 } from 'recharts';
+import { BreakLabels } from './chart/BreakLabel';
 import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, TIP_LABEL_STYLE, fmtSnapTick } from '../lib/chartStyle';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -20,6 +21,7 @@ import { TipSurface } from './chart/ChartTooltip';
 import { barGradientDefs } from './chartDefs';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 import { knownBreak } from '../lib/snapTime';
+import { useWidth } from '../lib/useWidth';
 import { monthsBetween } from '../lib/cadence';
 
 /** Hover card: capitalized "Retention" plus the underlying counts so the % is grounded. */
@@ -73,6 +75,8 @@ export function CohortPanel() {
   const [sortMode, setSortMode] = useState<'year' | 'retention'>('year');
   const [hoveredYear, setHoveredYear] = useState<number | null>(null);
   const [hoveredFlow, setHoveredFlow] = useState<number | null>(null);
+  // The turnover chart's width: its tooltip may be no wider than the plot, which Recharts keeps it inside.
+  const [turnRef, turnW] = useWidth<HTMLDivElement>();
 
   const { data, isFetching } = useSql<{ hire_year: number; total: number; still_here: number }>(
     ['cohort', scope.kind, scopeVal, latest?.id ?? '', filterKey(filters)],
@@ -184,7 +188,9 @@ export function CohortPanel() {
           <BarChart data={chart} margin={{ left: 12, right: 12 }}>
             <defs>{barGradientDefs(uid, { stayed: 'var(--mantine-color-pos-6)', lost: 'var(--mantine-color-gray-4)' })}</defs>
             <CartesianGrid {...GRID} />
-            <XAxis dataKey="year" tick={AXIS_TICK} interval={sortMode === 'year' ? 2 : 0} />
+            {/* Labels thin themselves to the width: a fixed every-third-year still ran together on a
+                phone, and sorted by retention every bar was labelled. */}
+            <XAxis dataKey="year" tick={AXIS_TICK} interval="preserveStartEnd" minTickGap={8} />
             <YAxis width={48} tick={AXIS_TICK} unit="%" domain={[0, 100]} />
             <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Legend />
@@ -248,33 +254,38 @@ export function CohortPanel() {
           <ChartSkeleton height={280} />
         ) : (
           <>
-            <div className="turnover" data-coverage-at={coverageLabel ?? ''}>
+            <div className="turnover" data-coverage-at={coverageLabel ?? ''} ref={turnRef}>
             <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart data={turnover} margin={{ left: 12, right: 12, top: 8 }}>
+              <ComposedChart data={turnover} margin={{ left: 12, right: 12, top: 18 }}>
                 <defs>{barGradientDefs(`${uid}-flow`, { joined: 'var(--mantine-color-pos-6)', departed: 'var(--mantine-color-red-6)' })}</defs>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
                 <YAxis width={56} tick={AXIS_TICK} />
                 {/* Recharts' own tooltip (TIP_STYLE), with the step's share in its label: those who left, as
                     a share of the staff at the start, and per month, since steps run 4 to 14 months. */}
+                {/* Recharts hands the formatter each series' `name` ("Joined", "Left", "Net change"), not its
+                    key — compared with the key, every row read "Net". The label wraps inside a box no
+                    wider than the plot (the chart less its axis and margins), where Recharts can keep it:
+                    on one line it ran 590px wide on a 375px screen. */}
                 <Tooltip
-                  formatter={(v: number, key) => [num(v), key === 'joined' ? 'Joined' : key === 'departed' ? 'Left' : 'Net']}
+                  formatter={(v: number, name) => [num(v), name]}
                   labelFormatter={(label, payload) => {
                     const d = payload?.[0]?.payload as (typeof turnover)[number] | undefined;
                     return d && d.leftShare != null && d.leftPerMonth != null
-                      ? `${label} · left ${pct(d.leftShare)} of the ${num(d.startN)} at the start, over ${d.months} months — ${pct(d.leftPerMonth, 2)} a month`
+                      ? `${label} · ${pct(d.leftShare)} of the ${num(d.startN)} at the start left, over ${d.months} months (${pct(d.leftPerMonth, 2)} a month)`
                       : label;
                   }}
                   cursor={{ fill: 'var(--mantine-color-default-hover)' }}
-                  contentStyle={TIP_STYLE}
+                  wrapperStyle={{ maxWidth: turnW ? Math.min(300, turnW - 96) : 300 }}
+                  contentStyle={{ ...TIP_STYLE, whiteSpace: 'normal' }}
                   labelStyle={TIP_LABEL_STYLE}
                 />
                 <Legend />
                 {coverageLabel && (
-                  <ReferenceLine x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4"
-                    className="coverage-marker"
-                    label={{ value: scope23.label, position: 'insideTopRight', fontSize: 10, fill: 'var(--mantine-color-dimmed)' }} />
+                  <ReferenceLine x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="coverage-marker" />
                 )}
+                {/* Its words above the plot, as on Trends: inside it, they sat on the y-axis's top tick. */}
+                {coverageLabel && <Customized component={<BreakLabels marks={[{ at: coverageLabel, texts: [scope23.label, scope23.short] }]} />} />}
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
                 <Bar
                   {...chartAnim(reduceMotion, MOTION.reveal)}

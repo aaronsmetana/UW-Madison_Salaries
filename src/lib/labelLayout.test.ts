@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overlaps, packLabelRows, placeChips, placeSideLabel, type Box } from './labelLayout';
+import { overlaps, packLabelRows, placeChips, placeSideLabel, placeSideLabels, type Box } from './labelLayout';
 
 const plot: Box = { left: 0, right: 400, top: 0, bottom: 200 };
 
@@ -77,5 +77,37 @@ describe('placeSideLabel', () => {
   });
   it('draws nothing rather than overflow', () => {
     expect(placeSideLabel(100, plot, ['a'.repeat(30)], w)).toBeNull();
+  });
+});
+
+describe('placeSideLabels', () => {
+  // 5px a character, like a 10px label.
+  const w = (t: string) => t.length * 5;
+  const plot = { left: 100, right: 400 };
+  const TTC = ['TTC reclassification', 'TTC'];
+  const NINE = ['9-month pay reported differently', '9-month reporting'];
+  const apart = (a: { x: number; anchor: string; text: string }, b: { x: number; anchor: string; text: string }) => {
+    const span = (p: typeof a) => (p.anchor === 'start' ? [p.x, p.x + w(p.text)] : [p.x - w(p.text), p.x]);
+    const [a0, a1] = span(a), [b0, b1] = span(b);
+    return Math.max(b0 - a1, a0 - b1);
+  };
+
+  it('places far-apart markers each as it would alone', () => {
+    const out = placeSideLabels([{ x: 110, texts: TTC }, { x: 390, texts: NINE }], plot, w);
+    expect(out.map((p) => [p?.text, p?.row])).toEqual([['TTC reclassification', 0], ['9-month pay reported differently', 0]]);
+  });
+
+  it('gives two that would touch their short wording, and keeps them 6px apart', () => {
+    // The phone case: the TTC line near the left, the 9-month label placed before its own line.
+    const out = placeSideLabels([{ x: 150, texts: TTC }, { x: 290, texts: NINE }], { left: 100, right: 300 }, w);
+    expect(out.map((p) => p?.text)).toEqual(['TTC', '9-month reporting']);
+    expect(out.every((p) => p?.row === 0)).toBe(true);
+    expect(apart(out[0]!, out[1]!)).toBeGreaterThanOrEqual(6);
+  });
+
+  it('moves the later of two that still touch to a second row', () => {
+    const out = placeSideLabels([{ x: 200, texts: ['first marker', 'first'] }, { x: 205, texts: ['second marker', 'second'] }], plot, w);
+    expect(out[0]?.row).toBe(0);
+    expect(out[1]?.row).toBe(1);
   });
 });

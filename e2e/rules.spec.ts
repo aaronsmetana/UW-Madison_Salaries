@@ -482,6 +482,46 @@ test.describe('Phones — the figure sits beside the name', () => {
     await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Median' }) }), /^Median$/i);
   });
 
+  test('Top earners: the pay is on screen', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./explore?tab=earners');
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Pay' }) }), /^Pay$/i);
+    // The rank, title and school are still there, under the name.
+    await expect(page.locator('.earner-row').first().locator('.fold-under')).toContainText(/^#1 · /);
+  });
+
+  test("the tray's buttons are on screen", async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./explore?tab=schools');
+    const add = page.locator('.school-row .peer-add');
+    await expect(add.first()).toBeVisible({ timeout: 60_000 });
+    await add.nth(0).click();
+    await add.nth(1).click();
+    const tray = page.locator('[role="region"][aria-label="Compare set"]');
+    await expect(tray).toBeVisible();
+    for (const b of await tray.locator('a, button').all()) {
+      const box = (await b.boundingBox())!;
+      const name = (await b.textContent())?.trim() || (await b.getAttribute('aria-label'));
+      expect(box.x, `${name} starts off the screen`).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, `${name} ends off the screen`).toBeLessThanOrEqual(PHONE.width);
+    }
+  });
+
+  test('the footer ends the page instead of covering its bottom', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./explore');
+    await expect(page.locator('.footer-inflow')).toBeAttached({ timeout: 60_000 });
+    await expect(page.locator('.mantine-AppShell-footer')).toBeHidden();
+    const link = page.locator('.footer-inflow').getByText('Source on GitHub');
+    await expect(link, 'the footer is on the page').toBeVisible();
+    await link.scrollIntoViewIfNeeded();
+    await expect(link).toBeInViewport();
+    // And on a wide screen, the fixed footer as before.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator('.mantine-AppShell-footer')).toBeVisible();
+    await expect(page.locator('.footer-inflow')).toBeHidden();
+  });
+
   test('printing keeps every column, even at a phone-like printable width', async ({ page }) => {
     // A4 portrait with margins prints ~700px wide — narrower than the phone breakpoint (48em).
     await page.setViewportSize({ width: 700, height: 1000 });
@@ -491,5 +531,45 @@ test.describe('Phones — the figure sits beside the name', () => {
     await expect(table.locator('tbody tr').first()).toBeAttached({ timeout: 60_000 });
     const hidden = await table.locator('[data-fold]').evaluateAll((els) => els.filter((e) => getComputedStyle(e).display === 'none').length);
     expect(hidden, 'no column folds on paper').toBe(0);
+  });
+});
+
+test.describe("A history across the TTC relabel and the 9-month change", () => {
+  test('the line breaks at the reporting change, and the chart says why there', async ({ page }) => {
+    const pk = await nineMonthPerson();
+    await page.goto(`./person/${encodeURIComponent(pk)}?tab=trends`);
+    await expect(page.locator('.person-trend .recharts-line-curve').first()).toBeAttached({ timeout: 60_000 });
+    await expect(page.locator('.person-trend .break-label')).toHaveCount(1);
+    await expect(page.locator('.person-trend .break-label')).toHaveText(/9-month/);
+    await expect(page.locator('.person-trend .reporting-marker')).toHaveCount(1);
+    // Someone on 12-month pay throughout: no marker.
+    await page.goto(`./person/${encodeURIComponent(AARON)}?tab=trends`);
+    await expect(page.locator('.person-trend .recharts-line-curve').first()).toBeAttached({ timeout: 60_000 });
+    await expect(page.locator('.person-trend .break-label')).toHaveCount(0);
+  });
+
+  test('a title only re-spelled at the relabel is one title, named once', async ({ page }) => {
+    // One appointment before and after the relabel, a new code, the same words in another case, and
+    // the same code from then on.
+    const [p] = await oracle<{ pk: string }>(
+      `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(title) t FROM $SAL
+                    WHERE salary > 0 GROUP BY 1, 2 HAVING count(*) = 1),
+            same AS (SELECT person_key FROM one WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(DISTINCT job) = 1 AND count(*) >= 4)
+       SELECT a.person_key pk FROM one a JOIN one b USING (person_key)
+       WHERE a.snapshot_id = '2021-11-pre' AND b.snapshot_id = '2021-11-post' AND a.job <> b.job
+         AND lower(trim(a.t)) = lower(trim(b.t)) AND a.t <> b.t AND person_key IN (SELECT person_key FROM same)
+       ORDER BY pk LIMIT 1`
+    );
+    expect(p, 'someone kept their title through the relabel in other letters').toBeTruthy();
+    await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=trends`);
+    await expect(page.locator('.person-trend .recharts-line-curve').first()).toBeAttached({ timeout: 60_000 });
+    const names = [...await page.locator('.trend-era-label').allTextContents(), ...await page.locator('.trend-era-list').allTextContents()];
+    expect(names, 'the chart names no title era for a single title').toEqual([]);
+    await expect(page.getByText(/Title before TTC/)).toHaveCount(0);
+    // And a real change at the relabel still starts an era: yours, three titles.
+    await page.goto(`./person/${encodeURIComponent(AARON)}?tab=trends`);
+    await expect(page.locator('.person-trend .recharts-line-curve').first()).toBeAttached({ timeout: 60_000 });
+    const mine = (await page.locator('.trend-era-label').allTextContents()).length || (await page.locator('.trend-era-list > *').count()) - 1;
+    expect(mine).toBe(3);
   });
 });

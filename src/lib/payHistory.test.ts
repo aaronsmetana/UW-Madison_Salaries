@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   matchAppointments, byAppointment, acrossLabel, combinedReason, laneGutter, laneLetter, laneReason,
   laneSlot, type ApptFields, type Raise,
+  titleEras,
+  sameTitleText,
 } from './payHistory';
 
 /**
@@ -695,5 +697,27 @@ describe('a lone appointment that moves title', () => {
   it('claims no continuity: the lane still starts over at a new title', () => {
     const { priorOf } = full([before, after]);
     expect(priorOf.has(after)).toBe(false);
+  });
+});
+
+describe('titleEras', () => {
+  const row = (id: string, job_code: string, title: string) => ({ id, job_code, title });
+  it('keeps one era across a relabel that only re-spells the title', () => {
+    expect(titleEras([row('2021-11-pre', 'A0301', 'ASSOCIATE PROFESSOR'), row('2021-11-post', 'FA030', 'Associate Professor'), row('2022-03', 'FA030', 'Associate Professor')]))
+      .toEqual([0, 0, 0]);
+  });
+  it('starts one at a relabel that changes the title, and at any later change of code', () => {
+    expect(titleEras([row('2021-11-pre', 'S44DN', 'INFORM PROCESS CONSLT'), row('2021-11-post', 'IT082', 'IT Professional III'), row('2022-08', 'IT040', 'System Engineer IV')]))
+      .toEqual([0, 1, 2]);
+    // Outside the relabel a new code is a new era, even with the same words.
+    expect(titleEras([row('2024-04', 'FA030', 'Associate Professor'), row('2024-09', 'FA031', 'Associate Professor')])).toEqual([0, 1]);
+  });
+});
+
+describe('sameTitleText', () => {
+  it('ignores case and spacing only', () => {
+    expect(sameTitleText('ASSOCIATE  PROFESSOR ', 'Associate Professor')).toBe(true);
+    expect(sameTitleText('Associate Professor', 'Assistant Professor')).toBe(false);
+    expect(sameTitleText(null, 'Associate Professor')).toBe(false);
   });
 });

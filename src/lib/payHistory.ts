@@ -559,3 +559,27 @@ export function laneGutter<T>(
 
   return { byRow, slots };
 }
+
+/** The same title, spelled the same but for case and spacing: before the Sep 2025 files, and in the
+ *  pre-TTC snapshot, titles were written in capitals ("ASSOCIATE PROFESSOR" / "Associate Professor"). */
+export function sameTitleText(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  return !!a && !!b && norm(a) === norm(b);
+}
+
+/**
+ * Title eras along a history, one number per row: a new era at each change of job code — except
+ * across the TTC relabel (the pre-TTC snapshot and the one after it) when the title is only re-spelled.
+ * The relabel reissued every code, so a 9-month professor's history drew two eras, both "Associate
+ * Professor", the first in capitals.
+ */
+export function titleEras(rows: readonly { id: string; job_code: string | null; title: string | null }[]): number[] {
+  let era = 0;
+  return rows.map((r, i) => {
+    if (i > 0 && r.job_code !== rows[i - 1].job_code) {
+      const relabel = rows[i - 1].id.endsWith('-pre');
+      if (!(relabel && sameTitleText(rows[i - 1].title, r.title))) era++;
+    }
+    return era;
+  });
+}
