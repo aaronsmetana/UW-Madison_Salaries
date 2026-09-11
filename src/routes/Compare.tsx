@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Stack, Title, Text, Card, Table, Loader, Group, Select, Pill, Button, SimpleGrid, ThemeIcon, Paper } from '@mantine/core';
-import { IconUser, IconBriefcase, IconBuildingBank, IconArrowsDiff } from '@tabler/icons-react';
+import { Stack, Title, Text, Card, Table, Loader, Group, Pill, Button, ThemeIcon } from '@mantine/core';
+import { IconArrowsDiff } from '@tabler/icons-react';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, LineChart, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES } from '../lib/chartStyle';
-import { withSnapX, snapAxisProps } from '../lib/snapTime';
+import { withSnapX, snapAxisProps, snapX, reportingBreaks } from '../lib/snapTime';
 import { PageHeader } from '../components/PageHeader';
 import { CardTitle } from '../components/CardTitle';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -17,7 +17,7 @@ import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, peopleSql, continuingRaisesSql } from '../lib/queries';
 import { usd, num, pct, spanLabel } from '../lib/format';
 import { ordinal } from '../lib/stats';
 import { ChartData } from '../components/ChartData';
@@ -27,19 +27,22 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
-import { dropdownProps } from '../lib/selectProps';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { encodeSel, decodeSel } from '../lib/share';
-import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 import { focusControl } from '../components/EmptyState';
+import { Sparkline } from '../components/chart/Sparkline';
+import { cadenceOf, type CadencePoint } from '../lib/cadence';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
 interface TStatRow { job_code: string; headcount: number; med: number | null; p25: number | null; p75: number | null; p90: number | null }
 interface TTrendRow { job_code: string; label: string; date: string; med: number }
+interface CadRow { person_key: string; id: string; date: string; pay: number | null; appts: number; job_code: string | null; grade: number | null; grade_basis: string | null; basis: string | null }
 
 interface TooltipPayloadItem {
+  /** 'none' for a series that stays out of the tooltip (the gap chart's shading). */
+  type?: string;
   color?: string;
   stroke?: string;
   dataKey?: string | number;
@@ -76,7 +79,7 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
 }
 
 export default function Compare() {
-  /** The three add blocks, so the empty state below can put the cursor in the first one. */
+  /** The add box's card, so the empty state below can put the cursor in it. */
   const addBlocksRef = useRef<HTMLDivElement | null>(null);
   const reduceMotion = prefersReducedMotion();
   useDocTitle('Compare');
@@ -90,6 +93,11 @@ export default function Compare() {
   // Legend mute/solo: a click dims one series (state only — the tray itself is untouched); shift-click
   // solos it (mutes everyone else), or un-solos back to "all visible" if it's already the lone survivor.
   const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
+  // Hover emphasis: a legend chip or a cadence row under the pointer thickens that series on every
+  // chart. Nothing else changes — dimming stays on click and shift-click (mute and solo), where it is
+  // asked for; a hover that faded everyone else was more than a pointer passing over should do.
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const lineWidth = (id: string) => (hoverId === id ? 3 : 2);
   const toggleMute = (id: string, allIds: string[], solo: boolean) => {
     setMutedIds((prev) => {
       if (solo) {
@@ -143,20 +151,6 @@ export default function Compare() {
   const schoolNames = schools.map((s) => sqlStr(s.id)).join(',');
   const titleCodes = titles.map((t) => sqlStr(t.id)).join(',');
 
-  // ── option lists for the in-page pickers ──────────────────────────────────
-  const { data: schoolOpts } = useSql<{ school: string }>(
-    ['cmp-school-opts', snap ?? ''],
-    `SELECT DISTINCT school FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL ORDER BY school`,
-    !!snap
-  );
-  const { data: titleOpts } = useSql<{ job_code: string; title: string; n: number }>(
-    ['cmp-title-opts', snap ?? '', metric],
-    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IS NOT NULL
-     GROUP BY job_code ORDER BY n DESC`,
-    !!snap
-  );
-
   const { data: pdata, isFetching: pLoading } = useSql<PRow>(
     ['cmp-people', personIds, metric],
     `SELECT person_key, any_value(snapshot_label) AS "label", any_value(snapshot_date) date, ${personPay(metric)} pay,
@@ -205,6 +199,25 @@ export default function Compare() {
                   FROM salaries WHERE ${expr} > 0 GROUP BY snapshot_id, school, person_key),
           ranked AS (SELECT *, percent_rank() OVER (PARTITION BY snapshot_id, school ORDER BY pay) pr FROM pop)
      SELECT person_key, label, date, round(pr * 100) pctile FROM ranked WHERE person_key IN (${personIds}) ORDER BY date`,
+    persons.length > 0
+  );
+
+  // Raise cadence, by the site's rules: continuing raises (R2), promotions and title changes by grade
+  // within one pay schedule (R3), the Sep 2025 reporting change never a raise, and months by date.
+  const { data: cadRows } = useSql<CadRow>(
+    ['cmp-cadence', personIds, metric],
+    `SELECT person_key, snapshot_id id, any_value(snapshot_date) date, ${personPay(metric)} pay,
+        count(*) FILTER (WHERE salary > 0) appts,
+        first(job_code ORDER BY coalesce(fte, 0) DESC, salary DESC) job_code,
+        first(grade_number ORDER BY coalesce(fte, 0) DESC, salary DESC) grade,
+        first(grade_basis ORDER BY coalesce(fte, 0) DESC, salary DESC) grade_basis,
+        first(comp_basis ORDER BY coalesce(fte, 0) DESC, salary DESC) basis
+     FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key, snapshot_id`,
+    persons.length > 0
+  );
+  const { data: contRows } = useSql<{ person_key: string; to_id: string; r: number }>(
+    ['cmp-continuing', personIds, metric],
+    `SELECT person_key, to_id, r FROM (${continuingRaisesSql({ metric, where: `person_key IN (${personIds})` })})`,
     persons.length > 0
   );
 
@@ -302,29 +315,26 @@ export default function Compare() {
   const cadence = useMemo(
     () =>
       persons.map((p) => {
-        const arr = (perPerson.get(p.id) ?? []).filter((x) => x.pay > 0);
-        let raises = 0;
-        let sumPct = 0;
-        let streak = 0;
-        let longest = 0;
-        for (let i = 1; i < arr.length; i++) {
-          const delta = arr[i].pay - arr[i - 1].pay;
-          if (delta > 0) {
-            raises++;
-            sumPct += delta / arr[i - 1].pay;
-            streak = 0;
-          } else {
-            streak++;
-            longest = Math.max(longest, streak);
-          }
-        }
-        return { id: p.id, label: p.label, raises, avgPct: raises ? sumPct / raises : null, longest, periods: Math.max(0, arr.length - 1) };
+        const points: CadencePoint[] = (cadRows ?? [])
+          .filter((r) => r.person_key === p.id)
+          .map((r) => ({ id: r.id, date: r.date, pay: r.pay ?? 0, appts: r.appts, jobCode: r.job_code, grade: r.grade, gradeBasis: r.grade_basis, basis: r.basis }))
+          .sort((a, b) => snapX(a.date, a.id) - snapX(b.date, b.id));
+        const continuing = new Map((contRows ?? []).filter((r) => r.person_key === p.id).map((r) => [r.to_id, r.r]));
+        const paid = points.filter((x) => x.pay > 0);
+        return {
+          id: p.id,
+          label: p.label,
+          colorIdx: p.colorIdx,
+          ...cadenceOf(points, continuing),
+          spark: paid.map((x) => ({ x: snapX(x.date, x.id), y: x.pay })),
+          breaks: reportingBreaks(paid),
+        };
       }),
-    [perPerson, persons]
+    [cadRows, contRows, persons]
   );
-
-  const titleSelectData = (titleOpts ?? []).map((t) => ({ value: t.job_code, label: `${t.title} (${t.job_code} · ${num(t.n)})` }));
-
+  const visiblePersons = persons.filter((p) => !mutedIds.has(p.id));
+  // Shade one person's gap only when they are the lone series on show; with several, the fills tangle.
+  const soloPerson = persons.length > 1 && visiblePersons.length === 1 ? visiblePersons[0] : null;
   return (
     <Stack gap="lg">
       <PageHeader
@@ -334,54 +344,28 @@ export default function Compare() {
 
       <ControlBar inline />
 
-      {/* ── Build your comparison: three labeled add blocks ──
-           The blocks carry no border or shadow of their own. They sit inside a bordered card, and a
-           hairline inside a hairline muddies both — the app's rule is that the border *is* the
-           separation. Reports does the same job (Eyebrow + input in a Card) with no inner Paper at
-           all; this now reads the same way. */}
+      {/* ── Build your comparison: one add box ──
+           The site's search, with all three groups: a person, a title or a division goes to the tray
+           as what it is. The card carries the border; the box and the chips sit inside it bare. */}
       <Card withBorder padding="lg" ref={addBlocksRef}>
-        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
-          <Paper p="sm">
-            <Group gap={6} mb={8}><IconUser size={ICON.compact} /><Eyebrow>Add person</Eyebrow></Group>
-            <SearchBox kinds={['people']} placeholder="Search a person by name…" size="md" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
-          </Paper>
-          <Paper p="sm">
-            <Group gap={6} mb={8}><IconBriefcase size={ICON.compact} /><Eyebrow>Add title</Eyebrow></Group>
-            <Select
-              {...dropdownProps('md')}
-              placeholder="Search a title…"
-              data={titleSelectData}
-              value={null}
-              onChange={(v) => {
-                if (!v) return;
-                const t = titleOpts?.find((x) => x.job_code === v);
-                add({ type: 'title', id: v, label: t?.title ?? v });
-              }}
-              searchable
-              nothingFoundMessage="No matching title"
-            />
-          </Paper>
-          <Paper p="sm">
-            <Group gap={6} mb={8}><IconBuildingBank size={ICON.compact} /><Eyebrow>Add school / division</Eyebrow></Group>
-            <Select
-              {...dropdownProps('md')}
-              placeholder="Search a school…"
-              data={(schoolOpts ?? []).map((s) => s.school)}
-              value={null}
-              onChange={(v) => v && add({ type: 'school', id: v, label: v })}
-              searchable
-              nothingFoundMessage="No matching school"
-            />
-          </Paper>
-        </SimpleGrid>
+        <Eyebrow>Add a person, title or division</Eyebrow>
+        <div style={{ marginTop: 8 }}>
+          <SearchBox
+            placeholder="Add a person, title or division…"
+            size="md"
+            onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })}
+            onPickTitle={(t) => add({ type: 'title', id: t.code, label: t.title })}
+            onPickDivision={(d) => add({ type: 'school', id: d.school, label: d.school })}
+          />
+        </div>
 
         {items.length > 0 && (
           <>
-            <SelectedRow label="People" items={persons} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} />
-            <SelectedRow label="Titles" items={titles} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} />
+            <SelectedRow label="People" items={persons} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} onHover={setHoverId} />
+            <SelectedRow label="Titles" items={titles} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} onHover={setHoverId} />
             <SelectedRow label="Schools" items={schools} onRemove={remove} />
             {(persons.length > 0 || titles.length > 0) && (
-              <Text size="xs" c="dimmed" mt={6}>The colored dots are the key for the charts below — click one to hide that series, shift-click to show only it.</Text>
+              <Text size="xs" c="dimmed" mt={6}>The colored dots are the key for the charts below — point at one to pick out its line, click to hide it, shift-click to show only it.</Text>
             )}
             <Group justify="flex-end" mt="sm">
               <Button size="xs" variant="subtle" color="gray" onClick={clear}>Clear all</Button>
@@ -441,7 +425,7 @@ export default function Compare() {
                       const color = CHART_SERIES[p.colorIdx % CHART_SERIES.length];
                       const muted = mutedIds.has(p.id);
                       return (
-                        <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={2} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
+                        <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={lineWidth(p.id)} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
                           {...chartAnim(reduceMotion, MOTION.figure)}
                           label={persons.length <= 4 && !muted ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
                           onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
@@ -492,23 +476,42 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <CardTitle>Pay gap to the top earner in this group</CardTitle>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
+            <ComposedChart data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }} className="gap-chart">
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(gapSeries)} tick={AXIS_TICK} />
+              {/* Distance behind, said as distance: "$10k behind", and the top line named for who is on it. */}
               <YAxis
-                tickFormatter={fmtK}
+                tickFormatter={(v: number) => (v === 0 ? 'top earner' : `${fmtK(-v)} behind`)}
                 ticks={gapTicks}
                 domain={gapTicks ? [gapTicks[0], gapTicks[gapTicks.length - 1]] : undefined}
-                width={80}
+                width={96}
                 tick={AXIS_TICK}
               />
-              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, usd)} /> : null} />
+              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows((payload ?? []).filter((x) => x.type !== 'none'), labelMap, (v) => (v === 0 ? 'top earner' : `${usd(-v)} behind`))} /> : null} />
+              {soloPerson && (
+                <Area
+                  className="gap-shade"
+                  type="monotone"
+                  dataKey={soloPerson.id}
+                  baseValue={0}
+                  stroke="none"
+                  fill={CHART_SERIES[soloPerson.colorIdx % CHART_SERIES.length]}
+                  fillOpacity={0.14}
+                  legendType="none"
+                  tooltipType="none"
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              )}
               {persons.map((p) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
-          <Text size="xs" c="dimmed">0 = highest-paid in the group at that snapshot; below 0 = behind by that amount.</Text>
+          <Text size="xs" c="dimmed">
+            How far each person was behind the group's top earner at each snapshot. Show only one person
+            (shift-click their dot) to shade their gap.
+          </Text>
           <ChartData
             caption="Pay gap to the top earner by snapshot"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
@@ -529,7 +532,7 @@ export default function Compare() {
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
               <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -546,29 +549,66 @@ export default function Compare() {
 
       {persons.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle>Raise cadence &amp; stagnation</CardTitle>
-          <Table>
+          <CardTitle sub="A raise is pay up in the same job, at the same FTE, from one snapshot to the next. A promotion (a grade up on the same pay schedule) is counted as a promotion, the Nov 2021 relabel is not a step, and the Sep 2025 change in how 9-month pay is reported is never a raise.">
+            Raise cadence &amp; stagnation
+          </CardTitle>
+          <Table.ScrollContainer minWidth={640} className="fold-scroll">
+          <Table className="fold-table">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Person</Table.Th>
+                <Table.Th data-fold>Pay path</Table.Th>
                 <Table.Th ta="right">Latest</Table.Th>
-                <Table.Th ta="right">Raises</Table.Th>
-                <Table.Th ta="right">Avg raise</Table.Th>
-                <Table.Th ta="right">Longest no-raise streak</Table.Th>
+                <Table.Th ta="right" data-fold>Raises</Table.Th>
+                <Table.Th ta="right" data-fold>Promotions</Table.Th>
+                <Table.Th ta="right" data-fold>Avg raise</Table.Th>
+                <Table.Th ta="right" data-fold>Longest without a raise</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {cadence.map((c) => (
-                <Table.Tr key={c.id}>
-                  <Table.Td>{c.label}</Table.Td>
-                  <Table.Td ta="right">{usd(latest.get(c.id) ?? null)}</Table.Td>
-                  <Table.Td ta="right">{c.raises} / {c.periods}</Table.Td>
-                  <Table.Td ta="right">{c.avgPct == null ? '—' : pct(c.avgPct)}</Table.Td>
-                  <Table.Td ta="right">{c.longest} {c.longest === 1 ? 'period' : 'periods'}</Table.Td>
-                </Table.Tr>
-              ))}
+              {cadence.map((c) => {
+                const color = CHART_SERIES[c.colorIdx % CHART_SERIES.length];
+                const raises = `${c.raises} of ${c.judged}`;
+                const longest = `${c.longestMonths} ${c.longestMonths === 1 ? 'month' : 'months'}`;
+                return (
+                  <Table.Tr
+                    key={c.id}
+                    className="cadence-row"
+                    data-person={c.id}
+                    data-raises={c.raises}
+                    data-promotions={c.promotions}
+                    data-judged={c.judged}
+                    data-longest={c.longestMonths}
+                    data-steps={c.steps.map((x) => `${x.toId}:${x.kind}`).join(',')}
+                    onMouseEnter={() => setHoverId(c.id)}
+                    onMouseLeave={() => setHoverId(null)}
+                  >
+                    <Table.Td>
+                      <Group gap={8} wrap="nowrap">
+                        <span className="series-dot" aria-hidden style={{ background: color }} />
+                        <span>{c.label}</span>
+                      </Group>
+                      <Text className="fold-under" size="xs" c="dimmed">
+                        {raises} raises · {c.promotions} {c.promotions === 1 ? 'promotion' : 'promotions'} · avg {c.avgRaise == null ? '—' : pct(c.avgRaise)} · longest without {longest}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td data-fold><Sparkline points={c.spark} breaks={c.breaks} stroke={color} width={64} height={18} /></Table.Td>
+                    <Table.Td ta="right">{usd(latest.get(c.id) ?? null)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{raises}</Table.Td>
+                    <Table.Td ta="right" data-fold>{c.promotions}</Table.Td>
+                    <Table.Td ta="right" data-fold>{c.avgRaise == null ? '—' : pct(c.avgRaise)}</Table.Td>
+                    <Table.Td ta="right" data-fold>{longest}</Table.Td>
+                  </Table.Tr>
+                );
+              })}
             </Table.Tbody>
           </Table>
+          </Table.ScrollContainer>
+          <Text size="xs" c="dimmed" mt={4}>
+            "Raises" counts the steps that say either way; a step where pay cannot be compared — several
+            appointments, a changed FTE, a snapshot missing between — is left out, and so is the run of
+            months across it.
+          </Text>
         </Card>
       )}
 
@@ -623,7 +663,7 @@ export default function Compare() {
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
               {titles.map((t) => (
-                <Line key={t.id} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={2} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line key={t.id} className={`cmp-line cmp-t${t.colorIdx}`} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(t.id)} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -687,7 +727,7 @@ export default function Compare() {
  * tags double as the charts' legend.
  */
 function SelectedRow({
-  label, items, onRemove, colored = false, mutedIds, onToggleMute,
+  label, items, onRemove, colored = false, mutedIds, onToggleMute, onHover,
 }: {
   label: string;
   items: TrayItem[];
@@ -695,19 +735,32 @@ function SelectedRow({
   colored?: boolean;
   mutedIds?: Set<string>;
   onToggleMute?: (id: string, allIds: string[], solo: boolean) => void;
+  /** The chip under the pointer (or focused), whose series the charts thicken; null on leaving. */
+  onHover?: (id: string | null) => void;
 }) {
   if (items.length === 0) return null;
   const allIds = items.map((i) => i.id);
   return (
-    <Group gap="xs" mt="sm" wrap="wrap">
+    <Group gap="xs" mt="sm" wrap="wrap" data-row={label}>
       <Text size="xs" c="dimmed" w={56}>{label}</Text>
       {items.map((i) => {
         const muted = mutedIds?.has(i.id) ?? false;
         return (
-          <Pill key={`${i.type}:${i.id}`} withRemoveButton onRemove={() => onRemove(i.id)}>
+          <Pill
+            key={`${i.type}:${i.id}`}
+            withRemoveButton
+            onRemove={() => onRemove(i.id)}
+            onMouseEnter={() => onHover?.(i.id)}
+            onMouseLeave={() => onHover?.(null)}
+            onFocus={() => onHover?.(i.id)}
+            onBlur={() => onHover?.(null)}
+            data-series={colored ? i.id : undefined}
+            data-color-idx={colored ? i.colorIdx : undefined}
+          >
             {colored && (
               <button
                 type="button"
+                className="series-toggle"
                 aria-label={`${muted ? 'Show' : 'Hide'} ${i.label} on the charts (shift-click to show only this one)`}
                 aria-pressed={!muted}
                 onClick={(e) => onToggleMute?.(i.id, allIds, e.shiftKey)}

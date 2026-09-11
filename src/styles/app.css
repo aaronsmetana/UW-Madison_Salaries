@@ -1664,3 +1664,12 @@ button:active,
     padding-left: 0;
   }
 }
+
+/* A series' colour beside its name, where the name is the key (Compare's cadence table). */
+.series-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
