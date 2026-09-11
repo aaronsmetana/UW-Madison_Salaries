@@ -650,3 +650,50 @@ describe('lane gutter', () => {
     expect(rows.filter((r) => m.laneStart.has(r))).toEqual(rows.filter((r) => !m.priorOf.has(r)));
   });
 });
+
+describe('a lone appointment that moves title', () => {
+  // The subject of the page this came from: IT Professional III (grade 20) to System Engineer IV
+  // (grade 27), +17.4%, with one appointment on each side.
+  const before = { snapshotId: '2022-03', date: '2022-03-01', jobCode: 'IT082', school: 'SMPH', department: 'Neurology', fte: 1, pay: 73682, grade: 20, gradeBasis: 'Madison 12 Month', basis: null };
+  const after = { ...before, snapshotId: '2022-08', date: '2022-08-01', jobCode: 'IT040', pay: 86496, grade: 27 };
+
+  it('reports the change and calls a grade rise in the same schedule a promotion', () => {
+    const r = run([before, after]).get(after);
+    expect(r).toMatchObject({ kind: 'titleChange', move: 'promotion', note: null });
+    expect((r as Extract<Raise, { kind: 'titleChange' }>).delta).toBeCloseTo(86496 / 73682 - 1, 6);
+  });
+
+  it('calls it a title change when the grade stayed or fell', () => {
+    const same = { ...after, grade: 20 };
+    expect(run([before, same]).get(same)).toMatchObject({ move: 'title change' });
+    const down = { ...after, grade: 18 };
+    expect(run([before, down]).get(down)).toMatchObject({ move: 'title change' });
+  });
+
+  it('does not compare grade numbers across pay schedules', () => {
+    const other = { ...after, grade: 80, gradeBasis: 'Madison 9 Month' };
+    expect(run([before, other]).get(other)).toMatchObject({ move: 'title change' });
+  });
+
+  it('draws no figure across the 9-month reporting change, and says why', () => {
+    const a = { ...before, basis: 'Academic' };
+    const b = { ...after, basis: '9 Month', pay: before.pay * (11 / 9) * 1.03 };
+    expect(run([a, b]).get(b)).toMatchObject({ kind: 'titleChange', delta: null, note: '9-month pay reported differently' });
+  });
+
+  it('is only for one appointment on each side', () => {
+    const second = { ...before, jobCode: 'IT099', department: 'Pediatrics', pay: 20000 };
+    expect(run([before, second, after]).get(after)).toEqual({ kind: 'none' });
+  });
+
+  it('never pairs the TTC twins, which share a date', () => {
+    const pre = { ...before, snapshotId: '2021-11-pre', date: '2021-11-01' };
+    const post = { ...after, snapshotId: '2021-11-post', date: '2021-11-01', pay: pre.pay };
+    expect(run([pre, post]).get(post)).toEqual({ kind: 'none' });
+  });
+
+  it('claims no continuity: the lane still starts over at a new title', () => {
+    const { priorOf } = full([before, after]);
+    expect(priorOf.has(after)).toBe(false);
+  });
+});

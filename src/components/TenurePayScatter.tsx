@@ -7,7 +7,7 @@ import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
 import { Box, Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
-import { leastSquares } from '../lib/stats';
+import { tenureFit, TENURE_MIN_PEERS } from '../lib/stats';
 import { TipSurface } from './chart/ChartTooltip';
 import { CrosshairLayer } from './chart/CrosshairLayer';
 import { ChartData } from './ChartData';
@@ -95,7 +95,11 @@ export function TenurePayScatter({
   };
   const reduceMotion = prefersReducedMotion();
   const [hover, setHover] = useState<ScatterPoint | null>(null);
-  const reg = leastSquares(points.map((p) => ({ x: p.tenure, y: p.pay })));
+  // One fit for the line, the callout and the comparison brief (tenureFit): peers only — never the
+  // person it is judging — and no fit at all below TENURE_MIN_PEERS.
+  const peerPts = points.filter((p) => !p.isSelf).map((p) => ({ x: p.tenure, y: p.pay }));
+  const fit = self ? tenureFit(peerPts, { x: self.tenure, y: self.pay }) : null;
+  const reg = fit ? { intercept: fit.intercept, slope: fit.slope } : null;
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   const xMax = Math.ceil(tMax / 10) * 10;
   const xTicks: number[] = [];
@@ -105,9 +109,6 @@ export function TenurePayScatter({
   const schoolPts = points.filter((p) => !p.isSelf && p.sameSchool);
   const selfPts = points.filter((p) => p.isSelf);
 
-  const expected = reg && self ? reg.intercept + reg.slope * self.tenure : null;
-  const gap = expected != null && self ? self.pay - expected : null;
-  const above = gap != null && gap >= 0;
 
   // The crosshair only appears while the cursor is actually over a point — no resting state on "this
   // person" when the chart isn't being interacted with. A hovered peer gets a slightly larger ring so
@@ -119,22 +120,25 @@ export function TenurePayScatter({
 
   return (
     <div>
-      {expected != null && gap != null && self && (
-        <Box
-          mb="md"
-          className={above ? undefined : 'tenure-callout'}
-          style={{
-            borderLeft: `3px solid ${above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-orange-5)'}`,
-            background: above ? 'var(--mantine-color-pos-light)' : 'var(--mantine-color-orange-light)',
-            borderRadius: 8,
-            padding: '10px 12px',
-          }}
-        >
+      {fit && self && (
+        <Box mb="md" className="tenure-callout" data-verdict={fit.verdict}>
           <Text size="sm">
-            <b>{above ? 'Above' : 'Below'} the tenure curve.</b> At {self.tenure.toFixed(1)} yrs, {titleLabel} typically
-            pays {usd(expected)}. This person earns <b>{usd(Math.abs(gap))}</b> {above ? 'more' : 'less'} than tenure alone predicts.
+            <b>{fit.verdict === 'on' ? 'On the tenure curve.' : fit.verdict === 'above' ? 'Above the tenure curve.' : 'Below the tenure curve.'}</b>{' '}
+            At {self.tenure.toFixed(1)} yrs, {titleLabel} typically pays <b>{usd(fit.expected)}</b>.{' '}
+            {fit.verdict === 'on'
+              ? <>This person is within 2% of that (<b>{usd(Math.abs(fit.gap))} {fit.gap >= 0 ? 'more' : 'less'}</b>).</>
+              : <>This person earns <b>{usd(Math.abs(fit.gap))} {fit.gap >= 0 ? 'more' : 'less'}</b> than tenure alone predicts.</>}
+          </Text>
+          <Text size="xs" c="dimmed" mt={4}>
+            Tenure explains about {Math.round(fit.r2 * 100)}% of pay differences for this title. Allowing for tenure,
+            this person is paid more than {fit.adjustedPercentile}% of the {fit.n} others.
           </Text>
         </Box>
+      )}
+      {!fit && self && peerPts.length < TENURE_MIN_PEERS && (
+        <Text size="xs" c="dimmed" mb="md">
+          Too few others with this title have a recorded hire date to fit a tenure trend ({peerPts.length}; at least {TENURE_MIN_PEERS} are needed).
+        </Text>
       )}
 
       {/* role="img" on the wrapper + aria-hidden on the chart itself: recharts tags every individual

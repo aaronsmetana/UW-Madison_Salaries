@@ -44,6 +44,19 @@ export function pct(n: number | null | undefined, digits = 1): string {
   return `${(Number(n) * 100).toFixed(digits)}%`;
 }
 
+/**
+ * A change between two figures, as a reader should see it: "+2.0%", "-1.5%", or "0%" — never "+0.0%"
+ * or "−0.0%". One formatter for every change the app prints (the trend chart's pills, both history
+ * tables), which printed the same no-change step as "+0.0%" in one place and "0%" in another.
+ * Anything smaller than half a displayed step (0.05%) is no change: the source's rate × FTE fallback
+ * lands cents away from a reported figure, which used to render unchanged pay as a signed change.
+ */
+export function fmtChange(d: number | null | undefined): string {
+  if (d == null || Number.isNaN(Number(d))) return '—';
+  if (Math.abs(d) < 0.0005) return '0%';
+  return `${d > 0 ? '+' : '-'}${(Math.abs(d) * 100).toFixed(1)}%`;
+}
+
 /** Tenure/duration in years, one decimal ("11.4 yr") — one rendering everywhere tenure is shown as
  *  text, replacing the scattered `${x.toFixed(1)} yr` one-offs. */
 export function fmtYears(n: number | null | undefined, digits = 1): string {

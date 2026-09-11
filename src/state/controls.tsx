@@ -4,7 +4,14 @@ import { useSearchParams } from 'react-router-dom';
 export type Scope =
   | { kind: 'all' }
   | { kind: 'school'; value: string }
-  | { kind: 'department'; value: string };
+  /**
+   * A department is only ever named WITHIN its school. The source reuses department names across
+   * schools — "Administration" is a department in 12 of them, and 16 names repeat, covering 2,885
+   * people — so a name alone silently merged unrelated units: SMPH's Administration (439 people) opened
+   * as an 800-person unit spanning Nursing, Athletics and ten others. `school: null` is kept only so a
+   * legacy `?dept=` link still resolves; it is labelled as spanning every school that uses the name.
+   */
+  | { kind: 'department'; value: string; school: string | null };
 
 export type Metric = 'full' | 'fte' | 'base';
 
@@ -41,10 +48,15 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
   const key = params.toString();
 
   const value = useMemo<ControlsState>(() => {
-    const scope: Scope = params.get('school')
-      ? { kind: 'school', value: params.get('school')! }
-      : params.get('dept')
-        ? { kind: 'department', value: params.get('dept')! }
+    // `dept` wins when present, and takes `school` with it: `?school=A&dept=B` is department B OF
+    // school A. It used to be read the other way round — `school` first — so a link naming both
+    // opened the whole school and dropped the department.
+    const school = params.get('school');
+    const dept = params.get('dept');
+    const scope: Scope = dept
+      ? { kind: 'department', value: dept, school: school || null }
+      : school
+        ? { kind: 'school', value: school }
         : { kind: 'all' };
     const metric = (params.get('metric') as Metric) || 'fte';
     const activeSnapshot = params.get('snap');
@@ -70,7 +82,10 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
           p.delete('school');
           p.delete('dept');
           if (s.kind === 'school') p.set('school', s.value);
-          else if (s.kind === 'department') p.set('dept', s.value);
+          else if (s.kind === 'department') {
+            if (s.school) p.set('school', s.school);
+            p.set('dept', s.value);
+          }
         }),
       setMetric: (m) => update((p) => (m === 'fte' ? p.delete('metric') : p.set('metric', m))),
       setActiveSnapshot: (id) => update((p) => (id ? p.set('snap', id) : p.delete('snap'))),
@@ -102,13 +117,23 @@ export const METRIC_LABEL: Record<Metric, string> = {
   base: 'Base pay',
 };
 
-export function scopeLabel(scope: Scope): string {
+/**
+ * The scope as a reader should see it. A department always says which school it is in; a legacy
+ * name-only department says how many schools it spans (`spans`, when the caller knows it), so it can
+ * never pass for one unit.
+ */
+export function scopeLabel(scope: Scope, spans?: number | null): string {
   if (scope.kind === 'school') return scope.value;
-  if (scope.kind === 'department') return scope.value;
+  if (scope.kind === 'department') {
+    if (scope.school) return `${scope.value} · ${scope.school}`;
+    return spans != null && spans > 1 ? `${scope.value} · in ${spans} divisions` : scope.value;
+  }
   return 'All UW';
 }
 
 /** Stable string key for the active scope (for query caching). */
 export function scopeKey(scope: Scope): string {
-  return scope.kind === 'all' ? 'all' : `${scope.kind}:${scope.value}`;
+  if (scope.kind === 'all') return 'all';
+  if (scope.kind === 'department') return `department:${scope.school ?? '*'}:${scope.value}`;
+  return `${scope.kind}:${scope.value}`;
 }

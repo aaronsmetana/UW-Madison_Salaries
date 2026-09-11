@@ -5,7 +5,7 @@ import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
 import { Eyebrow } from './Eyebrow';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
-import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
 import { downloadCSV } from '../lib/csv';
@@ -51,19 +51,19 @@ const THRESHOLDS = [{ id: '0', label: 'All' }, { id: '5', label: '≥5' }, { id:
 export function TitlesPanel() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
-  const expr = salaryExpr(metric);
   const nav = useNavigate();
   const { add, has } = useTray();
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const { data: titles } = useSql<TitleRow>(
     ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
-    `SELECT job_code, arg_max(title, salary) title, ${paidHeadcount(metric)} n,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        quantile_cont(${expr}, 0.25) FILTER (WHERE ${expr} > 0) p25,
-        quantile_cont(${expr}, 0.75) FILTER (WHERE ${expr} > 0) p75,
-        min(${expr}) FILTER (WHERE ${expr} > 0) lo, max(${expr}) FILTER (WHERE ${expr} > 0) hi
-     FROM salaries WHERE ${where} AND job_code IS NOT NULL GROUP BY job_code ORDER BY n DESC`,
+    `WITH pe AS (${peopleSql({ metric, where: `${where} AND job_code IS NOT NULL`, by: ['job_code'], extra: 'arg_max(title, salary) t' })})
+     SELECT job_code, arg_max(t, pay) title, count(*) FILTER (WHERE pay > 0) n,
+        median(pay) FILTER (WHERE pay > 0) med,
+        quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
+        quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
+        min(pay) FILTER (WHERE pay > 0) lo, max(pay) FILTER (WHERE pay > 0) hi
+     FROM pe GROUP BY job_code ORDER BY n DESC`,
     !!snap
   );
 

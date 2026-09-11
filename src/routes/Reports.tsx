@@ -7,13 +7,13 @@ import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExpo
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, personPay, basisEquivWhere } from '../lib/queries';
+import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, pct, fullName, fmtDate, plural } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
-import { leastSquares, ordinal } from '../lib/stats';
+import { tenureFit, TENURE_MIN_PEERS, ordinal } from '../lib/stats';
 import { readPref, writePref, clearPref } from '../lib/prefs';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { EmptyState, focusControl } from '../components/EmptyState';
@@ -311,17 +311,17 @@ export default function Reports() {
     return { leftN: r.left_n, ofN: r.of_n, fromLabel: fromSnapInfo.label, toLabel: snapLabel };
   }, [attritionRows, fromSnapInfo, snapLabel]);
 
-  // Raise-cycle comparison — same-title peers who appear in BOTH the previous and current snapshot
-  // (continuing appointments only; new hires/departures would distort a "raise" comparison).
+  // Raise-cycle comparison — same-title peers' continuing raises between the previous snapshot and this
+  // one (continuingRaisesSql: one appointment each side, same job code, same FTE, same pay basis — the
+  // app's one definition of a raise, so the brief and the Changes panel cannot disagree about it).
   const prevSnapId = prevSnapInfo?.id ?? '';
   const { data: raiseCycleRows } = useSql<{ person_key: string; pay_from: number; pay_to: number }>(
     ['rpt-raise-cycle', jobCode ?? '', snap ?? '', prevSnapId, metric, compBasisWhere],
-    `WITH cur AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
-                  WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere} GROUP BY person_key),
-          prv AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
-                  WHERE snapshot_id = ${sqlStr(prevSnapId)} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere} GROUP BY person_key)
-     SELECT cur.person_key, prv.pay pay_from, cur.pay pay_to
-     FROM cur JOIN prv USING (person_key) WHERE cur.pay > 0 AND prv.pay > 0`,
+    `SELECT person_key, pay_from, pay_to FROM (${continuingRaisesSql({
+      metric,
+      where: `job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere}`,
+      pair: { from: prevSnapId, to: snap ?? '' },
+    })})`,
     cmpReady && !!jobCode && !!prevSnapId
   );
   const raiseCycle = useMemo(() => {
@@ -434,11 +434,12 @@ export default function Reports() {
     const pts = (peerListRows ?? [])
       .filter((r) => r.person_key !== subjectKey && r.tenure != null && r.pay > 0)
       .map((r) => ({ x: r.tenure as number, y: r.pay }));
-    if (pts.length < 8) return null;
-    const reg = leastSquares(pts);
-    if (!reg) return null;
-    const expected = reg.intercept + reg.slope * tenureYears;
-    return { n: pts.length, expected, gap: expected - subjectPay };
+    // tenureFit — the same fit, peers and rule the scatter in this document draws, so its callout and
+    // this highlight cannot disagree. `gap` here is how far BELOW the line the subject sits (the brief
+    // argues shortfalls), the opposite sign of tenureFit's own.
+    const fit = tenureFit(pts, { x: tenureYears, y: subjectPay });
+    if (!fit) return null;
+    return { n: fit.n, expected: fit.expected, gap: -fit.gap, verdict: fit.verdict };
   }, [peerListRows, subjectPay, tenureYears, subjectKey]);
 
   // Points for the (detailed-format-only) tenure-vs-pay scatter — same-title peers + the subject. Peer
@@ -696,9 +697,9 @@ export default function Reports() {
       }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
-    // Gate: a tenure-trend gap under 2% of pay is within noise and reads as reaching — omit it from the
-    // document (the private checklist still flags it as too small; the detailed scatter stays as data).
-    if (tenureRegression && tenureRegression.gap >= 0.02 * subjectPay) {
+    // Gate: only a gap tenureFit calls "below" (2% of pay or more) is claimed — under that is within
+    // noise and reads as reaching (the private checklist still flags it; the scatter stays as data).
+    if (tenureRegression?.verdict === 'below') {
       out.push({
         kind: 'tenureTrend',
         value: usd(tenureRegression.gap),
@@ -841,21 +842,21 @@ export default function Reports() {
     // subjectPct/medianPct comparison mirrors the document's raise-cycle gating (Phase C): the subject
     // line is dropped when the subject out-raised peers, so the checklist explains that omission too.
     const raiseSubjectOutpaced = raiseCycle?.subjectPct != null && raiseCycle.subjectPct > raiseCycle.medianPct;
-    const tenureTrendMeaningful = tenureRegression != null && subjectPay != null && tenureRegression.gap >= 0.02 * subjectPay;
+    const tenureTrendMeaningful = tenureRegression?.verdict === 'below';
     return [
       { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools`, sectionId: 'standing' },
       { label: 'Percentile / market gap', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers', sectionId: 'highlights' },
       { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers', sectionId: 'highlights' },
       { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers', sectionId: 'highlights' },
       { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below', sectionId: 'highlights' },
-      { label: 'Tenure-trend regression', ok: tenureTrendMeaningful, note: tenureRegression == null ? 'need ≥8 same-title peers with tenure' : tenureRegression.gap <= 0 ? 'paid above the tenure trend' : !tenureTrendMeaningful ? 'gap under 2% of pay — omitted as too small to claim' : undefined, sectionId: 'highlights' },
+      { label: 'Tenure-trend regression', ok: tenureTrendMeaningful, note: tenureRegression == null ? `need ≥${TENURE_MIN_PEERS} same-title peers with tenure` : tenureRegression.verdict === 'above' ? 'paid above the tenure trend' : tenureRegression.verdict === 'on' ? 'gap under 2% of pay — omitted as too small to claim' : undefined, sectionId: 'highlights' },
       { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint', sectionId: 'highlights' },
       { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? `no published range for grade ${grade ?? '—'}` : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range', sectionId: 'highlights' },
       { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : raiseSubjectOutpaced ? 'subject out-raised peers — subject line omitted from document' : undefined, sectionId: 'history' },
       { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record', sectionId: 'history' },
       { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)', sectionId: 'risk' },
     ];
-  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt, marketPosition, subjectPay]);
+  }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt, marketPosition]);
 
   // ── Setup-pane data ──
   const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({

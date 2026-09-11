@@ -4,8 +4,8 @@ import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
-import { actualPay, sameBasis } from '../lib/queries';
-import { usd, pct, fmtBasis } from '../lib/format';
+import { actualPay, sameBasis, reportingChange } from '../lib/queries';
+import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 
 /**
@@ -30,25 +30,56 @@ export interface HistoryRow {
   salary_fte_adjusted: number | null;
   fte: number | null;
   comp_basis: string | null;
+  /** Grade and pay schedule: whether a title change was a promotion (see `titleChange`). */
+  grade_number?: number | null;
+  grade_basis?: string | null;
 }
 
-/** The history table's "Raise" cell. Three states, because the source cannot always attribute a
- *  change to a single appointment — see payHistory.ts. `children` is what to show when there is
- *  nothing to compare against at all: the promotion badge, or an em dash. */
-function RaiseCell({ raise, note, children }: { raise: Raise; note?: string | null; children: ReactNode }) {
+/** A change as a figure: signed and coloured, or a dimmed "0%" for no change. */
+function ChangeFigure({ delta }: { delta: number }) {
+  return delta === 0
+    ? <Text size="sm" c="dimmed">0%</Text>
+    : <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'}>{fmtChange(delta)}</Text>;
+}
+
+/**
+ * The history table's "Change" cell. Its states follow the matcher (see payHistory.ts): a paired
+ * change, one measured across appointments the source cannot tell apart, a lone appointment that
+ * moved title, and nothing to compare. `children` is the last of those. `reporting` names a reporting
+ * change between the two snapshots — no figure is drawn across one, because it is not a change in pay.
+ */
+function RaiseCell({ raise, note, reporting, children }: { raise: Raise; note?: string | null; reporting?: string | null; children: ReactNode }) {
   // A new appointment under a title the person already held. Deliberately not an em dash: that
   // already means "no prior snapshot", and the two must not read alike.
   if (raise.kind === 'newAppointment') return <Badge size="xs" variant="light" color="gray">new</Badge>;
   if (raise.kind === 'none') return <>{children}</>;
 
-  const { delta } = raise;
-  const figure = delta === 0
-    ? <Text size="sm" c="dimmed">0%</Text>
-    : (
-      <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'}>
-        {delta > 0 ? '+' : ''}{pct(delta)}
-      </Text>
+  if (raise.kind === 'titleChange') {
+    // Plain text, not a Badge: a badge truncates to its cell, and the 78px Change column cut
+    // "promotion" to "promoti…".
+    return (
+      <>
+        {raise.delta == null ? <Text size="sm" c="dimmed">—</Text> : <ChangeFigure delta={raise.delta} />}
+        <Text
+          size="xs"
+          fw={600}
+          c={raise.move === 'promotion' ? 'accent.7' : 'dimmed'}
+          className={raise.move === 'promotion' ? 'accent7-text' : undefined}
+          data-change-tag={raise.move}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {raise.move}
+        </Text>
+        {raise.note && <span className="appt-reporting-note">{raise.note}</span>}
+      </>
     );
+  }
+
+  if (reporting) {
+    return (<><Text size="sm" c="dimmed">—</Text><span className="appt-reporting-note">{reporting}</span></>);
+  }
+
+  const figure = <ChangeFigure delta={raise.delta} />;
   if (raise.kind === 'paired') {
     // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
     // in it looking like a pay change. Where that has happened the note says what the RATE did —
@@ -129,6 +160,10 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
         department: r.department,
         fte: r.fte,
         pay: actualPay(r),
+        date: r.snapshot_date,
+        grade: r.grade_number ?? null,
+        gradeBasis: r.grade_basis ?? null,
+        basis: r.comp_basis,
       })),
     [historyRows]
   );
@@ -218,6 +253,14 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                   const d = r.salary / from.salary - 1;
                   return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
                 })();
+                // A reporting change between this row and the one it is measured against: the
+                // appointment's own prior row where the matcher found one, else any prior row under
+                // the same title (a combined figure spans those).
+                const reporting = ((): string | null => {
+                  const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
+                  const hit = priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean);
+                  return hit ? hit.note : null;
+                })();
             return (
               <Table.Tr
                 key={`${r.snapshot_id}-${i}`}
@@ -271,9 +314,11 @@ export function HistoryTable({ rows }: { rows: readonly HistoryRow[] }) {
                 <Table.Td ta="right">{usd(r.salary)}</Table.Td>
                 <Table.Td ta="right">{usd(actual)}</Table.Td>
                 <Table.Td ta="right">
-                  <RaiseCell raise={raise} note={rateNote}>
+                  <RaiseCell raise={raise} note={rateNote} reporting={reporting}>
+                    {/* A new title the matcher could not pair — the person held more than one
+                        appointment on a side. It is new; whether it was a promotion is unknowable. */}
                     {isNew && !ttcReclass && pos > 0 ? (
-                      <Badge size="xs" variant="light" color="accent">promotion</Badge>
+                      <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>new title</Text>
                     ) : (
                       <Text size="sm" c="dimmed">—</Text>
                     )}

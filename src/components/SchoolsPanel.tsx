@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff, IconChevronRight, IconDownload } from '@tabler/icons-react';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
-import { salaryExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
@@ -21,14 +21,14 @@ interface DeptRow { department: string; headcount: number; med: number | null }
 type SortKey = 'school' | 'headcount' | 'med';
 
 /** Lazily-loaded department breakdown for an expanded division row. */
-function DeptRows({ where, school, expr, metric, colSpan }: {
-  where: string; school: string; expr: string; metric: Metric; colSpan: number;
+function DeptRows({ where, school, metric, colSpan }: {
+  where: string; school: string; metric: Metric; colSpan: number;
 }) {
   const { data } = useSql<DeptRow>(
     ['schools-depts', where, school, metric],
-    `SELECT department, ${paidHeadcount(metric)} headcount, median(${expr}) FILTER (WHERE ${expr} > 0) med
-     FROM salaries WHERE ${where} AND school = ${sqlStr(school)} AND department IS NOT NULL
-     GROUP BY department ORDER BY headcount DESC LIMIT 50`
+    `WITH pe AS (${peopleSql({ metric, where: `${where} AND school = ${sqlStr(school)} AND department IS NOT NULL`, by: ['department'] })})
+     SELECT department, count(*) FILTER (WHERE pay > 0) headcount, median(pay) FILTER (WHERE pay > 0) med
+     FROM pe GROUP BY department ORDER BY headcount DESC LIMIT 50`
   );
   if (!data) {
     return (
@@ -59,18 +59,17 @@ function DeptRows({ where, school, expr, metric, colSpan }: {
 export function SchoolsPanel() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
-  const expr = salaryExpr(metric);
   const { add, has } = useTray();
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const { data: schools } = useSql<SchoolRow>(
     ['browse-schools', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
-    `SELECT school, ${paidHeadcount(metric)} headcount,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        quantile_cont(${expr}, 0.25) FILTER (WHERE ${expr} > 0) p25,
-        quantile_cont(${expr}, 0.75) FILTER (WHERE ${expr} > 0) p75
-     FROM salaries WHERE ${where} AND school IS NOT NULL
-     GROUP BY school ORDER BY headcount DESC`,
+    `WITH pe AS (${peopleSql({ metric, where: `${where} AND school IS NOT NULL`, by: ['school'] })})
+     SELECT school, count(*) FILTER (WHERE pay > 0) headcount,
+        median(pay) FILTER (WHERE pay > 0) med,
+        quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
+        quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75
+     FROM pe GROUP BY school ORDER BY headcount DESC`,
     !!snap
   );
 
@@ -189,7 +188,7 @@ export function SchoolsPanel() {
                       <TrayButton inTray={inTray} onAdd={() => add({ type: 'school', id: s.school, label: s.school })} />
                     </Table.Td>
                   </Table.Tr>
-                  {open && <DeptRows where={where} school={s.school} expr={expr} metric={metric} colSpan={5} />}
+                  {open && <DeptRows where={where} school={s.school} metric={metric} colSpan={5} />}
                 </Fragment>
               );
             })}

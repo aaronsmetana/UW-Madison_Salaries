@@ -44,3 +44,67 @@ export function leastSquares(points: { x: number; y: number }[]): { slope: numbe
   const slope = num / den;
   return { slope, intercept: yBar - slope * xBar };
 }
+
+/** Fewer same-title peers with a recorded tenure than this and there is no trend to fit — a line
+ *  through seven points says more about those seven people than about the title. The comparison
+ *  brief already required this many; the person page drew a line and a verdict from two. */
+export const TENURE_MIN_PEERS = 8;
+
+/** A gap smaller than this share of pay is "on the curve". The brief's own rule ("under 2% of pay —
+ *  omitted as too small to claim"), now the only rule: the person page called a 1.2% gap "Below". */
+export const TENURE_ON_BAND = 0.02;
+
+export interface TenureFit {
+  /** Peers in the fit — never the subject. */
+  n: number;
+  slope: number;
+  intercept: number;
+  /** What tenure alone predicts at the subject's tenure. */
+  expected: number;
+  /** Subject's pay minus `expected`: negative means below the curve. */
+  gap: number;
+  /** Share of pay differences in the group that tenure accounts for (0–1). */
+  r2: number;
+  /** Typical distance of a peer from the line, in dollars. */
+  residualSd: number;
+  /** Share of peers whose pay sits further below the line than the subject's (0–100). */
+  adjustedPercentile: number;
+  verdict: 'above' | 'below' | 'on';
+}
+
+/**
+ * What tenure predicts for one person, from their peers — the one fit the scatter, its callout and
+ * the comparison brief all read.
+ *
+ * The subject is excluded from the fit: a line that includes the person it is judging bends toward
+ * them. `peers` must not contain the subject; `self` is the subject's own tenure (x) and pay (y).
+ */
+export function tenureFit(peers: { x: number; y: number }[], self: { x: number; y: number }): TenureFit | null {
+  if (peers.length < TENURE_MIN_PEERS) return null;
+  const reg = leastSquares(peers);
+  if (!reg) return null;
+  const at = (x: number) => reg.intercept + reg.slope * x;
+  const yBar = peers.reduce((s, p) => s + p.y, 0) / peers.length;
+  let sse = 0, sst = 0;
+  const residuals = peers.map((p) => {
+    const r = p.y - at(p.x);
+    sse += r * r;
+    sst += (p.y - yBar) ** 2;
+    return r;
+  });
+  const expected = at(self.x);
+  const gap = self.y - expected;
+  const below = residuals.filter((r) => r < gap).length;
+  const verdict: TenureFit['verdict'] = Math.abs(gap) < TENURE_ON_BAND * Math.abs(self.y) ? 'on' : gap > 0 ? 'above' : 'below';
+  return {
+    n: peers.length,
+    slope: reg.slope,
+    intercept: reg.intercept,
+    expected,
+    gap,
+    r2: sst > 0 ? Math.max(0, 1 - sse / sst) : 0,
+    residualSd: Math.sqrt(sse / Math.max(1, peers.length - 2)),
+    adjustedPercentile: Math.round((below / peers.length) * 100),
+    verdict,
+  };
+}

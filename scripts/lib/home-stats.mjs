@@ -23,6 +23,16 @@ const BIN_W = 1000;
  *  median marker ~$5k off, on a curve built from a different quantity. */
 const PAY = ACTUAL_PAY_SQL;
 
+/**
+ * One row per person with their summed actual pay — the population the landing figures describe.
+ * The bins, quartiles and headline median used to count appointment rows (22,383) under a caption
+ * about 22,009 employees; a person with two appointments was two points on the curve, at two partial
+ * salaries. This is `peopleSql` in src/lib/queries.ts for the 'fte' metric, where both of personPay's
+ * branches reduce to the sum of actual pay over paid appointments.
+ */
+const people = (src, snap) =>
+  `(SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)`;
+
 // Mirrors the six useSql queries in src/routes/Home.tsx so the landing page can render from a
 // ~2KB static JSON instead of booting DuckDB-WASM + downloading the full parquet.
 export function computeHomeStats(parquetPath, latestSnapshotId) {
@@ -41,7 +51,8 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       );
       const [dimsRow] = await run(
         `SELECT count(DISTINCT school) AS schools, count(DISTINCT job_code) AS titles,
-                min(salary) FILTER (WHERE salary > 0) AS lo, max(salary) FILTER (WHERE salary > 0) AS hi
+                (SELECT min(pay) FROM ${people(src, snap)} WHERE pay > 0) AS lo,
+                (SELECT max(pay) FROM ${people(src, snap)} WHERE pay > 0) AS hi
          FROM ${src} WHERE snapshot_id = '${snap}'`
       );
       // The histogram is capped so one $3M outlier can't flatten the whole curve into the baseline.
@@ -49,18 +60,18 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       // data so the landing page can label the last bin as "and N above" instead of quietly dropping
       // the top tail while its axis still claims to show the distribution.
       const bins = await run(
-        `SELECT floor(${PAY} / ${BIN_W}) * ${BIN_W} AS bucket, count(*) AS n FROM ${src}
-         WHERE snapshot_id = '${snap}' AND ${PAY} > 0 AND ${PAY} < ${BIN_CAP} GROUP BY bucket ORDER BY bucket`
+        `SELECT floor(pay / ${BIN_W}) * ${BIN_W} AS bucket, count(*) AS n FROM ${people(src, snap)}
+         WHERE pay > 0 AND pay < ${BIN_CAP} GROUP BY bucket ORDER BY bucket`
       );
       const [overflowRow] = await run(
-        `SELECT count(*) AS n FROM ${src} WHERE snapshot_id = '${snap}' AND ${PAY} >= ${BIN_CAP}`
+        `SELECT count(*) AS n FROM ${people(src, snap)} WHERE pay >= ${BIN_CAP}`
       );
-      // Quartiles over the same population the bins describe (per appointment, positive salary), so
-      // the markers the landing chart draws sit on its own curve rather than on a different one.
+      // Quartiles over the same people the bins describe, so the markers the landing chart draws sit
+      // on its own curve, and p50 is the headline median.
       const [quartRow] = await run(
-        `SELECT quantile_cont(${PAY}, 0.25) AS p25, quantile_cont(${PAY}, 0.5) AS p50,
-                quantile_cont(${PAY}, 0.75) AS p75
-         FROM ${src} WHERE snapshot_id = '${snap}' AND ${PAY} > 0`
+        `SELECT quantile_cont(pay, 0.25) AS p25, quantile_cont(pay, 0.5) AS p50,
+                quantile_cont(pay, 0.75) AS p75
+         FROM ${people(src, snap)} WHERE pay > 0`
       );
       const [titleTop] = await run(
         `SELECT title, count(*) AS n FROM ${src} WHERE snapshot_id = '${snap}' AND title IS NOT NULL
@@ -72,17 +83,20 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       );
       const [factRow] = await run(
         `WITH p AS (
-            SELECT person_key, sum(salary) FILTER (WHERE salary > 0) AS pay,
+            SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay,
                    any_value(date_of_hire) AS doh, any_value(snapshot_date) AS sd
             FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)
          SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) AS p90,
                 median(date_diff('day', CAST(doh AS DATE), CAST(sd AS DATE)) / 365.25) FILTER (WHERE doh IS NOT NULL) AS tenure
          FROM p`
       );
+      // Per person within each category, on actual pay — the measure every other landing figure uses.
       const byCat = await run(
-        `SELECT employee_category AS cat, median(salary) FILTER (WHERE salary > 0) AS med, count(*) AS n
-         FROM ${src} WHERE snapshot_id = '${snap}' AND employee_category IS NOT NULL
-         GROUP BY employee_category ORDER BY n DESC LIMIT 3`
+        `WITH p AS (SELECT employee_category AS cat, person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay
+                    FROM ${src} WHERE snapshot_id = '${snap}' AND employee_category IS NOT NULL
+                    GROUP BY employee_category, person_key)
+         SELECT cat, median(pay) FILTER (WHERE pay > 0) AS med, count(*) FILTER (WHERE pay > 0) AS n
+         FROM p GROUP BY cat ORDER BY n DESC LIMIT 3`
       );
 
       con.close();

@@ -89,6 +89,10 @@ export function getDB(): Promise<AsyncDuckDB> {
 export async function query<T = Record<string, unknown>>(sql: string): Promise<T[]> {
   const db = await getDB();
   const conn = await db.connect();
+  // Every query leaves a `sql` performance measure (duration + the query's opening text), so a change
+  // that makes a page's queries heavier shows up as a number rather than as a feeling. Read with
+  // performance.getEntriesByName('sql'); free when nothing reads it.
+  const t0 = performance.now();
   try {
     const result = await conn.query(sql);
     return result.toArray().map((row: { toJSON: () => Record<string, unknown> }) => {
@@ -100,6 +104,11 @@ export async function query<T = Record<string, unknown>>(sql: string): Promise<T
     });
   } finally {
     await conn.close();
+    try {
+      performance.measure('sql', { start: t0, detail: sql.replace(/\s+/g, ' ').trim().slice(0, 160) });
+    } catch {
+      /* measure() with options is unavailable in very old browsers — timing is diagnostic only */
+    }
   }
 }
 

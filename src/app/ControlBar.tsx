@@ -24,10 +24,11 @@ const METRIC_HELP: Record<Metric, string> = {
  * compact trigger and carry its own sticky filter — division names are long and otherwise wrap badly
  * inside a trigger-width menu.
  */
-function ScopeMenu({ scope, setScope, options }: {
+function ScopeMenu({ scope, setScope, options, label }: {
   scope: Scope;
   setScope: (s: Scope) => void;
   options: { value: string; label: string; count?: number | null }[];
+  label: string;
 }) {
   const [search, setSearch] = useState('');
   const combobox = useCombobox({
@@ -77,7 +78,7 @@ function ScopeMenu({ scope, setScope, options }: {
           rightSectionPointerEvents="none"
           onClick={() => combobox.toggleDropdown()}
         >
-          <Text span size="xs" truncate>{scopeLabel(scope)}</Text>
+          <Text span size="xs" truncate title={label}>{label}</Text>
         </InputBase>
       </Combobox.Target>
       <Combobox.Dropdown>
@@ -138,6 +139,17 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     !!snapId
   );
 
+  // A legacy name-only department link (`?dept=` without `school`) spans every school that uses the
+  // name. Count them so the label says so, rather than letting "Administration" pass for one unit.
+  const legacyDept = scope.kind === 'department' && !scope.school ? scope.value : null;
+  const { data: spanRows } = useSql<{ n: number }>(
+    ['scope-dept-spans', snapId ?? '', legacyDept ?? ''],
+    `SELECT count(DISTINCT school) n FROM salaries
+     WHERE snapshot_id = ${sqlStr(snapId ?? '')} AND department = ${sqlStr(legacyDept ?? '')}`,
+    !!snapId && !!legacyDept
+  );
+  const label = scopeLabel(scope, spanRows?.[0]?.n ?? null);
+
   // If the scoped school isn't in the active snapshot, fall back to All UW (keeps the view non-empty).
   useEffect(() => {
     if (!schools || scope.kind !== 'school') return;
@@ -189,7 +201,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     <>
       <Eyebrow style={{ flexShrink: 0 }}>Showing</Eyebrow>
       <Group gap="xs" wrap={wrapScope ? 'wrap' : 'nowrap'} style={{ minWidth: 0, flexShrink: wrapScope ? 1 : 0 }}>
-        <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} />
+        <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} label={label} />
         <Select
           {...dropdownProps('sm')}
           w={180}
@@ -263,7 +275,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
                 "you've focused the data" reminder beside the Reset button rather than restating the toggles. */}
             {!atDefaults && (
               <Badge variant="light" color="accent" visibleFrom="md">
-                {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
+                {label} · {snapLabel} · {METRIC_LABEL[metric]}
               </Badge>
             )}
             <FilterControls />
@@ -292,7 +304,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         {resetView}
         {copyLink}
         <Badge variant="light" color="accent">
-          {scopeLabel(scope)} · {snapLabel} · {METRIC_LABEL[metric]}
+          {label} · {snapLabel} · {METRIC_LABEL[metric]}
         </Badge>
       </Group>
     </Group>

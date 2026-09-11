@@ -17,7 +17,7 @@ import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId, useReferenceStatus } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, paidHeadcount, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
 import { usd, usdCompact, num, fmtDate } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
@@ -176,11 +176,15 @@ export default function Explore() {
 
   const { data: kpis } = useSql<Kpis>(
     ['kpis', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT ${paidHeadcount(metric)} headcount, count(DISTINCT person_key) all_people,
-        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        quantile_cont(${expr}, 0.9) FILTER (WHERE ${expr} > 0) p90
-     FROM salaries WHERE ${where}`,
+    // Headcount and payroll are sums over appointment rows; the median and p90 are over PEOPLE
+    // (peopleSql), so the median describes the same population the headcount counts.
+    `WITH pe AS (${peopleSql({ metric, where })})
+     SELECT (SELECT ${paidHeadcount(metric)} FROM salaries WHERE ${where}) headcount,
+        (SELECT count(DISTINCT person_key) FROM salaries WHERE ${where}) all_people,
+        (SELECT sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) FROM salaries WHERE ${where}) total_payroll,
+        median(pay) FILTER (WHERE pay > 0) med,
+        quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) p90
+     FROM pe`,
     enabled
   );
   const k = kpis?.[0];
@@ -191,10 +195,11 @@ export default function Explore() {
   const prevSnapMeta = curSnapMeta ? [...snapsAsc].filter((s) => s.date < curSnapMeta.date).at(-1) : undefined;
   const { data: kprevRows } = useSql<{ headcount: number; total_payroll: number | null; med: number | null }>(
     ['kpis-prev', prevSnapMeta?.id ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT ${paidHeadcount(metric)} headcount,
-        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med
-     FROM salaries WHERE ${snapWhere(prevSnapMeta?.id ?? '')} AND ${whereAll(scope, filters)}`,
+    `WITH pe AS (${peopleSql({ metric, where: `${snapWhere(prevSnapMeta?.id ?? '')} AND ${whereAll(scope, filters)}` })})
+     SELECT (SELECT ${paidHeadcount(metric)} FROM salaries WHERE ${snapWhere(prevSnapMeta?.id ?? '')} AND ${whereAll(scope, filters)}) headcount,
+        (SELECT sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) FROM salaries WHERE ${snapWhere(prevSnapMeta?.id ?? '')} AND ${whereAll(scope, filters)}) total_payroll,
+        median(pay) FILTER (WHERE pay > 0) med
+     FROM pe`,
     enabled && !!prevSnapMeta
   );
   const kp = kprevRows?.[0];
@@ -205,9 +210,9 @@ export default function Explore() {
   // Median-over-time series for the KPI sparkline (one point per real snapshot; pre-TTC twin dropped).
   const { data: sparkRows } = useSql<{ id: string; label: string; med: number | null }>(
     ['kpi-spark', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `SELECT snapshot_id id, any_value(snapshot_label) AS "label", median(${expr}) FILTER (WHERE ${expr} > 0) med
-     FROM salaries WHERE ${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'
-     GROUP BY snapshot_id ORDER BY any_value(snapshot_date)`,
+    `WITH pe AS (${peopleSql({ metric, where: `${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'`, by: ['snapshot_id'], extra: 'any_value(snapshot_label) lbl, any_value(snapshot_date) dt' })})
+     SELECT snapshot_id id, any_value(lbl) AS "label", median(pay) FILTER (WHERE pay > 0) med
+     FROM pe GROUP BY snapshot_id ORDER BY any_value(dt)`,
     enabled
   );
   const series = useMemo<SnapMed[]>(

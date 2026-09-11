@@ -9,7 +9,7 @@ import { lineGlowDefs } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
-import { salaryExpr, paidHeadcount, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct, spanLabel } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { ChartData } from './ChartData';
@@ -66,11 +66,14 @@ export function TrendsPanel() {
     // `renew` = paid employees on a renewable ("Regular") appointment — excludes Terminal and Temporary.
     // Appointment type is only recorded from the Sep 2025 dump on, so it's NULL (not 0) for older
     // snapshots, leaving those points off the line instead of plotting a misleading zero.
-    `SELECT snapshot_id id, any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med, ${paidHeadcount(metric)} hc,
+    // The median is over people (peopleSql); the counts stay over rows, where they already count people.
+    `WITH pe AS (${peopleSql({ metric, where: whereAll(scope, filters), by: ['snapshot_id'] })}),
+          m AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY snapshot_id)
+     SELECT snapshot_id id, any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
+        any_value(m.med) med, ${paidHeadcount(metric)} hc,
         CASE WHEN count(*) FILTER (WHERE employee_type IS NOT NULL) = 0 THEN NULL
              ELSE count(DISTINCT person_key) FILTER (WHERE ${expr} > 0 AND employee_type = 'Regular') END AS renew
-     FROM salaries WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
+     FROM salaries JOIN m USING (snapshot_id) WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
   );
 
   const plot = useMemo<Plot[]>(() => {

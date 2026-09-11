@@ -50,7 +50,9 @@ export default function Screening() {
     const n = Number(params.get('minN'));
     return {
       school: params.get('sch') ?? '',
-      department: params.get('dept') ?? '',
+      // A department is only meaningful inside its school (the source reuses names across schools),
+      // so a department without one is dropped rather than silently merging every school's unit.
+      department: params.get('sch') ? params.get('dept') ?? '' : '',
       minN: Number.isFinite(n) && n >= 2 ? n : DEFAULT_MIN_N,
     };
   }, [params]);
@@ -58,7 +60,7 @@ export default function Screening() {
   // Form state is seeded from the URL but edits freely until Screen is pressed, so typing in the
   // pickers doesn't re-run the query on every keystroke.
   const [school, setSchool] = useState<string>(() => params.get('sch') ?? '');
-  const [department, setDepartment] = useState<string>(() => params.get('dept') ?? '');
+  const [department, setDepartment] = useState<string>(() => (params.get('sch') ? params.get('dept') ?? '' : ''));
   const [minN, setMinN] = useState<number>(() => {
     const n = Number(params.get('minN'));
     return Number.isFinite(n) && n >= 2 ? n : DEFAULT_MIN_N;
@@ -90,9 +92,9 @@ export default function Screening() {
   const { data: deptOpts } = useSql<{ department: string }>(
     ['screen-depts', snap ?? '', school],
     `SELECT DISTINCT department FROM salaries
-     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND department IS NOT NULL ${school ? `AND school = ${sqlStr(school)}` : ''}
+     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND department IS NOT NULL AND school = ${sqlStr(school)}
      ORDER BY department`,
-    !!snap
+    !!snap && !!school
   );
 
   const scopeWhere = useMemo(() => {
@@ -246,7 +248,8 @@ export default function Screening() {
           />
           <Select
             label="Department"
-            placeholder="All departments"
+            placeholder={school ? 'All departments' : 'Choose a school first'}
+            disabled={!school}
             data={(deptOpts ?? []).map((d) => ({ value: d.department, label: d.department }))}
             value={department || null}
             onChange={(v) => setDepartment(v ?? '')}

@@ -577,7 +577,9 @@ export default function DataHealth() {
             <Th ta="right" tip="People with at least one paid appointment — the headcount used across the site.">Paid</Th>
             <Th ta="right" tip="Change in paid headcount vs the previous snapshot.">Δ paid</Th>
             <Th ta="right" tip="Appointments with no salary (affiliates given campus access), excluded from headcount and salary stats.">Unpaid $0</Th>
-            <Th ta="right" tip="Median paid salary (full-time rate as reported in the source).">Median</Th>
+            {/* Per row, on purpose: this table reports on the source's rows. Every other median on the
+                site counts people (a person with two appointments counts once, at their combined pay). */}
+            <Th ta="right" tip="Median actual pay per appointment row, as the source lists them — a person with two appointments counts twice here. Every other median on the site counts each person once.">Median per row</Th>
             <Th ta="right" tip="Change in median vs the previous snapshot.">Δ median</Th>
             <Th>Status</Th>
           </Table.Tr>

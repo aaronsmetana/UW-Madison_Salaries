@@ -21,6 +21,8 @@
  * combined one, so a tier earns its place by evidence, not by looking reasonable.
  */
 
+import { reportingChange, sameBasis } from './queries';
+
 /** The fields this module needs from one appointment row, whatever the caller's row type is. */
 export interface ApptFields {
   snapshotId: string;
@@ -31,6 +33,14 @@ export interface ApptFields {
   fte: number | null;
   /** Pay for THIS appointment alone. Callers differ on how they derive it (`actualPay` vs SQL). */
   pay: number;
+  /** Snapshot date. The pre- and post-TTC twins share one, which is how a relabel is told apart from
+   *  a title change. Optional: without it the snapshot ids' `-pre`/`-post` suffixes are used. */
+  date?: string | null;
+  /** Grade and its pay schedule, which decide whether a title change was a promotion. */
+  grade?: number | null;
+  gradeBasis?: string | null;
+  /** `comp_basis`: a change across a basis or reporting change is not a change in pay. */
+  basis?: string | null;
 }
 
 export type Raise =
@@ -40,6 +50,14 @@ export type Raise =
   | { kind: 'combined'; delta: number; curCount: number; priorCount: number }
   /** A new appointment under a title the person already held — nothing to compare it to. */
   | { kind: 'newAppointment' }
+  /**
+   * The person's only appointment moved to a new job code. One row on each side cannot be anyone
+   * else's, so the change is real and is reported — it used to be hidden behind a "promotion" badge
+   * that went on every new job code, including the 3,316 of 8,879 that kept or lowered the grade.
+   * `move` is "promotion" only when the grade rose within the same pay schedule. `delta` is null when
+   * the basis or its reporting also changed, and `note` says which.
+   */
+  | { kind: 'titleChange'; delta: number | null; move: 'promotion' | 'title change'; note: string | null }
   /** No prior snapshot, no prior row under this title, or a prior pay of zero. */
   | { kind: 'none' };
 
@@ -285,6 +303,24 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
           : { kind: 'none' };
       for (const row of unpairedCur) out.set(row, raise);
     }
+
+    // One appointment on each side, under different job codes: the same job moved title. Every other
+    // tier above keys on the job code, so this is the one case they leave as "none". Never across the
+    // TTC twins — that is a relabel of everyone at once, not a move.
+    if (i > 0) {
+      const curShown = shownBySnapshot.get(order[i])!;
+      const priShown = shownBySnapshot.get(order[i - 1])!;
+      if (curShown.length === 1 && priShown.length === 1) {
+        const fc = get(curShown[0]);
+        const fp = get(priShown[0]);
+        const ttcPair = fc.date != null && fp.date != null
+          ? String(fc.date) === String(fp.date)
+          : /-post$/.test(fc.snapshotId) && /-pre$/.test(fp.snapshotId);
+        if (fc.jobCode != null && fp.jobCode != null && fc.jobCode !== fp.jobCode && !ttcPair) {
+          out.set(curShown[0], titleChange(fp, fc));
+        }
+      }
+    }
   }
 
   // Lanes, in reading order, one snapshot at a time. Two passes on purpose: an inherited lane is
@@ -316,6 +352,18 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
   }
 
   return { raises: out, priorOf, lane, laneStart };
+}
+
+/** The change for a lone appointment that moved title — see the `titleChange` kind of `Raise`. */
+export function titleChange(prior: ApptFields, cur: ApptFields): Extract<Raise, { kind: 'titleChange' }> {
+  const reporting = reportingChange(prior.basis, cur.basis);
+  const note = reporting ? reporting.note : !sameBasis(prior.basis, cur.basis) ? 'basis changed' : null;
+  const delta = note != null || !(prior.pay > 0) ? null : snap((cur.pay - prior.pay) / prior.pay);
+  const promoted =
+    prior.grade != null && cur.grade != null &&
+    (prior.gradeBasis ?? '').trim().toLowerCase() === (cur.gradeBasis ?? '').trim().toLowerCase() &&
+    cur.grade > prior.grade;
+  return { kind: 'titleChange', delta, move: promoted ? 'promotion' : 'title change', note };
 }
 
 /**

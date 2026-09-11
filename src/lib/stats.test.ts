@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { percentile, leastSquares, ordinal } from './stats';
+import { percentile, leastSquares, ordinal, tenureFit, TENURE_MIN_PEERS } from './stats';
 
 describe('ordinal', () => {
   it('suffixes 1/2/3 and everything else', () => {
@@ -54,5 +54,43 @@ describe('percentile — values from outside the pool', () => {
 
   it('still reports 0 when nobody is below', () => {
     expect(percentile(50_000, [50_000, 60_000, 70_000])).toBe(0);
+  });
+});
+
+describe('tenureFit', () => {
+  // Pay rises $1,000 a year from $100,000, exactly, for ten peers at tenure 0..9.
+  const line = Array.from({ length: 10 }, (_, i) => ({ x: i, y: 100_000 + 1_000 * i }));
+
+  it('is null below the minimum number of peers', () => {
+    expect(tenureFit(line.slice(0, TENURE_MIN_PEERS - 1), { x: 5, y: 105_000 })).toBeNull();
+    expect(tenureFit(line.slice(0, TENURE_MIN_PEERS), { x: 5, y: 105_000 })).not.toBeNull();
+  });
+
+  it('fits the peers alone, so the subject cannot bend the line toward themselves', () => {
+    // A subject far above the line: had they been in the fit, `expected` would rise toward them.
+    const fit = tenureFit(line, { x: 5, y: 200_000 })!;
+    expect(fit.expected).toBeCloseTo(105_000, 6);
+    expect(fit.gap).toBeCloseTo(95_000, 6);
+  });
+
+  it('calls a gap under 2% of pay "on" the curve, and only a larger one above or below', () => {
+    expect(tenureFit(line, { x: 5, y: 105_000 - 1_000 })!.verdict).toBe('on'); // ~0.96% below
+    expect(tenureFit(line, { x: 5, y: 105_000 - 3_000 })!.verdict).toBe('below'); // ~2.9% below
+    expect(tenureFit(line, { x: 5, y: 105_000 + 3_000 })!.verdict).toBe('above');
+  });
+
+  it('reports how much of the spread tenure explains', () => {
+    expect(tenureFit(line, { x: 5, y: 105_000 })!.r2).toBeCloseTo(1, 6);
+    // Same tenures, pay alternating ±$5,000 around a flat $100,000: tenure explains almost nothing.
+    const noise = line.map((p, i) => ({ x: p.x, y: 100_000 + (i % 2 ? 5_000 : -5_000) }));
+    expect(tenureFit(noise, { x: 5, y: 100_000 })!.r2).toBeLessThan(0.1);
+  });
+
+  it('places the subject among the peers once tenure is allowed for', () => {
+    // Peers scattered ±$5,000 about the line. Further above it than every peer is the 100th; further
+    // below than every peer, the 0th.
+    const noisy = line.map((p, i) => ({ x: p.x, y: p.y + (i % 2 ? 5_000 : -5_000) }));
+    expect(tenureFit(noisy, { x: 5, y: 105_000 + 20_000 })!.adjustedPercentile).toBe(100);
+    expect(tenureFit(noisy, { x: 5, y: 105_000 - 20_000 })!.adjustedPercentile).toBe(0);
   });
 });

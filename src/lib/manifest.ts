@@ -34,8 +34,10 @@ export interface Summary {
   generated_at: string;
   total_rows: number;
   snapshot_count: number;
-  snapshots: { id: string; label: string; date: string; rows: number; median: number | null }[];
-  latest: { id: string; label: string; headcount: number; median: number | null } | null;
+  /** `median` is over people (summed actual pay per person), like every median in the app;
+   *  `median_rows` is the per-appointment figure, for the data-health page. */
+  snapshots: { id: string; label: string; date: string; rows: number; median: number | null; median_rows?: number | null }[];
+  latest: { id: string; label: string; headcount: number; median: number | null; median_rows?: number | null } | null;
 }
 
 /** Precomputed landing-page stats for the latest snapshot (see scripts/build-data.mjs). */

@@ -26,6 +26,23 @@ let tmpDir;
 let parquetPath;
 let stats;
 
+/** Writes `rows` to a parquet in `dir` and returns its path. */
+async function writeParquet(dir, rows) {
+  const ndjson = path.join(dir, 'rows.ndjson');
+  const out = path.join(dir, 'salaries.parquet');
+  fs.writeFileSync(ndjson, rows.map((r) => JSON.stringify(r)).join('\n'));
+  await new Promise((resolve, reject) => {
+    const db = new duckdb.Database(':memory:');
+    const con = db.connect();
+    const esc = (p) => p.replace(/'/g, "''");
+    con.run(`CREATE TABLE t AS SELECT * FROM read_json_auto('${esc(ndjson)}', format='newline_delimited');`, (err) => {
+      if (err) return reject(err);
+      con.run(`COPY t TO '${esc(out)}' (FORMAT PARQUET);`, (err2) => (err2 ? reject(err2) : db.close(resolve)));
+    });
+  });
+  return out;
+}
+
 beforeAll(async () => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-test-'));
   const ndjson = path.join(tmpDir, 'rows.ndjson');
@@ -61,8 +78,9 @@ describe('computeHomeStats shape + derivation', () => {
     expect(stats.schools).toBe(2);
     expect(stats.titles).toBe(3);
   });
-  it('finds the min/max nominal salary', () => {
-    expect(stats.salary_lo).toBe(40000);
+  it('finds the lowest and highest pay across people, on actual pay', () => {
+    // p3's 50000 rate at 0.5 FTE is 25000 actually paid — the measure every landing figure uses.
+    expect(stats.salary_lo).toBe(25000);
     expect(stats.salary_hi).toBe(120000);
   });
   it('bins actual (FTE-scaled) pay into $1k buckets, ascending, each carrying a count', () => {
@@ -84,17 +102,19 @@ describe('computeHomeStats shape + derivation', () => {
     expect(stats.top_division).toEqual({ school: 'A', n: 4 });
   });
   it('computes the 90th-percentile pay across people', () => {
-    // sorted per-person pay: 40000, 50000, 60000, 100000, 110000, 120000 -> interpolated p90 = 115000
+    // sorted per-person actual pay: 25000, 40000, 60000, 100000, 110000, 120000 -> interpolated p90 = 115000
     expect(stats.p90).toBeCloseTo(115000, 5);
   });
   it('reports a positive median tenure', () => {
     expect(typeof stats.median_tenure_years).toBe('number');
     expect(stats.median_tenure_years).toBeGreaterThan(0);
   });
-  it('ranks categories by headcount, each with its own median', () => {
+  it('ranks categories by headcount, each with its own median of actual pay per person', () => {
+    // Staff: p3 is paid 25000 (50000 at 0.5 FTE) and p4 60000, so the median is 42500 — it read
+    // 55000 when this took the median of full-time rates over rows.
     expect(stats.category_medians).toEqual([
       { category: 'Faculty', median: 110000 },
-      { category: 'Staff', median: 55000 },
+      { category: 'Staff', median: 42500 },
       { category: 'University Staff', median: 40000 },
     ]);
   });
@@ -116,5 +136,30 @@ describe('computeHomeStats shape + derivation', () => {
     // out every hourly worker. p6 must appear in the 40000 bin and in the payroll total.
     expect(stats.bins).toContainEqual({ bucket: 40000, n: 1 });
     expect(stats.bins.find((b) => b.bucket === 0)).toBeUndefined();
+  });
+});
+
+// The population rule, on its own fixture: a person with two appointments is ONE point on the curve,
+// at their combined pay. The landing page used to count appointment rows — 22,383 of them — under a
+// caption about 22,009 employees, so a split appointment was two people at two partial salaries.
+describe('computeHomeStats counts people, not appointments', () => {
+  let split;
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-split-'));
+    const base = { snapshot_id: 'snap-1', school: 'A', title: 'T', employee_category: 'Staff', salary_fte_adjusted: null, date_of_hire: '2020-01-01', snapshot_date: '2026-01-01' };
+    split = await computeHomeStats(await writeParquet(dir, [
+      { ...base, job_code: 'J1', person_key: 'p1', salary: 40000, fte: 0.5 },
+      { ...base, job_code: 'J2', person_key: 'p1', salary: 60000, fte: 0.5 },
+      // A numeric adjusted figure (equal to its own pay) so the column types as DOUBLE — see ROWS above.
+      { ...base, job_code: 'J1', person_key: 'p2', salary: 70000, fte: 1, salary_fte_adjusted: 70000 },
+    ]), 'snap-1');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  it('bins each person once, at the sum of their appointments', () => {
+    expect(split.bins).toEqual([{ bucket: 50000, n: 1 }, { bucket: 70000, n: 1 }]);
+  });
+  it('takes the median over those people', () => {
+    expect(split.p50).toBeCloseTo(60000, 5);
+    expect(split.salary_lo).toBe(50000);
   });
 });

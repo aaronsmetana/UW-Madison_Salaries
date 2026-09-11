@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, personPay, paidHeadcount } from '../lib/queries';
+import { personPay, peopleSql } from '../lib/queries';
 import { usd, num, fullName } from '../lib/format';
 import type { Metric } from '../state/controls';
 import { useTray } from '../state/tray';
@@ -46,7 +46,6 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   school?: string | null;
   pinSalary?: number | null;
 }) {
-  const expr = salaryExpr(metric);
   const nav = useNavigate();
   const { add, has } = useTray();
   const { data: grades } = useGrades();
@@ -90,8 +89,9 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const { data: bySchool } = useSql<SchoolRow>(
     ['ts-school', jobCode, snap, metric],
-    `SELECT school, ${paidHeadcount(metric)} n, median(${expr}) FILTER (WHERE ${expr} > 0) med
-     FROM salaries WHERE ${titleBase} AND school IS NOT NULL GROUP BY school ORDER BY n DESC`,
+    `WITH pe AS (${peopleSql({ metric, where: `${titleBase} AND school IS NOT NULL`, by: ['school'] })})
+     SELECT school, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med
+     FROM pe GROUP BY school ORDER BY n DESC`,
     enabled
   );
 

@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, whereAll, filterKey } from '../lib/queries';
+import { personPay, whereAll, filterKey, continuingRaisesSql } from '../lib/queries';
 import { usd, usdCompact, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
@@ -22,7 +22,7 @@ import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 interface Mover { person_key: string; fn: string; ln: string; title: string | null; school: string | null; a_pay: number; b_pay: number; delta: number; pct: number }
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
-interface SummaryRow { stayers: number; joiners: number; leavers: number; title_changes: number; median_raise: number | null }
+interface SummaryRow { stayers: number; joiners: number; leavers: number; title_changes: number; median_raise: number | null; n_continuing: number }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
@@ -68,15 +68,18 @@ export function ChangesPanel() {
      ) ORDER BY school`,
     enabled
   );
-  const deptSchoolClause = filterSchool ? ` AND school = ${sqlStr(filterSchool)}` : '';
+  // The school a department filter would sit inside: the panel's own pick, else the global scope's.
+  // Department names repeat across schools, so the department picker only opens once there is one.
+  const deptSchool = filterSchool ?? (scope.kind === 'school' ? scope.value : scope.kind === 'department' ? scope.school : null);
+  const deptSchoolClause = deptSchool ? ` AND school = ${sqlStr(deptSchool)}` : '';
   const { data: deptOpts } = useSql<{ department: string }>(
-    ['chg-depts', fromId, toId, filterSchool ?? ''],
+    ['chg-depts', fromId, toId, deptSchool ?? ''],
     `SELECT department FROM (
         SELECT department FROM salaries WHERE snapshot_id = ${A} AND department IS NOT NULL${deptSchoolClause} GROUP BY department
         INTERSECT
         SELECT department FROM salaries WHERE snapshot_id = ${B} AND department IS NOT NULL${deptSchoolClause} GROUP BY department
      ) ORDER BY department`,
-    enabled
+    enabled && !!deptSchool
   );
 
   // Drop a selected school/department that isn't present in both snapshots (e.g. after moving "From"
@@ -98,6 +101,14 @@ export function ChangesPanel() {
                                  any_value(first_name) fn, any_value(last_name) ln
                           FROM salaries WHERE snapshot_id = ${B} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0)`;
 
+  // Every raise figure on this panel — the median, the distribution, the biggest raises and cuts, the
+  // share of raise dollars — reads continuing raises (continuingRaisesSql): one appointment on each
+  // side, same title, same FTE, same pay basis. Over all stayers, a promotion, an FTE change and the
+  // Sep 2025 change in how 9-month pay is reported all passed for raises (the 9-month change alone put
+  // 1,474 faculty at +25.9%). Headcounts and the payroll decomposition still cover every stayer: the
+  // decomposition has to, or its parts stop summing to the total.
+  const crs = `(${continuingRaisesSql({ metric, where: localWhere, pair: { from: fromId ?? '', to: toId ?? '' } })})`;
+
   const { data: sumData } = useSql<SummaryRow>(
     ['chg-sum', fromId, toId, scopeKey, metric],
     `${cte}
@@ -105,15 +116,16 @@ export function ChangesPanel() {
             count(*) FILTER (WHERE a.person_key IS NULL) joiners,
             count(*) FILTER (WHERE b.person_key IS NULL) leavers,
             count(*) FILTER (WHERE a.person_key IS NOT NULL AND b.person_key IS NOT NULL AND a.job IS DISTINCT FROM b.job) title_changes,
-            median((b.pay - a.pay) / a.pay) FILTER (WHERE a.pay > 0 AND b.pay > 0) median_raise
+            (SELECT median(r) FROM ${crs}) median_raise,
+            (SELECT count(*) FROM ${crs}) n_continuing
      FROM a FULL OUTER JOIN b ON a.person_key = b.person_key`,
     enabled
   );
   const s = sumData?.[0];
 
   const moverSelect = `${cte}
-     SELECT b.person_key, b.fn, b.ln, b.title, b.school, a.pay a_pay, b.pay b_pay, (b.pay - a.pay) delta, (b.pay - a.pay) / a.pay pct
-     FROM a JOIN b ON a.person_key = b.person_key WHERE a.pay > 0 AND b.pay > 0`;
+     SELECT c.person_key, b.fn, b.ln, b.title, b.school, c.pay_from a_pay, c.pay_to b_pay, (c.pay_to - c.pay_from) delta, c.r pct
+     FROM ${crs} c JOIN b ON b.person_key = c.person_key`;
   const { data: raises } = useSql<Mover>(['chg-raise', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta DESC LIMIT 12`, enabled);
   const { data: cuts } = useSql<Mover>(['chg-cut', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta ASC LIMIT 12`, enabled);
   const { data: promos } = useSql<Promo>(
@@ -138,10 +150,8 @@ export function ChangesPanel() {
 
   const { data: raiseDist } = useSql<{ pct_bucket: number; n: number }>(
     ['chg-dist', fromId, toId, scopeKey, metric],
-    `${cte}
-     SELECT bucket * 5 AS pct_bucket, count(*) n FROM (
-       SELECT floor(least(greatest((b.pay - a.pay) / a.pay, -0.25), 0.5) * 100 / 5) AS bucket
-       FROM a JOIN b ON a.person_key = b.person_key WHERE a.pay > 0 AND b.pay > 0
+    `SELECT bucket * 5 AS pct_bucket, count(*) n FROM (
+       SELECT floor(least(greatest(r, -0.25), 0.5) * 100 / 5) AS bucket FROM ${crs}
      ) GROUP BY bucket ORDER BY bucket`,
     enabled
   );
@@ -157,7 +167,7 @@ export function ChangesPanel() {
 
   const { data: equityRows } = useSql<{ top10_share: number | null; n_raised: number }>(
     ['chg-equity', fromId, toId, scopeKey, metric],
-    `${cte}, r AS (SELECT (b.pay - a.pay) raise FROM a JOIN b ON a.person_key = b.person_key WHERE a.pay > 0 AND b.pay > 0 AND b.pay > a.pay)
+    `WITH r AS (SELECT (pay_to - pay_from) raise FROM ${crs} WHERE pay_to > pay_from)
      SELECT count(*) n_raised,
        CASE WHEN sum(raise) > 0 THEN round(100.0 * sum(raise) FILTER (WHERE raise >= (SELECT quantile_cont(raise, 0.9) FROM r)) / sum(raise), 1) ELSE NULL END top10_share
      FROM r`,
@@ -243,7 +253,7 @@ export function ChangesPanel() {
   const distColorSlot = (bucket: number) => (bucket < 0 ? 'red5' : bucket === 0 ? 'gray4' : 'pos5');
 
   // Share of continuing staff who got any raise, and the bucket the median raise lands in (histogram marker).
-  const raisedPct = equity?.n_raised != null && s?.stayers ? equity.n_raised / s.stayers : null;
+  const raisedPct = equity?.n_raised != null && s?.n_continuing ? equity.n_raised / s.n_continuing : null;
   const medBucketLabel = s?.median_raise != null
     ? `${Math.floor(Math.max(-0.25, Math.min(0.5, s.median_raise)) * 100 / 5) * 5}%`
     : null;
@@ -285,7 +295,8 @@ export function ChangesPanel() {
         />
         <Select
           {...dropdownProps('sm')}
-          size="xs" w={250} label="Department" placeholder="All departments" searchable clearable
+          size="xs" w={250} label="Department" placeholder={deptSchool ? 'All departments' : 'Choose a school first'} searchable clearable
+          disabled={!deptSchool}
           data={(deptOpts ?? []).map((x) => x.department)}
           value={filterDept}
           onChange={setFilterDept}
@@ -307,7 +318,9 @@ export function ChangesPanel() {
         <Text size="sm" c="dimmed">
           Between <b>{fromLabel}</b> and <b>{toLabel}</b>{scopeText}: ≈{num(s.stayers)} stayed, ≈{num(s.joiners)} joined,
           {' '}≈{num(s.leavers)} left (left = not present in {toLabel}); median raise {s.median_raise == null ? '—' : pct(s.median_raise)}
-          {raisedPct != null ? ` — but ${pct(raisedPct)} of continuing staff got some raise` : ''}.
+          {raisedPct != null ? ` — but ${pct(raisedPct)} of them got some raise` : ''}. Raises count the {num(s.n_continuing)} people
+          who held one appointment in both snapshots, in the same title at the same FTE — a promotion,
+          an FTE change or a change in how pay is reported is not a raise.
         </Text>
       )}
 
@@ -446,7 +459,7 @@ export function ChangesPanel() {
             </Button>
           }
         >
-          Biggest pay changes (continuing staff)
+          Biggest raises and cuts (same title, same FTE)
         </CardTitle>
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder padding="lg">

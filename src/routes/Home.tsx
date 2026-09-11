@@ -459,10 +459,13 @@ export default function Home() {
   );
   const payroll = artifactUsable ? homeStats.payroll_total : (payrollRows?.[0]?.total ?? null);
 
+  // Per person, on actual pay (`people` below) — the same population home-stats.json is built from.
+  const people = `(SELECT person_key, sum(${ACTUAL_PAY}) FILTER (WHERE salary > 0) AS pay
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} GROUP BY person_key)`;
   const { data: dimRows } = useSql<{ schools: number; titles: number; lo: number | null; hi: number | null }>(
     ['home-dims', snap ?? ''],
     `SELECT count(DISTINCT school) schools, count(DISTINCT job_code) titles,
-            min(salary) FILTER (WHERE salary > 0) lo, max(salary) FILTER (WHERE salary > 0) hi
+            (SELECT min(pay) FROM ${people} WHERE pay > 0) lo, (SELECT max(pay) FROM ${people} WHERE pay > 0) hi
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')}`,
     needsSql
   );
@@ -481,9 +484,9 @@ export default function Home() {
     // build script fixed that mismatch on its side and left this one: the fallback was binning the
     // full-time rate while the median marker drawn on top of it came from FTE-adjusted pay, so a
     // visitor pinned to an older snapshot got a marker sitting off its own curve.
-    `SELECT floor(${ACTUAL_PAY} / 1000) * 1000 AS bucket, count(*) AS n FROM salaries
-     WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${ACTUAL_PAY} > 0 AND ${ACTUAL_PAY} < 250000
-     GROUP BY bucket ORDER BY bucket`,
+    // One point per PERSON, as in the artifact: the curve sits under a count of employees.
+    `SELECT floor(pay / 1000) * 1000 AS bucket, count(*) AS n FROM ${people}
+     WHERE pay > 0 AND pay < 250000 GROUP BY bucket ORDER BY bucket`,
     needsSql
   );
   const bins = artifactUsable ? homeStats.bins : (binRows ?? []);
@@ -504,7 +507,7 @@ export default function Home() {
   const { data: factStats } = useSql<{ p90: number | null; tenure: number | null }>(
     ['home-facts', snap ?? ''],
     `WITH p AS (
-        SELECT person_key, sum(salary) FILTER (WHERE salary > 0) AS pay,
+        SELECT person_key, sum(${ACTUAL_PAY}) FILTER (WHERE salary > 0) AS pay,
                any_value(date_of_hire) AS doh, any_value(snapshot_date) AS sd
         FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} GROUP BY person_key)
      SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) p90,
@@ -516,9 +519,11 @@ export default function Home() {
   const tenure = artifactUsable ? homeStats.median_tenure_years : (factStats?.[0]?.tenure ?? null);
   const { data: byCat } = useSql<{ cat: string; med: number }>(
     ['home-bycat', snap ?? ''],
-    `SELECT employee_category cat, median(salary) FILTER (WHERE salary > 0) med, count(*) n
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND employee_category IS NOT NULL
-     GROUP BY employee_category ORDER BY n DESC LIMIT 3`,
+    `WITH p AS (SELECT employee_category cat, person_key, sum(${ACTUAL_PAY}) FILTER (WHERE salary > 0) pay
+                FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND employee_category IS NOT NULL
+                GROUP BY employee_category, person_key)
+     SELECT cat, median(pay) FILTER (WHERE pay > 0) med, count(*) FILTER (WHERE pay > 0) n
+     FROM p GROUP BY cat ORDER BY n DESC LIMIT 3`,
     needsSql
   );
   const categoryMedians = artifactUsable

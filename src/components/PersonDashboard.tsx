@@ -5,12 +5,12 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, sameBasis } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange } from '../lib/queries';
 import {
   matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName, fmtDate, spanLabel } from '../lib/format';
+import { usd, num, pct, fullName, fmtDate, spanLabel, fmtChange } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
@@ -199,6 +199,10 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         department: r.department,
         fte: r.fte,
         pay: r.pay ?? 0,
+        date: r.snapshot_date,
+        grade: r.grade_number,
+        gradeBasis: r.grade_basis,
+        basis: r.comp_basis,
       })),
     [historyRows]
   );
@@ -411,6 +415,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 const d = r.rate_raw / from.rate_raw - 1;
                 return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
               })();
+              // Same rule as the page: no figure across a reporting change (see REPORTING_CHANGES).
+              const reporting = ((): string | null => {
+                const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
+                const hit = priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean);
+                return hit ? hit.note : null;
+              })();
               const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
               return (
               <Table.Tr
@@ -454,14 +464,22 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                       interactive table has always painted it warn; the printed report — the copy
                       someone carries into a meeting — was asserting a cut in the strongest colour
                       the palette has. */}
-                  {(raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
+                  {!reporting && (raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
                     <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'}>
-                      {raise.delta > 0 ? '+' : ''}{pct(raise.delta)}
+                      {fmtChange(raise.delta)}
                       {raise.kind === 'combined' && (
                         <Text span size="xs" c="dimmed"> {acrossLabel(raise.curCount, raise.priorCount)}</Text>
                       )}
                     </Text>
                   )}
+                  {raise.kind === 'titleChange' && (
+                    <Text size="xs" c={raise.delta == null || raise.delta === 0 ? 'dimmed' : raise.delta > 0 ? 'pos' : 'orange'}>
+                      {raise.delta != null && raise.delta !== 0 ? `${fmtChange(raise.delta)} · ` : ''}
+                      <Text span size="xs" fw={600} c={raise.move === 'promotion' ? 'accent.7' : 'dimmed'} data-change-tag={raise.move}>{raise.move}</Text>
+                      {raise.note && <Text span size="xs" c="dimmed"> · {raise.note}</Text>}
+                    </Text>
+                  )}
+                  {reporting && raise.kind !== 'titleChange' && <span className="appt-reporting-note">{reporting}</span>}
                   {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
                   {rateNote && <span className="appt-rate-note">{rateNote}</span>}
                 </Table.Td>

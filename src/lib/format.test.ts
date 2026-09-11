@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis, fmtYears } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis, fmtYears, fmtChange } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -66,5 +66,20 @@ describe('format', () => {
     expect(fmtBasis(undefined)).toBe('—');
     expect(fmtBasis('')).toBe('—');
     expect(fmtBasis('   ')).toBe('—');
+  });
+});
+
+describe('fmtChange', () => {
+  it('signs a change and keeps one decimal', () => {
+    expect(fmtChange(0.174)).toBe('+17.4%');
+    expect(fmtChange(-0.015)).toBe('-1.5%');
+  });
+  it('prints no change as "0%", never "+0.0%" or "-0.0%"', () => {
+    expect(fmtChange(0)).toBe('0%');
+    expect(fmtChange(0.0004)).toBe('0%');
+    expect(fmtChange(-0.0004)).toBe('0%');
+  });
+  it('prints a dash for a missing figure', () => {
+    expect(fmtChange(null)).toBe('—');
   });
 });

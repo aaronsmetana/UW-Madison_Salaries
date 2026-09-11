@@ -20,7 +20,7 @@ import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS 
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, personPay, paidHeadcount, filterWhere, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql, filterWhere, filterKey } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -99,16 +99,17 @@ export default function School() {
 
   const { data: scoreRows, isLoading } = useSql<Score>(
     ['school-score', name, snap ?? '', metric, fk],
-    `SELECT ${paidHeadcount(metric)} headcount,
-        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) total_payroll,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        avg(${expr}) FILTER (WHERE ${expr} > 0) mean,
-        quantile_cont(${expr}, 0.25) FILTER (WHERE ${expr} > 0) p25,
-        quantile_cont(${expr}, 0.75) FILTER (WHERE ${expr} > 0) p75,
-        quantile_cont(${expr}, 0.90) FILTER (WHERE ${expr} > 0) p90,
-        min(${expr}) FILTER (WHERE ${expr} > 0) lo,
-        max(${expr}) FILTER (WHERE ${expr} > 0) hi
-     FROM salaries WHERE ${base}`,
+    `WITH pe AS (${peopleSql({ metric, where: base })})
+     SELECT (SELECT ${paidHeadcount(metric)} FROM salaries WHERE ${base}) headcount,
+        (SELECT sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) FROM salaries WHERE ${base}) total_payroll,
+        median(pay) FILTER (WHERE pay > 0) med,
+        avg(pay) FILTER (WHERE pay > 0) mean,
+        quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
+        quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
+        quantile_cont(pay, 0.90) FILTER (WHERE pay > 0) p90,
+        min(pay) FILTER (WHERE pay > 0) lo,
+        max(pay) FILTER (WHERE pay > 0) hi
+     FROM pe`,
     enabled
   );
   const s = scoreRows?.[0];
@@ -140,9 +141,10 @@ export default function School() {
 
   const { data: trend } = useSql<{ label: string; date: string; med: number | null; hc: number }>(
     ['school-trend', name, metric, fk],
-    `SELECT any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med, ${paidHeadcount(metric)} hc
-     FROM salaries WHERE school = ${sqlStr(name)} AND ${filterWhere(filters)} GROUP BY snapshot_id ORDER BY date`,
+    `WITH pe AS (${peopleSql({ metric, where: `school = ${sqlStr(name)} AND ${filterWhere(filters)}`, by: ['snapshot_id'], extra: 'any_value(snapshot_label) lbl, any_value(snapshot_date) dt' })})
+     SELECT any_value(lbl) AS "label", any_value(dt) date,
+        median(pay) FILTER (WHERE pay > 0) med, count(*) FILTER (WHERE pay > 0) hc
+     FROM pe GROUP BY snapshot_id ORDER BY date`,
     !!name
   );
 
@@ -172,11 +174,11 @@ export default function School() {
 
   const { data: depts } = useSql<{ department: string; headcount: number; med: number | null; payroll: number | null }>(
     ['school-depts-full', name, snap ?? '', metric, fk],
-    `SELECT department, ${paidHeadcount(metric)} headcount,
-        median(${expr}) FILTER (WHERE ${expr} > 0) med,
-        sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) payroll
-     FROM salaries WHERE ${base} AND department IS NOT NULL
-     GROUP BY department ORDER BY headcount DESC`,
+    `WITH pe AS (${peopleSql({ metric, where: `${base} AND department IS NOT NULL`, by: ['department'], extra: `sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) earn` })})
+     SELECT department, count(*) FILTER (WHERE pay > 0) headcount,
+        median(pay) FILTER (WHERE pay > 0) med,
+        sum(earn) payroll
+     FROM pe GROUP BY department ORDER BY headcount DESC`,
     enabled
   );
   type DeptSortKey = 'department' | 'headcount' | 'med' | 'payroll';
@@ -456,15 +458,15 @@ export default function School() {
                       key={d.department}
                       className="peer-row"
                       style={{ cursor: 'pointer' }}
-                      onClick={() => nav(`/explore?dept=${encodeURIComponent(d.department)}`)}
+                      onClick={() => nav(`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`)}
                       tabIndex={0}
                       role="button"
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/explore?dept=${encodeURIComponent(d.department)}`); }
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`); }
                       }}
                     >
                       <Table.Td>
-                        <Anchor component={Link} to={`/explore?dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>
+                        <Anchor component={Link} to={`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>
                           {d.department}
                         </Anchor>
                       </Table.Td>

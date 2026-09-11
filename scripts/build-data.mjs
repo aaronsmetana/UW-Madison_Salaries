@@ -259,6 +259,10 @@ async function main() {
       const hourly = prepareSheet(res.rows, personOf);
 
       const salaries = [];
+      // Actual pay summed per person — the population the app's medians describe (see peopleSql in
+      // src/lib/queries.ts). `salaries` stays per appointment row: it feeds the data-health page,
+      // which reports on the source's rows.
+      const payByPerson = new Map();
       const people = new Set();
       const paidPeople = new Set(); // people with ≥1 positive-salary appointment = the employee headcount
       let zeroNull = 0;
@@ -269,7 +273,11 @@ async function main() {
         // Median/min/max are on ACTUAL pay (FTE-adjusted) — matches what the app shows; "paid" is still
         // gated on a positive full-time salary.
         if (row.salary == null || row.salary === 0) zeroNull++;
-        else { salaries.push(actualPay(row)); paidPeople.add(pkey); }
+        else {
+          salaries.push(actualPay(row));
+          paidPeople.add(pkey);
+          payByPerson.set(pkey, (payByPerson.get(pkey) ?? 0) + actualPay(row));
+        }
         people.add(pkey);
         allRows.push({
           snapshot_id: id,
@@ -287,6 +295,7 @@ async function main() {
       }
 
       const med = median(salaries);
+      const medPeople = median([...payByPerson.values()].filter((v) => v > 0));
       const min = salaries.length ? Math.min(...salaries) : null;
       const max = salaries.length ? Math.max(...salaries) : null;
       if (max != null && max > 5_000_000) messages.push(`max salary ${max} looks implausible`);
@@ -305,6 +314,7 @@ async function main() {
         zero_or_null_salary: zeroNull,
         salary_min: min,
         salary_median: med,
+        salary_median_people: medPeople,
         salary_max: max,
         detected_mapping: res.detectedHeaders,
         unmapped_headers: res.unmapped,
@@ -452,8 +462,10 @@ async function main() {
     generated_at: new Date().toISOString(),
     total_rows: allRows.length,
     snapshot_count: dataSnaps.length,
-    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, median: s.salary_median })),
-    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median } : null,
+    // `median` is over PEOPLE (their summed actual pay), matching the headcount beside it and every
+    // median in the app; `median_rows` keeps the per-appointment figure the source's rows give.
+    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, median: s.salary_median_people, median_rows: s.salary_median })),
+    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median_people, median_rows: latest.salary_median } : null,
   }, null, 2));
 
   // pay-band reference (grade → range) + freshness status
