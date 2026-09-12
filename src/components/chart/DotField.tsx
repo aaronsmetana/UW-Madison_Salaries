@@ -1,8 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { layoutDots } from '../../lib/dotLayout';
 import {
-  AIR_BEFORE_REST, CLICK_CAP, RING_ALPHA, RING_REACH, WAVE_MS,
-  burstKick, burstSizes, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
+  AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, WAVE_MS,
+  burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
 } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
 import { bead, beadInk, type Bead, type BeadInk } from '../../lib/dotSprites';
@@ -27,8 +27,11 @@ const TONES = 8;
 const DEPTH_TONES = 5;
 /** A dot's state of motion: at rest; in flight (a soloed group's dot falling to its place, or raining
  *  back in and bouncing into it); leaving through the floor; gone (a group soloed away); or bursting —
- *  thrown aside by a click or a drag, on the spring home. */
+ *  thrown aside by a click or a drag, or rocked by a ripple, on a spring home. */
 const REST = 0, FLYING = 1, LEAVING = 2, GONE = 3, BURST = 4;
+/** Which spring holds a bursting dot: a burst's, or a ripple's (lib/dotPhysics). */
+const THROWN = 0, RIPPLED = 1;
+const springOf = (kind: number) => (kind === RIPPLED ? RIPPLE_SPRING : BURST_SPRING);
 /** Scratch for the spring and the kicks: one frame's dots are worked one at a time. */
 const pose: Pose = { ox: 0, oy: 0, vx: 0, vy: 0 };
 const speed2 = { vx: 0, vy: 0 };
@@ -241,9 +244,11 @@ export const DotField = forwardRef<DotFieldHandle, {
     vel: null as Float32Array | null,
     mode: null as Uint8Array | null,
     /** A bursting dot's motion: when it last changed (a kick arriving), where it was and how fast it went
-     *  then, and when it will be home (lib/dotPhysics `springPose`) — and a kick on its way, the
-     *  shockwave's front not there yet: when it arrives, its speed, and its cap. */
+     *  then, which spring holds it, and when it will be home (lib/dotPhysics `springPose`) — and a kick on
+     *  its way, the shockwave's front not there yet: when it arrives, its speed, its cap and its spring. */
     t0: null as Float64Array | null,
+    sk: null as Uint8Array | null,
+    pk: null as Uint8Array | null,
     bx: null as Float32Array | null,
     by: null as Float32Array | null,
     bvx: null as Float32Array | null,
@@ -257,8 +262,9 @@ export const DotField = forwardRef<DotFieldHandle, {
      *  drawn into it may belong. */
     slack: 0,
     slackLast: 0,
-    /** The shockwaves' rings: where each click was, when, and its burst's reach; and their ink. */
-    rings: [] as { x: number; y: number; t: number; reach: number }[],
+    /** The shockwaves: where each click was, when, its burst's reach, and how far its rings run (the
+     *  plot's furthest corner from it); and their ink. */
+    rings: [] as { x: number; y: number; t: number; reach: number; far: number }[],
     ringInk: '',
     /** The x-range of the dots in flight or leaving, and how many. */
     flyLo: Infinity,
@@ -322,10 +328,11 @@ export const DotField = forwardRef<DotFieldHandle, {
   const xOf = (i: number) => layout!.pts[2 * i] + (live.current.offX ? live.current.offX[i] : 0);
   const xOfRef = useRef(xOf);
   xOfRef.current = xOf;
-  // Whether it is in the air: thrown, and not yet within AIR_EPS of its place.
+  // Whether it is in the air: thrown by a burst (not rocked by a ripple), and not yet within AIR_EPS of
+  // its place.
   const inAir = (i: number, now: number) => {
     const L = live.current;
-    return !!L.mode && L.mode[i] === BURST && now < L.restAt![i] - AIR_BEFORE_REST;
+    return !!L.mode && L.mode[i] === BURST && L.sk![i] === THROWN && now < L.restAt![i] - AIR_BEFORE_REST;
   };
   const inAirRef = useRef(inAir);
   inAirRef.current = inAir;
@@ -417,18 +424,21 @@ export const DotField = forwardRef<DotFieldHandle, {
         }
       }
     }
-    // The shockwaves' rings, over the dots: each grows from its click and fades as it goes.
+    // The shockwaves, over the dots: each click's front and its echoes, a ripple's period behind, running
+    // out across the plot and fading as they go (lib/dotPhysics `ringAlpha`).
     if (L.rings.length && L.ringInk) {
       ctx.lineWidth = 1.5 * dpr;
       ctx.strokeStyle = L.ringInk;
       for (const g of L.rings) {
-        const rad = ((now - g.t) / WAVE_MS) * g.reach;
-        const fade = 1 - rad / (RING_REACH * g.reach);
-        if (!(rad > 0) || fade <= 0) continue;
-        ctx.globalAlpha = RING_ALPHA * fade;
-        ctx.beginPath();
-        ctx.arc(g.x * dpr, g.y * dpr, rad * dpr, 0, Math.PI * 2);
-        ctx.stroke();
+        for (let k = 0; k < RING_ECHOES; k++) {
+          const rad = ((now - g.t - k * RIPPLE_PERIOD) / WAVE_MS) * g.reach;
+          const a = ringAlpha(rad, k, g.reach, g.far);
+          if (a <= 0) continue;
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.arc(g.x * dpr, g.y * dpr, rad * dpr, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
     }
     ctx.restore();
@@ -497,22 +507,24 @@ export const DotField = forwardRef<DotFieldHandle, {
       if (L.rings.length && L.ringInk) {
         ctx.strokeStyle = L.ringInk;
         for (const g of L.rings) {
-          const rad = ((now - g.t) / WAVE_MS) * g.reach;
-          const fade = 1 - rad / (RING_REACH * g.reach);
           const gx = g.x + ox, gy = g.y + oy;
           const d = Math.hypot(gx - cx, gy - cy);
-          if (!(rad > 0) || fade <= 0 || d > R + rad || d < rad - R) continue;
-          ctx.globalAlpha = RING_ALPHA * fade;
-          ctx.beginPath();
-          let most = 1;
-          for (let n = 0; n <= 96; n++) {
-            const a = (n / 96) * Math.PI * 2;
-            const m = map(gx + rad * Math.cos(a), gy + rad * Math.sin(a));
-            if (n) ctx.lineTo(m.x * dpr, m.y * dpr); else ctx.moveTo(m.x * dpr, m.y * dpr);
-            if (m.scale > most) most = m.scale;
+          for (let k = 0; k < RING_ECHOES; k++) {
+            const rad = ((now - g.t - k * RIPPLE_PERIOD) / WAVE_MS) * g.reach;
+            const al = ringAlpha(rad, k, g.reach, g.far);
+            if (al <= 0 || d > R + rad || d < rad - R) continue;
+            ctx.globalAlpha = al;
+            ctx.beginPath();
+            let most = 1;
+            for (let n = 0; n <= 96; n++) {
+              const a = (n / 96) * Math.PI * 2;
+              const m = map(gx + rad * Math.cos(a), gy + rad * Math.sin(a));
+              if (n) ctx.lineTo(m.x * dpr, m.y * dpr); else ctx.moveTo(m.x * dpr, m.y * dpr);
+              if (m.scale > most) most = m.scale;
+            }
+            ctx.lineWidth = 1.5 * dpr * Math.min(2, most);
+            ctx.stroke();
           }
-          ctx.lineWidth = 1.5 * dpr * Math.min(2, most);
-          ctx.stroke();
         }
       }
       ctx.restore();
@@ -527,36 +539,50 @@ export const DotField = forwardRef<DotFieldHandle, {
       const speed = stir ? size.stirSpeed : size.speed;
       const cap = stir ? size.stirSpeed : CLICK_CAP * size.speed;
       const { order, sortedX, pts } = lay;
-      const j0 = lowerBound(sortedX, x - reach - L.slack);
-      const j1 = lowerBound(sortedX, x + reach + L.slack);
+      // A click's ripple runs across the whole field; a stir's burst is all there is of it.
+      const j0 = stir ? lowerBound(sortedX, x - reach - L.slack) : 0;
+      const j1 = stir ? lowerBound(sortedX, x + reach + L.slack) : order.length;
       let any = false;
       for (let j = j0; j < j1; j++) {
         const i = order[j];
         const m = L.mode[i];
         // A dot leaving, gone, or still falling into its place after a solo is not thrown.
         if (m !== REST && m !== BURST) continue;
-        if (!burstKick(xOfRef.current(i) - x, yOfRef.current(i, now) - y, i, reach, speed, stir ? 0 : WAVE_MS, kickAt)) continue;
+        const dx = xOfRef.current(i) - x, dy = yOfRef.current(i, now) - y;
+        let kind = THROWN;
+        let most = cap;
+        if (!burstKick(dx, dy, i, reach, speed, stir ? 0 : WAVE_MS, kickAt)) {
+          if (stir || !rippleKick(dx, dy, reach, size.ripple, WAVE_MS, kickAt)) continue;
+          // A ripple never sends a dot faster than it sends it, or than it already goes.
+          kind = RIPPLED;
+          most = Math.hypot(kickAt.vx, kickAt.vy);
+        }
         if (m === REST) {
           L.mode[i] = BURST;
           L.t0[i] = now;
           L.bx![i] = 0; L.by![i] = 0; L.bvx![i] = 0; L.bvy![i] = 0;
           L.restAt![i] = now;
         }
-        // A kick on its way when another comes: the earlier moment, the two added.
+        // A kick on its way when another comes: the earlier moment, the two added, a burst's spring over
+        // a ripple's.
         const due = now + kickAt.delay;
         if (L.pendT[i] === Infinity) {
-          L.pendT[i] = due; L.pkx![i] = kickAt.vx; L.pky![i] = kickAt.vy; L.pcap![i] = cap;
+          L.pendT[i] = due; L.pkx![i] = kickAt.vx; L.pky![i] = kickAt.vy; L.pcap![i] = most; L.pk![i] = kind;
         } else {
           L.pendT[i] = Math.min(L.pendT[i], due);
           L.pkx![i] += kickAt.vx; L.pky![i] += kickAt.vy;
-          L.pcap![i] = Math.max(L.pcap![i], cap);
+          L.pcap![i] = Math.max(L.pcap![i], most);
+          L.pk![i] = Math.min(L.pk![i], kind);
         }
         const hx = pts[2 * i];
         if (hx < L.flyLo) L.flyLo = hx;
         if (hx > L.flyHi) L.flyHi = hx;
         any = true;
       }
-      if (!stir) L.rings.push({ x, y, t: now, reach });
+      if (!stir) {
+        const far = Math.max(Math.hypot(x, y), Math.hypot(lay.width - x, y), Math.hypot(x, height - y), Math.hypot(lay.width - x, height - y));
+        L.rings.push({ x, y, t: now, reach, far });
+      }
       else if (!any) return false;
       if (any) L.flying = Math.max(1, L.flying);
       if (boxRef.current) boxRef.current.dataset.flight = 'moving';
@@ -566,18 +592,21 @@ export const DotField = forwardRef<DotFieldHandle, {
   }), [layout, values, kinds, airKinds, glow, height]);
 
   // A kick whose shockwave has arrived: where the dot is on its spring at that moment, plus the kick
-  // (capped: lib/dotPhysics `thrown`), starts its motion home again from there.
+  // (capped: lib/dotPhysics `thrown`), starts its motion home again from there — on the kick's spring,
+  // or a burst's if a burst still holds it.
   const rebase = (i: number) => {
     const L = live.current;
     const t = L.pendT![i];
-    springPose(L.bx![i], L.by![i], L.bvx![i], L.bvy![i], t - L.t0![i], pose);
+    springPose(springOf(L.sk![i]), L.bx![i], L.by![i], L.bvx![i], L.bvy![i], t - L.t0![i], pose);
     thrown(pose.vx, pose.vy, L.pkx![i], L.pky![i], L.pcap![i], speed2);
+    const kind = L.restAt![i] > t ? Math.min(L.sk![i], L.pk![i]) : L.pk![i];
+    L.sk![i] = kind;
     L.bx![i] = pose.ox;
     L.by![i] = pose.oy;
     L.bvx![i] = speed2.vx;
     L.bvy![i] = speed2.vy;
     L.t0![i] = t;
-    L.restAt![i] = t + springRestAfter(pose.ox, pose.oy, speed2.vx, speed2.vy);
+    L.restAt![i] = t + springRestAfter(springOf(kind), pose.ox, pose.oy, speed2.vx, speed2.vy);
     L.pendT![i] = Infinity;
     L.pkx![i] = 0;
     L.pky![i] = 0;
@@ -630,11 +659,17 @@ export const DotField = forwardRef<DotFieldHandle, {
           if (lay.pts[2 * i + 1] + st.o - lay.r > height) { L.mode[i] = GONE; L.off[i] = 0; L.vel[i] = 0; continue; }
         } else if (m === BURST) {
           if (L.pendT[i] <= now) rebase(i);
-          if (L.pendT[i] === Infinity && L.restAt[i] <= now) { L.mode[i] = REST; L.off[i] = 0; L.offX[i] = 0; continue; }
-          springPose(L.bx![i], L.by![i], L.bvx![i], L.bvy![i], now - L.t0[i], pose);
-          L.offX[i] = pose.ox;
-          L.off[i] = pose.oy;
-          if (Math.abs(pose.ox) > slackNow) slackNow = Math.abs(pose.ox);
+          if (L.restAt[i] <= now) {
+            // Home: at rest, or waiting at its place for the front on its way.
+            L.off[i] = 0;
+            L.offX[i] = 0;
+            if (L.pendT[i] === Infinity) { L.mode[i] = REST; continue; }
+          } else {
+            springPose(springOf(L.sk![i]), L.bx![i], L.by![i], L.bvx![i], L.bvy![i], now - L.t0[i], pose);
+            L.offX[i] = pose.ox;
+            L.off[i] = pose.oy;
+            if (Math.abs(pose.ox) > slackNow) slackNow = Math.abs(pose.ox);
+          }
         } else continue;
         count++;
         const x = lay.pts[2 * i];
@@ -653,15 +688,16 @@ export const DotField = forwardRef<DotFieldHandle, {
     }
     // A strip is repainted as far out as a dot drawn into it can be from its place, this frame or last.
     L.slack = Math.max(L.slackLast, slackNow);
-    // The shockwaves' rings: each one's strip repainted until it has faded, and once more to erase it.
+    // The shockwaves: each one's strip, as far as its front has run, repainted until its last echo is off
+    // the plot, and once more to erase it.
     if (L.rings.length) {
       flightFrame = true;
       for (const g of L.rings) {
-        const e = RING_REACH * g.reach + 2;
+        const e = Math.min(g.far, ((now - g.t) / WAVE_MS) * g.reach) + 2;
         if (g.x - e < sx0) sx0 = g.x - e;
         if (g.x + e > sx1) sx1 = g.x + e;
       }
-      L.rings = L.rings.filter((g) => now - g.t < RING_REACH * WAVE_MS);
+      L.rings = L.rings.filter((g) => ((now - g.t - (RING_ECHOES - 1) * RIPPLE_PERIOD) / WAVE_MS) * g.reach < g.far);
       if (L.rings.length) moving = true;
     }
     if (!full && sx1 >= sx0) {
@@ -773,6 +809,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.mode = mode;
     L.offX = new Float32Array(n);
     L.t0 = new Float64Array(n);
+    L.sk = new Uint8Array(n);
+    L.pk = new Uint8Array(n);
     L.bx = new Float32Array(n);
     L.by = new Float32Array(n);
     L.bvx = new Float32Array(n);

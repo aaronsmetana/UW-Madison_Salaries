@@ -7,6 +7,8 @@
 
 /** Magnification at the centre is FISHEYE_K + 1. */
 export const FISHEYE_K = 3;
+/** The landing chart's glass: its diameter, CSS px. */
+export const LENS_D = 140;
 
 /**
  * Where a point `dx, dy` from the centre is drawn inside a glass of radius `R`, and how much bigger a

@@ -1,9 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { fisheye } from '../../lib/fisheye';
+import { fisheye, LENS_D } from '../../lib/fisheye';
 import type { LensMap } from './DotField';
 
-/** The glass's diameter, CSS px. */
-export const LENS_D = 140;
+export { LENS_D };
 
 export interface FisheyeLensHandle {
   /** Draw again on the next frame: what is under the glass has moved. */

@@ -355,30 +355,91 @@ test('a click bursts a hole you can see behind a shockwave, and every dot comes 
   const x = c.width * 0.27, y = c.height * 0.72;
   const rest = await picture(page);
   expect(await inkShare(page, x, y, 20), 'the click is in the densest part of the field').toBeGreaterThan(0.9);
+  for (const side of [-1, 1]) expect(await inkShare(page, x + side * 76, y, 4), 'the field is dense round the glass').toBeGreaterThan(0.6);
   await clickAway(page, c, x, y);
   await page.clock.runFor(16);
   expect(await inkShare(page, x, y, 20), 'the shockwave reached the square with the click').toBeGreaterThan(0.6);
   await page.clock.runFor(112);
   expect(await inkShare(page, x, y, 20), 'no hole opened round the click').toBeLessThan(0.15);
+  // The hole reaches past the glass that sits on the click: round its rim (LENS_D / 2 = 70px) the dots
+  // are gone too, left and right of the click, where the field was dense.
+  for (const side of [-1, 1]) expect(await inkShare(page, x + side * 76, y, 4), `no hole past the glass's rim (${side < 0 ? 'left' : 'right'})`).toBeLessThan(0.15);
   await expect(dots).toHaveAttribute('data-flight', 'moving');
-  await page.clock.runFor(1372);
+  // The burst and its ripple, which runs out to the plot's far corner and rocks the dots there.
+  await page.clock.runFor(2372);
   await expect(dots).toHaveAttribute('data-flight', 'idle');
   expect((await picture(page)) === rest, 'the dots did not all come back to exactly their places').toBe(true);
 });
 
-test("the shockwave's ring runs out from a click and fades, even where there is nothing to throw", async ({ page }) => {
+test("the shockwave's rings run out across the whole plot and fade, even where there is nothing to throw", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await frozenHome(page);
   const c = await canvasBox(page);
-  // High over the tail, where the field is empty: only the ring can draw here.
+  // High over the tail, where the field is empty: only the rings draw here, 45px above the click, and
+  // 500px to its left, past the burst.
   const x = c.width * 0.62, y = c.height * 0.4;
-  const column = () => inkShare(page, x, y - 45, 12);
-  expect(await column(), 'the field is empty above the click').toBe(0);
+  const near = () => inkShare(page, x, y - 45, 12);
+  const far = () => inkShare(page, x - 500, y, 12);
+  expect(await near(), 'the field is empty above the click').toBe(0);
+  expect(await far(), 'the field is empty left of the click').toBe(0);
   await clickAway(page, c, x, y);
-  await page.clock.runFor(76);
-  expect(await column(), 'no ring passed 45px above the click at +76ms').toBeGreaterThan(0);
-  await page.clock.runFor(224);
-  expect(await column(), 'the ring was still drawn at +300ms').toBe(0);
+  await page.clock.runFor(48);
+  expect(await near(), 'no ring passed 45px above the click at +48ms').toBeGreaterThan(0);
+  await page.clock.runFor(252);
+  expect(await near(), 'a ring was still drawn there at +300ms').toBe(0);
+  // The front reaches 500px at about 536ms, and its first echo a ripple's period (184ms) later.
+  await page.clock.runFor(236);
+  expect(await far(), 'the front never reached 500px out').toBeGreaterThan(0);
+  await page.clock.runFor(184);
+  expect(await far(), 'no echo followed the front').toBeGreaterThan(0);
+  await page.clock.runFor(1500);
+  expect(await far(), 'a ring was still drawn at +2s').toBe(0);
+});
+
+test('past the burst the dots ripple: each rocks outward as the front passes, back past its place, and rests', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  const x = c.width * 0.3, y = c.height * 0.72;
+  // A window 420px right of the click — three times the burst's reach — over the stacks at the foot of
+  // the plot (above them only the rings draw). Its ink summed down each column.
+  const D = 420;
+  const profile = () => page.locator('.hero-dots canvas').first().evaluate((cv: HTMLCanvasElement, a) => {
+    const k = cv.width / cv.clientWidth;
+    const x0 = Math.round((a.x - 30) * k), w = Math.round(60 * k), y0 = Math.round(cv.height * 0.55);
+    const d = cv.getContext('2d')!.getImageData(x0, y0, w, cv.height - y0).data;
+    const col = new Array<number>(w).fill(0);
+    for (let i = 0; i < d.length; i += 4) col[(i / 4) % w] += d[i + 3];
+    return col;
+  }, { x: x + D });
+  // How far the window's dots sit from their places, px (outward, from the click, is +): the shift that
+  // best lays the middle half of the window back over its resting profile.
+  const shift = (rest: number[], now: number[]) => {
+    const w = rest.length, q = Math.floor(w / 4);
+    let best = 0, err = Infinity;
+    for (let s = -q; s <= q; s++) {
+      let e = 0;
+      for (let j = q; j < w - q; j++) e += (now[j] - rest[j - s]) ** 2;
+      if (e < err) { err = e; best = s; }
+    }
+    return best;
+  };
+  const rest = await profile();
+  const picked = await picture(page);
+  await clickAway(page, c, x, y);
+  // The front reaches 420px at about 450ms: before it, nothing there has moved.
+  await page.clock.runFor(384);
+  expect(Math.abs(shift(rest, await profile())), 'the dots moved before the front reached them').toBeLessThanOrEqual(1);
+  // Just past it, they swing out — about 11px at three reaches — ...
+  await page.clock.runFor(112);
+  const out = shift(rest, await profile());
+  expect(out, 'the dots past the burst did not swing out as the front passed').toBeGreaterThanOrEqual(5);
+  // ... and half a period on they are back past their places: a ripple, not a single push.
+  await page.clock.runFor(96);
+  expect(shift(rest, await profile()), 'the dots never swung back past their places').toBeLessThanOrEqual(-2);
+  await page.clock.runFor(2000);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
+  expect((await picture(page)) === picked, 'the rippled dots did not all come back to their places').toBe(true);
 });
 
 test('in the All view a dot in the air wears its employment type, and turns back as it lands', async ({ page }) => {
@@ -418,7 +479,7 @@ test('in the All view a dot in the air wears its employment type, and turns back
   await clickAway(page, c, x, y);
   await page.clock.runFor(128);
   expect(await offHue(), "no dot in the air wore its employment type's colour").toBeGreaterThan(0.05);
-  await page.clock.runFor(1372);
+  await page.clock.runFor(2372);
   expect((await picture(page)) === rest, 'the dots did not land back in the one ink').toBe(true);
 });
 
@@ -455,9 +516,10 @@ for (const scheme of ['light', 'dark'] as const) {
     const page = await ctx.newPage();
     await frozenHome(page);
     const c = await canvasBox(page);
-    const x = c.width * 0.5, y = c.height * 0.78;
-    // Past the burst's reach and inside the strip its ring keeps repainting: no dot here moves.
-    const band = () => meanInk(page, x + 94, 0, 10, c.height);
+    const x = c.width * 0.2, y = c.height * 0.78;
+    // 450px from the click: the front has not reached it at +128ms, so no dot here has moved, but the
+    // ripple spans the whole field, which is repainted — in squares — every frame.
+    const band = () => meanInk(page, x + 450, 0, 10, c.height);
     const rest = await band();
     await clickAway(page, c, x, y);
     await page.clock.runFor(128);
@@ -493,15 +555,18 @@ test('a drag with the button held stirs the dots along its path, and they close 
   const rest = await picture(page);
   const farRest = await inkShare(page, far, y, 8);
   expect(await inkShare(page, x1, y, 8), "the drag ends in a dense part of the field").toBeGreaterThan(0.6);
-  await page.mouse.move(c.x + x0, c.y + y);
+  // Pressed on the panel just left of the plot and drawn in: a stir alone (a press on the plot bursts,
+  // and its ripple would rock the dots measured here).
+  await page.mouse.move(c.x - 8, c.y + y);
   await page.mouse.down();
+  await page.mouse.move(c.x + x0, c.y + y);
+  await page.clock.runFor(16);
   for (let x = x0 + 16; ; x += 16) {
     await page.mouse.move(c.x + Math.min(x, x1), c.y + y);
     await page.clock.runFor(16);
     if (x >= x1) break;
   }
   await page.clock.runFor(96);
-  // The drag's end is 220px from the press: past a click's reach, so only the stir can open it.
   expect(await inkShare(page, x1, y, 8), 'the dots at the end of the drag did not part').toBeLessThan(0.4);
   expect(await inkShare(page, far, y, 8), 'dots far from the drag moved').toBe(farRest);
   await page.mouse.up();
@@ -652,22 +717,25 @@ test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; th
   await page.evaluate(() => performance.clearMeasures());
   await page.mouse.click(plot.x + plot.width * 0.27, plot.y + plot.height * 0.72);
   await expect(dots).toHaveAttribute('data-flight', 'moving');
-  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
   const burst = await median();
   expect(burst.n, 'the burst moved no dots').toBeGreaterThan(10);
   expect(burst.median, 'a burst frame, ms').toBeLessThan(8);
-  // A long drag, by the clock: across half the field in about a second.
+  // A stir, by the clock: 200px through the densest part in 0.8s, pressed just off the plot, so it is a
+  // stir alone and repainted in strips — narrower than a third of the field, which is repainted whole.
+  // (A press on the plot bursts, and its ripple repaints the whole field, which the burst above timed.)
   await page.evaluate(() => performance.clearMeasures());
   const y = plot.y + plot.height * 0.72, x0 = plot.x + plot.width * 0.15;
-  await page.mouse.move(x0, y);
+  await page.mouse.move(plot.x - 8, y);
   await page.mouse.down();
+  await page.mouse.move(x0, y);
   const t0 = Date.now();
-  for (let t = 0; t < 1000; t = Date.now() - t0) {
-    await page.mouse.move(x0 + 0.55 * t, y);
+  for (let t = 0; t < 800; t = Date.now() - t0) {
+    await page.mouse.move(x0 + 0.25 * t, y);
     await page.waitForTimeout(16);
   }
   await page.mouse.up();
-  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 4000 });
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
   const drag = await median();
   expect(drag.n, 'the drag moved no dots').toBeGreaterThan(20);
   expect(drag.median, 'a drag frame, ms').toBeLessThan(8);
@@ -795,23 +863,22 @@ test('soloing a category leaves exactly its people, and the readout counts them;
   await still.close();
 });
 
-test('once still again, the field is the picture it was before a drag and a burst', async ({ browser }) => {
+test('once still again, the field is the picture it was before a stir', async ({ browser }) => {
   // While dots move, what they cross is drawn in squares; once all is still it is drawn in beads again.
+  // A stir alone repaints in strips, which only the bead repaint of what they crossed puts back (a
+  // click's ripple spans the field, which is repainted whole: the burst tests cover that).
   const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await settledHome(page);
   const before = await picture(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
-  // A drag short enough to repaint as strips, which only the bead repaint of what they crossed puts
-  // back: across a third of the field or more, the field is repainted whole.
-  await page.mouse.move(plot.x + plot.width * 0.2, plot.y + plot.height * 0.8);
+  await page.mouse.move(plot.x - 8, plot.y + plot.height * 0.8);
   await page.mouse.down();
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 0; i <= 12; i++) {
     await page.mouse.move(plot.x + plot.width * (0.2 + (0.1 * i) / 12), plot.y + plot.height * 0.8);
     await page.waitForTimeout(12);
   }
   await page.mouse.up();
-  await page.mouse.click(plot.x + plot.width * 0.3, plot.y + plot.height * 0.7);
   await page.mouse.move(plot.x + plot.width * 0.5, plot.y - 200);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
   await expect.poll(async () => (await picture(page)) === before, { message: 'the field did not come back to its picture' }).toBe(true);
