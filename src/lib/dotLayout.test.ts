@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutDots, paysFromCounts, peopleFromCounts, seeded, wakeOffset, WAKE_LIFT, WAKE_REACH } from './dotLayout';
+import { layoutDots, paysFromCounts, peopleFromCounts, seeded, wakeOffset, WAKE_FULL_SPEED, WAKE_LIFT, WAKE_REACH } from './dotLayout';
 
 const curve = (x: number) => 60 * Math.exp(-(((x - 300) / 120) ** 2)) + 4;
 
@@ -111,7 +111,13 @@ describe('wakeOffset', () => {
     const near = wakeOffset({ dx: 2, dy: 3, speed: 2, room });
     const far = wakeOffset({ dx: 20, dy: 3, speed: 2, room });
     expect(near).toBeGreaterThan(far);
-    expect(wakeOffset({ dx: 2, dy: 3, speed: 0.3, room })).toBeLessThan(near);
+    expect(wakeOffset({ dx: 2, dy: 3, speed: WAKE_FULL_SPEED / 2, room })).toBeLessThan(near);
+  });
+  it('parts the dots by enough to see at an ordinary hover, not only at a flick', () => {
+    // 250 px/s: the dots either side of the pointer move 10px or more each way. At 8px of lift and full
+    // strength only at 1,200 px/s, they moved about 2px — a hairline in a field this dense.
+    expect(wakeOffset({ dx: 0, dy: -1, speed: 0.25, room })).toBeLessThanOrEqual(-10);
+    expect(wakeOffset({ dx: 0, dy: 1, speed: 0.25, room })).toBeGreaterThanOrEqual(10);
   });
   it('never takes a dot out of the curve or through the baseline', () => {
     expect(wakeOffset({ dx: 0, dy: -1, speed: 5, room: { up: 1.5, down: 50 } })).toBe(-1.5);

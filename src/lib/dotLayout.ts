@@ -118,11 +118,13 @@ export function peopleFromCounts(
 }
 
 /** How far the pointer's wake reaches either side, how far up or down it can move a dot, the vertical
- *  reach, and the pointer speed (CSS px per ms) at which it is at full strength. */
-export const WAKE_REACH = 28;
-export const WAKE_LIFT = 8;
-export const WAKE_REACH_Y = 44;
-export const WAKE_FULL_SPEED = 1.2;
+ *  reach, and the pointer speed (CSS px per ms) at which it is at full strength. Sized to be seen: at
+ *  8px of lift and full strength only at 1.2px/ms (a flick), an ordinary hover moved the dots under
+ *  the pointer about 2px, which in a field this dense opened a hairline and nothing more. */
+export const WAKE_REACH = 40;
+export const WAKE_LIFT = 16;
+export const WAKE_REACH_Y = 64;
+export const WAKE_FULL_SPEED = 0.25;
 
 /**
  * A dot's vertical offset in a moving pointer's wake: away from the pointer — up for a dot above it,

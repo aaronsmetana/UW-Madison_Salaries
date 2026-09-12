@@ -230,6 +230,23 @@ test('the wake follows a moving mouse in frames under 8ms, and settles once it s
   await ctx.close();
 });
 
+test('an ordinary hover parts the dots by enough to see', async ({ browser }) => {
+  // About 250 px/s, less for the round trips: the wake's parting has to show at the pace people point,
+  // not only at a flick. It once peaked at 2px there, a hairline nobody saw.
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const y = plot.y + plot.height * 0.6;
+  for (let i = 0; i <= 40; i++) {
+    await page.mouse.move(plot.x + plot.width * 0.15 + 4 * i, y);
+    await page.waitForTimeout(16);
+  }
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 1000 });
+  expect(Number(await page.locator('.hero-dots').getAttribute('data-wake-peak')), 'the widest the dots parted, in px').toBeGreaterThanOrEqual(8);
+  await ctx.close();
+});
+
 test('no wake under reduced motion, or for a finger', async ({ browser }) => {
   const still = await browser.newContext({ reducedMotion: 'reduce' });
   const p = await still.newPage();

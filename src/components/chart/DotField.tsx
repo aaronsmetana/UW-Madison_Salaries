@@ -22,10 +22,10 @@ const DOT_ALPHA = 0.85;
 /** A highlighted dot's ink: its own, moved toward black (light page) or white (dark page) until it
  *  stands this far apart from it (lib/inkMix). */
 export const STRONG_APART = 1.5;
-/** The wake's spring, per ms: a little under critical damping, so a dot overshoots slightly on its way
- *  back — the entrance's bounce — and is still within about 300ms. */
-const WAKE_OMEGA = 0.018;
-const WAKE_ZETA = 0.7;
+/** The wake's spring, per ms: under critical damping, so a dot overshoots a little on its way back —
+ *  the entrance's bounce — and is still within about 400ms. */
+const WAKE_OMEGA = 0.024;
+const WAKE_ZETA = 0.6;
 /** Once the pointer stops, its speed dies away with this time constant (ms). */
 const SPEED_TAU = 70;
 
@@ -187,6 +187,7 @@ export function DotField({
     wakeVel: null as Float32Array | null,
     wakeLo: Infinity,
     wakeHi: -Infinity,
+    wakePeak: 0,
     px: 0, py: 0, speed: 0, lastMove: 0, lastTick: 0, pointer: false,
     raf: 0,
     ink: [] as string[],
@@ -289,7 +290,7 @@ export function DotField({
     if (L.wakeOff && L.wakeVel) {
       const dt = Math.min(32, Math.max(1, now - (L.lastTick || now - 16)));
       if (now - L.lastMove > 20) L.speed *= Math.exp(-dt / SPEED_TAU);
-      if (L.speed < 0.005) L.speed = 0;
+      if (L.speed < 0.02) L.speed = 0;
       const reach = WAKE_REACH + 1;
       let lo = L.wakeLo, hi = L.wakeHi;
       if (L.pointer && L.speed > 0) { lo = Math.min(lo, L.px - reach); hi = Math.max(hi, L.px + reach); }
@@ -310,9 +311,10 @@ export function DotField({
           // Never out of the curve or through the baseline, even mid-bounce.
           if (o < -room.up) { o = -room.up; v = 0; }
           if (o > room.down) { o = room.down; v = 0; }
-          if (Math.abs(o) < 0.01 && Math.abs(v) < 0.0005 && target === 0) { o = 0; v = 0; }
+          if (Math.abs(o) < 0.05 && Math.abs(v) < 0.002 && target === 0) { o = 0; v = 0; }
           L.wakeOff[i] = o;
           L.wakeVel[i] = v;
+          if (Math.abs(o) > L.wakePeak) L.wakePeak = Math.abs(o);
           if (o !== 0 || v !== 0) { if (x < wakeLo) wakeLo = x; if (x > wakeHi) wakeHi = x; }
         }
         // Repaint where anything moved this frame: what was active, and the pointer's reach.
@@ -321,7 +323,11 @@ export function DotField({
       L.wakeLo = wakeLo;
       L.wakeHi = wakeHi;
       if (wakeHi >= wakeLo || (L.pointer && L.speed > 0)) moving = true;
-      if (boxRef.current) boxRef.current.dataset.wake = wakeHi >= wakeLo || (L.pointer && L.speed > 0) ? 'moving' : 'idle';
+      if (boxRef.current) {
+        boxRef.current.dataset.wake = wakeHi >= wakeLo || (L.pointer && L.speed > 0) ? 'moving' : 'idle';
+        // How far the last movement parted the dots, at most: what a guard reads to know it can be seen.
+        boxRef.current.dataset.wakePeak = L.wakePeak.toFixed(1);
+      }
     }
     L.lastTick = now;
     if (full) paintRef.current(now);
@@ -420,6 +426,7 @@ export function DotField({
     if (!lensAt) { L.pointer = false; kick(); return; }
     if (prefersReducedMotion() || document.hidden) return;
     const now = performance.now();
+    if (!(L.wakeHi >= L.wakeLo) && !(L.speed > 0)) L.wakePeak = 0;
     if (L.pointer && now > L.lastMove) {
       const inst = Math.hypot(lensAt.x - L.px, lensAt.y - L.py) / Math.max(1, now - L.lastMove);
       L.speed = Math.max(inst, L.speed * 0.6);
