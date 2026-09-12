@@ -189,10 +189,9 @@ for (const code of ['IT040', 'FA020']) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`./paycheck?code=${code}`, { waitUntil: 'networkidle' });
       await page.waitForSelector('.hist-plot', { timeout: 60_000 });
-      // Labels are thinned against a measured container width; let the observer settle.
-      await page.waitForTimeout(1_500);
-
-      const collisions = await page.evaluate(() => {
+      // Labels are thinned against a measured container width, which settles after the plot mounts —
+      // polled rather than slept for: a fixed 1.5s wait was not always enough in a loaded full run.
+      const collisions = () => page.evaluate(() => {
         const plot = document.querySelector('.hist-plot');
         if (!plot) return ['no .hist-plot on the page'];
         const boxes = [...plot.querySelectorAll('*')]
@@ -212,7 +211,7 @@ for (const code of ['IT040', 'FA020']) {
         }
         return hits;
       });
-      expect(collisions, `${code} at ${width}px`).toEqual([]);
+      await expect.poll(collisions, { message: `${code} at ${width}px`, timeout: 10_000 }).toEqual([]);
     });
   }
 }

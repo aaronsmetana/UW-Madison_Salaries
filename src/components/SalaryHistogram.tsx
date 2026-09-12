@@ -113,7 +113,9 @@ export function SalaryHistogram({
   const edges = [...bins.map((b) => b.lo), hi];
   // Keep the first and last — they are the range — and as many evenly-spaced interior edges as fit.
   const shownEdges = (() => {
-    if (plotW <= 0) return edges;
+    // Until the plot is measured, only the two ends: every edge at once overlapped on a phone for the
+    // frames before the width came in, and a screenshot or a loaded test run could catch them.
+    if (plotW <= 0) return edges.length > 2 ? [edges[0], edges[edges.length - 1]] : edges;
     const room = Math.max(2, Math.floor(plotW / EDGE_LABEL_PITCH));
     if (edges.length <= room) return edges;
     const step = Math.ceil((edges.length - 1) / (room - 1));
