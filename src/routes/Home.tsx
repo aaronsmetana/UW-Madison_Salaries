@@ -154,7 +154,7 @@ function Distribution({
   // where it may sit is a question about pixels that changes as the reader moves the pointer.
   const pillRef = useRef<HTMLDivElement>(null);
   const [pillW, setPillW] = useState(0);
-  // Where the pointer is, for a mouse: the magnifying glass sits there, and the wake follows it.
+  // Where the pointer is, for a mouse: the magnifying glass sits there.
   const [lensAt, setLensAt] = useState<{ x: number; y: number } | null>(null);
   // The glass (FisheyeLens) and what it draws from: both fields' dots, and the boxes everything else
   // on the chart is placed in.
@@ -575,7 +575,7 @@ function Distribution({
           ref={mainDotsRef}
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
           kinds={colour ? cats : null} inks={inkList} stack={colour}
-          entrance={entrance} lensAt={lensAt} wake highlight={highlight} glow
+          entrance={entrance} highlight={highlight} glow
           solo={shownSolo} replay={replay}
           onFrame={lensAt ? redrawLens : undefined}
         />

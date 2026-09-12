@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { layoutDots, wakeOffset, WAKE_REACH } from '../../lib/dotLayout';
+import { layoutDots } from '../../lib/dotLayout';
 import { splashKick, stepFall, stepThrough, SPLASH_R } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
 import { bead, type Bead } from '../../lib/dotSprites';
@@ -22,14 +22,8 @@ export const STRONG_APART = 1.5;
  *  of the range is the per-dot jitter. */
 const TONES = 8;
 const DEPTH_TONES = 5;
-/** The wake's spring, per ms: under critical damping, so a dot overshoots a little on its way back —
- *  the entrance's bounce — and is still within about 400ms. */
-const WAKE_OMEGA = 0.024;
-const WAKE_ZETA = 0.6;
-/** Once the pointer stops, its speed dies away with this time constant (ms). */
-const SPEED_TAU = 70;
-/** A dot's state of motion: at rest (or on the wake's spring), in flight (thrown by a splash, or
- *  raining in, bouncing into its place), leaving through the floor, or gone (a group soloed away). */
+/** A dot's state of motion: at rest, in flight (thrown by a splash, or raining in, bouncing into its
+ *  place), leaving through the floor, or gone (a group soloed away). */
 const REST = 0, FLYING = 1, LEAVING = 2, GONE = 3;
 /** How far above the top a dot raining back in may start, px: they arrive over about half a second. */
 const RAIN_SPREAD = 160;
@@ -96,7 +90,8 @@ export interface DotFieldHandle {
  * page loads none.
  *
  * Everything that moves is height only, which means nothing beyond "under the curve": the entrance's
- * fall, a re-stack when `stack` changes, and the pointer's wake. A dot's x is its value, always.
+ * fall, a re-stack when `stack` changes, a splash, and a soloed group's leaving and return. A dot's x is
+ * its value, always.
  */
 export const DotField = forwardRef<DotFieldHandle, {
   /** One per person, in the units `toX` takes. */
@@ -118,11 +113,6 @@ export const DotField = forwardRef<DotFieldHandle, {
   entrance?: boolean;
   /** How long the fall waits to start, ms — a second field lands after the first. */
   delay?: number;
-  /** Where the pointer is, in CSS px within the field, or null for none — for a mouse only, which the
-   *  caller decides. It drives the wake. */
-  lensAt?: { x: number; y: number } | null;
-  /** Part the dots near a moving `lensAt`, up and down, and let them spring back. */
-  wake?: boolean;
   /** Values in [lo, hi) draw in a stronger ink. Nothing else changes. */
   highlight?: readonly [number, number] | null;
   /** Show one kind alone: the others fall through the floor, and it falls to the floor in its own
@@ -135,12 +125,12 @@ export const DotField = forwardRef<DotFieldHandle, {
   /** Called after every paint: a magnifying glass over the field redraws with it. */
   onFrame?: () => void;
   /** The name each animated frame is measured under (`performance.measure`), so a page's fields can
-   *  be told apart; the wake's frames are `wake-frame`. */
+   *  be told apart; a splash's and a solo's frames are `flight-frame`. */
   frameMark?: string;
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, entrance = false, delay = 0,
-  lensAt = null, wake = false, highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -210,19 +200,14 @@ export const DotField = forwardRef<DotFieldHandle, {
     order.sort((a, b) => pts[2 * a] - pts[2 * b]);
     const sortedX = new Float32Array(n);
     for (let j = 0; j < n; j++) sortedX[j] = pts[2 * order[j]];
-    // How far each dot may move up and down and stay inside the curve and above the baseline, and how
-    // high it sits in its stack (0 at the baseline, 1 under the curve), which shades it.
-    const up = new Float32Array(n);
-    const down = new Float32Array(n);
+    // How high each dot sits in its stack (0 at the baseline, 1 under the curve), which shades it.
     const depth = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const y = pts[2 * i + 1];
       const h = heightAt(Math.floor(pts[2 * i]) + 0.5, width);
-      up[i] = Math.max(0, y - r - (height - h));
-      down[i] = Math.max(0, height - r - y);
       depth[i] = Math.min(1, Math.max(0, (height - r - y) / Math.max(1e-6, h - 2 * r)));
     }
-    return { pts, r, order, sortedX, up, down, depth, width };
+    return { pts, r, order, sortedX, depth, width };
   }, [width, values, toX, heightAt, height, rIn, stackKey]);
 
   // Everything the animation loop and the painter read, kept current without re-running effects.
@@ -230,8 +215,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     entranceStart: null as number | null,
     restackStart: null as number | null,
     restackFrom: null as Float32Array | null,
-    /** Each dot's offset from its resting place and its speed (the wake's springs, and flight), and its
-     *  state of motion. */
+    /** Each dot's offset from its resting place and its speed (in flight), and its state of motion. */
     off: null as Float32Array | null,
     vel: null as Float32Array | null,
     mode: null as Uint8Array | null,
@@ -243,10 +227,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     /** What has been repainted in squares while dots moved, to be put back in beads once all is still. */
     dirtyLo: Infinity,
     dirtyHi: -Infinity,
-    wakeLo: Infinity,
-    wakeHi: -Infinity,
-    wakePeak: 0,
-    px: 0, py: 0, speed: 0, lastMove: 0, lastTick: 0, pointer: false,
+    lastTick: 0,
     raf: 0,
     ink: [] as string[],
     strong: [] as string[],
@@ -268,7 +249,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
 
-  // The current y of dot i: at rest, falling in, re-stacking, plus its wake.
+  // The current y of dot i: at rest, falling in, re-stacking, plus its flight.
   const yOf = (i: number, now: number) => {
     const L = live.current;
     const lay = layout!;
@@ -293,7 +274,7 @@ export const DotField = forwardRef<DotFieldHandle, {
    * as squares in the same tones. A bead is a `drawImage`, about five times a square's cost, so 21,000
    * of them every frame held the fall and the re-stack at 16ms a frame; while the whole field moves it
    * is drawn in squares, which at this size and speed read the same, and in beads once it is still.
-   * A strip repainted while its dots move (the wake, a splash) is squares too — two thousand beads a
+   * A strip repainted while its dots move (a splash) is squares too — two thousand beads a
    * frame took 14ms on a CI runner — and goes back to beads once everything is still.
    */
   const paint = (now: number, x0 = -Infinity, x1 = Infinity, fast = false) => {
@@ -521,61 +502,11 @@ export const DotField = forwardRef<DotFieldHandle, {
         }
       }
     }
-    // The wake: a spring per dot toward its offset in the pointer's wake (zero once out of reach).
-    let wakeLo = Infinity, wakeHi = -Infinity;
-    let wakeFrame = false;
-    if (wake && L.off && L.vel && L.mode) {
-      if (now - L.lastMove > 20) L.speed *= Math.exp(-dt / SPEED_TAU);
-      if (L.speed < 0.02) L.speed = 0;
-      const reach = WAKE_REACH + 1;
-      let lo = L.wakeLo, hi = L.wakeHi;
-      if (L.pointer && L.speed > 0) { lo = Math.min(lo, L.px - reach); hi = Math.max(hi, L.px + reach); }
-      if (hi >= lo) {
-        wakeFrame = true;
-        const j0 = lowerBound(lay.sortedX, lo);
-        const j1 = lowerBound(lay.sortedX, hi + 1e-6);
-        const w2 = WAKE_OMEGA * WAKE_OMEGA;
-        const damp = 2 * WAKE_ZETA * WAKE_OMEGA;
-        for (let j = j0; j < j1; j++) {
-          const i = lay.order[j];
-          // A dot in flight, leaving or gone is not on the wake's spring.
-          if (L.mode[i] !== REST) continue;
-          const x = lay.pts[2 * i];
-          const y = lay.pts[2 * i + 1];
-          const room = { up: lay.up[i], down: lay.down[i] };
-          const target = L.pointer ? wakeOffset({ dx: x - L.px, dy: y - L.py, speed: L.speed, room }) : 0;
-          let v = L.vel[i] + (w2 * (target - L.off[i]) - damp * L.vel[i]) * dt;
-          let o = L.off[i] + v * dt;
-          // Never out of the curve or through the baseline, even mid-bounce.
-          if (o < -room.up) { o = -room.up; v = 0; }
-          if (o > room.down) { o = room.down; v = 0; }
-          if (Math.abs(o) < 0.05 && Math.abs(v) < 0.002 && target === 0) { o = 0; v = 0; }
-          L.off[i] = o;
-          L.vel[i] = v;
-          if (Math.abs(o) > L.wakePeak) L.wakePeak = Math.abs(o);
-          if (o !== 0 || v !== 0) { if (x < wakeLo) wakeLo = x; if (x > wakeHi) wakeHi = x; }
-        }
-        // Repaint where anything moved this frame: what was active, and the pointer's reach.
-        if (!full) {
-          paintRef.current(now, lo - lay.r - 1, hi + lay.r + 1, true);
-          L.dirtyLo = Math.min(L.dirtyLo, lo - lay.r - 1);
-          L.dirtyHi = Math.max(L.dirtyHi, hi + lay.r + 1);
-        }
-      }
-      L.wakeLo = wakeLo;
-      L.wakeHi = wakeHi;
-      if (wakeHi >= wakeLo || (L.pointer && L.speed > 0)) moving = true;
-      if (boxRef.current) {
-        boxRef.current.dataset.wake = wakeHi >= wakeLo || (L.pointer && L.speed > 0) ? 'moving' : 'idle';
-        // How far the last movement parted the dots, at most: what a guard reads to know it can be seen.
-        boxRef.current.dataset.wakePeak = L.wakePeak.toFixed(1);
-      }
-    }
     L.lastTick = now;
     // In squares while the whole field is moving; the frame that ends the move paints it in beads.
     if (full) paintRef.current(now, -Infinity, Infinity, moving);
-    if (full || wakeFrame || flightFrame) {
-      const name = flightFrame ? 'flight-frame' : full ? frameMark : 'wake-frame';
+    if (full || flightFrame) {
+      const name = flightFrame ? 'flight-frame' : frameMark;
       try { performance.measure(name, { start: t0, end: performance.now() }); } catch { /* diagnostic only */ }
     }
     // Everything still: what went into squares while it moved goes back into beads, once.
@@ -659,8 +590,6 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.flewFull = false;
     L.dirtyLo = Infinity;
     L.dirtyHi = -Infinity;
-    L.wakeLo = Infinity;
-    L.wakeHi = -Infinity;
     prevLayout.current = lay;
     prevStack.current = stackKey;
     prevSolo.current = solo;
@@ -725,7 +654,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     return () => { if (L.raf) { cancelAnimationFrame(L.raf); L.raf = 0; } };
     // `scheme` is read through getComputedStyle, which is why a theme change must re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, height, entrance, kinds, inks, scheme, wake, glow, solo]);
+  }, [layout, height, entrance, kinds, inks, scheme, glow, solo]);
 
   // Drop again: the fall into place, played on demand.
   const replayRef = useRef(replay);
@@ -760,26 +689,6 @@ export const DotField = forwardRef<DotFieldHandle, {
     paintRef.current(performance.now(), x0, x1);
   }, [hlLo, hlHi, layout, toX]);
 
-  // The wake follows the pointer: its position, and its speed from the last move.
-  useEffect(() => {
-    const L = live.current;
-    if (!wake || !layout || !L.off) return;
-    if (!lensAt) { L.pointer = false; kick(); return; }
-    if (prefersReducedMotion() || document.hidden) return;
-    const now = performance.now();
-    if (!(L.wakeHi >= L.wakeLo) && !(L.speed > 0)) L.wakePeak = 0;
-    if (L.pointer && now > L.lastMove) {
-      const inst = Math.hypot(lensAt.x - L.px, lensAt.y - L.py) / Math.max(1, now - L.lastMove);
-      L.speed = Math.max(inst, L.speed * 0.6);
-    }
-    L.px = lensAt.x;
-    L.py = lensAt.y;
-    L.lastMove = now;
-    L.pointer = true;
-    kick();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lensAt, wake, layout]);
-
   // What the guards read: how many dots of each kind, and how many the highlight covers.
   const kindCounts = useMemo(() => {
     if (!kinds) return undefined;
@@ -805,7 +714,6 @@ export const DotField = forwardRef<DotFieldHandle, {
       data-width={layout ? layout.width : undefined}
       data-alpha={DOT_ALPHA}
       data-settled={settled ? 'true' : 'false'}
-      data-lens={lensAt ? 'on' : 'off'}
       data-kinds={kindCounts}
       data-stack={stack ? 'on' : 'off'}
       data-highlight={hlLo != null ? lit : undefined}

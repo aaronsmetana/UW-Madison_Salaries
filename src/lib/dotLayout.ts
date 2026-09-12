@@ -116,33 +116,3 @@ export function peopleFromCounts(
   }
   return { pays, kinds };
 }
-
-/** How far the pointer's wake reaches either side, how far up or down it can move a dot, the vertical
- *  reach, and the pointer speed (CSS px per ms) at which it is at full strength. Sized to be seen: at
- *  8px of lift and full strength only at 1.2px/ms (a flick), an ordinary hover moved the dots under
- *  the pointer about 2px, which in a field this dense opened a hairline and nothing more. */
-export const WAKE_REACH = 40;
-export const WAKE_LIFT = 16;
-export const WAKE_REACH_Y = 64;
-export const WAKE_FULL_SPEED = 0.25;
-
-/**
- * A dot's vertical offset in a moving pointer's wake: away from the pointer — up for a dot above it,
- * down for one below — strongest at the pointer's column and speed, nothing beyond reach or at rest.
- * `room` is how far the dot may go each way and stay inside the curve and above the baseline. Only y
- * moves: a dot's x is its pay.
- */
-export function wakeOffset({ dx, dy, speed, room }: {
-  /** The dot's x and y minus the pointer's, CSS px (y down). */
-  dx: number;
-  dy: number;
-  /** The pointer's speed, CSS px per ms. */
-  speed: number;
-  room: { up: number; down: number };
-}): number {
-  if (!(speed > 0) || Math.abs(dx) >= WAKE_REACH || Math.abs(dy) >= WAKE_REACH_Y) return 0;
-  const across = 1 - (dx / WAKE_REACH) ** 2;
-  const along = 1 - Math.abs(dy) / WAKE_REACH_Y;
-  const mag = WAKE_LIFT * across * across * along * Math.min(1, speed / WAKE_FULL_SPEED);
-  return dy < 0 ? -Math.min(mag, Math.max(0, room.up)) : Math.min(mag, Math.max(0, room.down));
-}

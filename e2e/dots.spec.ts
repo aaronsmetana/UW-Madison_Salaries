@@ -4,8 +4,9 @@ import { parseColor, flatten, contrast } from './color';
 
 /**
  * Every employee as a dot (src/components/chart/DotField.tsx): the landing page's distribution — with
- * its pile of people above the cap, its "By employment type" colouring, the pointer's wake and the readout's
- * highlight — and a large peer strip. Expected values from SQL written here.
+ * its pile of people above the cap, its "By employment type" colouring, the readout's highlight, the
+ * glass, a click's splash and a soloed category — and a large peer strip. Expected values from SQL
+ * written here.
  */
 
 const KENNETH = 'kennethposs|2024-07-01';
@@ -72,6 +73,8 @@ test('the lens follows a mouse, not a finger; a tap stays on the page', async ({
   await page.goto('./');
   const dots = page.locator('.hero-dots');
   await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  // The flag the cursor rule reads (`.hero-dist-main[data-lens='on']`).
+  const main = page.locator('.hero-dist-main');
   const plot = page.locator('.hero-dist-plot');
   const box = (await plot.boundingBox())!;
   const at = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.8 };
@@ -81,14 +84,14 @@ test('the lens follows a mouse, not a finger; a tap stays on the page', async ({
     el.parentElement!.parentElement!.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'touch', clientX: p.x, clientY: p.y }));
   }, at);
   await page.waitForTimeout(200);
-  await expect(dots).toHaveAttribute('data-lens', 'off');
+  await expect(main).toHaveAttribute('data-lens', 'off');
 
   // A mouse's: the lens, over the dots under the pointer.
   await page.mouse.move(at.x, at.y);
-  await expect(dots).toHaveAttribute('data-lens', 'on');
+  await expect(main).toHaveAttribute('data-lens', 'on');
   await expect(page.locator('.dot-field-lens')).toBeVisible();
   await page.mouse.move(0, 0);
-  await expect(dots).toHaveAttribute('data-lens', 'off');
+  await expect(main).toHaveAttribute('data-lens', 'off');
 
   // The panel is not a link: it is for pointing at, and Divisions has its own link below it.
   await page.touchscreen.tap(at.x, at.y);
@@ -172,8 +175,8 @@ const kindsOf = (counts: number[]) => counts.map((n, k) => [k, n]).filter(([, n]
 
 /**
  * On a developer's machine, run at about a CI runner's pace: CPU slowed three times. A frame budget met
- * only on a fast laptop is not met — the wake and splash guards passed here at 3.8ms and failed in CI
- * at 14ms, when every moving frame stamped two thousand bead sprites. CI itself is not slowed further.
+ * only on a fast laptop is not met — the splash guard passed here at 3.8ms and failed in CI at 14ms,
+ * when every moving frame stamped two thousand bead sprites. CI itself is not slowed further.
  */
 async function atCiPace(page: Page) {
   if (process.env.CI) return;
@@ -281,73 +284,36 @@ test('the re-stack moves in frames under 8ms, and not at all under reduced motio
   await still.close();
 });
 
-/** Sweeps the mouse across the plot's lower half at a steady pace. */
-async function sweep(page: Page) {
-  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
-  const y = plot.y + plot.height * 0.8;
-  for (let i = 0; i <= 30; i++) {
-    await page.mouse.move(plot.x + plot.width * (0.2 + (0.4 * i) / 30), y);
-    await page.waitForTimeout(12);
-  }
+/**
+ * The landing page on Playwright's fake clock, laid out and with time stopped: a test steps it to the
+ * exact moments it reads, so what the field looks like at +128ms is the same on any machine. The
+ * entrance is marked seen, so the field is laid at once. The fake clock blanks `performance` entries,
+ * so frame budgets are measured on the real clock instead.
+ */
+async function frozenHome(page: Page) {
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.clock.install({ time: new Date('2026-09-12T12:00:00') });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await page.clock.pauseAt(new Date('2026-09-12T12:01:00'));
 }
+const picture = (page: Page) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement) => c.toDataURL());
 
-test('the wake follows a moving mouse in frames under 8ms, and settles once it stops', async ({ browser }) => {
-  const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
-  const page = await ctx.newPage();
-  await atCiPace(page);
-  await settledHome(page);
-  await page.evaluate(() => performance.clearMeasures());
-  await sweep(page);
-  const frames = await page.evaluate(() => performance.getEntriesByName('wake-frame').map((e) => e.duration).sort((a, b) => a - b));
-  expect(frames.length, 'the wake moved no dots').toBeGreaterThan(5);
-  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
-  // A resting pointer leaves a calm field.
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 600 });
-  await ctx.close();
-});
-
-test('an ordinary hover parts the dots by enough to see', async ({ browser }) => {
-  // 250 px/s, by the clock: the wake's parting has to show at the pace people point, not only at a
-  // flick. It once peaked at 2px there, a hairline nobody saw. Stepped by elapsed time rather than a
-  // fixed stride, so a busy machine sends fewer, longer moves at the same speed — a fixed 4px stride
-  // ran at 150 px/s, and slower still under load, and measured the load instead of the wake.
-  const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
-  const page = await ctx.newPage();
-  await settledHome(page);
+test('hovering moves no dot: the field is as still as the pointer leaves it', async ({ page }) => {
+  // The pointer's wake parted the dots up and down as it passed — a slit that followed the cursor —
+  // and read as wrong. Pointing shows the glass and the readout, and nothing else moves.
+  await frozenHome(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
   const y = plot.y + plot.height * 0.6;
-  const x0 = plot.x + plot.width * 0.15;
-  await page.mouse.move(x0, y);
-  const t0 = Date.now();
-  for (let t = 0; t < 700; t = Date.now() - t0) {
-    await page.mouse.move(x0 + 0.25 * t, y);
-    await page.waitForTimeout(16);
+  for (let i = 0; i <= 40; i++) {
+    await page.mouse.move(plot.x + plot.width * (0.15 + (0.5 * i) / 40), y);
+    await page.clock.runFor(16);
   }
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 1000 });
-  expect(Number(await page.locator('.hero-dots').getAttribute('data-wake-peak')), 'the widest the dots parted, in px').toBeGreaterThanOrEqual(8);
-  await ctx.close();
-});
-
-test('no wake under reduced motion, or for a finger', async ({ browser }) => {
-  const still = await browser.newContext({ reducedMotion: 'reduce' });
-  const p = await still.newPage();
-  await settledHome(p);
-  await sweep(p);
-  expect(await p.evaluate(() => performance.getEntriesByName('wake-frame').length), 'the wake ran under reduced motion').toBe(0);
-  await still.close();
-
-  const touch = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference' });
-  const q = await touch.newPage();
-  await settledHome(q);
-  const plot = (await q.locator('.hero-dist-plot').boundingBox())!;
-  await q.locator('.hero-dist-plot').evaluate((el, b) => {
-    for (let i = 0; i <= 20; i++) {
-      el.parentElement!.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'touch', clientX: b.x + b.width * (0.2 + i / 50), clientY: b.y + b.height * 0.8 }));
-    }
-  }, plot);
-  await q.waitForTimeout(300);
-  expect(await q.evaluate(() => performance.getEntriesByName('wake-frame').length), 'the wake ran for a finger').toBe(0);
-  await touch.close();
+  await page.clock.runFor(32);
+  const now = await picture(page);
+  await page.clock.runFor(700);
+  expect((await picture(page)) === now, 'the field was still moving after the pointer stopped').toBe(true);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
 });
 
 test('the highlighted dots are the people the readout counts', async ({ page }) => {
@@ -370,7 +336,7 @@ test('the highlighted dots are the people the readout counts', async ({ page }) 
 });
 
 test('pointing changes nothing away from the pointer: no dot elsewhere dims', async ({ browser }) => {
-  // Reduced motion, so no wake: what could change far from the pointer is only a dimming.
+  // What could change far from the pointer is only a dimming.
   const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await settledHome(page);
@@ -556,13 +522,12 @@ test('soloing a category leaves exactly its people, and the readout counts them;
   await still.close();
 });
 
-test('once still again, the field is the picture it was before the wake and a splash', async ({ browser }) => {
+test('once still again, the field is the picture it was before a hover and a splash', async ({ browser }) => {
   // While dots move, what they cross is drawn in squares; once all is still it is drawn in beads again.
   const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await settledHome(page);
-  const picture = () => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement) => c.toDataURL());
-  const before = await picture();
+  const before = await picture(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
   for (let i = 0; i <= 30; i++) {
     await page.mouse.move(plot.x + plot.width * (0.2 + (0.4 * i) / 30), plot.y + plot.height * 0.8);
@@ -571,7 +536,6 @@ test('once still again, the field is the picture it was before the wake and a sp
   await page.mouse.click(plot.x + plot.width * 0.3, plot.y + plot.height * 0.7);
   await page.mouse.move(plot.x + plot.width * 0.5, plot.y - 200);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 3000 });
-  await expect.poll(async () => (await picture()) === before, { message: 'the field did not come back to its picture' }).toBe(true);
+  await expect.poll(async () => (await picture(page)) === before, { message: 'the field did not come back to its picture' }).toBe(true);
   await ctx.close();
 });
