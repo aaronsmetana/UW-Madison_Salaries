@@ -240,6 +240,9 @@ export const DotField = forwardRef<DotFieldHandle, {
     flyHi: -Infinity,
     flying: 0,
     flewFull: false,
+    /** What has been repainted in squares while dots moved, to be put back in beads once all is still. */
+    dirtyLo: Infinity,
+    dirtyHi: -Infinity,
     wakeLo: Infinity,
     wakeHi: -Infinity,
     wakePeak: 0,
@@ -290,7 +293,8 @@ export const DotField = forwardRef<DotFieldHandle, {
    * as squares in the same tones. A bead is a `drawImage`, about five times a square's cost, so 21,000
    * of them every frame held the fall and the re-stack at 16ms a frame; while the whole field moves it
    * is drawn in squares, which at this size and speed read the same, and in beads once it is still.
-   * A strip (the wake, the highlight) is a few thousand dots, and stays in beads.
+   * A strip repainted while its dots move (the wake, a splash) is squares too — two thousand beads a
+   * frame took 14ms on a CI runner — and goes back to beads once everything is still.
    */
   const paint = (now: number, x0 = -Infinity, x1 = Infinity, fast = false) => {
     const canvas = canvasRef.current;
@@ -316,14 +320,27 @@ export const DotField = forwardRef<DotFieldHandle, {
     const kindsN = L.beads.length;
     const tone = L.tone;
     const mode = L.mode;
-    if (fast && whole) {
-      // Squares, a fill colour at a time: one pass per (kind, tone), the highlighted dots after.
+    if (fast) {
+      // Squares, a fill colour at a time: one pass per (kind, tone), the highlighted dots after. The
+      // whole field's groups are kept; a strip's dots are sorted into theirs in one counting pass.
       const side = 2 * r * dpr;
+      let groups: ArrayLike<number>[] = L.groups;
+      if (!whole) {
+        const G = kindsN * TONES;
+        const groupOf = (i: number) => (((kinds ? kinds[i] : 0) || 0) % kindsN) * TONES + tone[i];
+        const start = new Int32Array(G + 1);
+        for (let j = j0; j < j1; j++) start[groupOf(order[j]) + 1]++;
+        for (let g = 0; g < G; g++) start[g + 1] += start[g];
+        const next = start.slice(0, G);
+        const flat = new Uint32Array(Math.max(0, j1 - j0));
+        for (let j = j0; j < j1; j++) { const i = order[j]; flat[next[groupOf(i)]++] = i; }
+        groups = Array.from({ length: G }, (_, g) => flat.subarray(start[g], start[g + 1]));
+      }
       for (let strong = 0; strong < 2; strong++) {
         if (strong && !hl) break;
         const cols = strong ? L.strongTones : L.tones;
-        for (let g = 0; g < L.groups.length; g++) {
-          const list = L.groups[g];
+        for (let g = 0; g < groups.length; g++) {
+          const list = groups[g];
           if (!list.length) continue;
           ctx.fillStyle = cols[Math.floor(g / TONES)][g % TONES];
           for (let q = 0; q < list.length; q++) {
@@ -488,7 +505,12 @@ export const DotField = forwardRef<DotFieldHandle, {
       // repainted, in squares while it moves; a splash, where the dots were and are.
       flightWide = was[1] - was[0] > lay.width / 3;
       if (flightWide) { full = true; L.flewFull = true; }
-      else paintRef.current(now, Math.min(was[0], lo) - lay.r - 1, Math.max(was[1], hi) + lay.r + 1);
+      else {
+        const x0 = Math.min(was[0], lo) - lay.r - 1, x1 = Math.max(was[1], hi) + lay.r + 1;
+        paintRef.current(now, x0, x1, true);
+        L.dirtyLo = Math.min(L.dirtyLo, x0);
+        L.dirtyHi = Math.max(L.dirtyHi, x1);
+      }
       if (count > 0) moving = true;
       else {
         if (L.flewFull) { full = true; L.flewFull = false; }
@@ -534,7 +556,11 @@ export const DotField = forwardRef<DotFieldHandle, {
           if (o !== 0 || v !== 0) { if (x < wakeLo) wakeLo = x; if (x > wakeHi) wakeHi = x; }
         }
         // Repaint where anything moved this frame: what was active, and the pointer's reach.
-        if (!full) paintRef.current(now, lo - lay.r - 1, hi + lay.r + 1);
+        if (!full) {
+          paintRef.current(now, lo - lay.r - 1, hi + lay.r + 1, true);
+          L.dirtyLo = Math.min(L.dirtyLo, lo - lay.r - 1);
+          L.dirtyHi = Math.max(L.dirtyHi, hi + lay.r + 1);
+        }
       }
       L.wakeLo = wakeLo;
       L.wakeHi = wakeHi;
@@ -551,6 +577,12 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (full || wakeFrame || flightFrame) {
       const name = flightFrame ? 'flight-frame' : full ? frameMark : 'wake-frame';
       try { performance.measure(name, { start: t0, end: performance.now() }); } catch { /* diagnostic only */ }
+    }
+    // Everything still: what went into squares while it moved goes back into beads, once.
+    if (!moving && L.dirtyHi >= L.dirtyLo) {
+      if (!full) paintRef.current(now, L.dirtyLo, L.dirtyHi, false);
+      L.dirtyLo = Infinity;
+      L.dirtyHi = -Infinity;
     }
     if (moving) L.raf = requestAnimationFrame(tickRef.current);
   };
@@ -625,6 +657,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.flyLo = Infinity;
     L.flyHi = -Infinity;
     L.flewFull = false;
+    L.dirtyLo = Infinity;
+    L.dirtyHi = -Infinity;
     L.wakeLo = Infinity;
     L.wakeHi = -Infinity;
     prevLayout.current = lay;

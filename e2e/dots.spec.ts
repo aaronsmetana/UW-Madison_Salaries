@@ -57,6 +57,7 @@ test('with reduced motion the dots are simply there; otherwise their fall stays 
 
   const moving = await browser.newContext({ reducedMotion: 'no-preference' });
   const p2 = await moving.newPage();
+  await atCiPace(p2);
   await p2.goto('./');
   await expect(p2.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   const frames = await p2.evaluate(() => performance.getEntriesByName('dot-frame').map((e) => e.duration).sort((a, b) => a - b));
@@ -169,6 +170,17 @@ async function categories() {
 }
 const kindsOf = (counts: number[]) => counts.map((n, k) => [k, n]).filter(([, n]) => n > 0).map(([k, n]) => `${k}:${n}`).join(',');
 
+/**
+ * On a developer's machine, run at about a CI runner's pace: CPU slowed three times. A frame budget met
+ * only on a fast laptop is not met — the wake and splash guards passed here at 3.8ms and failed in CI
+ * at 14ms, when every moving frame stamped two thousand bead sprites. CI itself is not slowed further.
+ */
+async function atCiPace(page: Page) {
+  if (process.env.CI) return;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 3 });
+}
+
 async function settledHome(page: Page) {
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
@@ -248,6 +260,7 @@ test('the re-stack moves in frames under 8ms, and not at all under reduced motio
   // re-stack at 16ms, so the whole field moves in squares and settles into beads.
   const moving = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const p = await moving.newPage();
+  await atCiPace(p);
   await settledHome(p);
   // From a known state, whatever the page opens on.
   await byCategory(p);
@@ -281,6 +294,7 @@ async function sweep(page: Page) {
 test('the wake follows a moving mouse in frames under 8ms, and settles once it stops', async ({ browser }) => {
   const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
+  await atCiPace(page);
   await settledHome(page);
   await page.evaluate(() => performance.clearMeasures());
   await sweep(page);
@@ -412,6 +426,7 @@ test('after a window resize the dots are laid out for the width they are drawn a
 test('a click splashes the dots near it, and they fall back into their places; the page stays', async ({ browser }) => {
   const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
+  await atCiPace(page);
   await settledHome(page);
   const dots = page.locator('.hero-dots');
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
@@ -539,4 +554,24 @@ test('soloing a category leaves exactly its people, and the readout counts them;
   await expect(q.locator('.hero-dots')).toHaveAttribute('data-visible', String(cats[faculty].und), { timeout: 1000 });
   expect(await q.evaluate(() => performance.getEntriesByName('flight-frame').length), 'the solo flew under reduced motion').toBe(0);
   await still.close();
+});
+
+test('once still again, the field is the picture it was before the wake and a splash', async ({ browser }) => {
+  // While dots move, what they cross is drawn in squares; once all is still it is drawn in beads again.
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const picture = () => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  const before = await picture();
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  for (let i = 0; i <= 30; i++) {
+    await page.mouse.move(plot.x + plot.width * (0.2 + (0.4 * i) / 30), plot.y + plot.height * 0.8);
+    await page.waitForTimeout(12);
+  }
+  await page.mouse.click(plot.x + plot.width * 0.3, plot.y + plot.height * 0.7);
+  await page.mouse.move(plot.x + plot.width * 0.5, plot.y - 200);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 3000 });
+  await expect.poll(async () => (await picture()) === before, { message: 'the field did not come back to its picture' }).toBe(true);
+  await ctx.close();
 });
