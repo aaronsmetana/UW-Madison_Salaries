@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
-  IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch,
+  IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
 } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -174,6 +174,15 @@ function Distribution({
   // Once a session, for both fields together: the pile lands after the curve's last dots.
   const entrance = useEntranceOnce();
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
+  // Where there is no hover, a finger taps; the hints say so.
+  const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
+  const motion = !prefersReducedMotion();
+  // The fall into place, on demand ("Drop again"), and the one staff category shown alone, if any.
+  const [replay, setReplay] = useState(0);
+  const [solo, setSolo] = useState<number | null>(null);
+  // A readout a finger tapped stays until a tap elsewhere; a touch pointer "leaves" as it lifts.
+  const [tapped, setTapped] = useState(false);
+  const tapRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
   const H = phone ? PLOT_H.phone : PLOT_H.wide;
   const HEAD = phone ? HEADROOM.phone : HEADROOM.wide;
 
@@ -192,6 +201,31 @@ function Distribution({
   }, [payCounts, categories, bins]);
   const colour = byCategory && !!cats && !!categories;
   const inks = useMemo(() => (categories ?? []).map((c) => categoryInk(c.name)), [categories]);
+  // A category shown alone only means something in its colours; back to "All", everyone is back.
+  useEffect(() => { if (!colour) setSolo(null); }, [colour]);
+  const shownSolo = colour ? solo : null;
+  // Each category's people in the readout's $1k bins, from its counts per $100: a soloed readout
+  // counts its own people.
+  const categoryBins = useMemo(() => (categories ?? []).map((c) => {
+    const m = new Map<number, number>();
+    c.counts.forEach((n, b) => {
+      if (!n) return;
+      const bucket = Math.floor(((payCounts?.lo100 ?? 0) + b) / 10) * 1000;
+      m.set(bucket, (m.get(bucket) ?? 0) + n);
+    });
+    return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([bucket, n]) => ({ bucket, n }));
+  }), [categories, payCounts]);
+  // A tapped readout goes at a tap anywhere else.
+  useEffect(() => {
+    if (!tapped) return;
+    const away = (e: PointerEvent) => {
+      if (mainBoxRef.current?.contains(e.target as Node)) return;
+      setTapped(false);
+      setHoverIdx(null);
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, [tapped]);
 
   // The people at or above the cap: a pile past a break at the right, so every person is a dot. Its
   // place along x means only "above the cap"; stacked by category like the rest.
@@ -350,6 +384,12 @@ function Distribution({
   // Against the full headcount, not the binned total — the people above the $250k cap are still
   // people, and leaving them out would put the top of the drawn range at the 100th percentile.
   const share = hovered && headcount ? countBelow(bins, hovered.bucket) / headcount : null;
+  // With one category shown alone, the readout is of its people: how many within ±$5k, and where
+  // the pointer's pay falls among them (everyone in it, above the cap too).
+  const soloCat = shownSolo != null && categories ? categories[shownSolo] : null;
+  const soloBins = shownSolo != null ? categoryBins[shownSolo] : null;
+  const readCount = hovered ? countWithin(soloBins ?? bins, hovered.bucket, READOUT_RADIUS) : 0;
+  const readShare = hovered && soloCat && soloBins ? countBelow(soloBins, hovered.bucket) / soloCat.n : share;
   // Centred on the readout, then clamped to the plot's own edges. This replaces a pair of magic
   // thresholds (anchor left below 15%, right above 85%) that assumed a pill narrower than the one
   // the percentile made it: at 375px a 224px pill centred at 30% hung 2px off the panel, because
@@ -370,6 +410,27 @@ function Distribution({
     setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
   const onLeave = () => { setHoverIdx(null); setLensAt(null); lensPageRef.current = null; };
+  // A mouse's press splashes where it is. A finger's tap does too, and shows the readout there — but a
+  // finger that moves is scrolling, and the browser takes the gesture (no pointerup reaches here).
+  const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse') {
+      if (e.button !== 0) return;
+      const box = e.currentTarget.getBoundingClientRect();
+      mainDotsRef.current?.splash(e.clientX - box.left, e.clientY - box.top);
+      return;
+    }
+    tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+  };
+  const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const tap = tapRef.current;
+    tapRef.current = null;
+    if (!tap || e.pointerType === 'mouse' || tap.id !== e.pointerId) return;
+    if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 10 || performance.now() - tap.t > 400) return;
+    onHover(e);
+    setTapped(true);
+    const box = e.currentTarget.getBoundingClientRect();
+    mainDotsRef.current?.splash(e.clientX - box.left, e.clientY - box.top);
+  };
   const pileHighlight = hoverPile ? PILE_ALL : null;
   const inkList = colour ? inks : undefined;
 
@@ -486,9 +547,27 @@ function Distribution({
       className="hero-dist glass"
       style={{ '--pile-gap': `${hasPile ? PILE_GAP : 0}px`, '--pile-w': hasPile ? `max(${PILE_MIN_W}px, calc((100% - ${PILE_GAP}px) * ${(pileShare / (1 + pileShare)).toFixed(5)}))` : '0px' } as CSSProperties}
     >
-      {controls && <div className="hero-dist-controls">{controls}</div>}
+      {(controls || motion) && (
+        <div className="hero-dist-controls">
+          {/* The fall into place again; nothing to play under reduced motion. */}
+          {motion && (phone ? (
+            <ActionIcon variant="subtle" size="md" aria-label="Drop the dots again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
+              <IconArrowBarToDown size={16} />
+            </ActionIcon>
+          ) : (
+            <Button variant="subtle" size="compact-xs" leftSection={<IconArrowBarToDown size={14} />} className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
+              Drop again
+            </Button>
+          ))}
+          {controls}
+        </div>
+      )}
       <div className="hero-dist-row">
-      <div ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={onLeave}>
+      <div
+        ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
+        onPointerMove={onHover} onPointerLeave={(e) => { if (e.pointerType === 'mouse') onLeave(); }}
+        onPointerDown={onDown} onPointerUp={onUp}
+      >
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
           curve used to carry is these people; the line, the markers and the readout stay on top. */}
       <div style={{ position: 'absolute', inset: 0, height: H }}>
@@ -497,6 +576,7 @@ function Distribution({
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
           kinds={colour ? cats : null} inks={inkList} stack={colour}
           entrance={entrance} lensAt={lensAt} wake highlight={highlight} glow
+          solo={shownSolo} replay={replay}
           onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
@@ -571,8 +651,8 @@ function Distribution({
           ref={pillRef}
         >
           <span className="chart-value-pill">
-            {fmtK(hovered.bucket)} · {num(countWithin(bins, hovered.bucket, READOUT_RADIUS))} people ±{fmtK(READOUT_RADIUS)}
-            {share != null && ` · ${ordinal(Math.min(99, Math.max(1, Math.round(share * 100))))} percentile`}
+            {fmtK(hovered.bucket)} · {num(readCount)} {soloCat ? soloCat.name : 'people'} ±{fmtK(READOUT_RADIUS)}
+            {readShare != null && ` · ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}`}
           </span>
         </div>
       )}
@@ -600,12 +680,15 @@ function Distribution({
               className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
               entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow
+              solo={shownSolo} replay={replay}
               onFrame={lensAt ? redrawLens : undefined}
             />
             {hoverPile && headcount != null && (
               <div aria-hidden style={{ position: 'absolute', right: 0, top: H - pileH - 30, zIndex: Z.local, pointerEvents: 'none' }}>
                 <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>
-                  {num(over)} people at {fmtK(cap ?? hi)} or more · the top {(Math.max(0.1, (over / headcount) * 100)).toFixed(1)}%
+                  {soloCat
+                    ? `${num(soloCat.over ?? 0)} ${soloCat.name} at ${fmtK(cap ?? hi)} or more`
+                    : `${num(over)} people at ${fmtK(cap ?? hi)} or more · the top ${(Math.max(0.1, (over / headcount) * 100)).toFixed(1)}%`}
                 </span>
               </div>
             )}
@@ -675,14 +758,23 @@ function Distribution({
         </Text>
       </div>
       {colour && categories && (
-        <div className="hero-dist-legend">
-          <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">By highest-paid appointment, from the baseline up:</Text>
+        <div className="hero-dist-legend" data-solo={shownSolo ?? undefined}>
+          <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">
+            By highest-paid appointment, from the baseline up · {canHover ? 'click' : 'tap'} one to see it alone:
+          </Text>
+          {/* Each a button: one category alone, its people falling to the floor in their own shape
+              while the others fall through it; pressed again, everyone back. A hollow swatch marks a
+              category that is away — never a faded label, which would fail its contrast. */}
           {categories.map((c, i) => (
-            <span key={c.name} className="hero-dist-legend-item" data-category={c.name} data-n={c.n}>
-              <span className="hero-dist-swatch" style={{ background: inks[i] }} aria-hidden />
+            <button
+              key={c.name} type="button" className="hero-dist-legend-item" data-category={c.name} data-n={c.n}
+              aria-pressed={shownSolo === i}
+              onClick={() => setSolo((s) => (s === i ? null : i))}
+            >
+              <span className="hero-dist-swatch" style={{ background: shownSolo == null || shownSolo === i ? inks[i] : 'transparent', borderColor: inks[i] }} aria-hidden />
               <Text span size="xs" fw={600}>{c.name}</Text>
               <Text span size="xs" c="dimmed">{num(c.n)}<span className="hero-dist-legend-median"> · median {fmtK(c.median)}</span></Text>
-            </span>
+            </button>
           ))}
         </div>
       )}
@@ -690,6 +782,7 @@ function Distribution({
         Each dot is one person · actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
         {/* Say where the people above the cap are rather than truncating the tail silently. */}
         {hasPile ? ` · ${num(over)} at ${fmtK(cap ?? hi)}+ in the pile` : overflow ? ` · ${num(overflow)} above ${fmtK(cap ?? 0)} not shown` : ''}
+        {motion && <span className="hero-dist-hint"> · {canHover ? 'click' : 'tap'} the dots to stir them</span>}
       </Text>
     </div>
   );

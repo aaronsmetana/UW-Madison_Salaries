@@ -1137,15 +1137,15 @@ button:active,
   background-size: 22px 22px;
   /* Scoped to the top of the page: this element is a sibling of ALL the content with `inset: 0`, so
      the mask is what keeps it behind the hero rather than tiling the entire page height. */
-  -webkit-mask-image: radial-gradient(ellipse 62% 720px at 50% 170px, #000 0%, transparent 72%);
-  mask-image: radial-gradient(ellipse 62% 720px at 50% 170px, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 780px at 50% 170px, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse 62% 780px at 50% 170px, #000 0%, transparent 72%);
 }
 /* Reaching past the bottom of the distribution panel in both of its modes — "By category" adds a
    legend — at every width; on a phone the panel is much taller for its width (e2e/smoke.spec). */
 @media screen and (max-width: 30em) {
   .hero-dotgrid {
-    -webkit-mask-image: radial-gradient(ellipse 62% 840px at 50% 170px, #000 0%, transparent 72%);
-    mask-image: radial-gradient(ellipse 62% 840px at 50% 170px, #000 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse 62% 920px at 50% 170px, #000 0%, transparent 72%);
+    mask-image: radial-gradient(ellipse 62% 920px at 50% 170px, #000 0%, transparent 72%);
   }
 }
 
@@ -1795,7 +1795,22 @@ button:active,
   margin-top: 6px;
 }
 .hero-dist-legend-item { display: inline-flex; align-items: center; gap: 5px; }
-.hero-dist-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+/* Each category is a button (show it alone): a plain row until pointed at or pressed. */
+button.hero-dist-legend-item {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+button.hero-dist-legend-item:hover { background: var(--mantine-color-default-hover); }
+button.hero-dist-legend-item[aria-pressed='true'] { background: color-mix(in srgb, var(--mantine-color-accent-6) 14%, transparent); }
+button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
+.hero-dist-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1.5px solid transparent; box-sizing: border-box; }
+/* The canvas is for pointing at, pressing and tapping: no text selection to drag out of it. */
+.hero-dist-main { user-select: none; -webkit-user-select: none; }
 /* On a phone the legend keeps each category's count and leaves its median to wider screens: five
    medians made it five lines long. */
 @media screen and (max-width: 30em) {

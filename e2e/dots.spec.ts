@@ -408,3 +408,135 @@ test('after a window resize the dots are laid out for the width they are drawn a
   expect(await ink(fresh) === resized, 'the resized field paints what a fresh load at that width paints').toBe(true);
   await ctx.close();
 });
+
+test('a click splashes the dots near it, and they fall back into their places; the page stays', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const dots = page.locator('.hero-dots');
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  await page.evaluate(() => performance.clearMeasures());
+  await page.mouse.click(plot.x + plot.width * 0.26, plot.y + plot.height * 0.7);
+  await expect(dots).toHaveAttribute('data-flight', 'moving');
+  // Up, down, a bounce or two, and still: within a second and a half.
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 1500 });
+  const frames = await page.evaluate(() => performance.getEntriesByName('flight-frame').map((e) => e.duration).sort((a, b) => a - b));
+  expect(frames.length, 'the splash moved no dots').toBeGreaterThan(10);
+  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
+  await expect(dots).toHaveAttribute('data-visible', (await dots.getAttribute('data-dots'))!);
+  await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
+  await ctx.close();
+
+  // Under reduced motion a click throws nothing.
+  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  const q = await still.newPage();
+  await settledHome(q);
+  const box = (await q.locator('.hero-dist-plot').boundingBox())!;
+  await q.mouse.click(box.x + box.width * 0.26, box.y + box.height * 0.7);
+  await q.waitForTimeout(300);
+  expect(await q.evaluate(() => performance.getEntriesByName('flight-frame').length), 'a splash under reduced motion').toBe(0);
+  await still.close();
+});
+
+test('a tap splashes and shows the count there; a finger that scrolls does neither', async ({ browser }) => {
+  const ctx = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference', viewport: { width: 375, height: 812 } });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const dots = page.locator('.hero-dots');
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const at = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height * 0.75 };
+  // A scroll gesture first: down, 40px of travel, up.
+  await page.locator('.hero-dist-main').evaluate((el, p) => {
+    const ev = (type: string, y: number) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, clientX: p.x, clientY: y });
+    el.dispatchEvent(ev('pointerdown', p.y));
+    el.dispatchEvent(ev('pointermove', p.y + 20));
+    el.dispatchEvent(ev('pointerup', p.y + 40));
+  }, at);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => performance.getEntriesByName('flight-frame').length), 'a scrolling finger splashed').toBe(0);
+  // A tap.
+  await page.touchscreen.tap(at.x, at.y);
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 1500 });
+  expect(await page.evaluate(() => performance.getEntriesByName('flight-frame').length), 'the tap splashed nothing').toBeGreaterThan(5);
+  await expect(page.locator('.chart-value-pill').first()).toBeVisible();
+  await expect(page.locator('.chart-value-pill').first()).toContainText(/people ±\$5k/);
+  await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
+  await ctx.close();
+});
+
+test('"Drop again" plays the fall once more; there is none under reduced motion', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  await page.evaluate(() => performance.clearMeasures());
+  await page.locator('.hero-dist-drop').click();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'false');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 5000 });
+  const frames = await page.evaluate(() => performance.getEntriesByName('dot-frame').length);
+  expect(frames, 'the fall did not play').toBeGreaterThan(10);
+  await ctx.close();
+
+  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  const q = await still.newPage();
+  await settledHome(q);
+  await expect(q.locator('.hero-dist-drop')).toHaveCount(0);
+  await still.close();
+});
+
+test('soloing a category leaves exactly its people, and the readout counts them; again, everyone', async ({ browser }) => {
+  const cats = await categories();
+  const faculty = cats.findIndex((c) => c.cat === 'Faculty');
+  expect(faculty, 'the categories include Faculty').toBeGreaterThanOrEqual(0);
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const dots = page.locator('.hero-dots');
+  const all = (await dots.getAttribute('data-dots'))!;
+  const item = page.locator('.hero-dist-legend-item[data-category="Faculty"]');
+  await item.click();
+  await expect(item).toHaveAttribute('aria-pressed', 'true');
+  await expect(dots).toHaveAttribute('data-solo', String(faculty));
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 5000 });
+  await expect(dots).toHaveAttribute('data-visible', String(cats[faculty].und));
+  await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-visible', String(cats[faculty].ovr));
+  // Nothing of the others is drawn: no pixel of the Academic Staff ink is left on the canvas.
+  const academic = parseColor((await dots.getAttribute('data-inks'))!.split('|')[cats.findIndex((c) => c.cat === 'Academic Staff')]);
+  const left = await page.locator('.hero-dots canvas').evaluate((c: HTMLCanvasElement, ink) => {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 180 && Math.abs(d[i] - ink[0]) + Math.abs(d[i + 1] - ink[1]) + Math.abs(d[i + 2] - ink[2]) < 24) n++;
+    return n;
+  }, academic);
+  expect(left, 'Academic Staff pixels left on the canvas').toBe(0);
+  // The readout counts Faculty, within ±$5k of the pay under the pointer.
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  await page.mouse.move(plot.x + plot.width * 0.62, plot.y + plot.height * 0.9);
+  const pill = page.locator('.chart-value-pill').first();
+  await expect(pill).toContainText('Faculty ±$5k');
+  const text = (await pill.textContent())!;
+  const bucket = Number(text.match(/^\$([\d.]+)k/)![1]) * 1000;
+  const snap = await latestSnapshot();
+  const [o] = await oracle<{ n: number }>(
+    `WITH r AS (SELECT person_key, coalesce(employee_category, 'Other') ct, ${PAY} rp FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0),
+          p AS (SELECT person_key, sum(rp) pay, first(ct ORDER BY rp DESC, ct) ct FROM r GROUP BY person_key)
+     SELECT count(*) n FROM p WHERE ct = 'Faculty' AND pay >= ${bucket - 5000} AND pay < ${bucket + 6000} AND pay < 250000`
+  );
+  expect(Number(text.match(/· ([\d,]+) Faculty/)![1].replace(/,/g, '')), `Faculty within ±$5k of ${bucket}`).toBe(o.n);
+  await expect(dots).toHaveAttribute('data-highlight', String(o.n));
+  // Again: everyone back.
+  await page.mouse.move(0, 0);
+  await item.click();
+  await expect(item).toHaveAttribute('aria-pressed', 'false');
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 5000 });
+  await expect(dots).toHaveAttribute('data-visible', all);
+  await ctx.close();
+
+  // Under reduced motion the change is at once, with no flight.
+  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  const q = await still.newPage();
+  await settledHome(q);
+  await q.locator('.hero-dist-legend-item[data-category="Faculty"]').click();
+  await expect(q.locator('.hero-dots')).toHaveAttribute('data-visible', String(cats[faculty].und), { timeout: 1000 });
+  expect(await q.evaluate(() => performance.getEntriesByName('flight-frame').length), 'the solo flew under reduced motion').toBe(0);
+  await still.close();
+});

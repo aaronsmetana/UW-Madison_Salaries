@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { layoutDots, wakeOffset, WAKE_REACH } from '../../lib/dotLayout';
+import { splashKick, stepFall, stepThrough, SPLASH_R } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
 import { bead, type Bead } from '../../lib/dotSprites';
 import { prefersReducedMotion } from '../../lib/motion';
@@ -27,6 +28,11 @@ const WAKE_OMEGA = 0.024;
 const WAKE_ZETA = 0.6;
 /** Once the pointer stops, its speed dies away with this time constant (ms). */
 const SPEED_TAU = 70;
+/** A dot's state of motion: at rest (or on the wake's spring), in flight (thrown by a splash, or
+ *  raining in, bouncing into its place), leaving through the floor, or gone (a group soloed away). */
+const REST = 0, FLYING = 1, LEAVING = 2, GONE = 3;
+/** How far above the top a dot raining back in may start, px: they arrive over about half a second. */
+const RAIN_SPREAD = 160;
 
 /** A springy ease that overshoots a little and settles — the "bounce". */
 const easeOutBack = (p: number) => {
@@ -56,6 +62,9 @@ function lowerBound(a: ArrayLike<number>, v: number): number {
   return lo;
 }
 
+/** How many dots are not gone. */
+const countVisible = (mode: Uint8Array) => { let n = 0; for (let i = 0; i < mode.length; i++) if (mode[i] !== GONE) n++; return n; };
+
 /** A fixed, even-looking jitter of -1, 0 or +1 for dot i (a multiplicative hash, not a generator:
  *  the same dot keeps its tone through every re-layout). */
 const jitter = (i: number) => (Math.imul(i + 1, 2654435761) >>> 0) % 3 - 1;
@@ -67,6 +76,9 @@ export type LensMap = (x: number, y: number) => { x: number; y: number; scale: n
  *  px, less `ox, oy`), drawn through `map` into `ctx` — scaled to the glass's pixels already. */
 export interface DotFieldHandle {
   drawInto(ctx: CanvasRenderingContext2D, lens: { cx: number; cy: number; R: number; ox: number; oy: number; dpr: number; map: LensMap }): void;
+  /** Throws the dots near `x, y` (the field's CSS px) up, to fall back and bounce into place. False
+   *  when nothing moved (reduced motion, a hidden tab, no dots there). */
+  splash(x: number, y: number): boolean;
 }
 
 /**
@@ -113,6 +125,11 @@ export const DotField = forwardRef<DotFieldHandle, {
   wake?: boolean;
   /** Values in [lo, hi) draw in a stronger ink. Nothing else changes. */
   highlight?: readonly [number, number] | null;
+  /** Show one kind alone: the others fall through the floor, and it falls to the floor in its own
+   *  shape (stacked first). Null for all. Needs `stack`. */
+  solo?: number | null;
+  /** Bump to play the fall into place again. */
+  replay?: number;
   /** A faint halo round each dot on a dark page, so a dense field glows a little. */
   glow?: boolean;
   /** Called after every paint: a magnifying glass over the field redraws with it. */
@@ -123,7 +140,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, entrance = false, delay = 0,
-  lensAt = null, wake = false, highlight = null, glow = false, onFrame, frameMark = 'dot-frame', className,
+  lensAt = null, wake = false, highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -165,7 +182,14 @@ export const DotField = forwardRef<DotFieldHandle, {
     return () => { mo.disconnect(); mq?.removeEventListener?.('change', bump); dq?.removeEventListener?.('change', onDpr); };
   }, []);
 
-  const stackKey = stack && kinds ? kinds : undefined;
+  // Stacked by kind — the soloed kind first, so it takes each column's lowest slots.
+  const stackKey = useMemo(() => {
+    if (!stack || !kinds) return undefined;
+    if (solo == null) return kinds;
+    const k = new Uint8Array(kinds.length);
+    for (let i = 0; i < kinds.length; i++) k[i] = kinds[i] === solo ? 0 : 1 + kinds[i];
+    return k;
+  }, [stack, kinds, solo]);
   const layout = useMemo(() => {
     if (!(width > 0) || !values.length) return null;
     const n = values.length;
@@ -206,8 +230,16 @@ export const DotField = forwardRef<DotFieldHandle, {
     entranceStart: null as number | null,
     restackStart: null as number | null,
     restackFrom: null as Float32Array | null,
-    wakeOff: null as Float32Array | null,
-    wakeVel: null as Float32Array | null,
+    /** Each dot's offset from its resting place and its speed (the wake's springs, and flight), and its
+     *  state of motion. */
+    off: null as Float32Array | null,
+    vel: null as Float32Array | null,
+    mode: null as Uint8Array | null,
+    /** The x-range of the dots in flight or leaving, and how many. */
+    flyLo: Infinity,
+    flyHi: -Infinity,
+    flying: 0,
+    flewFull: false,
     wakeLo: Infinity,
     wakeHi: -Infinity,
     wakePeak: 0,
@@ -229,6 +261,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   });
   const prevLayout = useRef<typeof layout>(null);
   const prevStack = useRef<typeof stackKey>(undefined);
+  const prevSolo = useRef<number | null>(solo);
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
 
@@ -246,7 +279,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       const p = Math.min(1, Math.max(0, (now - L.entranceStart - delay - (lay.pts[2 * i] / lay.width) * SPREAD_MS) / FALL_MS));
       y = -lay.r + (y + lay.r) * easeOutBack(p);
     }
-    if (L.wakeOff) y += L.wakeOff[i];
+    if (L.off) y += L.off[i];
     return y;
   };
   const yOfRef = useRef(yOf);
@@ -282,6 +315,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     const hl = L.highlight;
     const kindsN = L.beads.length;
     const tone = L.tone;
+    const mode = L.mode;
     if (fast && whole) {
       // Squares, a fill colour at a time: one pass per (kind, tone), the highlighted dots after.
       const side = 2 * r * dpr;
@@ -294,6 +328,7 @@ export const DotField = forwardRef<DotFieldHandle, {
           ctx.fillStyle = cols[Math.floor(g / TONES)][g % TONES];
           for (let q = 0; q < list.length; q++) {
             const i = list[q];
+            if (mode && mode[i] === GONE) continue;
             const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
             if (lit !== !!strong) continue;
             ctx.fillRect(pts[2 * i] * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
@@ -307,6 +342,7 @@ export const DotField = forwardRef<DotFieldHandle, {
         const set = strong ? L.strongBeads : L.beads;
         for (let j = j0; j < j1; j++) {
           const i = order[j];
+          if (mode && mode[i] === GONE) continue;
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           if (lit !== !!strong) continue;
           const bd = set[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
@@ -342,6 +378,7 @@ export const DotField = forwardRef<DotFieldHandle, {
         const set = strong ? L.strongTones : L.tones;
         for (let j = j0; j < j1; j++) {
           const i = order[j];
+          if (L.mode && L.mode[i] === GONE) continue;
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           if (lit !== !!strong) continue;
           const sx = pts[2 * i] + ox;
@@ -367,6 +404,33 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
       ctx.restore();
     },
+    splash(x, y) {
+      const lay = layout;
+      const L = live.current;
+      if (!lay || !L.mode || !L.off || !L.vel || prefersReducedMotion() || document.hidden) return false;
+      const now = performance.now();
+      const { order, sortedX, pts } = lay;
+      const j0 = lowerBound(sortedX, x - SPLASH_R);
+      const j1 = lowerBound(sortedX, x + SPLASH_R);
+      let any = false;
+      for (let j = j0; j < j1; j++) {
+        const i = order[j];
+        if (L.mode[i] === GONE || L.mode[i] === LEAVING) continue;
+        const k = splashKick(pts[2 * i] - x, yOfRef.current(i, now) - y, i);
+        if (k === 0) continue;
+        L.mode[i] = FLYING;
+        L.vel[i] = Math.min(0, L.vel[i]) + k;
+        if (pts[2 * i] < L.flyLo) L.flyLo = pts[2 * i];
+        if (pts[2 * i] > L.flyHi) L.flyHi = pts[2 * i];
+        any = true;
+      }
+      if (any) {
+        L.flying = Math.max(1, L.flying);
+        if (boxRef.current) boxRef.current.dataset.flight = 'moving';
+        kickRef.current();
+      }
+      return any;
+    },
   }), [layout, values, kinds, glow]);
 
   /** One frame of whatever is moving; schedules the next while anything still is. */
@@ -388,11 +452,57 @@ export const DotField = forwardRef<DotFieldHandle, {
       else moving = true;
       full = true;
     }
+    const dt = Math.min(32, Math.max(1, now - (L.lastTick || now - 16)));
+    // Flight: dots a splash threw, dots raining back in, dots leaving through the floor.
+    let flightFrame = false;
+    let flightWide = false;
+    if (L.flying > 0 && L.mode && L.off && L.vel) {
+      flightFrame = true;
+      const was = [L.flyLo, L.flyHi];
+      let lo = Infinity, hi = -Infinity, count = 0;
+      const j0 = lowerBound(lay.sortedX, L.flyLo);
+      const j1 = lowerBound(lay.sortedX, L.flyHi + 1e-6);
+      for (let j = j0; j < j1; j++) {
+        const i = lay.order[j];
+        const m = L.mode[i];
+        if (m === FLYING) {
+          const st = stepFall(L.off[i], L.vel[i], dt, lay.pts[2 * i + 1] - lay.r);
+          L.off[i] = st.o;
+          L.vel[i] = st.v;
+          if (st.rest) { L.mode[i] = REST; continue; }
+        } else if (m === LEAVING) {
+          const st = stepThrough(L.off[i], L.vel[i], dt);
+          L.off[i] = st.o;
+          L.vel[i] = st.v;
+          if (lay.pts[2 * i + 1] + st.o - lay.r > height) { L.mode[i] = GONE; L.off[i] = 0; L.vel[i] = 0; continue; }
+        } else continue;
+        count++;
+        const x = lay.pts[2 * i];
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+      }
+      L.flying = count;
+      L.flyLo = lo;
+      L.flyHi = hi;
+      // Across a third of the field or more (a group leaving, or raining in), the whole field is
+      // repainted, in squares while it moves; a splash, where the dots were and are.
+      flightWide = was[1] - was[0] > lay.width / 3;
+      if (flightWide) { full = true; L.flewFull = true; }
+      else paintRef.current(now, Math.min(was[0], lo) - lay.r - 1, Math.max(was[1], hi) + lay.r + 1);
+      if (count > 0) moving = true;
+      else {
+        if (L.flewFull) { full = true; L.flewFull = false; }
+        if (L.entranceStart == null && L.restackStart == null) setSettled(true);
+        if (boxRef.current) {
+          boxRef.current.dataset.flight = 'idle';
+          boxRef.current.dataset.visible = String(countVisible(L.mode));
+        }
+      }
+    }
     // The wake: a spring per dot toward its offset in the pointer's wake (zero once out of reach).
     let wakeLo = Infinity, wakeHi = -Infinity;
     let wakeFrame = false;
-    if (L.wakeOff && L.wakeVel) {
-      const dt = Math.min(32, Math.max(1, now - (L.lastTick || now - 16)));
+    if (wake && L.off && L.vel && L.mode) {
       if (now - L.lastMove > 20) L.speed *= Math.exp(-dt / SPEED_TAU);
       if (L.speed < 0.02) L.speed = 0;
       const reach = WAKE_REACH + 1;
@@ -406,18 +516,20 @@ export const DotField = forwardRef<DotFieldHandle, {
         const damp = 2 * WAKE_ZETA * WAKE_OMEGA;
         for (let j = j0; j < j1; j++) {
           const i = lay.order[j];
+          // A dot in flight, leaving or gone is not on the wake's spring.
+          if (L.mode[i] !== REST) continue;
           const x = lay.pts[2 * i];
           const y = lay.pts[2 * i + 1];
           const room = { up: lay.up[i], down: lay.down[i] };
           const target = L.pointer ? wakeOffset({ dx: x - L.px, dy: y - L.py, speed: L.speed, room }) : 0;
-          let v = L.wakeVel[i] + (w2 * (target - L.wakeOff[i]) - damp * L.wakeVel[i]) * dt;
-          let o = L.wakeOff[i] + v * dt;
+          let v = L.vel[i] + (w2 * (target - L.off[i]) - damp * L.vel[i]) * dt;
+          let o = L.off[i] + v * dt;
           // Never out of the curve or through the baseline, even mid-bounce.
           if (o < -room.up) { o = -room.up; v = 0; }
           if (o > room.down) { o = room.down; v = 0; }
           if (Math.abs(o) < 0.05 && Math.abs(v) < 0.002 && target === 0) { o = 0; v = 0; }
-          L.wakeOff[i] = o;
-          L.wakeVel[i] = v;
+          L.off[i] = o;
+          L.vel[i] = v;
           if (Math.abs(o) > L.wakePeak) L.wakePeak = Math.abs(o);
           if (o !== 0 || v !== 0) { if (x < wakeLo) wakeLo = x; if (x > wakeHi) wakeHi = x; }
         }
@@ -436,14 +548,17 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.lastTick = now;
     // In squares while the whole field is moving; the frame that ends the move paints it in beads.
     if (full) paintRef.current(now, -Infinity, Infinity, moving);
-    if (full || wakeFrame) {
-      try { performance.measure(full ? frameMark : 'wake-frame', { start: t0, end: performance.now() }); } catch { /* diagnostic only */ }
+    if (full || wakeFrame || flightFrame) {
+      const name = flightFrame ? 'flight-frame' : full ? frameMark : 'wake-frame';
+      try { performance.measure(name, { start: t0, end: performance.now() }); } catch { /* diagnostic only */ }
     }
     if (moving) L.raf = requestAnimationFrame(tickRef.current);
   };
   const tickRef = useRef(tick);
   tickRef.current = tick;
   const kick = () => { const L = live.current; if (!L.raf) L.raf = requestAnimationFrame(tickRef.current); };
+  const kickRef = useRef(kick);
+  kickRef.current = kick;
 
   // Size the canvas, read the inks, make the beads, and paint — falling in or re-stacking where that applies.
   useEffect(() => {
@@ -489,19 +604,66 @@ export const DotField = forwardRef<DotFieldHandle, {
       // Every tone of every ink, each ink's separated by '|': what the contrast guard reads.
       boxRef.current.dataset.tones = L.tones.map((ts) => ts.join(';')).join('|');
     }
-    // The wake's springs belong to one layout; a new one starts them at rest.
-    L.wakeOff = wake ? new Float32Array(values.length) : null;
-    L.wakeVel = wake ? new Float32Array(values.length) : null;
-    L.wakeLo = Infinity;
-    L.wakeHi = -Infinity;
-
     const motionOk = !prefersReducedMotion() && !document.hidden;
     const prev = prevLayout.current;
-    const restacked = prev && prev !== lay && prev.width === lay.width && prev.pts.length === lay.pts.length && prevStack.current !== stackKey;
+    const sameField = !!prev && prev !== lay && prev.width === lay.width && prev.pts.length === lay.pts.length;
+    const restacked = sameField && prevStack.current !== stackKey;
+    const soloMoved = prevSolo.current !== solo;
+    // Each dot's motion belongs to one layout, and a new one starts it at rest — but for a group
+    // soloed away, which stays gone.
+    const oldOff = L.off;
+    const oldMode = L.mode;
+    const off = new Float32Array(n);
+    const vel = new Float32Array(n);
+    const mode = new Uint8Array(n);
+    const shown = (i: number) => solo == null || !kinds || kinds[i] === solo;
+    for (let i = 0; i < n; i++) if (!shown(i)) mode[i] = GONE;
+    L.off = off;
+    L.vel = vel;
+    L.mode = mode;
+    L.flying = 0;
+    L.flyLo = Infinity;
+    L.flyHi = -Infinity;
+    L.flewFull = false;
+    L.wakeLo = Infinity;
+    L.wakeHi = -Infinity;
     prevLayout.current = lay;
     prevStack.current = stackKey;
+    prevSolo.current = solo;
     const now = performance.now();
-    if (restacked && motionOk) {
+    if (sameField && soloMoved && motionOk && oldMode) {
+      // A group soloed, or brought back, by gravity. A dot that stays and whose place is lower falls
+      // to it; one whose place is higher eases up to it; one going falls through the floor; one coming
+      // back rains in from above the top, some higher than others, and bounces into its place.
+      const from = new Float32Array(n);
+      let easing = false;
+      let count = 0;
+      for (let i = 0; i < n; i++) {
+        const newY = lay.pts[2 * i + 1];
+        const oldY = prev.pts[2 * i + 1] + (oldOff ? oldOff[i] : 0);
+        const was = oldMode[i] !== GONE && oldMode[i] !== LEAVING;
+        from[i] = newY;
+        if (was && shown(i)) {
+          if (oldY <= newY) { mode[i] = FLYING; off[i] = oldY - newY; } else { from[i] = oldY; easing = true; }
+        } else if (was) {
+          mode[i] = LEAVING;
+          off[i] = oldY - newY;
+        } else if (shown(i)) {
+          mode[i] = FLYING;
+          off[i] = -(newY + lay.r + ((Math.imul(i + 3, 2654435761) >>> 0) % RAIN_SPREAD));
+        }
+        if (mode[i] === FLYING || mode[i] === LEAVING) count++;
+      }
+      L.flying = count;
+      // Every dot, including those a jitter put half a pixel left of the plot's edge.
+      L.flyLo = -Infinity;
+      L.flyHi = Infinity;
+      if (easing) { L.restackFrom = from; L.restackStart = now; }
+      if (boxRef.current) boxRef.current.dataset.flight = count ? 'moving' : 'idle';
+      setSettled(false);
+      paint(now, -Infinity, Infinity, true);
+      kick();
+    } else if (restacked && motionOk) {
       // From where each dot is now to its slot in the new stacking, up or down its own column.
       const from = new Float32Array(values.length);
       for (let i = 0; i < values.length; i++) from[i] = prev.pts[2 * i + 1];
@@ -522,10 +684,28 @@ export const DotField = forwardRef<DotFieldHandle, {
       paint(now);
       setSettled(true);
     }
+    if (boxRef.current && L.flying === 0) {
+      boxRef.current.dataset.flight = 'idle';
+      boxRef.current.dataset.visible = String(countVisible(mode));
+    }
     return () => { if (L.raf) { cancelAnimationFrame(L.raf); L.raf = 0; } };
     // `scheme` is read through getComputedStyle, which is why a theme change must re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, height, entrance, kinds, inks, scheme, wake, glow]);
+  }, [layout, height, entrance, kinds, inks, scheme, wake, glow, solo]);
+
+  // Drop again: the fall into place, played on demand.
+  const replayRef = useRef(replay);
+  useEffect(() => {
+    if (replay === replayRef.current) return;
+    replayRef.current = replay;
+    const L = live.current;
+    if (!layout || prefersReducedMotion() || document.hidden) return;
+    L.entranceStart = performance.now();
+    setSettled(false);
+    paintRef.current(L.entranceStart, -Infinity, Infinity, true);
+    kick();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replay, layout]);
 
   // The highlight: repaint only where it was and where it is.
   const hlLo = highlight?.[0] ?? null;
@@ -549,7 +729,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   // The wake follows the pointer: its position, and its speed from the last move.
   useEffect(() => {
     const L = live.current;
-    if (!wake || !layout || !L.wakeOff) return;
+    if (!wake || !layout || !L.off) return;
     if (!lensAt) { L.pointer = false; kick(); return; }
     if (prefersReducedMotion() || document.hidden) return;
     const now = performance.now();
@@ -573,8 +753,13 @@ export const DotField = forwardRef<DotFieldHandle, {
     for (let i = 0; i < kinds.length; i++) m.set(kinds[i], (m.get(kinds[i]) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k}:${n}`).join(',');
   }, [kinds]);
+  // Only the dots shown: while a group is soloed, the highlight is of its people.
   let lit = 0;
-  if (hlLo != null && hlHi != null) for (let i = 0; i < values.length; i++) if (values[i] >= hlLo && values[i] < hlHi) lit++;
+  if (hlLo != null && hlHi != null) {
+    for (let i = 0; i < values.length; i++) {
+      if (values[i] >= hlLo && values[i] < hlHi && (solo == null || !kinds || kinds[i] === solo)) lit++;
+    }
+  }
 
   const inkList = inks?.length ? inks : null;
   return (
@@ -590,6 +775,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       data-kinds={kindCounts}
       data-stack={stack ? 'on' : 'off'}
       data-highlight={hlLo != null ? lit : undefined}
+      data-solo={solo ?? 'none'}
       aria-hidden
     >
       <canvas ref={canvasRef} className="dot-field-ink" style={{ position: 'absolute', inset: 0, width: '100%', height }} />
