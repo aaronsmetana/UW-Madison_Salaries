@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { oracle } from './oracle';
 import AxeBuilder from '@axe-core/playwright';
 
 // Routes exercised in both color schemes. Reports needs a subject to render its full content, so it
@@ -11,6 +12,22 @@ async function setTheme(page: import('@playwright/test').Page, theme: 'light' | 
     document.documentElement.setAttribute('data-mantine-color-scheme', t);
     try { localStorage.setItem('mantine-color-scheme-value', t); } catch { /* ignore */ }
   }, theme);
+}
+
+/**
+ * Until no finite animation or transition has run for half a second. One check is not enough: a card
+ * that arrives after the awaited one fades in later (the Pay tab's ranks, a title's histogram counts),
+ * and axe measures a fading colour part-way to its background.
+ */
+async function settled(page: import('@playwright/test').Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    let quiet = performance.now();
+    const tick = () => {
+      if (document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) quiet = performance.now();
+      if (performance.now() - quiet > 500) resolve(); else requestAnimationFrame(tick);
+    };
+    tick();
+  }));
 }
 
 async function runAxe(page: import('@playwright/test').Page) {
@@ -107,6 +124,50 @@ for (const theme of THEMES) {
       const bad = await runAxe(page);
       expect(bad, tab).toEqual([]);
     }
+  });
+
+  // Views the route sweep never reached with their content in: a person's History tab (someone with a
+  // raise and a cut, so both change inks are on it), their Pay tab, a title page's people table, and
+  // the data page once its tables are in. Each hid a failure: the change figures and the pay-band
+  // badge under AA in light mode, 458 nested interactive rows, a 3:1 orange note.
+  test(`a11y: a person's History and Pay tabs, loaded (${theme}), have no critical/serious violations`, async ({ page }) => {
+    const [p] = await oracle<{ pk: string }>(
+      `WITH s AS (SELECT person_key, snapshot_id, snapshot_date d, job_code j, salary pay, fte, count(*) OVER (PARTITION BY person_key, snapshot_id) k
+                  FROM $SAL WHERE snapshot_id NOT LIKE '%-pre' AND salary > 0),
+            o AS (SELECT * FROM s WHERE k = 1),
+            c AS (SELECT person_key, pay, lag(pay) OVER w pp, lag(j) OVER w pj, j, lag(fte) OVER w pf, fte FROM o WINDOW w AS (PARTITION BY person_key ORDER BY d))
+       SELECT person_key pk FROM c GROUP BY 1
+       HAVING count(*) FILTER (WHERE pj = j AND pf = fte AND pay < pp * 0.97) > 0 AND count(*) FILTER (WHERE pj = j AND pf = fte AND pay > pp * 1.01) > 0
+       ORDER BY 1 LIMIT 1`
+    );
+    // Each tab waits for its last card to arrive: the Pay tab's ranks mount after the pay band, and fade
+    // in, so a scan once the band showed measured them at two-thirds opacity.
+    for (const [pk, tab, sels] of [[p.pk, 'history', ['table.appt-history tbody tr']], ['aaronsmetana|2014-10-15', 'pay', ['.payband-note', 'text=pctile']]] as const) {
+      await page.goto(`./person/${encodeURIComponent(pk)}?tab=${tab}`);
+      await setTheme(page, theme);
+      for (const sel of sels) await expect(page.locator(sel).first()).toBeVisible({ timeout: 60_000 });
+      await settled(page);
+      const bad = await runAxe(page);
+      expect(bad, `${pk} ${tab}`).toEqual([]);
+    }
+  });
+
+  test(`a11y: a title page with its people, loaded (${theme}), has no critical/serious violations`, async ({ page }) => {
+    await page.goto('./paycheck?code=IT040');
+    await setTheme(page, theme);
+    await expect(page.locator('.peer-row').first()).toBeAttached({ timeout: 60_000 });
+    await settled(page);
+    const bad = await runAxe(page);
+    expect(bad).toEqual([]);
+  });
+
+  test(`a11y: the data page, loaded (${theme}), has no critical/serious violations`, async ({ page }) => {
+    await page.goto('./data');
+    await setTheme(page, theme);
+    await expect(page.getByText(/shared-name groups/)).toBeVisible({ timeout: 60_000 });
+    await settled(page);
+    const bad = await runAxe(page);
+    expect(bad).toEqual([]);
   });
 
   test(`a11y: school page (${theme}) has no critical/serious violations`, async ({ page }) => {

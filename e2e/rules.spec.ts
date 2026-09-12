@@ -573,3 +573,30 @@ test.describe("A history across the TTC relabel and the 9-month change", () => {
     expect(mine).toBe(3);
   });
 });
+
+test.describe('Money axes in round steps', () => {
+  /** A chart's y tick values, from "$50,000" or "$50k". */
+  async function yTicks(page: Page, root: string) {
+    const texts = await page.locator(`${root} .recharts-yAxis .recharts-cartesian-axis-tick-value`).allTextContents();
+    return texts.map((t) => Number(t.replace(/[$,]/g, '').replace(/k$/, '000')));
+  }
+  const round = (ticks: number[]) => {
+    const step = ticks[1] - ticks[0];
+    const mant = step / 10 ** Math.floor(Math.log10(step));
+    return ticks.length > 2 && [1, 2, 2.5, 5].some((m) => Math.abs(mant - m) < 1e-9) && ticks.every((t, i) => Math.abs(t - ticks[0] - i * step) < 1e-6 && Math.abs(t / step - Math.round(t / step)) < 1e-9);
+  };
+
+  test("the trend chart, the starting group and the tenure scatter step by 1, 2, 2.5 or 5 × 10ⁿ", async ({ page }) => {
+    await page.goto(`./person/${encodeURIComponent(AARON)}?tab=trends`);
+    await expect(page.locator('.starting-group .recharts-yAxis .recharts-cartesian-axis-tick-value').first()).toBeVisible({ timeout: 60_000 });
+    for (const root of ['.person-trend', '.starting-group']) {
+      const t = await yTicks(page, root);
+      expect(round(t), `${root}: ${t.join(', ')}`).toBe(true);
+    }
+    await page.goto(`./person/${encodeURIComponent(await nineMonthPerson())}`);
+    const scatter = page.locator('.mantine-Card-root').filter({ hasText: 'Pay vs. tenure' });
+    await expect(scatter.locator('.recharts-yAxis .recharts-cartesian-axis-tick-value').first()).toBeVisible({ timeout: 60_000 });
+    const t = (await scatter.locator('.recharts-yAxis .recharts-cartesian-axis-tick-value').allTextContents()).map((x) => Number(x.replace(/[$,]/g, '').replace(/k$/, '000')));
+    expect(round(t), `scatter: ${t.join(', ')}`).toBe(true);
+  });
+});

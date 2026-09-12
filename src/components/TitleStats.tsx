@@ -284,10 +284,10 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                   <Table.Tr
                     key={p.person_key}
                     className="peer-row"
+                    // A click anywhere on the row opens the person; the keyboard's way in is the name's link.
+                    // As a role="button" with that link and the tray button inside it, every row was a
+                    // nested interactive control (axe), 458 of them for Associate Professor.
                     onClick={() => nav(`/person/${encodeURIComponent(p.person_key)}`)}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav(`/person/${encodeURIComponent(p.person_key)}`); } }}
                     style={{ cursor: 'pointer' }}
                   >
                     <Table.Td ta="right" c="dimmed" data-fold>{realRank}</Table.Td>

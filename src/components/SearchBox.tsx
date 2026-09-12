@@ -1,7 +1,7 @@
 import { useState, useMemo, useId, useEffect, type KeyboardEvent, type ReactNode } from 'react';
 import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip, Badge, Box } from '@mantine/core';
 import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
-import { useDebouncedValue } from '@mantine/hooks';
+import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql, useSummary, useSearchIndex } from '../lib/hooks';
 import { sqlStr, sqlLikeContains } from '../lib/duckdb';
@@ -140,6 +140,8 @@ export function SearchBox({
   peopleInGroup?: number;
 }) {
   const t = DROPDOWN_TIERS[size];
+  // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
+  const narrow = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const large = size === 'lg';
   const grouped = kinds.some((k) => k !== 'people');
   const wantPeople = kinds.includes('people');
@@ -260,6 +262,9 @@ export function SearchBox({
   const [active, setActive] = useState(0);
   // Whether the reader has chosen a row (see `enterPick`).
   const [moved, setMoved] = useState(false);
+  // An Enter pressed while people were still being searched: the text it was pressed on (as `q` will
+  // read it once the debounce catches up), opened once people have answered for it.
+  const [pendingEnter, setPendingEnter] = useState<string | null>(null);
   const itemKeys = items.map((i) => i.key).join('|');
   useEffect(() => { setActive(0); }, [itemKeys]);
   useEffect(() => { setMoved(false); }, [q]);
@@ -293,16 +298,29 @@ export function SearchBox({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') { setTerm(''); return; }
-    if (!opened || items.length === 0) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setMoved(true); setActive((a) => Math.min(items.length - 1, a + 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setMoved(true); setActive((a) => Math.max(0, a - 1)); }
-    else if (e.key === 'Enter') {
+    if (e.key === 'Escape') { setTerm(''); setPendingEnter(null); return; }
+    if (!opened) return;
+    if (e.key === 'Enter') {
       e.preventDefault();
       const i = enterPick(active, items.length, peopleBusy, moved);
-      if (i != null) select(items[i]);
+      if (i === 'wait') setPendingEnter(term.trim().toLowerCase());
+      else if (i != null) select(items[i]);
+      return;
     }
+    if (items.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setMoved(true); setPendingEnter(null); setActive((a) => Math.min(items.length - 1, a + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setMoved(true); setPendingEnter(null); setActive((a) => Math.max(0, a - 1)); }
   };
+  // The kept Enter: dropped if the text changes; otherwise the first row, once the search has caught up
+  // with that text and people have answered for it.
+  useEffect(() => {
+    if (pendingEnter == null) return;
+    if (term.trim().toLowerCase() !== pendingEnter) { setPendingEnter(null); return; }
+    if (q !== pendingEnter || peopleBusy) return;
+    setPendingEnter(null);
+    if (items.length) select(items[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingEnter, term, q, peopleBusy, items.length]);
 
   const rowStyle = (i: number) => ({
     display: 'block',
@@ -441,7 +459,7 @@ export function SearchBox({
             radius={t.radius}
             leftSection={<IconSearch size={t.icon} />}
             leftSectionWidth={large ? 56 : undefined}
-            placeholder={placeholder ?? (grouped ? 'Search people, titles or divisions…' : 'Search a person…')}
+            placeholder={placeholder ?? (grouped ? (narrow ? 'Name, title or division…' : 'Search people, titles or divisions…') : 'Search a person…')}
             value={term}
             onChange={(e) => setTerm(e.currentTarget.value)}
             onKeyDown={onKeyDown}
@@ -508,7 +526,7 @@ export function SearchBox({
                 {nPeople === 0 && peopleBusy && (
                   <Group gap={8} px={10} py={t.rowPad} className="search-status">
                     <Loader size={12} />
-                    <Text fz={t.subFont} c="dimmed">Searching people…</Text>
+                    <Text fz={t.subFont} c="dimmed">Searching people…{pendingEnter != null ? ' Enter opens the first match once they arrive.' : ''}</Text>
                   </Group>
                 )}
                 {peopleShown.map((h, i) => personRow(h, i))}

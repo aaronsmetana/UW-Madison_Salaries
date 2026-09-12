@@ -72,7 +72,7 @@ describe('format', () => {
 describe('fmtChange', () => {
   it('signs a change and keeps one decimal', () => {
     expect(fmtChange(0.174)).toBe('+17.4%');
-    expect(fmtChange(-0.015)).toBe('-1.5%');
+    expect(fmtChange(-0.015)).toBe('−1.5%');
   });
   it('prints no change as "0%", never "+0.0%" or "-0.0%"', () => {
     expect(fmtChange(0)).toBe('0%');

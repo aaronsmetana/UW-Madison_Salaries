@@ -4,6 +4,7 @@ import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Customized,
 } from 'recharts';
 import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
+import { moneyTicks } from '../lib/rangeScale';
 import { Box, Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
@@ -102,6 +103,9 @@ export function TenurePayScatter({
   const reg = fit ? { intercept: fit.intercept, slope: fit.slope } : null;
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   const xMax = Math.ceil(tMax / 10) * 10;
+  // Round pay steps across the points and the fitted line's ends (lib/rangeScale).
+  const pays = [...points.map((p) => p.pay), ...(self ? [self.pay] : []), ...(reg ? [reg.intercept, reg.intercept + reg.slope * xMax] : [])].filter((v) => Number.isFinite(v));
+  const yTicks = pays.length ? moneyTicks(Math.max(0, Math.min(...pays)), Math.max(...pays)) : [];
   const xTicks: number[] = [];
   for (let t = 0; t <= xMax; t += 10) xTicks.push(t);
 
@@ -165,7 +169,8 @@ export function TenurePayScatter({
             width={56}
             tick={AXIS_TICK}
             tickFormatter={fmtK}
-            domain={['auto', 'auto']}
+            ticks={yTicks.length ? yTicks : undefined}
+            domain={yTicks.length ? [yTicks[0], yTicks[yTicks.length - 1]] : ['auto', 'auto']}
             padding={{ top: 10, bottom: 10 }}
           />
           <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<ScatterTip />} />

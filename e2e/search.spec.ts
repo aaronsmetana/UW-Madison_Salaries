@@ -141,3 +141,29 @@ test('pickers that take only a person show people alone, with no groups', async 
   await expect(page.locator('[role="listbox"] [role="group"]')).toHaveCount(0);
   await expect(page.locator('[role="option"]:not([data-kind="person"])')).toHaveCount(0);
 });
+
+test('Enter pressed before people have loaded opens the person once they do', async ({ page }) => {
+  await page.goto('./');
+  const box = page.getByRole('combobox', { name: 'Search a person, title or division' });
+  await expect(box).toBeVisible({ timeout: 60_000 });
+  // Straight away: the database is still loading, so people are still being searched.
+  await box.fill('smetana');
+  await expect(page.locator('[data-group="people"] .search-status')).toBeVisible({ timeout: 10_000 });
+  await box.press('Enter');
+  await expect(page).toHaveURL(new RegExp(`/person/${encodeURIComponent(AARON)}$`), { timeout: 60_000 });
+});
+
+test('on a phone the placeholder fits its box', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('./');
+  const box = page.getByRole('combobox', { name: 'Search a person, title or division' });
+  await expect(box).toBeVisible({ timeout: 60_000 });
+  const { text, fits } = await box.evaluate((el: HTMLInputElement) => {
+    const cs = getComputedStyle(el);
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return { text: el.placeholder, fits: ctx.measureText(el.placeholder).width <= room };
+  });
+  expect(fits, `"${text}" is cut off`).toBe(true);
+});

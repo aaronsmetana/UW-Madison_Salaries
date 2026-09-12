@@ -133,7 +133,8 @@ export function PayBandBar({
       </div>
       <Group justify="space-between" mt={6}>
         <Text size="xs" c="dimmed">{usd(min)} · min</Text>
-        {status && <Badge size="sm" variant="light" color={color}>{status}</Badge>}
+        {/* Light variant text in the darker shades (app.css): the pos one measured 3.84:1 on its fill. */}
+        {status && <Badge size="sm" variant="light" color={color} className={color === 'pos' ? 'pos-light-text' : color === 'orange' ? 'orange-light-text' : undefined}>{status}</Badge>}
         <Text size="xs" c="dimmed">{usd(max)} · max</Text>
       </Group>
       {quartiles && (

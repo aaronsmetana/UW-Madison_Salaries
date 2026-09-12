@@ -24,7 +24,7 @@ const RAISES = `WITH snaps AS (SELECT snapshot_id, CAST(min(snapshot_date) AS VA
             WHERE a.job IS NOT NULL AND a.pay > 0 AND b.pay > 0
               AND (a.b IS NULL OR b.b IS NULL OR a.b = b.b OR (a.b = 'annual' AND b.b = '12 month')))`;
 
-const pct = (d: number) => (Math.abs(d) < 0.0005 ? '0%' : `${d > 0 ? '+' : '-'}${Math.abs(d * 100).toFixed(1)}%`);
+const pct = (d: number) => (Math.abs(d) < 0.0005 ? '0%' : `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(1)}%`);
 
 async function changeCellText(page: Page, label: string) {
   const row = page.locator('table.appt-history tbody tr').filter({ has: page.locator('td.appt-snapshot', { hasText: label }) });

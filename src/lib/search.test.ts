@@ -63,7 +63,9 @@ describe('enterPick', () => {
     expect(enterPick(0, 3, false, false)).toBe(0);
   });
   it('waits while people are still being searched, unless the reader chose a row', () => {
-    expect(enterPick(0, 3, true, false)).toBeNull();
+    expect(enterPick(0, 3, true, false)).toBe('wait');
+    // Even with nothing to show yet: the person may be about to arrive.
+    expect(enterPick(0, 0, true, false)).toBe('wait');
     expect(enterPick(1, 3, true, true)).toBe(1);
   });
   it('opens nothing when there is no row', () => {

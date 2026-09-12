@@ -288,3 +288,39 @@ test('pointing changes nothing away from the pointer: no dot elsewhere dims', as
   expect(Buffer.compare(before, after), 'dots far from the pointer changed while it pointed').toBe(0);
   await ctx.close();
 });
+
+test('after a window resize the dots are laid out for the width they are drawn at, as a fresh load lays them', async ({ browser }) => {
+  // On the way to a phone width the app shell eases its navbar's padding away, so the plot grows from
+  // nothing to its width in ~9ms steps. A half-pixel dead band in the field's width measure swallowed
+  // the last step whenever it came in under 0.5px, and the phone's dots were laid out for a width the
+  // canvas was not drawn at — differently run to run, which is how the visual suite found it.
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const field = page.locator('.hero-dots');
+  const offBy = () => field.evaluate((el) => Math.abs(Number(el.getAttribute('data-width')) - el.getBoundingClientRect().width));
+  const laidOut = (why: string) => expect.poll(offBy, { message: `the dots are laid out for the width the field is drawn at ${why}` }).toBeLessThan(0.01);
+  await page.setViewportSize({ width: 375, height: 812 });
+  // Until the shell's ease has finished: the same width over ten frames.
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    const el = document.querySelector('.hero-dots')!;
+    let last = -1, same = 0;
+    const tick = () => { const w = el.getBoundingClientRect().width; same = w === last ? same + 1 : 0; last = w; if (same >= 10) resolve(); else requestAnimationFrame(tick); };
+    tick();
+  }));
+  await laidOut('after the resize');
+  // Where that last step fell is a matter of frame timing, so make one that always falls short of
+  // half a pixel: widen the pile's gap by 0.3px, then put it back.
+  for (const gap of ['14.3px', '14px']) {
+    await page.locator('.hero-dist-row').evaluate((el, g) => (el as HTMLElement).style.setProperty('--pile-gap', g), gap);
+    await laidOut(`with the gap at ${gap}`);
+  }
+  const ink = (p: Page) => p.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  const resized = await ink(page);
+
+  const fresh = await ctx.newPage();
+  await fresh.setViewportSize({ width: 375, height: 812 });
+  await settledHome(fresh);
+  expect(await ink(fresh) === resized, 'the resized field paints what a fresh load at that width paints').toBe(true);
+  await ctx.close();
+});

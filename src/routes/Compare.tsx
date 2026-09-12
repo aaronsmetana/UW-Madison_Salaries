@@ -589,7 +589,7 @@ export default function Compare() {
                         <span>{c.label}</span>
                       </Group>
                       <Text className="fold-under" size="xs" c="dimmed">
-                        {raises} raises · {c.promotions} {c.promotions === 1 ? 'promotion' : 'promotions'} · avg {c.avgRaise == null ? '—' : pct(c.avgRaise)} · longest without {longest}
+                        raised at {c.raises} of {c.judged} steps · {c.promotions} {c.promotions === 1 ? 'promotion' : 'promotions'} · avg raise {c.avgRaise == null ? '—' : pct(c.avgRaise)} · longest without a raise: {longest}
                       </Text>
                     </Table.Td>
                     <Table.Td data-fold><Sparkline points={c.spark} breaks={c.breaks} stroke={color} width={64} height={18} /></Table.Td>

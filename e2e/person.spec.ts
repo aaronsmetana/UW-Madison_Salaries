@@ -564,7 +564,7 @@ test('a percentage moved by FTE says what the rate actually did', async ({ page 
 
   // The figure and its explanation must be in the same cell — a note one row away explains nothing.
   const sep24 = rows.find((r) => r.snapshot === 'Sep 2024' && r.note)!;
-  expect(sep24.raise).toContain('-32.0%');
+  expect(sep24.raise).toContain('−32.0%');
   expect(sep24.note).toBe('rate +2.0%');
 });
 

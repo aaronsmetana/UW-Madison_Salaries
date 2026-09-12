@@ -12,6 +12,7 @@ import { AXIS_TICK, GRID, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, sameTitleText } from '../lib/payHistory';
+import { moneyTicks } from '../lib/rangeScale';
 import { BreakLabels } from '../components/chart/BreakLabel';
 import { packLabelRows, measureText } from '../lib/labelLayout';
 import { useWidth } from '../lib/useWidth';
@@ -701,6 +702,13 @@ export default function Person() {
 
   const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
   const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
+  // Round steps from $0 to the highest line or grade-band edge drawn (lib/rangeScale): Recharts' own
+  // read $0 / $45,000 / $90,000.
+  const trendTicks = useMemo(() => {
+    const vals = trendPlot.flatMap((r) => (trendMode === 'actual' ? [r.salary, r.med, r.typical] : [r.rate, r.medRate]));
+    const top = Math.max(1, ...vals.filter((v): v is number => v != null && Number.isFinite(v)), band?.max ?? 0);
+    return moneyTicks(0, top);
+  }, [trendPlot, trendMode, band]);
 
   // Long titles (e.g. "Professor") can have 1000+ peers — page the table instead of rendering
   // every row. Auto-expand if the subject would otherwise be scrolled off the first page.
@@ -1357,7 +1365,7 @@ export default function Person() {
               tickMargin={fteVaries ? undefined : 10}
               height={fteVaries ? 8 : 34}
             />
-            <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} />
+            <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} ticks={trendTicks} domain={[0, trendTicks[trendTicks.length - 1] ?? 'auto']} />
             <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
             {/* The grade's official band, floor and ceiling (kept as separate siblings — Recharts does not
                 traverse a Fragment's children). Their values are in the legend. */}

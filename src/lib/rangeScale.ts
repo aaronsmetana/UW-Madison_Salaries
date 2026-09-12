@@ -49,3 +49,19 @@ export function scaleX(s: RangeScale, v: number, width: number, pad = 1): number
   const f = (Math.min(Math.max(v, s.lo), s.hi) - s.lo) / (s.hi - s.lo || 1);
   return pad + f * (width - 2 * pad);
 }
+
+/**
+ * Round money ticks covering [lo, hi]: a 1, 2, 2.5 or 5 × 10ᵏ step giving about `count` of them.
+ * Recharts' own "nice" steps are not: the starting-group chart read $0 / $35,000 / $70,000, and a
+ * professor's tenure scatter $0k / $115k / $230k.
+ */
+export function moneyTicks(lo: number, hi: number, count = 5): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [];
+  if (!(hi > lo)) return [lo];
+  const step = niceStep((hi - lo) / (count - 1));
+  const a = Math.floor(lo / step + 1e-9) * step;
+  const b = Math.ceil(hi / step - 1e-9) * step;
+  const out: number[] = [];
+  for (let k = 0; a + k * step <= b + step * 1e-6; k++) out.push(Math.round((a + k * step) * 100) / 100);
+  return out;
+}

@@ -120,6 +120,8 @@ test("the cadence table counts raises by the site's rules and measures stagnatio
   expect(Number(await row.getAttribute('data-raises'))).toBe(steps.filter((s) => s.endsWith(':raise')).length);
   expect(Number(await row.getAttribute('data-longest'))).toBe(longest);
   await expect(row).toContainText(`${longest} months`);
+  // Folded on a phone, in words: "raised at 6 of 7 steps", "longest without a raise: 7 months".
+  await expect(row.locator('.fold-under')).toHaveText(new RegExp(`^raised at ${await row.getAttribute('data-raises')} of ${await row.getAttribute('data-judged')} steps · .* · longest without a raise: ${longest} months$`));
   await expect(row.locator('.series-dot')).toHaveCount(1);
   await expect(row.locator('svg.sparkline')).toHaveAttribute('data-points', String(snaps.length + 1));
 });

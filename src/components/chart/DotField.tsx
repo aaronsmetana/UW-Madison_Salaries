@@ -117,7 +117,11 @@ export function DotField({
   useLayoutEffect(() => {
     const el = boxRef.current;
     if (!el) return;
-    const measure = () => setWidth((w) => { const n = el.getBoundingClientRect().width; return Math.abs(n - w) < 0.5 ? w : n; });
+    // Any real change of width re-lays the field. A half-pixel dead band here kept whichever width a
+    // resize passed through last within 0.5px of the final one, so after a window resize the dots were
+    // laid out for a width the canvas was not drawn at, and differed run to run. Nothing inside the box
+    // sizes it (the canvas is absolutely placed), so an exact measure cannot feed back on itself.
+    const measure = () => setWidth((w) => { const n = el.getBoundingClientRect().width; return Math.abs(n - w) < 0.01 ? w : n; });
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -492,6 +496,7 @@ export function DotField({
       className={`dot-field${className ? ` ${className}` : ''}`}
       style={{ position: 'relative', width: '100%', height, pointerEvents: 'none' }}
       data-dots={values.length}
+      data-width={layout ? layout.width : undefined}
       data-alpha={DOT_ALPHA}
       data-settled={settled ? 'true' : 'false'}
       data-lens={lensAt ? 'on' : 'off'}

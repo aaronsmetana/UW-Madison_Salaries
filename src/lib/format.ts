@@ -54,7 +54,8 @@ export function pct(n: number | null | undefined, digits = 1): string {
 export function fmtChange(d: number | null | undefined): string {
   if (d == null || Number.isNaN(Number(d))) return '—';
   if (Math.abs(d) < 0.0005) return '0%';
-  return `${d > 0 ? '+' : '-'}${(Math.abs(d) * 100).toFixed(1)}%`;
+  // A real minus (U+2212), as the raise bins print it, not a hyphen.
+  return `${d > 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%`;
 }
 
 /** Tenure/duration in years, one decimal ("11.4 yr") — one rendering everywhere tenure is shown as

@@ -67,12 +67,13 @@ export function matchDivisions(index: SearchIndex | undefined, q: string, limit:
 }
 
 /**
- * The row Enter opens, or null for none. While people are still being searched the first row is a
- * title or a division, and a name typed quickly would open that instead of the person — so until
- * people have answered, Enter acts only on a row the reader chose (by arrow key or pointer).
+ * The row Enter opens; 'wait' to open the first row once people have answered; null for none. While
+ * people are still being searched the first row is a title or a division, and a name typed quickly
+ * would open that instead of the person — so until people have answered, Enter acts at once only on a
+ * row the reader chose (by arrow key or pointer), and otherwise is kept rather than dropped.
  */
-export function enterPick(active: number, rows: number, peopleSearching: boolean, chosen: boolean): number | null {
+export function enterPick(active: number, rows: number, peopleSearching: boolean, chosen: boolean): number | 'wait' | null {
+  if (peopleSearching && !chosen) return 'wait';
   if (active < 0 || active >= rows) return null;
-  if (peopleSearching && !chosen) return null;
   return active;
 }

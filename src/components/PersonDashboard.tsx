@@ -529,7 +529,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                       someone carries into a meeting — was asserting a cut in the strongest colour
                       the palette has. */}
                   {!reporting && (raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
-                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'}>
+                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'} className={raise.delta > 0 ? 'pos-light-text' : 'orange-light-text'}>
                       {fmtChange(raise.delta)}
                       {raise.kind === 'combined' && (
                         <Text span size="xs" c="dimmed"> {acrossLabel(raise.curCount, raise.priorCount)}</Text>
@@ -537,7 +537,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                     </Text>
                   )}
                   {raise.kind === 'titleChange' && (
-                    <Text size="xs" c={raise.delta == null || raise.delta === 0 ? 'dimmed' : raise.delta > 0 ? 'pos' : 'orange'}>
+                    <Text size="xs" c={raise.delta == null || raise.delta === 0 ? 'dimmed' : raise.delta > 0 ? 'pos' : 'orange'} className={raise.delta == null || raise.delta === 0 ? undefined : raise.delta > 0 ? 'pos-light-text' : 'orange-light-text'}>
                       {raise.delta != null && raise.delta !== 0 ? `${fmtChange(raise.delta)} · ` : ''}
                       <Text span size="xs" fw={600} c={raise.move === 'promotion' ? 'accent.7' : 'dimmed'} data-change-tag={raise.move}>{raise.move}</Text>
                       {raise.note && <Text span size="xs" c="dimmed"> · {raise.note}</Text>}

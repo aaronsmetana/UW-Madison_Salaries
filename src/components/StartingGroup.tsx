@@ -8,6 +8,7 @@ import { sqlStr } from '../lib/duckdb';
 import { personPay, poolPercentile } from '../lib/queries';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
 import { AXIS_TICK, GRID, fmtUsd } from '../lib/chartStyle';
+import { moneyTicks } from '../lib/rangeScale';
 import { usd, num } from '../lib/format';
 import { ordinal } from '../lib/stats';
 import { BAND_IQR, MARK_SELF } from './markers';
@@ -105,6 +106,8 @@ export function StartingGroup({ personKey, first }: {
   const brkX = snapX(brk.date, brk.snapshotId);
   const showBreak = brkX > axis.domain[0] && brkX < axis.domain[1];
   const when = first.label.replace(/\s*\((?:Pre|Post)-TTC\)/, '');
+  // Round steps from $0 to the top of the group's range or this person's line (lib/rangeScale).
+  const yTicks = moneyTicks(0, Math.max(1, ...plot.flatMap((r) => [r.band10?.[1] ?? 0, r.mine ?? 0, r.median ?? 0])));
 
   return (
     <Card withBorder padding="lg" mt="lg" className="starting-group">
@@ -127,7 +130,7 @@ export function StartingGroup({ personKey, first }: {
         <ComposedChart data={plot} margin={{ left: 12, right: 30, top: 16, bottom: 0 }}>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
-          <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} />
+          <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} ticks={yTicks} domain={yTicks.length ? [yTicks[0], yTicks[yTicks.length - 1]] : undefined} />
           <Tooltip content={<GroupTip />} />
           {showBreak && <ReferenceLine x={brkX} stroke="var(--mantine-color-gray-4)" strokeDasharray="2 4" />}
           {/* 10th–90th, then the middle 50% drawn as it is on every chart (BAND_IQR). */}

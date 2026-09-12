@@ -39,7 +39,9 @@ export interface HistoryRow {
 function ChangeFigure({ delta }: { delta: number }) {
   return delta === 0
     ? <Text size="sm" c="dimmed">0%</Text>
-    : <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'}>{fmtChange(delta)}</Text>;
+    // The light-mode shades Mantine resolves for `pos` and `orange` measured 4.15–4.37:1 and 2.88:1 on
+    // these rows; the shared light-text classes (app.css) carry the darker ones.
+    : <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'} className={delta > 0 ? 'pos-light-text' : 'orange-light-text'}>{fmtChange(delta)}</Text>;
 }
 
 /**
