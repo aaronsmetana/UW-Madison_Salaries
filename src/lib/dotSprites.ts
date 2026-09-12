@@ -59,6 +59,43 @@ export function bead(ink: string, radius: number, glow: boolean): Bead {
   return out;
 }
 
+/**
+ * What a bead lays down, for drawing it as a square while it moves: a square of the same ink — the sum
+ * of the bead's alpha, halo and all, so `side²` at full alpha — in the bead's own mean colour. Measured
+ * from the sprite once. A square 2r wide in the flat tone, as moving dots were drawn, laid down about
+ * 27% more ink than the round bead, so a strip of moving dots was a darker rectangle in the field until
+ * it came to rest. (A dark bead's halo is a few percent of its ink outside its disc; a second, wider
+ * square to carry it moved a strip by under 1%, so the one square carries it.)
+ */
+export interface BeadInk { fill: string; side: number }
+
+const inks = new WeakMap<HTMLCanvasElement, BeadInk>();
+let scratch: CanvasRenderingContext2D | null = null;
+
+/** The ink of `b`. */
+export function beadInk(b: Bead): BeadInk {
+  const hit = inks.get(b.img);
+  if (hit) return hit;
+  const n = b.img.width;
+  // Read from a copy, so the sprite itself is never read back and stays where drawImage wants it.
+  if (!scratch) scratch = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const ctx = scratch!;
+  if (ctx.canvas.width < n || ctx.canvas.height < n) { ctx.canvas.width = Math.max(ctx.canvas.width, n); ctx.canvas.height = Math.max(ctx.canvas.height, n); }
+  ctx.clearRect(0, 0, n, n);
+  ctx.drawImage(b.img, 0, 0);
+  const px = ctx.getImageData(0, 0, n, n).data;
+  let r = 0, g = 0, bl = 0, a = 0;
+  for (let k = 0; k < px.length; k += 4) {
+    const al = px[k + 3] / 255;
+    r += px[k] * al; g += px[k + 1] * al; bl += px[k + 2] * al; a += al;
+  }
+  const ink: BeadInk = a > 0
+    ? { fill: `rgb(${(r / a).toFixed(2)}, ${(g / a).toFixed(2)}, ${(bl / a).toFixed(2)})`, side: Math.sqrt(a) }
+    : { fill: 'rgba(0, 0, 0, 0)', side: 0 };
+  inks.set(b.img, ink);
+  return ink;
+}
+
 function withAlpha(css: string, a: number): string {
   const m = css.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
   return m ? `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a})` : css;

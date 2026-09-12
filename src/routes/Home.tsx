@@ -21,6 +21,7 @@ import { Z } from '../lib/layers';
 import { DotField, SPREAD_MS, useEntranceOnce, type DotFieldHandle } from '../components/chart/DotField';
 import { FisheyeLens, LENS_D, type FisheyeLensHandle, type LensView } from '../components/chart/FisheyeLens';
 import { peopleFromCounts } from '../lib/dotLayout';
+import { STIR_STEP, stirPath } from '../lib/dotPhysics';
 import { usePref } from '../lib/prefs';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import type { HomeStats } from '../lib/manifest';
@@ -90,7 +91,7 @@ const PILE_MIN_W = 10;
 /** Every dot in the pile (its values run 0 to 1). */
 const PILE_ALL: [number, number] = [0, 2];
 /** The plot's height, and the clear band above the curve's peak, on a phone and wider. The band is
- *  where the readout rides over the peak and where a splash has room to fly (DotField). At 180px the
+ *  where the readout rides over the peak and where a burst's dots have room to fly (DotField). At 180px the
  *  chart was a strip: its dots too small to tell apart and its peak flush with the panel's top. */
 const PLOT_H = { phone: 220, wide: 300 };
 const HEADROOM = { phone: 28, wide: 36 };
@@ -183,6 +184,8 @@ function Distribution({
   // A readout a finger tapped stays until a tap elsewhere; a touch pointer "leaves" as it lifts.
   const [tapped, setTapped] = useState(false);
   const tapRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
+  // Where a drag with the mouse button held last stirred the dots, while it is held.
+  const stirRef = useRef<{ x: number; y: number } | null>(null);
   const H = phone ? PLOT_H.phone : PLOT_H.wide;
   const HEAD = phone ? HEADROOM.phone : HEADROOM.wide;
 
@@ -410,27 +413,54 @@ function Distribution({
     setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
   const onLeave = () => { setHoverIdx(null); setLensAt(null); lensPageRef.current = null; };
-  // A mouse's press splashes where it is. A finger's tap does too, and shows the readout there — but a
-  // finger that moves is scrolling, and the browser takes the gesture (no pointerup reaches here).
+  // A mouse's press bursts the dots where it is, and a drag with the button held stirs them along its
+  // path: a smaller burst every STIR_STEP px (lib/dotPhysics `stirPath`), through the move's coalesced
+  // points, so a quick drag follows its true line and leaves no gaps. A finger's tap bursts too, shows
+  // the readout there and ticks the phone — but a finger that moves is scrolling, and the browser takes
+  // the gesture (no pointerup reaches here, or a pointercancel does).
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse') {
       if (e.button !== 0) return;
       const box = e.currentTarget.getBoundingClientRect();
-      mainDotsRef.current?.splash(e.clientX - box.left, e.clientY - box.top);
+      const at = { x: e.clientX - box.left, y: e.clientY - box.top };
+      mainDotsRef.current?.burst(at.x, at.y);
+      stirRef.current = at;
       return;
     }
     tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
   };
+  const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    onHover(e);
+    // A touch contact reports its button held as it moves: only a mouse stirs.
+    if (e.pointerType !== 'mouse' || !(e.buttons & 1)) { stirRef.current = null; return; }
+    const box = e.currentTarget.getBoundingClientRect();
+    const native = e.nativeEvent;
+    const moves = typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : [];
+    const pts = (moves.length ? moves : [native]).map((m) => ({ x: m.clientX - box.left, y: m.clientY - box.top }));
+    let from = stirRef.current;
+    // Held down from off the plot: the stir starts here.
+    if (!from) { stirRef.current = pts[pts.length - 1]; return; }
+    for (const p of pts) {
+      for (const q of stirPath(from.x, from.y, p.x, p.y, STIR_STEP)) {
+        mainDotsRef.current?.burst(q.x, q.y, true);
+        from = q;
+      }
+    }
+    stirRef.current = from;
+  };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse') { stirRef.current = null; return; }
     const tap = tapRef.current;
     tapRef.current = null;
-    if (!tap || e.pointerType === 'mouse' || tap.id !== e.pointerId) return;
+    if (!tap || tap.id !== e.pointerId) return;
     if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 10 || performance.now() - tap.t > 400) return;
     onHover(e);
     setTapped(true);
     const box = e.currentTarget.getBoundingClientRect();
-    mainDotsRef.current?.splash(e.clientX - box.left, e.clientY - box.top);
+    if (mainDotsRef.current?.burst(e.clientX - box.left, e.clientY - box.top)) navigator.vibrate?.(10);
   };
+  // The browser took the gesture: no tap, no stir.
+  const onCancel = () => { stirRef.current = null; tapRef.current = null; };
   const pileHighlight = hoverPile ? PILE_ALL : null;
   const inkList = colour ? inks : undefined;
 
@@ -565,8 +595,8 @@ function Distribution({
       <div className="hero-dist-row">
       <div
         ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
-        onPointerMove={onHover} onPointerLeave={(e) => { if (e.pointerType === 'mouse') onLeave(); }}
-        onPointerDown={onDown} onPointerUp={onUp}
+        onPointerMove={onMove} onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onLeave(); stirRef.current = null; } }}
+        onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
       >
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
           curve used to carry is these people; the line, the markers and the readout stay on top. */}
@@ -575,6 +605,7 @@ function Distribution({
           ref={mainDotsRef}
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
           kinds={colour ? cats : null} inks={inkList} stack={colour}
+          airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
           entrance={entrance} highlight={highlight} glow
           solo={shownSolo} replay={replay}
           onFrame={lensAt ? redrawLens : undefined}
@@ -782,7 +813,7 @@ function Distribution({
         Each dot is one person · actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
         {/* Say where the people above the cap are rather than truncating the tail silently. */}
         {hasPile ? ` · ${num(over)} at ${fmtK(cap ?? hi)}+ in the pile` : overflow ? ` · ${num(overflow)} above ${fmtK(cap ?? 0)} not shown` : ''}
-        {motion && <span className="hero-dist-hint"> · {canHover ? 'click' : 'tap'} the dots to stir them</span>}
+        {motion && <span className="hero-dist-hint"> · {canHover ? 'click the dots to scatter them, or drag through them' : 'tap the dots to scatter them'}</span>}
       </Text>
     </div>
   );

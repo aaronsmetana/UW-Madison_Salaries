@@ -1,8 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { layoutDots } from '../../lib/dotLayout';
-import { splashKick, stepFall, stepThrough, SPLASH_R } from '../../lib/dotPhysics';
+import {
+  AIR_BEFORE_REST, CLICK_CAP, RING_ALPHA, RING_REACH, WAVE_MS,
+  burstKick, burstSizes, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
+} from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
-import { bead, type Bead } from '../../lib/dotSprites';
+import { bead, beadInk, type Bead, type BeadInk } from '../../lib/dotSprites';
 import { prefersReducedMotion } from '../../lib/motion';
 
 /** Played once per session: after that the dots are simply there. */
@@ -22,9 +25,14 @@ export const STRONG_APART = 1.5;
  *  of the range is the per-dot jitter. */
 const TONES = 8;
 const DEPTH_TONES = 5;
-/** A dot's state of motion: at rest, in flight (thrown by a splash, or raining in, bouncing into its
- *  place), leaving through the floor, or gone (a group soloed away). */
-const REST = 0, FLYING = 1, LEAVING = 2, GONE = 3;
+/** A dot's state of motion: at rest; in flight (a soloed group's dot falling to its place, or raining
+ *  back in and bouncing into it); leaving through the floor; gone (a group soloed away); or bursting —
+ *  thrown aside by a click or a drag, on the spring home. */
+const REST = 0, FLYING = 1, LEAVING = 2, GONE = 3, BURST = 4;
+/** Scratch for the spring and the kicks: one frame's dots are worked one at a time. */
+const pose: Pose = { ox: 0, oy: 0, vx: 0, vy: 0 };
+const speed2 = { vx: 0, vy: 0 };
+const kickAt: Kick = { vx: 0, vy: 0, delay: 0 };
 /** How far above the top a dot raining back in may start, px: they arrive over about half a second. */
 const RAIN_SPREAD = 160;
 
@@ -70,9 +78,10 @@ export type LensMap = (x: number, y: number) => { x: number; y: number; scale: n
  *  px, less `ox, oy`), drawn through `map` into `ctx` — scaled to the glass's pixels already. */
 export interface DotFieldHandle {
   drawInto(ctx: CanvasRenderingContext2D, lens: { cx: number; cy: number; R: number; ox: number; oy: number; dpr: number; map: LensMap }): void;
-  /** Throws the dots near `x, y` (the field's CSS px) up, to fall back and bounce into place. False
-   *  when nothing moved (reduced motion, a hidden tab, no dots there). */
-  splash(x: number, y: number): boolean;
+  /** Bursts the dots round `x, y` (the field's CSS px) outward behind a shockwave, each to spring back
+   *  to its place; with `stir`, a drag's smaller burst, with no shockwave. False when nothing shows:
+   *  reduced motion, a hidden tab, or a stir with no dots in reach. */
+  burst(x: number, y: number, stir?: boolean): boolean;
 }
 
 /**
@@ -89,9 +98,10 @@ export interface DotFieldHandle {
  * colours, one per kind — so a theme change redraws in the new ink. No chart library: the landing
  * page loads none.
  *
- * Everything that moves is height only, which means nothing beyond "under the curve": the entrance's
- * fall, a re-stack when `stack` changes, a splash, and a soloed group's leaving and return. A dot's x is
- * its value, always.
+ * The entrance's fall, a re-stack when `stack` changes, and a soloed group's leaving and return move
+ * each dot up or down its own column, under the curve. A click or a drag (`burst`) throws the dots round
+ * it aside, and a spring brings each back to its place exactly — so at rest a dot's x is its value,
+ * always.
  */
 export const DotField = forwardRef<DotFieldHandle, {
   /** One per person, in the units `toX` takes. */
@@ -113,6 +123,10 @@ export const DotField = forwardRef<DotFieldHandle, {
   entrance?: boolean;
   /** How long the fall waits to start, ms — a second field lands after the first. */
   delay?: number;
+  /** Each dot's kind while it is thrown, an index into `airInks`: a field in one ink shows who is
+   *  there in a burst — each dot in the air wears its kind's colour, and turns back as it lands. */
+  airKinds?: ArrayLike<number> | null;
+  airInks?: readonly string[];
   /** Values in [lo, hi) draw in a stronger ink. Nothing else changes. */
   highlight?: readonly [number, number] | null;
   /** Show one kind alone: the others fall through the floor, and it falls to the floor in its own
@@ -125,17 +139,19 @@ export const DotField = forwardRef<DotFieldHandle, {
   /** Called after every paint: a magnifying glass over the field redraws with it. */
   onFrame?: () => void;
   /** The name each animated frame is measured under (`performance.measure`), so a page's fields can
-   *  be told apart; a splash's and a solo's frames are `flight-frame`. */
+   *  be told apart; a burst's and a solo's frames are `flight-frame`. */
   frameMark?: string;
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, entrance = false, delay = 0,
-  highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inkRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const airRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const textRef = useRef<HTMLSpanElement>(null);
+  const ringRef = useRef<HTMLSpanElement>(null);
   const [width, setWidth] = useState(0);
   const [settled, setSettled] = useState(false);
   const [scheme, setScheme] = useState(0);
@@ -154,13 +170,16 @@ export const DotField = forwardRef<DotFieldHandle, {
     return () => ro.disconnect();
   }, []);
 
-  // A theme change repaints in the new ink; a move to a screen of another pixel ratio repaints at it.
+  // A theme change repaints in the new ink; a move to a screen of another pixel ratio repaints at it;
+  // Reduce Motion switched on mid-burst lays the field again at rest, every dot home at once.
   useEffect(() => {
     const bump = () => setScheme((s) => s + 1);
     const mo = new MutationObserver(bump);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mantine-color-scheme'] });
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
     mq?.addEventListener?.('change', bump);
+    const rq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    rq?.addEventListener?.('change', bump);
     let dq: MediaQueryList | undefined;
     const watchDpr = () => {
       dq?.removeEventListener?.('change', onDpr);
@@ -169,7 +188,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     };
     function onDpr() { bump(); watchDpr(); }
     watchDpr();
-    return () => { mo.disconnect(); mq?.removeEventListener?.('change', bump); dq?.removeEventListener?.('change', onDpr); };
+    return () => { mo.disconnect(); mq?.removeEventListener?.('change', bump); rq?.removeEventListener?.('change', bump); dq?.removeEventListener?.('change', onDpr); };
   }, []);
 
   // Stacked by kind — the soloed kind first, so it takes each column's lowest slots.
@@ -215,10 +234,32 @@ export const DotField = forwardRef<DotFieldHandle, {
     entranceStart: null as number | null,
     restackStart: null as number | null,
     restackFrom: null as Float32Array | null,
-    /** Each dot's offset from its resting place and its speed (in flight), and its state of motion. */
+    /** Each dot's offset from its resting place, down (in flight or bursting) and across (bursting), its
+     *  speed down in flight, and its state of motion. */
     off: null as Float32Array | null,
+    offX: null as Float32Array | null,
     vel: null as Float32Array | null,
     mode: null as Uint8Array | null,
+    /** A bursting dot's motion: when it last changed (a kick arriving), where it was and how fast it went
+     *  then, and when it will be home (lib/dotPhysics `springPose`) — and a kick on its way, the
+     *  shockwave's front not there yet: when it arrives, its speed, and its cap. */
+    t0: null as Float64Array | null,
+    bx: null as Float32Array | null,
+    by: null as Float32Array | null,
+    bvx: null as Float32Array | null,
+    bvy: null as Float32Array | null,
+    restAt: null as Float64Array | null,
+    pendT: null as Float64Array | null,
+    pkx: null as Float32Array | null,
+    pky: null as Float32Array | null,
+    pcap: null as Float32Array | null,
+    /** The furthest across any dot is thrown, now and at the last frame: how far outside a strip a dot
+     *  drawn into it may belong. */
+    slack: 0,
+    slackLast: 0,
+    /** The shockwaves' rings: where each click was, when, and its burst's reach; and their ink. */
+    rings: [] as { x: number; y: number; t: number; reach: number }[],
+    ringInk: '',
     /** The x-range of the dots in flight or leaving, and how many. */
     flyLo: Infinity,
     flyHi: -Infinity,
@@ -234,9 +275,16 @@ export const DotField = forwardRef<DotFieldHandle, {
     /** Per kind, per tone: the bead each dot is stamped with, plain and highlighted. */
     beads: [] as Bead[][],
     strongBeads: [] as Bead[][],
-    /** Per kind, per tone: the colour, for the magnifying glass's larger beads. */
+    /** Per kind, per tone: the colour, for the magnifying glass's larger beads, and what a moving
+     *  square lays down (lib/dotSprites `beadInk`). The same for the air's kinds. */
     tones: [] as string[][],
     strongTones: [] as string[][],
+    fast: [] as BeadInk[][],
+    strongFast: [] as BeadInk[][],
+    airTones: [] as string[][],
+    airStrongTones: [] as string[][],
+    airFast: [] as BeadInk[][],
+    airStrongFast: [] as BeadInk[][],
     /** Each dot's tone, and the dots of each (kind, tone), for the fast full-field paint. */
     tone: null as Uint8Array | null,
     groups: [] as Uint32Array[],
@@ -249,7 +297,8 @@ export const DotField = forwardRef<DotFieldHandle, {
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
 
-  // The current y of dot i: at rest, falling in, re-stacking, plus its flight.
+  // The current y of dot i: at rest, falling in, re-stacking, plus its flight or burst — a thrown dot
+  // kept between the canvas's top and the baseline, so one pressed to the floor slides along it.
   const yOf = (i: number, now: number) => {
     const L = live.current;
     const lay = layout!;
@@ -264,18 +313,31 @@ export const DotField = forwardRef<DotFieldHandle, {
       y = -lay.r + (y + lay.r) * easeOutBack(p);
     }
     if (L.off) y += L.off[i];
+    if (L.mode && L.mode[i] === BURST) y = Math.min(height - lay.r, Math.max(lay.r, y));
     return y;
   };
   const yOfRef = useRef(yOf);
   yOfRef.current = yOf;
+  // Its x: its value, and aside while it bursts.
+  const xOf = (i: number) => layout!.pts[2 * i] + (live.current.offX ? live.current.offX[i] : 0);
+  const xOfRef = useRef(xOf);
+  xOfRef.current = xOf;
+  // Whether it is in the air: thrown, and not yet within AIR_EPS of its place.
+  const inAir = (i: number, now: number) => {
+    const L = live.current;
+    return !!L.mode && L.mode[i] === BURST && now < L.restAt![i] - AIR_BEFORE_REST;
+  };
+  const inAirRef = useRef(inAir);
+  inAirRef.current = inAir;
 
   /**
    * Paints the strip [x0, x1) of the field — or all of it — as it stands at `now`: as beads, or `fast`,
    * as squares in the same tones. A bead is a `drawImage`, about five times a square's cost, so 21,000
    * of them every frame held the fall and the re-stack at 16ms a frame; while the whole field moves it
    * is drawn in squares, which at this size and speed read the same, and in beads once it is still.
-   * A strip repainted while its dots move (a splash) is squares too — two thousand beads a
-   * frame took 14ms on a CI runner — and goes back to beads once everything is still.
+   * A strip repainted while its dots move (a burst, a stir) is squares too — two thousand beads a
+   * frame took 14ms on a CI runner — and goes back to beads once everything is still. Each square lays
+   * down what its bead would (lib/dotSprites `beadInk`), so a strip in motion weighs what it does at rest.
    */
   const paint = (now: number, x0 = -Infinity, x1 = Infinity, fast = false) => {
     const canvas = canvasRef.current;
@@ -294,21 +356,26 @@ export const DotField = forwardRef<DotFieldHandle, {
     ctx.clearRect(a, 0, b - a, canvas.height);
     ctx.globalAlpha = DOT_ALPHA;
     const { order, sortedX, r, pts } = lay;
-    const reach = (glow && L.dark ? 2 : 1) * r + 1;
+    const reach = (glow && L.dark ? 2 : 1) * r + 1 + L.slack;
     const j0 = whole ? 0 : lowerBound(sortedX, a / dpr - reach);
     const j1 = whole ? order.length : lowerBound(sortedX, b / dpr + reach);
     const hl = L.highlight;
     const kindsN = L.beads.length;
     const tone = L.tone;
     const mode = L.mode;
+    const offX = L.offX;
     if (fast) {
-      // Squares, a fill colour at a time: one pass per (kind, tone), the highlighted dots after. The
-      // whole field's groups are kept; a strip's dots are sorted into theirs in one counting pass.
-      const side = 2 * r * dpr;
+      // Squares, a fill at a time: one pass per (kind, tone), the highlighted dots after. The whole
+      // field's groups are kept; a strip's dots — or a field with dots in the air, each under its air
+      // kind — are sorted into theirs in one counting pass.
+      const air = !!airKinds && L.airFast.length > 0 && L.flying > 0;
+      const airN = air ? L.airFast.length : 0;
       let groups: ArrayLike<number>[] = L.groups;
-      if (!whole) {
-        const G = kindsN * TONES;
-        const groupOf = (i: number) => (((kinds ? kinds[i] : 0) || 0) % kindsN) * TONES + tone[i];
+      if (!whole || air) {
+        const G = (kindsN + airN) * TONES;
+        const groupOf = (i: number) => (air && inAir(i, now)
+          ? kindsN + ((airKinds![i] || 0) % airN)
+          : ((kinds ? kinds[i] : 0) || 0) % kindsN) * TONES + tone[i];
         const start = new Int32Array(G + 1);
         for (let j = j0; j < j1; j++) start[groupOf(order[j]) + 1]++;
         for (let g = 0; g < G; g++) start[g + 1] += start[g];
@@ -319,17 +386,19 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
       for (let strong = 0; strong < 2; strong++) {
         if (strong && !hl) break;
-        const cols = strong ? L.strongTones : L.tones;
         for (let g = 0; g < groups.length; g++) {
           const list = groups[g];
           if (!list.length) continue;
-          ctx.fillStyle = cols[Math.floor(g / TONES)][g % TONES];
+          const k = Math.floor(g / TONES);
+          const ink = k < kindsN ? (strong ? L.strongFast : L.fast)[k][g % TONES] : (strong ? L.airStrongFast : L.airFast)[k - kindsN][g % TONES];
+          const side = ink.side;
+          ctx.fillStyle = ink.fill;
           for (let q = 0; q < list.length; q++) {
             const i = list[q];
             if (mode && mode[i] === GONE) continue;
             const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
             if (lit !== !!strong) continue;
-            ctx.fillRect(pts[2 * i] * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
+            ctx.fillRect((pts[2 * i] + (offX ? offX[i] : 0)) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
           }
         }
       }
@@ -344,8 +413,22 @@ export const DotField = forwardRef<DotFieldHandle, {
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           if (lit !== !!strong) continue;
           const bd = set[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
-          ctx.drawImage(bd.img, pts[2 * i] * dpr - bd.half, yOf(i, now) * dpr - bd.half);
+          ctx.drawImage(bd.img, (pts[2 * i] + (offX ? offX[i] : 0)) * dpr - bd.half, yOf(i, now) * dpr - bd.half);
         }
+      }
+    }
+    // The shockwaves' rings, over the dots: each grows from its click and fades as it goes.
+    if (L.rings.length && L.ringInk) {
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.strokeStyle = L.ringInk;
+      for (const g of L.rings) {
+        const rad = ((now - g.t) / WAVE_MS) * g.reach;
+        const fade = 1 - rad / (RING_REACH * g.reach);
+        if (!(rad > 0) || fade <= 0) continue;
+        ctx.globalAlpha = RING_ALPHA * fade;
+        ctx.beginPath();
+        ctx.arc(g.x * dpr, g.y * dpr, rad * dpr, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
     ctx.restore();
@@ -360,76 +443,146 @@ export const DotField = forwardRef<DotFieldHandle, {
       const L = live.current;
       if (!lay || !L.tone || !L.tones.length) return;
       const now = performance.now();
-      const { order, sortedX, r, pts } = lay;
-      // This field's own x of the glass's centre; everything within its radius (plus a dot).
+      const { order, sortedX, r } = lay;
+      // This field's own x of the glass's centre; everything within its radius (plus a dot, plus how far
+      // a thrown dot may be from its place).
       const fx = cx - ox;
-      const j0 = lowerBound(sortedX, fx - R - r);
-      const j1 = lowerBound(sortedX, fx + R + r);
+      const j0 = lowerBound(sortedX, fx - R - r - L.slack);
+      const j1 = lowerBound(sortedX, fx + R + r + L.slack);
       const hl = L.highlight;
       const kindsN = L.tones.length;
-      // Beads by (strong, kind, tone, quarter-pixel radius), so a dot costs a lookup, not a key string.
+      const air = !!airKinds && L.airTones.length > 0 && L.flying > 0;
+      const airN = L.airTones.length;
+      const kMax = Math.max(kindsN, airN, 1);
+      // Beads by (air, strong, kind, tone, quarter-pixel radius), so a dot costs a lookup, not a key string.
       const beads = new Map<number, Bead>();
       ctx.save();
       ctx.globalAlpha = DOT_ALPHA;
       for (let strong = 0; strong < 2; strong++) {
         if (strong && !hl) break;
-        const set = strong ? L.strongTones : L.tones;
         for (let j = j0; j < j1; j++) {
           const i = order[j];
           if (L.mode && L.mode[i] === GONE) continue;
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           if (lit !== !!strong) continue;
-          const sx = pts[2 * i] + ox;
+          const sx = xOfRef.current(i) + ox;
           const sy = yOfRef.current(i, now) + oy;
           if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + r) ** 2) continue;
           const m = map(sx, sy);
-          const k = ((kinds ? kinds[i] : 0) || 0) % kindsN;
+          const up = air && inAirRef.current(i, now);
+          const k = up ? (airKinds![i] || 0) % airN : ((kinds ? kinds[i] : 0) || 0) % kindsN;
+          const tone = L.tone[i];
           // Toward the rim the glass barely magnifies, and a bead there is a dot's own size: a square
-          // in its tone, at a fifth of a bead's cost — most of the glass's dots are out there.
+          // of its ink, at a fifth of a bead's cost — most of the glass's dots are out there.
           if (m.scale < 1.6) {
-            const side = 2 * r * m.scale * dpr;
-            ctx.fillStyle = set[k][L.tone[i]];
+            const ink = (up ? (strong ? L.airStrongFast : L.airFast) : (strong ? L.strongFast : L.fast))[k][tone];
+            const side = ink.side * m.scale;
+            ctx.fillStyle = ink.fill;
             ctx.fillRect(m.x * dpr - side / 2, m.y * dpr - side / 2, side, side);
             continue;
           }
           // Beads come in quarter-pixel sizes, so a sweep of the glass reuses a handful of sprites.
           const q = Math.max(2, Math.round(r * m.scale * dpr * 4));
-          const key = ((strong * kindsN + k) * TONES + L.tone[i]) * 256 + q;
+          const key = ((((up ? 2 : 0) + strong) * kMax + k) * TONES + tone) * 256 + q;
           let bd = beads.get(key);
-          if (!bd) { bd = bead(set[k][L.tone[i]], q / 4, glow && L.dark); beads.set(key, bd); }
+          if (!bd) {
+            const set = up ? (strong ? L.airStrongTones : L.airTones) : (strong ? L.strongTones : L.tones);
+            bd = bead(set[k][tone], q / 4, glow && L.dark);
+            beads.set(key, bd);
+          }
           ctx.drawImage(bd.img, m.x * dpr - bd.half, m.y * dpr - bd.half);
+        }
+      }
+      // The shockwaves' rings, through the glass.
+      if (L.rings.length && L.ringInk) {
+        ctx.strokeStyle = L.ringInk;
+        for (const g of L.rings) {
+          const rad = ((now - g.t) / WAVE_MS) * g.reach;
+          const fade = 1 - rad / (RING_REACH * g.reach);
+          const gx = g.x + ox, gy = g.y + oy;
+          const d = Math.hypot(gx - cx, gy - cy);
+          if (!(rad > 0) || fade <= 0 || d > R + rad || d < rad - R) continue;
+          ctx.globalAlpha = RING_ALPHA * fade;
+          ctx.beginPath();
+          let most = 1;
+          for (let n = 0; n <= 96; n++) {
+            const a = (n / 96) * Math.PI * 2;
+            const m = map(gx + rad * Math.cos(a), gy + rad * Math.sin(a));
+            if (n) ctx.lineTo(m.x * dpr, m.y * dpr); else ctx.moveTo(m.x * dpr, m.y * dpr);
+            if (m.scale > most) most = m.scale;
+          }
+          ctx.lineWidth = 1.5 * dpr * Math.min(2, most);
+          ctx.stroke();
         }
       }
       ctx.restore();
     },
-    splash(x, y) {
+    burst(x, y, stir = false) {
       const lay = layout;
       const L = live.current;
-      if (!lay || !L.mode || !L.off || !L.vel || prefersReducedMotion() || document.hidden) return false;
+      if (!lay || !L.mode || !L.t0 || !L.pendT || prefersReducedMotion() || document.hidden) return false;
       const now = performance.now();
+      const size = burstSizes(height);
+      const reach = stir ? size.stirReach : size.reach;
+      const speed = stir ? size.stirSpeed : size.speed;
+      const cap = stir ? size.stirSpeed : CLICK_CAP * size.speed;
       const { order, sortedX, pts } = lay;
-      const j0 = lowerBound(sortedX, x - SPLASH_R);
-      const j1 = lowerBound(sortedX, x + SPLASH_R);
+      const j0 = lowerBound(sortedX, x - reach - L.slack);
+      const j1 = lowerBound(sortedX, x + reach + L.slack);
       let any = false;
       for (let j = j0; j < j1; j++) {
         const i = order[j];
-        if (L.mode[i] === GONE || L.mode[i] === LEAVING) continue;
-        const k = splashKick(pts[2 * i] - x, yOfRef.current(i, now) - y, i);
-        if (k === 0) continue;
-        L.mode[i] = FLYING;
-        L.vel[i] = Math.min(0, L.vel[i]) + k;
-        if (pts[2 * i] < L.flyLo) L.flyLo = pts[2 * i];
-        if (pts[2 * i] > L.flyHi) L.flyHi = pts[2 * i];
+        const m = L.mode[i];
+        // A dot leaving, gone, or still falling into its place after a solo is not thrown.
+        if (m !== REST && m !== BURST) continue;
+        if (!burstKick(xOfRef.current(i) - x, yOfRef.current(i, now) - y, i, reach, speed, stir ? 0 : WAVE_MS, kickAt)) continue;
+        if (m === REST) {
+          L.mode[i] = BURST;
+          L.t0[i] = now;
+          L.bx![i] = 0; L.by![i] = 0; L.bvx![i] = 0; L.bvy![i] = 0;
+          L.restAt![i] = now;
+        }
+        // A kick on its way when another comes: the earlier moment, the two added.
+        const due = now + kickAt.delay;
+        if (L.pendT[i] === Infinity) {
+          L.pendT[i] = due; L.pkx![i] = kickAt.vx; L.pky![i] = kickAt.vy; L.pcap![i] = cap;
+        } else {
+          L.pendT[i] = Math.min(L.pendT[i], due);
+          L.pkx![i] += kickAt.vx; L.pky![i] += kickAt.vy;
+          L.pcap![i] = Math.max(L.pcap![i], cap);
+        }
+        const hx = pts[2 * i];
+        if (hx < L.flyLo) L.flyLo = hx;
+        if (hx > L.flyHi) L.flyHi = hx;
         any = true;
       }
-      if (any) {
-        L.flying = Math.max(1, L.flying);
-        if (boxRef.current) boxRef.current.dataset.flight = 'moving';
-        kickRef.current();
-      }
-      return any;
+      if (!stir) L.rings.push({ x, y, t: now, reach });
+      else if (!any) return false;
+      if (any) L.flying = Math.max(1, L.flying);
+      if (boxRef.current) boxRef.current.dataset.flight = 'moving';
+      kickRef.current();
+      return true;
     },
-  }), [layout, values, kinds, glow]);
+  }), [layout, values, kinds, airKinds, glow, height]);
+
+  // A kick whose shockwave has arrived: where the dot is on its spring at that moment, plus the kick
+  // (capped: lib/dotPhysics `thrown`), starts its motion home again from there.
+  const rebase = (i: number) => {
+    const L = live.current;
+    const t = L.pendT![i];
+    springPose(L.bx![i], L.by![i], L.bvx![i], L.bvy![i], t - L.t0![i], pose);
+    thrown(pose.vx, pose.vy, L.pkx![i], L.pky![i], L.pcap![i], speed2);
+    L.bx![i] = pose.ox;
+    L.by![i] = pose.oy;
+    L.bvx![i] = speed2.vx;
+    L.bvy![i] = speed2.vy;
+    L.t0![i] = t;
+    L.restAt![i] = t + springRestAfter(pose.ox, pose.oy, speed2.vx, speed2.vy);
+    L.pendT![i] = Infinity;
+    L.pkx![i] = 0;
+    L.pky![i] = 0;
+    L.pcap![i] = 0;
+  };
 
   /** One frame of whatever is moving; schedules the next while anything still is. */
   const tick = (now: number) => {
@@ -451,12 +604,14 @@ export const DotField = forwardRef<DotFieldHandle, {
       full = true;
     }
     const dt = Math.min(32, Math.max(1, now - (L.lastTick || now - 16)));
-    // Flight: dots a splash threw, dots raining back in, dots leaving through the floor.
+    // Flight — a soloed group's dots falling to their places, raining back in, or leaving through the
+    // floor — and bursts, each dot on its spring home, where it is a function of time alone.
     let flightFrame = false;
-    let flightWide = false;
-    if (L.flying > 0 && L.mode && L.off && L.vel) {
+    let sx0 = Infinity, sx1 = -Infinity;
+    let slackNow = 0;
+    if (L.flying > 0 && L.mode && L.off && L.vel && L.offX && L.t0 && L.pendT && L.restAt) {
       flightFrame = true;
-      const was = [L.flyLo, L.flyHi];
+      const was0 = L.flyLo, was1 = L.flyHi;
       let lo = Infinity, hi = -Infinity, count = 0;
       const j0 = lowerBound(lay.sortedX, L.flyLo);
       const j1 = lowerBound(lay.sortedX, L.flyHi + 1e-6);
@@ -473,6 +628,13 @@ export const DotField = forwardRef<DotFieldHandle, {
           L.off[i] = st.o;
           L.vel[i] = st.v;
           if (lay.pts[2 * i + 1] + st.o - lay.r > height) { L.mode[i] = GONE; L.off[i] = 0; L.vel[i] = 0; continue; }
+        } else if (m === BURST) {
+          if (L.pendT[i] <= now) rebase(i);
+          if (L.pendT[i] === Infinity && L.restAt[i] <= now) { L.mode[i] = REST; L.off[i] = 0; L.offX[i] = 0; continue; }
+          springPose(L.bx![i], L.by![i], L.bvx![i], L.bvy![i], now - L.t0[i], pose);
+          L.offX[i] = pose.ox;
+          L.off[i] = pose.oy;
+          if (Math.abs(pose.ox) > slackNow) slackNow = Math.abs(pose.ox);
         } else continue;
         count++;
         const x = lay.pts[2 * i];
@@ -482,29 +644,44 @@ export const DotField = forwardRef<DotFieldHandle, {
       L.flying = count;
       L.flyLo = lo;
       L.flyHi = hi;
-      // Across a third of the field or more (a group leaving, or raining in), the whole field is
-      // repainted, in squares while it moves; a splash, where the dots were and are.
-      flightWide = was[1] - was[0] > lay.width / 3;
-      if (flightWide) { full = true; L.flewFull = true; }
-      else {
-        const x0 = Math.min(was[0], lo) - lay.r - 1, x1 = Math.max(was[1], hi) + lay.r + 1;
-        paintRef.current(now, x0, x1, true);
-        L.dirtyLo = Math.min(L.dirtyLo, x0);
-        L.dirtyHi = Math.max(L.dirtyHi, x1);
-      }
+      // Across a third of the field or more (a group leaving, or raining in, or a long drag), the whole
+      // field is repainted, in squares while it moves; otherwise where the dots were and are.
+      if (was1 - was0 > lay.width / 3) { full = true; L.flewFull = true; }
+      else { sx0 = Math.min(was0, lo); sx1 = Math.max(was1, hi); }
       if (count > 0) moving = true;
-      else {
-        if (L.flewFull) { full = true; L.flewFull = false; }
-        if (L.entranceStart == null && L.restackStart == null) setSettled(true);
-        if (boxRef.current) {
-          boxRef.current.dataset.flight = 'idle';
-          boxRef.current.dataset.visible = String(countVisible(L.mode));
-        }
+      else if (L.flewFull) { full = true; L.flewFull = false; }
+    }
+    // A strip is repainted as far out as a dot drawn into it can be from its place, this frame or last.
+    L.slack = Math.max(L.slackLast, slackNow);
+    // The shockwaves' rings: each one's strip repainted until it has faded, and once more to erase it.
+    if (L.rings.length) {
+      flightFrame = true;
+      for (const g of L.rings) {
+        const e = RING_REACH * g.reach + 2;
+        if (g.x - e < sx0) sx0 = g.x - e;
+        if (g.x + e > sx1) sx1 = g.x + e;
+      }
+      L.rings = L.rings.filter((g) => now - g.t < RING_REACH * WAVE_MS);
+      if (L.rings.length) moving = true;
+    }
+    if (!full && sx1 >= sx0) {
+      const pad = lay.r + 1 + L.slack;
+      paintRef.current(now, sx0 - pad, sx1 + pad, true);
+      L.dirtyLo = Math.min(L.dirtyLo, sx0 - pad);
+      L.dirtyHi = Math.max(L.dirtyHi, sx1 + pad);
+    }
+    // Everything thrown is home, and every ring has faded.
+    if (flightFrame && L.flying === 0 && !L.rings.length) {
+      if (L.entranceStart == null && L.restackStart == null) setSettled(true);
+      if (boxRef.current && L.mode) {
+        boxRef.current.dataset.flight = 'idle';
+        boxRef.current.dataset.visible = String(countVisible(L.mode));
       }
     }
     L.lastTick = now;
     // In squares while the whole field is moving; the frame that ends the move paints it in beads.
     if (full) paintRef.current(now, -Infinity, Infinity, moving);
+    L.slackLast = slackNow;
     if (full || flightFrame) {
       const name = flightFrame ? 'flight-frame' : frameMark;
       try { performance.measure(name, { start: t0, end: performance.now() }); } catch { /* diagnostic only */ }
@@ -549,6 +726,16 @@ export const DotField = forwardRef<DotFieldHandle, {
     const rd = lay.r * dpr;
     L.beads = L.tones.map((ts) => ts.map((c) => bead(c, rd, glow && L.dark)));
     L.strongBeads = L.strongTones.map((ts) => ts.map((c) => bead(c, rd, glow && L.dark)));
+    const inkOf = (b: Bead) => beadInk(b);
+    L.fast = L.beads.map((bs) => bs.map(inkOf));
+    L.strongFast = L.strongBeads.map((bs) => bs.map(inkOf));
+    // The air's kinds: their tones, plain and highlighted, and what each lays down as a square.
+    const airInk = (airInks ?? []).map((c, k) => { const el = airRefs.current[k]; return el ? getComputedStyle(el).color : c; });
+    L.airTones = airInk.map((c) => toneInks(c, text, TONES));
+    L.airStrongTones = airInk.map((c) => toneInks(strongerInk(c, text, STRONG_APART), text, TONES));
+    L.airFast = L.airTones.map((ts) => ts.map((c) => inkOf(bead(c, rd, glow && L.dark))));
+    L.airStrongFast = L.airStrongTones.map((ts) => ts.map((c) => inkOf(bead(c, rd, glow && L.dark))));
+    L.ringInk = ringRef.current ? getComputedStyle(ringRef.current).color : '';
     // Each dot's tone: its depth in the stack — deeper toward the bottom on a light page, brighter
     // toward the top on a dark one — give or take one.
     const n = values.length;
@@ -584,6 +771,20 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.off = off;
     L.vel = vel;
     L.mode = mode;
+    L.offX = new Float32Array(n);
+    L.t0 = new Float64Array(n);
+    L.bx = new Float32Array(n);
+    L.by = new Float32Array(n);
+    L.bvx = new Float32Array(n);
+    L.bvy = new Float32Array(n);
+    L.restAt = new Float64Array(n);
+    L.pendT = new Float64Array(n).fill(Infinity);
+    L.pkx = new Float32Array(n);
+    L.pky = new Float32Array(n);
+    L.pcap = new Float32Array(n);
+    L.slack = 0;
+    L.slackLast = 0;
+    L.rings = [];
     L.flying = 0;
     L.flyLo = Infinity;
     L.flyHi = -Infinity;
@@ -654,7 +855,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     return () => { if (L.raf) { cancelAnimationFrame(L.raf); L.raf = 0; } };
     // `scheme` is read through getComputedStyle, which is why a theme change must re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, height, entrance, kinds, inks, scheme, glow, solo]);
+  }, [layout, height, entrance, kinds, inks, airInks, scheme, glow, solo]);
 
   // Drop again: the fall into place, played on demand.
   const replayRef = useRef(replay);
@@ -686,7 +887,11 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (!a && !b) return;
     const x0 = Math.min(a?.[0] ?? Infinity, b?.[0] ?? Infinity) - lay.r - 1;
     const x1 = Math.max(a?.[1] ?? -Infinity, b?.[1] ?? -Infinity) + lay.r + 1;
-    paintRef.current(performance.now(), x0, x1);
+    // While dots move, in squares like the strips round it — a bead strip there flickered against
+    // them — and back in beads with the rest once all is still.
+    const busy = L.flying > 0 || L.rings.length > 0;
+    paintRef.current(performance.now(), x0, x1, busy);
+    if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x0); L.dirtyHi = Math.max(L.dirtyHi, x1); }
   }, [hlLo, hlHi, layout, toX]);
 
   // What the guards read: how many dots of each kind, and how many the highlight covers.
@@ -723,6 +928,9 @@ export const DotField = forwardRef<DotFieldHandle, {
       <canvas ref={canvasRef} className="dot-field-ink" style={{ position: 'absolute', inset: 0, width: '100%', height }} />
       {/* The text colour, which a highlighted dot's ink is mixed toward. */}
       <span ref={textRef} style={{ color: 'var(--mantine-color-text)' }} hidden />
+      {/* The shockwave's ring, in the curve's accent. */}
+      <span ref={ringRef} style={{ color: 'var(--mantine-color-accent-6)' }} hidden />
+      {airInks?.map((c, k) => <span key={`air-${k}`} ref={(el) => { airRefs.current[k] = el; }} style={{ color: c }} hidden />)}
       {inkList
         ? inkList.map((c, k) => <span key={k} ref={(el) => { inkRefs.current[k] = el; }} className={`dot-field-ink-${k}`} style={{ color: c }} hidden />)
         : [

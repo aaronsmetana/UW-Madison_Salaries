@@ -5,8 +5,8 @@ import { parseColor, flatten, contrast } from './color';
 /**
  * Every employee as a dot (src/components/chart/DotField.tsx): the landing page's distribution — with
  * its pile of people above the cap, its "By employment type" colouring, the readout's highlight, the
- * glass, a click's splash and a soloed category — and a large peer strip. Expected values from SQL
- * written here.
+ * glass, a click's burst, a drag's stir and a soloed category — and a large peer strip. Expected values
+ * from SQL written here.
  */
 
 const KENNETH = 'kennethposs|2024-07-01';
@@ -79,9 +79,9 @@ test('the lens follows a mouse, not a finger; a tap stays on the page', async ({
   const box = (await plot.boundingBox())!;
   const at = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.8 };
 
-  // A finger's move: no lens.
-  await plot.evaluate((el, p) => {
-    el.parentElement!.parentElement!.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'touch', clientX: p.x, clientY: p.y }));
+  // A finger's move, sent to the box that listens for it: no lens.
+  await main.evaluate((el, p) => {
+    el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'touch', clientX: p.x, clientY: p.y }));
   }, at);
   await page.waitForTimeout(200);
   await expect(main).toHaveAttribute('data-lens', 'off');
@@ -175,7 +175,7 @@ const kindsOf = (counts: number[]) => counts.map((n, k) => [k, n]).filter(([, n]
 
 /**
  * On a developer's machine, run at about a CI runner's pace: CPU slowed three times. A frame budget met
- * only on a fast laptop is not met — the splash guard passed here at 3.8ms and failed in CI at 14ms,
+ * only on a fast laptop is not met — a click's guard passed here at 3.8ms and failed in CI at 14ms,
  * when every moving frame stamped two thousand bead sprites. CI itself is not slowed further.
  */
 async function atCiPace(page: Page) {
@@ -316,6 +316,253 @@ test('hovering moves no dot: the field is as still as the pointer leaves it', as
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
 });
 
+/** The field's canvas box, and readers of it: the share of a square (CSS px from the canvas's corner,
+ *  `half` either way) that has any ink; the mean ink over a rectangle; and its inked pixels' colours. */
+const canvasBox = async (page: Page) => (await page.locator('.hero-dots canvas').first().boundingBox())!;
+const inkShare = (page: Page, x: number, y: number, half: number) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth;
+  const w = Math.round(2 * a.half * k);
+  const d = c.getContext('2d')!.getImageData(Math.round((a.x - a.half) * k), Math.round((a.y - a.half) * k), w, w).data;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+  return n / (w * w);
+}, { x, y, half });
+const meanInk = (page: Page, x: number, y: number, w: number, h: number) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth;
+  const d = c.getContext('2d')!.getImageData(Math.round(a.x * k), Math.round(a.y * k), Math.round(a.w * k), Math.round(a.h * k)).data;
+  const m = [0, 0, 0, 0];
+  for (let i = 0; i < d.length; i += 4) { const al = d[i + 3] / 255; m[0] += d[i] * al; m[1] += d[i + 1] * al; m[2] += d[i + 2] * al; m[3] += al; }
+  return m.map((v) => v / (d.length / 4));
+}, { x, y, w, h });
+/** Presses and lets go at `x, y` (CSS px from the canvas's corner), then takes the pointer off the
+ *  plot, so neither the glass nor the readout's highlight is drawn on what a test reads. */
+async function clickAway(page: Page, c: { x: number; y: number; width: number }, x: number, y: number) {
+  await page.mouse.move(c.x + x, c.y + y);
+  await page.clock.runFor(32);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
+}
+
+test('a click bursts a hole you can see behind a shockwave, and every dot comes back to its place', async ({ page }) => {
+  // The splash it replaces threw 1–2px dots up out of a dense field: nothing in the field visibly
+  // changed. A burst opens a hole — a nearer dot never passes a farther one — and the front reaches
+  // the square round the click after the first frame, not with it.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const dots = page.locator('.hero-dots');
+  const c = await canvasBox(page);
+  const x = c.width * 0.27, y = c.height * 0.72;
+  const rest = await picture(page);
+  expect(await inkShare(page, x, y, 20), 'the click is in the densest part of the field').toBeGreaterThan(0.9);
+  await clickAway(page, c, x, y);
+  await page.clock.runFor(16);
+  expect(await inkShare(page, x, y, 20), 'the shockwave reached the square with the click').toBeGreaterThan(0.6);
+  await page.clock.runFor(112);
+  expect(await inkShare(page, x, y, 20), 'no hole opened round the click').toBeLessThan(0.15);
+  await expect(dots).toHaveAttribute('data-flight', 'moving');
+  await page.clock.runFor(1372);
+  await expect(dots).toHaveAttribute('data-flight', 'idle');
+  expect((await picture(page)) === rest, 'the dots did not all come back to exactly their places').toBe(true);
+});
+
+test("the shockwave's ring runs out from a click and fades, even where there is nothing to throw", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  // High over the tail, where the field is empty: only the ring can draw here.
+  const x = c.width * 0.62, y = c.height * 0.4;
+  const column = () => inkShare(page, x, y - 45, 12);
+  expect(await column(), 'the field is empty above the click').toBe(0);
+  await clickAway(page, c, x, y);
+  await page.clock.runFor(76);
+  expect(await column(), 'no ring passed 45px above the click at +76ms').toBeGreaterThan(0);
+  await page.clock.runFor(224);
+  expect(await column(), 'the ring was still drawn at +300ms').toBe(0);
+});
+
+test('in the All view a dot in the air wears its employment type, and turns back as it lands', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  // "All", and the re-stack played out on the stopped clock.
+  await page.locator('.hero-dist-toggle').getByText('All', { exact: true }).click();
+  await page.clock.runFor(600);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'off');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
+  const c = await canvasBox(page);
+  const x = c.width * 0.27, y = c.height * 0.72;
+  const rest = await picture(page);
+  // The share of inked pixels round the click whose hue is far from the one ink's.
+  const offHue = () => page.locator('.hero-dots').evaluate((box: HTMLElement, a) => {
+    const c = box.querySelector('canvas')!;
+    const hue = (r: number, g: number, b: number) => {
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      if (mx - mn < 12) return null;
+      const h = mx === r ? ((g - b) / (mx - mn)) % 6 : mx === g ? (b - r) / (mx - mn) + 2 : (r - g) / (mx - mn) + 4;
+      return (h * 60 + 360) % 360;
+    };
+    const [r, g, b] = (box.dataset.inks ?? '').split('|')[0].match(/[\d.]+/g)!.map(Number);
+    const base = hue(r, g, b)!;
+    const k = c.width / c.clientWidth, half = 100;
+    const d = c.getContext('2d')!.getImageData(Math.round((a.x - half) * k), Math.round((a.y - half) * k), Math.round(2 * half * k), Math.round(2 * half * k)).data;
+    let inked = 0, off = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 128) continue;
+      inked++;
+      const h = hue(d[i], d[i + 1], d[i + 2]);
+      if (h != null && Math.min(Math.abs(h - base), 360 - Math.abs(h - base)) > 40) off++;
+    }
+    return off / Math.max(1, inked);
+  }, { x, y });
+  expect(await offHue(), 'at rest the All view is one ink').toBeLessThan(0.005);
+  await clickAway(page, c, x, y);
+  await page.clock.runFor(128);
+  expect(await offHue(), "no dot in the air wore its employment type's colour").toBeGreaterThan(0.05);
+  await page.clock.runFor(1372);
+  expect((await picture(page)) === rest, 'the dots did not land back in the one ink').toBe(true);
+});
+
+test('the glass shows the hole a click opens under it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  const x = c.width * 0.27, y = c.height * 0.72;
+  await page.mouse.move(c.x + x, c.y + y);
+  await page.clock.runFor(48);
+  // A block of the glass left of its centre, across the pointer's row: the dots there, magnified —
+  // then, thrown out sideways, nothing but the band's even tint. The share of its pixels unlike its
+  // commonest one.
+  const unlike = () => page.locator('.dot-field-lens').evaluate((cv: HTMLCanvasElement) => {
+    const k = cv.width / cv.clientWidth, R = cv.clientWidth / 2;
+    const d = cv.getContext('2d')!.getImageData(Math.round((R - 40) * k), Math.round((R - 16) * k), Math.round(14 * k), Math.round(32 * k)).data;
+    const seen = new Map<number, number>();
+    for (let i = 0; i < d.length; i += 4) { const key = (d[i] << 24) ^ (d[i + 1] << 16) ^ (d[i + 2] << 8) ^ d[i + 3]; seen.set(key, (seen.get(key) ?? 0) + 1); }
+    return 1 - Math.max(...seen.values()) / (d.length / 4);
+  });
+  expect(await unlike(), 'the glass shows no dots at rest').toBeGreaterThan(0.5);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.clock.runFor(128);
+  expect(await unlike(), 'the glass still showed dots where the burst had thrown them out').toBeLessThan(0.02);
+});
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`while dots move, the still ones drawn round them weigh what they do at rest (${scheme})`, async ({ browser }) => {
+    // Moving dots are squares, and so are still ones inside a moving strip. Each lays down its bead's
+    // own ink, within a few percent; a flat square 2r wide laid down 15–35% more at 2x, so a strip in
+    // motion was a darker rectangle in the field.
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: scheme, reducedMotion: 'no-preference' });
+    const page = await ctx.newPage();
+    await frozenHome(page);
+    const c = await canvasBox(page);
+    const x = c.width * 0.5, y = c.height * 0.78;
+    // Past the burst's reach and inside the strip its ring keeps repainting: no dot here moves.
+    const band = () => meanInk(page, x + 94, 0, 10, c.height);
+    const rest = await band();
+    await clickAway(page, c, x, y);
+    await page.clock.runFor(128);
+    await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'moving');
+    const moving = await band();
+    for (let k = 0; k < 4; k++) {
+      expect(Math.abs(moving[k] / rest[k] - 1), `channel ${k}: ${moving[k].toFixed(4)} moving against ${rest[k].toFixed(4)} at rest`).toBeLessThan(0.06);
+    }
+    await ctx.close();
+  });
+}
+
+test('switching on Reduce Motion mid-burst puts every dot home at once', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const dots = page.locator('.hero-dots');
+  const c = await canvasBox(page);
+  const rest = await picture(page);
+  await clickAway(page, c, c.width * 0.27, c.height * 0.72);
+  await page.clock.runFor(64);
+  await expect(dots).toHaveAttribute('data-flight', 'moving');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(dots).toHaveAttribute('data-flight', 'idle');
+  expect((await picture(page)) === rest, 'the dots were not all home').toBe(true);
+});
+
+test('a drag with the button held stirs the dots along its path, and they close up behind it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  const y = c.height * 0.72;
+  const x0 = c.width * 0.2, x1 = c.width * 0.4, far = c.width * 0.85;
+  const rest = await picture(page);
+  const farRest = await inkShare(page, far, y, 8);
+  expect(await inkShare(page, x1, y, 8), "the drag ends in a dense part of the field").toBeGreaterThan(0.6);
+  await page.mouse.move(c.x + x0, c.y + y);
+  await page.mouse.down();
+  for (let x = x0 + 16; ; x += 16) {
+    await page.mouse.move(c.x + Math.min(x, x1), c.y + y);
+    await page.clock.runFor(16);
+    if (x >= x1) break;
+  }
+  await page.clock.runFor(96);
+  // The drag's end is 220px from the press: past a click's reach, so only the stir can open it.
+  expect(await inkShare(page, x1, y, 8), 'the dots at the end of the drag did not part').toBeLessThan(0.4);
+  expect(await inkShare(page, far, y, 8), 'dots far from the drag moved').toBe(farRest);
+  await page.mouse.up();
+  await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
+  await page.clock.runFor(1500);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
+  expect((await picture(page)) === rest, 'the stirred dots did not all come back to their places').toBe(true);
+});
+
+test('a touch the browser takes back throws nothing', async ({ browser }) => {
+  const ctx = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference', viewport: { width: 375, height: 812 } });
+  const page = await ctx.newPage();
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  const rest = await picture(page);
+  // Down, then cancelled — the browser took the gesture — and an up at the same spot at once.
+  await page.locator('.hero-dist-main').evaluate((el, p) => {
+    const ev = (type: string) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 9, clientX: p.x, clientY: p.y });
+    el.dispatchEvent(ev('pointerdown'));
+    el.dispatchEvent(ev('pointercancel'));
+    el.dispatchEvent(ev('pointerup'));
+  }, { x: c.x + c.width * 0.3, y: c.y + c.height * 0.7 });
+  await page.clock.runFor(200);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
+  expect((await picture(page)) === rest, 'a cancelled touch threw dots').toBe(true);
+  await ctx.close();
+});
+
+test('a tap that bursts the dots ticks the phone once; a click, a scroll and a still tap do not', async ({ browser }) => {
+  const buzz = () => {
+    const w = window as unknown as { buzz: unknown[] };
+    w.buzz = [];
+    (Navigator.prototype as unknown as { vibrate: (p: unknown) => boolean }).vibrate = (p) => { w.buzz.push(p); return true; };
+  };
+  const ctx = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference', viewport: { width: 375, height: 812 } });
+  const page = await ctx.newPage();
+  await page.addInitScript(buzz);
+  await settledHome(page);
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const at = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height * 0.75 };
+  await page.mouse.click(at.x, at.y);
+  await page.locator('.hero-dist-main').evaluate((el, p) => {
+    const ev = (type: string, y: number) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, buttons: 1, clientX: p.x, clientY: y });
+    el.dispatchEvent(ev('pointerdown', p.y));
+    el.dispatchEvent(ev('pointermove', p.y + 20));
+    el.dispatchEvent(ev('pointerup', p.y + 40));
+  }, at);
+  expect(await page.evaluate(() => (window as unknown as { buzz: unknown[] }).buzz), 'a click or a scroll ticked the phone').toEqual([]);
+  await page.touchscreen.tap(at.x, at.y);
+  expect(await page.evaluate(() => (window as unknown as { buzz: unknown[] }).buzz)).toEqual([10]);
+  await ctx.close();
+
+  const still = await browser.newContext({ hasTouch: true, reducedMotion: 'reduce', viewport: { width: 375, height: 812 } });
+  const q = await still.newPage();
+  await q.addInitScript(buzz);
+  await settledHome(q);
+  await q.touchscreen.tap(at.x, at.y);
+  expect(await q.evaluate(() => (window as unknown as { buzz: unknown[] }).buzz), 'a tap under Reduce Motion ticked the phone').toEqual([]);
+  await still.close();
+});
+
 test('the highlighted dots are the people the readout counts', async ({ page }) => {
   await settledHome(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
@@ -389,56 +636,82 @@ test('after a window resize the dots are laid out for the width they are drawn a
   await ctx.close();
 });
 
-test('a click splashes the dots near it, and they fall back into their places; the page stays', async ({ browser }) => {
-  const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
+test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; the page stays', async ({ browser }) => {
+  // The All view, so the frames carry the dots in the air in their own colours, and the ring.
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await atCiPace(page);
   await settledHome(page);
+  await allOneInk(page);
   const dots = page.locator('.hero-dots');
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const median = async () => {
+    const f = await page.evaluate(() => performance.getEntriesByName('flight-frame').map((e) => e.duration).sort((a, b) => a - b));
+    return { n: f.length, median: f[Math.floor(f.length / 2)] };
+  };
   await page.evaluate(() => performance.clearMeasures());
-  await page.mouse.click(plot.x + plot.width * 0.26, plot.y + plot.height * 0.7);
+  await page.mouse.click(plot.x + plot.width * 0.27, plot.y + plot.height * 0.72);
   await expect(dots).toHaveAttribute('data-flight', 'moving');
-  // Up, down, a bounce or two, and still: within a second and a half.
-  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 1500 });
-  const frames = await page.evaluate(() => performance.getEntriesByName('flight-frame').map((e) => e.duration).sort((a, b) => a - b));
-  expect(frames.length, 'the splash moved no dots').toBeGreaterThan(10);
-  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
+  const burst = await median();
+  expect(burst.n, 'the burst moved no dots').toBeGreaterThan(10);
+  expect(burst.median, 'a burst frame, ms').toBeLessThan(8);
+  // A long drag, by the clock: across half the field in about a second.
+  await page.evaluate(() => performance.clearMeasures());
+  const y = plot.y + plot.height * 0.72, x0 = plot.x + plot.width * 0.15;
+  await page.mouse.move(x0, y);
+  await page.mouse.down();
+  const t0 = Date.now();
+  for (let t = 0; t < 1000; t = Date.now() - t0) {
+    await page.mouse.move(x0 + 0.55 * t, y);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 4000 });
+  const drag = await median();
+  expect(drag.n, 'the drag moved no dots').toBeGreaterThan(20);
+  expect(drag.median, 'a drag frame, ms').toBeLessThan(8);
   await expect(dots).toHaveAttribute('data-visible', (await dots.getAttribute('data-dots'))!);
   await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
   await ctx.close();
 
-  // Under reduced motion a click throws nothing.
-  const still = await browser.newContext({ reducedMotion: 'reduce' });
+  // Under reduced motion a click, a tap and a drag throw nothing.
+  const still = await browser.newContext({ reducedMotion: 'reduce', hasTouch: true });
   const q = await still.newPage();
   await settledHome(q);
   const box = (await q.locator('.hero-dist-plot').boundingBox())!;
   await q.mouse.click(box.x + box.width * 0.26, box.y + box.height * 0.7);
+  await q.touchscreen.tap(box.x + box.width * 0.4, box.y + box.height * 0.7);
+  await q.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.7);
+  await q.mouse.down();
+  for (let i = 1; i <= 20; i++) await q.mouse.move(box.x + box.width * (0.2 + i * 0.01), box.y + box.height * 0.7);
+  await q.mouse.up();
   await q.waitForTimeout(300);
-  expect(await q.evaluate(() => performance.getEntriesByName('flight-frame').length), 'a splash under reduced motion').toBe(0);
+  expect(await q.evaluate(() => performance.getEntriesByName('flight-frame').length), 'dots moved under reduced motion').toBe(0);
   await still.close();
 });
 
-test('a tap splashes and shows the count there; a finger that scrolls does neither', async ({ browser }) => {
+test('a tap bursts the dots and shows the count there; a finger that scrolls does neither', async ({ browser }) => {
   const ctx = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference', viewport: { width: 375, height: 812 } });
   const page = await ctx.newPage();
   await settledHome(page);
   const dots = page.locator('.hero-dots');
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
   const at = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height * 0.75 };
-  // A scroll gesture first: down, 40px of travel, up.
+  // A scroll gesture first: down, 40px of travel, up — its moves carrying the button a touch contact
+  // reports, so a stir that took any pointer with a button held would throw dots here.
   await page.locator('.hero-dist-main').evaluate((el, p) => {
-    const ev = (type: string, y: number) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, clientX: p.x, clientY: y });
+    const ev = (type: string, y: number) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, buttons: 1, clientX: p.x, clientY: y });
     el.dispatchEvent(ev('pointerdown', p.y));
-    el.dispatchEvent(ev('pointermove', p.y + 20));
+    for (let k = 1; k <= 4; k++) el.dispatchEvent(ev('pointermove', p.y + 10 * k));
     el.dispatchEvent(ev('pointerup', p.y + 40));
   }, at);
   await page.waitForTimeout(300);
-  expect(await page.evaluate(() => performance.getEntriesByName('flight-frame').length), 'a scrolling finger splashed').toBe(0);
+  expect(await page.evaluate(() => performance.getEntriesByName('flight-frame').length), 'a scrolling finger threw dots').toBe(0);
   // A tap.
   await page.touchscreen.tap(at.x, at.y);
   await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 1500 });
-  expect(await page.evaluate(() => performance.getEntriesByName('flight-frame').length), 'the tap splashed nothing').toBeGreaterThan(5);
+  expect(await page.evaluate(() => performance.getEntriesByName('flight-frame').length), 'the tap threw nothing').toBeGreaterThan(5);
   await expect(page.locator('.chart-value-pill').first()).toBeVisible();
   await expect(page.locator('.chart-value-pill').first()).toContainText(/people ±\$5k/);
   await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
@@ -522,17 +795,22 @@ test('soloing a category leaves exactly its people, and the readout counts them;
   await still.close();
 });
 
-test('once still again, the field is the picture it was before a hover and a splash', async ({ browser }) => {
+test('once still again, the field is the picture it was before a drag and a burst', async ({ browser }) => {
   // While dots move, what they cross is drawn in squares; once all is still it is drawn in beads again.
   const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await settledHome(page);
   const before = await picture(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
-  for (let i = 0; i <= 30; i++) {
-    await page.mouse.move(plot.x + plot.width * (0.2 + (0.4 * i) / 30), plot.y + plot.height * 0.8);
+  // A drag short enough to repaint as strips, which only the bead repaint of what they crossed puts
+  // back: across a third of the field or more, the field is repainted whole.
+  await page.mouse.move(plot.x + plot.width * 0.2, plot.y + plot.height * 0.8);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(plot.x + plot.width * (0.2 + (0.1 * i) / 12), plot.y + plot.height * 0.8);
     await page.waitForTimeout(12);
   }
+  await page.mouse.up();
   await page.mouse.click(plot.x + plot.width * 0.3, plot.y + plot.height * 0.7);
   await page.mouse.move(plot.x + plot.width * 0.5, plot.y - 200);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
