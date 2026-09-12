@@ -98,6 +98,39 @@ test('the lens follows a mouse, not a finger; a tap stays on the page', async ({
   await ctx.close();
 });
 
+test('the magnifying glass sits on the pointer and shows the curve under it, magnified', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  await page.mouse.move(plot.x + plot.width * 0.45, plot.y + plot.height * 0.8);
+  // The readout's point, where the curve is at the pointer's pay: point the glass right at it.
+  const point = page.locator('.hero-dist-point');
+  await expect(point).toBeVisible();
+  const pb = (await point.boundingBox())!;
+  const at = { x: pb.x + pb.width / 2, y: pb.y + pb.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  const lens = page.locator('.fisheye-lens');
+  await expect(lens).toBeVisible();
+  await page.waitForTimeout(100);
+  const lb = (await lens.boundingBox())!;
+  expect(Math.abs(lb.x + lb.width / 2 - at.x), 'the glass is centred on the pointer, across').toBeLessThanOrEqual(1);
+  expect(Math.abs(lb.y + lb.height / 2 - at.y), 'the glass is centred on the pointer, down').toBeLessThanOrEqual(1);
+  // Its centre is the curve's point, magnified: the readout's accent, not a dot's ink or the card.
+  const { centre, accent } = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>('.fisheye-lens canvas')!;
+    const d = c.getContext('2d')!.getImageData(c.width / 2 - 2, c.height / 2 - 2, 5, 5).data;
+    const px: number[][] = [];
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) px.push([d[i], d[i + 1], d[i + 2]]);
+    const a = getComputedStyle(document.querySelector('.hero-dist-point')!).backgroundColor;
+    return { centre: px, accent: a };
+  });
+  const [ar, ag, ab] = parseColor(accent);
+  const near = centre.filter(([r, g, b]) => Math.hypot(r - ar, g - ag, b - ab) < 40);
+  expect(near.length, `the glass's centre shows the curve's point (${accent}); it showed ${JSON.stringify(centre.slice(0, 3))}`).toBeGreaterThanOrEqual(12);
+  await ctx.close();
+});
+
 test("a large title's peer strip draws each peer as a dot", async ({ page }) => {
   const snap = await latestSnapshot();
   const [r] = await oracle<{ n: number }>(
@@ -200,11 +233,20 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(contrast(lone, ground), `category ${k} as a lone dot`).toBeGreaterThanOrEqual(3);
       expect(contrast(strong[k].slice(0, 3), ink.slice(0, 3)), `category ${k}'s highlight against its ink`).toBeGreaterThanOrEqual(1.4);
     });
+    // Every tone a dot can take (its depth in the stack, give or take one), not only the ink.
+    const tones = (await dots.getAttribute('data-tones'))!.split('|').map((t) => t.split(';').map(parseColor));
+    expect(tones.length).toBe(inks.length);
+    tones.forEach((ts, k) => ts.forEach((t, j) => {
+      const lone = flatten([t[0], t[1], t[2], t[3] * alpha], ground);
+      expect(contrast(lone, ground), `category ${k}, tone ${j}, as a lone dot`).toBeGreaterThanOrEqual(3);
+    }));
   });
 }
 
 test('the re-stack moves in frames under 8ms, and not at all under reduced motion', async ({ browser }) => {
-  const moving = await browser.newContext({ reducedMotion: 'no-preference' });
+  // On a 2× screen, where each bead is a sprite: drawn as beads every frame, 21,000 of them held the
+  // re-stack at 16ms, so the whole field moves in squares and settles into beads.
+  const moving = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const p = await moving.newPage();
   await settledHome(p);
   // From a known state, whatever the page opens on.
@@ -251,15 +293,20 @@ test('the wake follows a moving mouse in frames under 8ms, and settles once it s
 });
 
 test('an ordinary hover parts the dots by enough to see', async ({ browser }) => {
-  // About 250 px/s, less for the round trips: the wake's parting has to show at the pace people point,
-  // not only at a flick. It once peaked at 2px there, a hairline nobody saw.
+  // 250 px/s, by the clock: the wake's parting has to show at the pace people point, not only at a
+  // flick. It once peaked at 2px there, a hairline nobody saw. Stepped by elapsed time rather than a
+  // fixed stride, so a busy machine sends fewer, longer moves at the same speed — a fixed 4px stride
+  // ran at 150 px/s, and slower still under load, and measured the load instead of the wake.
   const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
   await settledHome(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
   const y = plot.y + plot.height * 0.6;
-  for (let i = 0; i <= 40; i++) {
-    await page.mouse.move(plot.x + plot.width * 0.15 + 4 * i, y);
+  const x0 = plot.x + plot.width * 0.15;
+  await page.mouse.move(x0, y);
+  const t0 = Date.now();
+  for (let t = 0; t < 700; t = Date.now() - t0) {
+    await page.mouse.move(x0 + 0.25 * t, y);
     await page.waitForTimeout(16);
   }
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-wake', 'idle', { timeout: 1000 });

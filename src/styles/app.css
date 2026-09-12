@@ -194,6 +194,9 @@
      It is a specular highlight rather than a surface, so it stays white in both schemes and only its
      strength changes: on a white canvas it is nearly the full highlight, on the dark one a trace. */
   --glass-sheen: rgba(255, 255, 255, 0.75);
+  --lens-rim-outer: rgba(0, 0, 0, 0.22);
+  --lens-rim-inner: rgba(255, 255, 255, 0.9);
+  --lens-sheen: rgba(255, 255, 255, 0.55);
 
   /* The lit face of a FIGURE — a broad tonal bloom at a chart card's top edge, not an edge line.
      `--glass-sheen` cannot do this job: it is white, and white over the white light card composites
@@ -288,6 +291,9 @@ body {
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
   --glass-sheen: rgba(255, 255, 255, 0.07);
+  --lens-rim-outer: rgba(0, 0, 0, 0.65);
+  --lens-rim-inner: rgba(255, 255, 255, 0.2);
+  --lens-sheen: rgba(255, 255, 255, 0.16);
   --chart-sheen: rgba(255, 255, 255, 0.09);
 
   /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
@@ -1798,12 +1804,36 @@ button:active,
 }
 .strip-dots { color: var(--mark-peer); }
 .strip-dots .dot-field-accent { color: var(--mark-peer-same-school); }
-.dot-field-lens {
+/* The magnifying glass on the landing chart (FisheyeLens): the card's own surface under a thin light
+   rim and a thin dark one, a soft shadow beneath, a faint darkening toward the edge where glass bends
+   the most, and a highlight up and to the left. Over the chart's marks, under its readout pill. */
+.fisheye-lens {
+  position: absolute;
+  z-index: var(--z-content);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px var(--lens-rim-outer), 0 10px 24px -6px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+.fisheye-lens .dot-field-lens {
+  display: block;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   background: var(--surface, var(--mantine-color-body));
-  border: 1px solid var(--hairline-strong);
-  box-shadow: var(--shadow-merged-card);
 }
+.fisheye-lens::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 44% 30% at 34% 22%, var(--lens-sheen), transparent 72%),
+    radial-gradient(circle at 50% 50%, transparent 66%, rgba(0, 0, 0, 0.1) 100%);
+  box-shadow: inset 0 0 0 1.5px var(--lens-rim-inner);
+}
+/* The glass is the pointer while it shows. */
+.hero-dist-main[data-lens='on'] { cursor: none; }
 
 /* The app footer is fixed from sm up only (AppShell.tsx); on a phone it ends the page instead. */
 @media screen and (max-width: 47.99em) {

@@ -18,7 +18,8 @@ import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
-import { DotField, SPREAD_MS, useEntranceOnce } from '../components/chart/DotField';
+import { DotField, SPREAD_MS, useEntranceOnce, type DotFieldHandle } from '../components/chart/DotField';
+import { FisheyeLens, LENS_D, type FisheyeLensHandle, type LensView } from '../components/chart/FisheyeLens';
 import { peopleFromCounts } from '../lib/dotLayout';
 import { usePref } from '../lib/prefs';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -153,8 +154,23 @@ function Distribution({
   // where it may sit is a question about pixels that changes as the reader moves the pointer.
   const pillRef = useRef<HTMLDivElement>(null);
   const [pillW, setPillW] = useState(0);
-  // Where the lens is, for a mouse.
+  // Where the pointer is, for a mouse: the magnifying glass sits there, and the wake follows it.
   const [lensAt, setLensAt] = useState<{ x: number; y: number } | null>(null);
+  // The glass (FisheyeLens) and what it draws from: both fields' dots, and the boxes everything else
+  // on the chart is placed in.
+  const lensRef = useRef<FisheyeLensHandle>(null);
+  const mainDotsRef = useRef<DotFieldHandle>(null);
+  const pileDotsRef = useRef<DotFieldHandle>(null);
+  const mainBoxRef = useRef<HTMLDivElement>(null);
+  const pileBoxRef = useRef<HTMLDivElement>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
+  const axisRef = useRef<HTMLDivElement>(null);
+  const redrawLens = useCallback(() => lensRef.current?.redraw(), []);
+  const lensDrawRef = useRef<(ctx: CanvasRenderingContext2D, view: LensView) => void>(() => {});
+  // What the glass reads from the page once per hover rather than every frame: the colours it draws
+  // in, and each label under the plot with its place and type. Nothing moves them while pointing.
+  const lensPageRef = useRef<{ tok: (name: string) => string; labels: { text: string; x: number; y: number; w: number; size: number; weight: string; family: string; color: string }[] } | null>(null);
+  const drawLens = useCallback((ctx: CanvasRenderingContext2D, view: LensView) => lensDrawRef.current(ctx, view), []);
   // Once a session, for both fields together: the pile lands after the curve's last dots.
   const entrance = useEntranceOnce();
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
@@ -231,6 +247,8 @@ function Distribution({
     const row = labelRowRef.current;
     if (!row) return;
     const measure = () => {
+      // Whatever the glass read of the labels' places is stale now.
+      lensPageRef.current = null;
       const els = labelRefs.current.filter((el): el is HTMLDivElement => !!el);
       if (!els.length) return;
       // `offsetLeft` IS the centre here: the label is positioned by `left: X%` and then visually
@@ -351,9 +369,116 @@ function Distribution({
     setHoverIdx(best);
     setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
-  const onLeave = () => { setHoverIdx(null); setLensAt(null); };
+  const onLeave = () => { setHoverIdx(null); setLensAt(null); lensPageRef.current = null; };
   const pileHighlight = hoverPile ? PILE_ALL : null;
   const inkList = colour ? inks : undefined;
+
+  // What the glass shows: the picture outside it, magnified — the dots of both fields, then the
+  // markers, the curve, the band and the readout's point as the page draws them, then the labels under
+  // the plot, every point pushed through the fisheye (FisheyeLens). Coordinates are the plot's own.
+  lensDrawRef.current = (ctx, { cx, cy, R, dpr, map }) => {
+    const mainEl = mainBoxRef.current;
+    if (!mainEl) return;
+    const mainBox = mainEl.getBoundingClientRect();
+    const pw = mainBox.width;
+    mainDotsRef.current?.drawInto(ctx, { cx, cy, R, ox: 0, oy: 0, dpr, map });
+    const pileBox = pileBoxRef.current?.getBoundingClientRect();
+    if (pileBox) pileDotsRef.current?.drawInto(ctx, { cx, cy, R, ox: pileBox.left - mainBox.left, oy: pileBox.top - mainBox.top, dpr, map });
+    if (!lensPageRef.current) {
+      const css = getComputedStyle(mainEl);
+      const cache = new Map<string, string>();
+      const tokRead = (name: string) => { let v = cache.get(name); if (v == null) { v = css.getPropertyValue(name).trim(); cache.set(name, v); } return v; };
+      const labels = [...labelRefs.current, ...(axisRef.current ? Array.from(axisRef.current.children) : [])]
+        .filter((el): el is HTMLElement => el instanceof HTMLElement)
+        .map((el) => {
+          const b = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return {
+            text: el.textContent ?? '', x: b.left + b.width / 2 - mainBox.left, y: b.top + b.height / 2 - mainBox.top, w: b.width,
+            size: parseFloat(cs.fontSize), weight: cs.fontWeight, family: cs.fontFamily, color: cs.color,
+          };
+        });
+      lensPageRef.current = { tok: tokRead, labels };
+    }
+    const { tok, labels } = lensPageRef.current;
+    const px = (v: number) => (X(v) / W) * pw;
+    const path = (pts: [number, number][]) => {
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => { const m = map(x, y); if (i) ctx.lineTo(m.x, m.y); else ctx.moveTo(m.x, m.y); });
+    };
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    for (const m of marks) {
+      const x = px(m.v);
+      if (Math.abs(x - cx) > R) continue;
+      const pts: [number, number][] = [];
+      for (let y = m.strong ? 4 : 26; y <= H; y += 2) pts.push([x, y]);
+      path(pts);
+      ctx.strokeStyle = tok(m.strong ? '--mantine-color-accent-7' : '--mantine-color-gray-5');
+      ctx.lineWidth = m.strong ? 1.5 : 1;
+      ctx.setLineDash(m.strong ? [] : [2, 3]);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // The curve, a point a pixel, its stroke as thick as the glass makes it where the pointer is.
+    const curvePts: [number, number][] = [];
+    for (let x = Math.max(0, Math.floor(cx - R)); x <= Math.min(pw, Math.ceil(cx + R)); x++) curvePts.push([x, H - dotHeight(x, pw)]);
+    if (curvePts.length > 1) {
+      path(curvePts);
+      ctx.strokeStyle = tok('--mantine-color-accent-6');
+      ctx.lineWidth = 1.75 * map(cx, H - dotHeight(Math.min(pw, Math.max(0, cx)), pw)).scale;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    if (hovered && bandRef.current) {
+      const bs = getComputedStyle(bandRef.current);
+      const x0 = px(bandLo), x1 = px(bandHi);
+      const edge = (x: number) => { const pts: [number, number][] = []; for (let y = 0; y <= H; y += 3) pts.push([x, y]); return pts; };
+      const rim: [number, number][] = [...edge(x0)];
+      for (let x = x0; x <= x1; x += 3) rim.push([x, H]);
+      rim.push(...edge(x1).reverse());
+      for (let x = x1; x >= x0; x -= 3) rim.push([x, 0]);
+      path(rim);
+      ctx.closePath();
+      // Half the page's tint: magnified four times, the band fills most of the glass, and at full
+      // strength it veiled the dots the glass is for. Its edges keep their full ink.
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = bs.backgroundColor;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = bs.borderLeftColor;
+      ctx.lineWidth = 1;
+      for (const x of [x0, x1]) { path(edge(x)); ctx.stroke(); }
+      // The readout's point on the curve, at most twice its size: at four times it covered the beads.
+      const m = map(px(hovered.bucket), Y(hovered.n));
+      const k = Math.min(2, m.scale);
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 5 * k, 0, Math.PI * 2);
+      ctx.fillStyle = tok('--mantine-color-accent-7');
+      ctx.fill();
+      ctx.lineWidth = 2 * k;
+      ctx.strokeStyle = tok('--mantine-color-body');
+      ctx.stroke();
+    }
+    // The labels under the plot, each at its place, its type as large as the glass makes it there.
+    for (const l of labels) {
+      if (Math.hypot(l.x - cx, l.y - cy) > R + l.w / 2) continue;
+      const m = map(l.x, l.y);
+      ctx.font = `${l.weight} ${l.size * m.scale}px ${l.family}`;
+      ctx.fillStyle = l.color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(l.text, m.x, m.y);
+    }
+    // A faint ring at the centre: where the pointer is.
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(R, R, 4, 0, Math.PI * 2);
+    ctx.strokeStyle = tok('--mantine-color-text');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  };
 
   return (
     // Not a link any more: the panel is for pointing at, and Divisions has its own link below it.
@@ -363,14 +488,16 @@ function Distribution({
     >
       {controls && <div className="hero-dist-controls">{controls}</div>}
       <div className="hero-dist-row">
-      <div className="hero-dist-main" style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={onLeave}>
+      <div ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={onLeave}>
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
           curve used to carry is these people; the line, the markers and the readout stay on top. */}
       <div style={{ position: 'absolute', inset: 0, height: H }}>
         <DotField
+          ref={mainDotsRef}
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
           kinds={colour ? cats : null} inks={inkList} stack={colour}
-          entrance={entrance} lensAt={lensAt} wake highlight={highlight}
+          entrance={entrance} lensAt={lensAt} wake highlight={highlight} glow
+          onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
       <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
@@ -396,6 +523,7 @@ function Distribution({
           which is exactly the case backdrop-filter is for. */}
       {hovered && (
         <div
+          ref={bandRef}
           aria-hidden
           className="hero-dist-band"
           style={{
@@ -413,6 +541,7 @@ function Distribution({
       {hovered && (
         <div
           aria-hidden
+          className="hero-dist-point"
           style={{
             position: 'absolute', left: `${hoverPct}%`, top: Y(hovered.n),
             transform: 'translate(-50%, -50%)', width: 10, height: 10, borderRadius: '50%',
@@ -431,8 +560,11 @@ function Distribution({
             // Tracks the dot rather than pinning to the top of the plot: pinned, it sat exactly on
             // the apex and hid the mound the reader is pointing at. It rides just above the curve,
             // and flips underneath where the curve is too tall to leave room — which is precisely
-            // where the peaks are.
-            top: Y(hovered.n) < 26 ? Y(hovered.n) + 10 : Y(hovered.n) - 20,
+            // where the peaks are. With the magnifying glass up it clears the glass instead: above
+            // it, or under it where the glass is near the top.
+            top: lensAt
+              ? (lensAt.y - LENS_D / 2 - 30 >= 0 ? lensAt.y - LENS_D / 2 - 30 : lensAt.y + LENS_D / 2 + 6)
+              : Y(hovered.n) < 26 ? Y(hovered.n) + 10 : Y(hovered.n) - 20,
             // Only before the first measurement lands; after that `pillLeft` is already exact.
             transform: pillLeft != null ? undefined : 'translateX(-50%)',
           }}
@@ -444,6 +576,7 @@ function Distribution({
           </span>
         </div>
       )}
+      {lensAt && <FisheyeLens ref={lensRef} at={lensAt} draw={drawLens} />}
       </div>
 
 
@@ -457,14 +590,17 @@ function Distribution({
             />
           </svg>
           <div
+            ref={pileBoxRef}
             className="hero-dist-pile" style={{ position: 'relative', height: H }}
             onPointerMove={() => { setHoverIdx(null); setLensAt(null); setHoverPile(true); }}
             onPointerLeave={() => setHoverPile(false)}
           >
             <DotField
+              ref={pileDotsRef}
               className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
-              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame"
+              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow
+              onFrame={lensAt ? redrawLens : undefined}
             />
             {hoverPile && headcount != null && (
               <div aria-hidden style={{ position: 'absolute', right: 0, top: H - pileH - 30, zIndex: Z.local, pointerEvents: 'none' }}>
@@ -510,7 +646,7 @@ function Distribution({
           tick sits exactly under the pay it names — `justify="space-between"` only ever happened to
           be right for the two extremes. Positions are shares of the plot's width, which stops short
           of the pile. */}
-      <div className="hero-dist-axis" style={{ position: 'relative', height: AXIS_ROW_H, marginTop: 6 }}>
+      <div ref={axisRef} className="hero-dist-axis" style={{ position: 'relative', height: AXIS_ROW_H, marginTop: 6 }}>
         {ticks.map((v) => (
           <Text
             key={v}

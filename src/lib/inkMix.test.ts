@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrastRatio, mixOklab, parseRgb, strongerInk } from './inkMix';
+import { contrastRatio, mixOklab, parseRgb, strongerInk, toneInks } from './inkMix';
 
 describe('parseRgb', () => {
   it('reads the forms getComputedStyle returns', () => {
@@ -40,4 +40,24 @@ describe('strongerInk', () => {
     expect(parseRgb(strongerInk('rgb(43, 126, 146)', 'rgb(26, 27, 30)'))![1]).toBeLessThan(126);
     expect(parseRgb(strongerInk('rgb(79, 147, 164)', 'rgb(201, 201, 201)'))![1]).toBeGreaterThan(147);
   });
+});
+
+describe('toneInks', () => {
+  const cardLight = 'rgb(252, 252, 252)';
+  const cardDark = 'rgb(30, 32, 36)';
+  for (const [name, card, text] of [['light', cardLight, 'rgb(20, 22, 26)'], ['dark', cardDark, 'rgb(236, 238, 241)']] as const) {
+    it(`never has less contrast against the ${name} card than the ink itself, each tone more than the last`, () => {
+      for (const ink of ['rgb(18, 130, 150)', 'rgb(179, 92, 0)', 'rgb(214, 51, 108)', 'rgb(134, 142, 150)']) {
+        const tones = toneInks(ink, text);
+        expect(tones).toHaveLength(8);
+        expect(tones[0]).toBe(mixOklab(ink, ink, 0));
+        let last = contrastRatio(tones[0], card);
+        for (const t of tones.slice(1)) {
+          const c = contrastRatio(t, card);
+          expect(c).toBeGreaterThanOrEqual(last - 1e-9);
+          last = c;
+        }
+      }
+    });
+  }
 });

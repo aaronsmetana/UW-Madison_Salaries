@@ -86,3 +86,14 @@ export function strongerInk(ink: string, text: string, apart = 1.5): string {
   }
   return out;
 }
+
+/**
+ * A dot's tones: `n` versions of `ink`, from the ink itself to `span` of the way toward black (a light
+ * card, dark `text`) or white (a dark card) — always away from the card, so no tone has less contrast
+ * against it than the ink, which is the one the 3:1 rule was checked on. The first is the ink.
+ */
+export function toneInks(ink: string, text: string, n = 8, span = 0.16): string[] {
+  const t = parseRgb(text);
+  const toward = t && luminance(t) < 0.5 ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)';
+  return Array.from({ length: n }, (_, i) => (i === 0 ? mixOklab(ink, ink, 0) : mixOklab(ink, toward, (span * i) / Math.max(1, n - 1))));
+}
