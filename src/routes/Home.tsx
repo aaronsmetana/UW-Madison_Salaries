@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import {
   IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch,
 } from '@tabler/icons-react';
@@ -87,6 +88,11 @@ const PILE_GAP = 14;
 const PILE_MIN_W = 10;
 /** Every dot in the pile (its values run 0 to 1). */
 const PILE_ALL: [number, number] = [0, 2];
+/** The plot's height, and the clear band above the curve's peak, on a phone and wider. The band is
+ *  where the readout rides over the peak and where a splash has room to fly (DotField). At 180px the
+ *  chart was a strip: its dots too small to tell apart and its peak flush with the panel's top. */
+const PLOT_H = { phone: 220, wide: 300 };
+const HEADROOM = { phone: 28, wide: 36 };
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
 
@@ -104,7 +110,7 @@ const CATEGORY_INK: Record<string, string> = {
 const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';
 
 function Distribution({
-  bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory,
+  bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -117,6 +123,9 @@ function Distribution({
   headcount: number | null;
   /** Colour the dots by staff category, each column stacked into bands. */
   byCategory: boolean;
+  /** The panel's own controls (the grouping toggle), over its top-right corner, or above the plot on
+   *  a phone. */
+  controls?: ReactNode;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -125,10 +134,9 @@ function Distribution({
   const labelRowRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [labelRows, setLabelRows] = useState<number[]>([0, 0, 0]);
-  // Index into `curve` under the pointer, or null. A mouse-only enhancement, deliberately: the plot
-  // is `aria-hidden` decoration inside a link to /explore, and putting a second focusable control
-  // inside a link to carry a readout would be worse than not having one. Everything the readout says
-  // is already stated without it — the quartile markers below the curve, and the caption's headcount.
+  // Index into `curve` under the pointer, or null. The plot is `aria-hidden`: everything the readout
+  // says is already stated without it — the quartile markers below the curve, and the caption's
+  // headcount.
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // The pile of people above the cap is under the pointer.
   const [hoverPile, setHoverPile] = useState(false);
@@ -145,10 +153,13 @@ function Distribution({
   // where it may sit is a question about pixels that changes as the reader moves the pointer.
   const pillRef = useRef<HTMLDivElement>(null);
   const [pillW, setPillW] = useState(0);
-  // Where the lens is, for a mouse; a tap on a phone belongs to the link around the chart.
+  // Where the lens is, for a mouse.
   const [lensAt, setLensAt] = useState<{ x: number; y: number } | null>(null);
   // Once a session, for both fields together: the pile lands after the curve's last dots.
   const entrance = useEntranceOnce();
+  const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
+  const H = phone ? PLOT_H.phone : PLOT_H.wide;
+  const HEAD = phone ? HEADROOM.phone : HEADROOM.wide;
 
   // One dot per person, under the curve (DotField). Everyone the bins describe: the counts per $100
   // when the artifact carries them, otherwise each $1k bin's people spread across its thousand — and,
@@ -189,7 +200,7 @@ function Distribution({
   const curveMax = useMemo(() => Math.max(1, ...curve.map((b) => b.n)), [curve]);
   const dotX = useCallback((v: number, width: number) => ((v - curveLo) / curveSpan) * width, [curveLo, curveSpan]);
   // The curve's height above the baseline at a pixel, as the line draws it: the same interpolation
-  // between the smoothed $1k points, in the same 180px box.
+  // between the smoothed $1k points, in the same box, peaking `HEAD` below its top.
   const dotHeight = useCallback((x: number, width: number) => {
     if (curve.length < 2) return 0;
     const v = curveLo + (x / width) * curveSpan;
@@ -197,16 +208,16 @@ function Distribution({
     const a = curve[i], b = curve[i + 1];
     const f = Math.min(1, Math.max(0, (v - a.bucket) / ((b.bucket - a.bucket) || 1)));
     const n = a.n + (b.n - a.n) * f;
-    return (n / curveMax) * (180 - 4) + 2;
-  }, [curve, curveLo, curveSpan, curveMax]);
+    return (n / curveMax) * (H - HEAD - 2) + 2;
+  }, [curve, curveLo, curveSpan, curveMax, H, HEAD]);
   // The pile is packed as densely as the field: its height is the curve's mean height, and its width
   // the plot's times the share of people it holds, so each dot has the same room as one under the curve.
   const pileH = useMemo(() => {
     if (curve.length < 2) return 0;
     let t = 0;
-    for (const b of curve) t += (b.n / curveMax) * (180 - 4) + 2;
+    for (const b of curve) t += (b.n / curveMax) * (H - HEAD - 2) + 2;
     return Math.round(t / curve.length);
-  }, [curve, curveMax]);
+  }, [curve, curveMax, H, HEAD]);
   const pileShare = people.length > 0 ? over / people.length : 0;
   const hasPile = over > 0 && pileH > 0;
   const pileX = useCallback((v: number, width: number) => v * width, []);
@@ -263,17 +274,17 @@ function Distribution({
 
   if (bins.length < 3) return null;
 
-  // 1000x180, drawn at 180px tall. It was 120, and at the ~848px the panel gives it that is a 7:1
+  // 1000 wide, drawn `H` tall (PLOT_H). It was 120, and at the ~848px the panel gave it that was a 7:1
   // box — wide enough that the two features the $1k buckets exist to resolve (the shoulder near $57k
-  // and the step near $130k) flattened back into the curve they were rescued from. The extra height
-  // is amplitude, not padding: every slope is 50% steeper for the same data.
-  const W = 1000, H = 180;
+  // and the step near $130k) flattened back into the curve they were rescued from. Height is
+  // amplitude, not padding: every slope is steeper for the same data.
+  const W = 1000;
   const maxN = Math.max(...curve.map((b) => b.n), 1);
   const lo = curve[0].bucket;
   const hi = curve[curve.length - 1].bucket;
   const span = hi - lo || 1;
   const X = (v: number) => ((v - lo) / span) * W;
-  const Y = (n: number) => H - (n / maxN) * (H - 4) - 2;
+  const Y = (n: number) => H - (n / maxN) * (H - HEAD - 2) - 2;
   const pts = curve.map((b) => `${X(b.bucket).toFixed(1)},${Y(b.n).toFixed(1)}`);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
 
@@ -345,12 +356,12 @@ function Distribution({
   const inkList = colour ? inks : undefined;
 
   return (
-    // `card-hover` because the whole panel is a link to /explore, and lifting the border on hover is
-    // the one "this responds" gesture the app uses (see the rule's own note on why it isn't a lift).
+    // Not a link any more: the panel is for pointing at, and Divisions has its own link below it.
     <div
-      className="hero-dist glass card-hover"
+      className="hero-dist glass"
       style={{ '--pile-gap': `${hasPile ? PILE_GAP : 0}px`, '--pile-w': hasPile ? `max(${PILE_MIN_W}px, calc((100% - ${PILE_GAP}px) * ${(pileShare / (1 + pileShare)).toFixed(5)}))` : '0px' } as CSSProperties}
     >
+      {controls && <div className="hero-dist-controls">{controls}</div>}
       <div className="hero-dist-row">
       <div className="hero-dist-main" style={{ position: 'relative' }} onPointerMove={onHover} onPointerLeave={onLeave}>
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
@@ -611,9 +622,11 @@ export default function Home() {
   // the page isn't pinned to some other (older) snapshot — in which case we fall back to live SQL.
   const { data: homeStats, isError: homeStatsFailed } = useHomeStats();
   const artifactUsable = !!homeStats && (snap == null || snap === homeStats.snapshot_id);
-  // "All" or "By category" for the dots, remembered per viewer. Offered only when the artifact carries
-  // the categories: the live-SQL fallback draws the dots from the bins alone.
-  const [colourBy, setColourBy] = usePref<'all' | 'category'>('home-dots-colour', 'all');
+  // "All" or "By employment type" (the staff category) for the dots, remembered per viewer, opening on
+  // the second. A new key: under the old one a visitor who had once picked "All" would never see the
+  // new default. Offered only when the artifact carries the categories: the live-SQL fallback draws
+  // the dots from the bins alone.
+  const [colourBy, setColourBy] = usePref<'all' | 'category'>('home-dots-group', 'category');
   const canColour = artifactUsable && !!homeStats.pay_counts?.categories?.length;
   const needsSql = !!snap && (homeStatsFailed || (!!homeStats && !artifactUsable));
 
@@ -774,32 +787,27 @@ export default function Home() {
             headline tells you to use, so it reads as underweight at anything narrower than the
             figure it sits under. */}
         <Stack gap="lg" maw="var(--content-max)" mx="auto" w="100%" className="hero-rise">
-          {/* The toggle sits over the panel's top-right corner but outside its link: HTML allows no
-              interactive content inside an <a>, and a click on it would also have navigated away (the
-              guard in e2e/dots.spec; axe's nested-interactive rule does not cover links). */}
           <div className="hero-dist-wrap">
-            <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
-              <Distribution
-                bins={bins}
-                payCounts={artifactUsable ? homeStats.pay_counts ?? null : null}
-                p25={artifactUsable ? homeStats.p25 : null}
-                median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
-                p75={artifactUsable ? homeStats.p75 : null}
-                cap={artifactUsable ? homeStats.bin_cap : null}
-                overflow={artifactUsable ? homeStats.bins_overflow : null}
-                headcount={summary?.latest?.headcount ?? null}
-                byCategory={colourBy === 'category'}
-              />
-            </Anchor>
-            {canColour && (
-              <div className="hero-dist-toggle">
-                <SegmentedToggle
-                  options={[{ id: 'all', label: 'All' }, { id: 'category', label: 'By category' }]}
-                  value={colourBy}
-                  onChange={(v) => setColourBy(v === 'category' ? 'category' : 'all')}
-                />
-              </div>
-            )}
+            <Distribution
+              bins={bins}
+              payCounts={artifactUsable ? homeStats.pay_counts ?? null : null}
+              p25={artifactUsable ? homeStats.p25 : null}
+              median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
+              p75={artifactUsable ? homeStats.p75 : null}
+              cap={artifactUsable ? homeStats.bin_cap : null}
+              overflow={artifactUsable ? homeStats.bins_overflow : null}
+              headcount={summary?.latest?.headcount ?? null}
+              byCategory={colourBy === 'category' && canColour}
+              controls={canColour ? (
+                <div className="hero-dist-toggle">
+                  <SegmentedToggle
+                    options={[{ id: 'all', label: 'All' }, { id: 'category', label: 'By employment type' }]}
+                    value={colourBy}
+                    onChange={(v) => setColourBy(v === 'category' ? 'category' : 'all')}
+                  />
+                </div>
+              ) : undefined}
+            />
           </div>
 
           <SearchBox size="lg" autoFocus />

@@ -4,7 +4,7 @@ import { parseColor, flatten, contrast } from './color';
 
 /**
  * Every employee as a dot (src/components/chart/DotField.tsx): the landing page's distribution — with
- * its pile of people above the cap, its "By category" colouring, the pointer's wake and the readout's
+ * its pile of people above the cap, its "By employment type" colouring, the pointer's wake and the readout's
  * highlight — and a large peer strip. Expected values from SQL written here.
  */
 
@@ -65,7 +65,7 @@ test('with reduced motion the dots are simply there; otherwise their fall stays 
   await moving.close();
 });
 
-test('the lens follows a mouse, not a finger; a tap still opens Divisions', async ({ browser }) => {
+test('the lens follows a mouse, not a finger; a tap stays on the page', async ({ browser }) => {
   const ctx = await browser.newContext({ hasTouch: true });
   const page = await ctx.newPage();
   await page.goto('./');
@@ -89,7 +89,11 @@ test('the lens follows a mouse, not a finger; a tap still opens Divisions', asyn
   await page.mouse.move(0, 0);
   await expect(dots).toHaveAttribute('data-lens', 'off');
 
+  // The panel is not a link: it is for pointing at, and Divisions has its own link below it.
   await page.touchscreen.tap(at.x, at.y);
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
+  await page.getByText('Browse every school and title under Divisions').click();
   await expect(page).toHaveURL(/\/explore/);
   await ctx.close();
 });
@@ -136,9 +140,15 @@ async function settledHome(page: Page) {
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
+/** "By employment type" (the staff category): where the page opens, and a click away from "All". */
 async function byCategory(page: Page) {
-  await page.locator('.hero-dist-toggle').getByText('By category').click();
+  await page.locator('.hero-dist-toggle').getByText('By employment type').click();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+}
+async function allOneInk(page: Page) {
+  await page.locator('.hero-dist-toggle').getByText('All', { exact: true }).click();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'off');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
 }
 
@@ -152,18 +162,24 @@ test('every person paid is a dot: the field under the cap and the pile above it'
   await expect(page.locator('.hero-dist-pile-label')).toHaveText(`${over.toLocaleString('en-US')} at $250k+`);
 });
 
-test("By category colours each person by their highest-paid appointment's category, and the toggle stays put", async ({ page }) => {
+test("the page opens By employment type: each person in their highest-paid appointment's category", async ({ page }) => {
   const cats = await categories();
   await settledHome(page);
-  const under = await page.locator('.hero-dots').getAttribute('data-dots');
-  await byCategory(page);
-  // A control, not part of the link around the chart.
-  await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
+  // Where a first visit opens, with nothing clicked.
+  await expect(page.locator('.hero-dist-toggle').getByRole('radio', { name: 'By employment type' })).toBeChecked();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-kinds', kindsOf(cats.map((c) => c.und)));
   await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-kinds', kindsOf(cats.map((c) => c.ovr)));
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-dots', under!);
   for (const c of cats) await expect(page.locator(`.hero-dist-legend-item[data-category="${c.cat}"]`)).toHaveAttribute('data-n', String(c.n));
-  // Remembered for this viewer.
+  const under = await page.locator('.hero-dots').getAttribute('data-dots');
+  // "All" is one ink and the same people, and it is remembered for this viewer.
+  await allOneInk(page);
+  await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-dots', under!);
+  await page.reload();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'off', { timeout: 30_000 });
+  // A choice stored under the old key (from when the page opened on "All") does not hide the new default.
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('uwsal.pref.home-dots-colour', '"all"'); });
   await page.reload();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on', { timeout: 30_000 });
 });
@@ -191,8 +207,10 @@ test('the re-stack moves in frames under 8ms, and not at all under reduced motio
   const moving = await browser.newContext({ reducedMotion: 'no-preference' });
   const p = await moving.newPage();
   await settledHome(p);
-  await p.evaluate(() => performance.clearMeasures());
+  // From a known state, whatever the page opens on.
   await byCategory(p);
+  await p.evaluate(() => performance.clearMeasures());
+  await allOneInk(p);
   const frames = await p.evaluate(() => performance.getEntriesByName('dot-frame').map((e) => e.duration).sort((a, b) => a - b));
   expect(frames.length, 'the re-stack played').toBeGreaterThan(5);
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
@@ -201,6 +219,8 @@ test('the re-stack moves in frames under 8ms, and not at all under reduced motio
   const still = await browser.newContext({ reducedMotion: 'reduce' });
   const q = await still.newPage();
   await settledHome(q);
+  await byCategory(q);
+  await allOneInk(q);
   await byCategory(q);
   expect(await q.evaluate(() => performance.getEntriesByName('dot-frame').length), 'frames were animated').toBe(0);
   await still.close();

@@ -1131,15 +1131,15 @@ button:active,
   background-size: 22px 22px;
   /* Scoped to the top of the page: this element is a sibling of ALL the content with `inset: 0`, so
      the mask is what keeps it behind the hero rather than tiling the entire page height. */
-  -webkit-mask-image: radial-gradient(ellipse 62% 600px at 50% 170px, #000 0%, transparent 72%);
-  mask-image: radial-gradient(ellipse 62% 600px at 50% 170px, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 720px at 50% 170px, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse 62% 720px at 50% 170px, #000 0%, transparent 72%);
 }
 /* Reaching past the bottom of the distribution panel in both of its modes — "By category" adds a
    legend — at every width; on a phone the panel is much taller for its width (e2e/smoke.spec). */
 @media screen and (max-width: 30em) {
   .hero-dotgrid {
-    -webkit-mask-image: radial-gradient(ellipse 62% 760px at 50% 170px, #000 0%, transparent 72%);
-    mask-image: radial-gradient(ellipse 62% 760px at 50% 170px, #000 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse 62% 840px at 50% 170px, #000 0%, transparent 72%);
+    mask-image: radial-gradient(ellipse 62% 840px at 50% 170px, #000 0%, transparent 72%);
   }
 }
 
@@ -1766,13 +1766,20 @@ button:active,
 .hero-dist-main { flex: 1 1 0; min-width: 0; }
 .hero-dist-break { flex: 0 0 var(--pile-gap); }
 .hero-dist-pile { flex: 0 0 var(--pile-w); }
-/* The "All · By category" toggle, over the panel's top-right corner (outside its link). */
+/* The panel's controls ("All · By employment type"): over its top-right corner, in the clear band
+   above the curve's peak; on a phone, a row of their own above the plot, where the corner has no room. */
 .hero-dist-wrap { position: relative; }
-.hero-dist-toggle {
+.hero-dist-controls {
   position: absolute;
-  top: calc(var(--mantine-spacing-lg) + 8px);
+  top: 10px;
   right: 10px;
   z-index: var(--z-local, 2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+@media screen and (max-width: 30em) {
+  .hero-dist-controls { position: static; justify-content: flex-end; margin-bottom: 6px; }
 }
 .hero-dist-legend {
   display: flex;
