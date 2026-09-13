@@ -194,6 +194,9 @@
      It is a specular highlight rather than a surface, so it stays white in both schemes and only its
      strength changes: on a white canvas it is nearly the full highlight, on the dark one a trace. */
   --glass-sheen: rgba(255, 255, 255, 0.75);
+  /* The landing curve's glow under its line, and the faint wash under the curve behind the dots. */
+  --curve-glow: 0.14;
+  --curve-wash: 0.09;
   --lens-rim-outer: rgba(0, 0, 0, 0.22);
   --lens-rim-inner: rgba(255, 255, 255, 0.9);
   --lens-sheen: rgba(255, 255, 255, 0.55);
@@ -291,6 +294,8 @@ body {
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
   --glass-sheen: rgba(255, 255, 255, 0.07);
+  --curve-glow: 0.3;
+  --curve-wash: 0.14;
   --lens-rim-outer: rgba(0, 0, 0, 0.65);
   --lens-rim-inner: rgba(255, 255, 255, 0.2);
   --lens-sheen: rgba(255, 255, 255, 0.16);
@@ -1852,6 +1857,7 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 }
 /* The glass is the pointer while it shows. */
 .hero-dist-main[data-lens='on'] { cursor: none; }
+.hero-dist-curve-glow { stroke-opacity: var(--curve-glow); }
 
 /* The app footer is fixed from sm up only (AppShell.tsx); on a phone it ends the page instead. */
 @media screen and (max-width: 47.99em) {

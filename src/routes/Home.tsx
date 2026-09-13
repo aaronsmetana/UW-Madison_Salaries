@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -341,6 +341,8 @@ function Distribution({
     [hoveredBucket],
   );
 
+  // The wash under the curve: its gradient's id, unique on the page (and fit for a url(#…)).
+  const washId = `wash${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   // The curve's point nearest the median: where a keyboard's readout starts.
   const medianIdx = useMemo(() => {
     if (median == null || !curve.length) return 0;
@@ -375,6 +377,8 @@ function Distribution({
   const Y = (n: number) => H - (n / maxN) * (H - HEAD - 2) - 2;
   const pts = curve.map((b) => `${X(b.bucket).toFixed(1)},${Y(b.n).toFixed(1)}`);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
+  // The area under the curve, down to the baseline: the wash behind the dots.
+  const area = `${line} L${X(hi).toFixed(1)},${H} L${X(lo).toFixed(1)},${H} Z`;
 
   // Round salary steps for the axis, coarsened until the labels actually fit the rendered width.
   // `AXIS_LABEL_W` is the pitch one label needs to stay legible with a gap either side; before the
@@ -637,10 +641,17 @@ function Distribution({
     const curvePts: [number, number][] = [];
     for (let x = Math.max(0, Math.floor(cx - R)); x <= Math.min(pw, Math.ceil(cx + R)); x++) curvePts.push([x, H - dotHeight(x, pw)]);
     if (curvePts.length > 1) {
+      const scale = map(cx, H - dotHeight(Math.min(pw, Math.max(0, cx)), pw)).scale;
       path(curvePts);
       ctx.strokeStyle = tok('--mantine-color-accent-6');
-      ctx.lineWidth = 1.75 * map(cx, H - dotHeight(Math.min(pw, Math.max(0, cx)), pw)).scale;
       ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      // Its glow under it, as the page draws it.
+      ctx.globalAlpha = parseFloat(tok('--curve-glow')) || 0;
+      ctx.lineWidth = 6 * scale;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.75 * scale;
       ctx.stroke();
     }
     if (hovered && bandRef.current) {
@@ -729,6 +740,16 @@ function Distribution({
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
           curve used to carry is these people; the line, the markers and the readout stay on top. */}
       <div style={{ position: 'absolute', inset: 0, height: H }}>
+        {/* A faint wash under the curve, beneath the dots, so its shape reads even in the thin tails. */}
+        <svg className="hero-dist-wash" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ position: 'absolute', inset: 0, display: 'block' }}>
+          <defs>
+            <linearGradient id={washId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="var(--mantine-color-accent-6)" style={{ stopOpacity: 'var(--curve-wash)' }} />
+              <stop offset="1" stopColor="var(--mantine-color-accent-6)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <path d={area} fill={`url(#${washId})`} />
+        </svg>
         <DotField
           ref={mainDotsRef}
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
@@ -740,6 +761,8 @@ function Distribution({
         />
       </div>
       <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
+        {/* A soft glow under the curve's line, stronger on a dark page. */}
+        <path className="hero-dist-curve-glow" d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
         <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
         {marks.map((m) => (
           <line

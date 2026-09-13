@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   AIR_BEFORE_REST, AIR_EPS, BURST_OMEGA, BURST_R, BURST_SPEED, BURST_SPRING, BURST_ZETA, CLICK_CAP, GRAVITY, REST_EPS,
   RING_ALPHA, RING_ECHO, RING_RIPPLE, RIPPLE_A, RIPPLE_OMEGA, RIPPLE_SPRING, RIPPLE_ZETA, STIR_SPEED, WAVE_MS,
-  burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirPath, thrown, type Kick, type Pose, type Spring,
+  BLOOM_ALPHA, BLOOM_MS, bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirPath, thrown, type Kick, type Pose, type Spring,
 } from './dotPhysics';
 import { LENS_D } from './fisheye';
 
@@ -287,5 +287,21 @@ describe('stepThrough', () => {
     for (let t = 0; t < 400; t += 16) { const s = stepThrough(o, v, 16); o = s.o; v = s.v; seen.push(o); }
     expect(seen.every((x, i) => i === 0 || x > seen[i - 1])).toBe(true);
     expect(o).toBeGreaterThan(150);
+  });
+});
+
+describe('bloomAt', () => {
+  it('swells from a small glow to half the reach, easing out, and fades to nothing by BLOOM_MS', () => {
+    const at = (t: number) => bloomAt(t, BURST_R)!;
+    expect(at(0).rad).toBeCloseTo(0.15 * BURST_R, 9);
+    expect(at(0).alpha).toBeCloseTo(BLOOM_ALPHA, 9);
+    expect(at(BLOOM_MS / 2).rad).toBeGreaterThan(0.35 * BURST_R);
+    for (let t = 10; t < BLOOM_MS; t += 10) {
+      expect(at(t).rad).toBeGreaterThan(at(t - 10).rad);
+      expect(at(t).alpha).toBeLessThan(at(t - 10).alpha);
+      expect(at(t).rad).toBeLessThanOrEqual(0.5 * BURST_R + 1e-9);
+    }
+    expect(bloomAt(BLOOM_MS, BURST_R)).toBeNull();
+    expect(bloomAt(-1, BURST_R)).toBeNull();
   });
 });

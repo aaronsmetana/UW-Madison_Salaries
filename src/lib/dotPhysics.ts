@@ -173,6 +173,19 @@ export function ringAlpha(rad: number, k: number, reach: number, far: number): n
   return Math.min(0.9, RING_ALPHA * strength * Math.sqrt(reach / rad) * RING_ECHO ** k * edge);
 }
 
+/** The bloom at a blast: a soft glow in the accent that swells at the click and fades out over
+ *  BLOOM_MS, as the dots burst out of it. */
+export const BLOOM_MS = 250;
+export const BLOOM_ALPHA = 0.3;
+
+/** The bloom `age` ms after a click whose burst reaches `reach`: its radius, px, and strength; null once
+ *  it has faded. It swells quickly to half the reach, easing out, and fades as the square of its life. */
+export function bloomAt(age: number, reach: number): { rad: number; alpha: number } | null {
+  if (!(age >= 0) || age >= BLOOM_MS) return null;
+  const p = age / BLOOM_MS;
+  return { rad: reach * (0.15 + 0.35 * (1 - (1 - p) ** 2)), alpha: BLOOM_ALPHA * (1 - p) ** 2 };
+}
+
 /** A dot's speed after a kick `kx, ky`: the two added, but never faster than `cap` or than it already
  *  went — so a second click throws further, up to its cap, and a drag that passes the same dots again
  *  and again never throws them further than one stir. Written into `out`. */

@@ -256,6 +256,12 @@ for (const scheme of ['light', 'dark'] as const) {
       const lone = flatten([t[0], t[1], t[2], t[3] * alpha], ground);
       expect(contrast(lone, ground), `category ${k}, tone ${j}, as a lone dot`).toBeGreaterThanOrEqual(3);
     }));
+    // And each bead as drawn — its highlight, its deeper edge — seen from a step back: its mean colour.
+    const beads = (await dots.getAttribute('data-bead-inks'))!.split('|').map((t) => t.split(';').map(parseColor));
+    beads.forEach((bs, k) => bs.forEach((b, j) => {
+      const lone = flatten([b[0], b[1], b[2], b[3] * alpha], ground);
+      expect(contrast(lone, ground), `category ${k}, tone ${j}, a bead's mean colour`).toBeGreaterThanOrEqual(3);
+    }));
   });
 }
 
@@ -320,14 +326,18 @@ test('hovering moves no dot: the field is as still as the pointer leaves it', as
 /** The field's canvas box, and readers of it: the share of a square (CSS px from the canvas's corner,
  *  `half` either way) that has any ink; the mean ink over a rectangle; and its inked pixels' colours. */
 const canvasBox = async (page: Page) => (await page.locator('.hero-dots canvas').first().boundingBox())!;
-const inkShare = (page: Page, x: number, y: number, half: number) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
+const inkShare = (page: Page, x: number, y: number, half: number, over = 0) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
   const k = c.width / c.clientWidth;
   const w = Math.round(2 * a.half * k);
   const d = c.getContext('2d')!.getImageData(Math.round((a.x - a.half) * k), Math.round((a.y - a.half) * k), w, w).data;
   let n = 0;
-  for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > a.over) n++;
   return n / (w * w);
-}, { x, y, half });
+}, { x, y, half, over });
+/** Ink a dot lays down, not the bloom's faint glow over the hole (under 20 of 255 by +128ms); and ink
+ *  above anything the bloom can draw at all (it starts at 0.3 of full ink). */
+const DOT_INK = 24;
+const OVER_BLOOM = 96;
 const meanInk = (page: Page, x: number, y: number, w: number, h: number) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
   const k = c.width / c.clientWidth;
   const d = c.getContext('2d')!.getImageData(Math.round(a.x * k), Math.round(a.y * k), Math.round(a.w * k), Math.round(a.h * k)).data;
@@ -355,17 +365,18 @@ test('a click bursts a hole you can see behind a shockwave, and every dot comes 
   const c = await canvasBox(page);
   const x = c.width * 0.27, y = c.height * 0.72;
   const rest = await picture(page);
-  expect(await inkShare(page, x, y, 20), 'the click is in the densest part of the field').toBeGreaterThan(0.9);
-  for (const off of [-110, -76, 76, 110]) expect(await inkShare(page, x + off, y, 4), 'the field is dense round the glass').toBeGreaterThan(0.6);
+  expect(await inkShare(page, x, y, 20, DOT_INK), 'the click is in the densest part of the field').toBeGreaterThan(0.8);
+  for (const off of [-110, -76, 76, 110]) expect(await inkShare(page, x + off, y, 4, DOT_INK), 'the field is dense round the glass').toBeGreaterThan(0.6);
   await clickAway(page, c, x, y);
   await page.clock.runFor(16);
-  // By the first frame the front has run 15px, so the square round the click is only partly emptied.
-  expect(await inkShare(page, x, y, 20), 'the shockwave reached the square with the click').toBeGreaterThan(0.4);
+  // By the first frame the front has run 15px, so the square round the click is only partly emptied
+  // (counted above the bloom, which swells there at once): without the front, every dot in it is gone.
+  expect(await inkShare(page, x, y, 20, OVER_BLOOM), 'the shockwave reached the square with the click').toBeGreaterThan(0.3);
   await page.clock.runFor(112);
-  expect(await inkShare(page, x, y, 20), 'no hole opened round the click').toBeLessThan(0.15);
+  expect(await inkShare(page, x, y, 20, DOT_INK), 'no hole opened round the click').toBeLessThan(0.15);
   // The hole reaches well past the glass that sits on the click: round its rim (LENS_D / 2 = 70px) and
   // 110px out the dots are gone too, left and right of the click, where the field was dense.
-  for (const off of [-110, -76, 76, 110]) expect(await inkShare(page, x + off, y, 4), `no hole ${off}px from the click`).toBeLessThan(0.15);
+  for (const off of [-110, -76, 76, 110]) expect(await inkShare(page, x + off, y, 4, DOT_INK), `no hole ${off}px from the click`).toBeLessThan(0.15);
   await expect(dots).toHaveAttribute('data-flight', 'moving');
   // The burst and its ripple, which runs out to the plot's far corner and rocks the dots there.
   await page.clock.runFor(2372);
@@ -392,6 +403,16 @@ test("the shockwave's rings run out across the whole plot and fade, even where t
   // The front reaches 500px at about 536ms, and its first echo a ripple's period (184ms) later.
   await page.clock.runFor(236);
   expect(await far(), 'the front never reached 500px out').toBeGreaterThan(0);
+  // The front is a soft glowing band under a thin core: along the click's row, its ink spans more than
+  // the 1.5px line alone.
+  const band = await page.locator('.hero-dots canvas').first().evaluate((cv: HTMLCanvasElement, a) => {
+    const k = cv.width / cv.clientWidth;
+    const d = cv.getContext('2d')!.getImageData(Math.round((a.x - 16) * k), Math.round(a.y * k), Math.round(32 * k), 1).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+    return n / k;
+  }, { x: x - 500, y });
+  expect(band, 'the ring is a bare line (its ink across, px)').toBeGreaterThanOrEqual(5);
   await page.clock.runFor(184);
   expect(await far(), 'no echo followed the front').toBeGreaterThan(0);
   await page.clock.runFor(1500);
@@ -505,7 +526,8 @@ test('the glass shows the hole a click opens under it', async ({ page }) => {
   expect(await unlike(), 'the glass shows no dots at rest').toBeGreaterThan(0.5);
   await page.mouse.down();
   await page.mouse.up();
-  await page.clock.runFor(128);
+  // Read once the bloom has faded (BLOOM_MS, 250ms), while the hole is still open under the glass.
+  await page.clock.runFor(272);
   expect(await unlike(), 'the glass still showed dots where the burst had thrown them out').toBeLessThan(0.02);
 });
 
@@ -769,6 +791,44 @@ test('on a phone a finger held still brings up the glass above it; one that move
   await page.waitForTimeout(300);
   expect(await scrolled(), 'a quick swipe did not scroll the page').toBeGreaterThan(start + 40);
   await expect(main).toHaveAttribute('data-lens', 'off');
+  await ctx.close();
+});
+
+test('a click blooms: a soft glow swells where it lands and is gone within a quarter second', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  // High over the tail, where the field is empty: a square 20px beside the click, inside the bloom and
+  // clear of the front's ring, which has run 60px by then.
+  const x = c.width * 0.62, y = c.height * 0.4;
+  const beside = () => inkShare(page, x - 20, y, 8);
+  expect(await beside(), 'the field is empty beside the click').toBe(0);
+  await clickAway(page, c, x, y);
+  await page.clock.runFor(64);
+  expect(await beside(), 'no bloom where the click landed').toBeGreaterThan(0.5);
+  await page.clock.runFor(236);
+  expect(await beside(), 'the bloom was still there at +300ms').toBe(0);
+});
+
+test('the curve glows, and a faint wash lies under it behind the dots', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  await page.mouse.move(0, 0);
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  // In the tail: the sky far above the curve, and the foot of the field, where the curve runs low.
+  const sky = { x: plot.x + plot.width * 0.7, y: plot.y + 20, width: 120, height: 30 };
+  const foot = { x: plot.x + plot.width * 0.7, y: plot.y + plot.height - 50, width: 120, height: 48 };
+  const shot = async () => ({ sky: await page.screenshot({ clip: sky }), foot: await page.screenshot({ clip: foot }) });
+  const all = await shot();
+  await page.addStyleTag({ content: '.hero-dist-wash { visibility: hidden; }' });
+  const noWash = await shot();
+  expect(Buffer.compare(noWash.sky, all.sky), 'the wash reaches above the curve').toBe(0);
+  expect(Buffer.compare(noWash.foot, all.foot), 'no wash under the curve, between the dots').not.toBe(0);
+  await page.addStyleTag({ content: '.hero-dist-curve-glow { visibility: hidden; }' });
+  const noGlow = await shot();
+  expect(Buffer.compare(noGlow.sky, noWash.sky), 'the glow reaches the sky').toBe(0);
+  expect(Buffer.compare(noGlow.foot, noWash.foot), 'no glow along the curve').not.toBe(0);
   await ctx.close();
 });
 

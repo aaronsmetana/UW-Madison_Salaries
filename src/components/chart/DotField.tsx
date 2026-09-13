@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, u
 import { layoutDots, packDots } from '../../lib/dotLayout';
 import {
   AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, WAVE_MS,
-  burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
+  bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
 } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
 import { bead, beadInk, halo, type Bead, type BeadInk } from '../../lib/dotSprites';
@@ -34,6 +34,8 @@ const REST = 0, FLYING = 1, LEAVING = 2, GONE = 3, BURST = 4;
 /** Which spring holds a bursting dot: a burst's, or a ripple's (lib/dotPhysics). */
 const THROWN = 0, RIPPLED = 1;
 const springOf = (kind: number) => (kind === RIPPLED ? RIPPLE_SPRING : BURST_SPRING);
+/** A ring's strokes, CSS px wide and their share of its strength: a soft glowing band, then its core. */
+const RING_STROKES: readonly (readonly [number, number])[] = [[6, 0.25], [1.5, 1]];
 /** Scratch for the spring and the kicks: one frame's dots are worked one at a time. */
 const pose: Pose = { ox: 0, oy: 0, vx: 0, vy: 0 };
 const speed2 = { vx: 0, vy: 0 };
@@ -460,20 +462,35 @@ export const DotField = forwardRef<DotFieldHandle, {
         }
       }
     }
-    // The shockwaves, over the dots: each click's front and its echoes, a ripple's period behind, running
-    // out across the plot and fading as they go (lib/dotPhysics `ringAlpha`).
+    // The shockwaves, over the dots: a bloom swelling at each click and fading as the dots burst out of
+    // it, then the click's front and its echoes, a ripple's period behind, running out across the plot
+    // and fading as they go (lib/dotPhysics `ringAlpha`) — each a soft glowing band under a thin core.
     if (L.rings.length && L.ringInk) {
-      ctx.lineWidth = 1.5 * dpr;
       ctx.strokeStyle = L.ringInk;
+      ctx.lineCap = 'round';
       for (const g of L.rings) {
+        const bl = bloomAt(now - g.t, g.reach);
+        if (bl) {
+          const gr = ctx.createRadialGradient(g.x * dpr, g.y * dpr, 0, g.x * dpr, g.y * dpr, bl.rad * dpr);
+          gr.addColorStop(0, L.ringInk);
+          gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          ctx.globalAlpha = bl.alpha;
+          ctx.fillStyle = gr;
+          ctx.beginPath();
+          ctx.arc(g.x * dpr, g.y * dpr, bl.rad * dpr, 0, Math.PI * 2);
+          ctx.fill();
+        }
         for (let k = 0; k < RING_ECHOES; k++) {
           const rad = ((now - g.t - k * RIPPLE_PERIOD) / WAVE_MS) * g.reach;
           const a = ringAlpha(rad, k, g.reach, g.far);
           if (a <= 0) continue;
-          ctx.globalAlpha = a;
-          ctx.beginPath();
-          ctx.arc(g.x * dpr, g.y * dpr, rad * dpr, 0, Math.PI * 2);
-          ctx.stroke();
+          for (const [w, share] of RING_STROKES) {
+            ctx.globalAlpha = a * share;
+            ctx.lineWidth = w * dpr;
+            ctx.beginPath();
+            ctx.arc(g.x * dpr, g.y * dpr, rad * dpr, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
       }
     }
@@ -545,11 +562,24 @@ export const DotField = forwardRef<DotFieldHandle, {
         for (const g of L.rings) {
           const gx = g.x + ox, gy = g.y + oy;
           const d = Math.hypot(gx - cx, gy - cy);
+          const bl = bloomAt(now - g.t, g.reach);
+          if (bl && d < R + bl.rad) {
+            // Where the glass shows the click, the bloom as large as the glass makes it there.
+            const m = map(gx, gy);
+            const rr = bl.rad * Math.min(2.5, m.scale);
+            const gr = ctx.createRadialGradient(m.x * dpr, m.y * dpr, 0, m.x * dpr, m.y * dpr, rr * dpr);
+            gr.addColorStop(0, L.ringInk);
+            gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.globalAlpha = bl.alpha;
+            ctx.fillStyle = gr;
+            ctx.beginPath();
+            ctx.arc(m.x * dpr, m.y * dpr, rr * dpr, 0, Math.PI * 2);
+            ctx.fill();
+          }
           for (let k = 0; k < RING_ECHOES; k++) {
             const rad = ((now - g.t - k * RIPPLE_PERIOD) / WAVE_MS) * g.reach;
             const al = ringAlpha(rad, k, g.reach, g.far);
             if (al <= 0 || d > R + rad || d < rad - R) continue;
-            ctx.globalAlpha = al;
             ctx.beginPath();
             let most = 1;
             for (let n = 0; n <= 96; n++) {
@@ -558,8 +588,12 @@ export const DotField = forwardRef<DotFieldHandle, {
               if (n) ctx.lineTo(m.x * dpr, m.y * dpr); else ctx.moveTo(m.x * dpr, m.y * dpr);
               if (m.scale > most) most = m.scale;
             }
-            ctx.lineWidth = 1.5 * dpr * Math.min(2, most);
-            ctx.stroke();
+            ctx.lineCap = 'round';
+            for (const [w, share] of RING_STROKES) {
+              ctx.globalAlpha = al * share;
+              ctx.lineWidth = w * dpr * Math.min(2, most);
+              ctx.stroke();
+            }
           }
         }
       }
@@ -729,7 +763,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (L.rings.length) {
       flightFrame = true;
       for (const g of L.rings) {
-        const e = Math.min(g.far, ((now - g.t) / WAVE_MS) * g.reach) + 2;
+        const e = Math.min(g.far, Math.max(((now - g.t) / WAVE_MS) * g.reach, bloomAt(now - g.t, g.reach)?.rad ?? 0)) + 8;
         if (g.x - e < sx0) sx0 = g.x - e;
         if (g.x + e > sx1) sx1 = g.x + e;
       }
@@ -828,8 +862,10 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (boxRef.current) {
       boxRef.current.dataset.inks = L.ink.join('|');
       boxRef.current.dataset.strongInks = L.strong.join('|');
-      // Every tone of every ink, each ink's separated by '|': what the contrast guard reads.
+      // Every tone of every ink, each ink's separated by '|', and each bead's own mean colour, what a
+      // lone bead looks like from a step back: what the contrast guards read.
       boxRef.current.dataset.tones = L.tones.map((ts) => ts.join(';')).join('|');
+      boxRef.current.dataset.beadInks = L.fast.map((ts) => ts.map((f) => f.fill).join(';')).join('|');
     }
     const motionOk = !prefersReducedMotion() && !document.hidden;
     const prev = prevLayout.current;

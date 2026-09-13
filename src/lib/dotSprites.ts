@@ -10,8 +10,10 @@
  */
 import { mixOklab } from './inkMix';
 
-/** Radii (device px) under which the highlight cannot show: a plain disc there. */
+/** Radii (device px) under which the highlight cannot show: a plain disc there; and how far toward white
+ *  the highlight goes. */
 const GLOSS_FROM = 1.25;
+const SPARKLE = 0.5;
 /** The halo's reach, as a multiple of the dot's radius, and its strongest alpha: within the room a
  *  packed field leaves between dots, and a little stronger for being tighter. */
 const HALO_REACH = 1.6;
@@ -55,8 +57,9 @@ export function bead(ink: string, radius: number, glow: boolean): Bead {
   if (radius >= GLOSS_FROM) {
     const hx = c - radius * 0.35, hy = c - radius * 0.35;
     const g = ctx.createRadialGradient(hx, hy, 0, c, c, radius);
-    g.addColorStop(0, mixOklab(ink, 'rgb(255, 255, 255)', 0.32));
-    g.addColorStop(0.55, ink);
+    // A bright, tight highlight, so a field of separated beads glints.
+    g.addColorStop(0, mixOklab(ink, 'rgb(255, 255, 255)', SPARKLE));
+    g.addColorStop(0.4, ink);
     g.addColorStop(1, mixOklab(ink, 'rgb(0, 0, 0)', 0.16));
     ctx.fillStyle = g;
   } else {
