@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutDots, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
+import { layoutDots, packDots, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
 
 const curve = (x: number) => 60 * Math.exp(-(((x - 300) / 120) ** 2)) + 4;
 
@@ -32,6 +32,110 @@ describe('layoutDots', () => {
     const p = layoutDots({ xs: col, heightAt: curve, baseY: 100, r: 0.6 });
     const ys = Array.from({ length: 40 }, (_, i) => p[2 * i + 1]);
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.9 * (curve(300.5) - 1.2));
+  });
+});
+
+describe('packDots', () => {
+  // People spread as the curve is, and a spike of 30 sharing one pay at the peak — a streak in 1px columns.
+  const rand = seeded(11);
+  const spread: number[] = [];
+  while (spread.length < 5000) { const x = rand() * 600; if (rand() * 64 < curve(x)) spread.push(x); }
+  const xs = [...spread, ...Array.from({ length: 30 }, () => 300.2)];
+  const kinds = xs.map((_, i) => (i * 7) % 3);
+  const at2 = packDots({ xs, heightAt: curve, baseY: 100, width: 600, dpr: 2, spill: 3, stack: kinds, seed: 5 });
+  const D = Math.max(1, Math.round(3 / 1.5));
+  /** The pairs of dots closer than `min`, found through a grid: all of them, and those in different
+   *  columns (different x). */
+  const tooClose = (pts: Float32Array, min: number, near?: (x: number) => boolean) => {
+    const grid = new Map<string, number[]>();
+    const n = pts.length / 2;
+    for (let i = 0; i < n; i++) {
+      const k = `${Math.floor(pts[2 * i] / min)},${Math.floor(pts[2 * i + 1] / min)}`;
+      grid.set(k, [...(grid.get(k) ?? []), i]);
+    }
+    let pairs = 0, across = 0;
+    for (let i = 0; i < n; i++) {
+      if (near && !near(pts[2 * i])) continue;
+      const gx = Math.floor(pts[2 * i] / min), gy = Math.floor(pts[2 * i + 1] / min);
+      for (let ax = gx - 1; ax <= gx + 1; ax++) for (let ay = gy - 1; ay <= gy + 1; ay++) {
+        for (const j of grid.get(`${ax},${ay}`) ?? []) {
+          if (j > i && Math.hypot(pts[2 * j] - pts[2 * i], pts[2 * j + 1] - pts[2 * i + 1]) < min) {
+            pairs++;
+            if (pts[2 * j] !== pts[2 * i]) across++;
+          }
+        }
+      }
+    }
+    return { pairs, across };
+  };
+
+  it('gives every dot its own room: never too near a dot in another column, the spike absorbed', () => {
+    const min = 0.95 * 2 * at2.r;
+    const all = tooClose(at2.pts, min);
+    // Columns are a dot-width apart: no dot overlaps one in the next.
+    expect(all.across).toBe(0);
+    // The spike of 30 at one pay spread into its neighbours: nothing near it is crowded.
+    expect(tooClose(at2.pts, min, (x) => Math.abs(x - 300) < 8).pairs).toBe(0);
+    // What is left is a few chance clumps in the thin tails, where every column within the spill is as
+    // full: counted, small, and only ever within a column.
+    expect(at2.crowded).toBeLessThan(0.01 * xs.length);
+    if (at2.crowded === 0) expect(all.pairs).toBe(0);
+    // One-pixel columns, for contrast, crowd dots everywhere.
+    const plain = layoutDots({ xs, heightAt: curve, baseY: 100, r: at2.r, seed: 5 });
+    expect(tooClose(plain, min).pairs).toBeGreaterThan(xs.length / 4);
+  });
+
+  it('keeps every dot within the spill and half a column of its pay, and in pay order', () => {
+    const pitch = 1.5;
+    for (let i = 0; i < xs.length; i++) expect(Math.abs(at2.pts[2 * i] - xs[i])).toBeLessThanOrEqual(D * pitch + pitch / 2 + 1e-9);
+    expect(at2.maxShift).toBeLessThanOrEqual(D * pitch + pitch / 2 + 1e-9);
+    const byPay = xs.map((_, i) => i).sort((a, b) => xs[a] - xs[b] || a - b);
+    for (let q = 1; q < byPay.length; q++) expect(at2.pts[2 * byPay[q]]).toBeGreaterThanOrEqual(at2.pts[2 * byPay[q - 1]]);
+  });
+
+  it('keeps every dot under the curve and above the baseline, a radius inside both', () => {
+    for (let i = 0; i < xs.length; i++) {
+      const x = at2.pts[2 * i], y = at2.pts[2 * i + 1];
+      expect(y).toBeLessThanOrEqual(100 - at2.r + 1e-4);
+      expect(y).toBeGreaterThanOrEqual(100 - curve(x) + at2.r - 1e-4);
+    }
+  });
+
+  it('puts every dot on a device-pixel centre from 2x up, where its sprite stamps unresampled', () => {
+    for (let i = 0; i < xs.length; i++) {
+      for (const v of [at2.pts[2 * i] * 2 - 0.5, at2.pts[2 * i + 1] * 2 - 0.5]) expect(Math.abs(v - Math.round(v))).toBeLessThan(1e-4);
+    }
+  });
+
+  it('stacks the kinds within each column, lower keys lower', () => {
+    const cols = new Map<number, number[]>();
+    xs.forEach((_, i) => { const c = at2.pts[2 * i]; cols.set(c, [...(cols.get(c) ?? []), i]); });
+    for (const list of cols.values()) {
+      for (let k = 0; k < 2; k++) {
+        const top = Math.min(...list.filter((i) => kinds[i] === k).map((i) => at2.pts[2 * i + 1]));
+        const next = list.filter((i) => kinds[i] === k + 1).map((i) => at2.pts[2 * i + 1]);
+        if (next.length && Number.isFinite(top)) expect(Math.max(...next)).toBeLessThan(top);
+      }
+    }
+  });
+
+  it('draws the same picture every time', () => {
+    const again = packDots({ xs, heightAt: curve, baseY: 100, width: 600, dpr: 2, spill: 3, stack: kinds, seed: 5 });
+    expect(Array.from(again.pts)).toEqual(Array.from(at2.pts));
+  });
+
+  it('owns up to a spike too big for its neighbours: counted crowded, and still within bounds', () => {
+    const big = [...spread, ...Array.from({ length: 400 }, () => 300.2)];
+    const p = packDots({ xs: big, heightAt: curve, baseY: 100, width: 600, dpr: 2, spill: 3 });
+    expect(p.crowded).toBeGreaterThan(200);
+    expect(p.maxShift).toBeLessThanOrEqual(D * 1.5 + 0.75 + 1e-9);
+  });
+
+  it("sizes a phone's dots to its screen: two device pixels apart at 3x, no bigger than they fit", () => {
+    const dense = Array.from({ length: 20000 }, (_, i) => spread[i % spread.length]);
+    const p = packDots({ xs: dense, heightAt: curve, baseY: 100, width: 600, dpr: 3, spill: 3 });
+    expect(p.r * 3).toBeGreaterThanOrEqual(0.9 - 1e-9);
+    expect(2 * p.r).toBeLessThanOrEqual(0.95 * (Math.round(2 * 0.42 * Math.sqrt(15163 / 20000) * 3) / 3) + 0.05);
   });
 });
 

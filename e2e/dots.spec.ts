@@ -629,6 +629,53 @@ test('a tap that bursts the dots ticks the phone once; a click, a scroll and a s
   await still.close();
 });
 
+test("every landing dot has its own room: none crowded, none more than 3.75px from its pay", async ({ browser }) => {
+  // One-pixel columns put 66% of dots over a neighbour, and a column of people sharing a pay held up to
+  // 3.7 times its room — a solid streak. Packed (lib/dotLayout packDots), columns are a dot-width apart
+  // and a crowded one evens out with its neighbours within 3px.
+  for (const [viewport, scale, crowd] of [[{ width: 1440, height: 900 }, 2, 0.005], [{ width: 375, height: 812 }, 3, 0]] as const) {
+    const ctx = await browser.newContext({ viewport, deviceScaleFactor: scale, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await settledHome(page);
+    const dots = page.locator('.hero-dots');
+    const n = Number(await dots.getAttribute('data-dots'));
+    const crowded = Number(await dots.getAttribute('data-crowded'));
+    expect(crowded, `${crowded} of ${n} dots crowded at ${viewport.width}px @${scale}x`).toBeLessThanOrEqual(crowd * n);
+    // The spill (3px) and half a column.
+    expect(Number(await dots.getAttribute('data-max-shift')), 'the furthest a dot sits from its pay, px').toBeLessThanOrEqual(3.75);
+    await expect(dots).toHaveAttribute('data-alpha', '1');
+    await ctx.close();
+  }
+});
+
+test('at 2x the densest part of the field shows the gaps between its dots, and every dot is crisp', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  await page.mouse.move(0, 0);
+  const seen = await page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement) => {
+    const k = c.width / c.clientWidth, g = c.getContext('2d')!, W = c.clientWidth, H = c.clientHeight;
+    // The most inked 40x40 square along the foot of the field, and the share of its pixels left empty.
+    let best = { cov: 0, empty: 1 };
+    for (let x = 20; x < W - 20; x += 10) {
+      const d = g.getImageData(Math.round((x - 20) * k), Math.round((H - 60) * k), Math.round(40 * k), Math.round(40 * k)).data;
+      let empty = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] === 0) empty++;
+      const cov = 1 - empty / (d.length / 4);
+      if (cov > best.cov) best = { cov, empty: empty / (d.length / 4) };
+    }
+    // In the thin tail, the share of a dot's pixels at full ink: a sprite stamped on whole pixels keeps
+    // its opaque centre; one stamped between pixels is resampled, and none are.
+    const d = g.getImageData(Math.round(W * 0.6 * k), Math.round((H - 30) * k), Math.round(W * 0.38 * k), Math.round(28 * k)).data;
+    let inked = 0, full = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) { inked++; if (d[i] === 255) full++; }
+    return { empty: best.empty, full: full / Math.max(1, inked) };
+  });
+  expect(seen.empty, 'the densest square of the field is a solid mass (share of its pixels empty)').toBeGreaterThanOrEqual(0.28);
+  expect(seen.full, "the dots' sprites were resampled (share of their pixels at full ink)").toBeGreaterThanOrEqual(0.08);
+  await ctx.close();
+});
+
 test('the highlighted dots are the people the readout counts', async ({ page }) => {
   await settledHome(page);
   const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
@@ -661,6 +708,8 @@ test('pointing changes nothing away from the pointer: no dot elsewhere dims', as
   const before = await page.screenshot(strip);
   await page.mouse.move(plot.x + plot.width * 0.65, plot.y + plot.height * 0.7);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-highlight', /^[1-9]/);
+  // At 1x the landing's dots overlap across one-pixel columns, so each is laid down at 0.85 and the ink
+  // builds (from 1.25x they stand apart and are drawn in their full ink).
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-alpha', '0.85');
   const after = await page.screenshot(strip);
   expect(Buffer.compare(before, after), 'dots far from the pointer changed while it pointed').toBe(0);

@@ -96,6 +96,9 @@ const PILE_ALL: [number, number] = [0, 2];
  *  dots still had too little room each, so it grew by a quarter. */
 const PLOT_H = { phone: 275, wide: 375 };
 const HEADROOM = { phone: 35, wide: 45 };
+/** Every dot its own room (DotField `pack`): a crowded column of people who share a pay passes up to
+ *  3px of its surplus to its neighbours — a few hundred dollars — so no streak is a solid bar. */
+const PACK = { spill: 3 } as const;
 /** Where the median's line and the quartiles' begin below the plot's top: grown with it. */
 const MARK_TOP = { strong: 5, plain: 33 };
 /** The plot's width: the panel's, less the break and the pile. */
@@ -609,7 +612,7 @@ function Distribution({
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
           kinds={colour ? cats : null} inks={inkList} stack={colour}
           airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
-          entrance={entrance} highlight={highlight} glow
+          entrance={entrance} highlight={highlight} glow pack={PACK}
           solo={shownSolo} replay={replay}
           onFrame={lensAt ? redrawLens : undefined}
         />
@@ -713,7 +716,7 @@ function Distribution({
               ref={pileDotsRef}
               className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
-              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow
+              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow pack={PACK}
               solo={shownSolo} replay={replay}
               onFrame={lensAt ? redrawLens : undefined}
             />

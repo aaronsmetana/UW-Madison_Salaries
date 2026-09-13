@@ -1,11 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { layoutDots } from '../../lib/dotLayout';
+import { layoutDots, packDots } from '../../lib/dotLayout';
 import {
   AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, WAVE_MS,
   burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
 } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
-import { bead, beadInk, type Bead, type BeadInk } from '../../lib/dotSprites';
+import { bead, beadInk, halo, type Bead, type BeadInk } from '../../lib/dotSprites';
 import { prefersReducedMotion } from '../../lib/motion';
 
 /** Played once per session: after that the dots are simply there. */
@@ -16,8 +16,10 @@ export const SPREAD_MS = 550;
 /** A change of stacking (All ↔ By employment type): each dot moves up or down its own column to its new slot. */
 const RESTACK_MS = 420;
 /** A dot drawn alone, and overlapping ones: each is laid down at this alpha, so where dots pile up
- *  the ink builds — the canvas is the accumulation buffer. */
+ *  the ink builds — the canvas is the accumulation buffer. A packed field whose dots stand apart has
+ *  nothing to build: each is laid down in its full ink. */
 const DOT_ALPHA = 0.85;
+const PACKED_ALPHA = 1;
 /** A highlighted dot's ink: its own, moved toward black (light page) or white (dark page) until it
  *  stands this far apart from it (lib/inkMix). */
 export const STRONG_APART = 1.5;
@@ -122,6 +124,10 @@ export const DotField = forwardRef<DotFieldHandle, {
   height: number;
   /** Dot radius in CSS px; by default sized so the dots fill the area under the curve. */
   r?: number;
+  /** A dense field: every dot its own room, in columns a dot-width apart on whole device pixels, a
+   *  crowded column passing up to `spill` px of its surplus to its neighbours (lib/dotLayout
+   *  `packDots`). Without it, one-pixel columns, each dot within half a pixel of its value. */
+  pack?: { spill: number } | null;
   /** Play the fall into place now (see `useEntranceOnce`). */
   entrance?: boolean;
   /** How long the fall waits to start, ms — a second field lands after the first. */
@@ -146,7 +152,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   frameMark?: string;
   className?: string;
 }>(function DotField({
-  values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, entrance = false, delay = 0,
+  values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
   airKinds = null, airInks, highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -158,6 +164,9 @@ export const DotField = forwardRef<DotFieldHandle, {
   const [width, setWidth] = useState(0);
   const [settled, setSettled] = useState(false);
   const [scheme, setScheme] = useState(0);
+  // Device pixels per CSS pixel: a packed field sits on whole device pixels, so it is laid out again at a
+  // new ratio.
+  const [dpr, setDpr] = useState(() => (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
 
   useLayoutEffect(() => {
     const el = boxRef.current;
@@ -189,7 +198,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       dq = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
       dq?.addEventListener?.('change', onDpr);
     };
-    function onDpr() { bump(); watchDpr(); }
+    function onDpr() { bump(); setDpr(window.devicePixelRatio || 1); watchDpr(); }
     watchDpr();
     return () => { mo.disconnect(); mq?.removeEventListener?.('change', bump); rq?.removeEventListener?.('change', bump); dq?.removeEventListener?.('change', onDpr); };
   }, []);
@@ -202,20 +211,30 @@ export const DotField = forwardRef<DotFieldHandle, {
     for (let i = 0; i < kinds.length; i++) k[i] = kinds[i] === solo ? 0 : 1 + kinds[i];
     return k;
   }, [stack, kinds, solo]);
+  const spill = pack ? pack.spill : null;
+
+  const packDpr = pack ? dpr : 1;
   const layout = useMemo(() => {
     if (!(width > 0) || !values.length) return null;
     const n = values.length;
     const xs = new Float64Array(n);
     for (let i = 0; i < n; i++) xs[i] = toX(values[i], width);
     let r = rIn;
-    if (r == null) {
-      // Size the dots to the room: the area under the curve shared out, a dot taking a bit under
-      // its share so neighbours stay apart where the screen can show it.
-      let area = 0;
-      for (let c = 0; c < width; c++) area += Math.max(0, heightAt(c + 0.5, width));
-      r = Math.min(2, Math.max(0.5, 0.42 * Math.sqrt(area / n)));
+    let pts: Float32Array;
+    let crowded = 0, maxShift = 0.5, separate = false;
+    if (spill != null) {
+      const packed = packDots({ xs, heightAt: (x) => heightAt(x, width), baseY: height, width, dpr: packDpr, spill, stack: stackKey });
+      ({ pts, r, crowded, maxShift, separate } = packed);
+    } else {
+      if (r == null) {
+        // Size the dots to the room: the area under the curve shared out, a dot taking a bit under
+        // its share so neighbours stay apart where the screen can show it.
+        let area = 0;
+        for (let c = 0; c < width; c++) area += Math.max(0, heightAt(c + 0.5, width));
+        r = Math.min(2, Math.max(0.5, 0.42 * Math.sqrt(area / n)));
+      }
+      pts = layoutDots({ xs, heightAt: (x) => heightAt(x, width), baseY: height, r, stack: stackKey });
     }
-    const pts = layoutDots({ xs, heightAt: (x) => heightAt(x, width), baseY: height, r, stack: stackKey });
     // The dots in x order, for finding the ones in a strip of the canvas without visiting them all.
     const order = new Uint32Array(n);
     for (let i = 0; i < n; i++) order[i] = i;
@@ -229,9 +248,10 @@ export const DotField = forwardRef<DotFieldHandle, {
       const h = heightAt(Math.floor(pts[2 * i]) + 0.5, width);
       depth[i] = Math.min(1, Math.max(0, (height - r - y) / Math.max(1e-6, h - 2 * r)));
     }
-    return { pts, r, order, sortedX, depth, width };
-  }, [width, values, toX, heightAt, height, rIn, stackKey]);
+    return { pts, r, order, sortedX, depth, width, crowded, maxShift, separate };
+  }, [width, values, toX, heightAt, height, rIn, stackKey, spill, packDpr]);
 
+  const alpha = layout?.separate ? PACKED_ALPHA : DOT_ALPHA;
   // Everything the animation loop and the painter read, kept current without re-running effects.
   const live = useRef({
     entranceStart: null as number | null,
@@ -281,6 +301,9 @@ export const DotField = forwardRef<DotFieldHandle, {
     /** Per kind, per tone: the bead each dot is stamped with, plain and highlighted. */
     beads: [] as Bead[][],
     strongBeads: [] as Bead[][],
+    /** Per kind, per tone, on a dark page with a glow: the halos, drawn as a layer beneath the beads. */
+    halos: [] as Bead[][],
+    strongHalos: [] as Bead[][],
     /** Per kind, per tone: the colour, for the magnifying glass's larger beads, and what a moving
      *  square lays down (lib/dotSprites `beadInk`). The same for the air's kinds. */
     tones: [] as string[][],
@@ -353,7 +376,10 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (!canvas || !lay || !L.tone || !L.beads.length) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const dpr = canvas.width / Math.max(1, lay.width);
+    // A packed field was snapped to this screen's device pixels: drawn at exactly its ratio, each sprite
+    // lands on whole pixels. (The canvas's own width over the plot's can be a hair off it — 2006 over
+    // 1003.14 — and every sprite was then resampled.)
+    const dpr = spill != null ? packDpr : canvas.width / Math.max(1, lay.width);
     const whole = !(x0 > -Infinity) && !(x1 < Infinity);
     const a = whole ? 0 : Math.max(0, Math.floor((x0 - 1) * dpr));
     const b = whole ? canvas.width : Math.min(canvas.width, Math.ceil((x1 + 1) * dpr));
@@ -361,7 +387,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     ctx.save();
     if (!whole) { ctx.beginPath(); ctx.rect(a, 0, b - a, canvas.height); ctx.clip(); }
     ctx.clearRect(a, 0, b - a, canvas.height);
-    ctx.globalAlpha = DOT_ALPHA;
+    ctx.globalAlpha = alpha;
     const { order, sortedX, r, pts } = lay;
     const reach = (glow && L.dark ? 2 : 1) * r + 1 + L.slack;
     const j0 = whole ? 0 : lowerBound(sortedX, a / dpr - reach);
@@ -410,6 +436,16 @@ export const DotField = forwardRef<DotFieldHandle, {
         }
       }
     } else {
+      // The glow first, as one layer beneath every bead: it lights the gaps and veils no neighbour.
+      if (L.halos.length) {
+        for (let j = j0; j < j1; j++) {
+          const i = order[j];
+          if (mode && mode[i] === GONE) continue;
+          const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
+          const hb = (lit ? L.strongHalos : L.halos)[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
+          ctx.drawImage(hb.img, (pts[2 * i] + (offX ? offX[i] : 0)) * dpr - hb.half, yOf(i, now) * dpr - hb.half);
+        }
+      }
       // The highlighted dots last, so they sit over their neighbours.
       for (let strong = 0; strong < 2; strong++) {
         if (strong && !hl) break;
@@ -467,7 +503,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       // Beads by (air, strong, kind, tone, quarter-pixel radius), so a dot costs a lookup, not a key string.
       const beads = new Map<number, Bead>();
       ctx.save();
-      ctx.globalAlpha = DOT_ALPHA;
+      ctx.globalAlpha = alpha;
       for (let strong = 0; strong < 2; strong++) {
         if (strong && !hl) break;
         for (let j = j0; j < j1; j++) {
@@ -589,7 +625,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       kickRef.current();
       return true;
     },
-  }), [layout, values, kinds, airKinds, glow, height]);
+  }), [layout, values, kinds, airKinds, glow, height, alpha]);
 
   // A kick whose shockwave has arrived: where the dot is on its spring at that moment, plus the kick
   // (capped: lib/dotPhysics `thrown`), starts its motion home again from there — on the kick's spring,
@@ -760,17 +796,22 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.tones = L.ink.map((c) => toneInks(c, text, TONES));
     L.strongTones = L.strong.map((c) => toneInks(c, text, TONES));
     const rd = lay.r * dpr;
-    L.beads = L.tones.map((ts) => ts.map((c) => bead(c, rd, glow && L.dark)));
-    L.strongBeads = L.strongTones.map((ts) => ts.map((c) => bead(c, rd, glow && L.dark)));
-    const inkOf = (b: Bead) => beadInk(b);
-    L.fast = L.beads.map((bs) => bs.map(inkOf));
-    L.strongFast = L.strongBeads.map((bs) => bs.map(inkOf));
+    // The beads, and on a dark page with a glow their halos, drawn beneath them all.
+    const glowing = glow && L.dark;
+    L.beads = L.tones.map((ts) => ts.map((c) => bead(c, rd, false)));
+    L.strongBeads = L.strongTones.map((ts) => ts.map((c) => bead(c, rd, false)));
+    L.halos = glowing ? L.tones.map((ts) => ts.map((c) => halo(c, rd))) : [];
+    L.strongHalos = glowing ? L.strongTones.map((ts) => ts.map((c) => halo(c, rd))) : [];
+    // What a moving square lays down: its bead's ink and, beneath it, its halo's.
+    const inkOf = (c: string) => beadInk(bead(c, rd, false), glowing ? halo(c, rd) : null);
+    L.fast = L.tones.map((ts) => ts.map(inkOf));
+    L.strongFast = L.strongTones.map((ts) => ts.map(inkOf));
     // The air's kinds: their tones, plain and highlighted, and what each lays down as a square.
     const airInk = (airInks ?? []).map((c, k) => { const el = airRefs.current[k]; return el ? getComputedStyle(el).color : c; });
     L.airTones = airInk.map((c) => toneInks(c, text, TONES));
     L.airStrongTones = airInk.map((c) => toneInks(strongerInk(c, text, STRONG_APART), text, TONES));
-    L.airFast = L.airTones.map((ts) => ts.map((c) => inkOf(bead(c, rd, glow && L.dark))));
-    L.airStrongFast = L.airStrongTones.map((ts) => ts.map((c) => inkOf(bead(c, rd, glow && L.dark))));
+    L.airFast = L.airTones.map((ts) => ts.map(inkOf));
+    L.airStrongFast = L.airStrongTones.map((ts) => ts.map(inkOf));
     L.ringInk = ringRef.current ? getComputedStyle(ringRef.current).color : '';
     // Each dot's tone: its depth in the stack — deeper toward the bottom on a light page, brighter
     // toward the top on a dark one — give or take one.
@@ -955,7 +996,10 @@ export const DotField = forwardRef<DotFieldHandle, {
       style={{ position: 'relative', width: '100%', height, pointerEvents: 'none' }}
       data-dots={values.length}
       data-width={layout ? layout.width : undefined}
-      data-alpha={DOT_ALPHA}
+      data-r={layout ? layout.r.toFixed(3) : undefined}
+      data-crowded={layout && pack ? layout.crowded : undefined}
+      data-max-shift={layout && pack ? layout.maxShift.toFixed(2) : undefined}
+      data-alpha={alpha}
       data-settled={settled ? 'true' : 'false'}
       data-kinds={kindCounts}
       data-stack={stack ? 'on' : 'off'}
