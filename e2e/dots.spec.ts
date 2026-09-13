@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY, latestSnapshot } from './oracle';
 import { parseColor, flatten, contrast } from './color';
 
@@ -673,6 +674,101 @@ test('at 2x the densest part of the field shows the gaps between its dots, and e
   });
   expect(seen.empty, 'the densest square of the field is a solid mass (share of its pixels empty)').toBeGreaterThanOrEqual(0.28);
   expect(seen.full, "the dots' sprites were resampled (share of their pixels at full ink)").toBeGreaterThanOrEqual(0.08);
+  await ctx.close();
+});
+
+test('the keyboard walks the readout along the pay, bursts the dots at it, and puts it away', async ({ browser }) => {
+  const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const main = page.locator('.hero-dist-main');
+  const dots = page.locator('.hero-dots');
+  const pill = page.locator('.chart-value-pill').first();
+  const bucket = async () => Number(await main.getAttribute('aria-valuenow'));
+  const counted = async () => Number((((await pill.textContent()) ?? '').match(/([\d,]+) people/)?.[1] ?? '').replace(/,/g, ''));
+  // From the toggle just before it, Tab brings the keyboard to the plot: the readout starts at the median.
+  await page.locator('.hero-dist-toggle input:checked').focus();
+  await page.keyboard.press('Tab');
+  await expect(main).toBeFocused();
+  await expect(pill).toBeVisible();
+  const median = await bucket();
+  await expect(main).toHaveAttribute('role', 'slider');
+  // The median's own value, to within the $1k the readout steps by.
+  const p50 = (await (await page.request.get('./data/home-stats.json')).json()).p50 as number;
+  expect(Math.abs(median - p50)).toBeLessThanOrEqual(1000);
+  for (let k = 0; k < 3; k++) await page.keyboard.press('ArrowRight');
+  expect(await bucket()).toBe(median + 3000);
+  await page.keyboard.press('Shift+ArrowRight');
+  expect(await bucket()).toBe(median + 13000);
+  // What a screen reader hears is what the pill shows, and the highlighted dots are the people counted.
+  const n = await counted();
+  expect(await main.getAttribute('aria-valuetext')).toContain(`${n.toLocaleString('en-US')} people within`);
+  await expect(dots).toHaveAttribute('data-highlight', String(n));
+  // With the plot focused the page still passes axe.
+  const axe = await new AxeBuilder({ page }).include('.hero-dist').analyze();
+  expect(axe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious').map((v) => v.id)).toEqual([]);
+  // Enter bursts the dots at the readout's point; Escape puts the readout away.
+  await page.keyboard.press('Enter');
+  await expect(dots).toHaveAttribute('data-flight', 'moving');
+  await page.keyboard.press('Escape');
+  await expect(pill).toBeHidden();
+  await ctx.close();
+
+  // A mouse's click focuses the plot but does not jump the readout to the median.
+  const other = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
+  const q = await other.newPage();
+  await settledHome(q);
+  const box = (await q.locator('.hero-dist-plot').boundingBox())!;
+  await q.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.7);
+  await expect(q.locator('.hero-dist-main')).toBeFocused();
+  await expect.poll(async () => Number(await q.locator('.hero-dist-main').getAttribute('aria-valuenow')), { message: 'a click jumped the readout to the median' }).toBeGreaterThan(150000);
+  await q.waitForTimeout(200);
+  expect(Number(await q.locator('.hero-dist-main').getAttribute('aria-valuenow')), 'the readout moved to the median after the click').toBeGreaterThan(150000);
+  // Under Reduce Motion, Enter throws nothing.
+  await q.keyboard.press('Enter');
+  await q.waitForTimeout(200);
+  expect(await q.evaluate(() => performance.getEntriesByName('flight-frame').length)).toBe(0);
+  await other.close();
+});
+
+test('on a phone a finger held still brings up the glass above it; one that moves scrolls', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true, reducedMotion: 'no-preference' });
+  const page = await ctx.newPage();
+  await settledHome(page);
+  const main = page.locator('.hero-dist-main');
+  await main.scrollIntoViewIfNeeded();
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const box = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const x = box.x + box.width * 0.3, y = box.y + box.height * 0.7;
+  const scrolled = () => page.evaluate(() => window.scrollY);
+  const before = await scrolled();
+  await touch('touchStart', x, y);
+  await page.waitForTimeout(600);
+  await expect(main).toHaveAttribute('data-lens', 'on');
+  const glass = (await page.locator('.fisheye-lens').boundingBox())!;
+  // Above the finger, so the finger does not hide it.
+  expect(glass.y + glass.height, 'the glass is not above the finger').toBeLessThan(y);
+  // Sliding moves the glass, and the page stays put.
+  for (let k = 1; k <= 6; k++) { await touch('touchMove', x + 8 * k, y - 6 * k); await page.waitForTimeout(16); }
+  const moved = (await page.locator('.fisheye-lens').boundingBox())!;
+  expect(moved.x - glass.x, 'the glass did not follow the finger').toBeGreaterThan(30);
+  expect(await scrolled(), 'the page scrolled under the glass').toBe(before);
+  // Lifting puts the glass away and leaves the readout, with nothing thrown.
+  await touch('touchEnd', x + 48, y - 36);
+  await expect(main).toHaveAttribute('data-lens', 'off');
+  await expect(page.locator('.chart-value-pill').first()).toBeVisible();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
+
+  // A finger that moves at once is scrolling: the page moves and no glass comes up.
+  const start = await scrolled();
+  await touch('touchStart', x, y);
+  for (let k = 1; k <= 8; k++) { await touch('touchMove', x, y - 20 * k); await page.waitForTimeout(10); }
+  await touch('touchEnd', x, y - 160);
+  await page.waitForTimeout(300);
+  expect(await scrolled(), 'a quick swipe did not scroll the page').toBeGreaterThan(start + 40);
+  await expect(main).toHaveAttribute('data-lens', 'off');
   await ctx.close();
 });
 

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -99,6 +99,10 @@ const HEADROOM = { phone: 35, wide: 45 };
 /** Every dot its own room (DotField `pack`): a crowded column of people who share a pay passes up to
  *  3px of its surplus to its neighbours — a few hundred dollars — so no streak is a solid bar. */
 const PACK = { spill: 3 } as const;
+/** How long a finger must rest on the plot to bring up the glass, ms, and how far above the finger the
+ *  glass then sits, px, so the finger does not hide it. */
+const HOLD_MS = 450;
+const HOLD_LIFT = 28;
 /** Where the median's line and the quartiles' begin below the plot's top: grown with it. */
 const MARK_TOP = { strong: 5, plain: 33 };
 /** The plot's width: the panel's, less the break and the pile. */
@@ -192,6 +196,10 @@ function Distribution({
   const tapRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
   // Where a drag with the mouse button held last stirred the dots, while it is held.
   const stirRef = useRef<{ x: number; y: number } | null>(null);
+  // A finger held still on the plot brings up the glass above it; `magnify` while it is up.
+  const holdRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
+  const [magnify, setMagnify] = useState(false);
+  const magnifyRef = useRef(false);
   const H = phone ? PLOT_H.phone : PLOT_H.wide;
   const HEAD = phone ? HEADROOM.phone : HEADROOM.wide;
 
@@ -333,6 +341,25 @@ function Distribution({
     [hoveredBucket],
   );
 
+  // The curve's point nearest the median: where a keyboard's readout starts.
+  const medianIdx = useMemo(() => {
+    if (median == null || !curve.length) return 0;
+    let best = 0;
+    for (let i = 1; i < curve.length; i++) if (Math.abs(curve[i].bucket - median) < Math.abs(curve[best].bucket - median)) best = i;
+    return best;
+  }, [curve, median]);
+  // While the glass is up under a finger, the finger moves the glass, not the page: a touchmove that
+  // scrolls cannot be stopped from a pointer event, only from a touch listener that is not passive.
+  const plotReady = bins.length >= 3;
+  useEffect(() => {
+    const el = mainBoxRef.current;
+    if (!el) return;
+    const block = (e: TouchEvent) => { if (magnifyRef.current) e.preventDefault(); };
+    el.addEventListener('touchmove', block, { passive: false });
+    return () => el.removeEventListener('touchmove', block);
+  }, [plotReady]);
+  // A hold still waiting when the chart goes.
+  useEffect(() => () => { if (holdRef.current) window.clearTimeout(holdRef.current.timer); }, []);
   if (bins.length < 3) return null;
 
   // 1000 wide, drawn `H` tall (PLOT_H). It was 120, and at the ~848px the panel gave it that was a 7:1
@@ -399,6 +426,13 @@ function Distribution({
   const soloBins = shownSolo != null ? categoryBins[shownSolo] : null;
   const readCount = hovered ? countWithin(soloBins ?? bins, hovered.bucket, READOUT_RADIUS) : 0;
   const readShare = hovered && soloCat && soloBins ? countBelow(soloBins, hovered.bucket) / soloCat.n : share;
+  // The readout as a screen reader hears it: the slider's value.
+  const readoutText = hovered
+    ? `${fmtK(hovered.bucket)}: ${num(readCount)} ${soloCat ? soloCat.name : 'people'} within ±${fmtK(READOUT_RADIUS)}${readShare != null ? `, ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}` : ''}`
+    : 'Move along the pay distribution with the arrow keys';
+  // The glass sits on a mouse's pointer, or above a finger that holds it up.
+  const lensLift = magnify ? -(LENS_D / 2 + HOLD_LIFT) : 0;
+  const lensShownY = (lensAt?.y ?? 0) + lensLift;
   // Centred on the readout, then clamped to the plot's own edges. This replaces a pair of magic
   // thresholds (anchor left below 15%, right above 85%) that assumed a pill narrower than the one
   // the percentile made it: at 375px a 224px pill centred at 30% hung 2px off the panel, because
@@ -419,6 +453,55 @@ function Distribution({
     setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
   const onLeave = () => { setHoverIdx(null); setLensAt(null); lensPageRef.current = null; };
+  // The curve's point nearest a plot x, CSS px.
+  const nearestAt = (x: number, width: number) => {
+    const at = lo + Math.min(1, Math.max(0, x / Math.max(1, width))) * span;
+    let best = 0;
+    for (let i = 1; i < curve.length; i++) if (Math.abs(curve[i].bucket - at) < Math.abs(curve[best].bucket - at)) best = i;
+    return best;
+  };
+  const clearHold = () => { if (holdRef.current) { window.clearTimeout(holdRef.current.timer); holdRef.current = null; } };
+  const endMagnify = (pin: boolean) => {
+    if (!magnifyRef.current) return;
+    magnifyRef.current = false;
+    setMagnify(false);
+    setLensAt(null);
+    lensPageRef.current = null;
+    if (pin) setTapped(true); else setHoverIdx(null);
+  };
+
+  // The readout by keyboard: the plot is a slider over pay. The arrows step $1k (with Shift, or PageUp
+  // and PageDown, $10k), Home and End go to the ends, Enter or Space bursts the dots at the readout's
+  // point, and Escape puts the readout away. A keyboard focus starts it at the median.
+  const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!curve.length) return;
+    const last = curve.length - 1;
+    const at = hoverIdx ?? medianIdx;
+    const big = e.shiftKey ? 10 : 1;
+    let next: number | null = null;
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowUp': next = Math.min(last, at + big); break;
+      case 'ArrowLeft': case 'ArrowDown': next = Math.max(0, at - big); break;
+      case 'PageUp': next = Math.min(last, at + 10); break;
+      case 'PageDown': next = Math.max(0, at - 10); break;
+      case 'Home': next = 0; break;
+      case 'End': next = last; break;
+      case 'Enter': case ' ': {
+        e.preventDefault();
+        const box = mainBoxRef.current?.getBoundingClientRect();
+        if (!box) return;
+        const x = (X(curve[at].bucket) / W) * box.width;
+        mainDotsRef.current?.burst(x, H - dotHeight(x, box.width) / 2);
+        return;
+      }
+      case 'Escape': setHoverIdx(null); return;
+      default: return;
+    }
+    e.preventDefault();
+    setHoverPile(false);
+    setLensAt(null);
+    setHoverIdx(next);
+  };
   // A mouse's press bursts the dots where it is, and a drag with the button held stirs them along its
   // path: a smaller burst every STIR_STEP px (lib/dotPhysics `stirPath`), through the move's coalesced
   // points, so a quick drag follows its true line and leaves no gaps. A finger's tap bursts too, shows
@@ -434,8 +517,37 @@ function Distribution({
       return;
     }
     tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    // Held still, it brings up the glass above the finger, magnifying what is under its tip.
+    clearHold();
+    const box = e.currentTarget.getBoundingClientRect();
+    const at = { x: e.clientX - box.left, y: e.clientY - box.top };
+    holdRef.current = {
+      id: e.pointerId, x: e.clientX, y: e.clientY,
+      timer: window.setTimeout(() => {
+        holdRef.current = null;
+        tapRef.current = null;
+        magnifyRef.current = true;
+        setMagnify(true);
+        setHoverPile(false);
+        setHoverIdx(nearestAt(at.x, box.width));
+        setLensAt(at);
+        navigator.vibrate?.(8);
+      }, HOLD_MS),
+    };
   };
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse') {
+      const box = e.currentTarget.getBoundingClientRect();
+      if (magnifyRef.current) {
+        // The glass follows the finger, and so does the readout; the page does not scroll (below).
+        setHoverIdx(nearestAt(e.clientX - box.left, box.width));
+        setLensAt({ x: e.clientX - box.left, y: e.clientY - box.top });
+        return;
+      }
+      // A finger that moves before the hold is up is scrolling.
+      const hold = holdRef.current;
+      if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 10) clearHold();
+    }
     onHover(e);
     // A touch contact reports its button held as it moves: only a mouse stirs.
     if (e.pointerType !== 'mouse' || !(e.buttons & 1)) { stirRef.current = null; return; }
@@ -456,6 +568,9 @@ function Distribution({
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse') { stirRef.current = null; return; }
+    clearHold();
+    // Lifted from the glass: it goes, the readout stays where it was, and nothing is thrown.
+    if (magnifyRef.current) { endMagnify(true); tapRef.current = null; return; }
     const tap = tapRef.current;
     tapRef.current = null;
     if (!tap || tap.id !== e.pointerId) return;
@@ -465,8 +580,9 @@ function Distribution({
     const box = e.currentTarget.getBoundingClientRect();
     if (mainDotsRef.current?.burst(e.clientX - box.left, e.clientY - box.top)) navigator.vibrate?.(10);
   };
-  // The browser took the gesture: no tap, no stir.
-  const onCancel = () => { stirRef.current = null; tapRef.current = null; };
+  // The browser took the gesture: no tap, no stir, no glass.
+  const onCancel = () => { stirRef.current = null; tapRef.current = null; clearHold(); endMagnify(false); };
+
   const pileHighlight = hoverPile ? PILE_ALL : null;
   const inkList = colour ? inks : undefined;
 
@@ -603,6 +719,12 @@ function Distribution({
         ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
         onPointerMove={onMove} onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onLeave(); stirRef.current = null; } }}
         onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
+        tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution"
+        aria-valuemin={curve[0]?.bucket} aria-valuemax={curve[curve.length - 1]?.bucket}
+        aria-valuenow={(hovered ?? curve[medianIdx])?.bucket} aria-valuetext={readoutText}
+        onKeyDown={onKey}
+        onFocus={(e) => { if (hoverIdx == null && e.currentTarget.matches(':focus-visible')) { setHoverPile(false); setHoverIdx(medianIdx); } }}
+        onBlur={() => { if (!tapped && !magnifyRef.current) setHoverIdx(null); }}
       >
       {/* Every employee under the cap, one dot each, falling into place once a session. The fill the
           curve used to carry is these people; the line, the markers and the readout stay on top. */}
@@ -680,7 +802,7 @@ function Distribution({
             // where the peaks are. With the magnifying glass up it clears the glass instead: above
             // it, or under it where the glass is near the top.
             top: lensAt
-              ? (lensAt.y - LENS_D / 2 - 30 >= 0 ? lensAt.y - LENS_D / 2 - 30 : lensAt.y + LENS_D / 2 + 6)
+              ? (lensShownY - LENS_D / 2 - 30 >= 0 ? lensShownY - LENS_D / 2 - 30 : lensShownY + LENS_D / 2 + 6)
               : Y(hovered.n) < 26 ? Y(hovered.n) + 10 : Y(hovered.n) - 20,
             // Only before the first measurement lands; after that `pillLeft` is already exact.
             transform: pillLeft != null ? undefined : 'translateX(-50%)',
@@ -693,7 +815,7 @@ function Distribution({
           </span>
         </div>
       )}
-      {lensAt && <FisheyeLens ref={lensRef} at={lensAt} draw={drawLens} />}
+      {lensAt && <FisheyeLens ref={lensRef} at={lensAt} offsetY={lensLift} draw={drawLens} />}
       </div>
 
 

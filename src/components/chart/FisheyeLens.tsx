@@ -21,11 +21,13 @@ export interface LensView { cx: number; cy: number; R: number; dpr: number; map:
  * shadow, highlight) is CSS (`.fisheye-lens`). Mouse only: the caller decides when it shows.
  */
 export const FisheyeLens = forwardRef<FisheyeLensHandle, {
-  /** The pointer, in CSS px within the positioned box the glass is placed in. */
+  /** The pointer, in CSS px within the positioned box the glass is placed in: what the glass magnifies. */
   at: { x: number; y: number };
+  /** How far above or below that the glass is shown, px: a finger would hide a glass centred under it. */
+  offsetY?: number;
   /** Draws what is under the glass into `ctx` (unscaled: device pixels). */
   draw: (ctx: CanvasRenderingContext2D, view: LensView) => void;
-}>(function FisheyeLens({ at, draw }, ref) {
+}>(function FisheyeLens({ at, offsetY = 0, draw }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const atRef = useRef(at);
   atRef.current = at;
@@ -72,7 +74,7 @@ export const FisheyeLens = forwardRef<FisheyeLensHandle, {
 
   const R = LENS_D / 2;
   return (
-    <div className="fisheye-lens" aria-hidden style={{ left: at.x - R, top: at.y - R, width: LENS_D, height: LENS_D }}>
+    <div className="fisheye-lens" aria-hidden style={{ left: at.x - R, top: at.y - R + offsetY, width: LENS_D, height: LENS_D }}>
       <canvas ref={canvasRef} className="dot-field-lens" />
     </div>
   );

@@ -1810,7 +1810,10 @@ button.hero-dist-legend-item[aria-pressed='true'] { background: color-mix(in srg
 button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
 .hero-dist-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1.5px solid transparent; box-sizing: border-box; }
 /* The canvas is for pointing at, pressing and tapping: no text selection to drag out of it. */
-.hero-dist-main { user-select: none; -webkit-user-select: none; }
+.hero-dist-main { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* The plot is a slider for the keyboard: a ring when a keyboard brings focus to it, none for a click. */
+.hero-dist-main:focus { outline: none; }
+.hero-dist-main:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 4px; border-radius: 4px; }
 /* On a phone the legend keeps each category's count and leaves its median to wider screens: five
    medians made it five lines long. */
 @media screen and (max-width: 30em) {
