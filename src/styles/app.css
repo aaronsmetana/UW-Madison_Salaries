@@ -1137,15 +1137,15 @@ button:active,
   background-size: 22px 22px;
   /* Scoped to the top of the page: this element is a sibling of ALL the content with `inset: 0`, so
      the mask is what keeps it behind the hero rather than tiling the entire page height. */
-  -webkit-mask-image: radial-gradient(ellipse 62% 780px at 50% 170px, #000 0%, transparent 72%);
-  mask-image: radial-gradient(ellipse 62% 780px at 50% 170px, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 900px at 50% 170px, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse 62% 900px at 50% 170px, #000 0%, transparent 72%);
 }
-/* Reaching past the bottom of the distribution panel in both of its modes — "By category" adds a
-   legend — at every width; on a phone the panel is much taller for its width (e2e/smoke.spec). */
+/* Reaching past the bottom of the distribution panel in both of its modes — "By employment type" adds
+   a legend — at every width; on a phone the panel is much taller for its width (e2e/smoke.spec). */
 @media screen and (max-width: 30em) {
   .hero-dotgrid {
-    -webkit-mask-image: radial-gradient(ellipse 62% 920px at 50% 170px, #000 0%, transparent 72%);
-    mask-image: radial-gradient(ellipse 62% 920px at 50% 170px, #000 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse 62% 1010px at 50% 170px, #000 0%, transparent 72%);
+    mask-image: radial-gradient(ellipse 62% 1010px at 50% 170px, #000 0%, transparent 72%);
   }
 }
 

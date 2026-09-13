@@ -183,12 +183,12 @@ describe('ringAlpha', () => {
 });
 
 describe('burstSizes', () => {
-  it("reaches twice the magnifying glass's radius on a 300px plot", () => {
-    expect(burstSizes(300).reach).toBe(2 * (LENS_D / 2));
+  it("reaches twice the magnifying glass's radius on a 375px plot", () => {
+    expect(burstSizes(375).reach).toBe(2 * (LENS_D / 2));
   });
-  it("scales with the plot's height: a phone's 220px plot gets 0.733 of a 300px one's", () => {
-    const wide = burstSizes(300), phone = burstSizes(220);
-    for (const key of ['reach', 'speed', 'ripple', 'stirReach', 'stirSpeed'] as const) expect(phone[key] / wide[key]).toBeCloseTo(220 / 300, 6);
+  it("scales with the plot's height: a phone's 275px plot gets 0.733 of a 375px one's", () => {
+    const wide = burstSizes(375), phone = burstSizes(275);
+    for (const key of ['reach', 'speed', 'ripple', 'stirReach', 'stirSpeed'] as const) expect(phone[key] / wide[key]).toBeCloseTo(275 / 375, 6);
     expect(wide.reach).toBe(BURST_R);
   });
 });

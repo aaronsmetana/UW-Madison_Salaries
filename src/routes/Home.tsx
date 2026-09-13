@@ -92,9 +92,12 @@ const PILE_MIN_W = 10;
 const PILE_ALL: [number, number] = [0, 2];
 /** The plot's height, and the clear band above the curve's peak, on a phone and wider. The band is
  *  where the readout rides over the peak and where a burst's dots have room to fly (DotField). At 180px the
- *  chart was a strip: its dots too small to tell apart and its peak flush with the panel's top. */
-const PLOT_H = { phone: 220, wide: 300 };
-const HEADROOM = { phone: 28, wide: 36 };
+ *  chart was a strip: its dots too small to tell apart and its peak flush with the panel's top; at 300 the
+ *  dots still had too little room each, so it grew by a quarter. */
+const PLOT_H = { phone: 275, wide: 375 };
+const HEADROOM = { phone: 35, wide: 45 };
+/** Where the median's line and the quartiles' begin below the plot's top: grown with it. */
+const MARK_TOP = { strong: 5, plain: 33 };
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
 
@@ -204,7 +207,7 @@ function Distribution({
   }, [payCounts, categories, bins]);
   const colour = byCategory && !!cats && !!categories;
   const inks = useMemo(() => (categories ?? []).map((c) => categoryInk(c.name)), [categories]);
-  // A category shown alone only means something in its colours; back to "All", everyone is back.
+  // A category shown alone only means something in its colours; back to "Generic", everyone is back.
   useEffect(() => { if (!colour) setSolo(null); }, [colour]);
   const shownSolo = colour ? solo : null;
   // Each category's people in the readout's $1k bins, from its counts per $100: a soloed readout
@@ -503,7 +506,7 @@ function Distribution({
       const x = px(m.v);
       if (Math.abs(x - cx) > R) continue;
       const pts: [number, number][] = [];
-      for (let y = m.strong ? 4 : 26; y <= H; y += 2) pts.push([x, y]);
+      for (let y = m.strong ? MARK_TOP.strong : MARK_TOP.plain; y <= H; y += 2) pts.push([x, y]);
       path(pts);
       ctx.strokeStyle = tok(m.strong ? '--mantine-color-accent-7' : '--mantine-color-gray-5');
       ctx.lineWidth = m.strong ? 1.5 : 1;
@@ -616,7 +619,7 @@ function Distribution({
         {marks.map((m) => (
           <line
             key={m.label}
-            x1={X(m.v)} x2={X(m.v)} y1={m.strong ? 4 : 26} y2={H}
+            x1={X(m.v)} x2={X(m.v)} y1={m.strong ? MARK_TOP.strong : MARK_TOP.plain} y2={H}
             stroke={m.strong ? 'var(--mantine-color-accent-7)' : 'var(--mantine-color-gray-5)'}
             strokeWidth={m.strong ? 1.5 : 1}
             strokeDasharray={m.strong ? undefined : '2 3'}
@@ -882,8 +885,9 @@ export default function Home() {
   // the page isn't pinned to some other (older) snapshot — in which case we fall back to live SQL.
   const { data: homeStats, isError: homeStatsFailed } = useHomeStats();
   const artifactUsable = !!homeStats && (snap == null || snap === homeStats.snapshot_id);
-  // "All" or "By employment type" (the staff category) for the dots, remembered per viewer, opening on
-  // the second. A new key: under the old one a visitor who had once picked "All" would never see the
+  // "Generic" (one ink, stored as 'all') or "By employment type" (the staff category) for the dots,
+  // remembered per viewer, opening on the second. A new key: under the old one a visitor who had once
+  // picked the one ink (then called "All") would never see the
   // new default. Offered only when the artifact carries the categories: the live-SQL fallback draws
   // the dots from the bins alone.
   const [colourBy, setColourBy] = usePref<'all' | 'category'>('home-dots-group', 'category');
@@ -1061,7 +1065,7 @@ export default function Home() {
               controls={canColour ? (
                 <div className="hero-dist-toggle">
                   <SegmentedToggle
-                    options={[{ id: 'all', label: 'All' }, { id: 'category', label: 'By employment type' }]}
+                    options={[{ id: 'all', label: 'Generic' }, { id: 'category', label: 'By employment type' }]}
                     value={colourBy}
                     onChange={(v) => setColourBy(v === 'category' ? 'category' : 'all')}
                   />

@@ -117,8 +117,9 @@ for (const { name, width, height } of [
 
     const box = await svg.boundingBox();
     expect(box, 'the distribution should have a layout box').not.toBeNull();
-    // 300px wide and up, 220 on a phone: at 180 the chart was a strip, its dots too small to tell apart.
-    expect(box!.height, 'the distribution is not at its full height').toBe(width > 480 ? 300 : 220);
+    // 375px wide and up, 275 on a phone: at 180 the chart was a strip, its dots too small to tell apart,
+    // and at 300 they still had too little room each.
+    expect(box!.height, 'the distribution is not at its full height').toBe(width > 480 ? 375 : 275);
     expect(box!.width, 'the distribution has no width').toBeGreaterThan(200);
 
     // A curve, not a flat line: the area path has to describe real vertical variation.
@@ -549,7 +550,7 @@ test.describe('the landing distribution', () => {
 
     // In both of the panel's modes: "By employment type" adds a legend, so the panel is taller.
     for (const [viewport, mode] of [
-      [{ width: 1280, height: 720 }, 'All'], [{ width: 375, height: 760 }, 'All'],
+      [{ width: 1280, height: 720 }, 'Generic'], [{ width: 375, height: 760 }, 'Generic'],
       [{ width: 1280, height: 720 }, 'By employment type'], [{ width: 375, height: 760 }, 'By employment type'],
     ] as const) {
       await page.setViewportSize(viewport);

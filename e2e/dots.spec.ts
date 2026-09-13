@@ -188,14 +188,14 @@ async function settledHome(page: Page) {
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
-/** "By employment type" (the staff category): where the page opens, and a click away from "All". */
+/** "By employment type" (the staff category): where the page opens, and a click away from "Generic". */
 async function byCategory(page: Page) {
   await page.locator('.hero-dist-toggle').getByText('By employment type').click();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
 }
 async function allOneInk(page: Page) {
-  await page.locator('.hero-dist-toggle').getByText('All', { exact: true }).click();
+  await page.locator('.hero-dist-toggle').getByText('Generic', { exact: true }).click();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'off');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
 }
@@ -220,13 +220,13 @@ test("the page opens By employment type: each person in their highest-paid appoi
   await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-kinds', kindsOf(cats.map((c) => c.ovr)));
   for (const c of cats) await expect(page.locator(`.hero-dist-legend-item[data-category="${c.cat}"]`)).toHaveAttribute('data-n', String(c.n));
   const under = await page.locator('.hero-dots').getAttribute('data-dots');
-  // "All" is one ink and the same people, and it is remembered for this viewer.
+  // "Generic" is one ink and the same people, and it is remembered for this viewer.
   await allOneInk(page);
   await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-dots', under!);
   await page.reload();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'off', { timeout: 30_000 });
-  // A choice stored under the old key (from when the page opened on "All") does not hide the new default.
+  // A choice stored under the old key (from when the page opened on the one ink) does not hide the new default.
   await page.evaluate(() => { localStorage.clear(); localStorage.setItem('uwsal.pref.home-dots-colour', '"all"'); });
   await page.reload();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'on', { timeout: 30_000 });
@@ -442,11 +442,11 @@ test('past the burst the dots ripple: each rocks outward as the front passes, ba
   expect((await picture(page)) === picked, 'the rippled dots did not all come back to their places').toBe(true);
 });
 
-test('in the All view a dot in the air wears its employment type, and turns back as it lands', async ({ page }) => {
+test('in the Generic view a dot in the air wears its employment type, and turns back as it lands', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await frozenHome(page);
-  // "All", and the re-stack played out on the stopped clock.
-  await page.locator('.hero-dist-toggle').getByText('All', { exact: true }).click();
+  // "Generic", and the re-stack played out on the stopped clock.
+  await page.locator('.hero-dist-toggle').getByText('Generic', { exact: true }).click();
   await page.clock.runFor(600);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-stack', 'off');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
@@ -475,7 +475,7 @@ test('in the All view a dot in the air wears its employment type, and turns back
     }
     return off / Math.max(1, inked);
   }, { x, y });
-  expect(await offHue(), 'at rest the All view is one ink').toBeLessThan(0.005);
+  expect(await offHue(), 'at rest the Generic view is one ink').toBeLessThan(0.005);
   await clickAway(page, c, x, y);
   await page.clock.runFor(128);
   expect(await offHue(), "no dot in the air wore its employment type's colour").toBeGreaterThan(0.05);
@@ -639,9 +639,10 @@ test('the highlighted dots are the people the readout counts', async ({ page }) 
     await expect(pill).toBeVisible();
     await expect(dots).toHaveAttribute('data-highlight', String(await counted()));
   }
-  // Over the pile: all of it, and the pill says so.
+  // Over the pile: all of it, and the pill says so. Pointed at its middle: at 1280x720 the page's fixed
+  // footer covers the foot of the 375px plot until the page scrolls.
   const pile = (await page.locator('.hero-dist-pile').boundingBox())!;
-  await page.mouse.move(pile.x + pile.width / 2, pile.y + pile.height - 6);
+  await page.mouse.move(pile.x + pile.width / 2, pile.y + pile.height * 0.6);
   await expect(pill).toContainText('people at $250k or more');
   await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-highlight', String(await counted()));
   await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-highlight', (await page.locator('.hero-dots-over').getAttribute('data-dots'))!);
@@ -702,7 +703,7 @@ test('after a window resize the dots are laid out for the width they are drawn a
 });
 
 test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; the page stays', async ({ browser }) => {
-  // The All view, so the frames carry the dots in the air in their own colours, and the ring.
+  // The Generic view, so the frames carry the dots in the air in their own colours, and the ring.
   const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
   await atCiPace(page);

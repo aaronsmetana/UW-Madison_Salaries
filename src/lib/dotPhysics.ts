@@ -15,7 +15,7 @@ export const RESTITUTION = 0.35;
 export const REST_SPEED = 0.03;
 
 /** The sizes below are for a plot this tall; a field scales them by its own height (`burstSizes`). */
-export const BURST_REF_H = 300;
+export const BURST_REF_H = 375;
 /** How far a click's burst reaches, px: twice the magnifying glass's radius, so it spreads well past the
  *  glass that sits on the click. And how fast it throws the dot under it, px/ms: about 85px out, so the
  *  hole itself shows round the glass. */
