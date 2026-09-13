@@ -288,6 +288,8 @@ export const DotField = forwardRef<DotFieldHandle, {
      *  plot's furthest corner from it); and their ink. */
     rings: [] as { x: number; y: number; t: number; reach: number; far: number }[],
     ringInk: '',
+    /** The rings' ink at no alpha: where a bloom fades to, in its own hue. */
+    ringClear: 'rgba(0, 0, 0, 0)',
     /** The x-range of the dots in flight or leaving, and how many. */
     flyLo: Infinity,
     flyHi: -Infinity,
@@ -473,7 +475,7 @@ export const DotField = forwardRef<DotFieldHandle, {
         if (bl) {
           const gr = ctx.createRadialGradient(g.x * dpr, g.y * dpr, 0, g.x * dpr, g.y * dpr, bl.rad * dpr);
           gr.addColorStop(0, L.ringInk);
-          gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          gr.addColorStop(1, L.ringClear);
           ctx.globalAlpha = bl.alpha;
           ctx.fillStyle = gr;
           ctx.beginPath();
@@ -569,7 +571,7 @@ export const DotField = forwardRef<DotFieldHandle, {
             const rr = bl.rad * Math.min(2.5, m.scale);
             const gr = ctx.createRadialGradient(m.x * dpr, m.y * dpr, 0, m.x * dpr, m.y * dpr, rr * dpr);
             gr.addColorStop(0, L.ringInk);
-            gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            gr.addColorStop(1, L.ringClear);
             ctx.globalAlpha = bl.alpha;
             ctx.fillStyle = gr;
             ctx.beginPath();
@@ -847,6 +849,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.airFast = L.airTones.map((ts) => ts.map(inkOf));
     L.airStrongFast = L.airStrongTones.map((ts) => ts.map(inkOf));
     L.ringInk = ringRef.current ? getComputedStyle(ringRef.current).color : '';
+    const ringRgb = parseRgb(L.ringInk);
+    L.ringClear = ringRgb ? `rgba(${ringRgb[0]}, ${ringRgb[1]}, ${ringRgb[2]}, 0)` : 'rgba(0, 0, 0, 0)';
     // Each dot's tone: its depth in the stack — deeper toward the bottom on a light page, brighter
     // toward the top on a dark one — give or take one.
     const n = values.length;

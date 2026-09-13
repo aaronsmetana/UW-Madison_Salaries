@@ -234,7 +234,7 @@ test("the page opens By employment type: each person in their highest-paid appoi
 });
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`every category's ink clears 3:1 as a lone dot, and its highlight differs visibly (${scheme})`, async ({ page }) => {
+  test(`every category's ink clears 3:1 as a lone dot, and its highlight differs visibly (${scheme})`, async ({ page, browser }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await settledHome(page);
     await byCategory(page);
@@ -257,11 +257,25 @@ for (const scheme of ['light', 'dark'] as const) {
       expect(contrast(lone, ground), `category ${k}, tone ${j}, as a lone dot`).toBeGreaterThanOrEqual(3);
     }));
     // And each bead as drawn — its highlight, its deeper edge — seen from a step back: its mean colour.
-    const beads = (await dots.getAttribute('data-bead-inks'))!.split('|').map((t) => t.split(';').map(parseColor));
-    beads.forEach((bs, k) => bs.forEach((b, j) => {
-      const lone = flatten([b[0], b[1], b[2], b[3] * alpha], ground);
-      expect(contrast(lone, ground), `category ${k}, tone ${j}, a bead's mean colour`).toBeGreaterThanOrEqual(3);
-    }));
+    // Here at 1x the beads are too small for a highlight; at 3x they are widest in device pixels and the
+    // highlight is the largest share of each, so the beads are read there too.
+    const beadMeans = async (p: Page, scale: number) => {
+      const d = p.locator('.hero-dots');
+      const g = await groundBehind(p, '.hero-dots');
+      const a = Number(await d.getAttribute('data-alpha'));
+      const beads = (await d.getAttribute('data-bead-inks'))!.split('|').map((t) => t.split(';').map(parseColor));
+      beads.forEach((bs, k) => bs.forEach((b, j) => {
+        const lone = flatten([b[0], b[1], b[2], b[3] * a], g);
+        expect(contrast(lone, g), `category ${k}, tone ${j}, a bead's mean colour at ${scale}x`).toBeGreaterThanOrEqual(3);
+      }));
+    };
+    await beadMeans(page, 1);
+    const ctx = await browser.newContext({ colorScheme: scheme, deviceScaleFactor: 3, reducedMotion: 'reduce' });
+    const sharp = await ctx.newPage();
+    await settledHome(sharp);
+    await byCategory(sharp);
+    await beadMeans(sharp, 3);
+    await ctx.close();
   });
 }
 
@@ -661,6 +675,9 @@ test("every landing dot has its own room: none crowded, none more than 3.75px fr
     const page = await ctx.newPage();
     await settledHome(page);
     const dots = page.locator('.hero-dots');
+    // A field laid out without packing carries no count; a missing one must not read as none crowded.
+    await expect(dots, 'the field is not packed: no crowding measured').toHaveAttribute('data-crowded', /^\d+$/);
+    await expect(dots, 'the field is not packed: no shift measured').toHaveAttribute('data-max-shift', /^\d+(\.\d+)?$/);
     const n = Number(await dots.getAttribute('data-dots'));
     const crowded = Number(await dots.getAttribute('data-crowded'));
     expect(crowded, `${crowded} of ${n} dots crowded at ${viewport.width}px @${scale}x`).toBeLessThanOrEqual(crowd * n);
@@ -694,8 +711,8 @@ test('at 2x the densest part of the field shows the gaps between its dots, and e
     for (let i = 3; i < d.length; i += 4) if (d[i] > 0) { inked++; if (d[i] === 255) full++; }
     return { empty: best.empty, full: full / Math.max(1, inked) };
   });
-  expect(seen.empty, 'the densest square of the field is a solid mass (share of its pixels empty)').toBeGreaterThanOrEqual(0.28);
-  expect(seen.full, "the dots' sprites were resampled (share of their pixels at full ink)").toBeGreaterThanOrEqual(0.08);
+  expect.soft(seen.empty, 'the densest square of the field is a solid mass (share of its pixels empty)').toBeGreaterThanOrEqual(0.28);
+  expect.soft(seen.full, "the dots' sprites were resampled (share of their pixels at full ink)").toBeGreaterThanOrEqual(0.08);
   await ctx.close();
 });
 
@@ -772,16 +789,22 @@ test('on a phone a finger held still brings up the glass above it; one that move
   const glass = (await page.locator('.fisheye-lens').boundingBox())!;
   // Above the finger, so the finger does not hide it.
   expect(glass.y + glass.height, 'the glass is not above the finger').toBeLessThan(y);
-  // Sliding moves the glass, and the page stays put.
+  // Sliding moves the glass, and the page stays put. (A page that scrolls takes the gesture, and the glass
+  // goes with it: checked first, or reading the missing glass's box would wait out the test.)
   for (let k = 1; k <= 6; k++) { await touch('touchMove', x + 8 * k, y - 6 * k); await page.waitForTimeout(16); }
+  expect(await scrolled(), 'the page scrolled under the glass').toBe(before);
+  await expect(main, 'the glass went as the finger slid').toHaveAttribute('data-lens', 'on');
   const moved = (await page.locator('.fisheye-lens').boundingBox())!;
   expect(moved.x - glass.x, 'the glass did not follow the finger').toBeGreaterThan(30);
-  expect(await scrolled(), 'the page scrolled under the glass').toBe(before);
-  // Lifting puts the glass away and leaves the readout, with nothing thrown.
+  // Lifting puts the glass away and leaves the readout, with nothing thrown: counted in frames, since a
+  // burst is over within the time an attribute's check waits for "idle".
+  const thrown = () => page.evaluate(() => performance.getEntriesByName('flight-frame').length);
+  const framesBefore = await thrown();
   await touch('touchEnd', x + 48, y - 36);
   await expect(main).toHaveAttribute('data-lens', 'off');
   await expect(page.locator('.chart-value-pill').first()).toBeVisible();
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
+  await page.waitForTimeout(200);
+  expect(await thrown(), 'lifting the finger threw the dots').toBe(framesBefore);
 
   // A finger that moves at once is scrolling: the page moves and no glass comes up.
   const start = await scrolled();
