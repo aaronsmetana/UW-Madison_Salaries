@@ -165,14 +165,27 @@ test.describe('chart gradient ids', () => {
 /**
  * Home's hero distribution was the one chart bypassing `chartDefs` entirely: hand-written stops
  * (0.34 -> 0.02 against the factory's 0.28 -> 0) under a hardcoded id. Its fill is now the people
- * themselves, one dot each (DotField), so it carries no area gradient at all — and what this holds is
- * that it never grows a private one again, beside the dots or instead of them.
+ * themselves, one dot each (DotField); the one gradient it keeps is a faint wash under the curve,
+ * beneath the dots, so the curve's shape reads in the thin tails — and that is the shared
+ * `areaGradDef`, never a private copy: its id, two stops, and gone at the baseline (the private copy's
+ * 0.02 left a hairline of tint along the axis), no stronger at the top than the factory's own 0.28.
  */
 test('the hero distribution draws its people as dots, with no private area fill', async ({ page }) => {
   await page.goto('./', { waitUntil: 'networkidle' });
   await expect(page.locator('.hero-dist-plot')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.hero-dots canvas.dot-field-ink')).toHaveCount(1);
-  expect(await page.locator('.hero-dist linearGradient').count(), 'the hero distribution defines an area gradient of its own').toBe(0);
+  const grads = await page.locator('.hero-dist linearGradient').evaluateAll((gs) => gs.map((g) => ({
+    id: g.id,
+    stops: [...g.querySelectorAll('stop')].map((s) => Number(getComputedStyle(s).stopOpacity)),
+  })));
+  expect(grads.length, 'the hero distribution defines more than its one wash').toBeLessThanOrEqual(1);
+  for (const g of grads) {
+    expect(g.id, 'the hero distribution defines an area gradient of its own, not areaGradDef').toMatch(/-area-grad$/);
+    expect(g.stops.length, 'not areaGradDef: its stops').toBe(2);
+    expect(g.stops[1], 'the wash does not finish at the baseline').toBe(0);
+    expect(g.stops[0], 'the wash is stronger than any area fill in the app').toBeLessThanOrEqual(0.28);
+    expect(g.stops[0], 'the wash is not there at all').toBeGreaterThan(0);
+  }
 });
 
 test.describe('the chart-card specular', () => {

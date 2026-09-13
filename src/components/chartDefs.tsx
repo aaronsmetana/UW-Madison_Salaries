@@ -25,11 +25,13 @@ import { Fragment } from 'react';
  * one definition rather than growing a second private copy — which is what this function was split out
  * to prevent. The peer ribbon passes the population grey instead, because on that chart the accent IS
  * the subject's own mark and painting the crowd with it would erase the one thing the chart picks out.
+ * Home's hero passes a custom property (`'var(--curve-wash)'`), so its faint wash under the curve can be
+ * stronger on a dark page.
  */
 export function areaGradDef(
   id: string,
   color: string = 'var(--mantine-color-accent-6)',
-  topOpacity: number = 0.28,
+  topOpacity: number | string = 0.28,
 ) {
   return (
     <linearGradient id={`${id}-area-grad`} x1="0" y1="0" x2="0" y2="1">

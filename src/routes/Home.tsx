@@ -24,6 +24,7 @@ import { peopleFromCounts } from '../lib/dotLayout';
 import { STIR_STEP, stirPath } from '../lib/dotPhysics';
 import { usePref } from '../lib/prefs';
 import { SegmentedToggle } from '../components/SegmentedToggle';
+import { areaGradDef } from '../components/chartDefs';
 import type { HomeStats } from '../lib/manifest';
 import { ordinal } from '../lib/stats';
 
@@ -341,7 +342,7 @@ function Distribution({
     [hoveredBucket],
   );
 
-  // The wash under the curve: its gradient's id, unique on the page (and fit for a url(#…)).
+  // The wash under the curve: the shared area gradient's id, unique on the page (and fit for a url(#…)).
   const washId = `wash${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   // The curve's point nearest the median: where a keyboard's readout starts.
   const medianIdx = useMemo(() => {
@@ -742,13 +743,8 @@ function Distribution({
       <div style={{ position: 'absolute', inset: 0, height: H }}>
         {/* A faint wash under the curve, beneath the dots, so its shape reads even in the thin tails. */}
         <svg className="hero-dist-wash" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ position: 'absolute', inset: 0, display: 'block' }}>
-          <defs>
-            <linearGradient id={washId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="var(--mantine-color-accent-6)" style={{ stopOpacity: 'var(--curve-wash)' }} />
-              <stop offset="1" stopColor="var(--mantine-color-accent-6)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <path d={area} fill={`url(#${washId})`} />
+          <defs>{areaGradDef(washId, 'var(--mantine-color-accent-6)', 'var(--curve-wash)')}</defs>
+          <path d={area} fill={`url(#${washId}-area-grad)`} />
         </svg>
         <DotField
           ref={mainDotsRef}
