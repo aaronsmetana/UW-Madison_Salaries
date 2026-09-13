@@ -355,15 +355,16 @@ test('a click bursts a hole you can see behind a shockwave, and every dot comes 
   const x = c.width * 0.27, y = c.height * 0.72;
   const rest = await picture(page);
   expect(await inkShare(page, x, y, 20), 'the click is in the densest part of the field').toBeGreaterThan(0.9);
-  for (const side of [-1, 1]) expect(await inkShare(page, x + side * 76, y, 4), 'the field is dense round the glass').toBeGreaterThan(0.6);
+  for (const off of [-110, -76, 76, 110]) expect(await inkShare(page, x + off, y, 4), 'the field is dense round the glass').toBeGreaterThan(0.6);
   await clickAway(page, c, x, y);
   await page.clock.runFor(16);
-  expect(await inkShare(page, x, y, 20), 'the shockwave reached the square with the click').toBeGreaterThan(0.6);
+  // By the first frame the front has run 15px, so the square round the click is only partly emptied.
+  expect(await inkShare(page, x, y, 20), 'the shockwave reached the square with the click').toBeGreaterThan(0.4);
   await page.clock.runFor(112);
   expect(await inkShare(page, x, y, 20), 'no hole opened round the click').toBeLessThan(0.15);
-  // The hole reaches past the glass that sits on the click: round its rim (LENS_D / 2 = 70px) the dots
-  // are gone too, left and right of the click, where the field was dense.
-  for (const side of [-1, 1]) expect(await inkShare(page, x + side * 76, y, 4), `no hole past the glass's rim (${side < 0 ? 'left' : 'right'})`).toBeLessThan(0.15);
+  // The hole reaches well past the glass that sits on the click: round its rim (LENS_D / 2 = 70px) and
+  // 110px out the dots are gone too, left and right of the click, where the field was dense.
+  for (const off of [-110, -76, 76, 110]) expect(await inkShare(page, x + off, y, 4), `no hole ${off}px from the click`).toBeLessThan(0.15);
   await expect(dots).toHaveAttribute('data-flight', 'moving');
   // The burst and its ripple, which runs out to the plot's far corner and rocks the dots there.
   await page.clock.runFor(2372);

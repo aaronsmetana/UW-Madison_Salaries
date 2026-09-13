@@ -16,18 +16,20 @@ export const REST_SPEED = 0.03;
 
 /** The sizes below are for a plot this tall; a field scales them by its own height (`burstSizes`). */
 export const BURST_REF_H = 375;
-/** How far a click's burst reaches, px: twice the magnifying glass's radius, so it spreads well past the
- *  glass that sits on the click. And how fast it throws the dot under it, px/ms: about 85px out, so the
- *  hole itself shows round the glass. */
-export const BURST_R = LENS_D;
-export const BURST_SPEED = 1.94;
-/** How long the shockwave's front takes to cross the burst's reach, ms (it runs on at that speed across
- *  the whole graph), and how strong its ring starts. */
-export const WAVE_MS = 150;
+/** How far a click's burst reaches, px: three times the magnifying glass's radius, so it spreads well
+ *  past the glass that sits on the click. And how fast it throws the dot under it, px/ms: about 125px
+ *  out, so the hole itself shows wide round the glass. */
+export const BURST_R = 1.5 * LENS_D;
+export const BURST_SPEED = 2.88;
+/** How long the shockwave's front takes to cross the burst's reach, ms — about 0.93px/ms, a pace the eye
+ *  can follow as it runs on across the whole graph — and how strong its ring starts. */
+export const WAVE_MS = 225;
 export const RING_ALPHA = 0.55;
-/** The front's ring and its echoes, a ripple's period apart — each this share of the one before. */
+/** The front's ring and its echoes, a ripple's period apart — each this share of the one before — and
+ *  how much stronger the rings draw once past the burst, where they are the ripple. */
 export const RING_ECHOES = 3;
 export const RING_ECHO = 0.55;
+export const RING_RIPPLE = 1.2;
 /** A second click on dots still flying throws them further, up to this multiple of a click's speed. */
 export const CLICK_CAP = 2;
 /** A drag with the button held: smaller bursts STIR_STEP px apart along its path, each reaching
@@ -40,7 +42,7 @@ export const STIR_STEP = 10;
  *  the shockwave's front passes them, so rings of bunched-up dots run on across the graph. Its swing
  *  where it leaves the burst, px — fading in over the burst's last quarter-reach, then falling off as
  *  1/√distance, as a ripple on water does. */
-export const RIPPLE_A = 20;
+export const RIPPLE_A = 30;
 
 /** A spring home: its damping per ms (ζω), its damped frequency (ω_d), ω², and how far a dot it holds
  *  swings at the most per px/ms it was thrown from rest (so a swing can be asked for in px). */
@@ -155,16 +157,20 @@ export function rippleKick(dx: number, dy: number, reach: number, amp: number, w
 /**
  * How strong ring `k` of a shockwave draws at `rad` px from its click (0 the front, then its echoes, a
  * ripple's period behind): the front from RING_ALPHA at the click, easing through the burst; past the
- * burst's `reach`, every ring falling off as 1/√distance, each echo half the one before and fading in
- * over the burst's last quarter-reach, as the ripple does; and all of them fading out before `far`, the
- * furthest corner of the plot from the click. 0 where nothing draws.
+ * burst's `reach` — the ripple — the front growing to RING_RIPPLE over the burst's next quarter-reach
+ * and the echoes fading in there from nothing, each a RING_ECHO of the one before, all falling off as
+ * 1/√distance; and all of them fading out before `far`, the furthest corner of the plot from the click.
+ * 0 where nothing draws.
  */
 export function ringAlpha(rad: number, k: number, reach: number, far: number): number {
   if (!(rad > 0) || !(reach > 0) || rad >= far) return 0;
   const edge = Math.min(1, (far - rad) / (0.2 * far));
-  if (rad < reach) return k === 0 ? RING_ALPHA * (1 - 0.2 * (rad / reach)) * edge : 0;
-  const s = k === 0 ? 1 : Math.min(1, (rad - reach) / (0.25 * reach));
-  return RING_ALPHA * 0.8 * Math.sqrt(reach / rad) * RING_ECHO ** k * s * s * (3 - 2 * s) * edge;
+  const inner = 0.8;
+  if (rad < reach) return k === 0 ? RING_ALPHA * (1 - (1 - inner) * (rad / reach)) * edge : 0;
+  const s = Math.min(1, (rad - reach) / (0.25 * reach));
+  const ease = s * s * (3 - 2 * s);
+  const strength = k === 0 ? inner + (RING_RIPPLE - inner) * ease : RING_RIPPLE * ease;
+  return Math.min(0.9, RING_ALPHA * strength * Math.sqrt(reach / rad) * RING_ECHO ** k * edge);
 }
 
 /** A dot's speed after a kick `kx, ky`: the two added, but never faster than `cap` or than it already

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AIR_BEFORE_REST, AIR_EPS, BURST_OMEGA, BURST_R, BURST_SPEED, BURST_SPRING, BURST_ZETA, CLICK_CAP, GRAVITY, REST_EPS,
-  RING_ALPHA, RING_ECHO, RIPPLE_A, RIPPLE_OMEGA, RIPPLE_SPRING, RIPPLE_ZETA, STIR_SPEED, WAVE_MS,
+  RING_ALPHA, RING_ECHO, RING_RIPPLE, RIPPLE_A, RIPPLE_OMEGA, RIPPLE_SPRING, RIPPLE_ZETA, STIR_SPEED, WAVE_MS,
   burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirPath, thrown, type Kick, type Pose, type Spring,
 } from './dotPhysics';
 import { LENS_D } from './fisheye';
@@ -56,8 +56,9 @@ describe('springPose', () => {
       if (t >= 800) expect(Math.abs(o)).toBeLessThan(1);
     }
     // Past the glass's rim (LENS_D / 2), so the hole shows round it.
-    expect(peak).toBeGreaterThan(LENS_D / 2 + 10);
-    expect(peak).toBeLessThan(90);
+    expect(peak).toBeGreaterThan(115);
+    expect(peak).toBeLessThan(135);
+    expect(peak).toBeGreaterThan(LENS_D / 2 + 40);
     expect(peakAt).toBeGreaterThanOrEqual(100);
     expect(peakAt).toBeLessThanOrEqual(140);
     // Home without passing it by more than half a pixel: no knot where the dots from all round meet.
@@ -146,6 +147,9 @@ describe('rippleKick', () => {
     expect(out.vx).toBeLessThan(0);
     expect(out.vy).toBeGreaterThan(0);
   });
+  it('swings a dot RIPPLE_A (30px) a quarter-reach past the burst, less its 1/√distance', () => {
+    expect(swing(BURST_R * 1.25) * Math.sqrt(1.25)).toBeCloseTo(30, 6);
+  });
   it('fades in from nothing at the burst\'s edge, then falls off as 1/√distance across the graph', () => {
     expect(swing(BURST_R)).toBeCloseTo(0, 9);
     expect(swing(BURST_R * 1.25)).toBeCloseTo(RIPPLE_A * Math.sqrt(1 / 1.25), 6);
@@ -163,10 +167,18 @@ describe('rippleKick', () => {
 
 describe('ringAlpha', () => {
   const far = 800;
-  it('draws the front from the click, fading through the burst and on past it as 1/√distance', () => {
+  it('draws the front from the click, easing through the burst', () => {
     expect(ringAlpha(1, 0, BURST_R, far)).toBeCloseTo(RING_ALPHA, 2);
     expect(ringAlpha(BURST_R * 0.5, 0, BURST_R, far)).toBeLessThan(ringAlpha(1, 0, BURST_R, far));
-    expect(ringAlpha(BURST_R * 4, 0, BURST_R, far) / ringAlpha(BURST_R, 0, BURST_R, far)).toBeCloseTo(0.5, 2);
+  });
+  it("past the burst draws the ripple's front stronger, growing without a jump, then falling as 1/√distance", () => {
+    const wide = 5000;
+    const at = (x: number) => ringAlpha(x, 0, BURST_R, wide);
+    expect(at(BURST_R + 0.01) / at(BURST_R - 0.01)).toBeCloseTo(1, 2);
+    // A quarter-reach on it is RING_RIPPLE / 0.8 = 1.5 times as strong, less its 1/√distance.
+    expect(at(BURST_R * 1.25) / at(BURST_R)).toBeCloseTo((RING_RIPPLE / 0.8) * Math.sqrt(1 / 1.25), 6);
+    expect(RING_RIPPLE / 0.8).toBeCloseTo(1.5, 9);
+    expect(at(BURST_R * 5) / at(BURST_R * 1.25)).toBeCloseTo(0.5, 6);
   });
   it('draws its echoes only past the burst, each fainter than the one before', () => {
     expect(ringAlpha(BURST_R * 0.8, 1, BURST_R, far)).toBe(0);
@@ -183,8 +195,11 @@ describe('ringAlpha', () => {
 });
 
 describe('burstSizes', () => {
-  it("reaches twice the magnifying glass's radius on a 375px plot", () => {
-    expect(burstSizes(375).reach).toBe(2 * (LENS_D / 2));
+  it("reaches three times the magnifying glass's radius on a 375px plot", () => {
+    expect(burstSizes(375).reach).toBe(3 * (LENS_D / 2));
+  });
+  it('keeps the front at a pace the eye can follow, whatever the reach: about 0.93px/ms', () => {
+    expect(BURST_R / WAVE_MS).toBeCloseTo(0.933, 2);
   });
   it("scales with the plot's height: a phone's 275px plot gets 0.733 of a 375px one's", () => {
     const wide = burstSizes(375), phone = burstSizes(275);
