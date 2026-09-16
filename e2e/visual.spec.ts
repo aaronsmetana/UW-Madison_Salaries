@@ -254,6 +254,17 @@ for (const [name, route, opts] of DIRECT) {
   });
 }
 
+// The landing graph full page: the panel over the whole window, the plot as tall as it leaves. Viewport
+// shots — the page under it is the home scene's.
+test('visual: home full page', async ({ page }) => {
+  await page.goto('./');
+  await page.getByText(/\$[\d,]+/).first().waitFor({ timeout: 60_000 }).catch(() => {});
+  await page.getByRole('button', { name: 'Full page' }).click();
+  await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await shots(page, 'home-full', { fullPage: false });
+});
+
 test('visual: person', async ({ page }) => {
   await page.goto('./');
   const search = page.getByRole('combobox', { name: 'Search a person' });
