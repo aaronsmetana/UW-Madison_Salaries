@@ -21,7 +21,7 @@ import { Z } from '../lib/layers';
 import { DotField, SPREAD_MS, useEntranceOnce, type DotFieldHandle } from '../components/chart/DotField';
 import { FisheyeLens, LENS_D, type FisheyeLensHandle, type LensView } from '../components/chart/FisheyeLens';
 import { peopleFromCounts } from '../lib/dotLayout';
-import { STIR_STEP, stirPath } from '../lib/dotPhysics';
+import { STIR_STEP, dragSpeed, stirPath, stirStrength } from '../lib/dotPhysics';
 import { usePref } from '../lib/prefs';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { areaGradDef } from '../components/chartDefs';
@@ -195,8 +195,9 @@ function Distribution({
   // A readout a finger tapped stays until a tap elsewhere; a touch pointer "leaves" as it lifts.
   const [tapped, setTapped] = useState(false);
   const tapRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
-  // Where a drag with the mouse button held last stirred the dots, while it is held.
-  const stirRef = useRef<{ x: number; y: number } | null>(null);
+  // A drag with the mouse button held, while it is held: where it last stirred the dots (on its
+  // STIR_STEP grid), where the pointer last was and when, and how fast it is going, px/ms.
+  const stirRef = useRef<{ at: { x: number; y: number }; last: { x: number; y: number }; t: number; v: number } | null>(null);
   // A finger held still on the plot brings up the glass above it; `magnify` while it is up.
   const holdRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
   const [magnify, setMagnify] = useState(false);
@@ -507,9 +508,33 @@ function Distribution({
     setLensAt(null);
     setHoverIdx(next);
   };
+  // A drag's stir along its path through `pts` (the move's coalesced points, in the plot's CSS px): a
+  // smaller burst every STIR_STEP px (lib/dotPhysics `stirPath`), so a quick drag follows its true line
+  // and leaves no gaps — each as hard as the drag is fast (`stirStrength`), its speed measured over the
+  // whole move since the last, so the faster the drag the further the dots part and spread.
+  const stirAlong = (pts: { x: number; y: number }[]) => {
+    const now = performance.now();
+    const st = stirRef.current;
+    const end = pts[pts.length - 1];
+    // Held down from off the plot: the stir starts here.
+    if (!st) { stirRef.current = { at: end, last: end, t: now, v: 0 }; return; }
+    let dist = 0, px = st.last.x, py = st.last.y;
+    for (const p of pts) { dist += Math.hypot(p.x - px, p.y - py); px = p.x; py = p.y; }
+    const v = dragSpeed(st.v, dist, now - st.t);
+    const strength = stirStrength(v);
+    let from = st.at;
+    for (const p of pts) {
+      for (const q of stirPath(from.x, from.y, p.x, p.y, STIR_STEP)) {
+        const len = Math.hypot(q.x - from.x, q.y - from.y) || 1;
+        mainDotsRef.current?.burst(q.x, q.y, { strength, ux: (q.x - from.x) / len, uy: (q.y - from.y) / len });
+        from = q;
+      }
+    }
+    stirRef.current = { at: from, last: end, t: now, v };
+    if (mainBoxRef.current) mainBoxRef.current.dataset.stir = strength.toFixed(2);
+  };
   // A mouse's press bursts the dots where it is, and a drag with the button held stirs them along its
-  // path: a smaller burst every STIR_STEP px (lib/dotPhysics `stirPath`), through the move's coalesced
-  // points, so a quick drag follows its true line and leaves no gaps. A finger's tap bursts too, shows
+  // path (`stirAlong`). A finger's tap bursts too, shows
   // the readout there and ticks the phone — but a finger that moves is scrolling, and the browser takes
   // the gesture (no pointerup reaches here, or a pointercancel does).
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -518,7 +543,7 @@ function Distribution({
       const box = e.currentTarget.getBoundingClientRect();
       const at = { x: e.clientX - box.left, y: e.clientY - box.top };
       mainDotsRef.current?.burst(at.x, at.y);
-      stirRef.current = at;
+      stirRef.current = { at, last: at, t: performance.now(), v: 0 };
       return;
     }
     tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
@@ -559,17 +584,7 @@ function Distribution({
     const box = e.currentTarget.getBoundingClientRect();
     const native = e.nativeEvent;
     const moves = typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : [];
-    const pts = (moves.length ? moves : [native]).map((m) => ({ x: m.clientX - box.left, y: m.clientY - box.top }));
-    let from = stirRef.current;
-    // Held down from off the plot: the stir starts here.
-    if (!from) { stirRef.current = pts[pts.length - 1]; return; }
-    for (const p of pts) {
-      for (const q of stirPath(from.x, from.y, p.x, p.y, STIR_STEP)) {
-        mainDotsRef.current?.burst(q.x, q.y, true);
-        from = q;
-      }
-    }
-    stirRef.current = from;
+    stirAlong((moves.length ? moves : [native]).map((m) => ({ x: m.clientX - box.left, y: m.clientY - box.top })));
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse') { stirRef.current = null; return; }

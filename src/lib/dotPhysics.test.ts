@@ -3,6 +3,7 @@ import {
   AIR_BEFORE_REST, AIR_EPS, BURST_OMEGA, BURST_R, BURST_SPEED, BURST_SPRING, BURST_ZETA, CLICK_CAP, GRAVITY, REST_EPS,
   RING_ALPHA, RING_ECHO, RING_RIPPLE, RIPPLE_A, RIPPLE_OMEGA, RIPPLE_SPRING, RIPPLE_ZETA, STIR_SPEED, WAVE_MS,
   BLOOM_ALPHA, BLOOM_MS, bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirPath, thrown, type Kick, type Pose, type Spring,
+  STIR_DRAG, STIR_FAST, STIR_R, STIR_SLOW, TRAIL_MIN, TRAIL_MS, dragSpeed, fieldScale, stirKick, stirSizes, stirStrength, stirTopUp, trailAt,
 } from './dotPhysics';
 import { LENS_D } from './fisheye';
 
@@ -205,6 +206,170 @@ describe('burstSizes', () => {
     const wide = burstSizes(375), phone = burstSizes(275);
     for (const key of ['reach', 'speed', 'ripple', 'stirReach', 'stirSpeed'] as const) expect(phone[key] / wide[key]).toBeCloseTo(275 / 375, 6);
     expect(wide.reach).toBe(BURST_R);
+  });
+});
+
+describe('fieldScale', () => {
+  it('never grows a burst past its 375px size, so on a taller plot (full page) it is still three glass radii', () => {
+    expect(fieldScale(375)).toBe(1);
+    expect(fieldScale(700)).toBe(1);
+    expect(burstSizes(700).reach).toBe(3 * (LENS_D / 2));
+    expect(stirSizes(1, 700).reach).toBe(stirSizes(1, 375).reach);
+    expect(fieldScale(275)).toBeCloseTo(275 / 375, 12);
+  });
+});
+
+describe('stirStrength', () => {
+  it('is nothing for a slow drag, everything for a fast one, and grows all the way between', () => {
+    expect(stirStrength(0)).toBe(0);
+    expect(stirStrength(STIR_SLOW)).toBe(0);
+    expect(stirStrength(STIR_FAST)).toBe(1);
+    expect(stirStrength(10)).toBe(1);
+    let last = 0;
+    for (let v = STIR_SLOW + 0.05; v <= STIR_FAST; v += 0.05) {
+      const s = stirStrength(v);
+      expect(s).toBeGreaterThan(last);
+      last = s;
+    }
+  });
+  it('already shows at a brisk 1px/ms', () => {
+    expect(stirStrength(1)).toBeGreaterThan(0.4);
+  });
+});
+
+describe('stirSizes', () => {
+  it("is a slow drag's stir, as it always was, at strength 0", () => {
+    expect(stirSizes(0, 375)).toEqual({ reach: STIR_R, speed: STIR_SPEED, cap: STIR_SPEED });
+    const slow = burstSizes(275);
+    expect(stirSizes(0, 275).reach).toBeCloseTo(slow.stirReach, 12);
+    expect(stirSizes(0, 275).speed).toBeCloseTo(slow.stirSpeed, 12);
+  });
+  it('at its fastest reaches three times as far and parts the dots about 60px, still under half a click', () => {
+    const fast = stirSizes(1, 375);
+    expect(fast.reach).toBeCloseTo(3 * STIR_R, 9);
+    expect(fast.speed * BURST_SPRING.reach).toBeGreaterThan(50);
+    expect(fast.speed * BURST_SPRING.reach).toBeLessThan(70);
+    expect(fast.reach).toBeLessThan(BURST_R / 1.9);
+    expect(fast.speed).toBeLessThan(BURST_SPEED / 2);
+    expect(fast.cap).toBeCloseTo(fast.speed * (1 + STIR_DRAG), 12);
+  });
+  it('grows with strength, every size', () => {
+    let last = stirSizes(0, 375);
+    for (let s = 0.1; s <= 1.0001; s += 0.1) {
+      const now = stirSizes(s, 375);
+      expect(now.reach).toBeGreaterThan(last.reach);
+      expect(now.speed).toBeGreaterThan(last.speed);
+      expect(now.cap).toBeGreaterThan(last.cap);
+      last = now;
+    }
+  });
+});
+
+describe('dragSpeed', () => {
+  it("follows a steady drag to its own speed within a few moves, and ignores a move with no time", () => {
+    let v = 0;
+    for (let k = 0; k < 12; k++) v = dragSpeed(v, 48, 16);
+    expect(v).toBeCloseTo(3, 1);
+    expect(dragSpeed(1.2, 30, 0)).toBe(1.2);
+    // One 16ms move eases a third of the way.
+    expect(dragSpeed(0, 48, 16)).toBeCloseTo(3 * (1 - Math.exp(-16 / 40)), 9);
+  });
+  it('slows as the drag does', () => {
+    let v = 3;
+    for (let k = 0; k < 12; k++) v = dragSpeed(v, 2, 16);
+    expect(v).toBeLessThan(STIR_SLOW);
+  });
+});
+
+describe('stirKick', () => {
+  const at = (dx: number, dy: number, s: number, ux = 1, uy = 0, i = 4) => {
+    const out: Kick = { vx: 0, vy: 0, delay: -1 };
+    return stirKick(dx, dy, i, 100, 1, s, ux, uy, out) ? out : null;
+  };
+  it("is a burst's kick with no shockwave at strength 0", () => {
+    const b: Kick = { vx: 0, vy: 0, delay: 0 };
+    burstKick(30, -20, 4, 100, 1, 0, b);
+    expect(at(30, -20, 0)).toEqual(b);
+    expect(at(120, 0, 1)).toBeNull();
+  });
+  it('turns a fast drag\'s kick square off the stroke, each dot away on its own side, and carries it on a little', () => {
+    // A dot ahead of the pointer and just above a rightward stroke: a slow stir pushes it on ahead; a fast
+    // one mostly up and away, and a little along.
+    const slow = at(20, -6, 0)!, fast = at(20, -6, 1)!;
+    expect(Math.abs(slow.vx)).toBeGreaterThan(Math.abs(slow.vy));
+    expect(Math.abs(fast.vy)).toBeGreaterThan(Math.abs(fast.vx) * 0.9);
+    expect(fast.vy).toBeLessThan(0);
+    expect(at(20, 6, 1)!.vy).toBeGreaterThan(0);
+    // Behind the pointer a fast drag still carries the dot forward, not back.
+    expect(at(-20, -6, 1)!.vx).toBeGreaterThan(at(-20, -6, 0)!.vx);
+    // As fast as the burst's own kick, plus the push along.
+    const b: Kick = { vx: 0, vy: 0, delay: 0 };
+    burstKick(20, -6, 4, 100, 1, 0, b);
+    expect(Math.hypot(fast.vx, fast.vy)).toBeGreaterThan(Math.hypot(b.vx, b.vy));
+    expect(Math.hypot(fast.vx, fast.vy)).toBeLessThanOrEqual(Math.hypot(b.vx, b.vy) * (1 + STIR_DRAG) + 1e-9);
+  });
+  it('sends a dot dead on the line a fixed way of its own, whatever the stroke', () => {
+    const a = at(15, 0, 1, 1, 0, 2)!, b = at(15, 0, 1, 1, 0, 3)!;
+    expect(Math.sign(a.vy)).toBe(-Math.sign(b.vy));
+    expect(at(15, 0, 1, 1, 0, 2)).toEqual(a);
+  });
+});
+
+describe('stirTopUp', () => {
+  const kick = (vx: number, vy: number): Kick => ({ vx, vy, delay: 0 });
+  it('gives a dot at rest the whole kick', () => {
+    const k = kick(0.6, -0.8);
+    expect(stirTopUp(0, 0, 0, 0, k)).toBe(true);
+    expect(k).toEqual(kick(0.6, -0.8));
+  });
+  it('gives nothing to a dot already going out as fast, or already as far out as the kick would send it', () => {
+    expect(stirTopUp(0, 0, 0.6, -0.8, kick(0.6, -0.8))).toBe(false);
+    expect(stirTopUp(0.6 * BURST_SPRING.reach, -0.8 * BURST_SPRING.reach, 0, 0, kick(0.6, -0.8))).toBe(false);
+  });
+  it('tops a dot part-way out up to the swing, and only that', () => {
+    const k = kick(1, 0);
+    expect(stirTopUp(0.5 * BURST_SPRING.reach, 0, 0.25, 0, k)).toBe(true);
+    expect(k.vx).toBeCloseTo(0.25, 9);
+    expect(k.vy).toBe(0);
+  });
+  it('never gives more than the kick, even to a dot coming home from the other way', () => {
+    const k = kick(1, 0);
+    expect(stirTopUp(-40, 0, -1, 0, k)).toBe(true);
+    expect(k.vx).toBeCloseTo(1, 9);
+  });
+  it("keeps a drag's repeated kicks to the swing of one: a dot kicked every 16ms goes no further", () => {
+    // A dot kicked as the pointer passes it, move after move, stepped by the spring's own solution.
+    const one = 1.35;
+    let bx = 0, by = 0, bvx = 0, bvy = 0, t0 = 0, most = 0;
+    const p: Pose = { ox: 0, oy: 0, vx: 0, vy: 0 };
+    for (let t = 0; t <= 1200; t += 4) {
+      springPose(BURST_SPRING, bx, by, bvx, bvy, t - t0, p);
+      most = Math.max(most, Math.hypot(p.ox, p.oy));
+      if (t % 16 === 0 && t <= 96) {
+        const k = kick(0, -one);
+        if (stirTopUp(p.ox, p.oy, p.vx, p.vy, k)) {
+          const v = thrown(p.vx, p.vy, k.vx, k.vy, one, { vx: 0, vy: 0 });
+          bx = p.ox; by = p.oy; bvx = v.vx; bvy = v.vy; t0 = t;
+        }
+      }
+    }
+    expect(most).toBeLessThan(one * BURST_SPRING.reach * 1.1);
+    expect(most).toBeGreaterThan(one * BURST_SPRING.reach * 0.9);
+  });
+});
+
+describe('trailAt', () => {
+  it('draws nothing for a slow stir, or once faded', () => {
+    expect(trailAt(0, TRAIL_MIN - 0.01)).toBeNull();
+    expect(trailAt(TRAIL_MS, 1)).toBeNull();
+    expect(trailAt(-1, 1)).toBeNull();
+  });
+  it('fades as it ages and draws wider and stronger for a faster stir', () => {
+    expect(trailAt(0, 1)!.alpha).toBeGreaterThan(trailAt(100, 1)!.alpha);
+    expect(trailAt(100, 1)!.alpha).toBeGreaterThan(trailAt(250, 1)!.alpha);
+    expect(trailAt(50, 1)!.alpha).toBeGreaterThan(trailAt(50, 0.5)!.alpha);
+    expect(trailAt(50, 1)!.w).toBeGreaterThan(trailAt(50, 0.5)!.w);
+    expect(trailAt(0, TRAIL_MIN)!.alpha).toBe(0);
   });
 });
 

@@ -1,8 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { layoutDots, packDots } from '../../lib/dotLayout';
 import {
-  AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, WAVE_MS,
-  bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, thrown, type Kick, type Pose,
+  AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, TRAIL_ALPHA, TRAIL_MIN, TRAIL_MS, TRAIL_W, WAVE_MS,
+  bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirKick, stirSizes, stirTopUp, thrown, trailAt,
+  type Kick, type Pose,
 } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
 import { bead, beadInk, halo, type Bead, type BeadInk } from '../../lib/dotSprites';
@@ -36,6 +37,10 @@ const THROWN = 0, RIPPLED = 1;
 const springOf = (kind: number) => (kind === RIPPLED ? RIPPLE_SPRING : BURST_SPRING);
 /** A ring's strokes, CSS px wide and their share of its strength: a soft glowing band, then its core. */
 const RING_STROKES: readonly (readonly [number, number])[] = [[6, 0.25], [1.5, 1]];
+/** A wake's strokes, as a share of its width and of its strength: a soft band, then its core. */
+const TRAIL_STROKES: readonly (readonly [number, number])[] = [[1, 0.35], [0.3, 1]];
+/** Moves of one drag come this close together, ms; a wake point further from the last starts a new stroke. */
+const TRAIL_GAP_MS = 80;
 /** Scratch for the spring and the kicks: one frame's dots are worked one at a time. */
 const pose: Pose = { ox: 0, oy: 0, vx: 0, vy: 0 };
 const speed2 = { vx: 0, vy: 0 };
@@ -49,6 +54,45 @@ const easeOutBack = (p: number) => {
   const c3 = c1 + 1;
   return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2;
 };
+
+/**
+ * A drag's wake into `ctx`: each stretch between two of its points, as strong and as wide as the older
+ * end is (lib/dotPhysics `trailAt`), a soft band under a thin core, placed through `at` (canvas pixels,
+ * and how much a glass magnifies there). Stretches of about the same strength go down as one path, so
+ * where they meet the ink is not laid twice.
+ */
+function drawTrail(
+  ctx: CanvasRenderingContext2D, pts: readonly { x: number; y: number; t: number; s: number }[], now: number,
+  at: (x: number, y: number) => { x: number; y: number; scale: number }, dpr: number,
+) {
+  const LEVELS = 6;
+  const byLevel: { a: { x: number; y: number }; b: { x: number; y: number }; w: number }[][] = Array.from({ length: LEVELS }, () => []);
+  const top: number[] = new Array(LEVELS).fill(0);
+  for (let k = 1; k < pts.length; k++) {
+    const p = pts[k - 1], q = pts[k];
+    if (q.t - p.t > TRAIL_GAP_MS) continue;
+    const tr = trailAt(now - p.t, p.s);
+    if (!tr) continue;
+    const lv = Math.min(LEVELS - 1, Math.floor((tr.alpha / TRAIL_ALPHA) * LEVELS));
+    const a = at(p.x, p.y), b = at(q.x, q.y);
+    byLevel[lv].push({ a, b, w: tr.w * Math.min(2, Math.max(a.scale, b.scale)) });
+    top[lv] = Math.max(top[lv], tr.alpha);
+  }
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let lv = 0; lv < LEVELS; lv++) {
+    const segs = byLevel[lv];
+    if (!segs.length) continue;
+    const w = segs.reduce((m, g) => Math.max(m, g.w), 0);
+    for (const [share, strength] of TRAIL_STROKES) {
+      ctx.globalAlpha = top[lv] * strength;
+      ctx.lineWidth = w * share * dpr;
+      ctx.beginPath();
+      for (const g of segs) { ctx.moveTo(g.a.x, g.a.y); ctx.lineTo(g.b.x, g.b.y); }
+      ctx.stroke();
+    }
+  }
+}
 
 const readSession = () => { try { return sessionStorage.getItem(SEEN_KEY) === '1'; } catch { return true; } };
 const writeSession = () => { try { sessionStorage.setItem(SEEN_KEY, '1'); } catch { /* private mode */ } };
@@ -86,10 +130,15 @@ export type LensMap = (x: number, y: number) => { x: number; y: number; scale: n
 export interface DotFieldHandle {
   drawInto(ctx: CanvasRenderingContext2D, lens: { cx: number; cy: number; R: number; ox: number; oy: number; dpr: number; map: LensMap }): void;
   /** Bursts the dots round `x, y` (the field's CSS px) outward behind a shockwave, each to spring back
-   *  to its place; with `stir`, a drag's smaller burst, with no shockwave. False when nothing shows:
-   *  reduced motion, a hidden tab, or a stir with no dots in reach. */
-  burst(x: number, y: number, stir?: boolean): boolean;
+   *  to its place; with `stir`, a drag's burst, with no shockwave: as hard as its `strength` (0 slow to
+   *  1 fast, lib/dotPhysics `stirStrength`), the drag going the unit way `ux, uy`, leaving a wake when
+   *  fast. False when nothing shows: reduced motion, a hidden tab, or a stir with no dots in reach and no
+   *  wake. */
+  burst(x: number, y: number, stir?: Stir | null): boolean;
 }
+
+/** A drag's stir at one point of its path: how hard (0 to 1), and which way the drag goes (a unit vector). */
+export interface Stir { strength: number; ux: number; uy: number }
 
 /**
  * A distribution drawn as one dot per person: each at their own value along x, somewhere under the
@@ -287,6 +336,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     /** The shockwaves: where each click was, when, its burst's reach, and how far its rings run (the
      *  plot's furthest corner from it); and their ink. */
     rings: [] as { x: number; y: number; t: number; reach: number; far: number }[],
+    /** A fast drag's wake: the points it stirred at, when, and how hard, oldest first. */
+    trail: [] as { x: number; y: number; t: number; s: number }[],
     ringInk: '',
     /** The rings' ink at no alpha: where a bloom fades to, in its own hue. */
     ringClear: 'rgba(0, 0, 0, 0)',
@@ -496,6 +547,11 @@ export const DotField = forwardRef<DotFieldHandle, {
         }
       }
     }
+    // A fast drag's wake, over the dots with the rings.
+    if (L.trail.length && L.ringInk) {
+      ctx.strokeStyle = L.ringInk;
+      drawTrail(ctx, L.trail, now, (x, y) => ({ x: x * dpr, y: y * dpr, scale: 1 }), dpr);
+    }
     ctx.restore();
     onFrameRef.current?.();
   };
@@ -599,17 +655,24 @@ export const DotField = forwardRef<DotFieldHandle, {
           }
         }
       }
+      // The wake, through the glass.
+      if (L.trail.length && L.ringInk) {
+        ctx.strokeStyle = L.ringInk;
+        const near = L.trail.filter((q) => Math.hypot(q.x + ox - cx, q.y + oy - cy) < R + TRAIL_W);
+        drawTrail(ctx, near, now, (x, y) => { const m = map(x + ox, y + oy); return { x: m.x * dpr, y: m.y * dpr, scale: m.scale }; }, dpr);
+      }
       ctx.restore();
     },
-    burst(x, y, stir = false) {
+    burst(x, y, stir = null) {
       const lay = layout;
       const L = live.current;
       if (!lay || !L.mode || !L.t0 || !L.pendT || prefersReducedMotion() || document.hidden) return false;
       const now = performance.now();
       const size = burstSizes(height);
-      const reach = stir ? size.stirReach : size.reach;
-      const speed = stir ? size.stirSpeed : size.speed;
-      const cap = stir ? size.stirSpeed : CLICK_CAP * size.speed;
+      const stirred = stir ? stirSizes(stir.strength, height) : null;
+      const reach = stirred ? stirred.reach : size.reach;
+      const speed = stirred ? stirred.speed : size.speed;
+      const cap = stirred ? stirred.cap : CLICK_CAP * size.speed;
       const { order, sortedX, pts } = lay;
       // A click's ripple runs across the whole field; a stir's burst is all there is of it.
       const j0 = stir ? lowerBound(sortedX, x - reach - L.slack) : 0;
@@ -623,11 +686,15 @@ export const DotField = forwardRef<DotFieldHandle, {
         const dx = xOfRef.current(i) - x, dy = yOfRef.current(i, now) - y;
         let kind = THROWN;
         let most = cap;
-        if (!burstKick(dx, dy, i, reach, speed, stir ? 0 : WAVE_MS, kickAt)) {
+        if (stir ? !stirKick(dx, dy, i, reach, speed, stir.strength, stir.ux, stir.uy, kickAt) : !burstKick(dx, dy, i, reach, speed, WAVE_MS, kickAt)) {
           if (stir || !rippleKick(dx, dy, reach, size.ripple, WAVE_MS, kickAt)) continue;
           // A ripple never sends a dot faster than it sends it, or than it already goes.
           kind = RIPPLED;
           most = Math.hypot(kickAt.vx, kickAt.vy);
+        } else if (stir && m === BURST) {
+          // Already swinging: the stir only tops it up to its own swing (lib/dotPhysics `stirTopUp`).
+          springPose(springOf(L.sk![i]), L.bx![i], L.by![i], L.bvx![i], L.bvy![i], now - L.t0[i], pose);
+          if (!stirTopUp(pose.ox, pose.oy, pose.vx, pose.vy, kickAt)) continue;
         }
         if (m === REST) {
           L.mode[i] = BURST;
@@ -651,11 +718,13 @@ export const DotField = forwardRef<DotFieldHandle, {
         if (hx > L.flyHi) L.flyHi = hx;
         any = true;
       }
+      const wake = !!stir && stir.strength >= TRAIL_MIN;
+      if (wake) L.trail.push({ x, y, t: now, s: stir!.strength });
       if (!stir) {
         const far = Math.max(Math.hypot(x, y), Math.hypot(lay.width - x, y), Math.hypot(x, height - y), Math.hypot(lay.width - x, height - y));
         L.rings.push({ x, y, t: now, reach, far });
       }
-      else if (!any) return false;
+      else if (!any && !wake) return false;
       if (any) L.flying = Math.max(1, L.flying);
       if (boxRef.current) boxRef.current.dataset.flight = 'moving';
       kickRef.current();
@@ -772,6 +841,16 @@ export const DotField = forwardRef<DotFieldHandle, {
       L.rings = L.rings.filter((g) => ((now - g.t - (RING_ECHOES - 1) * RIPPLE_PERIOD) / WAVE_MS) * g.reach < g.far);
       if (L.rings.length) moving = true;
     }
+    // A wake: where its points are, repainted until the last has faded, and once more to erase it.
+    if (L.trail.length) {
+      flightFrame = true;
+      for (const q of L.trail) {
+        if (q.x - TRAIL_W < sx0) sx0 = q.x - TRAIL_W;
+        if (q.x + TRAIL_W > sx1) sx1 = q.x + TRAIL_W;
+      }
+      L.trail = L.trail.filter((q) => now - q.t < TRAIL_MS);
+      if (L.trail.length) moving = true;
+    }
     if (!full && sx1 >= sx0) {
       const pad = lay.r + 1 + L.slack;
       paintRef.current(now, sx0 - pad, sx1 + pad, true);
@@ -779,7 +858,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       L.dirtyHi = Math.max(L.dirtyHi, sx1 + pad);
     }
     // Everything thrown is home, and every ring has faded.
-    if (flightFrame && L.flying === 0 && !L.rings.length) {
+    if (flightFrame && L.flying === 0 && !L.rings.length && !L.trail.length) {
       if (L.entranceStart == null && L.restackStart == null) setSettled(true);
       if (boxRef.current && L.mode) {
         boxRef.current.dataset.flight = 'idle';
@@ -904,6 +983,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.slack = 0;
     L.slackLast = 0;
     L.rings = [];
+    L.trail = [];
     L.flying = 0;
     L.flyLo = Infinity;
     L.flyHi = -Infinity;
@@ -1008,7 +1088,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     const x1 = Math.max(a?.[1] ?? -Infinity, b?.[1] ?? -Infinity) + lay.r + 1;
     // While dots move, in squares like the strips round it — a bead strip there flickered against
     // them — and back in beads with the rest once all is still.
-    const busy = L.flying > 0 || L.rings.length > 0;
+    const busy = L.flying > 0 || L.rings.length > 0 || L.trail.length > 0;
     paintRef.current(performance.now(), x0, x1, busy);
     if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x0); L.dirtyHi = Math.max(L.dirtyHi, x1); }
   }, [hlLo, hlHi, layout, toX]);

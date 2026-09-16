@@ -33,10 +33,25 @@ export const RING_RIPPLE = 1.2;
 /** A second click on dots still flying throws them further, up to this multiple of a click's speed. */
 export const CLICK_CAP = 2;
 /** A drag with the button held: smaller bursts STIR_STEP px apart along its path, each reaching
- *  STIR_R and parting the dots about 15px — the dots part round the pointer and close behind it. */
+ *  STIR_R and parting the dots about 15px — the dots part round the pointer and close behind it. That
+ *  is a slow drag's stir; a faster one reaches further and throws harder (`stirSizes`). */
 export const STIR_R = 36;
 export const STIR_SPEED = 0.3;
 export const STIR_STEP = 10;
+/** A drag's speed, px/ms, at and under which it stirs as gently as a slow drag always has, and at and
+ *  over which it stirs its hardest: STIR_REACH_MAX times as far and STIR_SPEED_MAX times as hard — about
+ *  110px and a 60px parting, half a click's burst. */
+export const STIR_SLOW = 0.25;
+export const STIR_FAST = 3;
+export const STIR_REACH_MAX = 3;
+export const STIR_SPEED_MAX = 4.5;
+/** At its hardest, how far a stir turns its kick from straight out of the pointer to square off the
+ *  stroke — the dots part to either side of it — and how much of it pushes them on along the stroke. */
+export const STIR_PART = 0.7;
+export const STIR_DRAG = 0.25;
+/** How quickly a drag's measured speed follows its moves, ms: long enough to smooth one move's jitter,
+ *  short enough that a flick is felt within a few frames. */
+export const STIR_SMOOTH_MS = 40;
 
 /** Past the burst's reach, a ripple: the dots rocked out from the click and back, a time or two, as
  *  the shockwave's front passes them, so rings of bunched-up dots run on across the graph. Its swing
@@ -72,11 +87,40 @@ export const AIR_EPS = 1;
  *  AIR_EPS to REST_EPS. */
 export const AIR_BEFORE_REST = Math.log(AIR_EPS / REST_EPS) / BURST_SPRING.zw;
 
-/** A burst's, its ripple's and a stir's reach (px), speed (px/ms) and swing (px) for a field `height`
- *  px tall. */
+/** A field's scale for its bursts: its height over BURST_REF_H — but never more than 1, so on a plot
+ *  taller than that (the landing graph full page) a click still bursts three glass radii, the glass
+ *  being no bigger there. */
+export function fieldScale(height: number): number {
+  return Math.min(1, height / BURST_REF_H);
+}
+
+/** A burst's, its ripple's and a slow stir's reach (px), speed (px/ms) and swing (px) for a field
+ *  `height` px tall. */
 export function burstSizes(height: number) {
-  const k = height / BURST_REF_H;
+  const k = fieldScale(height);
   return { reach: BURST_R * k, speed: BURST_SPEED * k, ripple: RIPPLE_A * k, stirReach: STIR_R * k, stirSpeed: STIR_SPEED * k };
+}
+
+/** How hard a drag going `v` px/ms stirs: 0 at STIR_SLOW and under, 1 at STIR_FAST and over, easing out
+ *  between, so a brisk drag already shows. */
+export function stirStrength(v: number): number {
+  const s = Math.min(1, Math.max(0, (v - STIR_SLOW) / (STIR_FAST - STIR_SLOW)));
+  return 1 - (1 - s) ** 2;
+}
+
+/** A stir of strength `s` (`stirStrength`) on a field `height` px tall: how far it reaches, px, how hard
+ *  it throws the dot under the pointer, px/ms, and the most it lets a dot go, px/ms. */
+export function stirSizes(s: number, height: number) {
+  const k = fieldScale(height);
+  const speed = STIR_SPEED * (1 + (STIR_SPEED_MAX - 1) * s) * k;
+  return { reach: STIR_R * (1 + (STIR_REACH_MAX - 1) * s) * k, speed, cap: speed * (1 + STIR_DRAG * s) };
+}
+
+/** A drag's measured speed, px/ms, after a move of `dist` px over `dt` ms, from `prev`: eased toward the
+ *  move's own speed over STIR_SMOOTH_MS. */
+export function dragSpeed(prev: number, dist: number, dt: number): number {
+  if (!(dt > 0)) return prev;
+  return prev + (dist / dt - prev) * (1 - Math.exp(-dt / STIR_SMOOTH_MS));
 }
 
 /** A dot on the spring home: its offset from its place (px) and its speed (px/ms), each way. */
@@ -137,6 +181,47 @@ export function burstKick(dx: number, dy: number, i: number, reach: number, spee
 }
 
 /**
+ * The kick a stir of strength `s` at `dx, dy` from a dot gives it, the drag going the unit way `ux, uy`,
+ * written into `out`; false beyond `reach`. A burst's kick with no shockwave (`burstKick`) — then, the
+ * harder the stir, turned square off the stroke, away from it on the dot's own side (a dot on the line
+ * goes a fixed way of its own), and pushed on along it: the dots part to either side of a fast drag and
+ * are carried a little with it, as water is past a hand.
+ */
+export function stirKick(dx: number, dy: number, i: number, reach: number, speed: number, s: number, ux: number, uy: number, out: Kick): boolean {
+  if (!burstKick(dx, dy, i, reach, speed, 0, out)) return false;
+  const m = Math.hypot(out.vx, out.vy);
+  if (!(m > 0) || !(s > 0)) return true;
+  const across = ux * dy - uy * dx;
+  const side = across > 0 ? 1 : across < 0 ? -1 : (i & 1 ? 1 : -1);
+  const w = STIR_PART * s;
+  const px = (out.vx / m) * (1 - w) - uy * side * w;
+  const py = (out.vy / m) * (1 - w) + ux * side * w;
+  const pl = Math.hypot(px, py) || 1;
+  out.vx = (px / pl) * m + ux * STIR_DRAG * s * m;
+  out.vy = (py / pl) * m + uy * STIR_DRAG * s * m;
+  return true;
+}
+
+/**
+ * A stir's kick `out` on a dot already on the burst spring, `ox, oy` px from its place going `vx, vy`
+ * px/ms: cut to what brings the dot's swing, along the kick, out to the swing the kick gives from rest
+ * and no further — false when it is already on its way there. A drag keeps a dot in its reach for
+ * several moves; a whole kick every move kept it going out at full speed, and a fast drag threw dots
+ * 140px, further than a click. Where the dot will swing to is read as its offset plus its speed times
+ * the spring's reach (`Spring.reach`), which is exact from rest and near it otherwise.
+ */
+export function stirTopUp(ox: number, oy: number, vx: number, vy: number, out: Kick): boolean {
+  const km = Math.hypot(out.vx, out.vy);
+  if (!(km > 0)) return false;
+  const ux = out.vx / km, uy = out.vy / km;
+  const add = Math.min(km, km - (ox * ux + oy * uy) / BURST_SPRING.reach - (vx * ux + vy * uy));
+  if (!(add > 1e-6)) return false;
+  out.vx = ux * add;
+  out.vy = uy * add;
+  return true;
+}
+
+/**
  * The ripple a burst at `dx, dy` from a dot sends it, written into `out`; false inside the burst's
  * `reach`, where the burst itself throws the dot. Outward from the click, swinging the dot `amp` px where
  * it leaves the burst — nothing at the reach itself, all of it a quarter-reach on — then less as
@@ -184,6 +269,22 @@ export function bloomAt(age: number, reach: number): { rad: number; alpha: numbe
   if (!(age >= 0) || age >= BLOOM_MS) return null;
   const p = age / BLOOM_MS;
   return { rad: reach * (0.15 + 0.35 * (1 - (1 - p) ** 2)), alpha: BLOOM_ALPHA * (1 - p) ** 2 };
+}
+
+/** A fast drag's wake: a streak along its path in the accent, fading out over TRAIL_MS — none for a stir
+ *  under TRAIL_MIN strength, so a slow drag leaves nothing — at its widest TRAIL_W px, and TRAIL_ALPHA
+ *  strong. */
+export const TRAIL_MS = 300;
+export const TRAIL_MIN = 0.15;
+export const TRAIL_W = 8;
+export const TRAIL_ALPHA = 0.5;
+
+/** The wake `age` ms after a stir of strength `s` passed: how wide it draws there, px, and how strong;
+ *  null where it draws nothing. It fades as the square of its life, narrowing a little as it goes. */
+export function trailAt(age: number, s: number): { w: number; alpha: number } | null {
+  if (!(age >= 0) || age >= TRAIL_MS || !(s >= TRAIL_MIN)) return null;
+  const p = age / TRAIL_MS;
+  return { w: (2 + (TRAIL_W - 2) * s) * (1 - 0.4 * p), alpha: TRAIL_ALPHA * ((s - TRAIL_MIN) / (1 - TRAIL_MIN)) * (1 - p) ** 2 };
 }
 
 /** A dot's speed after a kick `kx, ky`: the two added, but never faster than `cap` or than it already

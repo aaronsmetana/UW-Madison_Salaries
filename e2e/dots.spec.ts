@@ -614,6 +614,88 @@ test('a drag with the button held stirs the dots along its path, and they close 
   expect((await picture(page)) === rest, 'the stirred dots did not all come back to their places').toBe(true);
 });
 
+/** A straight drag by the clock at `v` px/ms along canvas row `y`, pressed just left of the plot (so it
+ *  is a stir alone, not a burst) to canvas x `x1`; the button is left held. */
+async function dragAt(page: Page, c: { x: number; y: number }, y: number, x1: number, v: number) {
+  await page.mouse.move(c.x - 8, c.y + y);
+  await page.mouse.down();
+  await page.mouse.move(c.x, c.y + y);
+  await page.clock.runFor(16);
+  const steps = Math.ceil(x1 / (v * 16));
+  for (let k = 1; k <= steps; k++) {
+    await page.mouse.move(c.x + Math.min(x1, v * 16 * k), c.y + y);
+    await page.clock.runFor(16);
+  }
+}
+/** The clearing a drag along canvas row `y` opened at `x`, CSS px tall: the rows either side of it with
+ *  under a quarter of a 12px-wide column in dot ink, from `skip` px out (inside that a wake is drawn). */
+const clearing = (page: Page, x: number, y: number, skip = 7) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth;
+  const col = Math.round(a.x * k), yy = Math.round(a.y * k), w = Math.round(12 * k);
+  const d = c.getContext('2d')!.getImageData(col - (w >> 1), 0, w, c.height).data;
+  const inked = (row: number) => { let n = 0; for (let x = 0; x < w; x++) if (d[(row * w + x) * 4 + 3] > 24) n++; return n / w; };
+  const from = Math.round(a.skip * k);
+  let up = from; while (yy - up > 0 && inked(yy - up) < 0.25) up++;
+  let dn = from; while (yy + dn < c.height - 1 && inked(yy + dn) < 0.25) dn++;
+  return (up + dn) / k;
+}, { x, y, skip });
+
+test('the faster a drag, the further the dots part and spread — and every one comes home', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const main = page.locator('.hero-dist-main');
+  const dots = page.locator('.hero-dots');
+  const c = await canvasBox(page);
+  const y = c.height * 0.72, at = c.width * 0.3;
+  // (Whether dots far from a drag stay put is the slow drag's test above: a drag this long flies dots
+  // across over a third of the field, which is then repainted whole, in squares, while they move.)
+  const rest = await picture(page);
+  expect(await inkShare(page, at, y, 8), 'the drag passes a dense part of the field').toBeGreaterThan(0.6);
+  // Each drag passes the same point, stops 64ms of its own travel past it, and is read 48ms later: near
+  // the dots' widest there.
+  const part = async (v: number) => {
+    await dragAt(page, c, y, at + v * 64, v);
+    const strength = Number(await main.getAttribute('data-stir'));
+    await page.clock.runFor(48);
+    const gap = await clearing(page, at, y);
+    await page.mouse.up();
+    await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
+    await page.clock.runFor(1500);
+    await expect(dots).toHaveAttribute('data-flight', 'idle');
+    expect((await picture(page)) === rest, `after a ${v}px/ms drag the dots did not all come back to their places`).toBe(true);
+    return { strength, gap };
+  };
+  const slow = await part(0.2);
+  const fast = await part(3);
+  expect(slow.strength, 'a slow drag read as fast').toBe(0);
+  expect(fast.strength, 'a fast drag read as slow').toBeGreaterThan(0.85);
+  expect(slow.gap, 'a slow drag parted the dots wide').toBeLessThan(40);
+  expect(fast.gap, 'a fast drag did not part the dots wide').toBeGreaterThan(70);
+  expect(fast.gap, 'a fast drag parted the dots wider than one stir can: its kicks piled up').toBeLessThan(140);
+  expect(fast.gap, 'a fast drag parted no wider than a slow one').toBeGreaterThan(2.5 * slow.gap);
+});
+
+test('a fast drag leaves a wake that fades; a slow one leaves none', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const c = await canvasBox(page);
+  // Above the peak, where no dot ever is: any ink on the drag's line is its wake.
+  const y = 12, x1 = c.width * 0.5, at = c.width * 0.35;
+  expect(await inkShare(page, at, y, 4), 'dots above the peak').toBe(0);
+  await dragAt(page, c, y, x1, 3);
+  await page.clock.runFor(32);
+  expect(await inkShare(page, at, y, 2), 'a fast drag left no wake').toBeGreaterThan(0.6);
+  expect(await inkShare(page, at, y - 8, 1), 'the wake is wider than a stroke should be').toBe(0);
+  await page.clock.runFor(320);
+  expect(await inkShare(page, at, y, 4), 'the wake did not fade').toBe(0);
+  await page.mouse.up();
+  await page.clock.runFor(1200);
+  await dragAt(page, c, y, x1, 0.2);
+  await page.clock.runFor(32);
+  expect(await inkShare(page, at, y, 4), 'a slow drag left a wake').toBe(0);
+  await page.mouse.up();
+});
+
 test('a touch the browser takes back throws nothing', async ({ browser }) => {
   const ctx = await browser.newContext({ hasTouch: true, reducedMotion: 'no-preference', viewport: { width: 375, height: 812 } });
   const page = await ctx.newPage();
@@ -969,6 +1051,22 @@ test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; th
   const drag = await median();
   expect(drag.n, 'the drag moved no dots').toBeGreaterThan(20);
   expect(drag.median, 'a drag frame, ms').toBeLessThan(8);
+  // A fast drag, back and forth at 3px/ms over the same 300px for 0.8s: its wider stir and its wake.
+  await page.evaluate(() => performance.clearMeasures());
+  await page.mouse.move(plot.x - 8, y);
+  await page.mouse.down();
+  await page.mouse.move(x0, y);
+  const t1 = Date.now();
+  for (let t = 0; t < 800; t = Date.now() - t1) {
+    const s = (3 * t) % 600;
+    await page.mouse.move(x0 + (s < 300 ? s : 600 - s), y);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
+  const flick = await median();
+  expect(flick.n, 'the fast drag moved no dots').toBeGreaterThan(10);
+  expect(flick.median, 'a fast drag frame, ms').toBeLessThan(8);
   await expect(dots).toHaveAttribute('data-visible', (await dots.getAttribute('data-dots'))!);
   await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
   await ctx.close();
