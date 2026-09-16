@@ -680,6 +680,116 @@ test('the faster a drag, the further the dots part and spread — and every one 
   expect(fast.gap, 'a fast drag parted no wider than a slow one').toBeGreaterThan(2.5 * slow.gap);
 });
 
+/** Keeps the field's picture at rest in the page, for `goneFrom` to compare a later frame with. */
+const keepRest = (page: Page) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement) => {
+  (window as unknown as { restInk: Uint8ClampedArray }).restInk = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+});
+/**
+ * How far out the dots are gone, CSS px, against the picture `keepRest` kept — counting only where a dot
+ * was at rest, so a sparser field (full page's) reads the same as a dense one. Round a click at `x, y`:
+ * rings 4px wide, walked out until under half the ink one held at rest has gone. Across a drag along row
+ * `y`: for a 12px-wide column at each of `xs`, rows 4px apart walked up and down from 8px out (inside that
+ * the wake is drawn) until under 90% has gone.
+ */
+const goneFrom = (page: Page, x: number, y: number, xs: number[] | null) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth, W = c.width, H = c.height, step = 4 * k;
+  const now = c.getContext('2d')!.getImageData(0, 0, W, H).data;
+  const rest = (window as unknown as { restInk: Uint8ClampedArray }).restInk;
+  const edge = (bins: number[][], from: number, share: number) => {
+    let b = from;
+    while (b < bins.length && (bins[b][0] < 8 || bins[b][1] / bins[b][0] >= share)) b++;
+    return (b * step) / k;
+  };
+  const count = (bins: number[][], px: number, py: number, d: number) => {
+    const i = (py * W + px) * 4 + 3;
+    if (rest[i] <= 24) return;
+    const b = Math.floor(d / step);
+    if (b >= bins.length) return;
+    bins[b][0]++;
+    if (now[i] <= 24) bins[b][1]++;
+  };
+  const size = () => Array.from({ length: Math.ceil((900 * k) / step) }, () => [0, 0]);
+  if (!a.xs) {
+    const bins = size();
+    for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) count(bins, px, py, Math.hypot(px + 0.5 - a.x * k, py + 0.5 - a.y * k));
+    return [edge(bins, 0, 0.5)];
+  }
+  return a.xs.map((cx) => {
+    const bins = size(), c0 = Math.round((cx - 6) * k), c1 = Math.round((cx + 6) * k);
+    for (let py = 0; py < H; py++) for (let px = c0; px < c1; px++) count(bins, px, py, Math.abs(py + 0.5 - a.y * k));
+    return edge(bins, Math.ceil((8 * k) / step), 0.9);
+  });
+}, { x, y, xs });
+
+test('full page scales a click\'s hole and a fast drag\'s parting up with the graph', async ({ page }) => {
+  // Held at their size in place, a burst and a stir looked small on a graph twice as tall. Both now scale
+  // with the plot's height — a fast drag's a little harder still, since the pointer takes longer to cross
+  // its longer reach (lib/dotPhysics STIR_WAIT) — and every dot still comes home.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const dots = page.locator('.hero-dots');
+  const measure = async (where: string) => {
+    const c = await canvasBox(page);
+    const y = c.height * 0.72;
+    await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
+    await page.clock.runFor(32);
+    const rest = await picture(page);
+    await keepRest(page);
+    await clickAway(page, c, c.width * 0.27, y);
+    await page.clock.runFor(128);
+    const [hole] = await goneFrom(page, c.width * 0.27, y, null);
+    await page.clock.runFor(4000);
+    await expect(dots).toHaveAttribute('data-flight', 'idle');
+    expect((await picture(page)) === rest, `${where}: after a click the dots did not all come back`).toBe(true);
+
+    // A 3px/ms drag through five columns 7px apart, on well past the stir's reach; each column's widest
+    // parting, while the drag passes and after, averaged — one column alone reads a lattice's accident.
+    const at = c.width * 0.3, xs = [-14, -7, 0, 7, 14].map((d) => at + d);
+    const widest = xs.map(() => 0);
+    const read = async () => (await goneFrom(page, at, y, xs)).forEach((w, j) => { widest[j] = Math.max(widest[j], w); });
+    await page.mouse.move(c.x - 8, c.y + y);
+    await page.mouse.down();
+    await page.mouse.move(c.x, c.y + y);
+    await page.clock.runFor(16);
+    const x1 = at + 140 * Math.max(1, c.height / 375);
+    for (let k = 1; k <= Math.ceil(x1 / 48); k++) {
+      const px = Math.min(x1, 48 * k);
+      await page.mouse.move(c.x + px, c.y + y);
+      await page.clock.runFor(16);
+      if (px >= at) await read();
+    }
+    for (let k = 0; k < 12; k++) { await page.clock.runFor(16); await read(); }
+    await page.mouse.up();
+    await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
+    await page.clock.runFor(4000);
+    await expect(dots).toHaveAttribute('data-flight', 'idle');
+    expect((await picture(page)) === rest, `${where}: after a fast drag the dots did not all come back`).toBe(true);
+    return { h: c.height, hole, part: widest.reduce((s, w) => s + w, 0) / widest.length, widest };
+  };
+
+  const inPlace = await measure('in place');
+  await page.getByRole('button', { name: 'Full page' }).click();
+  await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
+  await expect.poll(async () => {
+    await page.clock.runFor(50);
+    return page.evaluate(() => {
+      const dots = document.querySelector('.hero-full .hero-dots') as HTMLElement | null;
+      const main = document.querySelector('.hero-full .hero-dist-main')?.getBoundingClientRect();
+      return !!dots && !!main && main.height > 650 && dots.dataset.settled === 'true' && Math.abs(Number(dots.dataset.width) - main.width) < 0.5;
+    });
+  }, { message: 'the dots were never laid out for the full page' }).toBe(true);
+  const full = await measure('full page');
+
+  const k = full.h / inPlace.h;
+  expect(k, 'full page is not much taller than the graph in place').toBeGreaterThan(1.8);
+  expect(full.hole / inPlace.hole / k, `a click's hole: ${inPlace.hole}px in place, ${full.hole}px on a graph ${k.toFixed(2)} times as tall`)
+    .toBeGreaterThan(0.85);
+  expect(full.hole / inPlace.hole / k, 'a click\'s hole grew past the graph').toBeLessThan(1.1);
+  expect(full.part / inPlace.part / k, `a fast drag's parting: ${inPlace.part.toFixed(1)}px in place, ${full.part.toFixed(1)}px on a graph ${k.toFixed(2)} times as tall`)
+    .toBeGreaterThan(0.8);
+  expect(full.part / inPlace.part / k, 'a fast drag\'s parting grew well past the graph').toBeLessThan(1.3);
+});
+
 test('a fast drag leaves a wake that fades; a slow one leaves none', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await frozenHome(page);

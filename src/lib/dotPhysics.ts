@@ -16,7 +16,7 @@ export const REST_SPEED = 0.03;
 
 /** The sizes below are for a plot this tall; a field scales them by its own height (`burstSizes`). */
 export const BURST_REF_H = 375;
-/** How far a click's burst reaches, px: three times the magnifying glass's radius, so it spreads well
+/** How far a click's burst reaches on that plot, px: three times the magnifying glass's radius, so it spreads well
  *  past the glass that sits on the click. And how fast it throws the dot under it, px/ms: about 125px
  *  out, so the hole itself shows wide round the glass. */
 export const BURST_R = 1.5 * LENS_D;
@@ -52,6 +52,13 @@ export const STIR_DRAG = 0.25;
 /** How quickly a drag's measured speed follows its moves, ms: long enough to smooth one move's jitter,
  *  short enough that a flick is felt within a few frames. */
 export const STIR_SMOOTH_MS = 40;
+/** On a field taller than BURST_REF_H, how much harder a stir throws beyond its scale `k`: k to this
+ *  power, times its strength. The hand moves as fast full page, so the pointer takes k times as long to
+ *  cross the stir's reach, and the dots it parts first are on their way home (the spring's time does not
+ *  scale) before it passes. Measured full page at 1280x720, 1440x900 and 2560x1440 (k 1.44, 1.92, 3.43):
+ *  scaled by k alone a 3px/ms drag parted the dots 0.84, 0.68 and 0.79 of k as wide as in place; with
+ *  this, 0.93, 0.89 and 1.11, and a 1px/ms drag 0.90-0.99. */
+export const STIR_WAIT = 0.5;
 
 /** Past the burst's reach, a ripple: the dots rocked out from the click and back, a time or two, as
  *  the shockwave's front passes them, so rings of bunched-up dots run on across the graph. Its swing
@@ -87,11 +94,12 @@ export const AIR_EPS = 1;
  *  AIR_EPS to REST_EPS. */
 export const AIR_BEFORE_REST = Math.log(AIR_EPS / REST_EPS) / BURST_SPRING.zw;
 
-/** A field's scale for its bursts: its height over BURST_REF_H — but never more than 1, so on a plot
- *  taller than that (the landing graph full page) a click still bursts three glass radii, the glass
- *  being no bigger there. */
+/** A field's scale for its bursts: its height over BURST_REF_H, taller or shorter. Full page, where the
+ *  graph is 1.9 times as tall on a 1440x900 screen and 3.4 times at 2560x1440, a click bursts and a drag
+ *  parts the dots that many times as far — the same share of the graph as in its place — while the
+ *  glass stays its size. (Held at 1 there once, a burst looked small on the big graph.) */
 export function fieldScale(height: number): number {
-  return Math.min(1, height / BURST_REF_H);
+  return height / BURST_REF_H;
 }
 
 /** A burst's, its ripple's and a slow stir's reach (px), speed (px/ms) and swing (px) for a field
@@ -109,10 +117,12 @@ export function stirStrength(v: number): number {
 }
 
 /** A stir of strength `s` (`stirStrength`) on a field `height` px tall: how far it reaches, px, how hard
- *  it throws the dot under the pointer, px/ms, and the most it lets a dot go, px/ms. */
+ *  it throws the dot under the pointer, px/ms, and the most it lets a dot go, px/ms. On a taller field
+ *  than BURST_REF_H it throws harder still (STIR_WAIT), so its parting grows with the field as a
+ *  click's hole does. */
 export function stirSizes(s: number, height: number) {
   const k = fieldScale(height);
-  const speed = STIR_SPEED * (1 + (STIR_SPEED_MAX - 1) * s) * k;
+  const speed = STIR_SPEED * (1 + (STIR_SPEED_MAX - 1) * s) * k * Math.max(1, k) ** (STIR_WAIT * s);
   return { reach: STIR_R * (1 + (STIR_REACH_MAX - 1) * s) * k, speed, cap: speed * (1 + STIR_DRAG * s) };
 }
 

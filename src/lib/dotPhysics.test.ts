@@ -3,7 +3,7 @@ import {
   AIR_BEFORE_REST, AIR_EPS, BURST_OMEGA, BURST_R, BURST_SPEED, BURST_SPRING, BURST_ZETA, CLICK_CAP, GRAVITY, REST_EPS,
   RING_ALPHA, RING_ECHO, RING_RIPPLE, RIPPLE_A, RIPPLE_OMEGA, RIPPLE_SPRING, RIPPLE_ZETA, STIR_SPEED, WAVE_MS,
   BLOOM_ALPHA, BLOOM_MS, bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirPath, thrown, type Kick, type Pose, type Spring,
-  STIR_DRAG, STIR_FAST, STIR_R, STIR_SLOW, TRAIL_MIN, TRAIL_MS, dragSpeed, fieldScale, stirKick, stirSizes, stirStrength, stirTopUp, trailAt,
+  STIR_DRAG, STIR_FAST, STIR_R, STIR_SLOW, STIR_WAIT, TRAIL_MIN, TRAIL_MS, dragSpeed, fieldScale, stirKick, stirSizes, stirStrength, stirTopUp, trailAt,
 } from './dotPhysics';
 import { LENS_D } from './fisheye';
 
@@ -210,12 +210,32 @@ describe('burstSizes', () => {
 });
 
 describe('fieldScale', () => {
-  it('never grows a burst past its 375px size, so on a taller plot (full page) it is still three glass radii', () => {
+  it('grows a burst and a stir with a taller plot as it shrinks them with a shorter one: full page scales them up', () => {
     expect(fieldScale(375)).toBe(1);
-    expect(fieldScale(700)).toBe(1);
-    expect(burstSizes(700).reach).toBe(3 * (LENS_D / 2));
-    expect(stirSizes(1, 700).reach).toBe(stirSizes(1, 375).reach);
     expect(fieldScale(275)).toBeCloseTo(275 / 375, 12);
+    // Full page at 1440x900 (a 719px plot) and at 2560x1440 (1286px).
+    for (const h of [719, 1286]) {
+      const k = h / 375;
+      expect(fieldScale(h)).toBeCloseTo(k, 12);
+      const tall = burstSizes(h), home = burstSizes(375);
+      for (const key of ['reach', 'speed', 'ripple', 'stirReach', 'stirSpeed'] as const) expect(tall[key] / home[key]).toBeCloseTo(k, 9);
+      // A stir reaches k times as far at any strength; a slow one throws k times as hard, a faster one
+      // harder still, up to k^(1 + STIR_WAIT) at full strength (the pointer waits longer to pass).
+      for (const s of [0, 0.5, 1]) {
+        const a = stirSizes(s, h), b = stirSizes(s, 375);
+        expect(a.reach / b.reach).toBeCloseTo(k, 9);
+        for (const key of ['speed', 'cap'] as const) expect(a[key] / b[key]).toBeCloseTo(k ** (1 + STIR_WAIT * s), 9);
+      }
+      expect(stirSizes(1, h).speed / stirSizes(1, 375).speed).toBeGreaterThan(k);
+    }
+  });
+  it('throws no harder than its scale on a field at or under 375px, so the graph in its place and on a phone are as they were', () => {
+    for (const h of [375, 275, 200]) {
+      for (const s of [0, 0.5, 1]) {
+        const a = stirSizes(s, h), b = stirSizes(s, 375), k = h / 375;
+        for (const key of ['reach', 'speed', 'cap'] as const) expect(a[key] / b[key]).toBeCloseTo(k, 9);
+      }
+    }
   });
 });
 
