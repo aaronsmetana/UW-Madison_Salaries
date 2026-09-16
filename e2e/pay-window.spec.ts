@@ -203,6 +203,13 @@ test('the tenure scatter zooms to the same window, pins the rest to its edges, a
   });
   const inside = geo.dots.filter((d) => !d.side);
   const topBand = geo.dots.filter((d) => d.side > 0), bottomBand = geo.dots.filter((d) => d.side < 0);
+  // In the bands: inside the plot, within a band's height of its top or bottom edge — not wherever
+  // their pay would put them off the scale.
+  const BAND = 16;
+  for (const d of topBand) expect(d.y, 'a dot over the window is not in the top band').toBeGreaterThanOrEqual(geo.top - 0.5);
+  for (const d of topBand) expect(d.y, 'a dot over the window is not in the top band').toBeLessThanOrEqual(geo.top + BAND + 0.5);
+  for (const d of bottomBand) expect(d.y, 'a dot under the window is not in the bottom band').toBeLessThanOrEqual(geo.bottom + 0.5);
+  for (const d of bottomBand) expect(d.y, 'a dot under the window is not in the bottom band').toBeGreaterThanOrEqual(geo.bottom - BAND - 0.5);
   expect(Math.max(...topBand.map((d) => d.y)), 'a dot over the window sits below the top band').toBeLessThan(Math.min(...inside.map((d) => d.y)));
   expect(Math.min(...bottomBand.map((d) => d.y)), 'a dot under the window sits above the bottom band').toBeGreaterThan(Math.max(...inside.map((d) => d.y)));
   // The tenure axis ends at the next five years past the longest tenure (31.5), not the next ten: the
@@ -220,7 +227,7 @@ test('the tenure scatter zooms to the same window, pins the rest to its edges, a
 
   // Room: most drawn dots stand clear of every other, and none was moved further than a nudge may.
   // (Not all: 103 Research Associates are on exactly $60,416, most in their first two years, and there is
-  // not room for them all within 10px of it. 75% at this width; 51% with no nudge at all.)
+  // not room for them all within 10px of it. 75% at this width; 30% with no nudge at all.)
   const room = await ownRoom(page);
   expect(room.share, `only ${room.clear} of ${room.n} dots have their own room`).toBeGreaterThan(0.65);
   const layer = plot.locator('.tenure-dots');

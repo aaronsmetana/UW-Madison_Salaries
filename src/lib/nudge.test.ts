@@ -50,9 +50,11 @@ describe('nudgeApart', () => {
     expect(atHome).toBe(d.crowded + 1);
   });
   it('never moves a fixed dot, whatever is under it, and places it first', () => {
-    const pts: NudgePoint[] = [{ x: 50, y: 50 }, { x: 50, y: 50 }, { x: 50, y: 50, fixed: true }];
+    const pts: NudgePoint[] = [{ x: 50, y: 50 }, { x: 50, y: 50 }, { x: 50, y: 50, fixed: true }, { x: 50, y: 50, fixed: true }];
     const d = nudgeApart(pts, R);
     expect([d.xs[2], d.ys[2]]).toEqual([50, 50]);
+    // Even on another fixed mark.
+    expect([d.xs[3], d.ys[3]]).toEqual([50, 50]);
     expect(Math.hypot(d.xs[0] - 50, d.ys[0] - 50)).toBeGreaterThanOrEqual(PITCH - 1e-6);
     expect(Math.hypot(d.xs[1] - 50, d.ys[1] - 50)).toBeGreaterThanOrEqual(PITCH - 1e-6);
   });

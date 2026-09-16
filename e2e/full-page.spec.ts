@@ -15,7 +15,8 @@ async function settledHome(page: Page) {
 }
 
 const panel = (page: Page) => page.locator('.hero-dist');
-const plotHeight = (page: Page) => page.locator('.hero-dist-main').evaluate((el) => el.getBoundingClientRect().height);
+/** The plot's height to the pixel: a box's height reads 374.99997 as often as 375. */
+const plotHeight = (page: Page) => page.locator('.hero-dist-main').evaluate((el) => Math.round(el.getBoundingClientRect().height));
 
 test('opens the graph full page over everything, as tall as the window, and puts it back', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -45,7 +46,7 @@ test('opens the graph full page over everything, as tall as the window, and puts
     return { main: main.width, laid: Number(dots.dataset.width), tall: dots.getBoundingClientRect().height };
   });
   expect(Math.abs(fit.laid - fit.main), `dots laid out ${fit.laid}px wide in a ${fit.main}px plot`).toBeLessThan(0.5);
-  expect(fit.tall).toBe(h);
+  expect(Math.round(fit.tall)).toBe(h);
 
   // The keyboard: focus lands on the way back out, and Tab never leaves the panel.
   await expect(page.getByRole('button', { name: 'Exit full page' })).toBeFocused();
@@ -53,11 +54,15 @@ test('opens the graph full page over everything, as tall as the window, and puts
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => !!document.activeElement?.closest('.hero-full')), `Tab ${k + 1} left the full page`).toBe(true);
   }
-  // The page under it stays where it was.
+  // The page under it stays where it was. A wheel over the full page is kept there by its own
+  // `overscroll-behavior` in Chromium; Safari on a phone scrolls a page behind a fixed layer unless the
+  // page itself cannot scroll, which is what the lock on the root is for — and Chromium cannot show
+  // that, so it is asserted as the lock.
   await page.mouse.move(700, 450);
   await page.mouse.wheel(0, 800);
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => window.scrollY), 'the page scrolled under the full page').toBe(0);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow), 'the page under the full page is not locked').toBe('hidden');
   const axe = await new AxeBuilder({ page }).include('.hero-full').analyze();
   expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
 
@@ -67,6 +72,7 @@ test('opens the graph full page over everything, as tall as the window, and puts
   await expect(panel(page)).toHaveAttribute('data-full', 'off');
   expect(await plotHeight(page)).toBe(375);
   await expect(page.getByRole('button', { name: 'Full page' })).toBeFocused();
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow), 'the page stayed locked').toBe('visible');
   await page.mouse.wheel(0, 300);
   await expect.poll(() => page.evaluate(() => window.scrollY), { message: 'the page no longer scrolls' }).toBeGreaterThan(0);
 

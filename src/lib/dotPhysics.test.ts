@@ -361,6 +361,9 @@ describe('stirTopUp', () => {
 describe('trailAt', () => {
   it('draws nothing for a slow stir, or once faded', () => {
     expect(trailAt(0, TRAIL_MIN - 0.01)).toBeNull();
+    // A leisurely 0.4px/ms drag leaves no wake at all, whatever the threshold is called.
+    expect(trailAt(0, stirStrength(0.4))).toBeNull();
+    expect(trailAt(0, stirStrength(1))).not.toBeNull();
     expect(trailAt(TRAIL_MS, 1)).toBeNull();
     expect(trailAt(-1, 1)).toBeNull();
   });
