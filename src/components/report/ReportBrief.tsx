@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor } from '@mantine/core';
 import { useReducedMotion } from '@mantine/hooks';
 import { Link } from 'react-router-dom';
@@ -20,6 +20,7 @@ import { REPO_URL } from '../../lib/links';
 import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
 import { raiseBucketLabel } from '../../lib/raiseBuckets';
 import { ordinal } from '../../lib/stats';
+import { payWindow } from '../../lib/payWindow';
 import { ICON } from '../../lib/ui';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -97,6 +98,8 @@ export function ReportBrief({ model, hovered, onHover }: {
   // The detailed-format tenure scatter reuses the shared TenurePayScatter component as-is. It and the
   // proof card above read one fit (tenureFit: peers only, at least 8, a 2% band), so they agree.
   const selfScatterPt = tenureScatterPoints.find((p) => p.isSelf);
+  // The pay window the person page zooms the same chart to (lib/payWindow), from the peers it plots.
+  const tenureWindow = useMemo(() => payWindow(tenureScatterPoints.map((p) => p.pay)), [tenureScatterPoints]);
   // Pay history on the shared date axis. One job code, so never the TTC twins (their codes differ).
   const historyRows = history.map((h) => ({ ...h, label: histLabel(h.date), x: snapX(h.date, '') }));
   const raiseDistMax = raiseCycle ? Math.max(1, ...raiseCycle.dist.map((d) => d.n)) : 1;
@@ -372,6 +375,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                     <Text size="sm" fw={700} mb={4}>Pay vs. tenure — same-title peers</Text>
                     <TenurePayScatter
                       points={tenureScatterPoints}
+                      zoom={tenureWindow}
                       self={selfScatterPt ? { tenure: selfScatterPt.tenure, pay: selfScatterPt.pay } : null}
                       titleLabel="this title"
                     />

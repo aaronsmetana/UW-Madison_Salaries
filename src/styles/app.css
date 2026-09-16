@@ -1635,6 +1635,13 @@ button:active,
    media query can only reach with !important — killing it leaves every mark at its final opacity,
    which is exactly the reduced-motion behaviour we want. */
 .peer-strip { position: relative; }
+/* A pile of the people outside a title's pay window (PeerStrip `zoom`): a button that lists them, drawn
+   as nothing but its dots until it is pointed at, pressed or focused. */
+.peer-strip-pile { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; border-radius: 4px; }
+button.peer-strip-pile:hover, button.peer-strip-pile[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--mantine-color-accent-6) 10%, transparent);
+}
+button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .peer-strip * { transition: none !important; }

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Text } from '@mantine/core';
 import { usd, num } from '../lib/format';
 import { ordinal } from '../lib/stats';
@@ -14,6 +14,7 @@ import { dotRows, rowHeight, MAX_ROWS } from '../lib/swarm';
 import { ChartData } from './ChartData';
 import { DotField } from './chart/DotField';
 import { Z } from '../lib/layers';
+import { sideOf, type PayWindow } from '../lib/payWindow';
 
 const RIBBON_H = 76;
 /** Headroom above the population for the subject's own mark, which sits on its own lane. */
@@ -51,19 +52,65 @@ const KERNEL_PX = 5;
  * against 68px before any of this.
  */
 const RIBBON_BIN_PX = 2;
+/**
+ * The ribbon's kernel and height across a plot `w` px wide: KERNEL_PX and RIBBON_H on a phone; wider,
+ * the kernel a hundredth of the plot and the ribbon a seventh of it, up to RIBBON_MAX_H.
+ *
+ * Held at 5px and 76px, a desktop strip zoomed to a title's middle 90% (lib/payWindow) was resolved
+ * three times as finely as the same strip on a phone: Research Associate's $50k–$74k at 880px smoothed
+ * over $140, so its 103 people on exactly $60,416 stood as one spike and everyone else as a flat line
+ * under it. A sixtieth of the plot drew that shape and ironed the zoomed Professors into one hump
+ * (roughness 0.004, under the "featureless" 0.008 the ribbon guard holds); a hundredth draws both.
+ */
+const RIBBON_MAX_H = 120;
+const ribbonKernel = (w: number) => Math.max(KERNEL_PX, w / 100);
+const ribbonHeight = (w: number) => Math.round(Math.min(RIBBON_MAX_H, Math.max(RIBBON_H, w / 7)));
+/** With a pay window (lib/payWindow): the break between the plot and each pile of the people outside
+ *  it, px; a pile's least width; and the most of the strip a pile may take. */
+const PILE_GAP = 12;
+const PILE_MIN_W = 10;
+const PILE_MAX_SHARE = 0.2;
 
 interface AxisLabel {
-  x: number;
+  /** Where it stands, px from the plot's left edge (a pile's label stands outside the plot). */
+  px: number;
   text: string;
   strong?: boolean;
+  /** How it hangs from `px`: its left edge there, its centre, or its right edge. */
+  anchor: 'start' | 'centre' | 'end';
+  className?: string;
 }
 
-/** How a label at `frac` along the axis is anchored, so the two at the extremes stay inside the card
+/** How a label at `frac` along the strip is anchored, so the two at the extremes stay inside the card
  *  instead of hanging half their width past the edge. */
-function anchorFor(frac: number): { tx: string; centreShift: number } {
-  if (frac < 0.06) return { tx: '0%', centreShift: 0.5 };
-  if (frac > 0.94) return { tx: '-100%', centreShift: -0.5 };
-  return { tx: '-50%', centreShift: 0 };
+function anchorFor(frac: number): AxisLabel['anchor'] {
+  if (frac < 0.06) return 'start';
+  if (frac > 0.94) return 'end';
+  return 'centre';
+}
+const ANCHOR_TX: Record<AxisLabel['anchor'], string> = { start: '0%', centre: '-50%', end: '-100%' };
+const ANCHOR_SHIFT: Record<AxisLabel['anchor'], number> = { start: 0.5, centre: 0, end: -0.5 };
+
+/** A pile's dots: everyone in it but the subject (who has their own mark), each placed along the pile by
+ *  their rank in it, lowest pay at the left; as a swarm (not `ribbon`), packed in rows `w` px wide. */
+function pileDots(list: readonly PeerPoint[], w: number, ribbon: boolean) {
+  const others = list.filter((p) => !p.isSelf);
+  const fracs = others.map((_, i) => (i + 0.5) / Math.max(1, others.length));
+  return {
+    others,
+    values: Float64Array.from(fracs),
+    kinds: Uint8Array.from(others.map((p) => (p.sameSchool ? 1 : 0))),
+    rows: ribbon ? [] : dotRows(fracs, (f) => f, w, DOT_R.peer),
+  };
+}
+
+/** What the caption says about a window's piles: the axis's span, and who is piled where. */
+function pileNote(w: PayWindow, below: number, above: number, listable: boolean): string {
+  const people = (n: number) => `${num(n)} ${n === 1 ? 'person' : 'people'}`;
+  const where = below && above
+    ? `the ${people(below)} paid less and the ${people(above)} paid more are piled at each end`
+    : below ? `the ${people(below)} paid less are piled at the left` : `the ${people(above)} paid more are piled at the right`;
+  return ` · the axis runs ${fmtK(w.lo)}–${fmtK(w.hi)}, where 90% of people with this title are paid; ${where}${listable ? ' (select a pile to list them)' : ''}`;
 }
 
 /**
@@ -102,6 +149,9 @@ export function PeerStrip({
   domain,
   label = 'This person',
   caption = 'Salary distribution',
+  zoom = null,
+  onPile,
+  pileShown = 0,
 }: {
   min: number;
   p25: number;
@@ -119,17 +169,28 @@ export function PeerStrip({
   /** Names the subject's mark, e.g. a first name. Rendered as "Aaron · $114,207". */
   label?: string;
   caption?: string;
+  /** The title's pay window (lib/payWindow), from everyone with the title: the axis spans it, and the
+   *  people paid under or over it are piled past a break at each end. It overrides `domain`. */
+  zoom?: PayWindow | null;
+  /** A pile pressed: the side (-1 under the window, 1 over it) whose people the page lists. */
+  onPile?: (side: -1 | 1) => void;
+  /** The side whose people the page is listing, or 0. */
+  pileShown?: -1 | 0 | 1;
 }) {
   const mounted = useMounted();
 
   const plotRef = useRef<HTMLDivElement>(null);
-  const [plotW, setPlotW] = useState(0);
+  const stripRef = useRef<HTMLDivElement>(null);
+  // The strip's whole width, measured; the plot's is what the piles leave of it.
+  const [stripW, setStripW] = useState(0);
   const [hoverPct, setHoverPct] = useState<number | null>(null);
   const [hoverY, setHoverY] = useState<number | null>(null);
+  const [hoverPile, setHoverPile] = useState<-1 | 0 | 1>(0);
 
-  // The five-number summary describes the cohort; the axis may span something wider (see `domain`).
-  const axisMin = domain ? Math.min(domain[0], min) : min;
-  const axisMax = domain ? Math.max(domain[1], max) : max;
+  // The five-number summary describes the cohort; the axis may span something wider (see `domain`), or
+  // narrower — the title's pay window, with the people outside it piled at each end.
+  const axisMin = zoom ? zoom.lo : domain ? Math.min(domain[0], min) : min;
+  const axisMax = zoom ? zoom.hi : domain ? Math.max(domain[1], max) : max;
   const span = axisMax - axisMin;
   // Memoised because the hover hit-test depends on it: an `at` rebuilt every render would make that
   // useMemo recompute on every mouse move, which is the one place in this component that matters.
@@ -141,9 +202,9 @@ export function PeerStrip({
   // The dot dodge needs real pixels, and only the container width can supply them. Fonts play no part
   // here (unlike the axis labels below), so a plain ResizeObserver is enough.
   useLayoutEffect(() => {
-    const el = plotRef.current;
+    const el = stripRef.current;
     if (!el) return;
-    const measure = () => setPlotW((prev) => {
+    const measure = () => setStripW((prev) => {
       const next = el.getBoundingClientRect().width;
       return Math.abs(next - prev) < 0.5 ? prev : next;
     });
@@ -168,8 +229,27 @@ export function PeerStrip({
   /** The dots actually drawn. The subject is left out because they already have their own mark on the
    *  lane above; drawing them twice puts an unexplained grey dot directly under their leader line, and
    *  makes the legend's "Others" a lie. This is what the scatter does too. */
-  const plotted = useMemo(() => peers.filter((p) => !p.isSelf), [peers]);
-  const hasSameSchool = useMemo(() => plotted.some((p) => p.sameSchool), [plotted]);
+  const plotted = useMemo(() => peers.filter((p) => !p.isSelf && sideOf(zoom, p.pay) === 0), [peers, zoom]);
+  const hasSameSchool = useMemo(() => peers.some((p) => !p.isSelf && p.sameSchool), [peers]);
+  /** Everyone in the cohort paid under and over the window, lowest first — the subject too, where they
+   *  are one of them — and the pays drawn in the plot itself. */
+  const lows = useMemo(() => peers.filter((p) => sideOf(zoom, p.pay) < 0), [peers, zoom]);
+  const highs = useMemo(() => peers.filter((p) => sideOf(zoom, p.pay) > 0), [peers, zoom]);
+  const inside = useMemo(() => sorted.filter((v) => sideOf(zoom, v) === 0), [sorted, zoom]);
+
+  // Each pile as wide as its share of the people drawn in the plot, so its dots have the room the
+  // plot's have: w = plot · n / inside, with the plot what the piles and their breaks leave. A pile is
+  // never narrower than PILE_MIN_W nor wider than PILE_MAX_SHARE of the strip.
+  const { plotW, lowW, highW } = useMemo(() => {
+    const nIn = Math.max(1, inside.length);
+    const gaps = (lows.length ? PILE_GAP : 0) + (highs.length ? PILE_GAP : 0);
+    const plot0 = Math.max(0, stripW - gaps) / (1 + (lows.length + highs.length) / nIn);
+    const width = (n: number) => (n ? Math.min(stripW * PILE_MAX_SHARE, Math.max(PILE_MIN_W, (plot0 * n) / nIn)) : 0);
+    const lw = width(lows.length), hw = width(highs.length);
+    return { plotW: Math.max(0, stripW - gaps - lw - hw), lowW: lw, highW: hw };
+  }, [stripW, inside.length, lows.length, highs.length]);
+  const lowAside = lowW ? lowW + PILE_GAP : 0;
+  const highAside = highW ? highW + PILE_GAP : 0;
 
   // Greedy row packing, sorted by value so the packer fills each row left to right. This is the same
   // helper the chart label staggers use — a dot is a label of constant width, so there is no second
@@ -180,7 +260,7 @@ export function PeerStrip({
   );
   const rowsNeeded = rows.length ? Math.max(...rows) + 1 : 0;
   const useRibbon = rowsNeeded > MAX_ROWS;
-  const swarmH = useRibbon ? RIBBON_H : Math.max(3, rowsNeeded) * ROW_H;
+  const swarmH = useRibbon ? ribbonHeight(plotW) : Math.max(3, rowsNeeded) * ROW_H;
   const plotH = swarmH + SELF_LANE_H;
 
   /**
@@ -200,11 +280,13 @@ export function PeerStrip({
   const ribbon = useMemo(() => {
     if (!useRibbon || plotW <= 0 || !(span > 0)) return null;
     const target = Math.max(40, Math.min(600, Math.round(plotW / RIBBON_BIN_PX)));
-    const bins = binSalaries(sorted, target, [axisMin, axisMax]);
+    // Only the people inside the axis: binned against a narrower domain, the rest would pile into its end
+    // bins and draw spikes at both edges.
+    const bins = binSalaries(inside, target, [axisMin, axisMax]);
     if (bins.length < 2) return null;
 
     const step = bins[1].lo - bins[0].lo;
-    const curve = smoothBins(bins.map((b) => ({ bucket: b.lo, n: b.n })), KERNEL_PX * (span / plotW));
+    const curve = smoothBins(bins.map((b) => ({ bucket: b.lo, n: b.n })), ribbonKernel(plotW) * (span / plotW));
     // Against the SMOOTHED peak, not the raw one: the kernel moves weight out of the tallest bin, so
     // normalising to the raw maximum would shrink the whole ribbon by however much it smoothed.
     const peak = Math.max(...curve.map((c) => c.n));
@@ -214,7 +296,7 @@ export function PeerStrip({
     const xy = curve.map((c) => ({ x: at(c.bucket + step / 2) * plotW, h: (c.n / peak) * (swarmH - 2) }));
     const pts = xy.map((p) => `${p.x.toFixed(1)},${(base - p.h).toFixed(1)}`);
     return { line: `M${pts.join(' L')}`, xy };
-  }, [useRibbon, plotW, span, sorted, axisMin, axisMax, at, plotH, swarmH]);
+  }, [useRibbon, plotW, span, inside, axisMin, axisMax, at, plotH, swarmH]);
 
   // One dot per peer under the ribbon's curve (DotField), where they are too many for a swarm: the
   // curve's height at a pixel, by the same interpolation the line is drawn with.
@@ -231,19 +313,47 @@ export function PeerStrip({
     return Math.max(0, a.h + (b.h - a.h) * f);
   }, [ribbon]);
 
-  const pos = at(value) * 100;
-  const selfX = at(value) * plotW;
-  const labelTx = pos < 12 ? '0%' : pos > 88 ? '-100%' : '-50%';
+  // The piles' dots: each person's place along its pile is their rank in it, lowest pay at the left.
+  // In a ribbon, as dense as the ribbon's own (its height the curve's mean); as a swarm, packed in rows.
+  const pileH = useMemo(() => {
+    const xy = ribbon?.xy;
+    if (!xy?.length) return swarmH - 2;
+    return Math.max(4, Math.round(xy.reduce((t, p) => t + p.h, 0) / xy.length));
+  }, [ribbon, swarmH]);
+  const lowDots = useMemo(() => pileDots(lows, lowW, useRibbon), [lows, lowW, useRibbon]);
+  const highDots = useMemo(() => pileDots(highs, highW, useRibbon), [highs, highW, useRibbon]);
+  const pileX = useCallback((v: number, w: number) => v * w, []);
+  const pileHeight = useCallback(() => pileH, [pileH]);
+
+  // The subject: over the plot where their pay is, or over their pile at their rank in it.
+  const selfSide = sideOf(zoom, value);
+  const selfPile = selfSide < 0 ? lows : selfSide > 0 ? highs : null;
+  const selfRank = selfPile ? Math.max(0, selfPile.findIndex((p) => p.isSelf)) : 0;
+  const selfX = selfSide < 0
+    ? -lowAside + ((selfRank + 0.5) / Math.max(1, lows.length)) * lowW
+    : selfSide > 0
+      ? plotW + PILE_GAP + ((selfRank + 0.5) / Math.max(1, highs.length)) * highW
+      : at(value) * plotW;
+  const stripFrac = stripW > 0 ? (selfX + lowAside) / stripW : 0.5;
+  const labelTx = stripFrac < 0.12 ? '0%' : stripFrac > 0.88 ? '-100%' : '-50%';
 
   // Three labels, never twelve — and deliberately not a fourth for the subject. The marker prints the
   // exact figure at the same x and the leader line lands on the axis under it, so an axis tick would
   // only restate it; it was also the one pair that ever collided (a subject near the median).
   // The band says what it is where it is: "middle 50%" at its centre, packed with the other labels.
+  // With piles, each end's label is its pile's — "29 under $50k" — under the pile, where the plot's own
+  // end would restate the same figure a few pixels away.
+  const px = (v: number) => at(v) * plotW;
+  const edge = (v: number, frac: number): AxisLabel => ({ px: px(v), text: zoom ? fmtK(v) : usd(v), anchor: anchorFor(frac) });
   const axisLabels: AxisLabel[] = [
-    { x: axisMin, text: usd(axisMin) },
-    { x: (p25 + p75) / 2, text: BAND_IQR.label },
-    { x: median, text: `median ${fmtK(median)}`, strong: true },
-    { x: axisMax, text: usd(axisMax) },
+    lows.length
+      ? { px: -lowAside, text: `${num(lows.length)} under ${fmtK(axisMin)}`, anchor: 'start', className: 'peer-strip-pile-label' }
+      : edge(axisMin, 0),
+    { px: px((p25 + p75) / 2), text: BAND_IQR.label, anchor: 'centre' },
+    { px: px(median), text: `median ${fmtK(median)}`, strong: true, anchor: anchorFor(at(median)) },
+    highs.length
+      ? { px: plotW + highAside, text: `${num(highs.length)} over ${fmtK(axisMax)}`, anchor: 'end', className: 'peer-strip-pile-label' }
+      : edge(axisMax, 1),
   ];
 
   const labelRowRef = useRef<HTMLDivElement>(null);
@@ -263,7 +373,7 @@ export function PeerStrip({
       // packer compares the wrong boxes and staggers labels that never touched. The fraction comes off
       // the element's own data attribute so this effect depends on nothing that changes every render.
       const next = assignLabelRows(
-        els.map((el) => el.offsetLeft + anchorFor(Number(el.dataset.frac) || 0).centreShift * el.offsetWidth),
+        els.map((el) => el.offsetLeft + (ANCHOR_SHIFT[el.dataset.anchor as AxisLabel['anchor']] ?? 0) * el.offsetWidth),
         els.map((el) => el.offsetWidth),
       );
       setLabelRows((prev) => (prev.length === next.length && prev.every((r, i) => r === next[i]) ? prev : next));
@@ -278,7 +388,7 @@ export function PeerStrip({
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [axisMin, axisMax, median, value, p25, p75]);
+  }, [axisMin, axisMax, median, value, p25, p75, plotW, lowAside, highAside, lows.length, highs.length]);
 
   const labelRowCount = Math.max(1, ...labelRows.map((r) => r + 1));
 
@@ -333,9 +443,18 @@ export function PeerStrip({
     return best;
   }, [useRibbon, hoverPct, hoverY, plotW, plotH, plotted, rows, at]);
 
-  const updateHover = (clientX: number, clientY: number) => {
+  const updateHover = (clientX: number, clientY: number, target: EventTarget | null) => {
     const el = plotRef.current;
     if (!el) return;
+    // Over a pile: its own readout, not the axis's.
+    const pile = (target as Element | null)?.closest?.('[data-pile]');
+    if (pile) {
+      setHoverPct(null);
+      setHoverY(null);
+      setHoverPile(Number(pile.getAttribute('data-pile')) < 0 ? -1 : 1);
+      return;
+    }
+    setHoverPile(0);
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0) return;
     setHoverPct(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * 100);
@@ -358,9 +477,67 @@ export function PeerStrip({
     );
   }
 
+  // A pile of the people outside the window, past a break: as a button where the page can list them.
+  const pileBox = (side: -1 | 1): ReactNode => {
+    const list = side < 0 ? lows : highs;
+    const w = side < 0 ? lowW : highW;
+    if (!list.length || !(w > 0)) return null;
+    const dots = side < 0 ? lowDots : highDots;
+    const bound = side < 0 ? axisMin : axisMax;
+    const words = `${num(list.length)} ${list.length === 1 ? 'person' : 'people'} ${side < 0 ? 'under' : 'over'} ${fmtK(bound)}`;
+    const left = side < 0 ? -lowAside : plotW + PILE_GAP;
+    const Box = onPile ? 'button' : 'div';
+    const H = plotH;
+    return (
+      <Box
+        key={side}
+        {...(onPile ? { type: 'button' as const, onClick: () => onPile(side), 'aria-pressed': pileShown === side, 'aria-label': `List the ${words}` } : { 'aria-hidden': true })}
+        className="peer-strip-pile"
+        data-pile={side}
+        data-n={list.length}
+        style={{ position: 'absolute', left, top: 0, width: w, height: H, cursor: onPile ? 'pointer' : undefined }}
+      >
+        {useRibbon ? (
+          <DotField className="strip-dots" values={dots.values} kinds={dots.kinds} toX={pileX} heightAt={pileHeight} height={H} />
+        ) : (
+          <svg width={w} height={H} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
+            {dots.others.map((p, i) => {
+              const dot = peerDot(p.sameSchool, plotted.length + lows.length + highs.length);
+              return (
+                <circle
+                  key={p.personKey || i}
+                  className="chart-dot"
+                  data-mark={p.sameSchool ? 'same-school' : 'peer'}
+                  cx={dots.values[i] * w}
+                  cy={H - (dots.rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
+                  r={dot.r}
+                  fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
+                  fillOpacity={dot.fillOpacity}
+                />
+              );
+            })}
+          </svg>
+        )}
+        {/* The break: a zigzag in the baseline between the pile and the plot. */}
+        <svg className="peer-strip-break" width={PILE_GAP} height={12} aria-hidden
+          style={{ position: 'absolute', bottom: -5, [side < 0 ? 'right' : 'left']: -PILE_GAP }}>
+          <path d={`M0 5 L${PILE_GAP * 0.3} 5 L${PILE_GAP * 0.42} 0 L${PILE_GAP * 0.58} 11 L${PILE_GAP * 0.7} 5 L${PILE_GAP} 5`} fill="none" stroke="var(--mantine-color-gray-5)" strokeWidth={1} />
+        </svg>
+        {hoverPile === side && (
+          <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', [side < 0 ? 'left' : 'right']: 0, pointerEvents: 'none', zIndex: Z.local }}>
+            <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>
+              {words} · {side < 0 ? 'lowest' : 'highest'} {usd(side < 0 ? list[0].pay : list[list.length - 1].pay)}
+            </span>
+          </div>
+        )}
+      </Box>
+    );
+  };
+
   return (
     <div>
-      <div className="peer-strip">
+      <div className="peer-strip" ref={stripRef} data-window={zoom ? `${zoom.lo}-${zoom.hi}` : undefined}>
+       <div style={{ marginLeft: lowAside, marginRight: highAside }}>
         {/* The subject's label. `accent7-text` is the app's existing fix for this pairing: the mark
             colour reads under 4.5:1 as type on the dark card, so dark mode swaps it for --text-accent.
             A label is not the mark colour applied to text — see MARK_SELF_TEXT. */}
@@ -370,7 +547,7 @@ export function PeerStrip({
             fw={700}
             style={{
               position: 'absolute',
-              left: `${pos}%`,
+              left: selfX,
               bottom: 2,
               transform: `translateX(${labelTx})`,
               whiteSpace: 'nowrap',
@@ -386,8 +563,8 @@ export function PeerStrip({
 
         <div
           ref={plotRef}
-          onMouseMove={(e) => updateHover(e.clientX, e.clientY)}
-          onMouseLeave={() => { setHoverPct(null); setHoverY(null); }}
+          onMouseMove={(e) => updateHover(e.clientX, e.clientY, e.target)}
+          onMouseLeave={() => { setHoverPct(null); setHoverY(null); setHoverPile(0); }}
           style={{ position: 'relative', height: plotH, cursor: sorted.length ? 'crosshair' : undefined }}
         >
           {plotW > 0 && useRibbon && ribbon && (
@@ -495,6 +672,9 @@ export function PeerStrip({
             </svg>
           )}
 
+          {pileBox(-1)}
+          {pileBox(1)}
+
           {hoverPct != null && hoverValue != null && (
             <div
               style={{
@@ -515,7 +695,7 @@ export function PeerStrip({
           )}
         </div>
 
-        <div aria-hidden style={{ height: 1, background: 'var(--hairline-strong)' }} />
+        <div aria-hidden style={{ height: 1, background: 'var(--hairline-strong)', marginLeft: -lowAside, marginRight: -highAside }} />
 
         <div ref={labelRowRef} style={{ position: 'relative', height: labelRowCount * AXIS_LABEL_ROW_H, marginTop: 4 }}>
           {axisLabels.map((l, i) => (
@@ -527,12 +707,13 @@ export function PeerStrip({
               size="xs"
               c="dimmed"
               fw={l.strong ? 600 : 400}
-              data-frac={at(l.x)}
+              className={l.className}
+              data-anchor={l.anchor}
               style={{
                 position: 'absolute',
-                left: `${at(l.x) * 100}%`,
+                left: l.px,
                 top: (labelRows[i] ?? 0) * AXIS_LABEL_ROW_H,
-                transform: `translateX(${anchorFor(at(l.x)).tx})`,
+                transform: `translateX(${ANCHOR_TX[l.anchor]})`,
                 whiteSpace: 'nowrap',
                 fontSize: 10.5,
               }}
@@ -541,6 +722,7 @@ export function PeerStrip({
             </Text>
           ))}
         </div>
+       </div>
       </div>
 
       <MarkerLegend
@@ -560,7 +742,8 @@ export function PeerStrip({
         {/* Not "height = how many people": the curve is smoothed, so its height is a density and
             reading a headcount off it would be wrong — see `smoothBins` in lib/distribution.ts. */}
         {useRibbon ? 'Taller = more people earn near that salary · ' : '1 dot = 1 person · '}
-        middle 50% of peers {fmtK(p25)}–{fmtK(p75)}.
+        middle 50% of peers {fmtK(p25)}–{fmtK(p75)}
+        {zoom && (lows.length || highs.length) ? pileNote(zoom, lows.length, highs.length, !!onPile) : ''}.
       </Text>
 
       {summaryTable}

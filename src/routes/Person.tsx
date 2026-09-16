@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, sameTitleText } from '../lib/payHistory';
@@ -33,6 +33,7 @@ import { useTray } from '../state/tray';
 import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, ordinal } from '../lib/stats';
+import { payWindow, sideOf } from '../lib/payWindow';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
@@ -625,8 +626,14 @@ export default function Person() {
      SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
   );
+  // Where the title's charts zoom to — the middle 90% of everyone with it, when a few far out would
+  // squeeze the rest (lib/payWindow) — and which of the piles of people outside it the table lists.
+  const payWin = useMemo(() => payWindow((peers ?? []).map((p) => p.pay)), [peers]);
+  const [pileShown, setPileShown] = useState<-1 | 0 | 1>(0);
+  const peerCardRef = useRef<HTMLDivElement>(null);
   // ── Cohort (All vs Same-school): every overview stat derives from the SAME filtered peer set. ──
   const [cohort, setCohort] = useState<'all' | 'school'>('all');
+  useEffect(() => setPileShown(0), [cohort, key]);
   const sameSchoolPeers = useMemo(
     () => (peers ?? []).filter((p) => p.school != null && p.school === latest?.school),
     [peers, latest],
@@ -717,7 +724,7 @@ export default function Person() {
   // The table's own display order (independent of cohortRank, which stays a fixed pay-rank stat for
   // the "#N of M" caption above regardless of how the table below is currently sorted).
   const sortedCohort = useMemo(() => {
-    const arr = [...cohortList];
+    const arr = cohortList.filter((p) => !pileShown || sideOf(payWin, p.pay) === pileShown);
     arr.sort((a, b) => {
       let cmp: number;
       switch (peerSort.key) {
@@ -730,12 +737,19 @@ export default function Person() {
       return peerSort.dir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [cohortList, peerSort]);
+  }, [cohortList, peerSort, pileShown, payWin]);
   const subjectIndexInSort = useMemo(() => sortedCohort.findIndex((p) => p.person_key === key), [sortedCohort, key]);
   useEffect(() => {
     if (subjectIndexInSort >= 25) setShowAllPeers(true);
   }, [subjectIndexInSort]);
-  const visiblePeers = showAllPeers ? sortedCohort : sortedCohort.slice(0, 25);
+  const visiblePeers = showAllPeers || pileShown ? sortedCohort : sortedCohort.slice(0, 25);
+  // A pile pressed on the strip lists its people here, and brings the table into view; pressed again,
+  // everyone is back.
+  const showPile = (side: -1 | 1) => {
+    const next = pileShown === side ? 0 : side;
+    setPileShown(next);
+    if (next) requestAnimationFrame(() => peerCardRef.current?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' }));
+  };
 
   // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
   const peerViewportRef = useRef<HTMLDivElement>(null);
@@ -1057,6 +1071,9 @@ export default function Person() {
                       value={cohortSelfPay ?? lastSalary}
                       points={cohortPoints}
                       domain={allPaysDomain}
+                      zoom={payWin}
+                      onPile={showPile}
+                      pileShown={pileShown}
                       label={latest?.first_name?.trim() || 'This person'}
                     />
                     {splitAppointment && (
@@ -1103,12 +1120,12 @@ export default function Person() {
                 >
                   Pay vs. tenure — same title
                 </CardTitle>
-                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} />
+                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} />
               </Card>
             )}
 
             {peers && peers.length > 1 && (
-              <Card withBorder padding="lg">
+              <Card withBorder padding="lg" ref={peerCardRef} className="peer-table-card">
                 <CardTitle
                   right={cohortRank != null && (
                     <Text size="sm" c="dimmed">
@@ -1118,6 +1135,14 @@ export default function Person() {
                 >
                   Others with this title{cohort === 'school' ? ` · ${latest?.school}` : ''}
                 </CardTitle>
+                {pileShown !== 0 && payWin && (
+                  <Group gap="xs" mb="xs" className="peer-pile-filter">
+                    <Text size="sm">
+                      Showing the {num(sortedCohort.length)} {sortedCohort.length === 1 ? 'person' : 'people'} paid {pileShown < 0 ? `under ${fmtK(payWin.lo)}` : `over ${fmtK(payWin.hi)}`}
+                    </Text>
+                    <Button variant="subtle" size="compact-xs" onClick={() => setPileShown(0)}>Show everyone</Button>
+                  </Group>
+                )}
                 <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
                   <Table stickyHeader miw={760} className="fold-table">
                     <Table.Thead>
@@ -1186,7 +1211,7 @@ export default function Person() {
                     </Table.Tbody>
                   </Table>
                 </ScrollArea.Autosize>
-                {cohortList.length > 25 && (
+                {cohortList.length > 25 && !pileShown && (
                   <Group justify="center" mt="sm">
                     <Button variant="subtle" size="xs" onClick={() => setShowAllPeers((v) => !v)}>
                       {showAllPeers ? 'Show top 25 only' : `Show all ${num(cohortList.length)}`}
