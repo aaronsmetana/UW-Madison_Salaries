@@ -3,7 +3,8 @@ import {
   AIR_BEFORE_REST, AIR_EPS, BURST_OMEGA, BURST_R, BURST_SPEED, BURST_SPRING, BURST_ZETA, CLICK_CAP, GRAVITY, REST_EPS,
   RING_ALPHA, RING_ECHO, RING_RIPPLE, RIPPLE_A, RIPPLE_OMEGA, RIPPLE_SPRING, RIPPLE_ZETA, STIR_SPEED, WAVE_MS,
   BLOOM_ALPHA, BLOOM_MS, bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirPath, thrown, type Kick, type Pose, type Spring,
-  STIR_DRAG, STIR_FAST, STIR_R, STIR_SLOW, STIR_WAIT, TRAIL_MIN, TRAIL_MS, dragSpeed, fieldScale, stirKick, stirSizes, stirStrength, stirTopUp, trailAt,
+  STIR_DRAG, STIR_FAST, STIR_R, STIR_SLOW, STIR_WAIT, TRAIL_MIN, TRAIL_MS, WAKE_SPREAD, WAKE_TIP, WAKE_TURN_PX, dragSpeed, fieldScale, stirKick, stirSizes, stirStrength, stirTopUp, trailAt,
+  wakeExtent, wakeTurn,
 } from './dotPhysics';
 import { LENS_D } from './fisheye';
 
@@ -302,36 +303,105 @@ describe('dragSpeed', () => {
 });
 
 describe('stirKick', () => {
+  // A stir reaching 100px, as hard as 1px/ms, the drag going right unless said.
   const at = (dx: number, dy: number, s: number, ux = 1, uy = 0, i = 4) => {
     const out: Kick = { vx: 0, vy: 0, delay: -1 };
     return stirKick(dx, dy, i, 100, 1, s, ux, uy, out) ? out : null;
   };
-  it("is a burst's kick with no shockwave at strength 0", () => {
-    const b: Kick = { vx: 0, vy: 0, delay: 0 };
-    burstKick(30, -20, 4, 100, 1, 0, b);
-    expect(at(30, -20, 0)).toEqual(b);
-    expect(at(120, 0, 1)).toBeNull();
+  it('moves nothing ahead of the pointer, nor beside it further out than its wake is wide, nor past its reach back', () => {
+    for (const [dx, dy] of [[1, 0], [0.01, 0], [20, -3], [60, 0], [5, 40]]) expect(at(dx, dy, 1), `${dx}, ${dy}`).toBeNull();
+    // WAKE_TIP of the reach wide each side at the tip: 10px.
+    expect(at(0, 9, 1)).not.toBeNull();
+    expect(at(0, 11, 1)).toBeNull();
+    expect(at(-100, 0, 1)).toBeNull();
+    expect(at(-99, 0, 0)).not.toBeNull();
   });
-  it('turns a fast drag\'s kick square off the stroke, each dot away on its own side, and carries it on a little', () => {
-    // A dot ahead of the pointer and just above a rightward stroke: a slow stir pushes it on ahead; a fast
-    // one mostly up and away, and a little along.
-    const slow = at(20, -6, 0)!, fast = at(20, -6, 1)!;
-    expect(Math.abs(slow.vx)).toBeGreaterThan(Math.abs(slow.vy));
-    expect(Math.abs(fast.vy)).toBeGreaterThan(Math.abs(fast.vx) * 0.9);
-    expect(fast.vy).toBeLessThan(0);
-    expect(at(20, 6, 1)!.vy).toBeGreaterThan(0);
-    // Behind the pointer a fast drag still carries the dot forward, not back.
-    expect(at(-20, -6, 1)!.vx).toBeGreaterThan(at(-20, -6, 0)!.vx);
-    // As fast as the burst's own kick, plus the push along.
-    const b: Kick = { vx: 0, vy: 0, delay: 0 };
-    burstKick(20, -6, 4, 100, 1, 0, b);
-    expect(Math.hypot(fast.vx, fast.vy)).toBeGreaterThan(Math.hypot(b.vx, b.vy));
-    expect(Math.hypot(fast.vx, fast.vy)).toBeLessThanOrEqual(Math.hypot(b.vx, b.vy) * (1 + STIR_DRAG) + 1e-9);
+  it('opens in a V behind the pointer: a dot beside its path is in the wake only once the pointer is far enough past', () => {
+    // 30px out, the wedge (10px wide at the tip, opening WAKE_SPREAD each side per px back) reaches it
+    // 20 / WAKE_SPREAD px back.
+    const reached = 20 / WAKE_SPREAD;
+    expect(reached).toBeGreaterThan(20);
+    expect(at(-(reached - 1), 30, 1)).toBeNull();
+    expect(at(-(reached + 1), 30, 1)).not.toBeNull();
+    expect(at(-(reached + 1), -30, 1)).not.toBeNull();
+    expect(WAKE_TIP).toBe(0.1);
+  });
+  it('throws each dot square off the stroke, away on its own side, and carries it on a little the harder the stir', () => {
+    // Right: a dot above the line goes up, one below goes down; a slow stir straight out, a fast one on a little.
+    const up = at(-20, -6, 1)!, down = at(-20, 6, 1)!, still = at(-20, -6, 0)!;
+    expect(up.vy).toBeLessThan(0);
+    expect(down.vy).toBeGreaterThan(0);
+    expect(Math.abs(still.vx)).toBeLessThan(1e-12);
+    expect(up.vx).toBeGreaterThan(0);
+    expect(up.vx / -up.vy).toBeCloseTo(STIR_DRAG, 12);
+    // Left, the same dot above the line (now behind to the right) still goes up, and on to the left.
+    const left = at(20, -6, 1, -1, 0)!;
+    expect(left.vy).toBeLessThan(0);
+    expect(left.vx).toBeLessThan(0);
+    // Down the page: a dot to the right of the path goes right, one to the left goes left, both on down.
+    const right = at(6, -20, 1, 0, 1)!, leftSide = at(-6, -20, 1, 0, 1)!;
+    expect(right.vx).toBeGreaterThan(0);
+    expect(leftSide.vx).toBeLessThan(0);
+    expect(right.vy).toBeGreaterThan(0);
+    expect(Math.abs(right.vx)).toBeGreaterThan(Math.abs(right.vy));
+    // A shockwave is a click's: a stir's kick is at once.
+    expect(up.delay).toBe(0);
+  });
+  it('throws hardest on the line, less the further out, and at the stir\'s speed at the most', () => {
+    const size = (k: Kick | null) => Math.hypot(k!.vx, k!.vy);
+    expect(size(at(-10, 1, 1))).toBeGreaterThan(size(at(-10, 8, 1)));
+    expect(size(at(-60, 5, 1))).toBeGreaterThan(size(at(-60, 30, 1)));
+    for (let dx = -99; dx <= 0; dx += 3) for (let dy = -60; dy <= 60; dy += 3) {
+      for (let i = 0; i < 40; i += 7) {
+        const out: Kick = { vx: 0, vy: 0, delay: 0 };
+        if (stirKick(dx, dy, i, 100, 1, 1, 1, 0, out)) expect(Math.hypot(out.vx, out.vy)).toBeLessThanOrEqual(1.25 * Math.hypot(1, STIR_DRAG) + 1e-9);
+      }
+    }
   });
   it('sends a dot dead on the line a fixed way of its own, whatever the stroke', () => {
-    const a = at(15, 0, 1, 1, 0, 2)!, b = at(15, 0, 1, 1, 0, 3)!;
+    const a = at(-15, 0, 1, 1, 0, 2)!, b = at(-15, 0, 1, 1, 0, 3)!;
     expect(Math.sign(a.vy)).toBe(-Math.sign(b.vy));
-    expect(at(15, 0, 1, 1, 0, 2)).toEqual(a);
+    expect(at(-15, 0, 1, 1, 0, 2)).toEqual(a);
+  });
+});
+
+describe('wakeExtent', () => {
+  it('holds every dot a stir can touch, and no more than it needs to', () => {
+    const reach = 100, ext = wakeExtent(reach);
+    let far = 0;
+    const out: Kick = { vx: 0, vy: 0, delay: 0 };
+    for (let dx = -130; dx <= 130; dx += 1) for (let dy = -130; dy <= 130; dy += 1) {
+      for (const [ux, uy] of [[1, 0], [0, -1], [Math.SQRT1_2, Math.SQRT1_2]]) {
+        if (stirKick(dx, dy, 1, reach, 1, 1, ux, uy, out)) far = Math.max(far, Math.hypot(dx, dy));
+      }
+    }
+    expect(far).toBeLessThanOrEqual(ext);
+    expect(far).toBeGreaterThan(ext - 2);
+  });
+});
+
+describe('wakeTurn', () => {
+  const turn = (ux: number, uy: number, mx: number, my: number) => wakeTurn(ux, uy, mx, my, { ux: 0, uy: 0 });
+  it('takes the first move\'s way outright, and keeps its way for a move of nothing', () => {
+    const first = turn(0, 0, 3, 4);
+    expect(first.ux).toBeCloseTo(0.6, 12);
+    expect(first.uy).toBeCloseTo(0.8, 12);
+    expect(turn(1, 0, 0, 0)).toEqual({ ux: 1, uy: 0 });
+  });
+  it("turns only part way on a mouse's one-pixel step, and all the way over a long move", () => {
+    const step = turn(1, 0, 1, 1);
+    const angle = Math.atan2(step.uy, step.ux);
+    expect(angle).toBeGreaterThan(0);
+    expect(angle).toBeLessThan(Math.PI / 4 / 4);
+    const long = turn(1, 0, 0, 80);
+    expect(long.uy).toBeGreaterThan(0.999);
+    // Straight back on itself it still has a way: the move's.
+    const back = turn(1, 0, -WAKE_TURN_PX * Math.LN2, 0);
+    expect(Math.hypot(back.ux, back.uy)).toBeCloseTo(1, 9);
+  });
+  it('is a unit vector, always', () => {
+    let w = { ux: 0, uy: 0 };
+    for (let k = 0; k < 200; k++) { w = turn(w.ux, w.uy, Math.cos(k) * (1 + (k % 5)), Math.sin(k * 1.7) * 3); expect(Math.hypot(w.ux, w.uy)).toBeCloseTo(1, 9); }
   });
 });
 

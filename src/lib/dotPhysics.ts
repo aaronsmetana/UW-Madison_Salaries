@@ -3,7 +3,7 @@ import { LENS_D } from './fisheye';
 /**
  * The landing dots' motion. A click bursts the dots round it outward, behind a shockwave, and a spring
  * brings each back to its place; past the burst the shockwave runs on as a ripple across the rest of the
- * graph; a drag with the button held stirs the dots with smaller bursts along its path. A group soloed away falls through the floor, and brought back it rains in from above and
+ * graph; a drag with the button held parts the dots in a wake behind it. A group soloed away falls through the floor, and brought back it rains in from above and
  * bounces into its places. At rest a dot's x is its pay (DotField): only a burst moves it aside, and
  * only for a moment.
  */
@@ -32,12 +32,22 @@ export const RING_ECHO = 0.55;
 export const RING_RIPPLE = 1.2;
 /** A second click on dots still flying throws them further, up to this multiple of a click's speed. */
 export const CLICK_CAP = 2;
-/** A drag with the button held: smaller bursts STIR_STEP px apart along its path, each reaching
- *  STIR_R and parting the dots about 15px — the dots part round the pointer and close behind it. That
- *  is a slow drag's stir; a faster one reaches further and throws harder (`stirSizes`). */
+/** A drag with the button held stirs the dots as a wake (`stirKick`): at the pointer and every STIR_STEP
+ *  px along its path, the dots behind it — within STIR_R back — part square off the stroke about 15px,
+ *  and close up again further back. That is a slow drag's stir; a faster one reaches further and throws
+ *  harder (`stirSizes`). */
 export const STIR_R = 36;
 export const STIR_SPEED = 0.3;
 export const STIR_STEP = 10;
+/** The wake's wedge: its tip is the pointer, this share of the stir's reach wide each side there, and its
+ *  sides open this many px each side for each px back — a V behind the pointer, so a dot beside its path
+ *  parts a moment after the pointer passes it, the further out the later. Nothing ahead of the pointer
+ *  moves. */
+export const WAKE_TIP = 0.1;
+export const WAKE_SPREAD = 0.75;
+/** How far along its path a drag's direction takes to turn to a new one, px: a mouse's one-pixel steps
+ *  go only eight ways, and the wake would swing with each. */
+export const WAKE_TURN_PX = 8;
 /** A drag's speed, px/ms, at and under which it stirs as gently as a slow drag always has, and at and
  *  over which it stirs its hardest: STIR_REACH_MAX times as far and STIR_SPEED_MAX times as hard — about
  *  110px and a 60px parting, half a click's burst. */
@@ -45,20 +55,18 @@ export const STIR_SLOW = 0.25;
 export const STIR_FAST = 3;
 export const STIR_REACH_MAX = 3;
 export const STIR_SPEED_MAX = 4.5;
-/** At its hardest, how far a stir turns its kick from straight out of the pointer to square off the
- *  stroke — the dots part to either side of it — and how much of it pushes them on along the stroke. */
-export const STIR_PART = 0.7;
+/** At its hardest, how much of a stir's kick pushes the dots on along the stroke. */
 export const STIR_DRAG = 0.25;
 /** How quickly a drag's measured speed follows its moves, ms: long enough to smooth one move's jitter,
  *  short enough that a flick is felt within a few frames. */
 export const STIR_SMOOTH_MS = 40;
 /** On a field taller than BURST_REF_H, how much harder a stir throws beyond its scale `k`: k to this
  *  power, times its strength. The hand moves as fast full page, so the pointer takes k times as long to
- *  cross the stir's reach, and the dots it parts first are on their way home (the spring's time does not
- *  scale) before it passes. Measured full page at 1280x720, 1440x900 and 2560x1440 (k 1.44, 1.92, 3.43):
- *  scaled by k alone a 3px/ms drag parted the dots 0.84, 0.68 and 0.79 of k as wide as in place; with
- *  this, 0.93, 0.89 and 1.11, and a 1px/ms drag 0.90-0.99. */
-export const STIR_WAIT = 0.5;
+ *  cross the wake's reach, and the dots on its line (parted first) are on their way home before the wake
+ *  widens to the dots further out (the spring's time does not scale). Measured full page at 1280x720,
+ *  1440x900 and 2560x1440 (k 1.44, 1.92, 3.43): scaled by k alone a 3px/ms drag parted the dots 0.97,
+ *  0.89 and 0.92 of k as wide as in place, a 1px/ms drag 0.93-0.99; with this, 0.98-1.04 and 1.00-1.03. */
+export const STIR_WAIT = 0.25;
 
 /** Past the burst's reach, a ripple: the dots rocked out from the click and back, a time or two, as
  *  the shockwave's front passes them, so rings of bunched-up dots run on across the graph. Its swing
@@ -191,25 +199,46 @@ export function burstKick(dx: number, dy: number, i: number, reach: number, spee
 }
 
 /**
- * The kick a stir of strength `s` at `dx, dy` from a dot gives it, the drag going the unit way `ux, uy`,
- * written into `out`; false beyond `reach`. A burst's kick with no shockwave (`burstKick`) — then, the
- * harder the stir, turned square off the stroke, away from it on the dot's own side (a dot on the line
- * goes a fixed way of its own), and pushed on along it: the dots part to either side of a fast drag and
- * are carried a little with it, as water is past a hand.
+ * The kick a stir of strength `s` at the pointer gives a dot `dx, dy` from it (the dot's position less the
+ * pointer's), the drag going the unit way `ux, uy`, written into `out`; false outside its wake. The wake
+ * is a wedge behind the pointer (WAKE_TIP, WAKE_SPREAD) out to `reach` back: a dot ahead of the pointer,
+ * or beside it further out than the wedge is wide there, is not touched. One inside goes square off the
+ * stroke, away from it on its own side (a dot on the line goes a fixed way of its own), hardest on the
+ * line and not at all at the wedge's side, and pushed on a little along it — the dots part to either side behind a
+ * drag, as water does behind a hand, and are carried a little with it. `i` jitters it as a burst does.
  */
 export function stirKick(dx: number, dy: number, i: number, reach: number, speed: number, s: number, ux: number, uy: number, out: Kick): boolean {
-  if (!burstKick(dx, dy, i, reach, speed, 0, out)) return false;
-  const m = Math.hypot(out.vx, out.vy);
-  if (!(m > 0) || !(s > 0)) return true;
+  const back = -(dx * ux + dy * uy);
+  if (!(back >= 0) || !(back < reach)) return false;
   const across = ux * dy - uy * dx;
+  const half = reach * WAKE_TIP + back * WAKE_SPREAD;
+  const a = Math.abs(across);
+  if (!(a < half)) return false;
+  const f = 1 - (a / half) ** 2;
+  const jitter = 0.75 + 0.5 * (((Math.imul(i + 7, 2246822519) >>> 0) % 1000) / 999);
+  const m = speed * f * jitter;
   const side = across > 0 ? 1 : across < 0 ? -1 : (i & 1 ? 1 : -1);
-  const w = STIR_PART * s;
-  const px = (out.vx / m) * (1 - w) - uy * side * w;
-  const py = (out.vy / m) * (1 - w) + ux * side * w;
-  const pl = Math.hypot(px, py) || 1;
-  out.vx = (px / pl) * m + ux * STIR_DRAG * s * m;
-  out.vy = (py / pl) * m + uy * STIR_DRAG * s * m;
+  out.vx = (-uy * side + ux * STIR_DRAG * s) * m;
+  out.vy = (ux * side + uy * STIR_DRAG * s) * m;
+  out.delay = 0;
   return true;
+}
+
+/** How far from the pointer a stir reaching `reach` can touch a dot, px: its wedge's far corners. */
+export function wakeExtent(reach: number): number {
+  return reach * Math.hypot(1, WAKE_TIP + WAKE_SPREAD);
+}
+
+/** A drag's direction, eased from `ux, uy` (0, 0 before it has one) toward a move `mx, my` px, over
+ *  WAKE_TURN_PX of path; the unit way it now goes, written into `out`. Unchanged for a move of nothing. */
+export function wakeTurn(ux: number, uy: number, mx: number, my: number, out: { ux: number; uy: number }) {
+  const len = Math.hypot(mx, my);
+  if (!(len > 0)) { out.ux = ux; out.uy = uy; return out; }
+  const keep = Math.exp(-len / WAKE_TURN_PX);
+  const x = ux * keep + (mx / len) * (1 - keep), y = uy * keep + (my / len) * (1 - keep);
+  const l = Math.hypot(x, y);
+  if (l > 1e-9) { out.ux = x / l; out.uy = y / l; } else { out.ux = mx / len; out.uy = my / len; }
+  return out;
 }
 
 /**

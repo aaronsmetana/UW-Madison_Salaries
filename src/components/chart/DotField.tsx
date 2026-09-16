@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, u
 import { layoutDots, packDots } from '../../lib/dotLayout';
 import {
   AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, TRAIL_ALPHA, TRAIL_MIN, TRAIL_MS, TRAIL_W, WAVE_MS,
-  bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirKick, stirSizes, stirTopUp, thrown, trailAt,
+  bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirKick, stirSizes, stirTopUp, thrown, trailAt, wakeExtent,
   type Kick, type Pose,
 } from '../../lib/dotPhysics';
 import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
@@ -674,9 +674,10 @@ export const DotField = forwardRef<DotFieldHandle, {
       const speed = stirred ? stirred.speed : size.speed;
       const cap = stirred ? stirred.cap : CLICK_CAP * size.speed;
       const { order, sortedX, pts } = lay;
-      // A click's ripple runs across the whole field; a stir's burst is all there is of it.
-      const j0 = stir ? lowerBound(sortedX, x - reach - L.slack) : 0;
-      const j1 = stir ? lowerBound(sortedX, x + reach + L.slack) : order.length;
+      // A click's ripple runs across the whole field; a stir's wake is all there is of it.
+      const span = stir ? wakeExtent(reach) + L.slack : 0;
+      const j0 = stir ? lowerBound(sortedX, x - span) : 0;
+      const j1 = stir ? lowerBound(sortedX, x + span) : order.length;
       let any = false;
       for (let j = j0; j < j1; j++) {
         const i = order[j];

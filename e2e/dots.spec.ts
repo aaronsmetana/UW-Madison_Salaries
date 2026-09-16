@@ -589,7 +589,7 @@ test('switching on Reduce Motion mid-burst puts every dot home at once', async (
   expect((await picture(page)) === rest, 'the dots were not all home').toBe(true);
 });
 
-test('a drag with the button held stirs the dots along its path, and they close up behind it', async ({ page }) => {
+test('a drag with the button held parts the dots behind it along its path, and they close up again', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await frozenHome(page);
   const c = await canvasBox(page);
@@ -610,13 +610,115 @@ test('a drag with the button held stirs the dots along its path, and they close 
     if (x >= x1) break;
   }
   await page.clock.runFor(96);
-  expect(await inkShare(page, x1, y, 8), 'the dots at the end of the drag did not part').toBeLessThan(0.4);
+  // Its wake opens behind the pointer, so the dots have parted a little way back along the drag.
+  expect(await inkShare(page, x1 - 24, y, 8), 'the dots behind the end of the drag did not part').toBeLessThan(0.4);
   expect(await inkShare(page, far, y, 8), 'dots far from the drag moved').toBe(farRest);
   await page.mouse.up();
   await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
   await page.clock.runFor(1500);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
   expect((await picture(page)) === rest, 'the stirred dots did not all come back to their places').toBe(true);
+});
+
+/**
+ * The wake round a drag's pointer, in the drag's own frame — its tip at `tip` (CSS px from the canvas's
+ * corner), going the unit way `u` — against the picture `keepRest` kept: the share of what were the
+ * middles of dots at rest (nearly solid ink: a still dot repainted as a square keeps them, a moved one
+ * does not) now empty, `ahead` of the pointer (6-40px on, 24px either side); and each side of its line —
+ * clear of the wake's trail, 4px either side of it — right behind its tip (1-6px back, 5-9px out) and
+ * `behind` it (30-60px back, 5-12px out); and how far out each side the dots have gone (`goneFrom`'s rows, 90%)
+ * `near` it (4-16px back) and `far` behind it (74-86px back) — null for a side with no dots.
+ */
+const wakeAt = (page: Page, tip: { x: number; y: number }, u: { x: number; y: number }) => page.locator('.hero-dots canvas').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth, W = c.width, H = c.height, dt = 0.5 / k;
+  const now = c.getContext('2d')!.getImageData(0, 0, W, H).data;
+  const rest = (window as unknown as { restInk: Uint8ClampedArray }).restInk;
+  const nx = -a.u.y, ny = a.u.x;
+  const px = (along: number, across: number) => {
+    const x = Math.round((a.tip.x + a.u.x * along + nx * across) * k), y = Math.round((a.tip.y + a.u.y * along + ny * across) * k);
+    return x >= 0 && y >= 0 && x < W && y < H ? (y * W + x) * 4 + 3 : -1;
+  };
+  const middles = (a0: number, a1: number, c0: number, c1: number) => {
+    let r = 0, g = 0;
+    for (let al = a0; al <= a1; al += dt) for (let ac = c0; ac <= c1; ac += dt) {
+      const i = px(al, ac);
+      if (i < 0 || rest[i] <= 200) continue;
+      r++;
+      if (now[i] <= 24) g++;
+    }
+    return r ? g / r : null;
+  };
+  const out = (back: number, side: number) => {
+    let seen = false;
+    for (let w = 8; w < 200; w += 2) {
+      let r = 0, g = 0;
+      for (let al = -back - 6; al <= -back + 6; al += dt) for (let ac = w; ac < w + 2; ac += dt) {
+        const i = px(al, side * ac);
+        if (i < 0 || rest[i] <= 24) continue;
+        r++;
+        if (now[i] <= 24) g++;
+      }
+      if (r >= 8) { seen = true; if (g / r < 0.9) return w; }
+    }
+    return seen ? 200 : null;
+  };
+  const sides = (a0: number, a1: number, c0: number, c1: number) => [middles(a0, a1, -c1, -c0), middles(a0, a1, c0, c1)];
+  return { ahead: middles(6, 40, -24, 24), atTip: sides(-6, -1, 5, 9), behind: sides(-60, -30, 5, 12), near: [out(10, -1), out(10, 1)], far: [out(80, -1), out(80, 1)] };
+}, { tip, u });
+
+test('a drag parts the dots only behind its pointer, in a V that opens back along the way it goes', async ({ page }) => {
+  // A round reach round each point of the drag parted the dots ahead of the pointer before it got there —
+  // "an invisible sphere". The wake's tip is the pointer: nothing ahead of it moves, the dots on its line
+  // part as it passes, and those further out part further back, whichever way it goes.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await frozenHome(page);
+  const dots = page.locator('.hero-dots');
+  const c = await canvasBox(page);
+  const rest = await picture(page);
+  for (const [way, v] of [['right', 3], ['right', 1], ['left', 3], ['down', 3]] as const) {
+    // Through the dense lower field, pressed just off the plot so it is a stir alone.
+    const end = { x: c.width * 0.35, y: c.height * 0.85 };
+    const u = way === 'right' ? { x: 1, y: 0 } : way === 'left' ? { x: -1, y: 0 } : { x: 0, y: 1 };
+    const start = way === 'right' ? { x: -8, y: end.y } : way === 'left' ? { x: c.width + 8, y: end.y } : { x: end.x, y: -8 };
+    const from = way === 'down' ? { x: end.x, y: 0 } : { x: way === 'right' ? 0 : c.width, y: end.y };
+    await keepRest(page);
+    await page.mouse.move(c.x + start.x, c.y + start.y);
+    await page.mouse.down();
+    await page.mouse.move(c.x + from.x, c.y + from.y);
+    await page.clock.runFor(16);
+    const dist = Math.hypot(end.x - from.x, end.y - from.y), step = v * 16;
+    for (let k = 1; k <= Math.ceil(dist / step); k++) {
+      const d = Math.min(dist, step * k);
+      await page.mouse.move(c.x + from.x + u.x * d, c.y + from.y + u.y * d);
+      await page.clock.runFor(16);
+    }
+    // Last, a move shorter than a stir's step (STIR_STEP): the wake's tip is where the pointer is, not
+    // the last whole step along its path, so the dots just behind it have parted.
+    const tip = { x: end.x + u.x * 6, y: end.y + u.y * 6 };
+    await page.mouse.move(c.x + tip.x, c.y + tip.y);
+    await page.clock.runFor(32);
+    const w = await wakeAt(page, tip, u);
+    const label = `${way} at ${v}px/ms`;
+    expect(w.ahead, `${label}: no dot middles ahead of the pointer to read`).not.toBeNull();
+    expect(w.ahead!, `${label}: dots ahead of the pointer moved before it reached them`).toBeLessThan(0.02);
+    // Just behind the tip the dots have had 32ms, and a slower drag's gentler kick has moved them less —
+    // but a dot the wake has not reached has not moved at all.
+    for (const [name, read, least] of [['just behind the pointer', w.atTip, 0.25], ['behind the pointer', w.behind, 0.5]] as const) {
+      const got = read.filter((n): n is number => n != null);
+      expect(got.length, `${label}: no dot middles ${name} to read`).toBeGreaterThan(0);
+      expect(Math.min(...got), `${label}: the dots ${name} did not part (${read})${name === 'just behind the pointer' ? ' — the wake lags it' : ''}`).toBeGreaterThan(least);
+    }
+    const near = w.near.filter((n): n is number => n != null), far = w.far.filter((n): n is number => n != null);
+    expect(near.length && far.length, `${label}: no dots beside the drag to read`).toBeTruthy();
+    expect(Math.max(...near), `${label}: the dots beside the pointer parted wide (${w.near}), not in a V from its tip`).toBeLessThanOrEqual(20);
+    expect(Math.min(...far), `${label}: 80px back the dots parted no wider (${w.far}) than beside the pointer (${w.near})`)
+      .toBeGreaterThanOrEqual(1.5 * Math.max(...near));
+    await page.mouse.up();
+    await page.mouse.move(c.x + c.width * 0.98, c.y - 60);
+    await page.clock.runFor(2000);
+    await expect(dots).toHaveAttribute('data-flight', 'idle');
+    expect((await picture(page)) === rest, `${label}: the dots did not all come back to their places`).toBe(true);
+  }
 });
 
 /** A straight drag by the clock at `v` px/ms along canvas row `y`, pressed just left of the plot (so it
