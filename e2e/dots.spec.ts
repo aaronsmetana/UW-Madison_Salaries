@@ -143,8 +143,13 @@ test("a large title's peer strip draws each peer as a dot", async ({ page }) => 
      WHERE snapshot_id = '${snap}' AND job_code = 'FA020' GROUP BY person_key) WHERE pay > 0`
   );
   await page.goto(`./person/${encodeURIComponent(KENNETH)}`);
-  // Everyone in the title but Kenneth, who has his own mark.
-  await expect(page.locator('.strip-dots')).toHaveAttribute('data-dots', String(r.n - 1), { timeout: 60_000 });
+  // Everyone in the title but Kenneth, who has his own mark: in the plot, or in the piles of the people
+  // paid outside the title's pay window at either end (lib/payWindow).
+  await expect(page.locator('.peer-strip .strip-dots').first()).toBeAttached({ timeout: 60_000 });
+  await expect.poll(
+    () => page.locator('.peer-strip .strip-dots').evaluateAll((els) => els.reduce((t, e) => t + Number(e.getAttribute('data-dots')), 0)),
+    { timeout: 30_000 },
+  ).toBe(r.n - 1);
 });
 
 for (const scheme of ['light', 'dark'] as const) {
