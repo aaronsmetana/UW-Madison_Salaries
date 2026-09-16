@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon, FocusTrap } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
   IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
+  IconArrowsMaximize, IconArrowsMinimize,
 } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -106,6 +108,32 @@ const HOLD_MS = 450;
 const HOLD_LIFT = 28;
 /** Where the median's line and the quartiles' begin below the plot's top: grown with it. */
 const MARK_TOP = { strong: 5, plain: 33 };
+/** Full page: the room kept round the panel, px, on a phone and wider; and how long it takes to grow
+ *  from its place on the page to fill the window, and to shrink back, ms. */
+const FULL_PAD = { phone: 8, wide: 16 };
+const FULL_MS = 240;
+/** The panel's corner, px, which the growing panel's clip keeps. */
+const PANEL_RADIUS = 16;
+
+/**
+ * The keyframes that play a full-page panel from `from` (its box on the page) to `to` (the box it fills,
+ * both viewport rects of the untransformed panel): moved to sit centred over `from` and clipped to its
+ * size, then opened out — so it grows out of its place rather than fading in over it. Laid out once, at
+ * the full size, and never scaled: a scale skews every `getBoundingClientRect` read inside it while it
+ * plays, and the segmented control's indicator (and a field's width) measured the shrunken boxes and
+ * kept them.
+ */
+function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
+  const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+  const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+  const cx = Math.max(0, (to.width - from.width) / 2);
+  const cy = Math.max(0, (to.height - from.height) / 2);
+  return [
+    { transform: `translate(${dx}px, ${dy}px)`, clipPath: `inset(${cy}px ${cx}px ${cy}px ${cx}px round ${PANEL_RADIUS}px)` },
+    { transform: 'none', clipPath: `inset(0px 0px 0px 0px round ${PANEL_RADIUS}px)` },
+  ];
+}
+
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
 
@@ -202,8 +230,25 @@ function Distribution({
   const holdRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
   const [magnify, setMagnify] = useState(false);
   const magnifyRef = useRef(false);
-  const H = phone ? PLOT_H.phone : PLOT_H.wide;
-  const HEAD = phone ? HEADROOM.phone : HEADROOM.wide;
+  // Full page: the panel fills the window (a portal over the page and its header), and the plot grows
+  // to the height it leaves — `fullH`, measured. The panel's box on the page, where it grows from and
+  // shrinks back to, and its height, which the page keeps while it is away.
+  const [full, setFull] = useState(false);
+  const [fullH, setFullH] = useState(0);
+  const [pageH, setPageH] = useState(0);
+  const fullRef = useRef(false);
+  fullRef.current = full;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const placeholderRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const growFromRef = useRef<DOMRect | null>(null);
+  const closingRef = useRef(false);
+  const refocusRef = useRef(false);
+  const baseH = phone ? PLOT_H.phone : PLOT_H.wide;
+  const H = full && fullH > 0 ? fullH : baseH;
+  // The clear band above the peak keeps its share of the plot.
+  const HEAD = Math.round(H * ((phone ? HEADROOM.phone : HEADROOM.wide) / baseH));
 
   // One dot per person, under the curve (DotField). Everyone the bins describe: the counts per $100
   // when the artifact carries them, otherwise each $1k bin's people spread across its thousand — and,
@@ -323,7 +368,8 @@ function Distribution({
     document.fonts?.ready.then(measure).catch(() => {});
     window.addEventListener('resize', measure);
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
-  }, [bins, p25, median, p75]);
+    // `full`: the panel is a new element each way (a portal), and its rows are measured afresh.
+  }, [bins, p25, median, p75, full]);
 
   // Keyed on everything the pill's text is built from — the bucket under the pointer, and the two
   // inputs to the count and the percentile. That is the full set: a text that has not changed has
@@ -358,10 +404,87 @@ function Distribution({
   useEffect(() => {
     const el = mainBoxRef.current;
     if (!el) return;
-    const block = (e: TouchEvent) => { if (magnifyRef.current) e.preventDefault(); };
+    // Full page too: there is no page to scroll there, and a finger stirs the dots.
+    const block = (e: TouchEvent) => { if (magnifyRef.current || fullRef.current) e.preventDefault(); };
     el.addEventListener('touchmove', block, { passive: false });
     return () => el.removeEventListener('touchmove', block);
-  }, [plotReady]);
+  }, [plotReady, full]);
+
+  // Full page, open: the page under it does not scroll, and Escape closes it — unless something over it
+  // has the keyboard (the command palette), or the readout took the key first (the slider's own Escape).
+  const closeFull = () => {
+    const el = panelRef.current, ph = placeholderRef.current;
+    if (!fullRef.current || closingRef.current) return;
+    refocusRef.current = true;
+    if (!el || !ph || prefersReducedMotion()) { setFull(false); return; }
+    closingRef.current = true;
+    const to = el.getBoundingClientRect();
+    const frames = flipFrames(ph.getBoundingClientRect(), to).reverse();
+    const anim = el.animate(frames, { duration: FULL_MS, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
+    scrimRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FULL_MS, fill: 'forwards' });
+    el.dataset.full = 'closing';
+    const done = () => { closingRef.current = false; setFull(false); };
+    anim.onfinish = done;
+    anim.oncancel = done;
+  };
+  const closeFullRef = useRef(closeFull);
+  closeFullRef.current = closeFull;
+  const openFull = () => {
+    const el = panelRef.current;
+    if (!el || fullRef.current) return;
+    growFromRef.current = el.getBoundingClientRect();
+    setPageH(el.offsetHeight);
+    // A first guess at the plot's height from the panel as it is, measured again once it is full.
+    const pad = phone ? FULL_PAD.phone : FULL_PAD.wide;
+    setFullH(Math.max(baseH, Math.floor(window.innerHeight - 2 * pad - (el.offsetHeight - H))));
+    setLensAt(null);
+    setHoverIdx(null);
+    setTapped(false);
+    setFull(true);
+  };
+  useEffect(() => {
+    if (!full) return;
+    const root = document.documentElement;
+    root.classList.add('hero-full-open');
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const el = panelRef.current;
+      const at = document.activeElement;
+      if (el && at && at !== document.body && !el.contains(at)) return;
+      closeFullRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { root.classList.remove('hero-full-open'); document.removeEventListener('keydown', onKey); };
+  }, [full]);
+  // The plot's height full page: the window's, less the room round the panel and everything in the
+  // panel that is not the plot — measured, since the legend wraps to the width — and again on a resize.
+  useLayoutEffect(() => {
+    if (!full) return;
+    const measure = () => {
+      const el = panelRef.current;
+      if (!el) return;
+      const pad = phone ? FULL_PAD.phone : FULL_PAD.wide;
+      const next = Math.max(baseH, Math.floor(window.innerHeight - 2 * pad - (el.offsetHeight - H)));
+      setFullH((h) => (Math.abs(h - next) < 2 ? h : next));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [full, H, phone, baseH]);
+  // Growing out of its place as it opens; and focus back on the button that opened it once it closes.
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (full) {
+      const from = growFromRef.current;
+      growFromRef.current = null;
+      if (!el || !from || prefersReducedMotion()) return;
+      el.animate(flipFrames(from, el.getBoundingClientRect()), { duration: FULL_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+      scrimRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FULL_MS, easing: 'ease-out' });
+    } else if (refocusRef.current) {
+      refocusRef.current = false;
+      toggleRef.current?.focus();
+    }
+  }, [full]);
   // A hold still waiting when the chart goes.
   useEffect(() => () => { if (holdRef.current) window.clearTimeout(holdRef.current.timer); }, []);
   if (bins.length < 3) return null;
@@ -547,6 +670,7 @@ function Distribution({
       return;
     }
     tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    stirRef.current = null;
     // Held still, it brings up the glass above the finger, magnifying what is under its tip.
     clearHold();
     const box = e.currentTarget.getBoundingClientRect();
@@ -579,15 +703,19 @@ function Distribution({
       if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 10) clearHold();
     }
     onHover(e);
-    // A touch contact reports its button held as it moves: only a mouse stirs.
-    if (e.pointerType !== 'mouse' || !(e.buttons & 1)) { stirRef.current = null; return; }
+    // A touch contact reports its button held as it moves: on the page a finger that moves is scrolling,
+    // and only a mouse stirs. Full page there is nothing to scroll, and a finger that has moved off its
+    // hold stirs as a mouse does.
+    const stirs = e.pointerType === 'mouse' ? !!(e.buttons & 1) : full && !!(e.buttons & 1) && !holdRef.current;
+    if (!stirs) { stirRef.current = null; return; }
     const box = e.currentTarget.getBoundingClientRect();
     const native = e.nativeEvent;
     const moves = typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : [];
     stirAlong((moves.length ? moves : [native]).map((m) => ({ x: m.clientX - box.left, y: m.clientY - box.top })));
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse') { stirRef.current = null; return; }
+    stirRef.current = null;
+    if (e.pointerType === 'mouse') return;
     clearHold();
     // Lifted from the glass: it goes, the readout stays where it was, and nothing is thrown.
     if (magnifyRef.current) { endMagnify(true); tapRef.current = null; return; }
@@ -720,13 +848,36 @@ function Distribution({
     ctx.restore();
   };
 
-  return (
+  // Full page, or back: one button, over the panel's corner with the rest of its controls.
+  const fullToggle = phone ? (
+    <ActionIcon
+      ref={toggleRef} variant="subtle" size="md" className="hero-dist-full-toggle"
+      aria-label={full ? 'Exit full page' : 'Full page'} onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
+    >
+      {full ? <IconArrowsMinimize size={16} /> : <IconArrowsMaximize size={16} />}
+    </ActionIcon>
+  ) : (
+    <Button
+      ref={toggleRef} variant="subtle" size="compact-xs" className="hero-dist-full-toggle"
+      leftSection={full ? <IconArrowsMinimize size={14} /> : <IconArrowsMaximize size={14} />}
+      onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
+    >
+      {full ? 'Exit full page' : 'Full page'}
+    </Button>
+  );
+
+  const panel = (
     // Not a link any more: the panel is for pointing at, and Divisions has its own link below it.
     <div
-      className="hero-dist glass"
+      ref={panelRef}
+      className={`hero-dist glass${full ? ' hero-dist-full' : ''}`}
+      data-full={full ? 'on' : 'off'}
+      role={full ? 'dialog' : undefined}
+      aria-modal={full || undefined}
+      aria-label={full ? 'Pay distribution, full page' : undefined}
       style={{ '--pile-gap': `${hasPile ? PILE_GAP : 0}px`, '--pile-w': hasPile ? `max(${PILE_MIN_W}px, calc((100% - ${PILE_GAP}px) * ${(pileShare / (1 + pileShare)).toFixed(5)}))` : '0px' } as CSSProperties}
     >
-      {(controls || motion) && (
+      {(
         <div className="hero-dist-controls">
           {/* The fall into place again; nothing to play under reduced motion. */}
           {motion && (phone ? (
@@ -738,6 +889,7 @@ function Distribution({
               Drop again
             </Button>
           ))}
+          {fullToggle}
           {controls}
         </div>
       )}
@@ -975,9 +1127,28 @@ function Distribution({
         Each dot is one person · actual pay{headcount != null ? ` across ${num(headcount)} employees` : ''}
         {/* Say where the people above the cap are rather than truncating the tail silently. */}
         {hasPile ? ` · ${num(over)} at ${fmtK(cap ?? hi)}+ in the pile` : overflow ? ` · ${num(overflow)} above ${fmtK(cap ?? 0)} not shown` : ''}
-        {motion && <span className="hero-dist-hint"> · {canHover ? 'click the dots to scatter them, or drag through them' : 'tap the dots to scatter them'}</span>}
+        {motion && <span className="hero-dist-hint"> · {canHover ? 'click the dots to scatter them, or drag through them' : full ? 'tap the dots to scatter them, or drag through them' : 'tap the dots to scatter them'}</span>}
       </Text>
     </div>
+  );
+
+  if (!full) return panel;
+  // Full page: over everything, in a portal — the page's content sits in a stacking context under its
+  // header, so no z-index from in here could lift it over the header — with the keyboard kept inside,
+  // and the panel's height kept on the page so nothing under it moves.
+  return (
+    <>
+      <div ref={placeholderRef} className="hero-dist-placeholder" style={{ height: pageH }} aria-hidden />
+      {createPortal(
+        <div className="hero-full">
+          <div ref={scrimRef} className="hero-full-scrim" aria-hidden onClick={closeFull} />
+          <FocusTrap active>
+            <div className="hero-full-frame">{panel}</div>
+          </FocusTrap>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 

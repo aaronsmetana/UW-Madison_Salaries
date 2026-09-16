@@ -99,6 +99,7 @@
   --z-local: 2;
   --z-sticky: 6;
   --z-floating: 180;
+  --z-full-page: 190;
   --z-modal: 200;
   --z-loading-bar: 1100;
 
@@ -1825,6 +1826,40 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
   .hero-dist-legend-median { display: none; }
   .hero-dist-legend-lead { flex-basis: 100%; text-align: center; }
 }
+/* The landing graph full page (Home `Distribution`): the panel in a portal over the page and its
+   header, on a scrim that blurs what is behind it; the page under it does not scroll. The padding is
+   the room `FULL_PAD` leaves when it measures the plot's height, so the two must agree. */
+html.hero-full-open, html.hero-full-open body { overflow: hidden; }
+.hero-full {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-full-page);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+@media screen and (max-width: 30em) {
+  .hero-full { padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+}
+.hero-full-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--mantine-color-body) 78%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hero-full-scrim { background: var(--mantine-color-body); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+.hero-full-frame { position: relative; margin-block: auto; width: 100%; }
+/* Full page the panel sits on the scrim, not the page: a denser tint, so the blurred page is a hint. */
+.hero-dist.hero-dist-full { margin-top: 0; --glass-tint: 88%; }
+/* No page to scroll or zoom there: a finger's drag is the dots' (Home `onMove`). */
+.hero-dist-full .hero-dist-main { touch-action: none; }
+/* The panel's place on the page while it is full page, the same height, so nothing below it moves. */
+.hero-dist-placeholder { margin-top: var(--mantine-spacing-lg); }
 .strip-dots { color: var(--mark-peer); }
 .strip-dots .dot-field-accent { color: var(--mark-peer-same-school); }
 /* The magnifying glass on the landing chart (FisheyeLens): the card's own surface under a thin light

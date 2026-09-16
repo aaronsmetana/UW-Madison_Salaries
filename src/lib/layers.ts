@@ -30,6 +30,12 @@ export const Z = {
    */
   floating: 180,
   /**
+   * A figure opened full page (the landing graph): over the page and its fixed chrome — the header, the
+   * selection tray — because for as long as it is open it IS the page. Still under `modal`, so the
+   * command palette opened over it takes the screen from it.
+   */
+  fullPage: 190,
+  /**
    * Mantine's own modal/overlay/popover layer. Nothing here may claim it or exceed it; it is
    * recorded so that staying under it is a decision rather than a coincidence.
    */
