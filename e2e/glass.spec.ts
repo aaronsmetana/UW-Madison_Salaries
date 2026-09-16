@@ -124,9 +124,8 @@ test.describe('chart gradient ids', () => {
   ] as const) {
     test(`resolve, and none is defined twice: ${name}`, async ({ page }) => {
       await page.goto(route, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(2_000);
 
-      const report = await page.evaluate(() => {
+      const read = () => page.evaluate(() => {
         const refs: string[] = [];
         for (const el of document.querySelectorAll('[fill],[filter],[stroke]')) {
           for (const attr of ['fill', 'filter', 'stroke']) {
@@ -141,6 +140,18 @@ test.describe('chart gradient ids', () => {
         const dangling = [...new Set(refs)].filter((id) => !document.getElementById(id));
         return { refs: refs.length, ids: ids.length, dupes: [...new Set(dupes)], dangling };
       });
+
+      // The charts draw only once DuckDB has booted and answered, and on a slow runner the network
+      // goes quiet while the wasm is still compiling — a fixed 2s after networkidle once read the
+      // changes tab with nothing drawn. Wait for the references to appear and then hold still, since
+      // the charts mount one after another (4, then 35 on the changes tab).
+      let report = await read();
+      await expect.poll(async () => {
+        const prev = report.refs;
+        report = await read();
+        return report.refs > 0 && report.refs === prev;
+      }, { message: `${name} references no gradients at all — this route cannot prove anything`, timeout: 60_000, intervals: [1_000] })
+        .toBe(true);
 
       // A route with no gradient references would pass both checks vacuously.
       expect(report.refs, `${name} references no gradients at all — this route cannot prove anything`)
