@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { oracle, PAY, latestSnapshot, usd } from './oracle';
+import { atCiPace, FRAME_MS } from './pace';
 
 /**
  * The pile past the landing graph's $250k cap unrolls (routes/Home, lib/tail): clicked, the graph squeezes
@@ -140,11 +141,10 @@ test('under Reduce Motion the pile unrolls and folds at once', async ({ browser 
   await ctx.close();
 });
 
-test('the pile unrolls and folds in frames under 8ms at 2x', async ({ browser }) => {
+test('the pile unrolls and folds in frames inside the frame budget at 2x', async ({ browser }) => {
   const ctx = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
-  // At about a CI runner's pace on a developer's machine (as dots.spec's frame budgets are).
-  if (!process.env.CI) await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 3 });
+  await atCiPace(page);
   await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
@@ -159,7 +159,7 @@ test('the pile unrolls and folds in frames under 8ms at 2x', async ({ browser })
   for (const [name, what] of [['dot-frame', "the graph's"], ['tail-frame', "the tail's"]] as const) {
     const f = await frames(name);
     expect(f.length, `${what} dots never moved`).toBeGreaterThan(10);
-    expect(f[Math.floor(f.length / 2)], `${what} unrolling frame, ms`).toBeLessThan(8);
+    expect(f[Math.floor(f.length / 2)], `${what} unrolling frame, ms`).toBeLessThan(FRAME_MS);
   }
   await ctx.close();
 });
