@@ -43,7 +43,22 @@ describe('packDots', () => {
   const xs = [...spread, ...Array.from({ length: 30 }, () => 300.2)];
   const kinds = xs.map((_, i) => (i * 7) % 3);
   const at2 = packDots({ xs, heightAt: curve, baseY: 100, width: 600, dpr: 2, spill: 3, stack: kinds, seed: 5 });
-  const D = Math.max(1, Math.round(3 / 1.5));
+  /** The column pitch the packer actually chose, read back from the layout. */
+  const pitchOf = (pts: Float32Array, n: number) => {
+    const col = [...new Set(Array.from({ length: n }, (_, i) => pts[2 * i]))].sort((a, b) => a - b);
+    let m = Infinity;
+    for (let i = 1; i < col.length; i++) m = Math.min(m, col[i] - col[i - 1]);
+    return m;
+  };
+  /**
+   * How far a dot may end up from its pay: the spill it is allowed, plus the column it sits in. Read
+   * from the layout, not assumed — the pitch follows the room each dot has, so the curve or the count
+   * moves it, and a hardcoded 1.5 went on describing a pitch that had since narrowed to 1.0. A column
+   * is the honest term rather than half of one: the centres are on device-pixel centres, which at this
+   * pitch puts them three-quarters of the way across their column, so a dot can start 0.75 from its own
+   * centre before it moves at all. The tight user-facing bound is the e2e's, measured on real pays.
+   */
+  const reach = (pts: Float32Array, n: number) => 3 + pitchOf(pts, n);
   /** The pairs of dots closer than `min`, found through a grid: all of them, and those in different
    *  columns (different x). */
   const tooClose = (pts: Float32Array, min: number, near?: (x: number) => boolean) => {
@@ -80,15 +95,28 @@ describe('packDots', () => {
     // full: counted, small, and only ever within a column.
     expect(at2.crowded).toBeLessThan(0.01 * xs.length);
     if (at2.crowded === 0) expect(all.pairs).toBe(0);
-    // One-pixel columns, for contrast, crowd dots everywhere.
+    // One-pixel columns, for contrast, crowd dots everywhere. Stated as a ratio to the packed field
+    // rather than as a fraction of the dots: `min` is a dot-width, so the count scales with whatever
+    // radius the packer picks for this field, and a fixed fraction of n silently re-tunes itself every
+    // time the pitch moves. What is being claimed is the contrast — two orders of magnitude — not a
+    // particular count.
     const plain = layoutDots({ xs, heightAt: curve, baseY: 100, r: at2.r, seed: 5 });
-    expect(tooClose(plain, min).pairs).toBeGreaterThan(xs.length / 4);
+    expect(tooClose(plain, min).pairs).toBeGreaterThan(100 * (all.pairs + 1));
+    // And the room is used: giving every dot its own room is trivially satisfiable by shrinking the
+    // dots until nothing touches, which draws an empty graph. This is the other half of the bargain,
+    // and it is the half the contrast count above used to guard only by accident — `min` comes from
+    // the packer's own radius, so a packer that collapses its dots also shrinks the yardstick it is
+    // measured by, and the crowding count falls with it. Collapsing the pitch to one device pixel
+    // leaves this field at a fifteenth of its area inked; a healthy pack covers about a quarter.
+    let area = 0;
+    for (let c = 0; c < 600; c++) area += Math.max(0, curve(c + 0.5));
+    expect((xs.length * Math.PI * at2.r ** 2) / area).toBeGreaterThan(0.15);
   });
 
-  it('keeps every dot within the spill and half a column of its pay, and in pay order', () => {
-    const pitch = 1.5;
-    for (let i = 0; i < xs.length; i++) expect(Math.abs(at2.pts[2 * i] - xs[i])).toBeLessThanOrEqual(D * pitch + pitch / 2 + 1e-9);
-    expect(at2.maxShift).toBeLessThanOrEqual(D * pitch + pitch / 2 + 1e-9);
+  it('keeps every dot within the spill and its column of its pay, and in pay order', () => {
+    const bound = reach(at2.pts, xs.length) + 1e-9;
+    for (let i = 0; i < xs.length; i++) expect(Math.abs(at2.pts[2 * i] - xs[i])).toBeLessThanOrEqual(bound);
+    expect(at2.maxShift).toBeLessThanOrEqual(bound);
     const byPay = xs.map((_, i) => i).sort((a, b) => xs[a] - xs[b] || a - b);
     for (let q = 1; q < byPay.length; q++) expect(at2.pts[2 * byPay[q]]).toBeGreaterThanOrEqual(at2.pts[2 * byPay[q - 1]]);
   });
@@ -125,10 +153,13 @@ describe('packDots', () => {
   });
 
   it('owns up to a spike too big for its neighbours: counted crowded, and still within bounds', () => {
-    const big = [...spread, ...Array.from({ length: 400 }, () => 300.2)];
+    // 800, not 400. The spill is given in pixels, so a narrower column pitch buys the spike more
+    // columns to spread into, and 400 at one pay is now absorbed without crowding — the guard passed
+    // while proving nothing. This is the size that still exceeds what the neighbours can hold.
+    const big = [...spread, ...Array.from({ length: 800 }, () => 300.2)];
     const p = packDots({ xs: big, heightAt: curve, baseY: 100, width: 600, dpr: 2, spill: 3 });
     expect(p.crowded).toBeGreaterThan(200);
-    expect(p.maxShift).toBeLessThanOrEqual(D * 1.5 + 0.75 + 1e-9);
+    expect(p.maxShift).toBeLessThanOrEqual(reach(p.pts, big.length) + 1e-9);
   });
 
   it("sizes a phone's dots to its screen: two device pixels apart at 3x, no bigger than they fit", () => {
