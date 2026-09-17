@@ -79,6 +79,18 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: E2E (shard ${{ matrix.shard }} of 5)
         run: npm run e2e -- --shard=${{ matrix.shard }}/5
+      # Playwright is told to keep a trace for every failure, but nothing was collecting them, so a
+      # shard that only fails here left no way to see why: downloading a job's log needs admin rights
+      # on the repository and answers 403. The check-run annotations carry the assertion and its
+      # numbers, which is usually enough — a trace is what is wanted when it is not.
+      - name: Traces for the failures (shard ${{ matrix.shard }})
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: traces-shard-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   deploy:
     needs: [build, e2e]

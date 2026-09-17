@@ -66,7 +66,7 @@ test('with reduced motion the dots are simply there; otherwise their fall stays 
   await expect(p2.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   const frames = await p2.evaluate(() => performance.getEntriesByName('dot-frame').map((e) => e.duration).sort((a, b) => a - b));
   expect(frames.length, 'the entrance played').toBeGreaterThan(5);
-  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
+  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
   await moving.close();
 });
 
@@ -192,6 +192,23 @@ async function atCiPace(page: Page) {
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 3 });
 }
 
+/**
+ * The budget for one moving frame. Two numbers, because the two machines are not the same machine:
+ * here the pace is pinned (one laptop, slowed exactly three times), while a shared runner is whatever
+ * hardware the job landed on, unslowed.
+ *
+ * Measured on this field: 6.4ms at the pinned three times, 11.4 at five, 17.4 at seven — and CI reads
+ * about 9.6, so a runner is roughly half again slower than the pinned pace. The 8ms bar was set from
+ * the pinned pace and applied to both, which left CI a coin flip: a deploy failed on 9.6 and on a
+ * median of exactly 8.0, and the identical code on the previous commit measures 6.5 and 11.5 here, so
+ * nothing had got slower — the bar was simply never the runner's.
+ *
+ * 12, not 16, for the runner. This guard exists because stamping every dot as a bead held the re-stack
+ * at 16ms; a budget of 16 would wave that exact regression through. 12 sits below it and above the
+ * runner's own noise.
+ */
+const FRAME_MS = process.env.CI ? 12 : 8;
+
 async function settledHome(page: Page) {
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
@@ -299,7 +316,7 @@ test('the re-stack moves in frames under 8ms, and not at all under reduced motio
   await allOneInk(p);
   const frames = await p.evaluate(() => performance.getEntriesByName('dot-frame').map((e) => e.duration).sort((a, b) => a - b));
   expect(frames.length, 'the re-stack played').toBeGreaterThan(5);
-  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(8);
+  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
   await moving.close();
 
   const still = await browser.newContext({ reducedMotion: 'reduce' });
@@ -1252,7 +1269,7 @@ test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; th
   await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
   const burst = await median();
   expect(burst.n, 'the burst moved no dots').toBeGreaterThan(10);
-  expect(burst.median, 'a burst frame, ms').toBeLessThan(8);
+  expect(burst.median, 'a burst frame, ms').toBeLessThan(FRAME_MS);
   // A stir, by the clock: 200px through the densest part in 0.8s, pressed just off the plot, so it is a
   // stir alone and repainted in strips — narrower than a third of the field, which is repainted whole.
   // (A press on the plot bursts, and its ripple repaints the whole field, which the burst above timed.)
@@ -1270,7 +1287,7 @@ test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; th
   await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
   const drag = await median();
   expect(drag.n, 'the drag moved no dots').toBeGreaterThan(20);
-  expect(drag.median, 'a drag frame, ms').toBeLessThan(8);
+  expect(drag.median, 'a drag frame, ms').toBeLessThan(FRAME_MS);
   // A fast drag, back and forth at 3px/ms over the same 300px for 0.8s: its wider stir and its wake.
   await page.evaluate(() => performance.clearMeasures());
   await page.mouse.move(plot.x - 8, y);
@@ -1286,7 +1303,7 @@ test('a burst and a drag move in frames under 8ms at 2x, and every dot lands; th
   await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
   const flick = await median();
   expect(flick.n, 'the fast drag moved no dots').toBeGreaterThan(10);
-  expect(flick.median, 'a fast drag frame, ms').toBeLessThan(8);
+  expect(flick.median, 'a fast drag frame, ms').toBeLessThan(FRAME_MS);
   await expect(dots).toHaveAttribute('data-visible', (await dots.getAttribute('data-dots'))!);
   await expect(page).toHaveURL(/\/UW-Madison_Salaries\/$/);
   await ctx.close();
@@ -1515,23 +1532,38 @@ const rainfall = (page: Page, at: number[], every = 200) => page.evaluate(async 
     return n;
   });
   const t0 = performance.now();
-  const out: { t: number; ink: number[] }[] = [];
+  const out: { t: number; settled: boolean; ink: number[] }[] = [];
   for (;;) {
-    out.push({ t: performance.now() - t0, ink: read() });
-    if (field.getAttribute('data-settled') === 'true') break;
+    // Either side of the read, so the frame the field settles on is never counted as a moving one.
+    const before = field.getAttribute('data-settled') === 'true';
+    const ink = read();
+    const after = field.getAttribute('data-settled') === 'true';
+    out.push({ t: performance.now() - t0, settled: before || after, ink });
+    if (after) break;
     if (performance.now() - t0 > 20_000) break;
     await new Promise((r) => setTimeout(r, ms));
   }
   return out;
 }, { xs: at, every });
 
-/** When a column first held `frac` of the ink it ends up with, ms. A rising measure rather than a
- *  last-change one: the field repaints whole every frame, so the ink in a strip jitters by a pixel or
- *  two long after its own dots have landed. */
-function reachedAt(series: { t: number; ink: number[] }[], which: number, frac: number) {
-  const last = series[series.length - 1].ink[which];
-  for (const s of series) if (s.ink[which] >= last * frac) return s.t;
-  return series[series.length - 1].t;
+/**
+ * When a column first held `frac` of the ink it ends up with, ms. A rising measure rather than a
+ * last-change one: the field repaints whole every frame, so the ink in a strip jitters by a pixel or
+ * two long after its own dots have landed.
+ *
+ * Measured against the last MOVING frame, never the settled one. The field draws squares while it
+ * moves and beads at rest, and a bead carries its halo: the rest picture holds 3% more ink than the
+ * squares in the crowded middle and 13% more in the thin tail, where there is more edge per dot. Taken
+ * as the denominator, that rest frame asks the moving frames for ink they never draw — a dense strip
+ * still clears the bar because it saturates early, while a sparse one cannot clear it until the
+ * settled frame itself, and reports the moment of settling as the moment it filled. CI read the thin
+ * tail as filling at 5901ms of a 5901ms fall, which is how this was found.
+ */
+function reachedAt(series: { t: number; settled: boolean; ink: number[] }[], which: number, frac: number) {
+  const moving = series.filter((s) => !s.settled);
+  const end = moving[moving.length - 1];
+  for (const s of moving) if (s.ink[which] >= end.ink[which] * frac) return s.t;
+  return end.t;
 }
 
 test('the dots rain in, and a thin column is done long before the crowded middle', async ({ page }) => {
@@ -1547,6 +1579,11 @@ test('the dots rain in, and a thin column is done long before the crowded middle
   const tailDone = reachedAt(series, 1, 0.9);
 
   expect(series.length, 'the fall was over before it could be watched').toBeGreaterThan(8);
+  // Both strips have to hold enough ink to be a measurement rather than a handful of stray pixels: if
+  // the axis or the packing moves them somewhere empty, this should say so rather than time noise.
+  const ink = series.filter((s) => !s.settled).at(-1)!.ink;
+  expect(ink[0], 'the mound strip is empty').toBeGreaterThan(400);
+  expect(ink[1], 'the tail strip is empty').toBeGreaterThan(40);
   expect(tailDone, `the tail filled at ${tailDone}ms, the mound at ${peakDone}ms, of ${took}ms`).toBeLessThan(peakDone / 3);
   // And the whole thing lands in about six seconds — not two, and not fifteen.
   expect(took, `the fall took ${took}ms`).toBeGreaterThan(3_500);
