@@ -48,6 +48,19 @@ const kickAt: Kick = { vx: 0, vy: 0, delay: 0 };
 /** How far above the top a dot raining back in may start, px: they arrive over about half a second. */
 const RAIN_SPREAD = 160;
 
+/** A marked dot (a search's result): this many times a dot's radius, and never under MARK_MIN_R px; its glow
+ *  reaches MARK_HALO of that out. It grows in over MARK_GROW_MS as it arrives and sends out one ring over
+ *  MARK_PULSE_MS, reaching MARK_PULSE times its radius. */
+const MARK_SCALE = 5;
+const MARK_MIN_R = 5.5;
+const MARK_HALO = 4;
+const MARK_GROW_MS = 320;
+const MARK_PULSE_MS = 900;
+const MARK_PULSE = 4;
+/** A marked dot's radius, CSS px, in a field whose dots are `r`; and how far from its centre it draws. */
+export const markRadius = (r: number) => Math.max(MARK_MIN_R, r * MARK_SCALE);
+const markExtent = (r: number) => markRadius(r) * Math.max(MARK_HALO, MARK_PULSE) + 2;
+
 /** A springy ease that overshoots a little and settles — the "bounce". */
 const easeOutBack = (p: number) => {
   const c1 = 1.4;
@@ -94,6 +107,44 @@ function drawTrail(
   }
 }
 
+/**
+ * A marked dot into `ctx` at `cx, cy` (canvas pixels), `R` its full radius there, `age` ms since it was
+ * marked: a soft glow in its ink, one ring going out as it arrives, and the dot itself, growing in with a
+ * little overshoot, in its ink with a rim of the page's colour so it stands clear of the dots beneath.
+ */
+function drawMark(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, R: number, age: number, px: number,
+  ink: { core: string; glow: string; clear: string; rim: string },
+) {
+  const grow = age >= MARK_GROW_MS ? 1 : easeOutBack(Math.max(0, age) / MARK_GROW_MS);
+  const r = R * (0.35 + 0.65 * grow);
+  const halo = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * MARK_HALO);
+  halo.addColorStop(0, ink.glow);
+  halo.addColorStop(1, ink.clear);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * MARK_HALO, 0, Math.PI * 2);
+  ctx.fill();
+  if (age >= 0 && age < MARK_PULSE_MS) {
+    const p = age / MARK_PULSE_MS;
+    ctx.globalAlpha = 0.8 * (1 - p) ** 2;
+    ctx.strokeStyle = ink.core;
+    ctx.lineWidth = 1.5 * px;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * (1 + (MARK_PULSE - 1) * p), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = ink.core;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = Math.max(px, r * 0.22);
+  ctx.strokeStyle = ink.rim;
+  ctx.stroke();
+}
+
 const readSession = () => { try { return sessionStorage.getItem(SEEN_KEY) === '1'; } catch { return true; } };
 const writeSession = () => { try { sessionStorage.setItem(SEEN_KEY, '1'); } catch { /* private mode */ } };
 
@@ -135,6 +186,10 @@ export interface DotFieldHandle {
    *  fast. False when nothing shows: reduced motion, a hidden tab, or a stir with no dots in reach and no
    *  wake. */
   burst(x: number, y: number, stir?: Stir | null): boolean;
+  /** Where dot `i` is now (the field's CSS px) and a marked dot's radius there; null for a dot not shown. */
+  positionOf(i: number): { x: number; y: number; r: number } | null;
+  /** The marked dot nearest `x, y` (the field's CSS px) close enough to be the one pointed at, or null. */
+  markAt(x: number, y: number): number | null;
 }
 
 /** A drag's stir at one point of its path: how hard (0 to 1), and which way the drag goes (a unit vector). */
@@ -192,6 +247,9 @@ export const DotField = forwardRef<DotFieldHandle, {
   /** Show one kind alone: the others fall through the floor, and it falls to the floor in its own
    *  shape (stacked first). Null for all. Needs `stack`. */
   solo?: number | null;
+  /** Dots to mark (indices into `values`): each drawn over the field several times its size, glowing in
+   *  `--found`, growing in and sending out one ring as it arrives. */
+  marks?: readonly number[] | null;
   /** Bump to play the fall into place again. */
   replay?: number;
   /** A faint halo round each dot on a dark page, so a dense field glows a little. */
@@ -204,7 +262,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, solo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, solo = null, marks = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -212,6 +270,8 @@ export const DotField = forwardRef<DotFieldHandle, {
   const airRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const textRef = useRef<HTMLSpanElement>(null);
   const ringRef = useRef<HTMLSpanElement>(null);
+  const markRef = useRef<HTMLSpanElement>(null);
+  const rimRef = useRef<HTMLSpanElement>(null);
   const [width, setWidth] = useState(0);
   const [settled, setSettled] = useState(false);
   const [scheme, setScheme] = useState(0);
@@ -374,7 +434,13 @@ export const DotField = forwardRef<DotFieldHandle, {
     groups: [] as Uint32Array[],
     dark: false,
     highlight: null as readonly [number, number] | null,
+    /** The marked dots, each with when it was marked; their inks; the frame their arrival is drawn on. */
+    marks: [] as { i: number; born: number }[],
+    markInk: { core: '', glow: '', clear: '', rim: '' },
+    markRaf: 0,
   });
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   const prevLayout = useRef<typeof layout>(null);
   const prevStack = useRef<typeof stackKey>(undefined);
   const prevSolo = useRef<number | null>(solo);
@@ -515,6 +581,16 @@ export const DotField = forwardRef<DotFieldHandle, {
         }
       }
     }
+    // The marked dots, over the rest.
+    if (L.marks.length && L.markInk.core) {
+      const ext = markExtent(r);
+      for (const m of L.marks) {
+        if (mode && mode[m.i] === GONE) continue;
+        const x = pts[2 * m.i] + (offX ? offX[m.i] : 0);
+        if (x + ext < a / dpr || x - ext > b / dpr) continue;
+        drawMark(ctx, x * dpr, yOf(m.i, now) * dpr, markRadius(r) * dpr, now - m.born, dpr, L.markInk);
+      }
+    }
     // The shockwaves, over the dots: a bloom swelling at each click and fading as the dots burst out of
     // it, then the click's front and its echoes, a ripple's period behind, running out across the plot
     // and fading as they go (lib/dotPhysics `ringAlpha`) — each a soft glowing band under a thin core.
@@ -612,6 +688,19 @@ export const DotField = forwardRef<DotFieldHandle, {
             beads.set(key, bd);
           }
           ctx.drawImage(bd.img, m.x * dpr - bd.half, m.y * dpr - bd.half);
+        }
+      }
+      // The marked dots, through the glass: as much bigger as it makes them, up to two and a half times.
+      if (L.marks.length && L.markInk.core) {
+        const ext = markExtent(r);
+        for (const mk of L.marks) {
+          if (L.mode && L.mode[mk.i] === GONE) continue;
+          const sx = xOfRef.current(mk.i) + ox;
+          const sy = yOfRef.current(mk.i, now) + oy;
+          if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + ext) ** 2) continue;
+          const m = map(sx, sy);
+          const scale = Math.min(2.5, m.scale);
+          drawMark(ctx, m.x * dpr, m.y * dpr, markRadius(r) * scale * dpr, now - mk.born, dpr, L.markInk);
         }
       }
       // The shockwaves' rings, through the glass.
@@ -730,6 +819,26 @@ export const DotField = forwardRef<DotFieldHandle, {
       if (boxRef.current) boxRef.current.dataset.flight = 'moving';
       kickRef.current();
       return true;
+    },
+    positionOf(i) {
+      const lay = layout;
+      const L = live.current;
+      if (!lay || !(i >= 0 && i < values.length) || (L.mode && L.mode[i] === GONE)) return null;
+      return { x: xOfRef.current(i), y: yOfRef.current(i, performance.now()), r: markRadius(lay.r) };
+    },
+    markAt(x, y) {
+      const lay = layout;
+      const L = live.current;
+      if (!lay || !L.marks.length) return null;
+      const now = performance.now();
+      let best: number | null = null;
+      let bestD = markRadius(lay.r) * 1.6 + 4;
+      for (const m of L.marks) {
+        if (L.mode && L.mode[m.i] === GONE) continue;
+        const d = Math.hypot(xOfRef.current(m.i) - x, yOfRef.current(m.i, now) - y);
+        if (d < bestD) { bestD = d; best = m.i; }
+      }
+      return best;
     },
   }), [layout, values, kinds, airKinds, glow, height, alpha]);
 
@@ -929,6 +1038,11 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.airFast = L.airTones.map((ts) => ts.map(inkOf));
     L.airStrongFast = L.airStrongTones.map((ts) => ts.map(inkOf));
     L.ringInk = ringRef.current ? getComputedStyle(ringRef.current).color : '';
+    const markCore = markRef.current ? getComputedStyle(markRef.current).color : '';
+    const markRgb = parseRgb(markCore);
+    L.markInk = markRgb
+      ? { core: markCore, glow: `rgba(${markRgb[0]}, ${markRgb[1]}, ${markRgb[2]}, ${L.dark ? 0.8 : 0.65})`, clear: `rgba(${markRgb[0]}, ${markRgb[1]}, ${markRgb[2]}, 0)`, rim: rimRef.current ? getComputedStyle(rimRef.current).color : 'rgb(255, 255, 255)' }
+      : { core: '', glow: '', clear: '', rim: '' };
     const ringRgb = parseRgb(L.ringInk);
     L.ringClear = ringRgb ? `rgba(${ringRgb[0]}, ${ringRgb[1]}, ${ringRgb[2]}, 0)` : 'rgba(0, 0, 0, 0)';
     // Each dot's tone: its depth in the stack — deeper toward the bottom on a light page, brighter
@@ -1094,6 +1208,44 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x0); L.dirtyHi = Math.max(L.dirtyHi, x1); }
   }, [hlLo, hlHi, layout, toX]);
 
+  // The marks: repaint where one went or came, and draw each arrival (its growth and its ring) in the
+  // strip round it until it is done.
+  const markKey = marks ? marks.join(',') : '';
+  useEffect(() => {
+    const L = live.current;
+    const now = performance.now();
+    const still = prefersReducedMotion();
+    const was = new Map(L.marks.map((m) => [m.i, m]));
+    const next = (markKey ? markKey.split(',').map(Number) : []).filter((i) => i >= 0 && i < values.length);
+    L.marks = next.map((i) => was.get(i) ?? { i, born: still ? -Infinity : now });
+    const lay = layoutRef.current;
+    if (!lay) return;
+    const ext = markExtent(lay.r);
+    const strip = (i: number, t: number) => {
+      const x = xOfRef.current(i);
+      const busy = L.flying > 0 || L.rings.length > 0 || L.trail.length > 0 || L.entranceStart != null || L.restackStart != null;
+      paintRef.current(t, x - ext, x + ext, busy);
+      if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x - ext); L.dirtyHi = Math.max(L.dirtyHi, x + ext); }
+    };
+    const kept = new Set(next);
+    for (const [i] of was) if (!kept.has(i)) strip(i, now);
+    for (const m of L.marks) if (!was.has(m.i)) strip(m.i, now);
+    if (L.markRaf || !L.marks.some((m) => now - m.born < MARK_PULSE_MS)) return;
+    const step = (t: number) => {
+      L.markRaf = 0;
+      let more = false;
+      for (const m of L.marks) {
+        if (t - m.born > MARK_PULSE_MS + 32) continue;
+        more = true;
+        strip(m.i, t);
+      }
+      if (more) L.markRaf = requestAnimationFrame(step);
+    };
+    L.markRaf = requestAnimationFrame(step);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markKey, layout]);
+  useEffect(() => () => { const L = live.current; if (L.markRaf) { cancelAnimationFrame(L.markRaf); L.markRaf = 0; } }, []);
+
   // What the guards read: how many dots of each kind, and how many the highlight covers.
   const kindCounts = useMemo(() => {
     if (!kinds) return undefined;
@@ -1126,6 +1278,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       data-stack={stack ? 'on' : 'off'}
       data-highlight={hlLo != null ? lit : undefined}
       data-solo={solo ?? 'none'}
+      data-marks={marks?.length ? marks.map((i) => (layout && i >= 0 && i < values.length ? `${i}:${layout.pts[2 * i].toFixed(1)}:${layout.pts[2 * i + 1].toFixed(1)}` : `${i}`)).join(' ') : undefined}
       aria-hidden
     >
       <canvas ref={canvasRef} className="dot-field-ink" style={{ position: 'absolute', inset: 0, width: '100%', height }} />
@@ -1133,6 +1286,9 @@ export const DotField = forwardRef<DotFieldHandle, {
       <span ref={textRef} style={{ color: 'var(--mantine-color-text)' }} hidden />
       {/* The shockwave's ring, in the curve's accent. */}
       <span ref={ringRef} style={{ color: 'var(--mantine-color-accent-6)' }} hidden />
+      {/* A marked dot's ink, and the page's colour its rim is drawn in. */}
+      <span ref={markRef} style={{ color: 'var(--found)' }} hidden />
+      <span ref={rimRef} style={{ color: 'var(--mantine-color-body)' }} hidden />
       {airInks?.map((c, k) => <span key={`air-${k}`} ref={(el) => { airRefs.current[k] = el; }} style={{ color: c }} hidden />)}
       {inkList
         ? inkList.map((c, k) => <span key={k} ref={(el) => { inkRefs.current[k] = el; }} className={`dot-field-ink-${k}`} style={{ color: c }} hidden />)

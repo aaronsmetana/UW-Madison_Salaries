@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { afterReveal } from './reveal';
 
 /**
  * Phone-width layout guard. Every route must fit the viewport: a page wider than the window scrolls the
@@ -47,6 +48,7 @@ test(`no horizontal page overflow at ${PHONE.width}px: person`, async ({ page })
   const hit = page.getByRole('option').first();
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
+  await afterReveal(page);
   await expect(page.getByRole('heading', { name: 'Kenneth Poss' })).toBeVisible({ timeout: 60_000 });
 
   // The header actions sit beside the title on desktop and wrap below it here; check every tab, since

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { parseColor, flatten, contrast } from './color';
+import { afterReveal } from './reveal';
 
 test('search finds a person and navigates to their profile', async ({ page }) => {
   await page.goto('./');
@@ -9,6 +10,7 @@ test('search finds a person and navigates to their profile', async ({ page }) =>
   const hit = page.getByRole('option').first();
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
+  await afterReveal(page);
 
   await expect(page).toHaveURL(/\/person\//);
   // The lead "Actual pay" stat card.
@@ -47,6 +49,7 @@ async function openPerson(page: import('@playwright/test').Page, name: string) {
   const hit = page.getByRole('option').first();
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
+  await afterReveal(page);
   await expect(page.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
   // The axis stagger re-measures on document.fonts.ready; let it settle before reading geometry.
   await page.waitForTimeout(800);

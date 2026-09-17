@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { afterReveal } from './reveal';
 
 /**
  * Visual baselines for every route, in both themes, at desktop and phone widths.
@@ -273,6 +274,7 @@ test('visual: person', async ({ page }) => {
   const hit = page.getByRole('option').first();
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
+  await afterReveal(page);
   await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
   // Load the page itself before the shutter. Arriving by client-side navigation from Home left a stale
   // compositor tile of the landing page in a corner of the dark shot — twice now, the second time with

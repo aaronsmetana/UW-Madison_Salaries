@@ -41,6 +41,12 @@ export const Z = {
    */
   modal: 200,
   /**
+   * One page turning into another (the landing search's reveal of a person): for the few seconds it
+   * covers the screen it is over everything, a dialog included, and takes the first key or press to
+   * finish at once. Only the loading bar, which reports the page loading beneath it, is above.
+   */
+  reveal: 1000,
+  /**
    * The global loading bar — the one thing that outranks a dialog. It is a 3px non-interactive
    * strip reporting that the app is still fetching, which stays true while a dialog is open.
    */

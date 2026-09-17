@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { deltaE, readSurface, samplePixels, setScheme, transparencyEmulator } from './glass';
+import { afterReveal } from './reveal';
 
 /**
  * The chart tooltip is the surface every graph in the app produces, so it is where a "sheen" reaches
@@ -275,11 +276,13 @@ test.describe('the chart-card specular', () => {
     ['person', './', async (p) => {
       await p.getByRole('combobox', { name: 'Search a person' }).fill('Kenneth Poss');
       await p.getByRole('option').first().click();
+      await afterReveal(p);
       await expect(p.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
     }, ['peer-strip']],
     ['person pay tab', './', async (p) => {
       await p.getByRole('combobox', { name: 'Search a person' }).fill('Kenneth Poss');
       await p.getByRole('option').first().click();
+      await afterReveal(p);
       await expect(p.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
       await p.getByRole('tab', { name: 'Pay & standing' }).click();
       await expect(p.locator('.chart-plot').first()).toBeVisible({ timeout: 30_000 });

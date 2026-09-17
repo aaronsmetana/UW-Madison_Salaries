@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { oracle } from './oracle';
 import AxeBuilder from '@axe-core/playwright';
+import { afterReveal } from './reveal';
 
 // Routes exercised in both color schemes. Reports needs a subject to render its full content, so it
 // gets its own case below (rather than a bare `./reports`, which would only show the empty-state).
@@ -186,6 +187,7 @@ for (const theme of THEMES) {
     const hit = page.getByRole('option').first();
     await expect(hit).toBeVisible({ timeout: 15_000 });
     await hit.click();
+    await afterReveal(page);
     await setTheme(page, theme);
     // The person page itself, settled: "any $ figure" was satisfied by whatever rendered first, and
     // axe then measured the Overview mid-fade, where every colour is part-way to its background.

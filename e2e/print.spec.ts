@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { afterReveal } from './reveal';
 
 /**
  * Print guard.
@@ -69,7 +70,7 @@ test('prints its content rather than a blank page: person', async ({ page }) => 
   const hit = page.getByRole('option').first();
   await expect(hit).toBeVisible({ timeout: 15_000 });
   await hit.click();
-  await expect(page).toHaveURL(/\/person\//, { timeout: 30_000 });
+  await afterReveal(page);
   await expect(page.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
 
   await page.emulateMedia({ media: 'print' });

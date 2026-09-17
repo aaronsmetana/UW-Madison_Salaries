@@ -27,6 +27,7 @@ import { TipSurface } from '../components/chart/ChartTooltip';
 import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconTrendingDown, IconMinus, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
+import { personRowsSql } from '../lib/personQuery';
 import { personPay, actualPay, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
@@ -299,15 +300,7 @@ export default function Person() {
       { replace: true }
     );
 
-  const { data, isLoading, error } = useSql<Row>(
-    ['person', key],
-    `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
-            title, job_code, salary, salary_fte_adjusted, fte, date_of_hire, employee_category,
-            grade_number, grade_basis, salary_grade_raw, flsa_status, comp_basis, pay_rate_type,
-            employee_type, contract_type
-     FROM salaries WHERE person_key = ${sqlStr(key)} ORDER BY snapshot_date`,
-    !!key
-  );
+  const { data, isLoading, error } = useSql<Row>(['person', key], personRowsSql(key), !!key);
   const { data: grades } = useGrades();
 
   const { data: summary } = useSummary();
@@ -819,7 +812,7 @@ export default function Person() {
           desktop row unchanged and only drops the actions below once they can no longer both fit. */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div className="page-rail" style={{ flex: '1 1 320px', minWidth: 0 }}>
-          <Title order={1}>{name}</Title>
+          <Title order={1} data-reveal-target tabIndex={-1}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (
               <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(latest.job_code)}`}>{latest?.title}</Anchor>

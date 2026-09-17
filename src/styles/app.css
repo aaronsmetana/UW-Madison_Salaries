@@ -101,6 +101,7 @@
   --z-floating: 180;
   --z-full-page: 190;
   --z-modal: 200;
+  --z-reveal: 1000;
   --z-loading-bar: 1100;
 
   --dur-instant: 120ms;
@@ -131,6 +132,13 @@
   --cat-training: var(--mantine-color-violet-7);
   --cat-limited: var(--mantine-color-gray-7);
   --cat-other: var(--mantine-color-gray-6);
+  /* A person a search found, marked on the landing dots: a bright green no category wears, a lone mark
+     at 3:1 or better against the card (e2e/dots.spec). */
+  --found: #1a9641;
+  /* The reveal's disc, deepening from that green to this, and the words on it: white, 3.8:1 on the
+     brightest of it and 5.4:1 on the deepest. */
+  --found-cover: #147a37;
+  --found-on: #ffffff;
   --guide-strong: var(--mantine-color-gray-6);
   /* The middle 50% of a group (p25-p75), one look everywhere: a neutral wash — teal means "this
      person" — bounded by two edges a reader can see (3.32:1). The wash it replaces was the accent at
@@ -376,6 +384,9 @@ body {
   --cat-training: var(--mantine-color-violet-4);
   --cat-limited: var(--mantine-color-gray-5);
   --cat-other: var(--mantine-color-gray-6);
+  --found: #4be37f;
+  --found-cover: #34d06c;
+  --found-on: #04260f;
   --guide-strong: var(--mantine-color-gray-6);
   --band-fill: rgba(222, 226, 230, 0.1);
   --band-edge: var(--mantine-color-gray-6);
@@ -1906,3 +1917,99 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .mantine-AppShell-footer { display: none; }
 }
 .footer-inflow { padding-block: var(--mantine-spacing-sm); }
+
+/* Read by a screen reader, not drawn. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The landing search's reveal of a person (components/PersonReveal): a dimming round the dot, its glow, the
+   green disc that opens from it over the window with the person's name on it, and the tag beside the dot
+   while it swells. Every motion is driven frame by frame from the component. */
+.person-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-reveal);
+  cursor: progress;
+}
+.person-reveal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(6, 8, 10);
+  opacity: 0;
+  -webkit-mask-image: radial-gradient(circle at var(--hole-x) var(--hole-y), transparent var(--hole, 0px), #000 calc(var(--hole, 0px) * 2.4));
+  mask-image: radial-gradient(circle at var(--hole-x) var(--hole-y), transparent var(--hole, 0px), #000 calc(var(--hole, 0px) * 2.4));
+}
+.person-reveal-glow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--found) 0%, color-mix(in srgb, var(--found) 45%, transparent) 30%, transparent 70%);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.person-reveal-disc {
+  position: fixed;
+  inset: 0;
+  /* Bright where the dot was, deepening outward. Every word on it is large (18.7px bold and up), and
+     clears 3:1 on its brightest green. */
+  background: radial-gradient(circle at var(--disc-x) var(--disc-y), var(--found) 0, var(--found-cover) 38vmax);
+  will-change: clip-path;
+}
+.person-reveal-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(90vw, 900px);
+  text-align: center;
+  color: var(--found-on);
+  opacity: 0;
+}
+.person-reveal-name {
+  display: inline-block;
+  transform-origin: 0 0;
+  font-size: clamp(32px, 6vw, 56px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.person-reveal-detail {
+  margin-top: 12px;
+  font-size: clamp(19px, 2vw, 22px);
+  font-weight: 700;
+}
+.person-reveal-pay {
+  margin-top: 8px;
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.person-reveal-tag {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--found);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.person-reveal-tag-name { font-size: 16px; font-weight: 700; }
+.person-reveal-tag-detail { font-size: 13px; color: var(--mantine-color-dimmed); }

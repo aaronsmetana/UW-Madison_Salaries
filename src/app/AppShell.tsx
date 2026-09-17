@@ -12,6 +12,7 @@ import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '
 import { CommandPalette, PaletteTrigger, usePalette } from '../components/CommandPalette';
 import { NAV, ABOUT, type NavItem } from './nav';
 import { consumeUpdate } from '../lib/appUpdate';
+import { RevealProvider } from '../components/PersonReveal';
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
@@ -92,7 +93,7 @@ export function AppShellLayout() {
   };
 
   return (
-    <>
+    <RevealProvider>
       {/* First tab stop on every route. Without it a keyboard or screen-reader user crossed 12 focus
           stops of masthead and sidebar before reaching the page they navigated to — on every
           navigation, since the shell does not remount. Visually hidden until focused (see
@@ -233,6 +234,6 @@ export function AppShellLayout() {
       {/* Mounted outside AppShell so ⌘K reaches it from every route. Modal keeps its children
           unmounted until opened, so `SearchBox` costs nothing (and boots no DuckDB) until used. */}
       <CommandPalette opened={palette.opened} close={palette.close} />
-    </>
+    </RevealProvider>
   );
 }

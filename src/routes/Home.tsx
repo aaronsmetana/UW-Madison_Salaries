@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon, FocusTrap } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
@@ -15,7 +15,10 @@ import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
-import { SearchBox } from '../components/SearchBox';
+import { SearchBox, type ShownPerson } from '../components/SearchBox';
+import { Sparkline } from '../components/chart/Sparkline';
+import { useReveal } from '../components/PersonReveal';
+import { dotSpots, homePeopleSql, type DotSpot, type HomePerson } from '../lib/homePeople';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
@@ -150,8 +153,13 @@ const CATEGORY_INK: Record<string, string> = {
 };
 const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';
 
+/** A person the search is showing who is on the graph: where their dot is. */
+interface FoundPerson extends ShownPerson { spot: DotSpot }
+/** The card about a found person's dot, CSS px wide. */
+const FOUND_CARD_W = 240;
+
 function Distribution({
-  bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls,
+  bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -167,6 +175,12 @@ function Distribution({
   /** The panel's own controls (the grouping toggle), over its top-right corner, or above the plot on
    *  a phone. */
   controls?: ReactNode;
+  /** The people the search is showing who are on the graph: their dots are marked. */
+  found?: FoundPerson[];
+  /** The person the search list has active: their name is shown over their dot. */
+  activeKey?: string | null;
+  /** Set to open a found person from their dot (the search's pick calls it); false if they are not shown. */
+  openRef?: MutableRefObject<((key: string) => boolean) | null>;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -280,6 +294,55 @@ function Distribution({
     });
     return [...m.entries()].sort((a, b) => a[0] - b[0]).map(([bucket, n]) => ({ bucket, n }));
   }), [categories, payCounts]);
+  // The people the search found: their dots marked (DotField `marks`), a card for the one pointed at or
+  // tapped, their name over the one the search list has active, and a press on a mark that opens them
+  // (components/PersonReveal) rather than bursting the dots.
+  const reveal = useReveal();
+  const foundMain = useMemo(() => found.filter((f) => f.spot.field === 'main'), [found]);
+  const foundPile = useMemo(() => found.filter((f) => f.spot.field === 'pile'), [found]);
+  const mainMarks = useMemo(() => foundMain.map((f) => f.spot.index), [foundMain]);
+  const pileMarks = useMemo(() => foundPile.map((f) => f.spot.index), [foundPile]);
+  const [card, setCard] = useState<{ key: string; pinned: boolean } | null>(null);
+  const pressRef = useRef<{ key: string; x: number; y: number } | null>(null);
+  useEffect(() => { if (card && !found.some((f) => f.person_key === card.key)) setCard(null); }, [found, card]);
+  const markHit = (field: 'main' | 'pile', e: ReactPointerEvent<HTMLDivElement>): FoundPerson | null => {
+    const list = field === 'main' ? foundMain : foundPile;
+    if (!list.length) return null;
+    const box = e.currentTarget.getBoundingClientRect();
+    const i = (field === 'main' ? mainDotsRef : pileDotsRef).current?.markAt(e.clientX - box.left, e.clientY - box.top);
+    return i == null ? null : list.find((f) => f.spot.index === i) ?? null;
+  };
+  const openFound = useCallback((f: FoundPerson) => {
+    const at = (f.spot.field === 'main' ? mainDotsRef : pileDotsRef).current?.positionOf(f.spot.index);
+    const box = (f.spot.field === 'main' ? mainBoxRef : pileBoxRef).current?.getBoundingClientRect();
+    if (!reveal || !at || !box) return false;
+    setCard(null);
+    reveal({ person: { key: f.person_key, name: f.name, title: f.title, school: f.school, pay: f.pay }, from: { x: box.left + at.x, y: box.top + at.y, r: at.r } });
+    return true;
+  }, [reveal]);
+  useEffect(() => {
+    if (!openRef) return;
+    openRef.current = (key) => { const f = found.find((p) => p.person_key === key); return !!f && openFound(f); };
+    return () => { openRef.current = null; };
+  }, [openRef, found, openFound]);
+  // Where each found person's dot is, for the card and the name — read again once a fall or a re-stack
+  // has put the dots in their places.
+  const [foundAt, setFoundAt] = useState<Map<string, { x: number; y: number; r: number; field: 'main' | 'pile' }>>(() => new Map());
+  useEffect(() => {
+    if (!found.length) { setFoundAt(new Map()); return; }
+    const read = () => {
+      const m = new Map<string, { x: number; y: number; r: number; field: 'main' | 'pile' }>();
+      for (const f of found) {
+        const at = (f.spot.field === 'main' ? mainDotsRef : pileDotsRef).current?.positionOf(f.spot.index);
+        if (at) m.set(f.person_key, { ...at, field: f.spot.field });
+      }
+      setFoundAt(m);
+    };
+    read();
+    const soon = window.setTimeout(read, 500), later = window.setTimeout(read, 1300);
+    return () => { window.clearTimeout(soon); window.clearTimeout(later); };
+  }, [found, H, plotW, full, colour, shownSolo]);
+
   // A tapped readout goes at a tap anywhere else.
   useEffect(() => {
     if (!tapped) return;
@@ -573,6 +636,16 @@ function Distribution({
   const onHover = (e: ReactPointerEvent<HTMLDivElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
     if (box.width <= 0) return;
+    if (e.pointerType === 'mouse' && foundMain.length) {
+      const f = markHit('main', e);
+      if (f) {
+        if (card?.key !== f.person_key) setCard({ key: f.person_key, pinned: false });
+        setHoverIdx(null);
+        setLensAt(null);
+        return;
+      }
+      if (card && !card.pinned) setCard(null);
+    }
     const at = lo + Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * span;
     let best = 0;
     for (let i = 1; i < curve.length; i++) {
@@ -582,7 +655,7 @@ function Distribution({
     setHoverIdx(best);
     setLensAt(e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
   };
-  const onLeave = () => { setHoverIdx(null); setLensAt(null); lensPageRef.current = null; };
+  const onLeave = () => { setHoverIdx(null); setLensAt(null); lensPageRef.current = null; setCard((c) => (c?.pinned ? c : null)); };
   // The curve's point nearest a plot x, CSS px.
   const nearestAt = (x: number, width: number) => {
     const at = lo + Math.min(1, Math.max(0, x / Math.max(1, width))) * span;
@@ -669,6 +742,8 @@ function Distribution({
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse') {
       if (e.button !== 0) return;
+      const found1 = markHit('main', e);
+      if (found1) { pressRef.current = { key: found1.person_key, x: e.clientX, y: e.clientY }; stirRef.current = null; return; }
       const box = e.currentTarget.getBoundingClientRect();
       const at = { x: e.clientX - box.left, y: e.clientY - box.top };
       mainDotsRef.current?.burst(at.x, at.y);
@@ -696,6 +771,9 @@ function Distribution({
     };
   };
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // A press on a mark that moves off it is a drag, not an open.
+    const press = pressRef.current;
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) pressRef.current = null;
     if (e.pointerType !== 'mouse') {
       const box = e.currentTarget.getBoundingClientRect();
       if (magnifyRef.current) {
@@ -712,7 +790,7 @@ function Distribution({
     // A touch contact reports its button held as it moves: on the page a finger that moves is scrolling,
     // and only a mouse stirs. Full page there is nothing to scroll, and a finger that has moved off its
     // hold stirs as a mouse does.
-    const stirs = e.pointerType === 'mouse' ? !!(e.buttons & 1) : full && !!(e.buttons & 1) && !holdRef.current;
+    const stirs = e.pointerType === 'mouse' ? !!(e.buttons & 1) && !pressRef.current : full && !!(e.buttons & 1) && !holdRef.current;
     if (!stirs) { stirRef.current = null; return; }
     const box = e.currentTarget.getBoundingClientRect();
     const native = e.nativeEvent;
@@ -721,7 +799,15 @@ function Distribution({
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     stirRef.current = null;
-    if (e.pointerType === 'mouse') return;
+    const press = pressRef.current;
+    pressRef.current = null;
+    if (e.pointerType === 'mouse') {
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) <= 6) {
+        const f = found.find((p) => p.person_key === press.key);
+        if (f) openFound(f);
+      }
+      return;
+    }
     clearHold();
     // Lifted from the glass: it goes, the readout stays where it was, and nothing is thrown.
     if (magnifyRef.current) { endMagnify(true); tapRef.current = null; return; }
@@ -729,6 +815,10 @@ function Distribution({
     tapRef.current = null;
     if (!tap || tap.id !== e.pointerId) return;
     if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 10 || performance.now() - tap.t > 400) return;
+    // A tap on a mark shows its card, with a way in; a tap anywhere else puts a card away and bursts.
+    const tappedFound = markHit('main', e);
+    if (tappedFound) { setCard({ key: tappedFound.person_key, pinned: true }); return; }
+    if (card) setCard(null);
     onHover(e);
     setTapped(true);
     const box = e.currentTarget.getBoundingClientRect();
@@ -736,6 +826,63 @@ function Distribution({
   };
   // The browser took the gesture: no tap, no stir, no glass.
   const onCancel = () => { stirRef.current = null; tapRef.current = null; clearHold(); endMagnify(false); };
+
+  // The card about a found person's dot: who they are, their pay and its path, and how to open them — a
+  // mouse clicks the dot; a finger, having tapped it, taps the button. Above the dot, or below it near the
+  // top of the plot.
+  const cardPerson = card ? found.find((f) => f.person_key === card.key) ?? null : null;
+  const cardSpot = cardPerson ? foundAt.get(cardPerson.person_key) ?? null : null;
+  const foundCard = (field: 'main' | 'pile') => {
+    if (!card || !cardPerson || !cardSpot || cardSpot.field !== field) return null;
+    const detail = [cardPerson.title, cardPerson.school].filter(Boolean).join(' · ');
+    const above = cardSpot.y - cardSpot.r - 10 > 120;
+    return (
+      <div
+        className="chart-tip hero-found-card"
+        data-found-card={cardPerson.person_key}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        style={{
+          position: 'absolute', zIndex: Z.local, width: FOUND_CARD_W,
+          pointerEvents: card.pinned ? 'auto' : 'none',
+          ...(field === 'main'
+            ? { left: Math.min(Math.max(0, cardSpot.x - FOUND_CARD_W / 2), Math.max(0, plotW - FOUND_CARD_W)) }
+            : { right: 0 }),
+          top: above ? cardSpot.y - cardSpot.r - 10 : cardSpot.y + cardSpot.r + 10,
+          transform: above ? 'translateY(-100%)' : undefined,
+        }}
+      >
+        <Text fw={700} size="sm" lh={1.25}>{cardPerson.name}</Text>
+        {detail && <Text size="xs" c="dimmed" lineClamp={2}>{detail}</Text>}
+        <Group gap={8} mt={4} wrap="nowrap" justify="space-between">
+          {cardPerson.pay != null && <Text size="sm" fw={600} style={{ fontVariantNumeric: 'tabular-nums' }}>{usd(cardPerson.pay)}</Text>}
+          <Sparkline points={cardPerson.series} breaks={cardPerson.breaks} />
+        </Group>
+        {card.pinned
+          ? <Button size="compact-xs" mt={6} fullWidth onClick={() => openFound(cardPerson)}>Open {cardPerson.name}</Button>
+          : <Text size="xxs" c="dimmed" mt={4}>Click the dot to open</Text>}
+      </div>
+    );
+  };
+  // The name over the dot of the person the search list has active (unless its card is up).
+  const activeFound = activeKey && activeKey !== card?.key ? found.find((f) => f.person_key === activeKey) ?? null : null;
+  const activeSpot = activeFound ? foundAt.get(activeFound.person_key) ?? null : null;
+  const foundName = (field: 'main' | 'pile') => {
+    if (!activeFound || !activeSpot || activeSpot.field !== field) return null;
+    return (
+      <div
+        aria-hidden
+        className="hero-found-name"
+        style={{
+          position: 'absolute', zIndex: Z.local, pointerEvents: 'none',
+          ...(field === 'main' ? { left: Math.min(Math.max(activeSpot.x, 70), Math.max(70, plotW - 70)), transform: 'translate(-50%, -100%)' } : { right: 0, transform: 'translateY(-100%)' }),
+          top: activeSpot.y - activeSpot.r - 8,
+        }}
+      >
+        <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>{activeFound.name}</span>
+      </div>
+    );
+  };
 
   const pileHighlight = hoverPile ? PILE_ALL : null;
   const inkList = colour ? inks : undefined;
@@ -925,7 +1072,7 @@ function Distribution({
           kinds={colour ? cats : null} inks={inkList} stack={colour}
           airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
           entrance={entrance} highlight={highlight} glow pack={PACK}
-          solo={shownSolo} replay={replay}
+          solo={shownSolo} replay={replay} marks={mainMarks}
           onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
@@ -1007,6 +1154,8 @@ function Distribution({
           </span>
         </div>
       )}
+      {foundCard('main')}
+      {foundName('main')}
       {lensAt && <FisheyeLens ref={lensRef} at={lensAt} offsetY={lensLift} draw={drawLens} />}
       </div>
 
@@ -1023,15 +1172,27 @@ function Distribution({
           <div
             ref={pileBoxRef}
             className="hero-dist-pile" style={{ position: 'relative', height: H }}
-            onPointerMove={() => { setHoverIdx(null); setLensAt(null); setHoverPile(true); }}
-            onPointerLeave={() => setHoverPile(false)}
+            onPointerMove={(e) => {
+              setHoverIdx(null);
+              setLensAt(null);
+              const f = e.pointerType === 'mouse' ? markHit('pile', e) : null;
+              if (f) { if (card?.key !== f.person_key) setCard({ key: f.person_key, pinned: false }); setHoverPile(false); return; }
+              if (card && !card.pinned) setCard(null);
+              setHoverPile(true);
+            }}
+            onPointerLeave={() => { setHoverPile(false); setCard((c) => (c?.pinned ? c : null)); }}
+            onPointerUp={(e) => {
+              const f = markHit('pile', e);
+              if (!f) return;
+              if (e.pointerType === 'mouse') openFound(f); else setCard({ key: f.person_key, pinned: true });
+            }}
           >
             <DotField
               ref={pileDotsRef}
               className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
               entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow pack={PACK}
-              solo={shownSolo} replay={replay}
+              solo={shownSolo} replay={replay} marks={pileMarks}
               onFrame={lensAt ? redrawLens : undefined}
             />
             {hoverPile && headcount != null && (
@@ -1043,9 +1204,15 @@ function Distribution({
                 </span>
               </div>
             )}
+            {foundCard('pile')}
+            {foundName('pile')}
           </div>
         </>
       )}
+      </div>
+
+      <div className="visually-hidden" aria-live="polite">
+        {found.length ? `${num(found.length)} ${found.length === 1 ? 'person' : 'people'} from the search marked on the graph` : ''}
       </div>
 
       {/* Marker labels live in HTML, not SVG: `preserveAspectRatio="none"` would stretch SVG text
@@ -1221,6 +1388,23 @@ export default function Home() {
   // the page isn't pinned to some other (older) snapshot — in which case we fall back to live SQL.
   const { data: homeStats, isError: homeStatsFailed } = useHomeStats();
   const artifactUsable = !!homeStats && (snap == null || snap === homeStats.snapshot_id);
+  // The people the search is showing, and its active row: their dots are marked on the graph, and picking
+  // one opens them from their dot (components/PersonReveal).
+  const navigate = useNavigate();
+  const [shown, setShown] = useState<ShownPerson[]>([]);
+  const [activeItem, setActiveItem] = useState<string | null>(null);
+  const openRef = useRef<((key: string) => boolean) | null>(null);
+  // Who each dot is (lib/homePeople): asked once the search has found someone, by when DuckDB is up.
+  const peopleSnap = artifactUsable ? homeStats.snapshot_id : '';
+  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && shown.length > 0);
+  const spots = useMemo(
+    () => (homePeople && artifactUsable && homeStats.pay_counts && homeStats.bin_cap != null ? dotSpots(homePeople, homeStats.pay_counts, homeStats.bin_cap) : null),
+    [homePeople, artifactUsable, homeStats],
+  );
+  const found = useMemo<FoundPerson[]>(
+    () => (spots ? shown.flatMap((p) => { const spot = spots.get(p.person_key); return spot ? [{ ...p, spot }] : []; }) : []),
+    [spots, shown],
+  );
   // "Generic" (one ink, stored as 'all') or "By employment type" (the staff category) for the dots,
   // remembered per viewer, opening on the second. A new key: under the old one a visitor who had once
   // picked the one ink (then called "All") would never see the
@@ -1387,7 +1571,7 @@ export default function Home() {
             headline tells you to use, so it reads as underweight at anything narrower than the
             figure it sits under. */}
         <Stack gap="lg" maw="var(--content-max)" mx="auto" w="100%" className="hero-rise">
-          <div className="hero-dist-wrap">
+          <div className="hero-dist-wrap" data-people-mapped={spots ? spots.size : undefined}>
             <Distribution
               bins={bins}
               payCounts={artifactUsable ? homeStats.pay_counts ?? null : null}
@@ -1398,6 +1582,9 @@ export default function Home() {
               overflow={artifactUsable ? homeStats.bins_overflow : null}
               headcount={summary?.latest?.headcount ?? null}
               byCategory={colourBy === 'category' && canColour}
+              found={found}
+              activeKey={activeItem?.startsWith('p:') ? activeItem.slice(2) : null}
+              openRef={openRef}
               controls={canColour ? (
                 <div className="hero-dist-toggle">
                   <SegmentedToggle
@@ -1410,7 +1597,11 @@ export default function Home() {
             />
           </div>
 
-          <SearchBox size="lg" autoFocus />
+          <SearchBox
+            size="lg" autoFocus onPeopleShown={setShown} onActiveItem={setActiveItem}
+            keepBelow={() => document.querySelector<HTMLElement>('.hero-dist-main')}
+            onPick={(h) => { if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`); }}
+          />
 
           {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
               Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}

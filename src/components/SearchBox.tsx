@@ -1,4 +1,4 @@
-import { useState, useMemo, useId, useEffect, type KeyboardEvent, type ReactNode } from 'react';
+import { useState, useMemo, useId, useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip, Badge, Box } from '@mantine/core';
 import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
@@ -12,6 +12,10 @@ import { ALL_KINDS, GROUP_LIMIT, matchTitles, matchDivisions, enterPick, type Se
 import { DROPDOWN_TIERS, type DropdownSize } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
 import { Sparkline } from './chart/Sparkline';
+import { prefersReducedMotion } from '../lib/motion';
+
+/** How much room a list kept below its box (`keepBelow`) is given, px, by scrolling the page if need be. */
+const BELOW_ROOM = 320;
 
 /** One matched person in one snapshot — the people query returns a row per person per snapshot. */
 interface HitRow {
@@ -43,6 +47,20 @@ interface PersonHit {
   breaks: number[];
   /** Actual pay in their latest snapshot. */
   pay: number | null;
+}
+
+/** A person the list is showing, as a page beside it can use them (the landing graph marks their dots). */
+export interface ShownPerson {
+  person_key: string;
+  name: string;
+  title: string | null;
+  school: string | null;
+  /** Actual pay in their latest snapshot. */
+  pay: number | null;
+  series: { x: number; y: number }[];
+  breaks: number[];
+  /** Not in the latest snapshot. */
+  former: boolean;
 }
 
 type Item =
@@ -122,6 +140,9 @@ export function SearchBox({
   kinds = ALL_KINDS,
   size = 'md',
   peopleInGroup = GROUP_LIMIT.people,
+  onPeopleShown,
+  onActiveItem,
+  keepBelow,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -138,6 +159,15 @@ export function SearchBox({
   /** How many people a grouped list shows before "More people match" — fewer in the ⌘K palette, whose
    *  list sits lower on the screen, so its titles and divisions are not below the fold. */
   peopleInGroup?: number;
+  /** Told the people the open list shows, in order, whenever they change — and none once it closes. */
+  onPeopleShown?: (people: ShownPerson[]) => void;
+  /** Told the active row's key ('p:<person_key>', 't:<code>' or 'd:<school>') as it moves; null when the
+   *  list is closed. */
+  onActiveItem?: (key: string | null) => void;
+  /** Keep the list below the box, never flipped up over what is above it — the element this returns (the
+   *  landing graph, whose dots the search marks). Opening the list scrolls the page to give it room below,
+   *  but never so far that the element's top passes under the header. */
+  keepBelow?: () => HTMLElement | null;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
@@ -269,6 +299,38 @@ export function SearchBox({
   useEffect(() => { setActive(0); }, [itemKeys]);
   useEffect(() => { setMoved(false); }, [q]);
   useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, listId]);
+
+  // What a page beside the box is told: the people shown and the active row, each only when it changes.
+  const shownKey = opened ? peopleShown.map((h) => h.person_key).join('|') : '';
+  const shownRef = useRef({ peopleShown, campusLatestDate, onPeopleShown });
+  shownRef.current = { peopleShown, campusLatestDate, onPeopleShown };
+  useEffect(() => {
+    const { peopleShown: shown, campusLatestDate: latest, onPeopleShown: tell } = shownRef.current;
+    tell?.(shownKey ? shown.map((h) => ({
+      person_key: h.person_key, name: fullName(h.fn, h.ln), title: h.title, school: h.school, pay: h.pay,
+      series: h.series, breaks: h.breaks, former: latest != null && h.last_date != null && String(h.last_date) < String(latest),
+    })) : []);
+  }, [shownKey]);
+  const activeKey = opened && items[active] ? items[active].key : null;
+  const activeRef = useRef(onActiveItem);
+  activeRef.current = onActiveItem;
+  useEffect(() => { activeRef.current?.(activeKey); }, [activeKey]);
+  useEffect(() => () => { shownRef.current.onPeopleShown?.([]); activeRef.current?.(null); }, []);
+
+  // Opened under a figure it must not cover: room for the list below, from the page's scroll.
+  const targetRef = useRef<HTMLDivElement>(null);
+  const keepBelowRef = useRef(keepBelow);
+  keepBelowRef.current = keepBelow;
+  useEffect(() => {
+    const above = opened ? keepBelowRef.current?.() : null;
+    const input = targetRef.current;
+    if (!above || !input) return;
+    const header = document.querySelector('.mantine-AppShell-header')?.getBoundingClientRect().bottom ?? 0;
+    const room = window.innerHeight - input.getBoundingClientRect().bottom - 12;
+    const most = above.getBoundingClientRect().top - header - 8;
+    const by = Math.min(BELOW_ROOM - room, most);
+    if (by > 0) window.scrollBy({ top: by, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }, [opened]);
 
   const select = (it: Item) => {
     if (it.kind === 'person') {
@@ -442,7 +504,7 @@ export function SearchBox({
       // screen it ran past the modal and the screen's bottom, and its titles were off-screen. The room
       // is handed to the style below as a variable, so the tier's own cap still applies where it is lower.
       middlewares={{
-        flip: true,
+        flip: !keepBelow,
         shift: true,
         size: {
           padding: 12,
@@ -453,7 +515,7 @@ export function SearchBox({
       }}
     >
       <Popover.Target>
-        <div style={{ width: '100%', maxWidth: large ? '100%' : 720, margin: large ? '0 auto' : undefined }}>
+        <div ref={targetRef} style={{ width: '100%', maxWidth: large ? '100%' : 720, margin: large ? '0 auto' : undefined }}>
           <TextInput
             size={t.mantineSize}
             radius={t.radius}

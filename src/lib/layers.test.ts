@@ -26,6 +26,7 @@ describe('the stacking scale is defined once', () => {
       floating: Z.floating,
       'full-page': Z.fullPage,
       modal: Z.modal,
+      reveal: Z.reveal,
       'loading-bar': Z.loadingBar,
     });
   });
