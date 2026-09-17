@@ -61,6 +61,14 @@ const MARK_PULSE = 4;
 export const markRadius = (r: number) => Math.max(MARK_MIN_R, r * MARK_SCALE);
 const markExtent = (r: number) => markRadius(r) * Math.max(MARK_HALO, MARK_PULSE) + 2;
 
+/** A field squeezed along x, or its dots moved to given places (the landing pile unrolling onto a long
+ *  axis, and folding back): each takes MOVE_MS, and a move sets its dots off one after another, left to
+ *  right along their laid-out places, over MOVE_STAGGER. */
+export const MOVE_MS = 900;
+export const MOVE_STAGGER = 500;
+const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
+const clamp01 = (p: number) => Math.min(1, Math.max(0, p));
+
 /** A springy ease that overshoots a little and settles — the "bounce". */
 const easeOutBack = (p: number) => {
   const c1 = 1.4;
@@ -250,6 +258,13 @@ export const DotField = forwardRef<DotFieldHandle, {
   /** Dots to mark (indices into `values`): each drawn over the field several times its size, glowing in
    *  `--found`, growing in and sending out one ring as it arrives. */
   marks?: readonly number[] | null;
+  /** Draw the field this many times as wide along x, from its left edge (1: as laid out); a change eases
+   *  over MOVE_MS. Nothing is laid out again: squeezed, the field is its own picture, narrowed. */
+  squeeze?: number;
+  /** Draw each dot at `pts` (x, y pairs, this field's CSS px) rather than in its place. A new `key` moves
+   *  them there from wherever they are drawn — or, with `pts` null, back to their places. A field mounted
+   *  with it starts there. */
+  moveTo?: { key: number; pts: Float32Array | null } | null;
   /** Bump to play the fall into place again. */
   replay?: number;
   /** A faint halo round each dot on a dark page, so a dense field glows a little. */
@@ -262,7 +277,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, solo = null, marks = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, solo = null, marks = null, squeeze = 1, moveTo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -438,6 +453,17 @@ export const DotField = forwardRef<DotFieldHandle, {
     marks: [] as { i: number; born: number }[],
     markInk: { core: '', glow: '', clear: '', rim: '' },
     markRaf: 0,
+    /** The squeeze: from, to, and when it started easing (null once there). */
+    sqFrom: 1,
+    sqTo: 1,
+    sqStart: null as number | null,
+    /** A move: where each dot set off from, where it goes (null: its place), and when; or where the dots
+     *  are held once there (null: their places); and the key of the last move asked for. */
+    mvFrom: null as Float32Array | null,
+    mvTo: null as Float32Array | null,
+    mvStart: null as number | null,
+    mvHold: null as Float32Array | null,
+    mvKey: null as number | null,
   });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
@@ -446,6 +472,23 @@ export const DotField = forwardRef<DotFieldHandle, {
   const prevSolo = useRef<number | null>(solo);
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
+
+  // How wide the field is drawn now, as a share of its laid-out width; whether any dot is drawn away from
+  // its laid-out place (then a strip of the field cannot be found from where the dots are laid out); and
+  // how far along its way a moving dot is — setting off in turn along its laid-out x.
+  const squeezeAt = (now: number) => {
+    const L = live.current;
+    return L.sqStart == null ? L.sqTo : L.sqFrom + (L.sqTo - L.sqFrom) * easeInOut(clamp01((now - L.sqStart) / MOVE_MS));
+  };
+  const displaced = () => {
+    const L = live.current;
+    return L.sqTo !== 1 || L.sqStart != null || L.mvStart != null || L.mvHold != null;
+  };
+  const moveShare = (i: number, now: number) => {
+    const L = live.current;
+    const lay = layout!;
+    return easeInOut(clamp01((now - (L.mvStart ?? now) - (lay.pts[2 * i] / Math.max(1, lay.width)) * MOVE_STAGGER) / MOVE_MS));
+  };
 
   // The current y of dot i: at rest, falling in, re-stacking, plus its flight or burst — a thrown dot
   // kept between the canvas's top and the baseline, so one pressed to the floor slides along it.
@@ -462,14 +505,28 @@ export const DotField = forwardRef<DotFieldHandle, {
       const p = Math.min(1, Math.max(0, (now - L.entranceStart - delay - (lay.pts[2 * i] / lay.width) * SPREAD_MS) / FALL_MS));
       y = -lay.r + (y + lay.r) * easeOutBack(p);
     }
+    if (L.mvStart != null && L.mvFrom) {
+      const to = L.mvTo ? L.mvTo[2 * i + 1] : lay.pts[2 * i + 1];
+      y = L.mvFrom[2 * i + 1] + (to - L.mvFrom[2 * i + 1]) * moveShare(i, now);
+    } else if (L.mvHold) y = L.mvHold[2 * i + 1];
     if (L.off) y += L.off[i];
     if (L.mode && L.mode[i] === BURST) y = Math.min(height - lay.r, Math.max(lay.r, y));
     return y;
   };
   const yOfRef = useRef(yOf);
   yOfRef.current = yOf;
-  // Its x: its value, and aside while it bursts.
-  const xOf = (i: number) => layout!.pts[2 * i] + (live.current.offX ? live.current.offX[i] : 0);
+  // Its x: its value — squeezed, or moved — and aside while it bursts.
+  const xOf = (i: number, now: number = performance.now()) => {
+    const L = live.current;
+    const lay = layout!;
+    let x = lay.pts[2 * i];
+    if (L.mvStart != null && L.mvFrom) {
+      const to = L.mvTo ? L.mvTo[2 * i] : x;
+      x = L.mvFrom[2 * i] + (to - L.mvFrom[2 * i]) * moveShare(i, now);
+    } else if (L.mvHold) x = L.mvHold[2 * i];
+    else if (L.sqTo !== 1 || L.sqStart != null) x *= squeezeAt(now);
+    return x + (L.offX ? L.offX[i] : 0);
+  };
   const xOfRef = useRef(xOf);
   xOfRef.current = xOf;
   // Whether it is in the air: thrown by a burst (not rocked by a ripple), and not yet within AIR_EPS of
@@ -501,7 +558,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     // lands on whole pixels. (The canvas's own width over the plot's can be a hair off it — 2006 over
     // 1003.14 — and every sprite was then resampled.)
     const dpr = spill != null ? packDpr : canvas.width / Math.max(1, lay.width);
-    const whole = !(x0 > -Infinity) && !(x1 < Infinity);
+    const whole = (!(x0 > -Infinity) && !(x1 < Infinity)) || displaced();
     const a = whole ? 0 : Math.max(0, Math.floor((x0 - 1) * dpr));
     const b = whole ? canvas.width : Math.min(canvas.width, Math.ceil((x1 + 1) * dpr));
     if (b <= a) return;
@@ -509,7 +566,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (!whole) { ctx.beginPath(); ctx.rect(a, 0, b - a, canvas.height); ctx.clip(); }
     ctx.clearRect(a, 0, b - a, canvas.height);
     ctx.globalAlpha = alpha;
-    const { order, sortedX, r, pts } = lay;
+    const { order, sortedX, r } = lay;
     const reach = (glow && L.dark ? 2 : 1) * r + 1 + L.slack;
     const j0 = whole ? 0 : lowerBound(sortedX, a / dpr - reach);
     const j1 = whole ? order.length : lowerBound(sortedX, b / dpr + reach);
@@ -517,7 +574,6 @@ export const DotField = forwardRef<DotFieldHandle, {
     const kindsN = L.beads.length;
     const tone = L.tone;
     const mode = L.mode;
-    const offX = L.offX;
     if (fast) {
       // Squares, a fill at a time: one pass per (kind, tone), the highlighted dots after. The whole
       // field's groups are kept; a strip's dots — or a field with dots in the air, each under its air
@@ -552,7 +608,7 @@ export const DotField = forwardRef<DotFieldHandle, {
             if (mode && mode[i] === GONE) continue;
             const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
             if (lit !== !!strong) continue;
-            ctx.fillRect((pts[2 * i] + (offX ? offX[i] : 0)) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
+            ctx.fillRect(xOf(i, now) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
           }
         }
       }
@@ -564,7 +620,7 @@ export const DotField = forwardRef<DotFieldHandle, {
           if (mode && mode[i] === GONE) continue;
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           const hb = (lit ? L.strongHalos : L.halos)[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
-          ctx.drawImage(hb.img, (pts[2 * i] + (offX ? offX[i] : 0)) * dpr - hb.half, yOf(i, now) * dpr - hb.half);
+          ctx.drawImage(hb.img, xOf(i, now) * dpr - hb.half, yOf(i, now) * dpr - hb.half);
         }
       }
       // The highlighted dots last, so they sit over their neighbours.
@@ -577,7 +633,7 @@ export const DotField = forwardRef<DotFieldHandle, {
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           if (lit !== !!strong) continue;
           const bd = set[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
-          ctx.drawImage(bd.img, (pts[2 * i] + (offX ? offX[i] : 0)) * dpr - bd.half, yOf(i, now) * dpr - bd.half);
+          ctx.drawImage(bd.img, xOf(i, now) * dpr - bd.half, yOf(i, now) * dpr - bd.half);
         }
       }
     }
@@ -586,7 +642,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       const ext = markExtent(r);
       for (const m of L.marks) {
         if (mode && mode[m.i] === GONE) continue;
-        const x = pts[2 * m.i] + (offX ? offX[m.i] : 0);
+        const x = xOf(m.i, now);
         if (x + ext < a / dpr || x - ext > b / dpr) continue;
         drawMark(ctx, x * dpr, yOf(m.i, now) * dpr, markRadius(r) * dpr, now - m.born, dpr, L.markInk);
       }
@@ -644,8 +700,9 @@ export const DotField = forwardRef<DotFieldHandle, {
       // This field's own x of the glass's centre; everything within its radius (plus a dot, plus how far
       // a thrown dot may be from its place).
       const fx = cx - ox;
-      const j0 = lowerBound(sortedX, fx - R - r - L.slack);
-      const j1 = lowerBound(sortedX, fx + R + r + L.slack);
+      const all = displaced();
+      const j0 = all ? 0 : lowerBound(sortedX, fx - R - r - L.slack);
+      const j1 = all ? order.length : lowerBound(sortedX, fx + R + r + L.slack);
       const hl = L.highlight;
       const kindsN = L.tones.length;
       const air = !!airKinds && L.airTones.length > 0 && L.flying > 0;
@@ -662,7 +719,7 @@ export const DotField = forwardRef<DotFieldHandle, {
           if (L.mode && L.mode[i] === GONE) continue;
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           if (lit !== !!strong) continue;
-          const sx = xOfRef.current(i) + ox;
+          const sx = xOfRef.current(i, now) + ox;
           const sy = yOfRef.current(i, now) + oy;
           if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + r) ** 2) continue;
           const m = map(sx, sy);
@@ -695,7 +752,7 @@ export const DotField = forwardRef<DotFieldHandle, {
         const ext = markExtent(r);
         for (const mk of L.marks) {
           if (L.mode && L.mode[mk.i] === GONE) continue;
-          const sx = xOfRef.current(mk.i) + ox;
+          const sx = xOfRef.current(mk.i, now) + ox;
           const sy = yOfRef.current(mk.i, now) + oy;
           if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + ext) ** 2) continue;
           const m = map(sx, sy);
@@ -824,7 +881,8 @@ export const DotField = forwardRef<DotFieldHandle, {
       const lay = layout;
       const L = live.current;
       if (!lay || !(i >= 0 && i < values.length) || (L.mode && L.mode[i] === GONE)) return null;
-      return { x: xOfRef.current(i), y: yOfRef.current(i, performance.now()), r: markRadius(lay.r) };
+      const now = performance.now();
+      return { x: xOfRef.current(i, now), y: yOfRef.current(i, now), r: markRadius(lay.r) };
     },
     markAt(x, y) {
       const lay = layout;
@@ -835,7 +893,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       let bestD = markRadius(lay.r) * 1.6 + 4;
       for (const m of L.marks) {
         if (L.mode && L.mode[m.i] === GONE) continue;
-        const d = Math.hypot(xOfRef.current(m.i) - x, yOfRef.current(m.i, now) - y);
+        const d = Math.hypot(xOfRef.current(m.i, now) - x, yOfRef.current(m.i, now) - y);
         if (d < bestD) { bestD = d; best = m.i; }
       }
       return best;
@@ -881,6 +939,14 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (L.restackStart != null) {
       if (now - L.restackStart >= RESTACK_MS) { L.restackStart = null; L.restackFrom = null; setSettled(true); }
       else moving = true;
+      full = true;
+    }
+    // A squeeze easing, or dots moving to their new places: the whole field, until they are there.
+    if (L.sqStart != null || L.mvStart != null) {
+      if (L.sqStart != null && now - L.sqStart >= MOVE_MS) L.sqStart = null;
+      if (L.mvStart != null && now - L.mvStart >= MOVE_MS + MOVE_STAGGER) { L.mvHold = L.mvTo; L.mvStart = null; L.mvFrom = null; L.mvTo = null; }
+      if (L.sqStart != null || L.mvStart != null) moving = true;
+      else if (boxRef.current) boxRef.current.dataset.move = 'still';
       full = true;
     }
     const dt = Math.min(32, Math.max(1, now - (L.lastTick || now - 16)));
@@ -1207,6 +1273,60 @@ export const DotField = forwardRef<DotFieldHandle, {
     paintRef.current(performance.now(), x0, x1, busy);
     if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x0); L.dirtyHi = Math.max(L.dirtyHi, x1); }
   }, [hlLo, hlHi, layout, toX]);
+
+  // The squeeze: from however wide the field is drawn now to the new width.
+  useEffect(() => {
+    const L = live.current;
+    if (squeeze === L.sqTo && L.sqStart == null) return;
+    const now = performance.now();
+    L.sqFrom = squeezeAt(now);
+    L.sqTo = squeeze;
+    if (!layoutRef.current) return;
+    if (prefersReducedMotion() || document.hidden) {
+      L.sqStart = null;
+      paintRef.current(now);
+      return;
+    }
+    L.sqStart = now;
+    if (boxRef.current) boxRef.current.dataset.move = 'moving';
+    kickRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [squeeze]);
+
+  // A move: the first places given are simply where the dots start; each new key sends them from where they
+  // are drawn to the places given, or home.
+  const moveKey = moveTo?.key ?? null;
+  const movePts = moveTo?.pts ?? null;
+  useEffect(() => {
+    const L = live.current;
+    if (moveKey === L.mvKey) return;
+    const first = L.mvKey == null;
+    L.mvKey = moveKey;
+    const lay = layoutRef.current;
+    const now = performance.now();
+    if (!lay || first || moveKey == null || prefersReducedMotion() || document.hidden) {
+      L.mvStart = null;
+      L.mvFrom = null;
+      L.mvTo = null;
+      L.mvHold = moveKey == null ? null : movePts;
+      if (lay) paintRef.current(now);
+      if (boxRef.current) boxRef.current.dataset.move = 'still';
+      return;
+    }
+    const n = values.length;
+    const from = new Float32Array(2 * n);
+    for (let i = 0; i < n; i++) {
+      from[2 * i] = xOfRef.current(i, now) - (L.offX ? L.offX[i] : 0);
+      from[2 * i + 1] = yOfRef.current(i, now) - (L.off ? L.off[i] : 0);
+    }
+    L.mvFrom = from;
+    L.mvTo = movePts;
+    L.mvStart = now;
+    L.mvHold = null;
+    if (boxRef.current) boxRef.current.dataset.move = 'moving';
+    kickRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveKey, layout]);
 
   // The marks: repaint where one went or came, and draw each arrival (its growth and its ring) in the
   // strip round it until it is done.

@@ -80,7 +80,10 @@ export interface HomeStats {
     /** The same people by staff category, largest first: each person once, in the category of their
      *  highest-paid appointment. `counts` sum to the parent's bin by bin; `over` counts those at or
      *  above the cap; `n` and `median` cover everyone paid in the category. */
-    categories?: { name: string; n: number; median: number; over: number; counts: number[] }[];
+    categories?: { name: string; n: number; median: number; over: number; counts: number[];
+      /** The pays of the people at or above the cap, by pay then person — the pile's own order, so its
+       *  dots can unroll each to its own pay. */
+      over_pays?: number[] }[];
   } | null;
   /** Quartiles over the same actual-pay measure `bins` describes (and the headline median uses). */
   p25: number | null;

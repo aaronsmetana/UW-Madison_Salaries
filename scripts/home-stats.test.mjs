@@ -238,6 +238,38 @@ describe('computeHomeStats pay_counts.categories: one category per person', () =
   });
 });
 
+// The pile past the cap unrolls on the landing page: each of its dots flies to its own pay, so the
+// artifact carries those pays, in the order the pile stacks its dots.
+describe('computeHomeStats pay_counts.categories over_pays: the pile, in its own order', () => {
+  let c;
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-over-'));
+    const base = { snapshot_id: 's', school: 'A', title: 'T', salary_fte_adjusted: null, date_of_hire: '2020-01-01', snapshot_date: '2026-01-01' };
+    c = await computeHomeStats(await writeParquet(dir, [
+      { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'zeta', salary: 400000, fte: 1 },
+      { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'alpha', salary: 400000, fte: 1 },
+      // Over the cap only together, and in Faculty by the larger appointment; the cents round away.
+      { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'split', salary: 150000, fte: 1 },
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'split', salary: 120000.6, fte: 1 },
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'boss', salary: 251000, fte: 1 },
+      // A reported figure somewhere, or every null leaves the column untyped.
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'under', salary: 60000, fte: 1, salary_fte_adjusted: 60000 },
+    ]), 's');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const cat = (name) => c.pay_counts.categories.find((x) => x.name === name);
+
+  it('lists each category\'s people over the cap by pay, ties by person, in whole dollars', () => {
+    expect(cat('Faculty').over_pays).toEqual([270001, 400000, 400000]);
+    expect(cat('Staff').over_pays).toEqual([251000]);
+  });
+
+  it('lists exactly the people the pile draws', () => {
+    for (const x of c.pay_counts.categories) expect(x.over_pays.length).toBe(x.over);
+    expect(c.pay_counts.categories.reduce((t, x) => t + x.over_pays.length, 0)).toBe(c.bins_overflow);
+  });
+});
+
 describe('serializeHomeStats', () => {
   it('writes compact JSON under its budget, and refuses a file over it', () => {
     const small = serializeHomeStats({ a: [1, 2, 3] });

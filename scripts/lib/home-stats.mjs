@@ -110,6 +110,12 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
         `SELECT cat, count(*) AS n, median(pay) AS med, count(*) FILTER (WHERE pay >= ${BIN_CAP}) AS over
          FROM ${peopleByCategory(src, snap)} WHERE pay > 0 GROUP BY cat ORDER BY n DESC, cat`
       );
+      // Everyone at or above the cap, at their pay, in the order the landing pile stacks them — by
+      // category, then by pay, then by person — so the pile can unroll each dot to its own pay. Whole
+      // dollars: ~2 KB gzipped for 574 people.
+      const overRows = await run(
+        `SELECT cat, pay FROM ${peopleByCategory(src, snap)} WHERE pay >= ${BIN_CAP} ORDER BY cat, pay, person_key`
+      );
       const [overflowRow] = await run(
         `SELECT count(*) AS n FROM ${people(src, snap)} WHERE pay >= ${BIN_CAP}`
       );
@@ -162,7 +168,8 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
             const categories = catRows.map((c) => {
               const own = new Array(counts.length).fill(0);
               for (const r of per100Cat) if (r.cat === c.cat) own[toNum(r.b) - lo100] = toNum(r.n);
-              return { name: c.cat, n: toNum(c.n), median: toNum(c.med), over: toNum(c.over), counts: own };
+              const overPays = overRows.filter((r) => r.cat === c.cat).map((r) => Math.round(toNum(r.pay)));
+              return { name: c.cat, n: toNum(c.n), median: toNum(c.med), over: toNum(c.over), over_pays: overPays, counts: own };
             });
             return { lo100, counts, categories };
           })(),

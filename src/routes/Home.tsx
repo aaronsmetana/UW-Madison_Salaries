@@ -23,7 +23,8 @@ import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
-import { DotField, SPREAD_MS, useEntranceOnce, type DotFieldHandle } from '../components/chart/DotField';
+import { DotField, MOVE_MS, MOVE_STAGGER, SPREAD_MS, useEntranceOnce, type DotFieldHandle } from '../components/chart/DotField';
+import { squeezeFactor, tailHeights } from '../lib/tail';
 import { FisheyeLens, LENS_D, type FisheyeLensHandle, type LensView } from '../components/chart/FisheyeLens';
 import { peopleFromCounts } from '../lib/dotLayout';
 import { STIR_STEP, dragSpeed, stirPath, stirStrength, wakeTurn } from '../lib/dotPhysics';
@@ -105,6 +106,10 @@ const HEADROOM = { phone: 35, wide: 45 };
 /** Every dot its own room (DotField `pack`): a crowded column of people who share a pay passes up to
  *  3px of its surplus to its neighbours — a few hundred dollars — so no streak is a solid bar. */
 const PACK = { spill: 3 } as const;
+/** How long the pile stays unrolled before it folds back by itself, ms. */
+const TAIL_OPEN_MS = 8000;
+/** A pay on the unrolled tail's axis: millions as millions. */
+const fmtPay = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(v % 1e6 ? 1 : 0)}M` : fmtK(v));
 /** How long a finger must rest on the plot to bring up the glass, ms, and how far above the finger the
  *  glass then sits, px, so the finger does not hide it. */
 const HOLD_MS = 450;
@@ -201,7 +206,7 @@ function Distribution({
   const [plotW, setPlotW] = useState(0);
   // The pile's label under it ("574 at $250k+"), measured: it reaches left past the pile into the
   // plot's own axis, and a tick there is dropped rather than drawn into it.
-  const pileLabelRef = useRef<HTMLDivElement>(null);
+  const pileLabelRef = useRef<HTMLElement | null>(null);
   const [pileLabelW, setPileLabelW] = useState(0);
   // Rendered width of the readout pill. It has to be measured rather than estimated: the text
   // carries four variable-length fields, and the pill is 65% of the panel's width on a phone, so
@@ -551,6 +556,102 @@ function Distribution({
   }, [full]);
   // A hold still waiting when the chart goes.
   useEffect(() => () => { if (holdRef.current) window.clearTimeout(holdRef.current.timer); }, []);
+
+  // The long tail (lib/tail): the pile's people at their own pay — `over_pays`, in the pile's own order —
+  // unrolled onto an axis run out to the top salary when the pile is clicked. The graph squeezes to its
+  // share of that axis; the pile's dots fly out from where they sit to theirs; the axis and a caption say
+  // where it ends; a click, Escape or a few seconds fold it back.
+  const tailPays = useMemo(() => {
+    if (!categories?.length || !categories.every((c) => Array.isArray(c.over_pays) && c.over_pays.length === (c.over ?? 0))) return null;
+    const v = Float64Array.from(categories.flatMap((c) => c.over_pays ?? []));
+    return v.length > 0 && v.length === over ? v : null;
+  }, [categories, over]);
+  const tailTop = useMemo(() => (tailPays ? tailPays.reduce((m, v) => Math.max(m, v), 0) : 0), [tailPays]);
+  const [tail, setTail] = useState<{ phase: 'opening' | 'open' | 'closing'; from: Float32Array; key: number; rowW: number } | null>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const tailDotsRef = useRef<DotFieldHandle>(null);
+  // The top earner's dot once the tail is out, in the row's px: a lone dot at the far end is easy to miss.
+  const [tailTopAt, setTailTopAt] = useState<{ x: number; y: number; r: number } | null>(null);
+  const washGRef = useRef<SVGGElement>(null);
+  const plotGRef = useRef<SVGGElement>(null);
+  const tailX = useCallback((v: number, width: number) => ((v - curveLo) / Math.max(1, tailTop - curveLo)) * width, [curveLo, tailTop]);
+  // A dot's room under the curve, px², so the tail's hill packs its dots as tightly as the graph's.
+  const perDot = useMemo(() => {
+    if (!(plotW > 0) || !people.length) return 0;
+    let a = 0;
+    for (let c = 0; c < plotW; c++) a += dotHeight(c + 0.5, plotW);
+    return a / people.length;
+  }, [plotW, dotHeight, people]);
+  const tailHeight = useMemo(() => {
+    let cache: { width: number; h: Float32Array } | null = null;
+    return (x: number, width: number) => {
+      if (!tailPays) return 0;
+      if (!cache || cache.width !== width) {
+        cache = { width, h: tailHeights(Float32Array.from(tailPays, (v) => tailX(v, width)), width, perDot, H - HEAD) };
+      }
+      return cache.h[Math.min(cache.h.length - 1, Math.max(0, Math.floor(x)))];
+    };
+  }, [tailPays, tailX, perDot, H, HEAD]);
+  const closeTail = useCallback(() => {
+    setTail((t) => (!t || t.phase === 'closing' ? t : prefersReducedMotion() ? null : { ...t, phase: 'closing', key: 3 }));
+  }, []);
+  // The unrolled field is drawn at the pile first; once it has been, its dots set off.
+  const tailDrawn = useCallback(() => setTail((t) => (t && t.phase === 'opening' && t.key === 1 ? { ...t, key: 2 } : t)), []);
+  const tailPhase = tail?.phase ?? null;
+  const tailKey = tail?.key ?? null;
+  useEffect(() => {
+    if (tailPhase === 'opening' && tailKey === 2) {
+      const id = window.setTimeout(() => setTail((t) => (t && t.phase === 'opening' ? { ...t, phase: 'open' } : t)), MOVE_MS + MOVE_STAGGER);
+      return () => window.clearTimeout(id);
+    }
+    if (tailPhase === 'open') {
+      const id = window.setTimeout(closeTail, TAIL_OPEN_MS);
+      return () => window.clearTimeout(id);
+    }
+    if (tailPhase === 'closing') {
+      const id = window.setTimeout(() => setTail(null), MOVE_MS + MOVE_STAGGER);
+      return () => window.clearTimeout(id);
+    }
+  }, [tailPhase, tailKey, closeTail]);
+  useEffect(() => {
+    if (tailPhase !== 'open' || !tailPays) { setTailTopAt(null); return; }
+    let top = 0;
+    for (let k = 1; k < tailPays.length; k++) if (tailPays[k] >= tailPays[top]) top = k;
+    setTailTopAt(tailDotsRef.current?.positionOf(top) ?? null);
+  }, [tailPhase, tailPays]);
+  // Escape folds it back — before anything else Escape does (full page's own, say).
+  useEffect(() => {
+    if (!tailPhase || tailPhase === 'closing') return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); closeTail(); } };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [tailPhase, closeTail]);
+  // A graph laid out again (a resize, full page) is not the one the tail unrolled from.
+  useEffect(() => { setTail(null); }, [plotW, H, full, tailPays]);
+  // How narrow the graph is drawn: the dots (DotField `squeeze`), and the curve, its wash and its guides,
+  // eased the same way over the same time.
+  const tailSqueeze = tail && tail.phase !== 'closing' ? squeezeFactor(curveLo, curveSpan, tailTop, plotW, tail.rowW) : 1;
+  const squeezeAnim = useRef({ from: 1, to: 1, start: 0, raf: 0 });
+  useEffect(() => {
+    const st = squeezeAnim.current;
+    const now = performance.now();
+    const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
+    const at = (t: number) => st.from + (st.to - st.from) * ease(Math.min(1, Math.max(0, (t - st.start) / MOVE_MS)));
+    const set = (f: number) => {
+      for (const g of [washGRef.current, plotGRef.current]) g?.setAttribute('transform', f === 1 ? '' : `scale(${f} 1)`);
+    };
+    st.from = at(now);
+    st.to = tailSqueeze;
+    st.start = now;
+    cancelAnimationFrame(st.raf);
+    if (prefersReducedMotion()) { set(tailSqueeze); return; }
+    const step = (t: number) => {
+      set(at(t));
+      if (t - st.start < MOVE_MS) st.raf = requestAnimationFrame(step);
+    };
+    st.raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(st.raf);
+  }, [tailSqueeze]);
   if (bins.length < 3) return null;
 
   // 1000 wide, drawn `H` tall (PLOT_H). It was 120, and at the ~848px the panel gave it that was a 7:1
@@ -634,6 +735,8 @@ function Distribution({
     ? Math.max(0, Math.min(plotW - pillW, (hoverPct / 100) * plotW - pillW / 2))
     : null;
   const onHover = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Unrolled, the graph is squeezed: nothing under the pointer reads as it would.
+    if (tail) return;
     const box = e.currentTarget.getBoundingClientRect();
     if (box.width <= 0) return;
     if (e.pointerType === 'mouse' && foundMain.length) {
@@ -677,7 +780,7 @@ function Distribution({
   // and PageDown, $10k), Home and End go to the ends, Enter or Space bursts the dots at the readout's
   // point, and Escape puts the readout away. A keyboard focus starts it at the median.
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!curve.length) return;
+    if (!curve.length || tail) return;
     const last = curve.length - 1;
     const at = hoverIdx ?? medianIdx;
     const big = e.shiftKey ? 10 : 1;
@@ -740,6 +843,8 @@ function Distribution({
   // the readout there and ticks the phone — but a finger that moves is scrolling, and the browser takes
   // the gesture (no pointerup reaches here, or a pointercancel does).
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // A press anywhere on an unrolled graph folds it back.
+    if (tail) { closeTail(); return; }
     if (e.pointerType === 'mouse') {
       if (e.button !== 0) return;
       const found1 = markHit('main', e);
@@ -771,6 +876,7 @@ function Distribution({
     };
   };
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (tail) return;
     // A press on a mark that moves off it is a drag, not an open.
     const press = pressRef.current;
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) pressRef.current = null;
@@ -799,6 +905,7 @@ function Distribution({
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     stirRef.current = null;
+    if (tail) return;
     const press = pressRef.current;
     pressRef.current = null;
     if (e.pointerType === 'mouse') {
@@ -826,6 +933,35 @@ function Distribution({
   };
   // The browser took the gesture: no tap, no stir, no glass.
   const onCancel = () => { stirRef.current = null; tapRef.current = null; clearHold(); endMagnify(false); };
+
+  // Unroll the pile: each of its dots sets off from where it is drawn in the pile, in the row's own px.
+  const openTail = () => {
+    if (!tailPays || tail) return;
+    const row = rowRef.current?.getBoundingClientRect();
+    const pileBox = pileBoxRef.current?.getBoundingClientRect();
+    if (!row || !pileBox) return;
+    const from = new Float32Array(2 * tailPays.length);
+    for (let k = 0; k < tailPays.length; k++) {
+      const at = pileDotsRef.current?.positionOf(k);
+      from[2 * k] = pileBox.left - row.left + (at ? at.x : pileBox.width / 2);
+      from[2 * k + 1] = pileBox.top - row.top + (at ? at.y : H);
+    }
+    setHoverPile(false);
+    setHoverIdx(null);
+    setLensAt(null);
+    setCard(null);
+    setTail(prefersReducedMotion() ? { phase: 'open', from, key: 2, rowW: row.width } : { phase: 'opening', from, key: 1, rowW: row.width });
+  };
+  // The tail's axis: round pays out to the top salary, as many as fit, clear of the fold-back label.
+  const tailTicks: number[] = [];
+  if (tail && plotW > 0 && tailTop > lo) {
+    const rowW = tail.rowW;
+    const fitsTail = Math.max(3, Math.floor(rowW / (AXIS_LABEL_W * 1.3)));
+    const tailStep = [250000, 500000, 1000000, 2000000].find((s) => (tailTop - lo) / s <= fitsTail) ?? 2000000;
+    for (let v = Math.ceil(lo / tailStep) * tailStep; v <= tailTop; v += tailStep) {
+      if (((v - lo) / (tailTop - lo)) * rowW < rowW - pileLabelW - AXIS_LABEL_W / 2) tailTicks.push(v);
+    }
+  }
 
   // The card about a found person's dot: who they are, their pay and its path, and how to open them — a
   // mouse clicks the dot; a finger, having tapped it, taps the button. Above the dot, or below it near the
@@ -1025,6 +1161,7 @@ function Distribution({
       ref={panelRef}
       className={`hero-dist glass${full ? ' hero-dist-full' : ''}`}
       data-full={full ? 'on' : 'off'}
+      data-tail={tail ? tail.phase : 'off'}
       role={full ? 'dialog' : undefined}
       aria-modal={full || undefined}
       aria-label={full ? 'Pay distribution, full page' : undefined}
@@ -1046,7 +1183,7 @@ function Distribution({
           {controls}
         </div>
       )}
-      <div className="hero-dist-row">
+      <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
       <div
         ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
         onPointerMove={onMove} onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onLeave(); stirRef.current = null; } }}
@@ -1064,7 +1201,7 @@ function Distribution({
         {/* A faint wash under the curve, beneath the dots, so its shape reads even in the thin tails. */}
         <svg className="hero-dist-wash" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ position: 'absolute', inset: 0, display: 'block' }}>
           <defs>{areaGradDef(washId, 'var(--mantine-color-accent-6)', 'var(--curve-wash)')}</defs>
-          <path d={area} fill={`url(#${washId}-area-grad)`} />
+          <g ref={washGRef}><path d={area} fill={`url(#${washId}-area-grad)`} /></g>
         </svg>
         <DotField
           ref={mainDotsRef}
@@ -1072,11 +1209,12 @@ function Distribution({
           kinds={colour ? cats : null} inks={inkList} stack={colour}
           airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
           entrance={entrance} highlight={highlight} glow pack={PACK}
-          solo={shownSolo} replay={replay} marks={mainMarks}
+          solo={shownSolo} replay={replay} marks={mainMarks} squeeze={tailSqueeze}
           onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
       <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
+        <g ref={plotGRef}>
         {/* A soft glow under the curve's line, stronger on a dark page. */}
         <path className="hero-dist-curve-glow" d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
         <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
@@ -1090,6 +1228,7 @@ function Distribution({
             vectorEffect="non-scaling-stroke"
           />
         ))}
+        </g>
       </svg>
       {/* The ±$5k band, drawn as the readout's own footprint rather than a hairline.
           The pill has always reported a count within ±$5k while the mark under it was a 1px line,
@@ -1171,8 +1310,10 @@ function Distribution({
           </svg>
           <div
             ref={pileBoxRef}
-            className="hero-dist-pile" style={{ position: 'relative', height: H }}
+            className="hero-dist-pile" style={{ position: 'relative', height: H, cursor: tailPays ? 'pointer' : undefined }}
+            data-tail={tail ? 'on' : undefined}
             onPointerMove={(e) => {
+              if (tail) return;
               setHoverIdx(null);
               setLensAt(null);
               const f = e.pointerType === 'mouse' ? markHit('pile', e) : null;
@@ -1182,8 +1323,10 @@ function Distribution({
             }}
             onPointerLeave={() => { setHoverPile(false); setCard((c) => (c?.pinned ? c : null)); }}
             onPointerUp={(e) => {
+              if (tail) { closeTail(); return; }
               const f = markHit('pile', e);
-              if (!f) return;
+              // Anywhere else on the pile unrolls it.
+              if (!f) { openTail(); return; }
               if (e.pointerType === 'mouse') openFound(f); else setCard({ key: f.person_key, pinned: true });
             }}
           >
@@ -1200,7 +1343,7 @@ function Distribution({
                 <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>
                   {soloCat
                     ? `${num(soloCat.over ?? 0)} ${soloCat.name} at ${fmtK(cap ?? hi)} or more`
-                    : `${num(over)} people at ${fmtK(cap ?? hi)} or more · the top ${(Math.max(0.1, (over / headcount) * 100)).toFixed(1)}%`}
+                    : `${num(over)} people at ${fmtK(cap ?? hi)} or more · the top ${(Math.max(0.1, (over / headcount) * 100)).toFixed(1)}%${tailPays ? ` · ${canHover ? 'click' : 'tap'} to unroll` : ''}`}
                 </span>
               </div>
             )}
@@ -1208,6 +1351,34 @@ function Distribution({
             {foundName('pile')}
           </div>
         </>
+      )}
+      {/* The pile unrolled: its people at their own pay across the whole row, and where the axis ends. */}
+      {tail && tailPays && (
+        <div className="hero-dist-tail" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: H, pointerEvents: 'none' }}>
+          {/* Where the graph ended: everything left of this line is the graph, squeezed. */}
+          {cap != null && tailTop > cap && (
+            <div className="hero-dist-tail-edge" aria-hidden style={{ left: `${((cap - lo) / (tailTop - lo)) * 100}%`, top: HEAD, height: H - HEAD }}>
+              <span>the graph's edge</span>
+            </div>
+          )}
+          <DotField
+            ref={tailDotsRef}
+            className="hero-dots-tail" values={tailPays} toX={tailX} heightAt={tailHeight} height={H}
+            kinds={colour ? pile.kinds : null} inks={inkList} stack={colour} glow pack={PACK}
+            solo={shownSolo} marks={pileMarks} frameMark="tail-frame" onFrame={tailDrawn}
+            moveTo={{ key: tail.key, pts: tail.key === 2 ? null : tail.from }}
+          />
+          {tailTopAt && (
+            <div className="hero-dist-tail-top" aria-hidden style={{ left: tailTopAt.x, top: tailTopAt.y }}>
+              <span className="hero-dist-tail-ring" style={{ width: Math.max(12, tailTopAt.r * 3), height: Math.max(12, tailTopAt.r * 3) }} />
+              <span className="chart-value-pill hero-dist-tail-top-label">{usd(tailTop)} · the top salary</span>
+            </div>
+          )}
+          <div className="chart-tip hero-dist-tail-note" aria-live="polite">
+            <Text size="sm" fw={700}>The top salary, {usd(tailTop)}, is {Math.round(tailTop / (cap ?? hi))}× the {fmtK(cap ?? hi)} edge of the graph</Text>
+            <Text size="xs" c="dimmed">{num(tailPays.length)} people at {fmtK(cap ?? hi)} or more, each at their own pay · {canHover ? 'click' : 'tap'} or press Esc to fold them back</Text>
+          </div>
+        </div>
       )}
       </div>
 
@@ -1219,6 +1390,7 @@ function Distribution({
           horizontally by whatever factor the box is scaled by. */}
       <div
         ref={labelRowRef}
+        className="hero-dist-marker-labels"
         style={{ position: 'relative', height: Math.max(1, ...labelRows.map((r) => r + 1)) * LABEL_ROW_H, marginTop: 2, width: PLOT_WIDTH }}
       >
         {marks.map((m, i) => (
@@ -1253,6 +1425,7 @@ function Distribution({
             key={v}
             size="xs"
             c="dimmed"
+            className="hero-dist-tick"
             style={{
               position: 'absolute',
               left: `calc(${PLOT_WIDTH} * ${(X(v) / W).toFixed(5)})`,
@@ -1265,15 +1438,40 @@ function Distribution({
             {fmtK(v)}
           </Text>
         ))}
-        <Text
-          ref={pileLabelRef}
-          size="xs"
-          c="dimmed"
-          className="hero-dist-pile-label"
-          style={{ position: 'absolute', right: 0, whiteSpace: 'nowrap' }}
-        >
-          {hasPile ? `${num(over)} at ${fmtK(cap ?? hi)}+` : cap != null ? `${fmtK(cap)}+` : `${fmtK(hi)}+`}
-        </Text>
+        {tailTicks.map((v) => (
+          <Text
+            key={`tail-${v}`}
+            size="xs"
+            c="dimmed"
+            className="hero-dist-tail-tick"
+            style={{ position: 'absolute', left: `${((v - lo) / (tailTop - lo)) * 100}%`, transform: v === lo ? undefined : 'translateX(-50%)', whiteSpace: 'nowrap' }}
+          >
+            {fmtPay(v)}
+          </Text>
+        ))}
+        {/* The pile's label is also how to unroll it — and fold it back — from the keyboard. */}
+        {hasPile && tailPays ? (
+          <button
+            ref={(el) => { pileLabelRef.current = el; }}
+            type="button"
+            className="hero-dist-pile-label hero-dist-pile-toggle"
+            aria-expanded={!!tail}
+            onClick={() => (tail ? closeTail() : openTail())}
+            style={{ position: 'absolute', right: 0, whiteSpace: 'nowrap' }}
+          >
+            {tail ? `${fmtPay(tailTop)} · fold back` : `${num(over)} at ${fmtK(cap ?? hi)}+`}
+          </button>
+        ) : (
+          <Text
+            ref={(el: HTMLDivElement | null) => { pileLabelRef.current = el; }}
+            size="xs"
+            c="dimmed"
+            className="hero-dist-pile-label"
+            style={{ position: 'absolute', right: 0, whiteSpace: 'nowrap' }}
+          >
+            {hasPile ? `${num(over)} at ${fmtK(cap ?? hi)}+` : cap != null ? `${fmtK(cap)}+` : `${fmtK(hi)}+`}
+          </Text>
+        )}
       </div>
       {colour && categories && (
         <div className="hero-dist-legend" data-solo={shownSolo ?? undefined}>

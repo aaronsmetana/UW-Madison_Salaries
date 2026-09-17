@@ -2013,3 +2013,67 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .person-reveal-tag-name { font-size: 16px; font-weight: 700; }
 .person-reveal-tag-detail { font-size: 13px; color: var(--mantine-color-dimmed); }
+
+/* The pile unrolled (routes/Home, lib/tail): its own dots hidden while the unrolled field — which starts
+   exactly where they are — carries them out; the graph's own ticks and quartile labels give way to the
+   tail's axis; a note says where the axis ends. */
+.hero-dist-pile[data-tail] .hero-dots-over { visibility: hidden; }
+.hero-dist-tick, .hero-dist-marker-labels { transition: opacity 300ms ease; }
+.hero-dist:not([data-tail="off"]) .hero-dist-tick,
+.hero-dist:not([data-tail="off"]) .hero-dist-marker-labels { opacity: 0; }
+.hero-dist-tail-note {
+  position: absolute;
+  top: 48px;
+  right: 8px;
+  max-width: min(440px, 70%);
+  pointer-events: none;
+}
+@media (max-width: 30em) {
+  .hero-dist-tail-note { top: 8px; max-width: calc(100% - 16px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-dist-tick, .hero-dist-marker-labels { transition: none; }
+}
+.hero-dist-pile-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs, 1.4);
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.hero-dist-pile-toggle:hover { color: var(--mantine-color-text); }
+.hero-dist-pile-toggle:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 2px; border-radius: 2px; }
+.hero-dist-tail-edge {
+  position: absolute;
+  width: 0;
+  border-left: 1px dashed var(--mantine-color-gray-5);
+  pointer-events: none;
+}
+.hero-dist-tail-edge span {
+  position: absolute;
+  top: -18px;
+  left: 4px;
+  font-size: var(--mantine-font-size-xxs, 10px);
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+.hero-dist-tail-top { position: absolute; width: 0; height: 0; pointer-events: none; }
+.hero-dist-tail-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--mantine-color-accent-6);
+  border-radius: 50%;
+}
+.hero-dist-tail-top-label {
+  position: absolute;
+  right: -2px;
+  bottom: 14px;
+  white-space: nowrap;
+}
