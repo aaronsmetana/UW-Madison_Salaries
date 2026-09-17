@@ -10,10 +10,11 @@ import {
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
-import { countBelow, countWithin, smoothBins, READOUT_RADIUS, type Bin } from '../lib/distribution';
+import { binsFromCounts, countBelow, countWithin, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
 import { usd, usdCompact, num } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
+import { measureText, placeNearLabels } from '../lib/labelLayout';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox, type ShownPerson } from '../components/SearchBox';
 import { Sparkline } from '../components/chart/Sparkline';
@@ -80,9 +81,9 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
  * with `vector-effect="non-scaling-stroke"` lets the geometry span any width while strokes stay 1px.
  */
 /** Height of one marker-label row, in px — the stagger step when labels collide. Must exceed the
- *  label's own rendered line box (xxs at lh 1.2 ≈ 13px) or two "different" rows still touch, which
+ *  label's own rendered line box (xs at lh 1.2 ≈ 15px) or two "different" rows still touch, which
  *  looks like the collision the stagger exists to prevent. */
-const LABEL_ROW_H = 16;
+const LABEL_ROW_H = 19;
 /** Height of the salary axis row, in px — one `xs` line box. */
 const AXIS_ROW_H = 18;
 /** Pitch one axis label is given, in px. Not the label's own width (~48px) — the axis is a frame,
@@ -162,6 +163,10 @@ const CATEGORY_INK: Record<string, string> = {
 };
 const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';
 
+/** A found person's name over their dot: the label's line box and the least gap between two of them,
+ *  px; where the first row sits below the top of the field; the padding around the measured name; the
+ *  widest a label may be; and the size it is drawn at. */
+const FOUND_LABEL = { h: 19, gap: 8, top: 2, pad: 16, maxW: 180, font: 12 } as const;
 /** A person the search is showing who is on the graph: where their dot is. */
 interface FoundPerson extends ShownPerson { spot: DotSpot }
 /** The card about a found person's dot, CSS px wide. */
@@ -194,7 +199,16 @@ function Distribution({
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
   // noise. See `KERNEL_SIGMA` for the measurements the width was chosen against.
-  const curve = useMemo(() => smoothBins(bins), [bins]);
+  // Drawn from the artifact's counts per $100 rebuilt at `CURVE_STEP` — five times the resolution of
+  // the $1k bins the readout counts — so the line is a curve rather than a 250-segment polyline.
+  // Without those counts (an older snapshot, drawn through the SQL fallback) it is the bins as before.
+  const curveBins = useMemo(
+    () => (payCounts?.counts.length ? binsFromCounts(payCounts.lo100, payCounts.counts, CURVE_STEP) : bins),
+    [payCounts, bins],
+  );
+  const curve = useMemo(() => smoothBins(curveBins), [curveBins]);
+  /** Dollars between two of the curve's points. */
+  const curveStep = curveBins.length > 1 ? curveBins[1].bucket - curveBins[0].bucket : BIN_DOLLARS;
   const labelRowRef = useRef<HTMLDivElement>(null);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [labelRows, setLabelRows] = useState<number[]>([0, 0, 0]);
@@ -314,6 +328,13 @@ function Distribution({
   const [card, setCard] = useState<{ key: string; pinned: boolean } | null>(null);
   const pressRef = useRef<{ key: string; x: number; y: number } | null>(null);
   useEffect(() => { if (card && !found.some((f) => f.person_key === card.key)) setCard(null); }, [found, card]);
+  // The one the reader is on — the row the search list has active, or the dot whose card is up. Their
+  // mark is drawn at twice the size (DotField `markBig`), so which of the green dots is "this one" is
+  // answered on the graph rather than only in the list.
+  const bigKey = activeKey ?? card?.key ?? null;
+  const bigFound = bigKey ? found.find((f) => f.person_key === bigKey) ?? null : null;
+  const bigMain = bigFound && bigFound.spot.field === 'main' ? bigFound.spot.index : null;
+  const bigPile = bigFound && bigFound.spot.field === 'pile' ? bigFound.spot.index : null;
   const markHit = (field: 'main' | 'pile', e: ReactPointerEvent<HTMLDivElement>): FoundPerson | null => {
     const list = field === 'main' ? foundMain : foundPile;
     if (!list.length) return null;
@@ -350,7 +371,7 @@ function Distribution({
     read();
     const soon = window.setTimeout(read, 500), later = window.setTimeout(read, 1300);
     return () => { window.clearTimeout(soon); window.clearTimeout(later); };
-  }, [found, H, plotW, full, colour, shownSolo]);
+  }, [found, H, plotW, full, colour, shownSolo, bigMain, bigPile]);
 
   // A tapped readout goes at a tap anywhere else.
   useEffect(() => {
@@ -391,12 +412,12 @@ function Distribution({
   const dotHeight = useCallback((x: number, width: number) => {
     if (curve.length < 2) return 0;
     const v = curveLo + (x / width) * curveSpan;
-    const i = Math.min(curve.length - 2, Math.max(0, Math.floor((v - curveLo) / 1000)));
+    const i = Math.min(curve.length - 2, Math.max(0, Math.floor((v - curveLo) / curveStep)));
     const a = curve[i], b = curve[i + 1];
     const f = Math.min(1, Math.max(0, (v - a.bucket) / ((b.bucket - a.bucket) || 1)));
     const n = a.n + (b.n - a.n) * f;
     return (n / curveMax) * (H - HEAD - 2) + 2;
-  }, [curve, curveLo, curveSpan, curveMax, H, HEAD]);
+  }, [curve, curveLo, curveSpan, curveStep, curveMax, H, HEAD]);
   // The pile is packed as densely as the field: its height is the curve's mean height, and its width
   // the plot's times the share of people it holds, so each dot has the same room as one under the curve.
   const pileH = useMemo(() => {
@@ -456,7 +477,12 @@ function Distribution({
 
   // The people the readout counts, drawn in a stronger ink: the highlight is exactly the pill's count
   // (the $1k bins within ±$5k of the bucket under the pointer).
-  const hoveredBucket = hoverIdx != null ? curve[hoverIdx]?.bucket ?? null : null;
+  // Snapped to the $1k grid the raw bins are kept on: the line got finer, the count it reports did
+  // not. Everything the readout says — the band, the count, the percentile, the pay it names — is
+  // built from this, so the drawing and the number never describe different neighbourhoods.
+  const hoveredBucket = hoverIdx != null && curve[hoverIdx]
+    ? Math.round(curve[hoverIdx].bucket / BIN_DOLLARS) * BIN_DOLLARS
+    : null;
   const highlight = useMemo<[number, number] | null>(
     () => (hoveredBucket != null ? [hoveredBucket - READOUT_RADIUS, hoveredBucket + READOUT_RADIUS + BIN_DOLLARS] : null),
     [hoveredBucket],
@@ -656,6 +682,55 @@ function Distribution({
     st.raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(st.raf);
   }, [tailSqueeze]);
+  // A name on every marked dot, not only the one the list has active. The labels are stacked into rows
+  // across the top of the field so no two touch (`assignLabelRows`, which the quartile labels use), and
+  // each is tied to its own dot by a leader that runs from the dot's green into the label's teal —
+  // which dot a name belongs to is then answered by the picture, not by whichever is nearest. Nothing
+  // while the pile is unrolled: the field is squeezed then, and these are its unsqueezed places.
+  const foundLabels = useMemo(() => {
+    if (tail || plotW <= 0 || !foundMain.length) return [];
+    const spots = foundMain
+      .map((f) => ({ f, at: foundAt.get(f.person_key) }))
+      .filter((s): s is { f: FoundPerson; at: { x: number; y: number; r: number; field: 'main' | 'pile' } } => !!s.at && s.at.field === 'main')
+      .sort((a, b) => a.at.x - b.at.x);
+    if (!spots.length) return [];
+    const placed = placeNearLabels(
+      spots.map((s, i) => ({
+        id: i,
+        x: s.at.x,
+        y: s.at.y,
+        r: s.at.r,
+        // The measured name plus its padding, with a little over for the weight it is drawn in —
+        // `measureText` reads the page's font at its normal weight, and these are drawn heavier.
+        width: Math.min(FOUND_LABEL.maxW, measureText(s.f.name, FOUND_LABEL.font) * 1.08 + FOUND_LABEL.pad),
+        priority: s.f.person_key === activeKey ? 1 : 0,
+      })),
+      { left: 0, right: plotW, top: 2, bottom: H - 2 },
+      // Seven levels is about 145px above the dot at most — a third of the plot — and the diagonals
+      // stop sooner (`reach`). Past that a name stops reading as this dot's and starts reading as a
+      // legend that happens to have a line attached.
+      { height: FOUND_LABEL.h, levels: phone ? 4 : 7 },
+    );
+    return placed.map((l) => {
+      const s = spots[l.id];
+      // The leader leaves the dot's rim pointing at where the label hangs, and ends exactly where the
+      // placing said it would — so the line a reader follows is the line the layout reasoned about.
+      const end = l.anchor;
+      const d = Math.hypot(end.x - s.at.x, end.y - s.at.y) || 1;
+      const rim = s.at.r + 2;
+      return {
+        key: s.f.person_key,
+        name: s.f.name,
+        active: s.f.person_key === activeKey,
+        cx: l.cx,
+        w: l.box.right - l.box.left,
+        top: l.box.top,
+        from: { x: s.at.x + ((end.x - s.at.x) / d) * rim, y: s.at.y + ((end.y - s.at.y) / d) * rim },
+        to: end,
+      };
+    });
+  }, [tail, plotW, foundMain, foundAt, activeKey, phone, H]);
+
   if (bins.length < 3) return null;
 
   // 1000 wide, drawn `H` tall (PLOT_H). It was 120, and at the ~848px the panel gave it that was a 7:1
@@ -699,10 +774,13 @@ function Distribution({
 
   // Only draw a marker that actually falls inside the plotted range.
   const inRange = (v: number | null): v is number => v != null && v >= lo && v <= hi;
+  // Named in full where there is room for it: "p25" is a statistician's shorthand on a page written
+  // for everyone else, and this is the one place the chart explains its own guides. The phone keeps
+  // the shorthand — all three labels crowd at 375px, and a wrapped label is worse than a terse one.
   const marks: { v: number; label: string; strong: boolean }[] = [
-    ...(inRange(p25) ? [{ v: p25, label: 'p25', strong: false }] : []),
+    ...(inRange(p25) ? [{ v: p25, label: phone ? 'p25' : '25th percentile', strong: false }] : []),
     ...(inRange(median) ? [{ v: median, label: 'median', strong: true }] : []),
-    ...(inRange(p75) ? [{ v: p75, label: 'p75', strong: false }] : []),
+    ...(inRange(p75) ? [{ v: p75, label: phone ? 'p75' : '75th percentile', strong: false }] : []),
   ];
 
   // The curve is a density, so its height is not a headcount and must never be shown as one. The
@@ -713,20 +791,20 @@ function Distribution({
   // The band covers the dollars the count covers: the $1k bins within ±$5k of the bucket, so from
   // $5k below it to the end of the bin $5k above. Clamped to the plotted range: near either end the
   // band would otherwise hang off the panel and claim to cover salaries the chart does not draw.
-  const bandLo = hovered ? Math.max(lo, hovered.bucket - READOUT_RADIUS) : 0;
-  const bandHi = hovered ? Math.min(hi, hovered.bucket + READOUT_RADIUS + BIN_DOLLARS) : 0;
+  const bandLo = hoveredBucket != null ? Math.max(lo, hoveredBucket - READOUT_RADIUS) : 0;
+  const bandHi = hoveredBucket != null ? Math.min(hi, hoveredBucket + READOUT_RADIUS + BIN_DOLLARS) : 0;
   // Against the full headcount, not the binned total — the people above the $250k cap are still
   // people, and leaving them out would put the top of the drawn range at the 100th percentile.
-  const share = hovered && headcount ? countBelow(bins, hovered.bucket) / headcount : null;
+  const share = hoveredBucket != null && headcount ? countBelow(bins, hoveredBucket) / headcount : null;
   // With one category shown alone, the readout is of its people: how many within ±$5k, and where
   // the pointer's pay falls among them (everyone in it, above the cap too).
   const soloCat = shownSolo != null && categories ? categories[shownSolo] : null;
   const soloBins = shownSolo != null ? categoryBins[shownSolo] : null;
-  const readCount = hovered ? countWithin(soloBins ?? bins, hovered.bucket, READOUT_RADIUS) : 0;
-  const readShare = hovered && soloCat && soloBins ? countBelow(soloBins, hovered.bucket) / soloCat.n : share;
+  const readCount = hoveredBucket != null ? countWithin(soloBins ?? bins, hoveredBucket, READOUT_RADIUS) : 0;
+  const readShare = hoveredBucket != null && soloCat && soloBins ? countBelow(soloBins, hoveredBucket) / soloCat.n : share;
   // The readout as a screen reader hears it: the slider's value.
-  const readoutText = hovered
-    ? `${fmtK(hovered.bucket)}: ${num(readCount)} ${soloCat ? soloCat.name : 'people'} within ±${fmtK(READOUT_RADIUS)}${readShare != null ? `, ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}` : ''}`
+  const readoutText = hoveredBucket != null
+    ? `${fmtK(hoveredBucket)}: ${num(readCount)} ${soloCat ? soloCat.name : 'people'} within ±${fmtK(READOUT_RADIUS)}${readShare != null ? `, ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}` : ''}`
     : 'Move along the pay distribution with the arrow keys';
   // The glass sits on a mouse's pointer, or above a finger that holds it up.
   const lensLift = magnify ? -(LENS_D / 2 + HOLD_LIFT) : 0;
@@ -787,13 +865,15 @@ function Distribution({
     if (!curve.length || tail) return;
     const last = curve.length - 1;
     const at = hoverIdx ?? medianIdx;
-    const big = e.shiftKey ? 10 : 1;
+    // In points, not in bins: a finer curve must not turn one arrow press into a $250 step.
+    const per1k = Math.max(1, Math.round(BIN_DOLLARS / curveStep));
+    const big = (e.shiftKey ? 10 : 1) * per1k;
     let next: number | null = null;
     switch (e.key) {
       case 'ArrowRight': case 'ArrowUp': next = Math.min(last, at + big); break;
       case 'ArrowLeft': case 'ArrowDown': next = Math.max(0, at - big); break;
-      case 'PageUp': next = Math.min(last, at + 10); break;
-      case 'PageDown': next = Math.max(0, at - 10); break;
+      case 'PageUp': next = Math.min(last, at + 10 * per1k); break;
+      case 'PageDown': next = Math.max(0, at - 10 * per1k); break;
       case 'Home': next = 0; break;
       case 'End': next = last; break;
       case 'Enter': case ' ': {
@@ -1213,7 +1293,7 @@ function Distribution({
           kinds={colour ? cats : null} inks={inkList} stack={colour}
           airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
           entrance={entrance} highlight={highlight} glow pack={PACK}
-          solo={shownSolo} replay={replay} marks={mainMarks} squeeze={tailSqueeze}
+          solo={shownSolo} replay={replay} marks={mainMarks} markBig={bigMain} squeeze={tailSqueeze}
           onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
@@ -1226,9 +1306,9 @@ function Distribution({
           <line
             key={m.label}
             x1={X(m.v)} x2={X(m.v)} y1={m.strong ? MARK_TOP.strong : MARK_TOP.plain} y2={H}
-            stroke={m.strong ? 'var(--mantine-color-accent-7)' : 'var(--mantine-color-gray-5)'}
-            strokeWidth={m.strong ? 1.5 : 1}
-            strokeDasharray={m.strong ? undefined : '2 3'}
+            stroke={m.strong ? 'var(--mantine-color-accent-7)' : 'var(--guide-strong)'}
+            strokeWidth={m.strong ? 1.5 : 1.25}
+            strokeDasharray={m.strong ? undefined : '3 3'}
             vectorEffect="non-scaling-stroke"
           />
         ))}
@@ -1292,13 +1372,49 @@ function Distribution({
           ref={pillRef}
         >
           <span className="chart-value-pill">
-            {fmtK(hovered.bucket)} · {num(readCount)} {soloCat ? soloCat.name : 'people'} ±{fmtK(READOUT_RADIUS)}
+            {fmtK(hoveredBucket ?? hovered.bucket)} · {num(readCount)} {soloCat ? soloCat.name : 'people'} ±{fmtK(READOUT_RADIUS)}
             {readShare != null && ` · ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}`}
           </span>
         </div>
       )}
+      {/* The leaders, under the labels: each runs from its dot's rim, in the mark's own green, into
+          the teal of the name it carries — at an angle wherever the name had to be shouldered aside. */}
+      {foundLabels.length > 0 && (
+        <svg
+          className="hero-found-leaders" width={Math.max(1, plotW)} height={H} aria-hidden
+          style={{ position: 'absolute', left: 0, top: 0, zIndex: Z.local, pointerEvents: 'none' }}
+        >
+          <defs>
+            {foundLabels.map((l, i) => (
+              <linearGradient
+                key={l.key} id={`${washId}-lead${i}`} gradientUnits="userSpaceOnUse"
+                x1={l.from.x} y1={l.from.y} x2={l.to.x} y2={l.to.y}
+              >
+                <stop offset="0%" stopColor="var(--found)" />
+                <stop offset="100%" stopColor="var(--mantine-color-accent-7)" />
+              </linearGradient>
+            ))}
+          </defs>
+          {foundLabels.map((l, i) => (
+            <line
+              key={l.key}
+              x1={l.from.x.toFixed(1)} y1={l.from.y.toFixed(1)} x2={l.to.x.toFixed(1)} y2={l.to.y.toFixed(1)}
+              stroke={`url(#${washId}-lead${i})`} strokeWidth={l.active ? 2 : 1.25} strokeLinecap="round"
+            />
+          ))}
+        </svg>
+      )}
+      {foundLabels.map((l) => (
+        <div
+          key={l.key} aria-hidden className="hero-found-label" data-active={l.active ? 'on' : undefined}
+          // Drawn at exactly the width it was placed at, not merely under it: the leader is aimed at
+          // this box's own corner, and a pill that shrank to its text would leave the line in mid-air.
+          style={{ position: 'absolute', left: l.cx, top: l.top, width: l.w, zIndex: Z.local, pointerEvents: 'none', transform: 'translateX(-50%)' }}
+        >
+          {l.name}
+        </div>
+      ))}
       {foundCard('main')}
-      {foundName('main')}
       {lensAt && <FisheyeLens ref={lensRef} at={lensAt} offsetY={lensLift} draw={drawLens} />}
       </div>
 
@@ -1339,7 +1455,7 @@ function Distribution({
               className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
               entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow pack={PACK}
-              solo={shownSolo} replay={replay} marks={pileMarks}
+              solo={shownSolo} replay={replay} marks={pileMarks} markBig={bigPile}
               onFrame={lensAt ? redrawLens : undefined}
             />
             {hoverPile && headcount != null && (
@@ -1369,7 +1485,7 @@ function Distribution({
             ref={tailDotsRef}
             className="hero-dots-tail" values={tailPays} toX={tailX} heightAt={tailHeight} height={H}
             kinds={colour ? pile.kinds : null} inks={inkList} stack={colour} glow pack={PACK}
-            solo={shownSolo} marks={pileMarks} frameMark="tail-frame" onFrame={tailDrawn}
+            solo={shownSolo} marks={pileMarks} markBig={bigPile} frameMark="tail-frame" onFrame={tailDrawn}
             moveTo={{ key: tail.key, pts: tail.key === 2 ? null : tail.from }}
           />
           {tailTopAt && (
@@ -1381,6 +1497,16 @@ function Distribution({
           <div className="chart-tip hero-dist-tail-note" aria-live="polite">
             <Text size="sm" fw={700}>The top salary, {usd(tailTop)}, is {Math.round(tailTop / (cap ?? hi))}× the {fmtK(cap ?? hi)} edge of the graph</Text>
             <Text size="xs" c="dimmed">{num(tailPays.length)} people at {fmtK(cap ?? hi)} or more, each at their own pay · {canHover ? 'click' : 'tap'} or press Esc to fold them back</Text>
+            {/* How long this stays open, as a line along the bottom of the note that drains away. It is
+                mounted when the wait starts and keyed on this opening, so it runs the wait rather than
+                merely resembling it. Nothing under Reduce Motion (app.css): the note already says how
+                to fold it back, and the graph folds itself either way. */}
+            {tail.phase === 'open' && (
+              <span
+                key={tail.key} aria-hidden className="hero-dist-tail-timer"
+                style={{ animationDuration: `${TAIL_OPEN_MS}ms` } as CSSProperties}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1401,10 +1527,10 @@ function Distribution({
           <Text
             key={m.label}
             ref={(el: HTMLDivElement | null) => { labelRefs.current[i] = el; }}
-            size="xxs"
+            size="xs"
             lh={1.2}
-            c={m.strong ? 'accent.7' : 'dimmed'}
-            fw={m.strong ? 700 : 500}
+            c={m.strong ? 'accent.7' : undefined}
+            fw={m.strong ? 700 : 600}
             className={m.strong ? 'accent7-text' : undefined}
             style={{
               position: 'absolute',

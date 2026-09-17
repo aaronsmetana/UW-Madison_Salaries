@@ -8,6 +8,14 @@ import { afterReveal } from './reveal';
 const ROUTES = ['./', './paycheck', './explore', './compare', './data', './screening'];
 const THEMES = ['light', 'dark'] as const;
 
+/**
+ * The first suggestion on a cold page waits on DuckDB booting and reading the parquet, not on the
+ * search. At 15s that held on a quiet machine and timed out under the full suite's five workers,
+ * failing an axe test for a reason axe has nothing to do with. The rest of the suite already gives
+ * a cold first hit 60s.
+ */
+const FIRST_HIT_MS = 60_000;
+
 async function setTheme(page: import('@playwright/test').Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
     document.documentElement.setAttribute('data-mantine-color-scheme', t);
@@ -83,7 +91,7 @@ for (const theme of THEMES) {
     await expect(search).toBeVisible({ timeout: 60_000 });
     await search.fill('Kenneth Poss');
     const hit = page.getByRole('option').first();
-    await expect(hit).toBeVisible({ timeout: 15_000 });
+    await expect(hit).toBeVisible({ timeout: FIRST_HIT_MS });
     await hit.click();
     await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
     const bad = await runAxe(page);
@@ -188,7 +196,7 @@ for (const theme of THEMES) {
     await expect(search).toBeVisible({ timeout: 60_000 });
     await search.fill('Kenneth Poss');
     const hit = page.getByRole('option').first();
-    await expect(hit).toBeVisible({ timeout: 15_000 });
+    await expect(hit).toBeVisible({ timeout: FIRST_HIT_MS });
     await hit.click();
     await afterReveal(page);
     await setTheme(page, theme);

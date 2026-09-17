@@ -11,8 +11,20 @@ import { prefersReducedMotion } from '../../lib/motion';
 
 /** Played once per session: after that the dots are simply there. */
 const SEEN_KEY = 'dotfield-entrance';
-/** Each dot's fall, and how far across the plot the last one waits to start. */
+/** Each dot's own fall, once it starts. */
 const FALL_MS = 650;
+/**
+ * The entrance as rainfall: a column fills from the floor up, each dot waiting for the one beneath it,
+ * so the thin tails are done in a moment and the crowded middle keeps raining. `RAIN_GAP` is the wait
+ * between one dot in a column and the next, and `RAIN_MS` caps the tallest column — the whole thing
+ * lands inside RAIN_MS + FALL_MS, about six seconds.
+ *
+ * It replaces a sweep across x: every column started at a time fixed by where it stood, so a column of
+ * four and a column of four hundred took exactly as long as each other, which is the one thing about
+ * this chart a picture of it should show.
+ */
+const RAIN_GAP = 120;
+const RAIN_MS = 5300;
 export const SPREAD_MS = 550;
 /** A change of stacking (All ↔ By employment type): each dot moves up or down its own column to its new slot. */
 const RESTACK_MS = 420;
@@ -57,9 +69,12 @@ const MARK_HALO = 4;
 const MARK_GROW_MS = 320;
 const MARK_PULSE_MS = 900;
 const MARK_PULSE = 4;
+/** The one mark the search list has picked out is drawn this much bigger again, so which of the marked
+ *  people is being read is answered by the field itself rather than only by the list. */
+const MARK_BIG = 2;
 /** A marked dot's radius, CSS px, in a field whose dots are `r`; and how far from its centre it draws. */
-export const markRadius = (r: number) => Math.max(MARK_MIN_R, r * MARK_SCALE);
-const markExtent = (r: number) => markRadius(r) * Math.max(MARK_HALO, MARK_PULSE) + 2;
+export const markRadius = (r: number, big = false) => Math.max(MARK_MIN_R, r * MARK_SCALE) * (big ? MARK_BIG : 1);
+const markExtent = (r: number, big = false) => markRadius(r, big) * Math.max(MARK_HALO, MARK_PULSE) + 2;
 
 /** A field squeezed along x, or its dots moved to given places (the landing pile unrolling onto a long
  *  axis, and folding back): each takes MOVE_MS, and a move sets its dots off one after another, left to
@@ -258,6 +273,9 @@ export const DotField = forwardRef<DotFieldHandle, {
   /** Dots to mark (indices into `values`): each drawn over the field several times its size, glowing in
    *  `--found`, growing in and sending out one ring as it arrives. */
   marks?: readonly number[] | null;
+  /** The one marked dot to draw at `MARK_BIG` times a mark's size (the person the search list has
+   *  active). An index into `values`, or null for none. */
+  markBig?: number | null;
   /** Draw the field this many times as wide along x, from its left edge (1: as laid out); a change eases
    *  over MOVE_MS. Nothing is laid out again: squeezed, the field is its own picture, narrowed. */
   squeeze?: number;
@@ -277,7 +295,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, solo = null, marks = null, squeeze = 1, moveTo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, solo = null, marks = null, markBig = null, squeeze = 1, moveTo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -374,7 +392,28 @@ export const DotField = forwardRef<DotFieldHandle, {
       const h = heightAt(Math.floor(pts[2 * i]) + 0.5, width);
       depth[i] = Math.min(1, Math.max(0, (height - r - y) / Math.max(1e-6, h - 2 * r)));
     }
-    return { pts, r, order, sortedX, depth, width, crowded, maxShift, separate };
+    // When each dot rains in: its place up its own column, counted from the floor. Columns are read
+    // off the laid-out x (`order` already has them in x order), and within one, the lowest dot is the
+    // first to land — the pile builds upward, as a pile does.
+    const rain = new Float32Array(n);
+    let deepest = 0;
+    for (let j = 0; j < n; ) {
+      let k = j;
+      // One column is one pixel of the picture, not one exact x: a packed column spills its crowd a
+      // few pixels either way (lib/dotLayout), so grouping by an exact x would cut the pile into
+      // slivers and the whole field would rain in at the same moment.
+      const at = Math.floor(pts[2 * order[j]]);
+      while (k < n && Math.floor(pts[2 * order[k]]) === at) k++;
+      const column = Array.from(order.subarray(j, k)).sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1]);
+      column.forEach((i, rank) => { rain[i] = rank; });
+      deepest = Math.max(deepest, column.length - 1);
+      j = k;
+    }
+    // Every dot in every field falls at the same rate, so a taller column plainly takes longer — until
+    // the tallest would run past RAIN_MS, which sets the rate for the whole field instead.
+    const gap = Math.min(RAIN_GAP, RAIN_MS / Math.max(1, deepest));
+    for (let i = 0; i < n; i++) rain[i] *= gap;
+    return { pts, r, order, sortedX, depth, width, crowded, maxShift, separate, rain, rainSpan: deepest * gap };
   }, [width, values, toX, heightAt, height, rIn, stackKey, spill, packDpr]);
 
   const alpha = layout?.separate ? PACKED_ALPHA : DOT_ALPHA;
@@ -449,8 +488,9 @@ export const DotField = forwardRef<DotFieldHandle, {
     groups: [] as Uint32Array[],
     dark: false,
     highlight: null as readonly [number, number] | null,
-    /** The marked dots, each with when it was marked; their inks; the frame their arrival is drawn on. */
-    marks: [] as { i: number; born: number }[],
+    /** The marked dots, each with when it was marked and whether it is the big one; their inks; the
+     *  frame their arrival is drawn on. */
+    marks: [] as { i: number; born: number; big: boolean }[],
     markInk: { core: '', glow: '', clear: '', rim: '' },
     markRaf: 0,
     /** The squeeze: from, to, and when it started easing (null once there). */
@@ -502,7 +542,7 @@ export const DotField = forwardRef<DotFieldHandle, {
       y = from + (y - from) * easeOutBack(p);
     }
     if (L.entranceStart != null) {
-      const p = Math.min(1, Math.max(0, (now - L.entranceStart - delay - (lay.pts[2 * i] / lay.width) * SPREAD_MS) / FALL_MS));
+      const p = Math.min(1, Math.max(0, (now - L.entranceStart - delay - lay.rain[i]) / FALL_MS));
       y = -lay.r + (y + lay.r) * easeOutBack(p);
     }
     if (L.mvStart != null && L.mvFrom) {
@@ -639,12 +679,12 @@ export const DotField = forwardRef<DotFieldHandle, {
     }
     // The marked dots, over the rest.
     if (L.marks.length && L.markInk.core) {
-      const ext = markExtent(r);
       for (const m of L.marks) {
         if (mode && mode[m.i] === GONE) continue;
+        const ext = markExtent(r, m.big);
         const x = xOf(m.i, now);
         if (x + ext < a / dpr || x - ext > b / dpr) continue;
-        drawMark(ctx, x * dpr, yOf(m.i, now) * dpr, markRadius(r) * dpr, now - m.born, dpr, L.markInk);
+        drawMark(ctx, x * dpr, yOf(m.i, now) * dpr, markRadius(r, m.big) * dpr, now - m.born, dpr, L.markInk);
       }
     }
     // The shockwaves, over the dots: a bloom swelling at each click and fading as the dots burst out of
@@ -749,15 +789,15 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
       // The marked dots, through the glass: as much bigger as it makes them, up to two and a half times.
       if (L.marks.length && L.markInk.core) {
-        const ext = markExtent(r);
         for (const mk of L.marks) {
           if (L.mode && L.mode[mk.i] === GONE) continue;
+          const ext = markExtent(r, mk.big);
           const sx = xOfRef.current(mk.i, now) + ox;
           const sy = yOfRef.current(mk.i, now) + oy;
           if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + ext) ** 2) continue;
           const m = map(sx, sy);
           const scale = Math.min(2.5, m.scale);
-          drawMark(ctx, m.x * dpr, m.y * dpr, markRadius(r) * scale * dpr, now - mk.born, dpr, L.markInk);
+          drawMark(ctx, m.x * dpr, m.y * dpr, markRadius(r, mk.big) * scale * dpr, now - mk.born, dpr, L.markInk);
         }
       }
       // The shockwaves' rings, through the glass.
@@ -882,7 +922,8 @@ export const DotField = forwardRef<DotFieldHandle, {
       const L = live.current;
       if (!lay || !(i >= 0 && i < values.length) || (L.mode && L.mode[i] === GONE)) return null;
       const now = performance.now();
-      return { x: xOfRef.current(i, now), y: yOfRef.current(i, now), r: markRadius(lay.r) };
+      const big = L.marks.some((m) => m.i === i && m.big);
+      return { x: xOfRef.current(i, now), y: yOfRef.current(i, now), r: markRadius(lay.r, big) };
     },
     markAt(x, y) {
       const lay = layout;
@@ -890,11 +931,14 @@ export const DotField = forwardRef<DotFieldHandle, {
       if (!lay || !L.marks.length) return null;
       const now = performance.now();
       let best: number | null = null;
-      let bestD = markRadius(lay.r) * 1.6 + 4;
+      // Nearest first, so the big mark does not swallow a neighbour it merely overlaps: each mark is
+      // only a candidate within its own reach.
+      let bestD = Infinity;
       for (const m of L.marks) {
         if (L.mode && L.mode[m.i] === GONE) continue;
+        const reach = markRadius(lay.r, m.big) * 1.6 + 4;
         const d = Math.hypot(xOfRef.current(m.i, now) - x, yOfRef.current(m.i, now) - y);
-        if (d < bestD) { bestD = d; best = m.i; }
+        if (d < reach && d < bestD) { bestD = d; best = m.i; }
       }
       return best;
     },
@@ -932,7 +976,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     let full = false;
     let moving = false;
     if (L.entranceStart != null) {
-      if (now - L.entranceStart >= delay + SPREAD_MS + FALL_MS) { L.entranceStart = null; setSettled(true); }
+      if (now - L.entranceStart >= delay + lay.rainSpan + FALL_MS) { L.entranceStart = null; setSettled(true); }
       else moving = true;
       full = true;
     }
@@ -1337,10 +1381,14 @@ export const DotField = forwardRef<DotFieldHandle, {
     const still = prefersReducedMotion();
     const was = new Map(L.marks.map((m) => [m.i, m]));
     const next = (markKey ? markKey.split(',').map(Number) : []).filter((i) => i >= 0 && i < values.length);
-    L.marks = next.map((i) => was.get(i) ?? { i, born: still ? -Infinity : now });
+    // A mark that was already there keeps when it arrived — it should not pulse again because another
+    // one grew — but it takes its size from the list as it is now: the big one moves with the picking.
+    const wasBig = L.marks.find((m) => m.big)?.i ?? null;
+    L.marks = next.map((i) => ({ ...(was.get(i) ?? { i, born: still ? -Infinity : now }), big: i === markBig }));
     const lay = layoutRef.current;
     if (!lay) return;
-    const ext = markExtent(lay.r);
+    // The widest a mark reaches, so growing or shrinking one repaints the whole strip it covered.
+    const ext = markExtent(lay.r, true);
     const strip = (i: number, t: number) => {
       const x = xOfRef.current(i);
       const busy = L.flying > 0 || L.rings.length > 0 || L.trail.length > 0 || L.entranceStart != null || L.restackStart != null;
@@ -1350,6 +1398,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     const kept = new Set(next);
     for (const [i] of was) if (!kept.has(i)) strip(i, now);
     for (const m of L.marks) if (!was.has(m.i)) strip(m.i, now);
+    // The two that changed size where they stand: the one that was big, and the one that is now.
+    for (const i of [wasBig, markBig]) if (i != null && kept.has(i) && was.has(i)) strip(i, now);
     if (L.markRaf || !L.marks.some((m) => now - m.born < MARK_PULSE_MS)) return;
     const step = (t: number) => {
       L.markRaf = 0;
@@ -1363,7 +1413,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     };
     L.markRaf = requestAnimationFrame(step);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markKey, layout]);
+  }, [markKey, markBig, layout]);
   useEffect(() => () => { const L = live.current; if (L.markRaf) { cancelAnimationFrame(L.markRaf); L.markRaf = 0; } }, []);
 
   // What the guards read: how many dots of each kind, and how many the highlight covers.
@@ -1399,6 +1449,8 @@ export const DotField = forwardRef<DotFieldHandle, {
       data-highlight={hlLo != null ? lit : undefined}
       data-solo={solo ?? 'none'}
       data-marks={marks?.length ? marks.map((i) => (layout && i >= 0 && i < values.length ? `${i}:${layout.pts[2 * i].toFixed(1)}:${layout.pts[2 * i + 1].toFixed(1)}` : `${i}`)).join(' ') : undefined}
+      data-mark-big={markBig != null && marks?.includes(markBig) ? markBig : undefined}
+      data-mark-r={layout && marks?.length ? markRadius(layout.r).toFixed(2) : undefined}
       aria-hidden
     >
       <canvas ref={canvasRef} className="dot-field-ink" style={{ position: 'absolute', inset: 0, width: '100%', height }} />

@@ -129,7 +129,13 @@ export function packDots({ xs, heightAt, baseY, width, dpr, spill, seed = 1, sta
   // the field was four-fifths empty — so the columns stay a pixel apart and the dots overlap across them
   // as ever; only a column is kept from crowding.
   const separate = dpr >= 1.25;
-  const pitchDev = separate ? Math.max(1, Math.round(2 * rArea * dpr)) : 1;
+  // Rounded DOWN, not to nearest. The pitch is a whole number of device pixels, so it steps: a field
+  // whose average room grows by a few percent can cross the halfway mark and take a whole extra pixel
+  // per column, which is a third fewer columns, a third more dots in the busiest ones, and a peak that
+  // closes into a solid mass. That is exactly what a finer curve did (its narrow spikes give the field
+  // a little more area). Flooring keeps the tighter columns: the dots of neighbouring columns overlap
+  // a shade more, which this field has always allowed, and no column is asked to hold more than it can.
+  const pitchDev = separate ? Math.max(1, Math.floor(2 * rArea * dpr)) : 1;
   const pitch = pitchDev / dpr;
   const C = Math.max(1, Math.floor(width / pitch));
   const cx = new Float64Array(C);

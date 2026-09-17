@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binStep, countBelow, countWithin, densify, smoothBins, KERNEL_SIGMA, type Bin } from './distribution';
+import { binStep, binsFromCounts, countBelow, countWithin, densify, smoothBins, CURVE_STEP, KERNEL_SIGMA, type Bin } from './distribution';
 
 const bins = (step: number, counts: number[], from = 0): Bin[] =>
   counts.map((n, i) => ({ bucket: from + i * step, n }));
@@ -196,5 +196,88 @@ describe('countBelow', () => {
     const headcount = binned + 10; // ten people above the cap
     expect(countBelow(bins, 30_000) / binned).toBeCloseTo(15 / 35);
     expect(countBelow(bins, 40_000) / headcount).toBeLessThan(1);
+  });
+});
+
+describe('binsFromCounts', () => {
+  it('sums the counts per $100 into bins of the step, losing nobody', () => {
+    // Ten $100 buckets from $10,000: five $200 bins' worth.
+    const counts = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3];
+    const out = binsFromCounts(100, counts, CURVE_STEP);
+    expect(out.map((b) => b.n).reduce((a, b) => a + b, 0)).toBe(39);
+    // Aligned to whole multiples of the step, not to wherever the counts happen to start.
+    expect(out[0].bucket % CURVE_STEP).toBe(0);
+    expect(out[0].bucket).toBe(10_000);
+    expect(binStep(out)).toBe(CURVE_STEP);
+    // $10,000 and $10,100 fall in the first bin, $10,200 and $10,300 in the second.
+    expect(out[0].n).toBe(3 + 1);
+    expect(out[1].n).toBe(4 + 1);
+  });
+
+  it('puts the bins on a grid the counts can answer for, whatever step it is handed', () => {
+    // $250 is two and a half $100 buckets. Splitting one is not something the source can do, so the
+    // step is rounded to whole buckets rather than quietly landing the grid on $150, $400, $650.
+    for (const b of binsFromCounts(0, [1, 2, 3, 4, 5, 6, 7, 8], 250)) expect(b.bucket % 100).toBe(0);
+  });
+
+  it('is dense: a bin nobody falls into is an explicit zero, not a missing point', () => {
+    const counts = [7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+    const out = binsFromCounts(0, counts, CURVE_STEP);
+    expect(out.length).toBe(6);
+    expect(out.map((b) => b.n)).toEqual([7, 0, 0, 0, 0, 2]);
+  });
+
+  it('has nothing to say about no counts', () => {
+    expect(binsFromCounts(0, [], CURVE_STEP)).toEqual([]);
+  });
+});
+
+describe('the curve the landing graph draws', () => {
+  // A distribution shaped like the real one, sampled per $100: a lognormal-ish hump with a round-number
+  // spike on it, which is what the $1k bins were quantising.
+  const per100 = Array.from({ length: 2000 }, (_, i) => {
+    const v = i * 100;
+    const hump = 400 * Math.exp(-((Math.log(Math.max(v, 1)) - Math.log(70_000)) ** 2) / (2 * 0.45 ** 2));
+    return Math.round(hump + (v === 50_000 ? 900 : 0));
+  });
+  const fine = smoothBins(binsFromCounts(0, per100, CURVE_STEP));
+  const coarse = smoothBins(binsFromCounts(0, per100, 1000));
+
+  it('draws several points for every one the $1k bins gave it', () => {
+    expect(1000 % CURVE_STEP, 'the fine grid has to contain the $1k one, or no point is shared').toBe(0);
+    expect(fine.length).toBeGreaterThan(coarse.length * 4.5);
+  });
+
+  it('is the same curve, not a different one: it agrees with the $1k line where they share a point', () => {
+    // The kernel is specified in dollars, so resampling must not change the shape — only how closely
+    // it is sampled. Away from the ends (where a bin's own width shifts its centre) they track within
+    // a few percent.
+    const scale = (b: { n: number }[]) => Math.max(...b.map((x) => x.n));
+    const fs = scale(fine), cs = scale(coarse);
+    for (const c of coarse.slice(20, -20)) {
+      const match = fine.find((b) => b.bucket === c.bucket)!;
+      expect(Math.abs(match.n / fs - c.n / cs)).toBeLessThan(0.03);
+    }
+  });
+
+  it('turns less sharply at every corner, which is what "less jagged" means on screen', () => {
+    // The line is drawn across the same plot however many points it has, so compare the two in the
+    // same box: the average turn from one segment to the next, in degrees. The average rather than the
+    // worst turn — the worst is at the round-number spike, which the finer line RESOLVES rather than
+    // smooths, and that corner is data.
+    const sharpest = (series: Bin[]) => {
+      const W = 1200, H = 380;
+      const lo = series[0].bucket, span = series[series.length - 1].bucket - lo;
+      const top = Math.max(...series.map((b) => b.n));
+      const pts = series.map((b) => [((b.bucket - lo) / span) * W, H - (b.n / top) * H] as const);
+      let turn = 0;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const a = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+        const b = Math.atan2(pts[i + 1][1] - pts[i][1], pts[i + 1][0] - pts[i][0]);
+        turn += Math.abs(((b - a + Math.PI) % (2 * Math.PI)) - Math.PI);
+      }
+      return ((turn / (pts.length - 2)) * 180) / Math.PI;
+    };
+    expect(sharpest(fine)).toBeLessThan(sharpest(coarse) / 2);
   });
 });

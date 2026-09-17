@@ -273,3 +273,121 @@ test('someone no longer here is listed, but has no dot to mark', async ({ page }
   expect(await page.locator('.hero-dots').getAttribute('data-marks')).toBeNull();
   expect(await page.locator('.hero-dots-over').getAttribute('data-marks')).toBeNull();
 });
+
+test('every marked person is named beside their own dot, tied to it, and no two names touch', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await home(page);
+  await searchBox(page).fill('smith');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  // The places are read again once the marks have grown in.
+  await page.waitForTimeout(1500);
+
+  const marks = await marksOf(page, '.hero-dots');
+  const field = (await page.locator('.hero-dots').boundingBox())!;
+  const labels = await page.locator('.hero-found-label').evaluateAll((els) => els.map((el) => {
+    const b = el.getBoundingClientRect();
+    return { text: (el.textContent ?? '').trim(), left: b.left, right: b.right, top: b.top, bottom: b.bottom };
+  }));
+  // Everyone marked is named, bar at most one: where several people earn within a few hundred dollars
+  // of each other their dots are a few pixels apart, and a name that would have to cross another to
+  // reach its dot is left to the list instead of drawn misleadingly.
+  expect(labels.length, 'the names were thinned further than a crowd explains').toBeGreaterThanOrEqual(marks.length - 1);
+
+  // The names shown are the people whose dots are marked — from SQL and the dot rule, not the page's
+  // own account of itself.
+  const where = await spots();
+  const byIndex = new Map<number, string>();
+  for (const [key, spot] of where) if (spot.field === 'main') byIndex.set(spot.index, key);
+  const names = new Map((await people()).map((p) => [p.person_key, `${p.fn} ${p.ln}`.toLowerCase()]));
+  const marked = new Set(marks.map((m) => names.get(byIndex.get(m.i)!)));
+  for (const l of labels) expect(marked.has(l.text.toLowerCase()), `"${l.text}" is on no marked dot`).toBe(true);
+
+  // No two names on top of each other.
+  for (let i = 0; i < labels.length; i++) {
+    for (let j = i + 1; j < labels.length; j++) {
+      const a = labels[i], b = labels[j];
+      expect(a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom,
+        `"${a.text}" and "${b.text}" overlap`).toBe(false);
+    }
+  }
+
+  // Each leader runs from a marked dot to the edge of a name — and the name is beside its dot rather
+  // than banked at the top of the plot with a line crossing the graph to reach it.
+  const leaders = await page.locator('.hero-found-leaders line').evaluateAll((els) => els.map((el) => {
+    const b = el.getBoundingClientRect();
+    return { x1: Number(el.getAttribute('x1')), y1: Number(el.getAttribute('y1')), x2: Number(el.getAttribute('x2')), y2: Number(el.getAttribute('y2')), h: b.height };
+  }));
+  expect(leaders.length).toBe(labels.length);
+  for (const l of leaders) {
+    const from = { x: field.x + l.x1, y: field.y + l.y1 };
+    const to = { x: field.x + l.x2, y: field.y + l.y2 };
+    const dot = marks.map((m) => ({ x: field.x + m.x, y: field.y + m.y }))
+      .reduce((best, m) => (Math.hypot(m.x - from.x, m.y - from.y) < Math.hypot(best.x - from.x, best.y - from.y) ? m : best));
+    expect(Math.hypot(dot.x - from.x, dot.y - from.y), 'a leader starts nowhere near a dot').toBeLessThan(30);
+    expect(Math.hypot(to.x - from.x, to.y - from.y), 'a name sits far from the dot it names').toBeLessThan(170);
+    const touches = labels.some((b) => to.x >= b.left - 2 && to.x <= b.right + 2 && Math.min(Math.abs(to.y - b.top), Math.abs(to.y - b.bottom)) < 2);
+    expect(touches, 'a leader ends at no name').toBe(true);
+  }
+});
+
+/** How far the solid core of a mark reaches from its centre, CSS px: out along a row until the ink
+ *  stops being the found green. A mark's core is its radius less a rim of about a fifth. */
+const coreRadius = (page: Page, sel: string, at: { x: number; y: number }, ink: number[]) =>
+  page.locator(`${sel} canvas`).first().evaluate((c: HTMLCanvasElement, a) => {
+    const k = c.width / c.clientWidth;
+    const ctx = c.getContext('2d')!;
+    const y = Math.round(a.y * k);
+    let out = 0;
+    for (let dx = 0; dx < 120; dx++) {
+      const x = Math.round(a.x * k) + dx;
+      if (x >= c.width) break;
+      const d = ctx.getImageData(x, y, 1, 1).data;
+      const isInk = d[3] > 230 && Math.abs(d[0] - a.ink[0]) < 30 && Math.abs(d[1] - a.ink[1]) < 30 && Math.abs(d[2] - a.ink[2]) < 30;
+      if (!isInk) break;
+      out = dx / k;
+    }
+    return out;
+  }, { ...at, ink });
+
+test('the person the list has active is drawn twice the size, and wears the filled name', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await home(page);
+  const ink = parseColor(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--found')));
+
+  // Someone searched alone: their row is the active one, so their dot is the big one.
+  const who = await lone(false);
+  await searchBox(page).fill(who.name);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  await page.waitForTimeout(1500);
+  const spot = (await spots()).get(who.person_key)!;
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-mark-big', String(spot.index));
+  const markR = Number(await page.locator('.hero-dots').getAttribute('data-mark-r'));
+  expect(markR).toBeGreaterThan(1);
+  const [big] = await marksOf(page, '.hero-dots');
+  const bigCore = await coreRadius(page, '.hero-dots', big, ink);
+  expect(bigCore, 'nothing was drawn where the mark is').toBeGreaterThan(markR);
+
+  // The one name drawn filled is that person's.
+  const active = page.locator('.hero-found-label[data-active="on"]');
+  await expect(active).toHaveCount(1);
+  expect(((await active.textContent()) ?? '').toLowerCase()).toBe(who.name.toLowerCase());
+
+  // A mark nobody has picked out is drawn at a mark's own size: the one furthest from the big one in a
+  // search that shows several, so no neighbour's ink runs into the measurement.
+  await searchBox(page).fill('smith');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-mark-big', /\d/, { timeout: 60_000 });
+  await page.waitForTimeout(1500);
+  const marks = await marksOf(page, '.hero-dots');
+  const bigNow = Number(await page.locator('.hero-dots').getAttribute('data-mark-big'));
+  const lonely = marks
+    .filter((m) => m.i !== bigNow)
+    .map((m) => ({ m, near: Math.min(...marks.filter((o) => o.i !== m.i).map((o) => Math.hypot(o.x - m.x, o.y - m.y))) }))
+    .reduce((far, c) => (c.near > far.near ? c : far));
+  expect(lonely.near, 'no mark stands clear enough of its neighbours to measure').toBeGreaterThan(markR * 6);
+  const plainCore = await coreRadius(page, '.hero-dots', lonely.m, ink);
+  expect(plainCore, `against a mark radius of ${markR}`).toBeLessThan(markR * 1.2);
+  expect(plainCore).toBeGreaterThan(markR * 0.5);
+  // Measured the same way, on the same field: the picked-out dot is the bigger one by well over half
+  // again — the drawing doubles it, and a core is its radius less a rim.
+  expect(bigCore / plainCore, `${bigCore} against ${plainCore}`).toBeGreaterThan(1.6);
+});

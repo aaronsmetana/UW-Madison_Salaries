@@ -2,6 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY, latestSnapshot } from './oracle';
 import { parseColor, flatten, contrast } from './color';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Every employee as a dot (src/components/chart/DotField.tsx): the landing page's distribution — with
@@ -1339,7 +1341,8 @@ test('"Drop again" plays the fall once more; there is none under reduced motion'
   await page.evaluate(() => performance.clearMeasures());
   await page.locator('.hero-dist-drop').click();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'false');
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 5000 });
+  // The fall is rainfall now: the deepest column waits for every dot beneath it, about six seconds.
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 15_000 });
   const frames = await page.evaluate(() => performance.getEntriesByName('dot-frame').length);
   expect(frames, 'the fall did not play').toBeGreaterThan(10);
   await ctx.close();
@@ -1429,4 +1432,123 @@ test('once still again, the field is the picture it was before a stir', async ({
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle', { timeout: 3000 });
   await expect.poll(async () => (await picture(page)) === before, { message: 'the field did not come back to its picture' }).toBe(true);
   await ctx.close();
+});
+
+/**
+ * The line the landing graph draws, as points in the plot's own pixels.
+ *
+ * The path is authored in a 1000-wide viewBox stretched to the plot's width (`preserveAspectRatio="none"`),
+ * so a turn in the drawing is not a turn in the geometry until the x is scaled back — which is exactly
+ * the question here, since a reader sees the stretched picture.
+ */
+async function curvePoints(page: Page) {
+  const d = await page.locator('.hero-dist-plot path').nth(1).getAttribute('d');
+  const box = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const k = box.width / 1000;
+  return (d ?? '').split(/[ML]/).filter(Boolean).map((p) => {
+    const [x, y] = p.trim().split(',').map(Number);
+    return { x: x * k, y };
+  });
+}
+/** The average turn from one segment of a polyline to the next, in degrees: how faceted it looks. */
+function meanTurn(pts: { x: number; y: number }[]) {
+  let turn = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x);
+    const b = Math.atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x);
+    turn += Math.abs(((b - a + Math.PI) % (2 * Math.PI)) - Math.PI);
+  }
+  return ((turn / Math.max(1, pts.length - 2)) * 180) / Math.PI;
+}
+
+test('the curve is drawn from the counts per $100, not from the readout\'s $1k bins', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  const pts = await curvePoints(page);
+  // The artifact's own $1k bins say how many points the line used to have.
+  const bins = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/home-stats.json', import.meta.url)), 'utf8')).bins.length as number;
+  expect(pts.length, `the line has ${pts.length} points against ${bins} $1k bins`).toBeGreaterThanOrEqual(bins * 4);
+
+  // And it is less faceted for it. The comparison is against the same data, not a remembered number:
+  // every fifth point IS the $1k line, so the drawing has to turn markedly less than that does.
+  const coarse = pts.filter((_, i) => i % 5 === 0);
+  expect(meanTurn(pts), 'the line turns as sharply as one point per $1k').toBeLessThan(meanTurn(coarse) / 2.5);
+});
+
+test("the readout still counts whole $1k bins, however finely the line is drawn", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+  await page.mouse.move(plot.x + plot.width * 0.42, plot.y + plot.height * 0.7);
+  const pill = page.locator('.hero-dist-main .chart-value-pill').first();
+  await expect(pill).toBeVisible();
+  const text = (await pill.textContent()) ?? '';
+  // The pay it names is a whole thousand — the grid the count is kept on — not $77.4k.
+  const [, k] = text.match(/^\$(\d+(?:\.\d+)?)k/) ?? [];
+  expect(k, `the readout named "${text}"`).toBeTruthy();
+  expect(Number(k) % 1, 'the readout named a pay off the $1k grid it counts on').toBe(0);
+  // …and the count is the raw bins within ±$5k of it, from SQL.
+  const snap = await latestSnapshot();
+  const centre = Number(k) * 1000;
+  const [row] = await oracle<{ n: number }>(
+    `WITH p AS (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY person_key)
+     SELECT count(*) n FROM p WHERE floor(pay / 1000) * 1000 BETWEEN ${centre - 5000} AND ${centre + 5000}`,
+  );
+  expect(Number((text.match(/·\s*([\d,]+)\s*people/) ?? [])[1]?.replace(/,/g, ''))).toBe(row.n);
+});
+
+/**
+ * Watches the field rain in: every `every` ms until it settles, the ink in each of `at` (shares of the
+ * width), as a pixel count. Sampled in the page so the reading is not paced by the test's round trips.
+ */
+const rainfall = (page: Page, at: number[], every = 200) => page.evaluate(async ({ xs, every: ms }) => {
+  const field = document.querySelector('.hero-dots')!;
+  const c = field.querySelector('canvas') as HTMLCanvasElement;
+  const ctx = c.getContext('2d')!;
+  const read = () => xs.map((f) => {
+    const x = Math.min(c.width - 8, Math.max(0, Math.round(f * c.width)));
+    const d = ctx.getImageData(x, 0, 8, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 24) n++;
+    return n;
+  });
+  const t0 = performance.now();
+  const out: { t: number; ink: number[] }[] = [];
+  for (;;) {
+    out.push({ t: performance.now() - t0, ink: read() });
+    if (field.getAttribute('data-settled') === 'true') break;
+    if (performance.now() - t0 > 20_000) break;
+    await new Promise((r) => setTimeout(r, ms));
+  }
+  return out;
+}, { xs: at, every });
+
+/** When a column first held `frac` of the ink it ends up with, ms. A rising measure rather than a
+ *  last-change one: the field repaints whole every frame, so the ink in a strip jitters by a pixel or
+ *  two long after its own dots have landed. */
+function reachedAt(series: { t: number; ink: number[] }[], which: number, frac: number) {
+  const last = series[series.length - 1].ink[which];
+  for (const s of series) if (s.ink[which] >= last * frac) return s.t;
+  return series[series.length - 1].t;
+}
+
+test('the dots rain in, and a thin column is done long before the crowded middle', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots[data-dots]')).toBeAttached({ timeout: 30_000 });
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'false');
+
+  // The mound, hundreds of people deep in a single pixel, and the thin end of the distribution.
+  const series = await rainfall(page, [0.22, 0.75]);
+  const took = series[series.length - 1].t;
+  const peakDone = reachedAt(series, 0, 0.9);
+  const tailDone = reachedAt(series, 1, 0.9);
+
+  expect(series.length, 'the fall was over before it could be watched').toBeGreaterThan(8);
+  expect(tailDone, `the tail filled at ${tailDone}ms, the mound at ${peakDone}ms, of ${took}ms`).toBeLessThan(peakDone / 3);
+  // And the whole thing lands in about six seconds — not two, and not fifteen.
+  expect(took, `the fall took ${took}ms`).toBeGreaterThan(3_500);
+  expect(took, `the fall took ${took}ms`).toBeLessThan(12_000);
 });

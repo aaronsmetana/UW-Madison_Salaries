@@ -2010,6 +2010,34 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   opacity: 0;
   transform: translateY(-50%);
 }
+/* A found person's name over their dot, tied to it by a leader (routes/Home `foundLabels`). Teal,
+   the colour this app uses for "this person", on the page's own surface so a name that lands over a
+   dense patch of dots is still read as words; the one the search list has active wears the filled
+   chip instead, which is the same look the chart's other value chips have. */
+.hero-found-label {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  color: var(--text-accent);
+  background: color-mix(in srgb, var(--mantine-color-body) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
+  box-shadow: var(--mantine-shadow-xs);
+  backdrop-filter: blur(3px);
+}
+.hero-found-label[data-active='on'] {
+  color: var(--mantine-color-white);
+  background: var(--mantine-color-accent-7);
+  border-color: var(--mantine-color-accent-7);
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--mantine-shadow-md);
+}
+
 .person-reveal-tag-name { font-size: 16px; font-weight: 700; }
 .person-reveal-tag-detail { font-size: 13px; color: var(--mantine-color-dimmed); }
 
@@ -2017,6 +2045,12 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
    exactly where they are — carries them out; the graph's own ticks and quartile labels give way to the
    tail's axis; a note says where the axis ends. */
 .hero-dist-pile[data-tail] .hero-dots-over { visibility: hidden; }
+/* Unrolled, there is no "and then, separately, the pile": the axis runs all the way to the top salary,
+   so the break that stands for that jump is describing a graph that is not on the screen. It goes with
+   the pile's dots and comes back as they fold home. */
+.hero-dist-break { transition: opacity 250ms ease; }
+.hero-dist[data-tail='opening'] .hero-dist-break,
+.hero-dist[data-tail='open'] .hero-dist-break { opacity: 0; }
 .hero-dist-tick, .hero-dist-marker-labels { transition: opacity 300ms ease; }
 .hero-dist:not([data-tail="off"]) .hero-dist-tick,
 .hero-dist:not([data-tail="off"]) .hero-dist-marker-labels { opacity: 0; }
@@ -2029,6 +2063,27 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 @media (max-width: 30em) {
   .hero-dist-tail-note { top: 8px; max-width: calc(100% - 16px); }
+}
+/* How long the unrolled pile stays open: a hairline along the foot of its note, draining left to right
+   over the wait. Deliberately quiet — it answers "how long have I got" for anyone who looks, and does
+   not ask to be looked at, which a countdown in figures or a thick bar would. */
+.hero-dist-tail-timer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--mantine-color-accent-6) 55%, transparent);
+  transform-origin: left center;
+  animation: tail-drain linear forwards;
+}
+@keyframes tail-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-dist-tail-timer { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-dist-tick, .hero-dist-marker-labels { transition: none; }

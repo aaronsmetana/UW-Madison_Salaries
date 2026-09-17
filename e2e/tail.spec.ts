@@ -163,3 +163,59 @@ test('the pile unrolls and folds in frames under 8ms at 2x', async ({ browser })
   }
   await ctx.close();
 });
+
+test('the break that stands for the jump to the pile goes while the pile is unrolled', async ({ page }) => {
+  await frozen(page);
+  const glyph = page.locator('.hero-dist-break');
+  const opacity = () => glyph.evaluate((el) => Number(getComputedStyle(el).opacity));
+  await expect(glyph).toBeVisible();
+  expect(await opacity(), 'the break is not drawn on the graph at rest').toBeGreaterThan(0.9);
+
+  const pile = (await page.locator('.hero-dist-pile').boundingBox())!;
+  await page.mouse.click(pile.x + pile.width / 2, pile.y + pile.height - 12);
+  await expect(panel(page)).toHaveAttribute('data-tail', /opening|open/);
+  // Unrolled, the axis runs all the way to the top salary: there is no jump for the break to stand for.
+  await page.clock.runFor(1200);
+  await expect.poll(opacity, { message: 'the break stayed over the unrolled tail' }).toBeLessThan(0.05);
+
+  // It comes back with the pile.
+  await page.mouse.click(pile.x + pile.width / 2, pile.y + pile.height - 12);
+  await page.clock.runFor(2500);
+  await expect(panel(page)).toHaveAttribute('data-tail', 'off');
+  await expect.poll(opacity, { message: 'the break did not come back once the pile folded home' }).toBeGreaterThan(0.9);
+});
+
+// The unrolled pile folds itself back after a wait, which until now it gave no sign of: a reader
+// looking at 574 dots had no way to know the picture was about to be taken away.
+test('the unrolled pile shows how long it has left, and the line runs the wait it is standing in for', async ({ page }) => {
+  // A real clock: a CSS animation runs on the browser's own timeline, which the fake one does not move.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  const pile = (await page.locator('.hero-dist-pile').boundingBox())!;
+  await page.mouse.click(pile.x + pile.width / 2, pile.y + pile.height - 12);
+
+  const bar = page.locator('.hero-dist-tail-timer');
+  await expect(bar).toBeVisible({ timeout: 5_000 });
+  // It is the wait, not a decoration of it: the same 8s the pile stays open for (routes/Home
+  // `TAIL_OPEN_MS`, which the test above folds by running the clock exactly that far).
+  const timing = await bar.evaluate((el) => {
+    const a = el.getAnimations()[0];
+    return { ms: Number(a?.effect?.getTiming().duration ?? 0), playing: a?.playState };
+  });
+  expect(timing.ms).toBe(8000);
+  expect(timing.playing).toBe('running');
+
+  // And it drains: narrower later than it was early on.
+  const drawn = () => bar.evaluate((el) => el.getBoundingClientRect().width * (new DOMMatrix(getComputedStyle(el).transform)).a);
+  const early = await drawn();
+  await page.waitForTimeout(2_500);
+  const later = await drawn();
+  expect(early, 'the line was not drawn').toBeGreaterThan(20);
+  expect(later, `${later} against ${early}`).toBeLessThan(early * 0.75);
+
+  // It goes with the tail it was counting down.
+  await page.mouse.click(pile.x + pile.width / 2, pile.y + pile.height - 12);
+  await expect(bar).toHaveCount(0);
+});

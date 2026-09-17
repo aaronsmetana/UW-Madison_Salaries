@@ -190,3 +190,142 @@ export function placeSideLabels(
   });
   return out;
 }
+
+/**
+ * Does the segment a-b pass through `box`? Liang-Barsky, so a line that merely touches a corner does
+ * not count. Used to keep a leader from crossing a label it does not belong to — a leader that runs
+ * through another name is worse than no leader at all, because it reads as pointing at that one.
+ */
+export function segmentHitsBox(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  box: Box,
+  pad = 0,
+): boolean {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  let t0 = 0, t1 = 1;
+  const edges: [number, number][] = [
+    [-dx, a.x - (box.left - pad)],
+    [dx, (box.right + pad) - a.x],
+    [-dy, a.y - (box.top - pad)],
+    [dy, (box.bottom + pad) - a.y],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else { if (r < t0) return false; if (r < t1) t1 = r; }
+  }
+  return t1 > t0;
+}
+
+/** What it costs a label to sit straight over another marked point, in the same units as the distance
+ *  from its own point: about two rows' worth, so a label will go a good way round rather than wall a
+ *  neighbour in, but will still take the place if there is nowhere else. */
+const WALLED_IN = 45;
+
+/** A label that belongs to one point on a chart, and must stay by it. */
+export interface NearLabel {
+  id: number;
+  /** The point it names, and the radius to keep clear of it (the dot's own drawn size). */
+  x: number;
+  y: number;
+  r: number;
+  width: number;
+  /** Placed first, so the one the reader is following gets the closest place there is. */
+  priority: number;
+}
+
+export interface PlacedNearLabel {
+  id: number;
+  cx: number;
+  cy: number;
+  box: Box;
+  /** Where its leader meets it: the edge or corner the line from the point ends on. */
+  anchor: { x: number; y: number };
+}
+
+/**
+ * A label for each point, as near to its own point as there is room for.
+ *
+ * The other approach — one bank of labels along the top of the plot, each with a leader down to its
+ * point — was tried and read wrongly: the names became a legend at the top of the page rather than
+ * annotations on the graph, and every leader crossed the whole plot to get back to its dot. So each
+ * label is placed against its own point: straight above it, straight below, or out along a 45-degree
+ * ray, where the label hangs off the end of the ray by its near corner.
+ *
+ * 45 degrees, and nothing in between, because a reader follows a line by its angle: a fan of leaders
+ * at arbitrary angles has to be traced one by one, while a bank of parallel diagonals reads at a
+ * glance. Hanging the label off the ray's end rather than centring it on the ray is what lets several
+ * of them nest — each sits clear of the next ray out, so a crowd of dots grows a staircase of names
+ * rather than a heap.
+ *
+ * Nothing is drawn over a marked point, no label over another, and no leader through a name it does
+ * not belong to — that last one reads as pointing at the wrong person, which is worse than no leader.
+ * A label with nowhere to go is left out; the search list still names everyone.
+ */
+export function placeNearLabels(
+  labels: readonly NearLabel[],
+  plot: Box,
+  o: { height?: number; lift?: number; step?: number; levels?: number; pad?: number; reach?: number } = {}
+): PlacedNearLabel[] {
+  const h = o.height ?? 19;
+  const lift = o.lift ?? 8;
+  const step = o.step ?? 21;
+  const levels = o.levels ?? 5;
+  const pad = o.pad ?? 4;
+  // The furthest a leader may reach along its ray. Past this a name stops being read as this dot's and
+  // starts being read as a legend with a line attached, which is the failure this replaced.
+  const reach = o.reach ?? 104;
+  // Every point stays clear, whether or not its own label is placed: a name over another green dot
+  // hides the very thing it is pointing at.
+  const points: Box[] = labels.map((l) => ({ left: l.x - l.r, right: l.x + l.r, top: l.y - l.r, bottom: l.y + l.r }));
+  const placed: PlacedNearLabel[] = [];
+  const order = [...labels].sort((a, b) => b.priority - a.priority || a.x - b.x);
+  for (const l of order) {
+    const half = l.width / 2;
+    const spots: { cx: number; cy: number; anchor: { x: number; y: number }; cost: number }[] = [];
+    for (let lvl = 0; lvl < levels; lvl++) {
+      const t = l.r + lift + lvl * step;
+      // Straight above and below: a vertical leader to the middle of the near edge.
+      spots.push({ cx: l.x, cy: l.y - t - h / 2, anchor: { x: l.x, y: l.y - t }, cost: t });
+      spots.push({ cx: l.x, cy: l.y + t + h / 2, anchor: { x: l.x, y: l.y + t }, cost: t + 0.1 });
+      // Out along a 45-degree ray, the label hanging off its end by the near bottom (or top) corner.
+      if (t > reach) continue;
+      for (const dir of [-1, 1]) {
+        const corner = l.x + dir * t;
+        const cx = corner + dir * half;
+        spots.push({ cx, cy: l.y - t - h / 2, anchor: { x: corner, y: l.y - t }, cost: t * Math.SQRT2 });
+        spots.push({ cx, cy: l.y + t + h / 2, anchor: { x: corner, y: l.y + t }, cost: t * Math.SQRT2 + 0.1 });
+      }
+    }
+    // A label that sits straight over another marked dot walls that dot in: every way out from it,
+    // vertical or diagonal, then runs through this name. So covering someone else's sky costs, and in
+    // a crowd the labels fan out along their rays instead of the first one taking the middle.
+    for (const s of spots) {
+      const above = s.cy < l.y;
+      for (const other of labels) {
+        if (other.id === l.id) continue;
+        const inSpan = other.x > s.cx - half - pad && other.x < s.cx + half + pad;
+        if (inSpan && (above ? other.y > s.cy : other.y < s.cy)) s.cost += WALLED_IN;
+      }
+    }
+    spots.sort((a, b) => a.cost - b.cost);
+    for (const s of spots) {
+      const box = { left: s.cx - half, right: s.cx + half, top: s.cy - h / 2, bottom: s.cy + h / 2 };
+      if (box.top < plot.top || box.bottom > plot.bottom) continue;
+      if (box.left < plot.left || box.right > plot.right) continue;
+      if (points.some((p) => overlaps(box, p, pad))) continue;
+      if (placed.some((p) => overlaps(box, p.box, pad))) continue;
+      // The leader has to get there without running through a name it does not belong to — which is
+      // what simply stacking labels above one another would do, however clear of each other they are.
+      if (placed.some((p) => segmentHitsBox({ x: l.x, y: l.y }, s.anchor, p.box, pad))) continue;
+      placed.push({ id: l.id, cx: s.cx, cy: s.cy, box, anchor: s.anchor });
+      break;
+    }
+  }
+  return placed.sort((a, b) => a.id - b.id);
+}

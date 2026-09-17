@@ -33,6 +33,47 @@ export const READOUT_RADIUS = 5000;
 const MAX_BUCKETS = 2000;
 
 /**
+ * Dollars per point the curve is drawn at, where the counts per $100 are there to draw from.
+ *
+ * The line used to be built from the same $1k bins the readout counts: 250 points, which across a
+ * page-wide plot is a corner every five pixels — a polyline the eye reads as faceted rather than a
+ * curve. The artifact already carries counts per $100 (the dots are laid out from them), so the line
+ * is rebuilt five times as fine. The kernel is unchanged and is measured in dollars, so the curve is
+ * the same shape, sampled closely enough that its corners stop showing; and a peak now lands on the
+ * $200 it belongs to rather than at the foot of its $1k bin.
+ *
+ * Not $100 itself: `densify` refuses a series longer than `MAX_BUCKETS`, and $100 buckets over the
+ * $250k the graph draws is 2,500 of them. Not $250 either, tempting as a round quarter-thousand is:
+ * it is two and a half of the artifact's buckets, so the bins would land on $150, $400, $650 and the
+ * grid the whole chart is read against would be off the round numbers it names.
+ */
+export const CURVE_STEP = 200;
+
+/**
+ * Bins summed from counts per $100 — `lo100` is the first count's bucket, in $100s
+ * (`home-stats.json` `pay_counts`).
+ *
+ * `step` is in dollars and is rounded to a whole number of those $100 buckets: a step that split one
+ * would put the bins on a grid the source cannot answer for.
+ *
+ * Dense by construction and aligned to whole multiples of the step, which is what the kernel needs: it
+ * walks neighbours by index, so an uneven or gappy series would reach further in dollars on one side
+ * of a point than the other.
+ */
+export function binsFromCounts(lo100: number, counts: readonly number[], step: number): Bin[] {
+  const per = Math.max(1, Math.round(step / 100));
+  if (!counts.length) return [];
+  const first = Math.floor(lo100 / per);
+  const last = Math.floor((lo100 + counts.length - 1) / per);
+  const out: Bin[] = [];
+  for (let b = first; b <= last; b++) out.push({ bucket: b * per * 100, n: 0 });
+  for (let i = 0; i < counts.length; i++) {
+    if (counts[i]) out[Math.floor((lo100 + i) / per) - first].n += counts[i];
+  }
+  return out;
+}
+
+/**
  * The gap between adjacent buckets, in dollars, inferred from the data rather than passed in.
  *
  * Inferred because two different producers feed this chart with two different widths in play over

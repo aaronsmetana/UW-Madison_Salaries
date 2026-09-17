@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readSurface, transparencyEmulator } from './glass';
+import { parseColor, flatten, contrast } from './color';
 
 // DuckDB-WASM needs a moment to boot on a cold page load; give assertions room via expect's
 // built-in polling rather than fixed sleeps.
@@ -51,12 +52,13 @@ for (const { name, width, height } of [
     await page.setViewportSize({ width, height });
     await page.goto('./', { waitUntil: 'networkidle' });
 
-    // Anchor both ends — the labels' container also starts with "p25 $…", and a start-anchored
-    // regex would match the wrapper and compare the wrong boxes.
+    // Anchor both ends — the labels' container also starts with the first label's text, and a
+    // start-anchored regex would match the wrapper and compare the wrong boxes. The quartiles are
+    // named in full where there is room and in the shorthand on a phone, so both are allowed here.
     const labels = [
-      page.getByText(/^p25 \$[\d.,]+k$/).first(),
+      page.getByText(/^(p25|25th percentile) \$[\d.,]+k$/).first(),
       page.getByText(/^median \$[\d.,]+k$/).first(),
-      page.getByText(/^p75 \$[\d.,]+k$/).first(),
+      page.getByText(/^(p75|75th percentile) \$[\d.,]+k$/).first(),
     ];
     await expect(labels[0]).toBeVisible({ timeout: 60_000 });
     // The stagger re-measures on document.fonts.ready; let that settle before reading geometry.
@@ -264,8 +266,17 @@ test.describe('the landing distribution', () => {
     // 0.016 — the round-number spikes at $35k/$40k/$50k intact, the line between them still a line.
     // The upper bound alone used to be the whole test, which would have waved through smoothing the
     // spikes away again.
+    // Read on the $1k grid the numbers below were measured against, whatever resolution the line is
+    // drawn at (it is five times finer now — see `CURVE_STEP`). A second difference is a property of
+    // the spacing as much as of the shape: sampled five times as closely, the same curve scores eight
+    // times lower, and comparing that against these thresholds would say "over-smoothed" about a line
+    // that had not changed at all.
     const roughness = await page.locator(CURVE).first().evaluate((el) => {
-      const ys = (el.getAttribute('d') ?? '').split(/[ML]/).slice(1).map((p) => Number(p.split(',')[1]));
+      const pts = (el.getAttribute('d') ?? '').split(/[ML]/).slice(1).map((p) => p.split(',').map(Number));
+      // 250 points is the $1k grid over the $250k the graph draws — the spacing these numbers were
+      // measured at.
+      const every = Math.max(1, Math.round(pts.length / 250));
+      const ys = pts.filter((_, i) => i % every === 0).map((p) => p[1]);
       const mean = ys.reduce((a, b) => a + b, 0) / ys.length;
       let acc = 0;
       for (let i = 1; i < ys.length - 1; i++) acc += Math.abs(ys[i - 1] - 2 * ys[i] + ys[i + 1]);
@@ -606,4 +617,37 @@ test.describe('the landing distribution', () => {
         .toBeLessThan(end);
     }
   });
+});
+
+// The quartile labels under the landing graph are the only place the chart explains its own guides, and
+// they were 10px dimmed text — the size a footnote is set in. A reader who cannot read them is left with
+// three unexplained dotted lines.
+test('the quartile labels under the landing graph are set to be read', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./', { waitUntil: 'networkidle' });
+  const labels = page.locator('.hero-dist-marker-labels > *');
+  await expect(labels).toHaveCount(3, { timeout: 60_000 });
+  const seen = await labels.evaluateAll((els) => els.map((el) => {
+    const cs = getComputedStyle(el);
+    return { text: (el.textContent ?? '').trim(), size: parseFloat(cs.fontSize), weight: Number(cs.fontWeight), color: cs.color };
+  }));
+  for (const l of seen) {
+    expect(l.size, `"${l.text}" is set at ${l.size}px`).toBeGreaterThanOrEqual(12);
+    expect(l.weight, `"${l.text}" is set at ${l.weight}`).toBeGreaterThanOrEqual(600);
+  }
+  // Named in full on a screen with the room for it, rather than in a statistician's shorthand.
+  expect(seen.map((l) => l.text.replace(/\s+\$.*/, ''))).toEqual(['25th percentile', 'median', '75th percentile']);
+
+  // And each clears 4.5:1 against the panel it sits on, which 10px dimmed text did not.
+  const ground = await page.locator('.hero-dist').evaluate((el) => {
+    const out: string[] = [];
+    for (let e: Element | null = el; e; e = e.parentElement) out.push(getComputedStyle(e).backgroundColor);
+    return out.reverse();
+  });
+  let bg = [255, 255, 255];
+  for (const c of ground) { const [r, g, b, a] = parseColor(c); if (a > 0) bg = flatten([r, g, b, a], bg); }
+  for (const l of seen) {
+    const [r, g, b, a] = parseColor(l.color);
+    expect(contrast(flatten([r, g, b, a], bg), bg), `"${l.text}" against the panel`).toBeGreaterThanOrEqual(4.5);
+  }
 });
