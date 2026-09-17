@@ -70,7 +70,8 @@ test('clicking the pile unrolls its people onto an axis to the top salary, each 
   await expect(panel(page)).toHaveAttribute('data-tail', 'open');
   const scale = (v: number) => ((v - 0) / (over.hi - 0)) * row.width;
   // Every one of them at or past the cap's place on the long axis, and the lowest at their own.
-  expect(await inkIn(page, '.hero-dots-tail', 0, scale(CAP) - 4), 'an unrolled dot sits below the cap').toBe(0);
+  // (A packed dot sits up to its spill, 3px, and half a column from its pay: 6px covers both, and the edge.)
+  expect(await inkIn(page, '.hero-dots-tail', 0, scale(CAP) - 6), 'an unrolled dot sits below the cap').toBe(0);
   expect(await inkIn(page, '.hero-dots-tail', scale(over.lo) - 4, scale(over.lo) + 8), 'nobody at the lowest pay over the cap').toBeGreaterThan(0);
   // The graph squeezed to its share of that axis: nothing drawn past the cap's place.
   expect(await inkIn(page, '.hero-dots', scale(CAP) + 6, main.width), 'the graph did not squeeze').toBe(0);

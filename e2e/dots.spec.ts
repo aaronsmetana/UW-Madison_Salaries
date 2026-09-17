@@ -408,8 +408,8 @@ test("the shockwave's rings run out across the whole plot and fade, even where t
   await frozenHome(page);
   const c = await canvasBox(page);
   // High over the tail, where the field is empty: only the rings draw here, 45px above the click, and
-  // 500px to its left, past the burst.
-  const x = c.width * 0.62, y = c.height * 0.4;
+  // 500px to its left, past the burst — still right of the peak on a page-wide plot.
+  const x = c.width * 0.85, y = c.height * 0.35;
   const near = () => inkShare(page, x, y - 45, 12);
   const far = () => inkShare(page, x - 500, y, 12);
   expect(await near(), 'the field is empty above the click').toBe(0);
@@ -442,10 +442,11 @@ test('past the burst the dots ripple: each rocks outward as the front passes, ba
   await page.setViewportSize({ width: 1440, height: 900 });
   await frozenHome(page);
   const c = await canvasBox(page);
-  const x = c.width * 0.3, y = c.height * 0.72;
-  // A window 420px right of the click — three times the burst's reach — over the stacks at the foot of
-  // the plot (above them only the rings draw). Its ink summed down each column.
+  // A window 420px right of the click — twice the burst's reach — over the stacks at the foot of the plot
+  // (above them only the rings draw), at about $180k whatever the plot's width. Its ink summed down each
+  // column.
   const D = 420;
+  const x = c.width * 0.72 - D, y = c.height * 0.72;
   const profile = () => page.locator('.hero-dots canvas').first().evaluate((cv: HTMLCanvasElement, a) => {
     const k = cv.width / cv.clientWidth;
     const x0 = Math.round((a.x - 30) * k), w = Math.round(60 * k), y0 = Math.round(cv.height * 0.55);
@@ -625,7 +626,7 @@ test('a drag with the button held parts the dots behind it along its path, and t
  * corner), going the unit way `u` — against the picture `keepRest` kept: the share of what were the
  * middles of dots at rest (nearly solid ink: a still dot repainted as a square keeps them, a moved one
  * does not) now empty, `ahead` of the pointer (6-40px on, 24px either side); and each side of its line —
- * clear of the wake's trail, 4px either side of it — right behind its tip (1-6px back, 5-9px out) and
+ * clear of the wake's trail, 4px either side of it — right behind its tip (1-8px back, 4.5-8px out) and
  * `behind` it (30-60px back, 5-12px out); and how far out each side the dots have gone (`goneFrom`'s rows, 90%)
  * `near` it (4-16px back) and `far` behind it (74-86px back) — null for a side with no dots.
  */
@@ -663,7 +664,7 @@ const wakeAt = (page: Page, tip: { x: number; y: number }, u: { x: number; y: nu
     return seen ? 200 : null;
   };
   const sides = (a0: number, a1: number, c0: number, c1: number) => [middles(a0, a1, -c1, -c0), middles(a0, a1, c0, c1)];
-  return { ahead: middles(6, 40, -24, 24), atTip: sides(-6, -1, 5, 9), behind: sides(-60, -30, 5, 12), near: [out(10, -1), out(10, 1)], far: [out(80, -1), out(80, 1)] };
+  return { ahead: middles(6, 40, -24, 24), atTip: sides(-8, -1, 4.5, 8), behind: sides(-60, -30, 5, 12), near: [out(10, -1), out(10, 1)], far: [out(80, -1), out(80, 1)] };
 }, { tip, u });
 
 test('a drag parts the dots only behind its pointer, in a V that opens back along the way it goes', async ({ page }) => {
@@ -696,12 +697,12 @@ test('a drag parts the dots only behind its pointer, in a V that opens back alon
     // the last whole step along its path, so the dots just behind it have parted.
     const tip = { x: end.x + u.x * 6, y: end.y + u.y * 6 };
     await page.mouse.move(c.x + tip.x, c.y + tip.y);
-    await page.clock.runFor(32);
+    await page.clock.runFor(64);
     const w = await wakeAt(page, tip, u);
     const label = `${way} at ${v}px/ms`;
     expect(w.ahead, `${label}: no dot middles ahead of the pointer to read`).not.toBeNull();
     expect(w.ahead!, `${label}: dots ahead of the pointer moved before it reached them`).toBeLessThan(0.02);
-    // Just behind the tip the dots have had 32ms, and a slower drag's gentler kick has moved them less —
+    // Just behind the tip the dots have had 64ms, and a slower drag's gentler kick has moved them less —
     // but a dot the wake has not reached has not moved at all.
     for (const [name, read, least] of [['just behind the pointer', w.atTip, 0.25], ['behind the pointer', w.behind, 0.5]] as const) {
       const got = read.filter((n): n is number => n != null);

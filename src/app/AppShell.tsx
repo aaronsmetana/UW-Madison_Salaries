@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
@@ -13,16 +13,64 @@ import { CommandPalette, PaletteTrigger, usePalette } from '../components/Comman
 import { NAV, ABOUT, type NavItem } from './nav';
 import { consumeUpdate } from '../lib/appUpdate';
 import { RevealProvider } from '../components/PersonReveal';
+import { prefersReducedMotion } from '../lib/motion';
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
 // (Titles render via /paycheck, which has its own inline pickers — no global control bar.)
 const CONTROL_PATHS = ['/school'];
 
+/**
+ * The sidebar's first look, once a visit: open, over the page's left edge — the page beneath is laid out
+ * for the collapsed rail from the start, so nothing on it moves — for PEEK_MS, then narrowed into the rail
+ * over PEEK_CLOSE_MS (app.css `.app-navbar-peek`), its labels fading as it goes. Not while a pointer is on
+ * it or the keyboard is in it: then once they leave. Desktop only; a phone's sidebar is a drawer.
+ */
+const PEEK_MS = 2000;
+const PEEK_CLOSE_MS = 450;
+const PEEK_KEY = 'nav-peek';
+/** This visit has already loaded the site: the sidebar has had its look, or the landing dots their fall. */
+function visitStarted(): boolean {
+  try {
+    return sessionStorage.getItem(PEEK_KEY) === '1' || sessionStorage.getItem('dotfield-entrance') === '1';
+  } catch {
+    return true;
+  }
+}
+
 export function AppShellLayout() {
   const loc = useLocation();
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure(false);
-  const [collapsed, { toggle: toggleDesktop }] = useDisclosure(false);
+  const [collapsed, { toggle: toggleDesktop }] = useDisclosure(true);
+  const [peek, setPeek] = useState<'open' | 'closing' | null>(() =>
+    typeof window !== 'undefined' && !visitStarted() && !!window.matchMedia?.('(min-width: 48em)').matches ? 'open' : null);
+  const navRef = useRef<HTMLElement>(null);
+  const peekOnce = useRef(peek);
+  useEffect(() => {
+    if (peekOnce.current) { try { sessionStorage.setItem(PEEK_KEY, '1'); } catch { /* private mode */ } }
+  }, []);
+  useEffect(() => {
+    if (peek !== 'open') return;
+    const nav = navRef.current;
+    let timer = 0;
+    const tuck = () => {
+      // Not out from under a pointer resting on it or a keyboard in it: once they have left.
+      if (nav && (nav.matches(':hover') || nav.contains(document.activeElement))) {
+        timer = window.setTimeout(tuck, 400);
+        return;
+      }
+      setPeek(prefersReducedMotion() ? null : 'closing');
+    };
+    timer = window.setTimeout(tuck, PEEK_MS);
+    return () => window.clearTimeout(timer);
+  }, [peek]);
+  useEffect(() => {
+    if (peek !== 'closing') return;
+    const timer = window.setTimeout(() => setPeek(null), PEEK_CLOSE_MS + 50);
+    return () => window.clearTimeout(timer);
+  }, [peek]);
+  // Labels show while the sidebar is open, or still narrowing from its first look.
+  const labelled = !collapsed || peek != null;
   const palette = usePalette();
 
   // A newer build activated while this tab was open (see lib/appUpdate). Take it at the first
@@ -64,7 +112,9 @@ export function AppShellLayout() {
       <NavLink
         component={Link}
         to={n.to}
-        label={collapsed ? undefined : n.label}
+        label={labelled ? n.label : undefined}
+        // An icon alone names nothing: the rail's links carry their names for a screen reader.
+        aria-label={labelled ? undefined : n.label}
         leftSection={<Icon size={20} stroke={1.7} />}
         active={active}
         variant="light"
@@ -78,12 +128,12 @@ export function AppShellLayout() {
             boxShadow: active ? 'inset 3px 0 0 0 var(--mantine-color-accent-7), inset 0 0 0 1px rgba(14,110,131,.10)' : undefined,
           },
           label: { fontWeight: active ? 700 : 500 },
-          section: collapsed ? { marginInlineEnd: 0 } : undefined,
-          body: collapsed ? { display: 'none' } : undefined,
+          section: labelled ? undefined : { marginInlineEnd: 0 },
+          body: labelled ? undefined : { display: 'none' },
         }}
       />
     );
-    return collapsed ? (
+    return !labelled ? (
       <Tooltip key={n.to} label={n.label} position="right" withArrow>
         {link}
       </Tooltip>
@@ -176,12 +226,12 @@ export function AppShellLayout() {
           {showControl && <ControlBar />}
         </AppShell.Header>
 
-        <AppShell.Navbar p="sm">
+        <AppShell.Navbar p="sm" ref={navRef} className={peek ? 'app-navbar-peek' : undefined} data-peek={peek ?? undefined}>
           <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
           <Divider my="xs" />
           {renderLink(ABOUT, true)}
           {/* Collapse/expand toggle anchored at the bottom of the sidebar (desktop only). */}
-          <Tooltip label="Expand menu" position="right" withArrow disabled={!collapsed}>
+          <Tooltip label="Expand menu" position="right" withArrow disabled={labelled}>
             <Button
               variant="subtle"
               color="gray"
@@ -189,13 +239,14 @@ export function AppShellLayout() {
               mt="xs"
               fullWidth
               visibleFrom="sm"
-              justify={collapsed ? 'center' : 'flex-start'}
-              px={collapsed ? 0 : undefined}
-              onClick={toggleDesktop}
-              leftSection={collapsed ? undefined : <IconChevronLeft size={18} />}
-              aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              justify={labelled ? 'flex-start' : 'center'}
+              px={labelled ? undefined : 0}
+              // During its first look, collapsing is tucking it in now.
+              onClick={() => (peek === 'open' ? setPeek(prefersReducedMotion() ? null : 'closing') : toggleDesktop())}
+              leftSection={labelled ? <IconChevronLeft size={18} /> : undefined}
+              aria-label={labelled ? 'Collapse navigation' : 'Expand navigation'}
             >
-              {collapsed ? <IconChevronRight size={18} /> : 'Collapse'}
+              {labelled ? <span className="app-navbar-toggle-label">Collapse</span> : <IconChevronRight size={18} />}
             </Button>
           </Tooltip>
         </AppShell.Navbar>

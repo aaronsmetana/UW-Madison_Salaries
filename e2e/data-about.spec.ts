@@ -112,13 +112,14 @@ test.describe('data · about', () => {
     ).toBe(0);
 
     // Narrow: it must still clip and scroll inside the card rather than taking the page with it.
-    await page.setViewportSize({ width: 1024, height: 900 });
+    // Narrow enough, beside the sidebar's rail, that the table has to scroll.
+    await page.setViewportSize({ width: 780, height: 900 });
     const narrow = await measure();
     const narrowSeen = JSON.stringify(narrow);
-    expect(narrow.pageOverflow, `the table widened the whole page at 1024 — ${narrowSeen}`).toBe(0);
-    expect(narrow.wrapperScrollsBy, `the wrapper is scrolling at 1024 — ${narrowSeen}`).toBe(0);
-    expect(narrow.scrollerWithinCard, `the table scroller escaped its card at 1024 — ${narrowSeen}`).toBe(true);
-    expect(narrow.viewportScrollsBy, `the table stopped scrolling at 1024 — ${narrowSeen}`).toBeGreaterThan(0);
+    expect(narrow.pageOverflow, `the table widened the whole page at 780 — ${narrowSeen}`).toBe(0);
+    expect(narrow.wrapperScrollsBy, `the wrapper is scrolling at 780 — ${narrowSeen}`).toBe(0);
+    expect(narrow.scrollerWithinCard, `the table scroller escaped its card at 780 — ${narrowSeen}`).toBe(true);
+    expect(narrow.viewportScrollsBy, `the table stopped scrolling at 780 — ${narrowSeen}`).toBeGreaterThan(0);
   });
 
   /**
@@ -152,11 +153,11 @@ test.describe('data · about', () => {
       expect(m.masked, `the mask is painted over a table that fits — ${seen}`).toBe(false);
     }).toPass({ timeout: 5_000 });
 
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 780, height: 900 });
     await expect(async () => {
       const m = await read();
       const seen = JSON.stringify(m);
-      expect(m.scrollsBy, `expected the table to overflow at 1024 — ${seen}`).toBeGreaterThan(0);
+      expect(m.scrollsBy, `expected the table to overflow at 780 — ${seen}`).toBeGreaterThan(0);
       expect(m.faded, `the table scrolls with nothing to say so — ${seen}`).toBe(true);
       expect(m.masked, `data-overflowing is set but no mask is painted — ${seen}`).toBe(true);
     }).toPass({ timeout: 5_000 });
@@ -176,7 +177,7 @@ test.describe('data · about', () => {
    * those rows look unremarkable in the one column that never scrolls away.
    */
   test('the Snapshot column stays put while the rest of the table scrolls', async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 780, height: 900 });
 
     const m = await page.evaluate(() => {
       const vp = document.querySelector<HTMLElement>('.data-snap-scroll .mantine-ScrollArea-viewport')!;
@@ -289,7 +290,7 @@ test.describe('data · about', () => {
    * announced, took a focus stop, and scrolled the page instead of the table.
    */
   test('the ingestion table can be scrolled from the keyboard', async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 780, height: 900 });
     const viewport = page.locator('.data-snap-scroll .mantine-ScrollArea-viewport');
     await expect(viewport, 'the scrollable region is not the element that scrolls').toHaveAttribute('role', 'region');
 

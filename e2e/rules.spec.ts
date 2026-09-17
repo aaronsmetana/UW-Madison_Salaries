@@ -91,9 +91,10 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
       )).map((r) => `${r.fn} ${r.ln}`.toLowerCase())
     );
     await page.goto('./explore?tab=changes');
-    await page.getByRole('textbox', { name: 'From' }).click();
+    // Exactly these: the growth card at the top of Explore has its own "From snapshot" / "To snapshot".
+    await page.getByRole('textbox', { name: 'From', exact: true }).click();
     await page.getByRole('option', { name: 'Apr 2025', exact: true }).click();
-    await page.getByRole('textbox', { name: 'To' }).click();
+    await page.getByRole('textbox', { name: 'To', exact: true }).click();
     await page.getByRole('option', { name: 'Sep 2025', exact: true }).click();
     const raises = page.locator('.mantine-Card-root', { has: page.getByText('Biggest raises', { exact: true }) }).locator('tbody tr');
     await expect(raises.first()).toBeVisible({ timeout: 60_000 });

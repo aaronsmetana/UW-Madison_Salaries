@@ -261,7 +261,6 @@
      decision and belongs in px. A *measure* is a line length — a count of characters, which is what
      makes text comfortable to read — so it belongs in `ch` and should track the type size of whatever
      it is applied to. Conflating the two is what produced the seven numbers. */
-  --content-max: 1200px; /* full-width bands: the showcase row, wide tables */
   --content-prose: 880px; /* a reading column that also holds layout (the /data cards, Home's hero) */
   --measure: 62ch; /* one paragraph */
   --measure-narrow: 44ch; /* a centred hint or caption */
@@ -2077,3 +2076,51 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   bottom: 14px;
   white-space: nowrap;
 }
+
+/* The sidebar's first look, once a visit (app/AppShell): open over the page's left edge — the page beneath
+   is laid out for the rail, so nothing on it moves — then narrowed into the rail, labels fading first. */
+@media (min-width: 48em) {
+  .app-navbar-peek {
+    overflow: hidden;
+    transition: width 450ms cubic-bezier(0.3, 0, 0.2, 1), box-shadow 450ms ease;
+  }
+  .app-navbar-peek[data-peek='open'] {
+    width: 330px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+  }
+  .app-navbar-peek[data-peek='closing'] {
+    width: var(--app-shell-navbar-width);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0);
+  }
+  .app-navbar-peek .mantine-NavLink-label,
+  .app-navbar-peek .app-navbar-toggle-label {
+    white-space: nowrap;
+    transition: opacity 220ms ease;
+  }
+  .app-navbar-peek[data-peek='closing'] .mantine-NavLink-label,
+  .app-navbar-peek[data-peek='closing'] .app-navbar-toggle-label,
+  .app-navbar-peek[data-peek='closing'] .mantine-Button-section {
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-navbar-peek { transition: none; }
+}
+
+/* Home's bands run the page's width (routes/Home). What sits under the search grows with the band — the
+   figures and their icons (not their eyebrow labels, one size app-wide), the showcase tiles' type, icons
+   and padding — from its size in the 1200px band it
+   used to be capped at, to half again at most on a wide screen: container units, so it follows the band
+   (a sidebar opening, full page) rather than the window. */
+.home-band { container-type: inline-size; }
+.home-band .home-kpi-value { font-size: clamp(1.75rem, 2.7cqi, 3.4rem) !important; }
+/* Mantine writes a ThemeIcon's size and a Text's `fz` inline, so these override them outright. */
+.home-band .home-kpi-icon { width: clamp(26px, 2.1cqi, 40px) !important; height: clamp(26px, 2.1cqi, 40px) !important; min-width: 0 !important; min-height: 0 !important; }
+.home-band .home-kpi-icon svg { width: clamp(16px, 1.3cqi, 24px); height: clamp(16px, 1.3cqi, 24px); }
+.home-band .showcase-card { padding: clamp(20px, 1.9cqi, 36px); }
+.home-band .showcase-icon { width: clamp(34px, 2.8cqi, 52px) !important; height: clamp(34px, 2.8cqi, 52px) !important; min-width: 0 !important; min-height: 0 !important; }
+.home-band .showcase-icon svg { width: clamp(20px, 1.6cqi, 30px); height: clamp(20px, 1.6cqi, 30px); }
+.home-band .showcase-title { font-size: clamp(var(--mantine-font-size-md), 1.35cqi, 1.45rem) !important; }
+.home-band .showcase-blurb { font-size: clamp(var(--mantine-font-size-sm), 1.05cqi, 1.1rem); }
+.home-band .showcase-stat { font-size: clamp(var(--mantine-font-size-xs), 0.85cqi, 0.95rem); }

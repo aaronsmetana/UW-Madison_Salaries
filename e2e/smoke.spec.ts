@@ -448,6 +448,8 @@ test.describe('the landing distribution', () => {
       await page.goto('./', { waitUntil: 'networkidle' });
       const panel = page.locator('.hero-dist');
       await expect(panel).toBeVisible({ timeout: 60_000 });
+      // The sidebar's first look lies over the plot's left edge for its first two seconds.
+      await expect(page.locator('.app-navbar-peek')).toHaveCount(0, { timeout: 10_000 });
       const box = (await panel.boundingBox())!;
       // Swept across the PLOT, not the panel: the panel carries padding, so the first and last few
       // percent of its width sit beside the chart rather than over it and register no hover at all.
@@ -467,12 +469,10 @@ test.describe('the landing distribution', () => {
   }
 
   // The hero column is a reading measure and the figure is not prose. It was drawn at
-  // `--content-prose` while the showcase tiles below it used `--content-max`, so the page's one
-  // chart was 320px narrower than the row of cards under it for no reason a reader could see.
-  // Swept rather than checked at one width, because there are two things to prove and only the
-  // widest viewport shows both: above ~1560px the 1200px cap binds and the chart has to stop
-  // growing WITH the tiles, and below it the chart has to keep pace as the column narrows.
-  for (const width of [1920, 1600, 1280, 992, 768, 375]) {
+  // `--content-prose` while the showcase tiles below it were wider, so the page's one chart was 320px
+  // narrower than the row of cards under it for no reason a reader could see. Both now run the page's
+  // width; swept, so the chart keeps pace with the tiles at every width, wide and narrow.
+  for (const width of [2560, 1920, 1600, 1280, 992, 768, 375]) {
     test(`is as wide as the tiles below it (${width}px)`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto('./', { waitUntil: 'networkidle' });
@@ -490,6 +490,44 @@ test.describe('the landing distribution', () => {
       expect(overflow, `at ${width}px the chart pushes the page sideways`).toBe(0);
     });
   }
+
+  // Capped at 1200px, a wide screen left a third of itself empty either side of the chart. The chart and
+  // the search now run the page's width, the plot grows taller with it (up to 520px), and what sits under
+  // the search — the figures and the showcase tiles — grows with it too, from its size at 1440px.
+  test('runs the page\'s width on a wide screen, and what is under the search grows with it', async ({ page }) => {
+    await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
+    const read = async (width: number) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto('./', { waitUntil: 'networkidle' });
+      await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
+      await page.waitForTimeout(500);
+      return page.evaluate(() => {
+        const main = document.querySelector('#main-content')!;
+        const cs = getComputedStyle(main);
+        const room = main.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        const w = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().width;
+        const fs = (sel: string) => parseFloat(getComputedStyle(document.querySelector(sel)!).fontSize);
+        return {
+          room, chart: w('.hero-dist'), search: w('.hero-search-input'), plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height,
+          figure: fs('.home-kpi-value'), title: fs('.showcase-title'), blurb: fs('.showcase-blurb'), icon: w('.showcase-icon'),
+        };
+      });
+    };
+    const laptop = await read(1440);
+    const wide = await read(2560);
+    for (const [name, r] of [['1440px', laptop], ['2560px', wide]] as const) {
+      expect(Math.abs(r.chart - r.room), `at ${name} the chart is ${r.chart}px of ${r.room}px`).toBeLessThanOrEqual(1);
+      expect(Math.abs(r.search - r.room), `at ${name} the search is ${r.search}px of ${r.room}px`).toBeLessThanOrEqual(1);
+    }
+    expect(laptop.plotH, 'the plot at 1440px').toBe(375);
+    expect(wide.plotH, 'the plot did not grow taller with a wide screen').toBe(520);
+    expect(wide.figure, 'the figures did not grow').toBeGreaterThan(laptop.figure * 1.3);
+    expect(wide.title, 'the tiles\' titles did not grow').toBeGreaterThan(laptop.title * 1.2);
+    expect(wide.blurb, 'the tiles\' text did not grow').toBeGreaterThan(laptop.blurb * 1.15);
+    expect(wide.icon, 'the tiles\' icons did not grow').toBeGreaterThan(laptop.icon * 1.3);
+    // And never past a size that stops reading as a caption.
+    expect(wide.blurb).toBeLessThanOrEqual(18);
+  });
 
   test('is glass over a backdrop that actually reaches it', async ({ page }) => {
     await page.goto('./');

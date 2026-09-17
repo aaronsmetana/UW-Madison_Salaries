@@ -32,6 +32,9 @@ async function settled(page: import('@playwright/test').Page) {
 }
 
 async function runAxe(page: import('@playwright/test').Page) {
+  // Not while the sidebar's first look is still narrowing: its labels are fading out, and a label at
+  // half opacity measures as a contrast failure for the 450ms it lasts.
+  await page.waitForFunction(() => !document.querySelector('.app-navbar-peek'), null, { timeout: 10_000 });
   const results = await new AxeBuilder({ page })
     // Mantine's own Popover/Combobox target wrapper (every Select/SearchBox in the app) renders
     // `aria-expanded` on a plain `<div aria-haspopup="dialog">` with no explicit interactive role —

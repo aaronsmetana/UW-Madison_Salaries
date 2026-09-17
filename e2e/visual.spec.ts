@@ -168,6 +168,8 @@ const CHARTS = (page: Page) => [page.locator('.recharts-wrapper'), page.locator(
 const PINNED_BUILD = '2026-09-04T12:00:00.000Z'; // renders as "Sep 4, 2026" — the date the committed baselines were captured with
 
 test.beforeEach(async ({ page }) => {
+  // The sidebar's first look (sidebar.spec) is over by two and a half seconds; a scene is the page itself.
+  await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
   // Both artifacts carry the stamp, and /data prints the manifest's twice as raw ISO slices
   // (`DataHealth.tsx`) rather than through `fmtDate` — so pinning only `summary.json` leaves that
   // page moving. Measured: 5,000 differing pixels on /data, all in its snapshots table.

@@ -49,17 +49,18 @@ function Kpi({ icon, label, value, format, color, hint }: KpiData) {
     <Text
       fw={700}
       ta="center"
+      className="home-kpi-value"
       style={{ fontSize: 'var(--fs-stat)', lineHeight: 1.1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
     >
       {animated == null ? '—' : format(Math.round(animated))}
     </Text>
   );
   return (
-    <Stack gap={8} align="center" style={{ flex: 1, minWidth: 0, paddingInline: 12 }}>
+    <Stack gap={8} align="center" className="home-kpi" style={{ flex: 1, minWidth: 0, paddingInline: 12 }}>
       {/* The icon leaves ~110px for the label, so a second line is allowed and its height reserved on
           every tile — otherwise a tile whose label wraps drops its value off the shared baseline. */}
       <Group gap={7} justify="center" align="center" wrap="nowrap" mih={30}>
-        <ThemeIcon size={26} radius="md" variant="light" color={color}>
+        <ThemeIcon size={26} radius="md" variant="light" color={color} className="home-kpi-icon">
           {icon}
         </ThemeIcon>
         <Eyebrow ta="center" lineClamp={2} style={{ lineHeight: 1.2 }}>{label}</Eyebrow>
@@ -101,7 +102,10 @@ const PILE_ALL: [number, number] = [0, 2];
  *  where the readout rides over the peak and where a burst's dots have room to fly (DotField). At 180px the
  *  chart was a strip: its dots too small to tell apart and its peak flush with the panel's top; at 300 the
  *  dots still had too little room each, so it grew by a quarter. */
-const PLOT_H = { phone: 275, wide: 375 };
+const PLOT_H = { phone: 275, wide: 375, most: 520 };
+/** A wide plot grows taller with its width — this share of it, from PLOT_H.wide up to PLOT_H.most — so on a
+ *  big screen the page-wide curve keeps its shape instead of flattening into a strip. */
+const PLOT_ASPECT = 0.27;
 const HEADROOM = { phone: 35, wide: 45 };
 /** Every dot its own room (DotField `pack`): a crowded column of people who share a pay passes up to
  *  3px of its surplus to its neighbours — a few hundred dollars — so no streak is a solid bar. */
@@ -265,10 +269,10 @@ function Distribution({
   const growFromRef = useRef<DOMRect | null>(null);
   const closingRef = useRef(false);
   const refocusRef = useRef(false);
-  const baseH = phone ? PLOT_H.phone : PLOT_H.wide;
+  const baseH = phone ? PLOT_H.phone : Math.round(Math.min(PLOT_H.most, Math.max(PLOT_H.wide, plotW * PLOT_ASPECT)));
   const H = full && fullH > 0 ? fullH : baseH;
   // The clear band above the peak keeps its share of the plot.
-  const HEAD = Math.round(H * ((phone ? HEADROOM.phone : HEADROOM.wide) / baseH));
+  const HEAD = Math.round(H * (phone ? HEADROOM.phone / PLOT_H.phone : HEADROOM.wide / PLOT_H.wide));
 
   // One dot per person, under the curve (DotField). Everyone the bins describe: the counts per $100
   // when the artifact carries them, otherwise each $1k bin's people spread across its thousand — and,
@@ -1538,14 +1542,14 @@ function ShowcaseCard({ icon, title, blurb, stat, to }: {
   return (
     <Anchor component={Link} to={to} underline="never" c="inherit" style={{ display: 'block', height: '100%' }}>
       <Card className="card-hover showcase-card" padding="lg" style={{ height: '100%' }}>
-        <ThemeIcon size={34} radius="md" variant="light" color="accent" mb="sm">
+        <ThemeIcon size={34} radius="md" variant="light" color="accent" mb="sm" className="showcase-icon">
           {icon}
         </ThemeIcon>
-        <Text fw={700} fz="md" style={{ letterSpacing: '-0.01em' }}>
+        <Text fw={700} fz="md" className="showcase-title" style={{ letterSpacing: '-0.01em' }}>
           {title} <span className="showcase-arrow">→</span>
         </Text>
-        <Text size="sm" c="dimmed" mt={4} style={{ lineHeight: 1.5 }}>{blurb}</Text>
-        <Text size="xs" c="dimmed" mt="sm" fw={600}>{stat}</Text>
+        <Text size="sm" c="dimmed" mt={4} className="showcase-blurb" style={{ lineHeight: 1.5 }}>{blurb}</Text>
+        <Text size="xs" c="dimmed" mt="sm" fw={600} className="showcase-stat">{stat}</Text>
       </Card>
     </Anchor>
   );
@@ -1761,14 +1765,14 @@ export default function Home() {
 
         {/* The distribution sits directly under the median that labels it, so the marker under the
             headline number is the same number. Then search — the action — then the supporting figures. */}
-        {/* Capped at `--content-max`, matching the showcase tiles below, NOT at the `--content-prose`
-            the headline and paragraph use. The narrow hero column is a reading measure, and a figure
-            is not prose: at 880px the plot was a 4.9:1 box, and the two features the $1k buckets
-            exist to resolve read better with the extra 320px than any amount of extra height gives
-            them. The search field matches it: it is the page's primary action and the thing the
-            headline tells you to use, so it reads as underweight at anything narrower than the
-            figure it sits under. */}
-        <Stack gap="lg" maw="var(--content-max)" mx="auto" w="100%" className="hero-rise">
+        {/* The page's full width, like the showcase band below — NOT the `--measure` the headline's
+            paragraph keeps. The narrow hero column is a reading measure, and a figure is not prose:
+            at 880px the plot was a 4.9:1 box, and capped at 1200px it left a third of a wide screen
+            empty either side of a chart with more to show. The plot grows taller with its width
+            (PLOT_ASPECT), and the search field matches the figure it sits under: it is the page's
+            primary action, and reads as underweight at anything narrower. What sits under it scales
+            with the band (app.css `.home-band`). */}
+        <Stack gap="lg" w="100%" className="hero-rise home-band">
           <div className="hero-dist-wrap" data-people-mapped={spots ? spots.size : undefined}>
             <Distribution
               bins={bins}
@@ -1828,7 +1832,7 @@ export default function Home() {
             nothing indicating that Compare, Reports, Screening or the division pages existed at all.
             Everything here reads from the same two JSON artifacts the stats card uses, so the landing
             page still never touches DuckDB. */}
-        <Stack gap="md" maw="var(--content-max)" mx="auto" w="100%" mt="xl">
+        <Stack gap="md" w="100%" mt="xl" className="home-band">
           <Group justify="center" gap={8}>
             <Eyebrow c="dimmed">Also in here</Eyebrow>
           </Group>
