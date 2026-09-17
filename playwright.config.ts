@@ -9,6 +9,11 @@ export default defineConfig({
   testDir: 'e2e',
   timeout: 120_000, // DuckDB-WASM init (parquet fetch + wasm boot) is slow on a cold page load
   workers: 1, // each test spins up its own DuckDB-WASM instance — too heavy to parallelize
+  // One machine still runs one test at a time. This is for CI, which splits the suite across machines
+  // (`--shard`, .github/workflows/deploy.yml): tests, not files, are shared out, so the slow files
+  // (a11y, person) do not all land on one shard. Every test stands alone — no shared state, no hooks
+  // between tests — which is what makes this safe.
+  fullyParallel: true,
   // `list` reads well in a terminal. On CI, add `github`: it emits `::error::` workflow annotations,
   // and annotations are the only part of a failed run that can be read back without repo-admin
   // rights — the run logs API returns 403. A failure nobody can read is a failure that gets guessed

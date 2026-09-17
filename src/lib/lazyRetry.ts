@@ -1,4 +1,7 @@
-import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { lazy, type LazyExoticComponent } from 'react';
+
+/** What React.lazy itself accepts, read off its own signature rather than restated. */
+type LazyComponent = Awaited<ReturnType<Parameters<typeof lazy>[0]>>['default'];
 
 const RELOAD_FLAG = 'uwsal.chunk-reload';
 
@@ -32,7 +35,7 @@ const flag = {
  * a blank route. A fresh page load fetches the current index.html, which points at the
  * current chunk hashes. sessionStorage guards against a reload loop if the failure persists.
  */
-export function lazyWithRetry<T extends ComponentType<any>>(
+export function lazyWithRetry<T extends LazyComponent>(
   factory: () => Promise<{ default: T }>
 ): LazyExoticComponent<T> {
   return lazy(() =>

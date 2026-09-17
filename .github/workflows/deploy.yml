@@ -22,8 +22,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 20
           cache: npm
@@ -38,26 +38,60 @@ jobs:
         run: npm run data
       - name: Build site
         run: npm run build
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-      - name: E2E
-        run: npm run e2e
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+      # The browser tests below run against this build and this data, not one of their own each.
+      # public/data too: the tests' oracles read the Parquet and home-stats.json from there.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: site
+          path: |
+            dist
+            public/data
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
 
-  deploy:
+  # The browser suite, shared out across five machines at once: each runs its tests one at a time (a test
+  # boots its own DuckDB, and the frame-budget tests need the CPU to themselves), so on one machine the
+  # suite had grown to 42 minutes of a 44-minute deploy. Tests, not files, are shared out
+  # (playwright.config.ts `fullyParallel`), and a failing shard does not stop the others, so one run
+  # reports every failure.
+  e2e:
     needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: site
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: E2E (shard ${{ matrix.shard }} of 5)
+        run: npm run e2e -- --shard=${{ matrix.shard }}/5
+
+  deploy:
+    needs: [build, e2e]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 # Actions are pinned to commit SHAs, not tags. A tag is mutable: whoever controls the action's repo
-# can repoint v4 at new code, and this workflow runs with a token that can publish the site. The
+# can repoint a tag at new code, and this workflow runs with a token that can publish the site. The
 # trailing comment records which release each SHA was, so these stay legible when you come to bump
 # them — resolve a new one with:
-#   curl -sS https://api.github.com/repos/actions/checkout/git/ref/tags/v4
+#   curl -sS https://api.github.com/repos/actions/checkout/commits/v7.0.1
+# Every one runs on Node 24: the Node 20 releases were being forced onto it with a deprecation warning.
