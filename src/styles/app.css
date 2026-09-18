@@ -1805,10 +1805,17 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   z-index: var(--z-local, 2);
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  /* Full page the search box joins this row; on a narrow window it wraps under the buttons rather
+     than pushing them off the panel's left edge. */
+  flex-wrap: wrap;
+  max-width: calc(100% - 20px);
   gap: 6px;
 }
 @media screen and (max-width: 30em) {
-  .hero-dist-controls { position: static; justify-content: flex-end; margin-bottom: 6px; }
+  /* Standing in the flow they have the panel's own width; the cap above is for the floating row, which
+     would otherwise run off the panel's left edge, and taking it here would inset them by its 20px. */
+  .hero-dist-controls { position: static; justify-content: flex-end; margin-bottom: 6px; max-width: none; }
 }
 .hero-dist-legend {
   display: flex;
@@ -1875,26 +1882,27 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .hero-dist.hero-dist-full { margin-top: 0; --glass-tint: 88%; }
 /* No page to scroll or zoom there: a finger's drag is the dots' (Home `onMove`). */
 .hero-dist-full .hero-dist-main { touch-action: none; }
-/* The panel's own search, full page only, above the plot. Held to a readable measure and centred, which
-   also keeps it clear of the controls in the top-right corner rather than running under them. */
+/* Full page only, sharing the controls' corner. It is the last of them, so the box ends at the panel's
+   right edge and its list — the width of the box, directly under it — falls on the thin tail. Centred,
+   that list would land on the peak and cover 11.9% of the dots at 1280x800 and 2% at 1440x900; on the
+   left, 41.4%. While the controls float it also takes no height from the plot; narrow, where they stand
+   in the flow, it wraps onto a line of its own and `FULL_SEARCH_H` in routes/Home pays for that line. */
 .hero-dist-search {
-  /* Its height is fixed, and mirrored by `FULL_SEARCH_H` in routes/Home. Full page works out the plot's
-     height from the panel as it stands on the page, where this row does not exist, so the row's own
-     height has to be a number that reckoning can subtract — and a number, not whatever the input
-     happens to measure, which is a font's business and differs between machines. Out by the row's
-     height, the panel grows from half a row off its own place. */
   --full-search-h: 42px;
-  width: min(28rem, 100%);
+  width: min(26rem, 100%);
   height: var(--full-search-h);
-  margin: 0 auto 12px;
 }
 .hero-dist-search input {
   height: var(--full-search-h);
   min-height: var(--full-search-h);
+  transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
 }
-/* Narrow, the controls wrap to their own line above the plot, so the box has the width to itself. */
-@media (max-width: 48em) {
-  .hero-dist-search { width: 100%; }
+/* At rest it is a hairline on the panel's own glass, not a card: an empty field has nothing to read,
+   so it need not hold a surface of its own in front of the graph. Hover or focus hands the surface
+   back, which the open list needs — that list is opaque, and the two meet as one card. */
+.hero-dist-search input:not(:hover):not(:focus) {
+  background-color: transparent;
+  border-color: var(--hairline);
 }
 /* The panel's place on the page while it is full page, the same height, so nothing below it moves. */
 .hero-dist-placeholder { margin-top: var(--mantine-spacing-lg); }

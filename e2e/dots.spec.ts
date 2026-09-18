@@ -880,9 +880,9 @@ test('full page scales a click\'s hole and a fast drag\'s parting up with the gr
 
   const k = full.h / inPlace.h;
   // The premise of everything below, not a measurement of its own: unless full page is a good deal
-  // taller, dividing by `k` proves nothing about the hole and the parting scaling with the graph. It is
-  // 1.71 now rather than 1.84, because the panel carries a search row full page and the plot gets the
-  // window less the panel's furniture — a change in how much taller, not in whether.
+  // taller, dividing by `k` proves nothing about the hole and the parting scaling with the graph. The
+  // bar sits well under the ratio rather than on it: the plot gets the window less whatever furniture
+  // the panel carries, so the ratio moves with that furniture without anything here being wrong.
   expect(k, 'full page is not much taller than the graph in place').toBeGreaterThan(1.6);
   expect(full.hole / inPlace.hole / k, `a click's hole: ${inPlace.hole}px in place, ${full.hole}px on a graph ${k.toFixed(2)} times as tall`)
     .toBeGreaterThan(0.85);

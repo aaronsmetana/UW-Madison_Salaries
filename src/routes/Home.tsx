@@ -148,14 +148,16 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
 }
 
 /**
- * What the panel's search row costs it, full page: the row (42px) and the margin under it (12). Mirrors
- * `--full-search-h` and the margin in app.css `.hero-dist-search`. The plot's height full page is worked
- * out from the panel as it stands on the page, which has no such row, so the row has to be subtracted by
- * hand — and it has to be right, because the panel's grow-out-of-its-place is aimed at the panel as that
- * reckoning leaves it. Out by the row, the panel starts half a row off its own place and lands with a
- * jump. The e2e's `it does not start over its place` is what holds these two to each other.
+ * What the panel's search box costs it full page on a phone: the box (42px, `--full-search-h` in
+ * app.css) and the gap above it (6). Narrow, the controls stand in the flow and the box wraps onto a
+ * line of its own there; wide, they float in the corner and it costs the plot nothing. The panel's
+ * full-page height is worked out from the panel as it stands on the page, which carries no box at all,
+ * so that line has to be a number this reckoning can subtract — and a number, not whatever the input
+ * measures, which is a font's business and differs between machines. It also has to be right: the
+ * grow-out-of-its-place is aimed at the panel as this leaves it, and out by the line the panel starts
+ * half of it off its own place. `full page grows out of its place` holds the two to each other.
  */
-const FULL_SEARCH_H = 42 + 12;
+const FULL_SEARCH_H = 42 + 6;
 
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
@@ -569,10 +571,12 @@ function Distribution({
     if (!el || fullRef.current) return;
     growFromRef.current = el.getBoundingClientRect();
     setPageH(el.offsetHeight);
-    // A first guess at the plot's height from the panel as it is, measured again once it is full — less
-    // the search row, which the panel only carries full page and so is not in the height being read here.
+    // A first guess at the plot's height from the panel as it is, measured again once it is full. The
+    // search box full page rides in the corner with the controls, which cost nothing while they float —
+    // but on a phone they stand in the flow, and there the box takes a line the panel on the page has not
+    // got.
     const pad = phone ? FULL_PAD.phone : FULL_PAD.wide;
-    const furniture = el.offsetHeight - H + (search ? FULL_SEARCH_H : 0);
+    const furniture = el.offsetHeight - H + (search && phone ? FULL_SEARCH_H : 0);
     setFullH(Math.max(baseH, Math.floor(window.innerHeight - 2 * pad - furniture)));
     setLensAt(null);
     setHoverIdx(null);
@@ -1303,11 +1307,14 @@ function Distribution({
           ))}
           {fullToggle}
           {controls}
+          {/* Full page, the page's own search box is behind the scrim, so the panel carries one. It
+              joins the controls rather than taking a row above the plot: while they float in the corner
+              it costs the plot no height at all, and its list — the width of the box, directly under
+              it — drops on the thin tail rather than on the peak. Narrow, the controls stand in the
+              flow and it does take a line there; `FULL_SEARCH_H` is that line. */}
+          {full && search && <div className="hero-dist-search">{search}</div>}
         </div>
       )}
-      {/* Full page, the page's own search box is behind the scrim, so the panel carries one. It sits
-          above the plot: its list drops downward over the graph, which is the thing being searched. */}
-      {full && search && <div className="hero-dist-search">{search}</div>}
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
       <div
         ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}

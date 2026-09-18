@@ -40,8 +40,8 @@ test('opens the graph full page over everything, as tall as the window, and puts
   const h = await plotHeight(page);
   // Against the panel it sits in, and against the 375px it had on the page, rather than as a count of
   // pixels off the window. The plot gets what the window leaves after the panel's own furniture — the
-  // controls, the axis, the legend, the caption, and now a search row that exists only here — so a bare
-  // figure moves whenever that furniture changes and says nothing either way about the plot growing.
+  // controls, the axis, the legend, the caption — so a bare figure moves whenever that furniture changes
+  // and says nothing either way about the plot growing.
   expect(h, 'the plot did not grow to the window').toBeGreaterThan(1.5 * 375);
   expect(h / box.height, 'the panel is mostly furniture').toBeGreaterThan(0.7);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
@@ -90,9 +90,16 @@ test('opens the graph full page over everything, as tall as the window, and puts
   expect(await plotHeight(page)).toBe(375);
 });
 
+// The phone is in here because the panel's furniture differs there: the controls float in the corner on
+// a wide window, and the search box rides with them for nothing, but narrow they stand in the flow and
+// the box takes a line of its own. The panel's full-page height is reckoned from the panel on the page,
+// which has no box at all, so a line unaccounted for lands the grow half a line off its place — 23.8px
+// of it, when the box first moved into the controls.
 test('full page grows out of its place, and at once under Reduce Motion', async ({ browser }) => {
-  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion });
+  for (const [reducedMotion, width, height] of [
+    ['no-preference', 1440, 900], ['reduce', 1440, 900], ['no-preference', 375, 812],
+  ] as const) {
+    const ctx = await browser.newContext({ viewport: { width, height }, reducedMotion, ...(width < 500 ? { hasTouch: true, isMobile: true, deviceScaleFactor: 3 } : {}) });
     const page = await ctx.newPage();
     await settledHome(page);
     const from = (await panel(page).boundingBox())!;
@@ -115,10 +122,10 @@ test('full page grows out of its place, and at once under Reduce Motion', async 
       expect(start.anims, 'the panel did not grow').toBeGreaterThan(0);
       // It starts centred over its box on the page, clipped to that box's size.
       const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(start.first!.transform)!;
-      expect(Math.abs(start.to.x + start.to.width / 2 + Number(m[1]) - (from.x + from.width / 2)), 'it does not start over its place').toBeLessThan(1);
-      expect(Math.abs(start.to.y + start.to.height / 2 + Number(m[2]) - (from.y + from.height / 2))).toBeLessThan(1);
+      expect(Math.abs(start.to.x + start.to.width / 2 + Number(m[1]) - (from.x + from.width / 2)), `${width}px wide: it does not start over its place`).toBeLessThan(1);
+      expect(Math.abs(start.to.y + start.to.height / 2 + Number(m[2]) - (from.y + from.height / 2)), `${width}px wide: it does not start over its place, vertically`).toBeLessThan(1);
       const c = /inset\(([\d.]+)px ([\d.]+)px/.exec(start.first!.clip)!;
-      expect(Math.abs(start.to.width - 2 * Number(c[2]) - from.width), 'it does not start the size of its place').toBeLessThan(1);
+      expect(Math.abs(start.to.width - 2 * Number(c[2]) - from.width), `${width}px wide: it does not start the size of its place`).toBeLessThan(1);
       expect(start.first!.transform, 'a scale skews what the panel measures while it grows').not.toMatch(/scale/);
     }
     await ctx.close();
