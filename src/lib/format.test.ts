@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis, fmtYears, fmtChange } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis, fmtYears, fmtChange, vsCampus } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -81,5 +81,29 @@ describe('fmtChange', () => {
   });
   it('prints a dash for a missing figure', () => {
     expect(fmtChange(null)).toBe('—');
+  });
+});
+
+describe('vsCampus', () => {
+  it('says how far below or above, in whole percent', () => {
+    expect(vsCampus(62000, 76694)).toBe('19% below campus');
+    expect(vsCampus(102000, 76694)).toBe('33% above campus');
+  });
+  it('calls a gap of a point or less "about the campus median", and a point and a half a number', () => {
+    expect(vsCampus(100, 100)).toBe('about the campus median');
+    expect(vsCampus(101, 100)).toBe('about the campus median');
+    expect(vsCampus(99, 100)).toBe('about the campus median');
+    expect(vsCampus(101.5, 100)).toBe('2% above campus');
+  });
+  it('rounds a gap the same way either side of campus', () => {
+    // Math.round alone takes -1.5 to -1 and 1.5 to 2.
+    expect(vsCampus(98.5, 100)).toBe('2% below campus');
+    expect(vsCampus(97.5, 100)).toBe('3% below campus');
+    expect(vsCampus(102.5, 100)).toBe('3% above campus');
+  });
+  it('says nothing with nothing to compare', () => {
+    expect(vsCampus(null, 76694)).toBe('');
+    expect(vsCampus(50000, 0)).toBe('');
+    expect(vsCampus(50000, null)).toBe('');
   });
 });

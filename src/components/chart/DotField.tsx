@@ -80,6 +80,11 @@ const markExtent = (r: number, big = false) => markRadius(r, big) * Math.max(MAR
  *  axis, and folding back): each takes MOVE_MS, and a move sets its dots off one after another, left to
  *  right along their laid-out places, over MOVE_STAGGER. */
 export const MOVE_MS = 900;
+/** How much of its ink a dimmed dot keeps (`dim`): enough that the field's shape still reads behind the
+ *  dots a filter lights, little enough that they are what the eye finds. */
+export const DIM_ALPHA = 0.2;
+/** How many strips a change of `dim` is repainted in, one a frame (see its effect). */
+export const DIM_STRIPS = 8;
 export const MOVE_STAGGER = 500;
 const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 const clamp01 = (p: number) => Math.min(1, Math.max(0, p));
@@ -270,6 +275,10 @@ export const DotField = forwardRef<DotFieldHandle, {
   airInks?: readonly string[];
   /** Values in [lo, hi) draw in a stronger ink. Nothing else changes. */
   highlight?: readonly [number, number] | null;
+  /** One per dot: 1 draws that dot faint, at `DIM_ALPHA` of its ink and without its glow; 0 as it is.
+   *  The people a filter is not about stay in the picture as its context, and the ones it is about stand
+   *  out of it. Only a repaint — nothing moves or is laid out again. */
+  dim?: Uint8Array | null;
   /** Show one kind alone: the others fall through the floor, and it falls to the floor in its own
    *  shape (stacked first). Null for all. Needs `stack`. */
   solo?: number | null;
@@ -298,7 +307,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, solo = null, marks = null, markBig = null, squeeze = 1, moveTo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, dim = null, solo = null, marks = null, markBig = null, squeeze = 1, moveTo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -491,6 +500,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     groups: [] as Uint32Array[],
     dark: false,
     highlight: null as readonly [number, number] | null,
+    /** `dim`, as the paint reads it. */
+    dim: null as Uint8Array | null,
     /** The marked dots, each with when it was marked and whether it is the big one; their inks; the
      *  frame their arrival is drawn on. */
     marks: [] as { i: number; born: number; big: boolean }[],
@@ -617,6 +628,10 @@ export const DotField = forwardRef<DotFieldHandle, {
     const kindsN = L.beads.length;
     const tone = L.tone;
     const mode = L.mode;
+    // A dimmed field: its faint dots in a pass of their own under the rest, so the ones a filter is about
+    // are drawn over their neighbours as well as in full ink.
+    const dm = L.dim && L.dim.length === values.length ? L.dim : null;
+    const faint = (i: number) => !!dm && dm[i] === 1;
     if (fast) {
       // Squares, a fill at a time: one pass per (kind, tone), the highlighted dots after. The whole
       // field's groups are kept; a strip's dots — or a field with dots in the air, each under its air
@@ -637,21 +652,25 @@ export const DotField = forwardRef<DotFieldHandle, {
         for (let j = j0; j < j1; j++) { const i = order[j]; flat[next[groupOf(i)]++] = i; }
         groups = Array.from({ length: G }, (_, g) => flat.subarray(start[g], start[g + 1]));
       }
-      for (let strong = 0; strong < 2; strong++) {
-        if (strong && !hl) break;
-        for (let g = 0; g < groups.length; g++) {
-          const list = groups[g];
-          if (!list.length) continue;
-          const k = Math.floor(g / TONES);
-          const ink = k < kindsN ? (strong ? L.strongFast : L.fast)[k][g % TONES] : (strong ? L.airStrongFast : L.airFast)[k - kindsN][g % TONES];
-          const side = ink.side;
-          ctx.fillStyle = ink.fill;
-          for (let q = 0; q < list.length; q++) {
-            const i = list[q];
-            if (mode && mode[i] === GONE) continue;
-            const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
-            if (lit !== !!strong) continue;
-            ctx.fillRect(xOf(i, now) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
+      for (let pass = dm ? 0 : 1; pass < 2; pass++) {
+        ctx.globalAlpha = pass ? alpha : alpha * DIM_ALPHA;
+        for (let strong = 0; strong < 2; strong++) {
+          if (strong && !hl) break;
+          for (let g = 0; g < groups.length; g++) {
+            const list = groups[g];
+            if (!list.length) continue;
+            const k = Math.floor(g / TONES);
+            const ink = k < kindsN ? (strong ? L.strongFast : L.fast)[k][g % TONES] : (strong ? L.airStrongFast : L.airFast)[k - kindsN][g % TONES];
+            const side = ink.side;
+            ctx.fillStyle = ink.fill;
+            for (let q = 0; q < list.length; q++) {
+              const i = list[q];
+              if (mode && mode[i] === GONE) continue;
+              if (faint(i) === !!pass) continue;
+              const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
+              if (lit !== !!strong) continue;
+              ctx.fillRect(xOf(i, now) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
+            }
           }
         }
       }
@@ -661,25 +680,31 @@ export const DotField = forwardRef<DotFieldHandle, {
         for (let j = j0; j < j1; j++) {
           const i = order[j];
           if (mode && mode[i] === GONE) continue;
+          if (faint(i)) continue;
           const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
           const hb = (lit ? L.strongHalos : L.halos)[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
           ctx.drawImage(hb.img, xOf(i, now) * dpr - hb.half, yOf(i, now) * dpr - hb.half);
         }
       }
-      // The highlighted dots last, so they sit over their neighbours.
-      for (let strong = 0; strong < 2; strong++) {
-        if (strong && !hl) break;
-        const set = strong ? L.strongBeads : L.beads;
-        for (let j = j0; j < j1; j++) {
-          const i = order[j];
-          if (mode && mode[i] === GONE) continue;
-          const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
-          if (lit !== !!strong) continue;
-          const bd = set[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
-          ctx.drawImage(bd.img, xOf(i, now) * dpr - bd.half, yOf(i, now) * dpr - bd.half);
+      // The highlighted dots last, so they sit over their neighbours — and the faint ones first of all.
+      for (let pass = dm ? 0 : 1; pass < 2; pass++) {
+        ctx.globalAlpha = pass ? alpha : alpha * DIM_ALPHA;
+        for (let strong = 0; strong < 2; strong++) {
+          if (strong && !hl) break;
+          const set = strong ? L.strongBeads : L.beads;
+          for (let j = j0; j < j1; j++) {
+            const i = order[j];
+            if (mode && mode[i] === GONE) continue;
+            if (faint(i) === !!pass) continue;
+            const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
+            if (lit !== !!strong) continue;
+            const bd = set[((kinds ? kinds[i] : 0) || 0) % kindsN][tone[i]];
+            ctx.drawImage(bd.img, xOf(i, now) * dpr - bd.half, yOf(i, now) * dpr - bd.half);
+          }
         }
       }
     }
+    ctx.globalAlpha = alpha;
     // The marked dots, over the rest.
     if (L.marks.length && L.markInk.core) {
       for (const m of L.marks) {
@@ -754,42 +779,48 @@ export const DotField = forwardRef<DotFieldHandle, {
       // Beads by (air, strong, kind, tone, quarter-pixel radius), so a dot costs a lookup, not a key string.
       const beads = new Map<number, Bead>();
       ctx.save();
-      ctx.globalAlpha = alpha;
-      for (let strong = 0; strong < 2; strong++) {
-        if (strong && !hl) break;
-        for (let j = j0; j < j1; j++) {
-          const i = order[j];
-          if (L.mode && L.mode[i] === GONE) continue;
-          const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
-          if (lit !== !!strong) continue;
-          const sx = xOfRef.current(i, now) + ox;
-          const sy = yOfRef.current(i, now) + oy;
-          if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + r) ** 2) continue;
-          const m = map(sx, sy);
-          const up = air && inAirRef.current(i, now);
-          const k = up ? (airKinds![i] || 0) % airN : ((kinds ? kinds[i] : 0) || 0) % kindsN;
-          const tone = L.tone[i];
-          // Toward the rim the glass barely magnifies, and a bead there is a dot's own size: a square
-          // of its ink, at a fifth of a bead's cost — most of the glass's dots are out there.
-          if (m.scale < 1.6) {
-            const ink = (up ? (strong ? L.airStrongFast : L.airFast) : (strong ? L.strongFast : L.fast))[k][tone];
-            const side = ink.side * m.scale;
-            ctx.fillStyle = ink.fill;
-            ctx.fillRect(m.x * dpr - side / 2, m.y * dpr - side / 2, side, side);
-            continue;
+      // Through the glass as on the field: a dimmed dot faint, and under the ones a filter lights.
+      const dm = L.dim && L.dim.length === values.length ? L.dim : null;
+      for (let pass = dm ? 0 : 1; pass < 2; pass++) {
+        ctx.globalAlpha = pass ? alpha : alpha * DIM_ALPHA;
+        for (let strong = 0; strong < 2; strong++) {
+          if (strong && !hl) break;
+          for (let j = j0; j < j1; j++) {
+            const i = order[j];
+            if (L.mode && L.mode[i] === GONE) continue;
+            if ((!!dm && dm[i] === 1) === !!pass) continue;
+            const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
+            if (lit !== !!strong) continue;
+            const sx = xOfRef.current(i, now) + ox;
+            const sy = yOfRef.current(i, now) + oy;
+            if ((sx - cx) ** 2 + (sy - cy) ** 2 > (R + r) ** 2) continue;
+            const m = map(sx, sy);
+            const up = air && inAirRef.current(i, now);
+            const k = up ? (airKinds![i] || 0) % airN : ((kinds ? kinds[i] : 0) || 0) % kindsN;
+            const tone = L.tone[i];
+            // Toward the rim the glass barely magnifies, and a bead there is a dot's own size: a square
+            // of its ink, at a fifth of a bead's cost — most of the glass's dots are out there.
+            if (m.scale < 1.6) {
+              const ink = (up ? (strong ? L.airStrongFast : L.airFast) : (strong ? L.strongFast : L.fast))[k][tone];
+              const side = ink.side * m.scale;
+              ctx.fillStyle = ink.fill;
+              ctx.fillRect(m.x * dpr - side / 2, m.y * dpr - side / 2, side, side);
+              continue;
+            }
+            // Beads come in quarter-pixel sizes, so a sweep of the glass reuses a handful of sprites.
+            const q = Math.max(2, Math.round(r * m.scale * dpr * 4));
+            const key = ((((up ? 2 : 0) + strong) * kMax + k) * TONES + tone) * 256 + q;
+            let bd = beads.get(key);
+            if (!bd) {
+              const set = up ? (strong ? L.airStrongTones : L.airTones) : (strong ? L.strongTones : L.tones);
+              bd = bead(set[k][tone], q / 4, glow && L.dark);
+              beads.set(key, bd);
+            }
+            ctx.drawImage(bd.img, m.x * dpr - bd.half, m.y * dpr - bd.half);
           }
-          // Beads come in quarter-pixel sizes, so a sweep of the glass reuses a handful of sprites.
-          const q = Math.max(2, Math.round(r * m.scale * dpr * 4));
-          const key = ((((up ? 2 : 0) + strong) * kMax + k) * TONES + tone) * 256 + q;
-          let bd = beads.get(key);
-          if (!bd) {
-            const set = up ? (strong ? L.airStrongTones : L.airTones) : (strong ? L.strongTones : L.tones);
-            bd = bead(set[k][tone], q / 4, glow && L.dark);
-            beads.set(key, bd);
-          }
-          ctx.drawImage(bd.img, m.x * dpr - bd.half, m.y * dpr - bd.half);
         }
       }
+      ctx.globalAlpha = alpha;
       // The marked dots, through the glass: as much bigger as it makes them, up to two and a half times.
       if (L.marks.length && L.markInk.core) {
         for (const mk of L.marks) {
@@ -1323,6 +1354,63 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x0); L.dirtyHi = Math.max(L.dirtyHi, x1); }
   }, [hlLo, hlHi, layout, toX]);
 
+  // The dimming: the whole field repainted, nothing moved — in strips, a frame each. A field of 22k beads
+  // takes about 55ms to repaint whole at CI's pace, three frames and more held up at once; `DIM_STRIPS`
+  // strips each fit a frame, and read as the dimming passing across the field in about a tenth of a second.
+  // Whole and at once where strips would not help: dots in the air are being repainted every frame anyway,
+  // a field drawn away from its places (the pile unrolled, a squeeze) is only ever repainted whole, and
+  // under Reduce Motion a sweep is motion.
+  const dimRaf = useRef(0);
+  const dimWas = useRef<Uint8Array | null>(null);
+  useEffect(() => {
+    const L = live.current;
+    L.dim = dim;
+    const lay = layout;
+    // Only a change in which dots are faint repaints here. A new layout is painted by the field itself, which
+    // reads the mask as it goes; and the same mask again — rebuilt with the same people in — changes nothing.
+    // Sweeping on those too repainted the whole field twice over on the way into full page, mask or none.
+    const was = dimWas.current;
+    dimWas.current = dim;
+    if (was === dim || (!!was && !!dim && was.length === dim.length && was.every((v, i) => v === dim[i]))) return;
+    cancelAnimationFrame(dimRaf.current);
+    if (!lay || L.entranceStart != null || L.restackStart != null) return;
+    const busy = L.flying > 0 || L.rings.length > 0 || L.trail.length > 0;
+    // Measured, as the animated frames are, so a test can hold each repaint to a frame's budget.
+    const paint = (x0: number, x1: number, fast: boolean) => {
+      const t0 = performance.now();
+      paintRef.current(t0, x0, x1, fast);
+      performance.measure('dim-paint', { start: t0 });
+    };
+    if (busy || displaced() || prefersReducedMotion() || document.hidden) {
+      paint(-Infinity, Infinity, busy);
+      return;
+    }
+    // Strips of equal dots, not equal width: the field crowds between $40k and $80k, and equal widths cost
+    // 1ms at the edges and 22ms in the middle. Cut at the dots' own x quantiles, each is an eighth of the work.
+    const { sortedX } = lay;
+    const cut = (k: number) => sortedX[Math.min(sortedX.length - 1, Math.floor((k * sortedX.length) / DIM_STRIPS))];
+    let k = 0;
+    const step = () => {
+      paint(k === 0 ? -Infinity : cut(k), k === DIM_STRIPS - 1 ? Infinity : cut(k + 1), false);
+      if (++k < DIM_STRIPS) dimRaf.current = requestAnimationFrame(step);
+    };
+    dimRaf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(dimRaf.current);
+    // `displaced` reads the live state, not props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dim, layout]);
+  // How many are drawn faint — only when the mask is one this field draws with: a mask of any other length
+  // is ignored by the paint, and a test must not read one as applied.
+  const dimmed = useMemo(() => (dim && dim.length === values.length ? dim.reduce((t, v) => t + v, 0) : null), [dim, values.length]);
+  // Which dots are lit, as a fingerprint a test can rebuild from its own list: how many, and the sum and the
+  // sum of squares of their indices — exact in a double for any field this size.
+  const litPrint = useMemo(() => {
+    if (!dim || dim.length !== values.length) return null;
+    let n = 0, sum = 0, sq = 0;
+    for (let i = 0; i < dim.length; i++) if (!dim[i]) { n++; sum += i; sq += i * i; }
+    return `${n}:${sum}:${sq}`;
+  }, [dim, values.length]);
+
   // The squeeze: from however wide the field is drawn now to the new width.
   useEffect(() => {
     const L = live.current;
@@ -1452,6 +1540,8 @@ export const DotField = forwardRef<DotFieldHandle, {
       data-kinds={kindCounts}
       data-stack={stack ? 'on' : 'off'}
       data-highlight={hlLo != null ? lit : undefined}
+      data-dimmed={dimmed ?? undefined}
+      data-lit={litPrint ?? undefined}
       data-solo={solo ?? 'none'}
       data-marks={marks?.length ? marks.map((i) => (layout && i >= 0 && i < values.length ? `${i}:${layout.pts[2 * i].toFixed(1)}:${layout.pts[2 * i + 1].toFixed(1)}` : `${i}`)).join(' ') : undefined}
       data-mark-big={markBig != null && marks?.includes(markBig) ? markBig : undefined}

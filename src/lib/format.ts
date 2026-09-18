@@ -117,3 +117,18 @@ export function fmtGradeBasis(b: string | null | undefined): string | null {
   const known: Record<string, string> = { annual_12mo: '12-month', annual_9mo: '9-month', hourly: 'hourly' };
   return known[b.trim().toLowerCase()] ?? b.replace(/_/g, ' ');
 }
+
+/**
+ * How a group's median sits against the campus one, in words: "19% below campus", "34% above campus", or
+ * "about the campus median" within a point either way, a gap too small to be worth a number. Empty when
+ * there is nothing to compare.
+ */
+export function vsCampus(group: number | null | undefined, campus: number | null | undefined): string {
+  if (group == null || campus == null || !(campus > 0) || !Number.isFinite(group)) return '';
+  // The size rounded, then the side: `Math.round` alone takes -1.5 to -1 but 1.5 to 2, which would call
+  // the same gap "about the median" below campus and "2%" above it.
+  const gap = (100 * (group - campus)) / campus;
+  const pct = Math.sign(gap) * Math.round(Math.abs(gap));
+  if (Math.abs(pct) <= 1) return 'about the campus median';
+  return pct < 0 ? `${-pct}% below campus` : `${pct}% above campus`;
+}

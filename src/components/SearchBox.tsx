@@ -50,6 +50,13 @@ interface PersonHit {
   pay: number | null;
 }
 
+/** A filter the box is holding, shown at its start as a token with a way to take it off. */
+export interface FilterToken {
+  key: string;
+  kind: 'title' | 'division';
+  label: string;
+}
+
 /** A person the list is showing, as a page beside it can use them (the landing graph marks their dots). */
 export interface ShownPerson {
   person_key: string;
@@ -148,6 +155,8 @@ export function SearchBox({
   onQueryChange,
   keepFoundOnUnmount = false,
   results = 'list',
+  tokens,
+  onRemoveToken,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -187,6 +196,10 @@ export function SearchBox({
    *  beside it on one line, as chips — for a box that sits over something the reader is looking at (the
    *  graph full page), where a menu would lie on top of it however it was placed. */
   results?: 'list' | 'strip';
+  /** Filters in force, drawn between the box and its strip (strip only). The last goes with Backspace in
+   *  an empty box, or with Escape once the box is empty. */
+  tokens?: readonly FilterToken[];
+  onRemoveToken?: (key: string) => void;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
@@ -443,10 +456,22 @@ export function SearchBox({
     // An Escape that clears the text has been used, and says so: a page that also closes on Escape —
     // the graph's full page — then leaves it alone, and the next one is the one that closes it. Without
     // this a single press both emptied the box and threw the reader out of the view they were in.
+    // An empty box's Escape peels the last filter instead, and says so in the same way: layer by layer,
+    // the text, then the filters, then — at the page — full page itself.
+    const lastToken = tokens?.length && onRemoveToken ? tokens[tokens.length - 1] : null;
     if (e.key === 'Escape') {
-      if (term) e.preventDefault();
+      if (term) {
+        e.preventDefault();
+      } else if (lastToken) {
+        e.preventDefault();
+        onRemoveToken!(lastToken.key);
+      }
       setTerm('');
       setPendingEnter(null);
+      return;
+    }
+    if (e.key === 'Backspace' && !term && lastToken) {
+      onRemoveToken!(lastToken.key);
       return;
     }
     if (!opened) return;
@@ -589,6 +614,7 @@ export function SearchBox({
         role: 'option',
         'aria-selected': i === active,
         'data-kind': it.kind,
+        'data-key': it.key,
         // The box keeps the focus, as a combobox does: the options are reached with the arrow keys, and
         // Tab leaves the strip rather than walking every chip.
         tabIndex: -1,
@@ -648,6 +674,21 @@ export function SearchBox({
           autoFocus={autoFocus}
           styles={{ input: { fontSize: t.inputFont } }}
         />
+        {tokens && tokens.length > 0 && (
+          <div className="search-tokens">
+            {tokens.map((tk) => (
+              <span key={tk.key} className="search-token" data-kind={tk.kind}>
+                {tk.kind === 'title'
+                  ? <IconBriefcase size={14} aria-hidden className="search-chip-icon" />
+                  : <IconBuilding size={14} aria-hidden className="search-chip-icon" />}
+                <span className="search-token-label" title={tk.label}>{tk.label}</span>
+                <button type="button" className="search-token-x" aria-label={`Remove filter: ${tk.label}`} onClick={() => onRemoveToken?.(tk.key)}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div
           ref={stripRef}
           className="search-strip"

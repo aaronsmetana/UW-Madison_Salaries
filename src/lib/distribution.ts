@@ -181,3 +181,21 @@ export function smoothBins(bins: Bin[], sigma: number = KERNEL_SIGMA): Bin[] {
     return { bucket: b.bucket, n: weight > 0 ? acc / weight : b.n };
   });
 }
+
+/**
+ * A group's people per $100 on the campus curve's own grid — `lo100` and `length` from `pay_counts` — and
+ * how many are at or past the cap. Fed to `binsFromCounts` and `smoothBins` exactly as `pay_counts` is, the
+ * group's curve comes out of the same kernel, step and scale as the campus one, so any difference between
+ * the two lines is the people. Everyone in the group gives back `pay_counts`.
+ */
+export function groupCounts(pays: readonly number[], lo100: number, length: number, cap: number): { counts: number[]; over: number } {
+  const counts = new Array<number>(length).fill(0);
+  let over = 0;
+  for (const p of pays) {
+    if (!(p > 0)) continue;
+    if (p >= cap) { over++; continue; }
+    const b = Math.floor(p / 100) - lo100;
+    if (b >= 0 && b < length) counts[b]++;
+  }
+  return { counts, over };
+}

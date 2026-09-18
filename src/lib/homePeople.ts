@@ -95,3 +95,76 @@ export function dotSpots(people: readonly HomePerson[], pc: PayCounts, cap: numb
   }
   return out;
 }
+
+/** A filter on the graph: a title, a school, or a title within a school. */
+export interface GraphFilter {
+  jobCode?: string;
+  school?: string;
+}
+
+/**
+ * The people a filter covers, at their dots' pay. Anyone with a paid appointment in `snapshot` with that
+ * job code, in that school, or — with both — both in the one appointment: "Research Associates in the
+ * School of Medicine" are people who are a Research Associate there, not a Research Associate somewhere
+ * and something else there. Paid appointments only, the rows the dots are drawn from (`homePeopleSql`),
+ * and the pay is the dot's — every paid appointment summed — rather than the matching one's, because it is
+ * the dot that gets lit and the dot that stands at that pay.
+ */
+export function filterPeopleSql(snapshot: string, f: GraphFilter): string {
+  const conds = [
+    f.jobCode != null ? `job_code = ${sqlStr(f.jobCode)}` : null,
+    f.school != null ? `school = ${sqlStr(f.school)}` : null,
+  ].filter((c): c is string => c != null);
+  if (!conds.length) throw new Error('filterPeopleSql: a filter with neither a title nor a school');
+  return `WITH dots AS (${homePeopleSql(snapshot)}),
+    hit AS (SELECT DISTINCT person_key FROM salaries
+            WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0 AND ${conds.join(' AND ')})
+    SELECT person_key, pay FROM dots JOIN hit USING (person_key) WHERE pay > 0 ORDER BY person_key`;
+}
+
+/** The continuous median of values already in ascending order — DuckDB's `quantile_cont(x, 0.5)`. */
+export function medianOf(sorted: readonly number[]): number | null {
+  const n = sorted.length;
+  if (!n) return null;
+  return n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+}
+
+/** What a filter lights on the graph. */
+export interface Emphasis {
+  /** One per dot under the curve: 1 for a dot that dims, 0 for one of the group. */
+  main: Uint8Array;
+  /** The same for the pile past the cap. */
+  pile: Uint8Array;
+  /** How many of the group have a dot. */
+  count: number;
+  /** Their median pay, the continuous one the campus median is (`quantile_cont(pay, 0.5)` in
+   *  scripts/lib/home-stats.mjs), so "N% below campus" compares like with like. */
+  median: number | null;
+  /** Their pays, ascending — the group's curve is drawn from these. */
+  pays: number[];
+}
+
+/**
+ * The masks for both fields, from the group's people and where their dots are (`dotSpots`). A person with
+ * no dot — not in the counts the field was drawn from — lights nothing and is not counted, so the count
+ * and the median describe exactly what is lit.
+ */
+export function emphasis(
+  spots: ReadonlyMap<string, DotSpot>,
+  people: readonly { person_key: string; pay: number }[],
+  sizes: { main: number; pile: number },
+): Emphasis {
+  const main = new Uint8Array(sizes.main).fill(1);
+  const pile = new Uint8Array(sizes.pile).fill(1);
+  const pays: number[] = [];
+  for (const p of people) {
+    const at = spots.get(p.person_key);
+    if (!at) continue;
+    const mask = at.field === 'main' ? main : pile;
+    if (!(at.index >= 0 && at.index < mask.length) || mask[at.index] === 0) continue;
+    mask[at.index] = 0;
+    pays.push(p.pay);
+  }
+  pays.sort((a, b) => a - b);
+  return { main, pile, count: pays.length, median: medianOf(pays), pays };
+}

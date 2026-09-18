@@ -268,6 +268,27 @@ test('visual: home full page', async ({ page }) => {
   await shots(page, 'home-full', { fullPage: false });
 });
 
+test('visual: home full page, filtered', async ({ page }) => {
+  await page.goto('./');
+  await page.getByText(/\$[\d,]+/).first().waitFor({ timeout: 60_000 }).catch(() => {});
+  await page.getByRole('button', { name: 'Full page' }).click();
+  await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  // A title within a school: both tokens, the field dimmed but for them, their own curve and median, and
+  // the label saying how many they are and how their median sits against campus.
+  const bar = page.locator('.hero-dist-full .search-bar-field input');
+  // By key: "Research Associate" is two titles, PD012 and PD012N, and a name alone picks either.
+  for (const [q, key] of [['research assoc', 't:PD012'], ['medicine', 'd:School of Medicine and Public Health']] as const) {
+    await bar.fill(q);
+    await page.locator(`.hero-dist-full [role="option"][data-key="${key}"]`).click({ timeout: 60_000 });
+  }
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  // No caret blinking in the box, and the dimming's sweep across the field done.
+  await bar.blur();
+  await page.waitForTimeout(600);
+  await shots(page, 'home-full-filtered', { fullPage: false });
+});
+
 test('visual: person', async ({ page }) => {
   await page.goto('./');
   const search = page.getByRole('combobox', { name: 'Search a person' });

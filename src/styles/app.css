@@ -1987,14 +1987,84 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   font-weight: 600;
   cursor: pointer;
 }
+/* The filters in force, between the box and its results: filled where a result chip is outlined, so what
+   is on reads apart from what could be put on. Each comes off with its own ×. */
+.search-tokens { flex: none; display: flex; align-items: center; gap: 6px; max-width: 45%; min-width: 0; }
+/* A filter shrinks by its name and nothing else: never narrower than its icon, 2.5rem of the name and its
+   ×. Allowed to go further, one filter's × slid under the next; not allowed to shrink at all, a nowrap name
+   counted at its full width and the second filter ran off the panel. */
+.search-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: calc(2.5rem + 66px);
+  height: var(--full-strip-h);
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.search-token-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: 16rem; }
+.search-token .search-chip-icon, .search-token-x { flex: none; }
+.search-token-x {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.search-token-x:hover { background: var(--mantine-color-default); color: var(--mantine-color-text); }
+.search-token-x:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
+/* The group's label, at the top of the plot where the curve never reaches: its name, how many, their
+   median and how that sits against campus, over its own dashed median line. */
+.hero-dist-group-flag {
+  z-index: var(--z-local, 2);
+  padding: 2px 8px;
+  border: 1px dashed var(--mantine-color-text);
+  border-radius: 6px;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.hero-dist-group-flag[data-pending] { color: var(--mantine-color-dimmed); }
+.hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-flag { animation: hero-group-in 200ms ease-out; }
+@keyframes hero-group-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-flag { animation: none; }
+}
 /* A phone's bar: the box and its strip each take a line of their own, above the buttons. A finger swipes
    the strip, so it has no "+N". Mirrored by `FULL_BAR.phone`. */
 @media screen and (max-width: 30em) {
   .hero-dist-full .hero-dist-controls { height: auto; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; justify-content: flex-end; }
   .hero-dist-full .hero-dist-search { flex: 1 1 100%; height: auto; }
-  .hero-dist-full .search-bar { flex-direction: column; align-items: stretch; gap: 6px; }
-  .hero-dist-full .search-bar-field { width: 100%; }
+  /* The box on a line of its own, then the filters and the strip sharing the next, so a filter going on
+     adds no line and the bar keeps the height `FULL_BAR.phone` gives it. */
+  .hero-dist-full .search-bar { flex-wrap: wrap; gap: 6px; }
+  .hero-dist-full .search-bar-field { flex: 1 1 100%; width: 100%; }
   .hero-dist-full .search-strip-more { display: none; }
+  /* The filters and the strip share one line, and must never wrap onto a third: a line breaks by each
+     item's natural width, and two full-length filters pushed the strip under them and the plot down. So
+     the filters are held to most of the line and the strip asks for no width of its own, taking what is
+     left. Each filter keeps enough of its name to be told apart. */
+  .hero-dist-full .search-tokens { flex: 0 1 auto; max-width: 75%; }
+  .hero-dist-full .search-strip { flex: 1 1 0; }
 }
 /* The panel's place on the page while it is full page, the same height, so nothing below it moves. */
 .hero-dist-placeholder { margin-top: var(--mantine-spacing-lg); }

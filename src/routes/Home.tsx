@@ -7,19 +7,20 @@ import {
   IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
   IconArrowsMaximize, IconArrowsMinimize,
 } from '@tabler/icons-react';
-import { useSummary, useSql, useActiveSnapshotId, useHomeStats } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
-import { binsFromCounts, countBelow, countWithin, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
-import { usd, usdCompact, num } from '../lib/format';
+import { binsFromCounts, countBelow, countWithin, groupCounts, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
+import { usd, usdCompact, num, vsCampus } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
 import { measureText, placeNearLabels } from '../lib/labelLayout';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
-import { SearchBox, type ShownPerson } from '../components/SearchBox';
+import { SearchBox, type FilterToken, type ShownPerson } from '../components/SearchBox';
 import { Sparkline } from '../components/chart/Sparkline';
 import { useReveal } from '../components/PersonReveal';
-import { dotSpots, homePeopleSql, type DotSpot, type HomePerson } from '../lib/homePeople';
+import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, type DotSpot, type Emphasis, type HomePerson } from '../lib/homePeople';
+import type { DivisionHit, TitleHit } from '../lib/search';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
 import { ICON } from '../lib/ui';
@@ -163,6 +164,13 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
  */
 const FULL_BAR = { wide: 42 + 8, phone: 42 + 6 + 32 + 6 };
 
+/** A filter the full page's bar holds: a title or a school, as the search's index gives them. */
+type GraphFilterItem = { kind: 'title'; hit: TitleHit } | { kind: 'division'; hit: DivisionHit };
+const filterKey = (f: GraphFilterItem) => (f.kind === 'title' ? `t:${f.hit.code}` : `d:${f.hit.school}`);
+/** The group a filter picks out, as the graph draws it: its name, and — once its people are in — which
+ *  dots it lights, how many they are, and their median and pays. */
+type GraphGroup = { name: string; pending: true } | ({ name: string; pending: false } & Emphasis);
+
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
 
@@ -183,6 +191,8 @@ const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';
  *  px; where the first row sits below the top of the field; the padding around the measured name; the
  *  widest a label may be; and the size it is drawn at. */
 const FOUND_LABEL = { h: 19, gap: 8, top: 2, pad: 16, maxW: 180, font: 12 } as const;
+/** The group's label's type size, px (app.css `.hero-dist-group-flag`, Mantine's xs). */
+const FLAG_FONT = 12;
 /** A person the search is showing who is on the graph: where their dot is. */
 interface FoundPerson extends ShownPerson { spot: DotSpot }
 /** The card about a found person's dot, CSS px wide. */
@@ -190,7 +200,7 @@ const FOUND_CARD_W = 240;
 
 function Distribution({
   bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
-  search, onFullChange,
+  search, onFullChange, group = null, onPeel,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -218,6 +228,11 @@ function Distribution({
   /** Told when the panel goes full page and comes back, so the page can put its own search box away
    *  while the panel carries one. */
   onFullChange?: (full: boolean) => void;
+  /** What a filter on the full page's bar picks out: its dots stay lit and the rest dim, and its own
+   *  curve and median are drawn over the field beside everyone's. */
+  group?: GraphGroup | null;
+  /** Asked first when Escape would close full page: true if it took a filter off instead. */
+  onPeel?: () => boolean;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -230,6 +245,18 @@ function Distribution({
     [payCounts, bins],
   );
   const curve = useMemo(() => smoothBins(curveBins), [curveBins]);
+  // The group's own curve: its pays counted on the campus grid and run through the campus curve's own
+  // kernel and step (lib/distribution `groupCounts`), so the two lines differ only by who is in them. Its
+  // $1k bins answer the readout's "how many of them within ±$5k" as `bins` answers it for everyone.
+  const lit = group && !group.pending ? group : null;
+  const groupShape = useMemo(() => {
+    if (!lit || !payCounts?.counts.length || cap == null) return null;
+    const g = groupCounts(lit.pays, payCounts.lo100, payCounts.counts.length, cap);
+    return {
+      curve: smoothBins(binsFromCounts(payCounts.lo100, g.counts, CURVE_STEP)),
+      bins1k: binsFromCounts(payCounts.lo100, g.counts, BIN_DOLLARS),
+    };
+  }, [lit, payCounts, cap]);
   /** Dollars between two of the curve's points. */
   const curveStep = curveBins.length > 1 ? curveBins[1].bucket - curveBins[0].bucket : BIN_DOLLARS;
   const labelRowRef = useRef<HTMLDivElement>(null);
@@ -245,6 +272,32 @@ function Distribution({
   // about pixels, not about the dollar range, and answering it from the range alone put "$200k" and
   // "$250k+" flush against each other at 375px.
   const [plotW, setPlotW] = useState(0);
+  // The group's label, at the top of the plot: the plot's headroom, which the curve's peak stops `HEAD` short
+  // of, so it lies on no dot. The numbers are here rather than in the bar, where they would not fit, and
+  // here is where the eye already is — at the line they describe. One line, always: a phone's headroom is
+  // 48px, and a label that wrapped to three hung down over the peak. Where the whole of it will not fit
+  // across the plot it drops the group's name, which the tokens just above already give.
+  const groupFlagFull = group
+    ? group.pending
+      ? `${group.name} · …`
+      : group.count === 0
+        ? `No one on the graph is ${group.name}`
+        : `${group.name} · ${num(group.count)} · median ${fmtK(group.median ?? 0)} · ${vsCampus(group.median, median)}`
+    : null;
+  const groupFlagShort = lit && lit.count > 0 ? `${num(lit.count)} · median ${fmtK(lit.median ?? 0)} · ${vsCampus(lit.median, median)}` : null;
+  const groupFlagText = groupFlagFull && groupFlagShort && plotW > 0 && measureText(groupFlagFull, FLAG_FONT) * 1.08 + 18 > plotW
+    ? groupFlagShort
+    : groupFlagFull;
+  const flagRef = useRef<HTMLDivElement>(null);
+  const [flagBox, setFlagBox] = useState({ w: 0, h: 0 });
+  // The names the search hangs on its dots start below the label, so none is laid over it.
+  const flagRoom = groupFlagText ? flagBox.h + 6 : 2;
+  // The group's label, measured whenever it or the plot changes: its box places it and keeps the names off it.
+  useLayoutEffect(() => {
+    const el = flagRef.current;
+    const w = el?.offsetWidth ?? 0, h = el?.offsetHeight ?? 0;
+    setFlagBox((b) => (b.w === w && b.h === h ? b : { w, h }));
+  }, [groupFlagText, plotW]);
   // The pile's label under it ("574 at $250k+"), measured: it reaches left past the pile into the
   // plot's own axis, and a tick there is dropped rather than drawn into it.
   const pileLabelRef = useRef<HTMLElement | null>(null);
@@ -301,6 +354,8 @@ function Distribution({
   fullRef.current = full;
   const fullChangeRef = useRef(onFullChange);
   fullChangeRef.current = onFullChange;
+  const peelRef = useRef(onPeel);
+  peelRef.current = onPeel;
   useEffect(() => { fullChangeRef.current?.(full); }, [full]);
   const panelRef = useRef<HTMLDivElement>(null);
   const placeholderRef = useRef<HTMLDivElement>(null);
@@ -594,6 +649,8 @@ function Distribution({
       const el = panelRef.current;
       const at = document.activeElement;
       if (el && at && at !== document.body && !el.contains(at)) return;
+      // A filter comes off before full page closes: one layer at a time.
+      if (peelRef.current?.()) { e.preventDefault(); return; }
       closeFullRef.current();
     };
     document.addEventListener('keydown', onKey);
@@ -731,6 +788,9 @@ function Distribution({
   // each is tied to its own dot by a leader that runs from the dot's green into the label's teal —
   // which dot a name belongs to is then answered by the picture, not by whichever is nearest. Nothing
   // while the pile is unrolled: the field is squeezed then, and these are its unsqueezed places.
+  // Where the names may be placed: the plot, less the group's label at its top — one box, read by the
+  // placement and printed on the leaders, so a test sees the bound that was used rather than a copy of it.
+  const namesBox = useMemo(() => ({ left: 0, right: plotW, top: flagRoom, bottom: H - 2 }), [plotW, flagRoom, H]);
   const foundLabels = useMemo(() => {
     if (tail || plotW <= 0 || !foundMain.length) return [];
     const spots = foundMain
@@ -749,7 +809,7 @@ function Distribution({
         width: Math.min(FOUND_LABEL.maxW, measureText(s.f.name, FOUND_LABEL.font) * 1.08 + FOUND_LABEL.pad),
         priority: s.f.person_key === activeKey ? 1 : 0,
       })),
-      { left: 0, right: plotW, top: 2, bottom: H - 2 },
+      namesBox,
       // Seven levels is about 145px above the dot at most — a third of the plot — and the diagonals
       // stop sooner (`reach`). Past that a name stops reading as this dot's and starts reading as a
       // legend that happens to have a line attached.
@@ -773,7 +833,7 @@ function Distribution({
         to: end,
       };
     });
-  }, [tail, plotW, foundMain, foundAt, activeKey, phone, H]);
+  }, [tail, plotW, foundMain, foundAt, activeKey, phone, namesBox]);
 
   if (bins.length < 3) return null;
 
@@ -792,6 +852,26 @@ function Distribution({
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
   // The area under the curve, down to the baseline: the wash behind the dots.
   const area = `${line} L${X(hi).toFixed(1)},${H} L${X(lo).toFixed(1)},${H} Z`;
+  // The group's curve in the same box, scaled to its own peak at the campus peak's height: its shape
+  // beside everyone's, not its size — the lit dots and the count on its label give that.
+  const groupMax = groupShape ? Math.max(0, ...groupShape.curve.map((b) => b.n)) : 0;
+  // From its first point with anyone to its last: the flat zero either side only doubled the axis in dashes.
+  const groupSpan = (() => {
+    if (!groupShape || !(groupMax > 0)) return null;
+    const c = groupShape.curve, floor = groupMax * 0.002;
+    let a = 0, z = c.length - 1;
+    while (a < z && c[a].n <= floor) a++;
+    while (z > a && c[z].n <= floor) z--;
+    return c.slice(Math.max(0, a - 1), Math.min(c.length, z + 2));
+  })();
+  const groupLine = groupSpan
+    ? groupSpan.map((b, i) => `${i ? 'L' : 'M'}${X(b.bucket).toFixed(1)},${(H - (b.n / groupMax) * (H - HEAD - 2) - 2).toFixed(1)}`).join(' ')
+    : null;
+  // Its median, as a line down the plot — unless it is past the cap, where the plot ends and the pile
+  // begins; the label then sits at the plot's right end, over the pile.
+  const groupMedianX = lit && lit.count > 0 && lit.median != null && lit.median < hi ? X(lit.median) : null;
+  const flagCenter = groupMedianX != null ? (groupMedianX / W) * plotW : lit && lit.count > 0 ? plotW : plotW / 2;
+  const flagLeft = Math.max(0, Math.min(plotW - flagBox.w, flagCenter - flagBox.w / 2));
 
   // Round salary steps for the axis, coarsened until the labels actually fit the rendered width.
   // `AXIS_LABEL_W` is the pitch one label needs to stay legible with a gap either side; before the
@@ -845,10 +925,12 @@ function Distribution({
   const soloCat = shownSolo != null && categories ? categories[shownSolo] : null;
   const soloBins = shownSolo != null ? categoryBins[shownSolo] : null;
   const readCount = hoveredBucket != null ? countWithin(soloBins ?? bins, hoveredBucket, READOUT_RADIUS) : 0;
+  // And with a filter on, how many of them are in the same window.
+  const groupRead = hoveredBucket != null && groupShape ? countWithin(groupShape.bins1k, hoveredBucket, READOUT_RADIUS) : null;
   const readShare = hoveredBucket != null && soloCat && soloBins ? countBelow(soloBins, hoveredBucket) / soloCat.n : share;
   // The readout as a screen reader hears it: the slider's value.
   const readoutText = hoveredBucket != null
-    ? `${fmtK(hoveredBucket)}: ${num(readCount)} ${soloCat ? soloCat.name : 'people'} within ±${fmtK(READOUT_RADIUS)}${readShare != null ? `, ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}` : ''}`
+    ? `${fmtK(hoveredBucket)}: ${num(readCount)} ${soloCat ? soloCat.name : 'people'} within ±${fmtK(READOUT_RADIUS)}${readShare != null ? `, ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}` : ''}${groupRead != null ? `, ${num(groupRead)} in the filter` : ''}`
     : 'Move along the pay distribution with the arrow keys';
   // The glass sits on a mouse's pointer, or above a finger that holds it up.
   const lensLift = magnify ? -(LENS_D / 2 + HOLD_LIFT) : 0;
@@ -1320,6 +1402,8 @@ function Distribution({
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
       <div
         ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
+        data-filter={group?.name} data-group-count={lit?.count} data-group-median={lit?.median ?? undefined}
+        data-group-points={groupShape?.curve.length}
         onPointerMove={onMove} onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onLeave(); stirRef.current = null; } }}
         onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
         tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution"
@@ -1344,6 +1428,7 @@ function Distribution({
           airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
           entrance={entrance} highlight={highlight} glow pack={PACK}
           solo={shownSolo} replay={replay} marks={mainMarks} markBig={bigMain} squeeze={tailSqueeze}
+          dim={lit?.main ?? null}
           onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
@@ -1362,8 +1447,28 @@ function Distribution({
             vectorEffect="non-scaling-stroke"
           />
         ))}
+        {/* The group's own shape and its median, dashed in the page's text ink: apart from the accent
+            campus curve and from the green of the search's marks, on either scheme. */}
+        {groupLine && (
+          <path className="hero-dist-group-curve" d={groupLine} fill="none" stroke="var(--mantine-color-text)" strokeWidth={1.75}
+            strokeDasharray="6 4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        )}
+        {groupMedianX != null && (
+          <line className="hero-dist-group-median" x1={groupMedianX} x2={groupMedianX} y1={flagBox.h + 4} y2={H}
+            stroke="var(--mantine-color-text)" strokeWidth={1.25} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+        )}
         </g>
       </svg>
+      {groupFlagText && (
+        <div
+          ref={flagRef}
+          className="hero-dist-group-flag"
+          data-pending={group?.pending || undefined}
+          style={{ position: 'absolute', top: 2, left: flagLeft, maxWidth: plotW }}
+        >
+          {groupFlagText}
+        </div>
+      )}
       {/* The ±$5k band, drawn as the readout's own footprint rather than a hairline.
           The pill has always reported a count within ±$5k while the mark under it was a 1px line,
           so the drawing and the number described different things — a reader lining the line up
@@ -1424,6 +1529,7 @@ function Distribution({
           <span className="chart-value-pill">
             {fmtK(hoveredBucket ?? hovered.bucket)} · {num(readCount)} {soloCat ? soloCat.name : 'people'} ±{fmtK(READOUT_RADIUS)}
             {readShare != null && ` · ${ordinal(Math.min(99, Math.max(1, Math.round(readShare * 100))))} percentile${soloCat ? ` of ${soloCat.name}` : ''}`}
+            {groupRead != null && ` · ${num(groupRead)} in the filter`}
           </span>
         </div>
       )}
@@ -1431,7 +1537,7 @@ function Distribution({
           the teal of the name it carries — at an angle wherever the name had to be shouldered aside. */}
       {foundLabels.length > 0 && (
         <svg
-          className="hero-found-leaders" width={Math.max(1, plotW)} height={H} aria-hidden
+          className="hero-found-leaders" width={Math.max(1, plotW)} height={H} aria-hidden data-names-top={namesBox.top}
           style={{ position: 'absolute', left: 0, top: 0, zIndex: Z.local, pointerEvents: 'none' }}
         >
           <defs>
@@ -1506,6 +1612,7 @@ function Distribution({
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
               entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow pack={PACK}
               solo={shownSolo} replay={replay} marks={pileMarks} markBig={bigPile}
+              dim={lit?.pile ?? null}
               onFrame={lensAt ? redrawLens : undefined}
             />
             {hoverPile && headcount != null && (
@@ -1537,6 +1644,8 @@ function Distribution({
             kinds={colour ? pile.kinds : null} inks={inkList} stack={colour} glow pack={PACK}
             solo={shownSolo} marks={pileMarks} markBig={bigPile} frameMark="tail-frame" onFrame={tailDrawn}
             moveTo={{ key: tail.key, pts: tail.key === 2 ? null : tail.from }}
+            // The unrolled pile is the pile's own people in the pile's own order, so its mask is the pile's.
+            dim={lit?.pile ?? null}
           />
           {tailTopAt && (
             <div className="hero-dist-tail-top" aria-hidden style={{ left: tailTopAt.x, top: tailTopAt.y }}>
@@ -1564,6 +1673,13 @@ function Distribution({
 
       <div className="visually-hidden" aria-live="polite">
         {found.length ? `${num(found.length)} ${found.length === 1 ? 'person' : 'people'} from the search marked on the graph` : ''}
+      </div>
+      <div className="visually-hidden" aria-live="polite">
+        {lit
+          ? lit.count
+            ? `${num(lit.count)} ${lit.count === 1 ? 'person' : 'people'} in ${lit.name}, median ${usd(lit.median)}, ${vsCampus(lit.median, median)}.`
+            : `No one on the graph is ${lit.name}.`
+          : ''}
       </div>
 
       {/* Marker labels live in HTML, not SVG: `preserveAspectRatio="none"` would stretch SVG text
@@ -1777,6 +1893,13 @@ export default function Home() {
   // panel, never both, and each is handed the query the other was holding.
   const [query, setQuery] = useState('');
   const [graphFull, setGraphFull] = useState(false);
+  // What the full page's bar is filtering the graph to: at most one title and one school, in the order they
+  // were put on (Escape and Backspace take the last one off first). Full page only — the landing graph has
+  // no bar to show them in, and they go when full page does.
+  const [filters, setFilters] = useState<GraphFilterItem[]>([]);
+  useEffect(() => { if (!graphFull) setFilters([]); }, [graphFull]);
+  const putFilter = useCallback((f: GraphFilterItem) => setFilters((fs) => [...fs.filter((g) => g.kind !== f.kind), f]), []);
+  const takeFilter = useCallback((key: string) => setFilters((fs) => fs.filter((g) => filterKey(g) !== key)), []);
   // Only the box the page opens with takes the caret. The one that comes back when full page closes is
   // a box returning to a page the reader is already looking at, and full page hands focus to its own
   // exit button, which this would take straight back off it.
@@ -1795,11 +1918,46 @@ export default function Home() {
   };
   // Who each dot is (lib/homePeople): asked once the search has found someone, by when DuckDB is up.
   const peopleSnap = artifactUsable ? homeStats.snapshot_id : '';
-  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && shown.length > 0);
+  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && (shown.length > 0 || filters.length > 0));
   const spots = useMemo(
     () => (homePeople && artifactUsable && homeStats.pay_counts && homeStats.bin_cap != null ? dotSpots(homePeople, homeStats.pay_counts, homeStats.bin_cap) : null),
     [homePeople, artifactUsable, homeStats],
   );
+  // The filter's people, at their dots' pay, and what that lights: one query per filter (cached by its key),
+  // mapped onto the dots through the same `spots` the search's marks use.
+  const title = filters.find((f): f is { kind: 'title'; hit: TitleHit } => f.kind === 'title')?.hit;
+  const school = filters.find((f): f is { kind: 'division'; hit: DivisionHit } => f.kind === 'division')?.hit;
+  const { data: filterRows } = useSql<{ person_key: string; pay: number }>(
+    ['graph-filter', peopleSnap, title?.code ?? '', school?.school ?? ''],
+    filters.length && peopleSnap ? filterPeopleSql(peopleSnap, { jobCode: title?.code, school: school?.school }) : '',
+    !!peopleSnap && filters.length > 0,
+  );
+  // A title's name alone can be two titles — "Research Associate" is PD012 and PD012N — so where the index
+  // has another under the same name, the filter names its code too; picked, it must still say which it was.
+  const { data: searchIndex } = useSearchIndex(!!title);
+  const titleName = useMemo(() => {
+    if (!title) return null;
+    const shared = (searchIndex?.titles ?? []).filter(([, t]) => t === title.title).length > 1;
+    return shared ? `${title.title} (${title.code})` : title.title;
+  }, [title, searchIndex]);
+  const group = useMemo<GraphGroup | null>(() => {
+    if (!filters.length || !artifactUsable || !homeStats.pay_counts) return null;
+    const name = titleName && school ? `${titleName} in ${school.school}` : (titleName ?? school?.school ?? '');
+    // Not yet known: the query is out, or the dots are not yet named. The field is left as it is until
+    // the answer is in, rather than dimmed to nothing and lit a moment later.
+    if (!filterRows || !spots) return { name, pending: true };
+    const pc = homeStats.pay_counts;
+    const sizes = {
+      main: pc.counts.reduce((t, n) => t + n, 0),
+      pile: (pc.categories ?? []).reduce((t, c) => t + c.over, 0),
+    };
+    return { name, pending: false, ...emphasis(spots, filterRows.map((r) => ({ person_key: r.person_key, pay: Number(r.pay) })), sizes) };
+  }, [filters.length, titleName, school, filterRows, spots, artifactUsable, homeStats]);
+  const tokens = useMemo<FilterToken[]>(() => filters.map((f) => ({
+    key: filterKey(f),
+    kind: f.kind,
+    label: f.kind === 'title' ? (titleName ?? f.hit.title) : f.hit.school,
+  })), [filters, titleName]);
   const found = useMemo<FoundPerson[]>(
     () => (spots ? shown.flatMap((p) => { const spot = spots.get(p.person_key); return spot ? [{ ...p, spot }] : []; }) : []),
     [spots, shown],
@@ -1985,7 +2143,24 @@ export default function Home() {
               activeKey={activeItem?.startsWith('p:') ? activeItem.slice(2) : null}
               openRef={openRef}
               onFullChange={setGraphFull}
-              search={<SearchBox {...searchProps} size="md" results="strip" placeholder="Search a person, title or school…" />}
+              search={(
+                <SearchBox
+                  {...searchProps}
+                  size="md"
+                  results="strip"
+                  placeholder="Search a person, title or school…"
+                  tokens={tokens}
+                  onRemoveToken={takeFilter}
+                  onPickTitle={(hit) => putFilter({ kind: 'title', hit })}
+                  onPickDivision={(hit) => putFilter({ kind: 'division', hit })}
+                />
+              )}
+              group={group}
+              onPeel={() => {
+                if (!filters.length) return false;
+                takeFilter(filterKey(filters[filters.length - 1]));
+                return true;
+              }}
               controls={canColour ? (
                 <div className="hero-dist-toggle">
                   <SegmentedToggle

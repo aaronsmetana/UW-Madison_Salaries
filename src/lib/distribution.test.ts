@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binStep, binsFromCounts, countBelow, countWithin, densify, smoothBins, CURVE_STEP, KERNEL_SIGMA, type Bin } from './distribution';
+import { binStep, binsFromCounts, countBelow, countWithin, densify, groupCounts, smoothBins, CURVE_STEP, KERNEL_SIGMA, type Bin } from './distribution';
 
 const bins = (step: number, counts: number[], from = 0): Bin[] =>
   counts.map((n, i) => ({ bucket: from + i * step, n }));
@@ -279,5 +279,29 @@ describe('the curve the landing graph draws', () => {
       return ((turn / (pts.length - 2)) * 180) / Math.PI;
     };
     expect(sharpest(fine)).toBeLessThan(sharpest(coarse) / 2);
+  });
+});
+
+describe('groupCounts', () => {
+  const CAP = 250000;
+  it('puts each pay in its $100 on the campus grid, and counts the ones at or past the cap apart', () => {
+    const g = groupCounts([20050, 20099.99, 20100, 249999, 250000, 900000], 200, 2300, CAP);
+    expect(g.counts[0]).toBe(2);
+    expect(g.counts[1]).toBe(1);
+    expect(g.counts[2499 - 200]).toBe(1);
+    expect(g.over).toBe(2);
+  });
+  it('drops the unpaid and anything off the grid, as the counts it mirrors never held them', () => {
+    const g = groupCounts([0, -5, NaN, 5000, 30000], 200, 10, CAP);
+    expect(g.counts.reduce((t, n) => t + n, 0)).toBe(0);
+    expect(g.over).toBe(0);
+  });
+  it('given everyone, gives back the counts — so the group curve through the same kernel is the campus curve', () => {
+    const lo100 = 150, counts = [3, 0, 7, 12, 5, 0, 0, 9, 2, 1, 4, 6];
+    const pays: number[] = [];
+    counts.forEach((n, b) => { for (let k = 0; k < n; k++) pays.push((lo100 + b) * 100 + (k * 13) % 100); });
+    const g = groupCounts(pays, lo100, counts.length, 1e9);
+    expect(g.counts).toEqual(counts);
+    expect(smoothBins(binsFromCounts(lo100, g.counts, CURVE_STEP))).toEqual(smoothBins(binsFromCounts(lo100, counts, CURVE_STEP)));
   });
 });
