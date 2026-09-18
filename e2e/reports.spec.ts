@@ -36,8 +36,17 @@ test.describe('equity review brief', () => {
     await expect(brief.getByText('Peer A', { exact: true })).toHaveCount(0);
     // Mantine's Switch keeps its native input visually hidden (a styled track sits over it), so
     // Playwright's visibility check on the input itself never passes — click the label text instead,
-    // exactly as a real user would.
-    await page.getByText('Anonymize peer names in document').click();
+    // exactly as a real user would. Two pieces of fixed chrome can swallow that click: the footer at the
+    // page's bottom edge, which a minimal scroll-into-view can leave this switch under, and the sidebar's
+    // once-a-visit peek over the left, which by design will not tuck away while a pointer rests on it
+    // (AppShell `tuck`). So step off the sidebar, let the peek go, and bring the switch to the middle,
+    // where nothing fixed reaches. On a loaded machine every retry otherwise lands on one or the other
+    // until the test times out.
+    await page.mouse.move(640, 400);
+    await expect(page.locator('nav[data-peek]')).toHaveCount(0);
+    const anonymize = page.getByText('Anonymize peer names in document');
+    await anonymize.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await anonymize.click();
     await expect(brief.getByText('Peer A', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
     await expect(brief.getByText('Debdeep Pati')).toHaveCount(0);
   });
