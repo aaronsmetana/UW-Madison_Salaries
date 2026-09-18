@@ -148,16 +148,20 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
 }
 
 /**
- * What the panel's search box costs it full page on a phone: the box (42px, `--full-search-h` in
- * app.css) and the gap above it (6). Narrow, the controls stand in the flow and the box wraps onto a
- * line of its own there; wide, they float in the corner and it costs the plot nothing. The panel's
- * full-page height is worked out from the panel as it stands on the page, which carries no box at all,
- * so that line has to be a number this reckoning can subtract — and a number, not whatever the input
- * measures, which is a font's business and differs between machines. It also has to be right: the
- * grow-out-of-its-place is aimed at the panel as this leaves it, and out by the line the panel starts
- * half of it off its own place. `full page grows out of its place` holds the two to each other.
+ * What the search bar costs the panel full page, px, which the panel on the page does not carry. Wide,
+ * the controls float in the corner on the page and cost nothing, and full page they become a line in the
+ * flow: the bar's own height (`--full-bar-h` in app.css) and the gap under it (`--full-bar-gap`). On a
+ * phone the controls already stand in the flow, and the box and its strip each take a line of their own
+ * above the buttons: the box (`--full-search-h`), the strip (`--full-strip-h`) and a row gap (6) after
+ * each.
+ *
+ * Numbers, not measurements: the panel's full-page height is worked out from the panel as it stands on
+ * the page, where none of this exists yet, and a font's metrics are not something to subtract. They also
+ * have to be right — the grow-out-of-its-place is aimed at the panel this reckoning leaves, and out by a
+ * line it starts half a line off its own place. `full page grows out of its place` holds them to it on a
+ * desktop and a phone.
  */
-const FULL_SEARCH_H = 42 + 6;
+const FULL_BAR = { wide: 42 + 8, phone: 42 + 6 + 32 + 6 };
 
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
@@ -571,12 +575,10 @@ function Distribution({
     if (!el || fullRef.current) return;
     growFromRef.current = el.getBoundingClientRect();
     setPageH(el.offsetHeight);
-    // A first guess at the plot's height from the panel as it is, measured again once it is full. The
-    // search box full page rides in the corner with the controls, which cost nothing while they float —
-    // but on a phone they stand in the flow, and there the box takes a line the panel on the page has not
-    // got.
+    // A first guess at the plot's height from the panel as it is, measured again once it is full — plus
+    // the search bar, which the panel only carries full page.
     const pad = phone ? FULL_PAD.phone : FULL_PAD.wide;
-    const furniture = el.offsetHeight - H + (search && phone ? FULL_SEARCH_H : 0);
+    const furniture = el.offsetHeight - H + (search ? (phone ? FULL_BAR.phone : FULL_BAR.wide) : 0);
     setFullH(Math.max(baseH, Math.floor(window.innerHeight - 2 * pad - furniture)));
     setLensAt(null);
     setHoverIdx(null);
@@ -1295,6 +1297,12 @@ function Distribution({
     >
       {(
         <div className="hero-dist-controls">
+          {/* Full page, the page's own search box is behind the scrim, so the panel carries one: the box and
+              a strip of its results, leading the line of controls above the plot. The results sit on that
+              line as chips rather than dropping over the graph, so nothing the search draws lies on the
+              thing being searched, at any size, and typing never changes the plot's size. First in the
+              DOM as on screen, so the focus order is the order the line is read in. */}
+          {full && search && <div className="hero-dist-search">{search}</div>}
           {/* The fall into place again; nothing to play under reduced motion. */}
           {motion && (phone ? (
             <ActionIcon variant="subtle" size="md" aria-label="Drop the dots again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
@@ -1307,12 +1315,6 @@ function Distribution({
           ))}
           {fullToggle}
           {controls}
-          {/* Full page, the page's own search box is behind the scrim, so the panel carries one. It
-              joins the controls rather than taking a row above the plot: while they float in the corner
-              it costs the plot no height at all, and its list — the width of the box, directly under
-              it — drops on the thin tail rather than on the peak. Narrow, the controls stand in the
-              flow and it does take a line there; `FULL_SEARCH_H` is that line. */}
-          {full && search && <div className="hero-dist-search">{search}</div>}
         </div>
       )}
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
@@ -1983,7 +1985,7 @@ export default function Home() {
               activeKey={activeItem?.startsWith('p:') ? activeItem.slice(2) : null}
               openRef={openRef}
               onFullChange={setGraphFull}
-              search={<SearchBox {...searchProps} size="md" placeholder="Search a person on the graph…" />}
+              search={<SearchBox {...searchProps} size="md" results="strip" placeholder="Search a person, title or school…" />}
               controls={canColour ? (
                 <div className="hero-dist-toggle">
                   <SegmentedToggle

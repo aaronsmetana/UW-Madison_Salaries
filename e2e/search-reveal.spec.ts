@@ -436,9 +436,10 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   await expect(boxes).toHaveCount(1);
   await expect(boxes).toHaveValue('goldsmith');
   await expect(page.locator('.hero-dist-full .hero-dist-search input')).toHaveCount(1);
-  // And its list is shut. A box handed a query opens closed — the reader asked for the graph, and the
-  // list would drop over the thing they just made bigger.
-  await expect(page.getByRole('option')).toHaveCount(0);
+  // Its results are there at once, as chips on the bar's own line: they lie over nothing, so there is
+  // nothing to hold them back for. And there is no menu anywhere to lie over the graph.
+  await expect(page.locator('.hero-dist-full [role="option"]').first()).toBeVisible();
+  await expect(page.locator('.search-dropdown')).toHaveCount(0);
 
   // The dots stayed marked and named right through the handover.
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./);
@@ -481,4 +482,132 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'off');
   await expect(searchBox(page)).toHaveValue('carlsmith');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./);
+});
+
+/** The plot full page, and how its dots are laid out: what the bar must never change. */
+async function plotShape(page: Page) {
+  return page.evaluate(() => {
+    const main = document.querySelector('.hero-dist-full .hero-dist-main')!.getBoundingClientRect();
+    const dots = document.querySelector('.hero-dist-full .hero-dots') as HTMLElement;
+    return { x: main.x, y: main.y, w: main.width, h: main.height, laidW: dots.dataset.width, laidH: dots.getBoundingClientRect().height };
+  });
+}
+/** The bar's pieces that lie on the plot or the pile, if any. */
+async function barOverPlot(page: Page) {
+  return page.evaluate(() => {
+    const R = (e: Element) => e.getBoundingClientRect();
+    const main = R(document.querySelector('.hero-dist-full .hero-dist-main')!);
+    const pileEl = document.querySelector('.hero-dist-full .hero-dist-pile');
+    const pile = pileEl ? R(pileEl) : null;
+    const hit = (a: DOMRect, b: DOMRect | null) => !!b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    return [...document.querySelectorAll('.hero-dist-full .hero-dist-search, .hero-dist-full .hero-dist-search *')]
+      .filter((el) => { const r = R(el); return r.width > 0 && r.height > 0 && (hit(r, main) || hit(r, pile)); })
+      .map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 60));
+  });
+}
+
+/**
+ * Full page, the search's results are a strip of chips on the bar above the plot — never a menu over it.
+ * A menu lay on the graph wherever its box was put: centred it hid 11.9% of the dots at 1280x800, and even
+ * in the corner it lay over the tail. So: nothing the search draws touches the plot or the pile, at any
+ * size, and nothing it does — results, no results, clearing — moves the plot or lays its dots out again.
+ */
+test('full page, the search never lies on the graph and never moves it', async ({ browser }) => {
+  for (const [width, height] of [[1280, 800], [1440, 900], [375, 812]] as const) {
+    const ctx = await browser.newContext({ viewport: { width, height }, ...(width < 500 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3 } : {}) });
+    const page = await ctx.newPage();
+    await home(page);
+    await page.locator('.hero-dist-full-toggle').click();
+    await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+    await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+    // Once the panel has finished growing into place: read mid-grow, the plot is still translated by the
+    // grow and "moves" when it lands, which is the grow and not the bar.
+    await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
+    const before = await plotShape(page);
+    const box = page.locator('.hero-dist-full .hero-dist-search input');
+
+    await box.fill('aaron');
+    // Options anywhere first, so that a menu — which is portaled out of the panel — is what gets reported.
+    await expect(page.getByRole('option').first()).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(300);
+    await expect(page.locator('.search-dropdown'), `${width}px: a menu came up full page`).toHaveCount(0);
+    await expect(page.locator('.hero-dist-full [role="option"]').first()).toBeVisible();
+    expect(await barOverPlot(page), `${width}px: the bar lies on the graph`).toEqual([]);
+    expect(await plotShape(page), `${width}px: results moved the plot`).toEqual(before);
+
+    await box.fill('zzqqxxzz');
+    await expect(page.locator('.search-strip-note', { hasText: 'No matches' })).toBeVisible({ timeout: 60_000 });
+    expect(await barOverPlot(page), `${width}px: the empty bar lies on the graph`).toEqual([]);
+    expect(await plotShape(page), `${width}px: an empty result moved the plot`).toEqual(before);
+
+    await box.fill('');
+    await page.waitForTimeout(300);
+    expect(await plotShape(page), `${width}px: clearing moved the plot`).toEqual(before);
+    await ctx.close();
+  }
+});
+
+/**
+ * One Escape does one thing. In the full page's box it empties the box; only once the box is empty does
+ * Escape leave full page. A single press used to do both, throwing the reader out of the view they were
+ * searching in along with their query.
+ */
+test('Escape in the full-page bar empties it first, and only then leaves full page', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await home(page);
+  await page.locator('.hero-dist-full-toggle').click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+  const box = page.locator('.hero-dist-full .hero-dist-search input');
+  await box.fill('aaron');
+  await expect(page.locator('.hero-dist-full [role="option"]').first()).toBeVisible({ timeout: 60_000 });
+  await box.press('Escape');
+  await expect(box).toHaveValue('');
+  await expect(page.locator('.hero-dist'), 'the Escape that emptied the box also left full page').toHaveAttribute('data-full', 'on');
+  await box.press('Escape');
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'off');
+});
+
+/**
+ * More chips than the line holds: the strip says how many are past its edge, a press on that takes the
+ * pointer to them, and the keys reach every one by themselves — the active chip is always in view.
+ */
+test('a strip too long for its line says how many are past its edge, and the keys reach them', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await home(page);
+  await page.locator('.hero-dist-full-toggle').click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+  const box = page.locator('.hero-dist-full .hero-dist-search input');
+  await box.fill('aaron');
+  const options = page.locator('.hero-dist-full [role="option"]');
+  await expect(options.first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(500);
+  const more = page.locator('.search-strip-more');
+  await expect(more, 'six people and no word of the ones past the edge').toBeVisible();
+  const n = Number((await more.textContent())!.replace('+', ''));
+  // What "+N" counts: the chips that do not end inside the strip.
+  const inView = () => page.evaluate(() => {
+    const strip = document.querySelector('.search-strip')!.getBoundingClientRect();
+    return [...document.querySelectorAll('.hero-dist-full [role="option"]')].map((c) => {
+      const r = c.getBoundingClientRect();
+      return r.left >= strip.left - 1 && r.right <= strip.right + 1;
+    });
+  });
+  const seen = await inView();
+  expect(seen.filter((v) => !v).length, '"+N" is not the number past the edge').toBe(n);
+
+  await more.click();
+  await expect.poll(() => page.locator('.search-strip').evaluate((el) => el.scrollLeft), { message: '"+N" did not move the strip' }).toBeGreaterThan(0);
+  // Back to the start, and still: the keys below start from the first chip in view.
+  await page.locator('.search-strip').evaluate((el) => { el.scrollLeft = 0; });
+
+  // The keys, from the first chip to the last: each one brought into view as it becomes the active one.
+  const total = await options.count();
+  await box.focus();
+  for (let i = 1; i < total; i++) {
+    await box.press('ArrowDown');
+    await expect(options.nth(i)).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(async () => (await inView())[i], { message: `the active chip, ${i + 1} of ${total}, is out of sight`, timeout: 2_000 }).toBe(true);
+  }
+  // And past the edge they were: the last one needed the strip to move.
+  expect(await page.locator('.search-strip').evaluate((el) => el.scrollLeft), 'the keys never had to move the strip').toBeGreaterThan(0);
 });

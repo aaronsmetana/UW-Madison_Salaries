@@ -1,12 +1,13 @@
-import { useState, useMemo, useId, useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useState, useMemo, useId, useEffect, useLayoutEffect, useCallback, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip, Badge, Box } from '@mantine/core';
-import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
+import { IconSearch, IconAlertTriangle, IconUser, IconBriefcase, IconBuilding } from '@tabler/icons-react';
 import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql, useSummary, useSearchIndex } from '../lib/hooks';
 import { sqlStr, sqlLikeContains } from '../lib/duckdb';
 import { personPay } from '../lib/queries';
 import { fullName, usd, num } from '../lib/format';
+import { fmtK } from '../lib/chartStyle';
 import { snapX, reportingBreaks } from '../lib/snapTime';
 import { ALL_KINDS, GROUP_LIMIT, matchTitles, matchDivisions, enterPick, type SearchKind, type TitleHit, type DivisionHit } from '../lib/search';
 import { DROPDOWN_TIERS, type DropdownSize } from '../lib/selectProps';
@@ -146,6 +147,7 @@ export function SearchBox({
   query,
   onQueryChange,
   keepFoundOnUnmount = false,
+  results = 'list',
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -181,11 +183,16 @@ export function SearchBox({
    *  only swapping one box for another. Without it the handover to full page blanks every marked dot
    *  until the new box's query comes back. */
   keepFoundOnUnmount?: boolean;
+  /** Where the results go. `list` drops them under the box in a floating menu. `strip` lays them out
+   *  beside it on one line, as chips — for a box that sits over something the reader is looking at (the
+   *  graph full page), where a menu would lie on top of it however it was placed. */
+  results?: 'list' | 'strip';
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
   const narrow = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const large = size === 'lg';
+  const strip = results === 'strip';
   const grouped = kinds.some((k) => k !== 'people');
   const wantPeople = kinds.includes('people');
   // Held here unless the parent holds it. The landing page owns its query so the graph's full page can
@@ -207,9 +214,10 @@ export function SearchBox({
   const enabled = q.length >= 2;
   const peopleLimit = grouped ? peopleInGroup + 1 : 25;
 
-  // Fetched on first focus — on the landing page that is the page load, since its box is autofocused.
+  // Fetched on first focus — on the landing page that is the page load, since its box is autofocused. A
+  // strip is on screen from the moment it mounts, so it does not wait to be focused.
   const [focused, setFocused] = useState(autoFocus);
-  const { data: index } = useSearchIndex(focused && grouped);
+  const { data: index } = useSearchIndex((focused || strip) && grouped);
   const titles = useMemo(() => (kinds.includes('titles') ? matchTitles(index, q) : []), [kinds, index, q]);
   const divisions = useMemo(() => (kinds.includes('divisions') ? matchDivisions(index, q) : []), [kinds, index, q]);
 
@@ -302,7 +310,8 @@ export function SearchBox({
     ],
     [peopleShown, titles, divisions]
   );
-  const opened = enabled && !handed;
+  // A strip covers nothing, so it has no reason to hold its results back from a query it was handed.
+  const opened = enabled && (strip || !handed);
 
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
@@ -324,7 +333,8 @@ export function SearchBox({
   const itemKeys = items.map((i) => i.key).join('|');
   useEffect(() => { setActive(0); }, [itemKeys]);
   useEffect(() => { setMoved(false); }, [q]);
-  useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, listId]);
+  // `inline` for the strip, which scrolls sideways; a list only ever needs `block`.
+  useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [active, listId]);
 
   // What a page beside the box is told: the people shown and the active row, each only when it changes.
   // Keyed on the query having found them, not on the list being on screen. The two were the same thing
@@ -346,11 +356,14 @@ export function SearchBox({
   activeRef.current = onActiveItem;
   useEffect(() => { activeRef.current?.(activeKey); }, [activeKey]);
   // Gone from the page, so nothing of this box's is still being shown — unless the parent owns that
-  // list and is handing this box's query to another one.
+  // list and is handing this box's query to another one. That goes for the active row as much as for the
+  // people: the box going away can be the later of the two — the landing box leaves a render after the
+  // full page's has come up and named its first chip — and clearing it then wiped the one just shown.
   const keepRef = useRef(keepFoundOnUnmount);
   keepRef.current = keepFoundOnUnmount;
   useEffect(() => () => {
-    if (!keepRef.current) shownRef.current.onPeopleShown?.([]);
+    if (keepRef.current) return;
+    shownRef.current.onPeopleShown?.([]);
     activeRef.current?.(null);
   }, []);
 
@@ -368,6 +381,36 @@ export function SearchBox({
     const by = Math.min(BELOW_ROOM - room, most);
     if (by > 0) window.scrollBy({ top: by, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [opened]);
+
+  // The strip scrolls sideways. What it knows of its edges: whether it has been scrolled off its start,
+  // and how many chips still run past its end — the "+N" a pointer can press to reach them. The keys
+  // take it past the edge by themselves (the active chip is scrolled into view).
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: 0 });
+  const measureStrip = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const end = el.scrollLeft + el.clientWidth;
+    let right = 0;
+    el.querySelectorAll<HTMLElement>('[role="option"]').forEach((c) => { if (c.offsetLeft + c.offsetWidth > end + 1) right++; });
+    const left = el.scrollLeft > 1;
+    setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
+  }, []);
+  useLayoutEffect(() => {
+    if (!strip) return;
+    measureStrip();
+    const el = stripRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measureStrip);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [strip, measureStrip, itemKeys, opened, peopleBusy]);
+  // Titles that share a name are told apart by their code; one that is alone does not need it.
+  const titleNames = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const h of titles) m.set(h.title.toLowerCase(), (m.get(h.title.toLowerCase()) ?? 0) + 1);
+    return m;
+  }, [titles]);
 
   const select = (it: Item) => {
     if (it.kind === 'person') {
@@ -397,7 +440,15 @@ export function SearchBox({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') { setTerm(''); setPendingEnter(null); return; }
+    // An Escape that clears the text has been used, and says so: a page that also closes on Escape —
+    // the graph's full page — then leaves it alone, and the next one is the one that closes it. Without
+    // this a single press both emptied the box and threw the reader out of the view they were in.
+    if (e.key === 'Escape') {
+      if (term) e.preventDefault();
+      setTerm('');
+      setPendingEnter(null);
+      return;
+    }
     if (!opened) return;
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -524,6 +575,126 @@ export function SearchBox({
   const nPeople = peopleShown.length;
   const showPeopleGroup = wantPeople && (nPeople > 0 || peopleBusy);
   const empty = items.length === 0 && !peopleBusy;
+  const placeholderText = placeholder ?? (grouped ? (narrow ? 'Name, title or division…' : 'Search people, titles or divisions…') : 'Search a person…');
+
+  if (strip) {
+    // One line of chips beside the box instead of a menu under it. The chips are the same options in
+    // the same order, the keys and the pointer drive the same `active`, and a pick does the same thing —
+    // only where they are drawn differs, which is the whole point: they sit on the box's own line and
+    // lie over nothing. Notes (searching, no match, more) sit outside the listbox, which holds options.
+    const shown = opened && items.length > 0;
+    const chip = (it: Item, i: number) => {
+      const props = {
+        id: optId(i),
+        role: 'option',
+        'aria-selected': i === active,
+        'data-kind': it.kind,
+        // The box keeps the focus, as a combobox does: the options are reached with the arrow keys, and
+        // Tab leaves the strip rather than walking every chip.
+        tabIndex: -1,
+        className: 'search-chip',
+        onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
+        onMouseEnter: () => { setActive(i); setMoved(true); },
+        onClick: () => select(it),
+      };
+      if (it.kind === 'person') {
+        const h = it.hit;
+        const former = campusLatestDate != null && h.last_date != null && String(h.last_date) < String(campusLatestDate);
+        return (
+          <UnstyledButton key={it.key} {...props} data-former={former || undefined}>
+            <IconUser size={14} aria-hidden className="search-chip-icon" />
+            <span className="search-chip-name">{fullName(h.fn, h.ln)}</span>
+            {h.pay != null && <span className="search-chip-pay">{former ? `last ${fmtK(h.pay)}` : fmtK(h.pay)}</span>}
+          </UnstyledButton>
+        );
+      }
+      if (it.kind === 'title') {
+        const h = it.hit;
+        return (
+          <UnstyledButton key={it.key} {...props}>
+            <IconBriefcase size={14} aria-hidden className="search-chip-icon" />
+            <span className="search-chip-name">{h.title}</span>
+            {(titleNames.get(h.title.toLowerCase()) ?? 0) > 1 && <span className="code-pill">{h.code}</span>}
+          </UnstyledButton>
+        );
+      }
+      return (
+        <UnstyledButton key={it.key} {...props}>
+          <IconBuilding size={14} aria-hidden className="search-chip-icon" />
+          <span className="search-chip-name">{it.hit.school}</span>
+        </UnstyledButton>
+      );
+    };
+    return (
+      <div className="search-bar">
+        <TextInput
+          className="search-bar-field"
+          size={t.mantineSize}
+          radius={t.radius}
+          leftSection={<IconSearch size={t.icon} />}
+          placeholder={placeholderText}
+          value={term}
+          onChange={(e) => setTerm(e.currentTarget.value)}
+          onKeyDown={onKeyDown}
+          onFocus={() => { setFocused(true); setHanded(false); }}
+          rightSection={peopleBusy ? <Loader size="sm" /> : null}
+          aria-label={grouped ? 'Search a person, title or division' : 'Search a person'}
+          role="combobox"
+          aria-expanded={shown}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={shown ? optId(active) : undefined}
+          data-autofocus={autoFocus || undefined}
+          autoFocus={autoFocus}
+          styles={{ input: { fontSize: t.inputFont } }}
+        />
+        <div
+          ref={stripRef}
+          className="search-strip"
+          // A strip wider than its line is a region that scrolls, and a keyboard has to be able to reach it
+          // and scroll it without the box: the box's arrows bring the active chip into view, but not every
+          // reader drives it that way. Only then, though — a strip that fits is no stop on the way past.
+          tabIndex={edges.left || edges.right > 0 ? 0 : undefined}
+          data-more-left={edges.left || undefined}
+          data-more-right={edges.right > 0 || undefined}
+          onScroll={measureStrip}
+          // A wheel scrolls the strip sideways: it is one line, and there is nothing behind it to scroll.
+          onWheel={(e) => {
+            const el = e.currentTarget;
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY;
+          }}
+        >
+          {opened && usingFuzzy && <span className="search-strip-note">Did you mean</span>}
+          {opened && peopleBusy && nPeople === 0 && (
+            <span className="search-strip-note"><Loader size={12} /> Searching people…</span>
+          )}
+          {shown && (
+            <div role="listbox" id={listId} aria-label="Search results" className="search-strip-list">
+              {items.map((it, i) => chip(it, i))}
+            </div>
+          )}
+          {opened && empty && <span className="search-strip-note">No matches for “{debounced}”.</span>}
+          {opened && morePeople && <span className="search-strip-note">More people match — keep typing</span>}
+        </div>
+        {edges.right > 0 && (
+          // For a pointer only: the keys already reach every chip, and a reader of the listbox has them all.
+          <button
+            type="button"
+            className="search-strip-more"
+            tabIndex={-1}
+            aria-hidden
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const el = stripRef.current;
+              el?.scrollBy({ left: el.clientWidth * 0.8, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+            }}
+          >
+            +{edges.right}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <Popover
@@ -563,7 +734,7 @@ export function SearchBox({
             radius={t.radius}
             leftSection={<IconSearch size={t.icon} />}
             leftSectionWidth={large ? 56 : undefined}
-            placeholder={placeholder ?? (grouped ? (narrow ? 'Name, title or division…' : 'Search people, titles or divisions…') : 'Search a person…')}
+            placeholder={placeholderText}
             value={term}
             onChange={(e) => setTerm(e.currentTarget.value)}
             onKeyDown={onKeyDown}

@@ -1805,17 +1805,10 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   z-index: var(--z-local, 2);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  /* Full page the search box joins this row; on a narrow window it wraps under the buttons rather
-     than pushing them off the panel's left edge. */
-  flex-wrap: wrap;
-  max-width: calc(100% - 20px);
   gap: 6px;
 }
 @media screen and (max-width: 30em) {
-  /* Standing in the flow they have the panel's own width; the cap above is for the floating row, which
-     would otherwise run off the panel's left edge, and taking it here would inset them by its 20px. */
-  .hero-dist-controls { position: static; justify-content: flex-end; margin-bottom: 6px; max-width: none; }
+  .hero-dist-controls { position: static; justify-content: flex-end; margin-bottom: 6px; }
 }
 .hero-dist-legend {
   display: flex;
@@ -1882,27 +1875,126 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .hero-dist.hero-dist-full { margin-top: 0; --glass-tint: 88%; }
 /* No page to scroll or zoom there: a finger's drag is the dots' (Home `onMove`). */
 .hero-dist-full .hero-dist-main { touch-action: none; }
-/* Full page only, sharing the controls' corner. It is the last of them, so the box ends at the panel's
-   right edge and its list — the width of the box, directly under it — falls on the thin tail. Centred,
-   that list would land on the peak and cover 11.9% of the dots at 1280x800 and 2% at 1440x900; on the
-   left, 41.4%. While the controls float it also takes no height from the plot; narrow, where they stand
-   in the flow, it wraps onto a line of its own and `FULL_SEARCH_H` in routes/Home pays for that line. */
+/* Full page the controls are a bar across the top of the panel, in the flow and led by the search: the
+   box, its results as a strip of chips, then the buttons. Anything that floated over the plot — a menu
+   under the box, wherever the box was put — lay on the graph being searched. On a line of its own at a
+   fixed height, nothing typed or shown in it covers a dot or moves the plot. The heights here are
+   mirrored by `FULL_BAR` in routes/Home, which subtracts them from the window before the panel grows. */
+.hero-dist-full .hero-dist-controls {
+  --full-bar-h: 42px;
+  --full-bar-gap: 8px;
+  position: static;
+  height: var(--full-bar-h);
+  margin-bottom: var(--full-bar-gap);
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.hero-dist-full .hero-dist-controls > :not(.hero-dist-search) { flex: none; }
 .hero-dist-search {
   --full-search-h: 42px;
-  width: min(26rem, 100%);
+  --full-strip-h: 32px;
+  flex: 1 1 auto;
+  min-width: 0;
   height: var(--full-search-h);
 }
-.hero-dist-search input {
+.search-bar { display: flex; align-items: center; gap: 8px; height: 100%; min-width: 0; }
+/* Wide enough for its placeholder, "Search a person, title or school…", which is 276px in the field's
+   15px face: at 16rem it read "…title or schoo", and the one word it most needs to say was the one cut. */
+.search-bar-field { flex: none; width: 18rem; }
+.search-bar-field input {
   height: var(--full-search-h);
   min-height: var(--full-search-h);
   transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
 }
-/* At rest it is a hairline on the panel's own glass, not a card: an empty field has nothing to read,
-   so it need not hold a surface of its own in front of the graph. Hover or focus hands the surface
-   back, which the open list needs — that list is opaque, and the two meet as one card. */
-.hero-dist-search input:not(:hover):not(:focus) {
+/* At rest the box is a hairline on the panel's own glass, not a card: an empty field has nothing to
+   read, so it need not hold a surface of its own over the panel. Hover or focus hands it back. */
+.search-bar-field input:not(:hover):not(:focus) {
   background-color: transparent;
   border-color: var(--hairline);
+}
+/* The results: one line that scrolls sideways, its scrollbar hidden, faded at an edge with more past it. */
+.search-strip {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--full-strip-h);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.search-strip::-webkit-scrollbar { display: none; }
+.search-strip[data-more-right] { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+.search-strip[data-more-left] { mask-image: linear-gradient(to right, transparent, #000 28px); }
+.search-strip[data-more-left][data-more-right] {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+/* Focused (when it scrolls, it is a stop), the fade comes off: a mask clips everything outside the box,
+   the focus ring with it. The ring sits inside, where the mask would have faded it at the ends. */
+.search-strip:focus-visible {
+  mask-image: none;
+  outline: 2px solid var(--mantine-color-accent-6);
+  outline-offset: -2px;
+  border-radius: 999px;
+}
+.search-strip-list { display: flex; align-items: center; gap: 6px; }
+.search-strip-note {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+.search-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--full-strip-h);
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-sm);
+  white-space: nowrap;
+  transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
+}
+.search-chip-icon { flex: none; color: var(--mantine-color-dimmed); }
+.search-chip-name { font-weight: 600; }
+.search-chip-pay { color: var(--mantine-color-dimmed); font-variant-numeric: tabular-nums; }
+.search-chip[data-former] .search-chip-name { color: var(--mantine-color-dimmed); }
+/* The active chip, by key or pointer — its person's dot on the graph is drawn large beside it. */
+.search-chip[aria-selected='true'] {
+  border-color: var(--mantine-color-accent-6);
+  background: var(--mantine-color-accent-light);
+}
+.search-strip-more {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* A phone's bar: the box and its strip each take a line of their own, above the buttons. A finger swipes
+   the strip, so it has no "+N". Mirrored by `FULL_BAR.phone`. */
+@media screen and (max-width: 30em) {
+  .hero-dist-full .hero-dist-controls { height: auto; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; justify-content: flex-end; }
+  .hero-dist-full .hero-dist-search { flex: 1 1 100%; height: auto; }
+  .hero-dist-full .search-bar { flex-direction: column; align-items: stretch; gap: 6px; }
+  .hero-dist-full .search-bar-field { width: 100%; }
+  .hero-dist-full .search-strip-more { display: none; }
 }
 /* The panel's place on the page while it is full page, the same height, so nothing below it moves. */
 .hero-dist-placeholder { margin-top: var(--mantine-spacing-lg); }

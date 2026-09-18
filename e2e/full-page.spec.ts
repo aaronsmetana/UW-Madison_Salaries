@@ -70,6 +70,18 @@ test('opens the graph full page over everything, as tall as the window, and puts
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow), 'the page under the full page is not locked').toBe('hidden');
   const axe = await new AxeBuilder({ page }).include('.hero-full').analyze();
   expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+  // And with results on the bar: chips are options in a listbox beside a combobox, and every kind of
+  // chip gets scanned — people for one query, titles and a school for the other.
+  const bar = page.locator('.hero-full .hero-dist-search input');
+  for (const q of ['aaron', 'medicine']) {
+    await bar.fill(q);
+    await expect(page.locator('.hero-full [role="option"]').first()).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(300);
+    const scan = await new AxeBuilder({ page }).include('.hero-full').analyze();
+    expect(scan.violations.map((v) => `${v.id}: ${v.nodes.length}`), `with "${q}" on the bar`).toEqual([]);
+  }
+  expect(await page.locator('.hero-full [role="option"][data-kind="division"]').count(), 'no school was ever on the bar to scan').toBeGreaterThan(0);
+  await bar.fill('');
 
   // Escape: back in its place, focus on the button that opened it, and the page scrolls again.
   await page.keyboard.press('Escape');
@@ -164,6 +176,7 @@ test('full page on a phone: a finger drags through the dots and stirs them, hold
   // On the page first: a finger that moves over the plot scrolls, and throws nothing.
   await main.scrollIntoViewIfNeeded();
   let box = (await page.locator('.hero-dist-plot').boundingBox())!;
+  const inPlaceH = box.height;
   const before = await frames();
   await touch('touchStart', box.x + box.width * 0.2, box.y + box.height * 0.8);
   for (let k = 1; k <= 8; k++) { await touch('touchMove', box.x + box.width * (0.2 + 0.05 * k), box.y + box.height * 0.8 - 12 * k); await page.waitForTimeout(16); }
@@ -177,7 +190,11 @@ test('full page on a phone: a finger drags through the dots and stirs them, hold
   await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   box = (await page.locator('.hero-dist-plot').boundingBox())!;
-  expect(box.height, 'the plot did not grow on the phone').toBeGreaterThan(400);
+  // Against the plot on the page rather than as a count of pixels: full page on a phone carries three
+  // lines above the plot — the search box, its strip of results and the buttons — and the plot gets what
+  // the window leaves. It was 463px with none of them and 415px with the box alone; it is 377px now, from
+  // 275px on the page. A bare figure only ever measured that furniture, not whether the plot grew.
+  expect(box.height / inPlaceH, `the plot did not grow on the phone: ${inPlaceH}px on the page, ${box.height}px full page`).toBeGreaterThan(1.3);
   const scrolled = () => page.evaluate(() => [window.scrollY, document.querySelector('.hero-full')!.scrollTop]);
   const at = await scrolled();
 
