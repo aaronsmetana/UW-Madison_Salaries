@@ -391,3 +391,94 @@ test('the person the list has active is drawn twice the size, and wears the fill
   // again — the drawing doubles it, and a core is its radius less a rim.
   expect(bigCore / plainCore, `${bigCore} against ${plainCore}`).toBeGreaterThan(1.6);
 });
+
+/**
+ * The graph going full page takes the search with it. The panel is re-parented into a portal to fill
+ * the window, which remounts everything inside it, so the query cannot live in the box: one box stands
+ * down, the other comes up holding what the first one held, and the marked dots never blink.
+ */
+test('the search goes full page with the graph: one box, the query kept, the dots still named', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // Not `home`, which tells the field its entrance has already played. A visitor's first sight of the
+  // page is the dots falling, and the panel going full page lays them out and drops them again — which
+  // is the only time the places a name could be hung on are moving. Skip that and there is nothing here
+  // to get wrong: the field re-lays out between two frames and every reading is the settled one.
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
+  await searchBox(page).fill('goldsmith');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  await page.waitForTimeout(1500);
+  const before = (await marksOf(page, '.hero-dots')).length;
+  expect(before, 'nobody was marked to begin with').toBeGreaterThan(1);
+  await expect(page.locator('.hero-found-label')).toHaveCount(before);
+  // On the page, the list is open: that is what typing does.
+  expect(await page.getByRole('option').count()).toBeGreaterThan(0);
+
+  // Sampled from the click onward, because the difficulty is in the travelling: the panel lays its dots
+  // out again for the taller plot and they move to their new places, and a name is hung on a place. The
+  // place a dot is passing through is not the place it is going.
+  const leaderEnds = () => page.locator('.hero-found-leaders line').evaluateAll((els) => els.map((el) => ({
+    x: Number(el.getAttribute('x1')), y: Number(el.getAttribute('y1')),
+  })));
+  await page.getByRole('button', { name: 'Full page' }).click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+  const travelling: { x: number; y: number }[][] = [];
+  for (let i = 0; i < 30; i++) {
+    travelling.push(await leaderEnds());
+    if (i > 1 && await page.locator('.hero-dots').getAttribute('data-settled') === 'true') break;
+    await page.waitForTimeout(100);
+  }
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await page.waitForTimeout(400);
+
+  // One box, inside the panel, holding the query the page's box was holding.
+  const boxes = page.getByRole('combobox', { name: /Search a person/ });
+  await expect(boxes).toHaveCount(1);
+  await expect(boxes).toHaveValue('goldsmith');
+  await expect(page.locator('.hero-dist-full .hero-dist-search input')).toHaveCount(1);
+  // And its list is shut. A box handed a query opens closed — the reader asked for the graph, and the
+  // list would drop over the thing they just made bigger.
+  await expect(page.getByRole('option')).toHaveCount(0);
+
+  // The dots stayed marked and named right through the handover.
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./);
+  expect((await marksOf(page, '.hero-dots')).length, 'the marks were lost going full page').toBe(before);
+
+  const atRest = await leaderEnds();
+  expect(atRest.length, 'the names went away going full page').toBe(before);
+
+  // Not a pixel of wander from the moment the names appear: they are put where their dots are going, so
+  // the dots arrive under them rather than dragging them along. Every sample taken while the field was
+  // laying itself out again has to match where they ended up.
+  const watched = travelling.filter((s) => s.length === atRest.length);
+  expect(watched.length, 'the names were never seen while the dots moved').toBeGreaterThan(1);
+  for (const s of watched) {
+    for (let i = 0; i < atRest.length; i++) {
+      expect(Math.hypot(atRest[i].x - s[i].x, atRest[i].y - s[i].y),
+        'a name wandered while the dots flew').toBeLessThan(2);
+    }
+  }
+  // And each one ended up on a dot. A name read once off a dot in flight and never read again sat
+  // 389px from the person it named, at their right pay, for as long as the graph stayed open.
+  const after = await marksOf(page, '.hero-dots');
+  const field = (await page.locator('.hero-dots').boundingBox())!;
+  for (const l of atRest) {
+    const from = { x: field.x + l.x, y: field.y + l.y };
+    const near = after.map((m) => Math.hypot(field.x + m.x - from.x, field.y + m.y - from.y)).sort((a, b) => a - b)[0];
+    expect(near, 'a name is stranded away from every dot, full page').toBeLessThan(30);
+  }
+
+  // Searching from in here works, and marks a different set.
+  await page.locator('.hero-dist-search input').fill('carlsmith');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  await page.waitForTimeout(1500);
+  const inFull = await marksOf(page, '.hero-dots');
+  expect(inFull.length, 'a search from inside full page marked nobody').toBeGreaterThan(0);
+  expect(inFull.map((m) => m.i).join(), 'the full page search marked the same people').not.toBe(after.map((m) => m.i).join());
+
+  // And back out, the page's own box has what was typed in there.
+  await page.getByRole('button', { name: 'Exit full page' }).click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'off');
+  await expect(searchBox(page)).toHaveValue('carlsmith');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./);
+});

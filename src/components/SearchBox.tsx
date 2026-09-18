@@ -143,6 +143,9 @@ export function SearchBox({
   onPeopleShown,
   onActiveItem,
   keepBelow,
+  query,
+  onQueryChange,
+  keepFoundOnUnmount = false,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -168,6 +171,16 @@ export function SearchBox({
    *  landing graph, whose dots the search marks). Opening the list scrolls the page to give it room below,
    *  but never so far that the element's top passes under the header. */
   keepBelow?: () => HTMLElement | null;
+  /** The query, when the parent holds it rather than this box — paired with `onQueryChange`. Two boxes
+   *  that share one query are the same search in two places: the landing page's, and the one inside the
+   *  graph once it is full page. */
+  query?: string;
+  /** Told the query as it is typed, whether or not the parent holds it. */
+  onQueryChange?: (q: string) => void;
+  /** Leave the found people alone when this box goes away, because the parent owns that list and is
+   *  only swapping one box for another. Without it the handover to full page blanks every marked dot
+   *  until the new box's query comes back. */
+  keepFoundOnUnmount?: boolean;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
@@ -175,7 +188,20 @@ export function SearchBox({
   const large = size === 'lg';
   const grouped = kinds.some((k) => k !== 'people');
   const wantPeople = kinds.includes('people');
-  const [term, setTerm] = useState('');
+  // Held here unless the parent holds it. The landing page owns its query so the graph's full page can
+  // carry it: the panel is re-parented into a portal to go full page, which remounts everything inside
+  // it, so anything that has to survive the move cannot live in here.
+  const [ownTerm, setOwnTerm] = useState(query ?? '');
+  const term = query ?? ownTerm;
+  // A box that opens already holding a query was handed it by the box it replaced — the graph going
+  // full page, or coming back. It keeps its list shut until the reader turns to it: they asked for the
+  // graph, and the list would open over the thing they just made bigger. Typing or focusing ends it.
+  const [handed, setHanded] = useState(() => (query ?? '').trim().length >= 2);
+  const setTerm = (v: string) => {
+    if (query === undefined) setOwnTerm(v);
+    setHanded(false);
+    onQueryChange?.(v);
+  };
   const [debounced] = useDebouncedValue(term, 200);
   const q = debounced.trim().toLowerCase();
   const enabled = q.length >= 2;
@@ -276,7 +302,7 @@ export function SearchBox({
     ],
     [peopleShown, titles, divisions]
   );
-  const opened = enabled;
+  const opened = enabled && !handed;
 
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
@@ -301,7 +327,11 @@ export function SearchBox({
   useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, listId]);
 
   // What a page beside the box is told: the people shown and the active row, each only when it changes.
-  const shownKey = opened ? peopleShown.map((h) => h.person_key).join('|') : '';
+  // Keyed on the query having found them, not on the list being on screen. The two were the same thing
+  // until a box could hold a query with its list shut — the graph's full page hands the query over and
+  // opens closed — and keying this on the list blanked every marked dot at the moment of the handover,
+  // until the reader happened to click the box. Who the search found does not depend on who is looking.
+  const shownKey = enabled ? peopleShown.map((h) => h.person_key).join('|') : '';
   const shownRef = useRef({ peopleShown, campusLatestDate, onPeopleShown });
   shownRef.current = { peopleShown, campusLatestDate, onPeopleShown };
   useEffect(() => {
@@ -315,7 +345,14 @@ export function SearchBox({
   const activeRef = useRef(onActiveItem);
   activeRef.current = onActiveItem;
   useEffect(() => { activeRef.current?.(activeKey); }, [activeKey]);
-  useEffect(() => () => { shownRef.current.onPeopleShown?.([]); activeRef.current?.(null); }, []);
+  // Gone from the page, so nothing of this box's is still being shown — unless the parent owns that
+  // list and is handing this box's query to another one.
+  const keepRef = useRef(keepFoundOnUnmount);
+  keepRef.current = keepFoundOnUnmount;
+  useEffect(() => () => {
+    if (!keepRef.current) shownRef.current.onPeopleShown?.([]);
+    activeRef.current?.(null);
+  }, []);
 
   // Opened under a figure it must not cover: room for the list below, from the page's scroll.
   const targetRef = useRef<HTMLDivElement>(null);
@@ -496,6 +533,11 @@ export function SearchBox({
       offset={0}
       radius={t.radius}
       withinPortal
+      // Mantine would otherwise hang `aria-haspopup`, `aria-expanded` and `aria-controls` on the target
+      // wrapper, which is a plain <div> with no interactive role — an ARIA attribute that is not allowed
+      // there, and a second, competing account of a combobox that the input below already gives
+      // correctly. The input keeps its own role, its expanded state and its link to the list.
+      withRoles={false}
       trapFocus={false}
       returnFocus={false}
       closeOnClickOutside={false}
@@ -525,7 +567,7 @@ export function SearchBox({
             value={term}
             onChange={(e) => setTerm(e.currentTarget.value)}
             onKeyDown={onKeyDown}
-            onFocus={() => setFocused(true)}
+            onFocus={() => { setFocused(true); setHanded(false); }}
             rightSection={peopleBusy ? <Loader size="sm" /> : null}
             aria-label={grouped ? 'Search a person, title or division' : 'Search a person'}
             role="combobox"

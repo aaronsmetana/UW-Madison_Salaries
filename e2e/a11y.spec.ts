@@ -44,9 +44,18 @@ async function runAxe(page: import('@playwright/test').Page) {
   // half opacity measures as a contrast failure for the 450ms it lasts.
   await page.waitForFunction(() => !document.querySelector('.app-navbar-peek'), null, { timeout: 10_000 });
   const results = await new AxeBuilder({ page })
-    // Mantine's own Popover/Combobox target wrapper (every Select/SearchBox in the app) renders
-    // `aria-expanded` on a plain `<div aria-haspopup="dialog">` with no explicit interactive role —
-    // a Mantine-internal markup choice, not something app code controls.
+    // Mantine's Popover/Combobox target wrapper renders `aria-expanded` on a plain
+    // `<div aria-haspopup="dialog">` with no interactive role, which that role does not allow.
+    //
+    // SearchBox no longer does this: `withRoles={false}` on its Popover stops Mantine adding those
+    // attributes, and the input underneath was already giving the combobox's role, its expanded state
+    // and its link to the list, correctly and on its own. That is why the graph's full page can be
+    // scanned without this exclusion, which is where the search box now lives.
+    //
+    // The exclusion stays for everything else. It was lifted once, on the strength of the search boxes
+    // being fixed, and the Selects on Explore, Compare, Divisions and the school pages still render it
+    // — eight failures, on pages a single-file run of this spec had raced past, scanning them before
+    // their Selects had mounted. Lifting it for good means giving those the same treatment first.
     //
     // Scoped by selector rather than `.disableRules(['aria-allowed-attr'])`, which switched the rule
     // off for the whole page: any genuine misuse of an ARIA attribute in app code would have been

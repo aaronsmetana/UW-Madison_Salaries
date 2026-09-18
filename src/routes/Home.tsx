@@ -147,6 +147,16 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
   ];
 }
 
+/**
+ * What the panel's search row costs it, full page: the row (42px) and the margin under it (12). Mirrors
+ * `--full-search-h` and the margin in app.css `.hero-dist-search`. The plot's height full page is worked
+ * out from the panel as it stands on the page, which has no such row, so the row has to be subtracted by
+ * hand — and it has to be right, because the panel's grow-out-of-its-place is aimed at the panel as that
+ * reckoning leaves it. Out by the row, the panel starts half a row off its own place and lands with a
+ * jump. The e2e's `it does not start over its place` is what holds these two to each other.
+ */
+const FULL_SEARCH_H = 42 + 12;
+
 /** The plot's width: the panel's, less the break and the pile. */
 const PLOT_WIDTH = 'calc(100% - var(--pile-gap) - var(--pile-w))';
 
@@ -174,6 +184,7 @@ const FOUND_CARD_W = 240;
 
 function Distribution({
   bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
+  search, onFullChange,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -195,6 +206,12 @@ function Distribution({
   activeKey?: string | null;
   /** Set to open a found person from their dot (the search's pick calls it); false if they are not shown. */
   openRef?: MutableRefObject<((key: string) => boolean) | null>;
+  /** A search box for the panel itself, shown only full page — where the page's own box is off the
+   *  screen behind the scrim, and a graph this size is the one worth searching against. */
+  search?: ReactNode;
+  /** Told when the panel goes full page and comes back, so the page can put its own search box away
+   *  while the panel carries one. */
+  onFullChange?: (full: boolean) => void;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -276,6 +293,9 @@ function Distribution({
   const [pageH, setPageH] = useState(0);
   const fullRef = useRef(false);
   fullRef.current = full;
+  const fullChangeRef = useRef(onFullChange);
+  fullChangeRef.current = onFullChange;
+  useEffect(() => { fullChangeRef.current?.(full); }, [full]);
   const panelRef = useRef<HTMLDivElement>(null);
   const placeholderRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
@@ -355,6 +375,18 @@ function Distribution({
     openRef.current = (key) => { const f = found.find((p) => p.person_key === key); return !!f && openFound(f); };
     return () => { openRef.current = null; };
   }, [openRef, found, openFound]);
+  // Whether the dots are on their way somewhere — the fall, a re-stack, the field laid out again for
+  // full page — rather than at rest. A dot in flight has no place to hang a name on.
+  const [moving, setMoving] = useState(false);
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const read = () => setMoving(panel.querySelector('.hero-dots')?.getAttribute('data-settled') === 'false');
+    read();
+    const obs = new MutationObserver(read);
+    obs.observe(panel, { attributes: true, subtree: true, attributeFilter: ['data-settled'] });
+    return () => obs.disconnect();
+  }, [full]);
   // Where each found person's dot is, for the card and the name — read again once a fall or a re-stack
   // has put the dots in their places.
   const [foundAt, setFoundAt] = useState<Map<string, { x: number; y: number; r: number; field: 'main' | 'pile' }>>(() => new Map());
@@ -363,7 +395,7 @@ function Distribution({
     const read = () => {
       const m = new Map<string, { x: number; y: number; r: number; field: 'main' | 'pile' }>();
       for (const f of found) {
-        const at = (f.spot.field === 'main' ? mainDotsRef : pileDotsRef).current?.positionOf(f.spot.index);
+        const at = (f.spot.field === 'main' ? mainDotsRef : pileDotsRef).current?.positionOf(f.spot.index, true);
         if (at) m.set(f.person_key, { ...at, field: f.spot.field });
       }
       setFoundAt(m);
@@ -371,7 +403,11 @@ function Distribution({
     read();
     const soon = window.setTimeout(read, 500), later = window.setTimeout(read, 1300);
     return () => { window.clearTimeout(soon); window.clearTimeout(later); };
-  }, [found, H, plotW, full, colour, shownSolo, bigMain, bigPile]);
+    // `moving` is in here so the positions are read again the moment the dots come to rest: the timers
+    // alone cannot be relied on to catch it. Going full page lays the field out afresh and the dots
+    // travel to their new places — the one on top of the deepest column furthest of all — so the last
+    // timed read could take a dot still in flight, with nothing afterwards to correct it.
+  }, [found, H, plotW, full, colour, shownSolo, bigMain, bigPile, moving]);
 
   // A tapped readout goes at a tap anywhere else.
   useEffect(() => {
@@ -533,9 +569,11 @@ function Distribution({
     if (!el || fullRef.current) return;
     growFromRef.current = el.getBoundingClientRect();
     setPageH(el.offsetHeight);
-    // A first guess at the plot's height from the panel as it is, measured again once it is full.
+    // A first guess at the plot's height from the panel as it is, measured again once it is full — less
+    // the search row, which the panel only carries full page and so is not in the height being read here.
     const pad = phone ? FULL_PAD.phone : FULL_PAD.wide;
-    setFullH(Math.max(baseH, Math.floor(window.innerHeight - 2 * pad - (el.offsetHeight - H))));
+    const furniture = el.offsetHeight - H + (search ? FULL_SEARCH_H : 0);
+    setFullH(Math.max(baseH, Math.floor(window.innerHeight - 2 * pad - furniture)));
     setLensAt(null);
     setHoverIdx(null);
     setTapped(false);
@@ -1267,6 +1305,9 @@ function Distribution({
           {controls}
         </div>
       )}
+      {/* Full page, the page's own search box is behind the scrim, so the panel carries one. It sits
+          above the plot: its list drops downward over the graph, which is the thing being searched. */}
+      {full && search && <div className="hero-dist-search">{search}</div>}
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
       <div
         ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
@@ -1722,6 +1763,27 @@ export default function Home() {
   const [shown, setShown] = useState<ShownPerson[]>([]);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const openRef = useRef<((key: string) => boolean) | null>(null);
+  // The query lives here, not in either search box, because the graph's full page is a portal: going
+  // full page remounts the panel and everything in it. One box is on the page and the other inside the
+  // panel, never both, and each is handed the query the other was holding.
+  const [query, setQuery] = useState('');
+  const [graphFull, setGraphFull] = useState(false);
+  // Only the box the page opens with takes the caret. The one that comes back when full page closes is
+  // a box returning to a page the reader is already looking at, and full page hands focus to its own
+  // exit button, which this would take straight back off it.
+  const firstSearchRef = useRef(true);
+  useEffect(() => { firstSearchRef.current = false; }, []);
+  /** What both boxes share: the one query, the one list of found people, and the one way to open them. */
+  const searchProps = {
+    query,
+    onQueryChange: setQuery,
+    keepFoundOnUnmount: true,
+    onPeopleShown: setShown,
+    onActiveItem: setActiveItem,
+    onPick: (h: { person_key: string; name: string }) => {
+      if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`);
+    },
+  };
   // Who each dot is (lib/homePeople): asked once the search has found someone, by when DuckDB is up.
   const peopleSnap = artifactUsable ? homeStats.snapshot_id : '';
   const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && shown.length > 0);
@@ -1913,6 +1975,8 @@ export default function Home() {
               found={found}
               activeKey={activeItem?.startsWith('p:') ? activeItem.slice(2) : null}
               openRef={openRef}
+              onFullChange={setGraphFull}
+              search={<SearchBox {...searchProps} size="md" placeholder="Search a person on the graph…" />}
               controls={canColour ? (
                 <div className="hero-dist-toggle">
                   <SegmentedToggle
@@ -1925,11 +1989,16 @@ export default function Home() {
             />
           </div>
 
-          <SearchBox
-            size="lg" autoFocus onPeopleShown={setShown} onActiveItem={setActiveItem}
-            keepBelow={() => document.querySelector<HTMLElement>('.hero-dist-main')}
-            onPick={(h) => { if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`); }}
-          />
+          {/* Away while the graph is full page, which carries the same search itself. Its place is not
+              held: the scrim over it is a blur of the page, not a picture of it. */}
+          {!graphFull && (
+            <SearchBox
+              {...searchProps}
+              size="lg"
+              autoFocus={firstSearchRef.current}
+              keepBelow={() => document.querySelector<HTMLElement>('.hero-dist-main')}
+            />
+          )}
 
           {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
               Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}

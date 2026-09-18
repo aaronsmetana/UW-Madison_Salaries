@@ -210,7 +210,10 @@ export interface DotFieldHandle {
    *  wake. */
   burst(x: number, y: number, stir?: Stir | null): boolean;
   /** Where dot `i` is now (the field's CSS px) and a marked dot's radius there; null for a dot not shown. */
-  positionOf(i: number): { x: number; y: number; r: number } | null;
+  /** Where dot `i` is — or, `atRest`, where it is going: its place in the layout rather than the point
+   *  it has reached on the way there. A name hung on a dot in flight points at empty graph until the
+   *  dot catches up, and if it is read once and not read again, it never does. */
+  positionOf(i: number, atRest?: boolean): { x: number; y: number; r: number } | null;
   /** The marked dot nearest `x, y` (the field's CSS px) close enough to be the one pointed at, or null. */
   markAt(x: number, y: number): number | null;
 }
@@ -917,13 +920,15 @@ export const DotField = forwardRef<DotFieldHandle, {
       kickRef.current();
       return true;
     },
-    positionOf(i) {
+    positionOf(i, atRest) {
       const lay = layout;
       const L = live.current;
       if (!lay || !(i >= 0 && i < values.length) || (L.mode && L.mode[i] === GONE)) return null;
       const now = performance.now();
       const big = L.marks.some((m) => m.i === i && m.big);
-      return { x: xOfRef.current(i, now), y: yOfRef.current(i, now), r: markRadius(lay.r, big) };
+      const r = markRadius(lay.r, big);
+      if (atRest) return { x: lay.pts[2 * i], y: lay.pts[2 * i + 1], r };
+      return { x: xOfRef.current(i, now), y: yOfRef.current(i, now), r };
     },
     markAt(x, y) {
       const lay = layout;

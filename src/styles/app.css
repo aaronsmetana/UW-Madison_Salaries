@@ -1875,6 +1875,27 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .hero-dist.hero-dist-full { margin-top: 0; --glass-tint: 88%; }
 /* No page to scroll or zoom there: a finger's drag is the dots' (Home `onMove`). */
 .hero-dist-full .hero-dist-main { touch-action: none; }
+/* The panel's own search, full page only, above the plot. Held to a readable measure and centred, which
+   also keeps it clear of the controls in the top-right corner rather than running under them. */
+.hero-dist-search {
+  /* Its height is fixed, and mirrored by `FULL_SEARCH_H` in routes/Home. Full page works out the plot's
+     height from the panel as it stands on the page, where this row does not exist, so the row's own
+     height has to be a number that reckoning can subtract — and a number, not whatever the input
+     happens to measure, which is a font's business and differs between machines. Out by the row's
+     height, the panel grows from half a row off its own place. */
+  --full-search-h: 42px;
+  width: min(28rem, 100%);
+  height: var(--full-search-h);
+  margin: 0 auto 12px;
+}
+.hero-dist-search input {
+  height: var(--full-search-h);
+  min-height: var(--full-search-h);
+}
+/* Narrow, the controls wrap to their own line above the plot, so the box has the width to itself. */
+@media (max-width: 48em) {
+  .hero-dist-search { width: 100%; }
+}
 /* The panel's place on the page while it is full page, the same height, so nothing below it moves. */
 .hero-dist-placeholder { margin-top: var(--mantine-spacing-lg); }
 .strip-dots { color: var(--mark-peer); }

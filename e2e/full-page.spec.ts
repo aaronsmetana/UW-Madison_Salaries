@@ -38,7 +38,12 @@ test('opens the graph full page over everything, as tall as the window, and puts
   expect(await page.evaluate(() => !!document.elementFromPoint(40, 20)?.closest('.hero-full')), 'the header is over the full page').toBe(true);
   // The plot takes the height, and its dots are laid out for the box they are drawn in.
   const h = await plotHeight(page);
-  expect(h, 'the plot did not grow to the window').toBeGreaterThan(650);
+  // Against the panel it sits in, and against the 375px it had on the page, rather than as a count of
+  // pixels off the window. The plot gets what the window leaves after the panel's own furniture — the
+  // controls, the axis, the legend, the caption, and now a search row that exists only here — so a bare
+  // figure moves whenever that furniture changes and says nothing either way about the plot growing.
+  expect(h, 'the plot did not grow to the window').toBeGreaterThan(1.5 * 375);
+  expect(h / box.height, 'the panel is mostly furniture').toBeGreaterThan(0.7);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   const fit = await page.evaluate(() => {
     const main = document.querySelector('.hero-dist-main')!.getBoundingClientRect();

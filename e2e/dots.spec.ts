@@ -871,13 +871,19 @@ test('full page scales a click\'s hole and a fast drag\'s parting up with the gr
     return page.evaluate(() => {
       const dots = document.querySelector('.hero-full .hero-dots') as HTMLElement | null;
       const main = document.querySelector('.hero-full .hero-dist-main')?.getBoundingClientRect();
-      return !!dots && !!main && main.height > 650 && dots.dataset.settled === 'true' && Math.abs(Number(dots.dataset.width) - main.width) < 0.5;
+      // Taller than half again its 375px on the page: this is waiting for the full-page layout to have
+      // happened, not measuring it, and the exact height depends on what furniture the panel carries.
+      return !!dots && !!main && main.height > 560 && dots.dataset.settled === 'true' && Math.abs(Number(dots.dataset.width) - main.width) < 0.5;
     });
   }, { message: 'the dots were never laid out for the full page' }).toBe(true);
   const full = await measure('full page');
 
   const k = full.h / inPlace.h;
-  expect(k, 'full page is not much taller than the graph in place').toBeGreaterThan(1.8);
+  // The premise of everything below, not a measurement of its own: unless full page is a good deal
+  // taller, dividing by `k` proves nothing about the hole and the parting scaling with the graph. It is
+  // 1.71 now rather than 1.84, because the panel carries a search row full page and the plot gets the
+  // window less the panel's furniture — a change in how much taller, not in whether.
+  expect(k, 'full page is not much taller than the graph in place').toBeGreaterThan(1.6);
   expect(full.hole / inPlace.hole / k, `a click's hole: ${inPlace.hole}px in place, ${full.hole}px on a graph ${k.toFixed(2)} times as tall`)
     .toBeGreaterThan(0.85);
   expect(full.hole / inPlace.hole / k, 'a click\'s hole grew past the graph').toBeLessThan(1.1);
