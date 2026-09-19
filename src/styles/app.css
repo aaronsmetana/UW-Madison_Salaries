@@ -2105,10 +2105,18 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   pointer-events: none;
 }
 .hero-dist-group-flag[data-pending] { color: var(--mantine-color-dimmed); }
-.hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-flag { animation: hero-group-in 200ms ease-out; }
+/* The group's line and median over a casing: the same path, wider, in the panel's own colour, so the dashes
+   cross one quiet channel rather than every colour of dot at once (a large group, like a school of 5,840, is
+   a quarter of the field lit). Not quite solid, so the dots under it dim rather than vanish. */
+.hero-dist-group-casing {
+  stroke: var(--mantine-color-body);
+  stroke-width: var(--group-casing-w, 6px);
+  stroke-opacity: var(--group-casing-a, 0.85);
+}
+.hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: hero-group-in 200ms ease-out; }
 @keyframes hero-group-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-flag { animation: none; }
+  .hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: none; }
 }
 /* A phone's bar: the box and its strip each take a line of their own, above the buttons. A finger swipes
    the strip, so it has no "+N". Mirrored by `FULL_BAR.phone`. */

@@ -412,3 +412,71 @@ for (const scheme of ['dark', 'light'] as const) {
     await ctx.close();
   });
 }
+
+/**
+ * A filter's own line over a large group — the School of Medicine is a quarter of the field lit — crossed
+ * dots of every colour, and read as one more speckle among them. It is drawn over a casing: the same path,
+ * wider, in the panel's own colour, so the dashes cross one quiet channel. Checked where it is drawn: along
+ * the line, the dots' ink is pulled to the panel's colour by the casing's own opacity, and the dashes stand
+ * out from that channel as text does from the page.
+ */
+for (const scheme of ['dark', 'light'] as const) {
+  test(`a filter's line runs in a channel of the panel's own colour through the dots (${scheme})`, async ({ browser }) => {
+    const { ctx, page } = await open(browser, { scheme });
+    await settled(page);
+    await page.locator('.hero-dist-full-toggle').click();
+    await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+    const box = page.locator('.hero-dist-full .search-bar-field input');
+    await box.fill('medicine');
+    await page.locator('.hero-dist-full [role="option"][data-key="d:School of Medicine and Public Health"]').click({ timeout: 60_000 });
+    await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+    await box.blur();
+    await page.mouse.move(1430, 5);
+    await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
+    const curve = page.locator('.hero-dist-full .hero-dist-group-curve');
+    const casing = page.locator('.hero-dist-full .hero-dist-group-casing');
+    // Under the line and under its median, each the same shape as what it is under.
+    await expect(casing).toHaveCount(2);
+    expect(await casing.first().getAttribute('d')).toBe(await curve.getAttribute('d'));
+    expect(await casing.nth(1).getAttribute('x1')).toBe(await page.locator('.hero-dist-full .hero-dist-group-median').getAttribute('x1'));
+    const look = await page.evaluate(() => {
+      const c = getComputedStyle(document.querySelector('.hero-dist-full .hero-dist-group-casing')!);
+      const l = getComputedStyle(document.querySelector('.hero-dist-full .hero-dist-group-curve')!);
+      // The panel's surface, resolved where the panel is: the page behind it is a darker canvas.
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--mantine-color-body)';
+      document.querySelector('.hero-dist-full')!.appendChild(probe);
+      const body = getComputedStyle(probe).color;
+      probe.remove();
+      return { stroke: c.stroke, width: parseFloat(c.strokeWidth), opacity: parseFloat(c.strokeOpacity), line: l.stroke, lineWidth: parseFloat(l.strokeWidth), body };
+    });
+    expect(parseColor(look.stroke).slice(0, 3), 'the casing is not the panel’s colour').toEqual(parseColor(look.body).slice(0, 3));
+    expect(look.width, 'the casing is no wider than the line').toBeGreaterThanOrEqual(look.lineWidth + 3);
+    expect(look.opacity, 'the casing is too faint to quiet the dots').toBeGreaterThanOrEqual(0.8);
+    // Points along the line across the field's crowded middle, and a pixel either side.
+    const main = (await page.locator('.hero-dist-full .hero-dist-main').boundingBox())!;
+    const along = (await curve.evaluate((p: SVGPathElement) => {
+      const L = p.getTotalLength();
+      const m = p.getScreenCTM()!;
+      return Array.from({ length: 240 }, (_, k) => new DOMPoint(p.getPointAtLength((L * (k + 0.5)) / 240).x, p.getPointAtLength((L * (k + 0.5)) / 240).y).matrixTransform(m));
+    })).filter((q) => q.x > main.x + main.width * 0.2 && q.x < main.x + main.width * 0.6 && q.y < main.y + main.height - 4);
+    const pts = along.flatMap((q) => [-2, 0, 2].map((dy) => ({ x: q.x - main.x, y: q.y + dy - main.y })));
+    expect(pts.length, 'too little of the line crosses the field').toBeGreaterThan(90);
+    // What is under the line: the channel, then the dots with no casing.
+    await hide(page, '.hero-dist-full .hero-dist-group-curve, .hero-dist-full .hero-dist-group-median');
+    const channel = await pixels(page, main, pts);
+    await hide(page, '.hero-dist-full .hero-dist-group-casing');
+    const bare = await pixels(page, main, pts);
+    const card = parseColor(look.body);
+    const off = (c: number[]) => Math.hypot(c[0] - card[0], c[1] - card[1], c[2] - card[2]);
+    const inkBare = bare.reduce((t, c) => t + off(c), 0);
+    const inkChannel = channel.reduce((t, c) => t + off(c), 0);
+    expect(inkBare / pts.length, 'no dots under the line to quiet').toBeGreaterThan(12);
+    expect(inkChannel, `the dots' ink under the line is not quieted by the casing (${Math.round(inkChannel)} of ${Math.round(inkBare)})`)
+      .toBeLessThanOrEqual(inkBare * (1 - look.opacity + 0.08));
+    // And the dashes against that channel read as text does.
+    const mean = [0, 1, 2].map((k) => channel.reduce((t, c) => t + c[k], 0) / channel.length);
+    expect(contrast(parseColor(look.line).slice(0, 3), mean), 'the line is faint against its channel').toBeGreaterThanOrEqual(4.5);
+    await ctx.close();
+  });
+}

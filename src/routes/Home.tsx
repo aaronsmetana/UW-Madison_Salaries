@@ -718,6 +718,7 @@ function Distribution({
   const [tailTopAt, setTailTopAt] = useState<{ x: number; y: number; r: number } | null>(null);
   const washGRef = useRef<SVGGElement>(null);
   const plotGRef = useRef<SVGGElement>(null);
+  const groupGRef = useRef<SVGGElement>(null);
   const tailX = useCallback((v: number, width: number) => ((v - curveLo) / Math.max(1, tailTop - curveLo)) * width, [curveLo, tailTop]);
   // A dot's room under the curve, px², so the tail's hill packs its dots as tightly as the graph's.
   const perDot = useMemo(() => {
@@ -782,7 +783,7 @@ function Distribution({
     const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
     const at = (t: number) => st.from + (st.to - st.from) * ease(Math.min(1, Math.max(0, (t - st.start) / MOVE_MS)));
     const set = (f: number) => {
-      for (const g of [washGRef.current, plotGRef.current]) g?.setAttribute('transform', f === 1 ? '' : `scale(${f} 1)`);
+      for (const g of [washGRef.current, plotGRef.current, groupGRef.current]) g?.setAttribute('transform', f === 1 ? '' : `scale(${f} 1)`);
     };
     st.from = at(now);
     st.to = tailSqueeze;
@@ -1523,18 +1524,37 @@ function Distribution({
               onAnimationEnd={() => setSheenOn(false)} />
           </g>
         )}
-        {/* The group's own shape and its median, dashed in the page's text ink: apart from the accent
-            campus curve and from the green of the search's marks, on either scheme. */}
-        {groupLine && (
-          <path className="hero-dist-group-curve" d={groupLine} fill="none" stroke="var(--mantine-color-text)" strokeWidth={1.75}
-            strokeDasharray="6 4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        )}
-        {groupMedianX != null && (
-          <line className="hero-dist-group-median" x1={groupMedianX} x2={groupMedianX} y1={flagBox.h + 4} y2={H}
-            stroke="var(--mantine-color-text)" strokeWidth={1.25} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
-        )}
         </g>
       </svg>
+      {/* The group's own shape and its median, dashed in the page's text ink: apart from the accent campus
+          curve and from the green of the search's marks, on either scheme. Over the dots, in a layer of
+          their own: drawn with the plot, under the field, the dashes only showed in the gaps between dots,
+          and a large group's line broke up into the speckle it crossed. Each over a casing in the panel's
+          own colour, a channel cut through the dots (app.css `.hero-dist-group-casing`). Under the glass,
+          which comes later at the same layer. */}
+      {(groupLine || groupMedianX != null) && (
+        <svg
+          className="hero-dist-group" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden
+          style={{ position: 'absolute', left: 0, top: 0, zIndex: Z.content, pointerEvents: 'none' }}
+        >
+          <g ref={groupGRef}>
+            {groupLine && (
+              <>
+                <path className="hero-dist-group-casing" d={groupLine} fill="none" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <path className="hero-dist-group-curve" d={groupLine} fill="none" stroke="var(--mantine-color-text)" strokeWidth={2.25}
+                  strokeDasharray="6 4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+              </>
+            )}
+            {groupMedianX != null && (
+              <>
+                <line className="hero-dist-group-casing" x1={groupMedianX} x2={groupMedianX} y1={flagBox.h + 4} y2={H} vectorEffect="non-scaling-stroke" />
+                <line className="hero-dist-group-median" x1={groupMedianX} x2={groupMedianX} y1={flagBox.h + 4} y2={H}
+                  stroke="var(--mantine-color-text)" strokeWidth={1.75} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+              </>
+            )}
+          </g>
+        </svg>
+      )}
       {groupFlagText && (
         <div
           ref={flagRef}
