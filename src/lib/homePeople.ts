@@ -27,6 +27,30 @@ export function homePeopleSql(snapshot: string): string {
     GROUP BY person_key`;
 }
 
+/** Who a person is, as the full page's magnifying glass names their dot. */
+export interface HomeName {
+  person_key: string;
+  fn: string;
+  ln: string;
+  title: string | null;
+  school: string | null;
+}
+
+/**
+ * Everyone's name in `snapshot`, with the title and school of the appointment their dot is coloured by:
+ * their highest-paid, ties broken as `homePeopleSql` breaks them. The same rows it counts, so everyone who
+ * has a dot has a name here. Its own query rather than more columns on that one, which runs whenever the
+ * page's search marks someone and inside every filter's (`filterPeopleSql`): this is only asked for once
+ * the glass is up full page.
+ */
+export function homeNamesSql(snapshot: string): string {
+  return `SELECT person_key, first_name AS fn, last_name AS ln, title, school FROM (
+      SELECT person_key, first_name, last_name, title, school,
+             row_number() OVER (PARTITION BY person_key ORDER BY ${ACTUAL_PAY} DESC, coalesce(employee_category, 'Other'), title, school) AS k
+      FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0)
+    WHERE k = 1`;
+}
+
 /** The counts the landing dots are drawn from (`HomeStats['pay_counts']`). */
 export interface PayCounts {
   lo100: number;
@@ -94,6 +118,15 @@ export function dotSpots(people: readonly HomePerson[], pc: PayCounts, cap: numb
     at += cats[c].over;
   }
   return out;
+}
+
+/** `dotSpots` the other way round: whose each dot is, by field and index — so a dot found under the
+ *  pointer, which is only an index, has a person. */
+export function spotPeople(spots: ReadonlyMap<string, DotSpot>): { main: string[]; pile: string[] } {
+  const main: string[] = [];
+  const pile: string[] = [];
+  for (const [key, s] of spots) (s.field === 'main' ? main : pile)[s.index] = key;
+  return { main, pile };
 }
 
 /** A filter on the graph: a title, a school, or a title within a school. */

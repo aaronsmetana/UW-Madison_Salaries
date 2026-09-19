@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, medianOf, topSchoolsForSql, topTitlesInSql, type HomePerson, type PayCounts } from './homePeople';
+import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, medianOf, spotPeople, topSchoolsForSql, topTitlesInSql, type HomePerson, type PayCounts } from './homePeople';
 import { peopleFromCounts } from './dotLayout';
 
 const CAP = 250000;
@@ -174,5 +174,27 @@ describe('the drill-down starters', () => {
     expect(topTitlesInSql('s', "O'Brien")).toContain("school = 'O''Brien'");
     expect(topSchoolsForSql('s', 'X', 0)).toMatch(/LIMIT 1$/);
     expect(topTitlesInSql('s', 'Y', 2.7)).toMatch(/LIMIT 2$/);
+  });
+});
+
+describe('spotPeople', () => {
+  it('names every dot by the person dotSpots put there, and no dot twice', () => {
+    const people = crowd(4000);
+    const spots = dotSpots(people, countsOf(people), CAP)!;
+    const who = spotPeople(spots);
+    for (const [key, s] of spots) expect(who[s.field][s.index]).toBe(key);
+    const named = who.main.filter(Boolean).length + who.pile.filter(Boolean).length;
+    expect(named).toBe(spots.size);
+  });
+});
+
+describe('homeNamesSql', () => {
+  it('reads the rows the dots are counted from, one per person: their highest-paid appointment, tied as the dots tie', () => {
+    const sql = homeNamesSql('2026-03');
+    expect(sql).toContain("snapshot_id = '2026-03'");
+    expect(sql).toContain('salary > 0');
+    // Pay first, then the category the dot takes on a tie (homePeopleSql's `ORDER BY rp DESC, cat`).
+    expect(sql).toMatch(/PARTITION BY person_key ORDER BY .+ DESC, coalesce\(employee_category, 'Other'\)/);
+    expect(sql).toMatch(/WHERE k = 1/);
   });
 });

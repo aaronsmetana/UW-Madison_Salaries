@@ -11,7 +11,7 @@ import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex }
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
 import { binsFromCounts, countBelow, countWithin, groupCounts, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
-import { usd, usdCompact, num, vsCampus } from '../lib/format';
+import { usd, usdCompact, num, vsCampus, fullName } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
 import { measureText, placeNearLabels } from '../lib/labelLayout';
@@ -19,7 +19,7 @@ import { useCountUp, prefersReducedMotion } from '../lib/motion';
 import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { Sparkline } from '../components/chart/Sparkline';
 import { useReveal } from '../components/PersonReveal';
-import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, topSchoolsForSql, topTitlesInSql, type DotSpot, type Emphasis, type HomePerson } from '../lib/homePeople';
+import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotPeople, topSchoolsForSql, topTitlesInSql, type DotSpot, type Emphasis, type HomeName, type HomePerson } from '../lib/homePeople';
 import type { DivisionHit, TitleHit } from '../lib/search';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -164,6 +164,17 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
  */
 const FULL_BAR = { wide: 42 + 8, phone: 42 + 6 + 32 + 6 };
 
+/** A dot's person, as the full page's magnifying glass names them. */
+interface DotWho { key: string; name: string; title: string | null; school: string | null; pay: number | null }
+/** Whose a dot is, by field and index; null for a dot with no one found for it. */
+type WhoIs = (field: 'main' | 'pile', index: number) => DotWho | null;
+/** How close to the glass's centre a dot is named from, past its own radius, CSS px: about a dot, so a
+ *  gap between dots names no one. */
+const WHO_REACH = 1.5;
+/** The caption that names it: a fixed size, so it holds still while the pointer crosses dot after dot. */
+const WHO_W = 264;
+const WHO_H = 60;
+
 /** A filter the full page's bar holds: a title or a school, as the search's index gives them. */
 type GraphFilterItem = { kind: 'title'; hit: TitleHit } | { kind: 'division'; hit: DivisionHit };
 const filterKey = (f: GraphFilterItem) => (f.kind === 'title' ? `t:${f.hit.code}` : `d:${f.hit.school}`);
@@ -200,7 +211,7 @@ const FOUND_CARD_W = 240;
 
 function Distribution({
   bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
-  search, onFullChange, group = null, onPeel, openFullRef,
+  search, onFullChange, group = null, onPeel, openFullRef, whoIs = null, onWantWho,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -235,6 +246,11 @@ function Distribution({
   onPeel?: () => boolean;
   /** Set to open full page from outside the panel: the landing search's "Show on graph". */
   openFullRef?: MutableRefObject<(() => void) | null>;
+  /** Whose a dot is, for the magnifying glass to name full page: 'loading' until the page has looked them
+   *  up, which it does when first asked (`onWantWho`, the first time the glass is up full page); null
+   *  where it cannot. */
+  whoIs?: WhoIs | 'loading' | null;
+  onWantWho?: () => void;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -849,6 +865,21 @@ function Distribution({
     });
   }, [tail, plotW, foundMain, foundAt, activeKey, phone, namesBox]);
 
+  // Full page, the glass names the dot at its centre — the pointer, or the fingertip under a held glass:
+  // the nearest within about a dot of it, and with a filter on, only among the ones it lights. Who the
+  // dots are is looked up the first time the glass is up full page, not before.
+  const glassUp = full && lensAt != null && !tail;
+  const wantWhoRef = useRef(onWantWho);
+  wantWhoRef.current = onWantWho;
+  useEffect(() => { if (glassUp) wantWhoRef.current?.(); }, [glassUp]);
+  const lensDot = glassUp && whoIs ? mainDotsRef.current?.dotAt(lensAt!.x, lensAt!.y, WHO_REACH, { litOnly: !!lit }) ?? null : null;
+  const lensWho = lensDot != null && typeof whoIs === 'function' ? whoIs('main', lensDot) : null;
+  // For the glass's own drawing, which rings the dot it names.
+  const lensWhoRef = useRef<number | null>(null);
+  lensWhoRef.current = lensWho ? lensDot : null;
+  // The names can arrive while the pointer is still: the glass rings the dot then, not on the next move.
+  useEffect(() => { redrawLens(); }, [lensWho?.key, redrawLens]);
+
   if (bins.length < 3) return null;
 
   // 1000 wide, drawn `H` tall (PLOT_H). It was 120, and at the ~848px the panel gave it that was a 7:1
@@ -969,6 +1000,20 @@ function Distribution({
   // The glass sits on a mouse's pointer, or above a finger that holds it up.
   const lensLift = magnify ? -(LENS_D / 2 + HOLD_LIFT) : 0;
   const lensShownY = (lensAt?.y ?? 0) + lensLift;
+  // The caption beside the glass, clear of its readout: to its right, or its left near the plot's right
+  // edge; where neither side has room (a phone), above the glass and its readout, or else below it.
+  const whoPlace = (() => {
+    if (!lensAt || lensDot == null || (!lensWho && whoIs !== 'loading')) return null;
+    const R = LENS_D / 2;
+    const cy = lensShownY;
+    const side = Math.max(0, Math.min(H - WHO_H, cy - WHO_H / 2));
+    if (lensAt.x + R + 8 + WHO_W <= plotW) return { left: lensAt.x + R + 8, top: side };
+    if (lensAt.x - R - 8 - WHO_W >= 0) return { left: lensAt.x - R - 8 - WHO_W, top: side };
+    const left = Math.max(0, Math.min(plotW - WHO_W, lensAt.x - WHO_W / 2));
+    const pillAbove = cy - R - 30 >= 0;
+    const over = (pillAbove ? cy - R - 30 : cy - R) - 6 - WHO_H;
+    return { left, top: over >= 0 ? over : cy + R + (pillAbove ? 0 : 30) + 6 };
+  })();
   // Centred on the readout, then clamped to the plot's own edges. This replaces a pair of magic
   // thresholds (anchor left below 15%, right above 85%) that assumed a pill narrower than the one
   // the percentile made it: at 375px a 224px pill centred at 30% hung 2px off the panel, because
@@ -1371,12 +1416,21 @@ function Distribution({
       ctx.textBaseline = 'middle';
       ctx.fillText(l.text, m.x, m.y);
     }
-    // A faint ring at the centre: where the pointer is.
-    ctx.globalAlpha = 0.4;
+    // The dot the glass names, ringed where the glass puts it (the caption beside it says who); with none
+    // named, a faint ring at the centre: where the pointer is.
+    const named = lensWhoRef.current;
+    const at = named != null ? mainDotsRef.current?.positionOf(named) : null;
     ctx.beginPath();
-    ctx.arc(R, R, 4, 0, Math.PI * 2);
+    if (at) {
+      const m = map(at.x, at.y);
+      ctx.arc(m.x, m.y, 7, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+    } else {
+      ctx.globalAlpha = 0.4;
+      ctx.arc(R, R, 4, 0, Math.PI * 2);
+      ctx.lineWidth = 1;
+    }
     ctx.strokeStyle = tok('--mantine-color-text');
-    ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
   };
@@ -1435,7 +1489,7 @@ function Distribution({
       )}
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
       <div
-        ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} data-sheens={sheen} style={{ position: 'relative' }}
+        ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} data-who={whoIs == null ? 'off' : whoIs === 'loading' ? 'loading' : 'ready'} data-sheens={sheen} style={{ position: 'relative' }}
         data-filter={group?.name} data-group-count={lit?.count} data-group-median={lit?.median ?? undefined}
         data-group-points={groupShape?.curve.length}
         onPointerMove={onMove} onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onLeave(); stirRef.current = null; } }}
@@ -1668,6 +1722,26 @@ function Distribution({
       ))}
       {foundCard('main')}
       {lensAt && <FisheyeLens ref={lensRef} at={lensAt} offsetY={lensLift} draw={drawLens} />}
+      {whoPlace && (
+        <div
+          className="chart-tip hero-lens-who" aria-hidden data-who={lensWho?.key}
+          style={{ position: 'absolute', zIndex: Z.local, pointerEvents: 'none', left: whoPlace.left, top: whoPlace.top, width: WHO_W, height: WHO_H }}
+        >
+          {lensWho ? (
+            <>
+              <div className="hero-lens-who-line">
+                <span className="hero-lens-who-name">{lensWho.name}</span>
+                {lensWho.pay != null && <span className="hero-lens-who-pay">{fmtK(lensWho.pay)}</span>}
+              </div>
+              {/* A line each, so the school — what tells two people of one title apart — is not what is cut. */}
+              {lensWho.title && <div className="hero-lens-who-detail">{lensWho.title}</div>}
+              {lensWho.school && <div className="hero-lens-who-detail">{lensWho.school}</div>}
+            </>
+          ) : (
+            <div className="hero-lens-who-detail">Finding who’s who…</div>
+          )}
+        </div>
+      )}
       </div>
 
 
@@ -2016,13 +2090,32 @@ export default function Home() {
       if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`);
     },
   };
-  // Who each dot is (lib/homePeople): asked once the search has found someone, by when DuckDB is up.
+  // Who each dot is (lib/homePeople): asked once the search has found someone, a filter is on, or the
+  // magnifying glass is first up full page — by when DuckDB is up.
   const peopleSnap = artifactUsable ? homeStats.snapshot_id : '';
-  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && (shown.length > 0 || filters.length > 0));
+  const [wantWho, setWantWho] = useState(false);
+  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && (shown.length > 0 || filters.length > 0 || wantWho));
+  // And their names, for the glass to name a dot with: only once it has been up full page.
+  const { data: homeNames } = useSql<HomeName>(['home-names', peopleSnap], homeNamesSql(peopleSnap), !!peopleSnap && wantWho);
   const spots = useMemo(
     () => (homePeople && artifactUsable && homeStats.pay_counts && homeStats.bin_cap != null ? dotSpots(homePeople, homeStats.pay_counts, homeStats.bin_cap) : null),
     [homePeople, artifactUsable, homeStats],
   );
+  // Whose a dot is, for the glass: 'loading' until both lookups are in, null where the dots cannot be
+  // named at all (a snapshot whose counts carry no categories, so `dotSpots` has nothing to go on).
+  const whoIs = useMemo((): WhoIs | 'loading' | null => {
+    if (!wantWho) return null;
+    if (!homePeople || !homeNames) return 'loading';
+    if (!spots) return null;
+    const at = spotPeople(spots);
+    const names = new Map(homeNames.map((n) => [n.person_key, n]));
+    const pays = new Map(homePeople.map((p) => [p.person_key, p.pay]));
+    return (field, index) => {
+      const key = at[field][index];
+      const n = key ? names.get(key) : undefined;
+      return key && n ? { key, name: fullName(n.fn, n.ln), title: n.title, school: n.school, pay: pays.get(key) ?? null } : null;
+    };
+  }, [wantWho, homePeople, homeNames, spots]);
   // The filter's people, at their dots' pay, and what that lights: one query per filter (cached by its key),
   // mapped onto the dots through the same `spots` the search's marks use.
   const title = filters.find((f): f is { kind: 'title'; hit: TitleHit } => f.kind === 'title')?.hit;
@@ -2289,6 +2382,8 @@ export default function Home() {
                 />
               )}
               openFullRef={openFullRef}
+              whoIs={whoIs}
+              onWantWho={() => setWantWho(true)}
               group={group}
               onPeel={() => {
                 if (!filters.length) return false;

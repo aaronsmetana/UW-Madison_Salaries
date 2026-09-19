@@ -233,6 +233,10 @@ export interface DotFieldHandle {
   positionOf(i: number, atRest?: boolean): { x: number; y: number; r: number } | null;
   /** The marked dot nearest `x, y` (the field's CSS px) close enough to be the one pointed at, or null. */
   markAt(x: number, y: number): number | null;
+  /** Any dot nearest `x, y` (the field's CSS px), where it is now, and no further off than its own radius
+   *  plus `reach`; null in the gaps between dots and in the sky. With `litOnly`, a dot a filter dims is
+   *  passed over: it is the context, not who the filter is about. */
+  dotAt(x: number, y: number, reach: number, o?: { litOnly?: boolean }): number | null;
 }
 
 /** A drag's stir at one point of its path: how hard (0 to 1), and which way the drag goes (a unit vector). */
@@ -1021,6 +1025,28 @@ export const DotField = forwardRef<DotFieldHandle, {
         const reach = markRadius(lay.r, m.big) * 1.6 + 4;
         const d = Math.hypot(xOfRef.current(m.i, now) - x, yOfRef.current(m.i, now) - y);
         if (d < reach && d < bestD) { bestD = d; best = m.i; }
+      }
+      return best;
+    },
+    dotAt(x, y, reach, o) {
+      const lay = layout;
+      const L = live.current;
+      if (!lay) return null;
+      const now = performance.now();
+      const { order, sortedX, r } = lay;
+      // By the laid-out x, widened by how far a thrown dot may be from its place, as the glass reads them.
+      const all = displaced();
+      const j0 = all ? 0 : lowerBound(sortedX, x - reach - r - L.slack);
+      const j1 = all ? order.length : lowerBound(sortedX, x + reach + r + L.slack);
+      const dm = o?.litOnly && L.dim && L.dim.length === values.length ? L.dim : null;
+      let best: number | null = null;
+      let bestD = (r + reach) ** 2;
+      for (let j = j0; j < j1; j++) {
+        const i = order[j];
+        if (L.mode && L.mode[i] === GONE) continue;
+        if (dm && dm[i] === 1) continue;
+        const d = (xOfRef.current(i, now) - x) ** 2 + (yOfRef.current(i, now) - y) ** 2;
+        if (d <= bestD) { bestD = d; best = i; }
       }
       return best;
     },
