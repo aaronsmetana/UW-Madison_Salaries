@@ -289,6 +289,21 @@ test('visual: home full page, filtered', async ({ page }) => {
   await shots(page, 'home-full-filtered', { fullPage: false });
 });
 
+// Searching full page: the list under the box, over the graph while the box is in use, and the people it
+// found marked and named on the graph beside it.
+test('visual: home full page, searching', async ({ page }) => {
+  await page.goto('./');
+  await page.getByText(/\$[\d,]+/).first().waitFor({ timeout: 60_000 }).catch(() => {});
+  await page.getByRole('button', { name: 'Full page' }).click();
+  await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await page.locator('.hero-dist-full .search-bar-field input').fill('aaron');
+  await expect(page.locator('.hero-dist-full .search-bar-list [role="option"][data-kind="person"]')).toHaveCount(8, { timeout: 60_000 });
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  await page.waitForTimeout(600);
+  await shots(page, 'home-full-searching', { fullPage: false });
+});
+
 test('visual: person', async ({ page }) => {
   await page.goto('./');
   const search = page.getByRole('combobox', { name: 'Search a person' });

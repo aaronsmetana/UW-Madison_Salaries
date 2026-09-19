@@ -307,11 +307,16 @@ test('filtering never moves the plot, and nothing it draws lies on a dot', async
     await expect(tokens(page)).toHaveCount(2);
     await page.waitForTimeout(400);
     await check('two filters');
-    // And searching with both on: a strip full of results beside two filters is what could wrap a line.
+    // And searching with both on. Its results drop in a list under the box, which lies on the graph while
+    // the box is in use — that is the list's to answer for (search-bar-list.spec) — and must not move the
+    // plot; once the box is left, nothing of the bar may lie there.
     await bar(page).fill('aaron');
-    await expect(page.locator('.hero-dist-full [role="option"]').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.hero-dist-full .search-bar-list [role="option"]').first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(300);
-    await check('searching with two filters on');
+    expect(await plotShape(page), `${width}px: searching with two filters on moved the plot`).toEqual(before);
+    await bar(page).blur();
+    await check('searching with two filters on, the box left');
+    await bar(page).focus();
     await bar(page).fill('');
     await bar(page).press('Escape');
     await bar(page).press('Escape');

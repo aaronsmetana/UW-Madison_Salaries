@@ -163,6 +163,9 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
  * desktop and a phone.
  */
 const FULL_BAR = { wide: 42 + 8, phone: 42 + 6 + 32 + 6 };
+/** How many people the full page's search lists (and marks) before "More people match": more than the
+ *  page's own box, since its list has the whole window to drop into. */
+const FULL_PAGE_PEOPLE = 8;
 
 /** A dot's person, as the full page's magnifying glass names them. */
 interface DotWho { key: string; name: string; title: string | null; school: string | null; pay: number | null }
@@ -211,7 +214,7 @@ const FOUND_CARD_W = 240;
 
 function Distribution({
   bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
-  search, onFullChange, group = null, onPeel, openFullRef, whoIs = null, onWantWho,
+  search, onFullChange, group = null, onPeel, openFullRef, whoIs = null, onWantWho, searchOpenRef,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -251,6 +254,9 @@ function Distribution({
    *  where it cannot. */
   whoIs?: WhoIs | 'loading' | null;
   onWantWho?: () => void;
+  /** True while the full page's search has its list open over the graph: a press on the graph then only
+   *  puts the list away — the reader was turning back to the graph, not reaching for its dots. */
+  searchOpenRef?: MutableRefObject<boolean>;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -879,6 +885,8 @@ function Distribution({
   lensWhoRef.current = lensWho ? lensDot : null;
   // The names can arrive while the pointer is still: the glass rings the dot then, not on the next move.
   useEffect(() => { redrawLens(); }, [lensWho?.key, redrawLens]);
+  // The press that put the search's list away (`dismissSearch`), so its release is not acted on either.
+  const dismissedRef = useRef<number | null>(null);
 
   if (bins.length < 3) return null;
 
@@ -1054,6 +1062,14 @@ function Distribution({
     return best;
   };
   const clearHold = () => { if (holdRef.current) { window.clearTimeout(holdRef.current.timer); holdRef.current = null; } };
+  // A press while the search's list is open over the graph only puts it away: the box is left, which shuts
+  // the list, and nothing else that press would do — a burst, a tap's, the pile unrolling — is done.
+  const dismissSearch = (e: ReactPointerEvent<HTMLElement>) => {
+    if (!searchOpenRef?.current) return false;
+    dismissedRef.current = e.pointerId;
+    (document.activeElement as HTMLElement | null)?.blur();
+    return true;
+  };
   const endMagnify = (pin: boolean) => {
     if (!magnifyRef.current) return;
     magnifyRef.current = false;
@@ -1132,6 +1148,7 @@ function Distribution({
   // the readout there and ticks the phone — but a finger that moves is scrolling, and the browser takes
   // the gesture (no pointerup reaches here, or a pointercancel does).
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (dismissSearch(e)) return;
     // A press anywhere on an unrolled graph folds it back.
     if (tail) { closeTail(); return; }
     if (e.pointerType === 'mouse') {
@@ -1194,6 +1211,7 @@ function Distribution({
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     stirRef.current = null;
+    if (dismissedRef.current === e.pointerId) { dismissedRef.current = null; return; }
     if (tail) return;
     const press = pressRef.current;
     pressRef.current = null;
@@ -1467,11 +1485,12 @@ function Distribution({
     >
       {(
         <div className="hero-dist-controls">
-          {/* Full page, the page's own search box is behind the scrim, so the panel carries one: the box and
-              a strip of its results, leading the line of controls above the plot. The results sit on that
-              line as chips rather than dropping over the graph, so nothing the search draws lies on the
-              thing being searched, at any size, and typing never changes the plot's size. First in the
-              DOM as on screen, so the focus order is the order the line is read in. */}
+          {/* Full page, the page's own search box is behind the scrim, so the panel carries one, leading the
+              line of controls above the plot: the box, with starters beside it while nothing is typed, and
+              its results in a list under it while it is in use. The list lies over the graph only then — it
+              goes when the reader turns back to the graph, and a press that puts it away does nothing else
+              (`searchOpenRef`) — and it never changes the plot's size. First in the DOM as on screen, so the
+              focus order is the order the line is read in. */}
           {full && search && <div className="hero-dist-search">{search}</div>}
           {/* The fall into place again; nothing to play under reduced motion. */}
           {motion && (phone ? (
@@ -1768,7 +1787,9 @@ function Distribution({
               setHoverPile(true);
             }}
             onPointerLeave={() => { setHoverPile(false); setCard((c) => (c?.pinned ? c : null)); }}
+            onPointerDown={(e) => { dismissSearch(e); }}
             onPointerUp={(e) => {
+              if (dismissedRef.current === e.pointerId) { dismissedRef.current = null; return; }
               if (tail) { closeTail(); return; }
               const f = markHit('pile', e);
               // Anywhere else on the pile unrolls it.
@@ -2178,6 +2199,8 @@ export default function Home() {
     return (topSchools ?? []).flatMap((r) => { const row = bySchool.get(r.school); return row ? [asSchool(row)] : []; });
   }, [searchIndex, title, school, topTitles, topSchools]);
   const openFullRef = useRef<(() => void) | null>(null);
+  // Whether the full page's search has its list open over the graph (SearchBox `onListOpen`).
+  const searchOpenRef = useRef(false);
   const tokens = useMemo<FilterToken[]>(() => filters.map((f) => ({
     key: filterKey(f),
     kind: f.kind,
@@ -2372,7 +2395,16 @@ export default function Home() {
                 <SearchBox
                   {...searchProps}
                   size="md"
-                  results="strip"
+                  results="bar"
+                  peopleInGroup={FULL_PAGE_PEOPLE}
+                  onListOpen={(open) => { searchOpenRef.current = open; }}
+                  // On a phone the list is as wide as the graph: it stops halfway down the plot, so the rest
+                  // stays in sight — the marks landing as the reader types — and a tap there puts it away.
+                  listLimit={() => {
+                    if (!window.matchMedia('(max-width: 30em)').matches) return null;
+                    const plot = document.querySelector('.hero-dist-full .hero-dist-main')?.getBoundingClientRect();
+                    return plot ? plot.top + plot.height / 2 : null;
+                  }}
                   placeholder="Search a person, title or school…"
                   tokens={tokens}
                   onRemoveToken={takeFilter}
@@ -2384,6 +2416,7 @@ export default function Home() {
               openFullRef={openFullRef}
               whoIs={whoIs}
               onWantWho={() => setWantWho(true)}
+              searchOpenRef={searchOpenRef}
               group={group}
               onPeel={() => {
                 if (!filters.length) return false;

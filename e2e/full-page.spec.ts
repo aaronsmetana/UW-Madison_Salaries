@@ -70,12 +70,13 @@ test('opens the graph full page over everything, as tall as the window, and puts
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow), 'the page under the full page is not locked').toBe('hidden');
   const axe = await new AxeBuilder({ page }).include('.hero-full').analyze();
   expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
-  // And with results on the bar: chips are options in a listbox beside a combobox, and every kind of
-  // chip gets scanned — people for one query, titles and a school for the other.
+  // And with results under the bar: rows are options in a listbox under a combobox, and every kind of row
+  // gets scanned — people for one query, titles and a school for the other. Waited for in the list itself:
+  // the starters beside an empty box are options too, and are on screen before the typing has settled.
   const bar = page.locator('.hero-full .hero-dist-search input');
   for (const q of ['aaron', 'medicine']) {
     await bar.fill(q);
-    await expect(page.locator('.hero-full [role="option"]').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.hero-full .search-bar-list [role="option"]').first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(300);
     const scan = await new AxeBuilder({ page }).include('.hero-full').analyze();
     expect(scan.violations.map((v) => `${v.id}: ${v.nodes.length}`), `with "${q}" on the bar`).toEqual([]);

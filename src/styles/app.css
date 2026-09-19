@@ -1888,10 +1888,10 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 /* No page to scroll or zoom there: a finger's drag is the dots' (Home `onMove`). */
 .hero-dist-full .hero-dist-main { touch-action: none; }
 /* Full page the controls are a bar across the top of the panel, in the flow and led by the search: the
-   box, its results as a strip of chips, then the buttons. Anything that floated over the plot — a menu
-   under the box, wherever the box was put — lay on the graph being searched. On a line of its own at a
-   fixed height, nothing typed or shown in it covers a dot or moves the plot. The heights here are
-   mirrored by `FULL_BAR` in routes/Home, which subtracts them from the window before the panel grows. */
+   box, its filters and starters, then the buttons. On a line of its own at a fixed height, nothing on it
+   covers a dot or moves the plot. What the box finds drops in a list under it (`.search-bar-list`), which
+   does lie on the graph — so only while the box is in use. The heights here are mirrored by `FULL_BAR` in
+   routes/Home, which subtracts them from the window before the panel grows. */
 .hero-dist-full .hero-dist-controls {
   --full-bar-h: 42px;
   --full-bar-gap: 8px;
@@ -1924,7 +1924,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   background-color: transparent;
   border-color: var(--hairline);
 }
-/* The results: one line that scrolls sideways, its scrollbar hidden, faded at an edge with more past it. */
+/* The starters: one line that scrolls sideways, its scrollbar hidden, faded at an edge with more past it. */
 .search-strip {
   position: relative;
   flex: 1 1 auto;
@@ -2118,8 +2118,8 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: none; }
 }
-/* A phone's bar: the box and its strip each take a line of their own, above the buttons. A finger swipes
-   the strip, so it has no "+N". Mirrored by `FULL_BAR.phone`. */
+/* A phone's bar: the box and its starters each take a line of their own, above the buttons. A finger
+   swipes the strip, so it has no "+N". Mirrored by `FULL_BAR.phone`. */
 @media screen and (max-width: 30em) {
   .hero-dist-full .hero-dist-controls { height: auto; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; justify-content: flex-end; }
   .hero-dist-full .hero-dist-search { flex: 1 1 100%; height: auto; }
@@ -2447,3 +2447,19 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .hero-lens-who-name { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hero-lens-who-pay { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hero-lens-who-detail { font-size: 11.5px; line-height: 1.3; color: var(--mantine-color-dimmed); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Full page, the bar's results: a list under the box, over the graph only while the box is in use
+   (SearchBox `bar`); it goes when the reader turns back to the graph, the query and its marks staying.
+   Placed and sized by the box (`listPlace`): under its left edge, no wider than the panel and no taller than
+   the room left in it, past which it scrolls. A container, so the grouped list takes its one column. */
+.search-bar { position: relative; }
+.search-bar-list {
+  position: absolute;
+  z-index: var(--z-sticky);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  container-type: inline-size;
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: var(--shadow-merged-card);
+}

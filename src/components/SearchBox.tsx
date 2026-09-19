@@ -17,6 +17,9 @@ import { prefersReducedMotion } from '../lib/motion';
 
 /** How much room a list kept below its box (`keepBelow`) is given, px, by scrolling the page if need be. */
 const BELOW_ROOM = 320;
+/** The bar's list is at least this wide, px, even under a narrower box: a person's row holds a name, a pay,
+ *  and their title and school under them. */
+const BAR_LIST_MIN_W = 384;
 
 /** One matched person in one snapshot — the people query returns a row per person per snapshot. */
 interface HitRow {
@@ -162,6 +165,8 @@ export function SearchBox({
   onRemoveToken,
   starters,
   onShowOnGraph,
+  onListOpen,
+  listLimit,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -197,26 +202,35 @@ export function SearchBox({
    *  only swapping one box for another. Without it the handover to full page blanks every marked dot
    *  until the new box's query comes back. */
   keepFoundOnUnmount?: boolean;
-  /** Where the results go. `list` drops them under the box in a floating menu. `strip` lays them out
-   *  beside it on one line, as chips — for a box that sits over something the reader is looking at (the
-   *  graph full page), where a menu would lie on top of it however it was placed. */
-  results?: 'list' | 'strip';
-  /** Filters in force, drawn between the box and its strip (strip only). The last goes with Backspace in
+  /** Where the results go. `list` drops them under the box in a floating menu. `bar` is a box on a line of
+   *  controls over something the reader is looking at (the graph full page): its results drop under it in
+   *  a list only while the box is in use — typed into and focused — and go the moment the reader turns back
+   *  to the graph, the query and what it marked staying. With nothing typed, the line beside the box offers
+   *  starters as chips (`starters`). */
+  results?: 'list' | 'bar';
+  /** Filters in force, drawn between the box and its starters (bar only). The last goes with Backspace in
    *  an empty box, or with Escape once the box is empty. */
   tokens?: readonly FilterToken[];
   onRemoveToken?: (key: string) => void;
-  /** What the strip offers while nothing is typed (strip only): titles and divisions to put on with one
-   *  press, so an empty line says what the bar can do rather than nothing. Options like any result. */
+  /** What the bar offers while nothing is typed (bar only): titles and divisions to put on with one press,
+   *  as chips on the box's line, so an empty line says what the bar can do rather than nothing. */
   starters?: readonly SearchPick[];
   /** Offered on every title and division row of the list (list only), beside opening its page: show it on
    *  the graph instead. A pointer presses it; the keyboard has Shift+Enter on the row. */
   onShowOnGraph?: (pick: SearchPick) => void;
+  /** Told whether the bar's list is open (bar only): while it is, a press on what it lies over should only
+   *  put it away. */
+  onListOpen?: (open: boolean) => void;
+  /** The lowest the bar's list may reach, px from the window's top, where the page wants some of what it
+   *  lies over left in sight (a phone's graph, under a list as wide as it); null for no limit but the
+   *  panel's. Past it the list scrolls. */
+  listLimit?: () => number | null;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
   const narrow = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const large = size === 'lg';
-  const strip = results === 'strip';
+  const bar = results === 'bar';
   const grouped = kinds.some((k) => k !== 'people');
   const wantPeople = kinds.includes('people');
   // Held here unless the parent holds it. The landing page owns its query so the graph's full page can
@@ -236,12 +250,16 @@ export function SearchBox({
   const [debounced] = useDebouncedValue(term, 200);
   const q = debounced.trim().toLowerCase();
   const enabled = q.length >= 2;
-  const peopleLimit = grouped ? peopleInGroup + 1 : 25;
+  // Handed a query by the page's own box, the bar asks for as many people as that box did until the reader
+  // turns to it: the same question, answered at once from what that box was just told, so the people it
+  // marked on the graph carry straight over rather than blinking out while a bigger answer comes.
+  const inGroup = bar && handed ? GROUP_LIMIT.people : peopleInGroup;
+  const peopleLimit = grouped ? inGroup + 1 : 25;
 
   // Fetched on first focus — on the landing page that is the page load, since its box is autofocused. A
-  // strip is on screen from the moment it mounts, so it does not wait to be focused.
+  // bar is on screen from the moment it mounts, so it does not wait to be focused.
   const [focused, setFocused] = useState(autoFocus);
-  const { data: index } = useSearchIndex((focused || strip) && grouped);
+  const { data: index } = useSearchIndex((focused || bar) && grouped);
   const titles = useMemo(() => (kinds.includes('titles') ? matchTitles(index, q) : []), [kinds, index, q]);
   const divisions = useMemo(() => (kinds.includes('divisions') ? matchDivisions(index, q) : []), [kinds, index, q]);
 
@@ -271,7 +289,12 @@ export function SearchBox({
     ),
     enabled && wantPeople
   );
-  const primaryHits = useMemo(() => (primaryRows ? toPeople(primaryRows) : undefined), [primaryRows]);
+  // A bigger answer to the same query — the bar asking for its own number once it is turned to — keeps the
+  // last one up while it comes, so the people it marks stay put.
+  const lastRows = useRef<{ q: string; rows: HitRow[] } | null>(null);
+  if (primaryRows) lastRows.current = { q, rows: primaryRows };
+  const rows = primaryRows ?? (lastRows.current?.q === q ? lastRows.current.rows : undefined);
+  const primaryHits = useMemo(() => (rows ? toPeople(rows) : undefined), [rows]);
 
   // Typo fallback: only runs once the exact-match query has settled with zero hits. Uses DuckDB's
   // built-in Jaro-Winkler similarity against the full display name; > 0.86 keeps it to near-misses
@@ -321,13 +344,13 @@ export function SearchBox({
   const nav = useNavigate();
 
   const people = useMemo(() => (usingFuzzy ? fuzzyHits : (primaryHits ?? [])), [usingFuzzy, fuzzyHits, primaryHits]);
-  const peopleShown = grouped ? people.slice(0, peopleInGroup) : people;
-  const morePeople = grouped && people.length > peopleInGroup;
+  const peopleShown = grouped ? people.slice(0, inGroup) : people;
+  const morePeople = grouped && people.length > inGroup;
 
   // Keyboard navigation for the autocomplete (combobox semantics): one flat list across the groups,
   // in the order they are drawn.
-  // With nothing typed, a strip's options are its starters, reached by the same keys and picked the same way.
-  const showStarters = strip && !enabled && !!starters?.length;
+  // With nothing typed, a bar's options are its starters, reached by the same keys and picked the same way.
+  const showStarters = bar && !enabled && !!starters?.length;
   const items = useMemo<Item[]>(
     () => showStarters
       ? starters!.map((s): Item => (s.kind === 'title'
@@ -340,8 +363,12 @@ export function SearchBox({
       ],
     [showStarters, starters, peopleShown, titles, divisions]
   );
-  // A strip covers nothing, so it has no reason to hold its results back from a query it was handed.
-  const opened = (enabled && (strip || !handed)) || showStarters;
+  // The bar's list lies over the graph, so it is open only while the box is in use: typed into and focused,
+  // and not holding a query it was handed and has not been turned to. It goes the moment the reader turns
+  // back to the graph; the query stays, and so do the people it marked there.
+  // And only while there is text to answer: emptied, it shuts at once rather than a debounce later.
+  const listOpen = bar && enabled && term.trim().length >= 2 && focused && !handed;
+  const opened = bar ? listOpen || showStarters : enabled && !handed;
 
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
@@ -412,6 +439,41 @@ export function SearchBox({
     if (by > 0) window.scrollBy({ top: by, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [opened]);
 
+  // The bar's list: told to the page as it opens and shuts, and placed under the box — as wide as the box
+  // or `BAR_LIST_MIN_W`, and no further down than the panel it is in, or the screen above a phone's
+  // keyboard (`visualViewport`); past that it scrolls. Measured as it opens and as the window changes.
+  const listOpenRef = useRef(onListOpen);
+  listOpenRef.current = onListOpen;
+  const listLimitRef = useRef(listLimit);
+  listLimitRef.current = listLimit;
+  useEffect(() => { listOpenRef.current?.(listOpen); }, [listOpen]);
+  useEffect(() => () => listOpenRef.current?.(false), []);
+  const barRef = useRef<HTMLDivElement>(null);
+  const barInputRef = useRef<HTMLInputElement>(null);
+  const [listPlace, setListPlace] = useState<{ top: number; left: number; width: number; room: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!listOpen) return;
+    const measure = () => {
+      const input = barInputRef.current;
+      const row = barRef.current;
+      if (!input || !row) return;
+      const ib = input.getBoundingClientRect();
+      const rb = row.getBoundingClientRect();
+      const pb = (row.closest('.hero-dist') ?? document.body).getBoundingClientRect();
+      const vv = window.visualViewport;
+      const bottom = Math.min(pb.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight, listLimitRef.current?.() ?? Infinity);
+      const width = Math.min(Math.max(ib.width, BAR_LIST_MIN_W), pb.right - ib.left - 8);
+      setListPlace({ top: ib.bottom - rb.top + 4, left: ib.left - rb.left, width, room: Math.max(120, Math.floor(bottom - ib.bottom - 16)) });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.visualViewport?.removeEventListener('resize', measure);
+    };
+  }, [listOpen]);
+
   // The strip scrolls sideways. What it knows of its edges: whether it has been scrolled off its start,
   // and how many chips still run past its end — the "+N" a pointer can press to reach them. The keys
   // take it past the edge by themselves (the active chip is scrolled into view).
@@ -427,14 +489,14 @@ export function SearchBox({
     setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
   }, []);
   useLayoutEffect(() => {
-    if (!strip) return;
+    if (!bar) return;
     measureStrip();
     const el = stripRef.current;
     if (!el) return;
     const ro = new ResizeObserver(measureStrip);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [strip, measureStrip, itemKeys, opened, peopleBusy]);
+  }, [bar, measureStrip, itemKeys, opened, peopleBusy]);
   // Titles that share a name are told apart by their code; one that is alone does not need it.
   const titleNames = useMemo(() => {
     const m = new Map<string, number>();
@@ -540,12 +602,16 @@ export function SearchBox({
     'data-key': it.key,
     onMouseEnter: () => { setActive(i); setMoved(true); },
     onClick: () => select(it),
+    // In the bar the box keeps the focus, as a combobox does: a press on a row that took it would shut the
+    // list before the press landed, and the keys reach every row from the box.
+    ...(bar ? { tabIndex: -1, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {}),
     px: 10,
     py: t.rowPad,
     style: rowStyle(i),
   });
 
-  const personRow = (h: PersonHit, i: number) => {
+  // `compact`, in the bar's list: no pay path, and the pay in thousands — a narrower list over the graph.
+  const personRow = (h: PersonHit, i: number, compact = false) => {
     const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
     const multiAppt = (h.latest_appts ?? 0) > 1; // only flag roles held in the latest snapshot
     // Departed employees read in the muted ink with a "Former" badge. They used to be faded to 55% as
@@ -594,9 +660,9 @@ export function SearchBox({
               the sparkline beside it is decoration. */}
           {h.pay != null && (
             <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
-              <Sparkline points={h.series} breaks={h.breaks} stroke={inactive ? 'var(--mantine-color-dimmed)' : undefined} />
+              {!compact && <Sparkline points={h.series} breaks={h.breaks} stroke={inactive ? 'var(--mantine-color-dimmed)' : undefined} />}
               <Text fz={t.subFont} fw={600} c={inactive ? 'dimmed' : undefined} className="search-pay" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                {inactive ? `last ${usd(h.pay)}` : usd(h.pay)}
+                {(inactive ? 'last ' : '') + (compact ? fmtK(h.pay) : usd(h.pay))}
               </Text>
             </Group>
           )}
@@ -647,12 +713,75 @@ export function SearchBox({
   const empty = items.length === 0 && !peopleBusy;
   const placeholderText = placeholder ?? (grouped ? (narrow ? 'Name, title or division…' : 'Search people, titles or divisions…') : 'Search a person…');
 
-  if (strip) {
-    // One line of chips beside the box instead of a menu under it. The chips are the same options in
-    // the same order, the keys and the pointer drive the same `active`, and a pick does the same thing —
-    // only where they are drawn differs, which is the whole point: they sit on the box's own line and
-    // lie over nothing. Notes (searching, no match, more) sit outside the listbox, which holds options.
-    const shown = opened && items.length > 0;
+  // The results under the box — the page's menu, or the bar's list: nothing found; the people, titles and
+  // divisions in labelled groups; or, where the box takes only people, a plain list of them.
+  const listBody = (compact: boolean) => (
+    <>
+      {empty ? (
+        <Text size="sm" c="dimmed" px="md" py={10}>
+          No matches for “{debounced}”.
+        </Text>
+      ) : grouped ? (
+        // Grouped: People, then Titles, then Divisions, each a labelled group of options. Where the
+        // box is wide, people take the left column and titles and divisions the right, so all three
+        // show without scrolling (app.css, .search-groups).
+        // A listbox only once it holds an option: while the first people are still being found, the list is
+        // a status with nothing to choose, and a listbox of none is a broken one to a screen reader.
+        <div className="search-groups" style={{ padding: t.island }} role={items.length ? 'listbox' : undefined} id={listId} aria-label={items.length ? 'Search results' : undefined}>
+          {showPeopleGroup && (
+            <div role="group" aria-labelledby={`${listId}-people`} className="search-group" data-group="people">
+              <GroupLabel id={`${listId}-people`}>{usingFuzzy ? 'People — no exact match, did you mean' : 'People'}</GroupLabel>
+              {nPeople === 0 && peopleBusy && (
+                <Group gap={8} px={10} py={t.rowPad} className="search-status">
+                  <Loader size={12} />
+                  <Text fz={t.subFont} c="dimmed">Searching people…{pendingEnter != null ? ' Enter opens the first match once they arrive.' : ''}</Text>
+                </Group>
+              )}
+              {peopleShown.map((h, i) => personRow(h, i, compact))}
+              {morePeople && (
+                <Text fz={t.subFont} c="dimmed" px={10} py={4} className="search-status">
+                  More people match — keep typing to narrow them.
+                </Text>
+              )}
+            </div>
+          )}
+          {(titles.length > 0 || divisions.length > 0) && (
+          <div role="presentation" className="search-side">
+          {titles.length > 0 && (
+            <div role="group" aria-labelledby={`${listId}-titles`} className="search-group" data-group="titles">
+              <GroupLabel id={`${listId}-titles`}>Titles</GroupLabel>
+              {titles.map((h, j) => titleRow(h, nPeople + j))}
+            </div>
+          )}
+          {divisions.length > 0 && (
+            <div role="group" aria-labelledby={`${listId}-divisions`} className="search-group" data-group="divisions">
+              <GroupLabel id={`${listId}-divisions`}>Divisions</GroupLabel>
+              {divisions.map((h, j) => divisionRow(h, nPeople + titles.length + j))}
+            </div>
+          )}
+          </div>
+          )}
+        </div>
+      ) : items.length > 0 ? (
+        // Island buffer; rows are rounded chips inset from the walls + clear of the scrollbar.
+        <Stack gap={1} p={t.island} role="listbox" id={listId}>
+          {usingFuzzy && (
+            <Text size="xs" c="dimmed" fs="italic" px={10} pt={6} pb={2}>
+              No exact match — did you mean:
+            </Text>
+          )}
+          {peopleShown.map((h, i) => personRow(h, i, compact))}
+        </Stack>
+      ) : null}
+    </>
+  );
+
+  if (bar) {
+    // With nothing typed, the box's line offers starters as chips, which lie over nothing. Typed into, the
+    // box drops its results in a list under it, over the graph — only while it is in use (`listOpen`).
+    // Chips and rows are the same kind of option: the keys and the pointer drive the same `active`, and a
+    // pick does the same thing.
+    const expanded = listOpen || (showStarters && items.length > 0);
     const chip = (it: Item, i: number) => {
       const props = {
         id: optId(i),
@@ -697,8 +826,9 @@ export function SearchBox({
       );
     };
     return (
-      <div className="search-bar">
+      <div ref={barRef} className="search-bar">
         <TextInput
+          ref={barInputRef}
           className="search-bar-field"
           size={t.mantineSize}
           radius={t.radius}
@@ -708,17 +838,32 @@ export function SearchBox({
           onChange={(e) => setTerm(e.currentTarget.value)}
           onKeyDown={onKeyDown}
           onFocus={() => { setFocused(true); setHanded(false); }}
+          // Left for the graph (or anywhere): the list goes, the query and its marks stay.
+          onBlur={() => setFocused(false)}
           rightSection={peopleBusy ? <Loader size="sm" /> : null}
           aria-label={grouped ? 'Search a person, title or division' : 'Search a person'}
           role="combobox"
-          aria-expanded={shown}
+          aria-expanded={expanded}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-activedescendant={shown ? optId(active) : undefined}
+          aria-activedescendant={expanded && items.length > 0 ? optId(active) : undefined}
           data-autofocus={autoFocus || undefined}
           autoFocus={autoFocus}
           styles={{ input: { fontSize: t.inputFont } }}
         />
+        {listOpen && (
+          <div
+            className="search-bar-list"
+            // A press on the list's own padding or scrollbar keeps the focus in the box, which would
+            // otherwise leave it and put the list away from under the pointer.
+            onMouseDown={(e) => e.preventDefault()}
+            style={listPlace
+              ? { top: listPlace.top, left: listPlace.left, width: listPlace.width, maxHeight: listPlace.room }
+              : { visibility: 'hidden' }}
+          >
+            {listBody(true)}
+          </div>
+        )}
         {tokens && tokens.length > 0 && (
           <div className="search-tokens">
             {tokens.map((tk) => (
@@ -751,17 +896,11 @@ export function SearchBox({
           }}
         >
           {showStarters && <span className="search-strip-note">Try</span>}
-          {opened && usingFuzzy && <span className="search-strip-note">Did you mean</span>}
-          {opened && peopleBusy && nPeople === 0 && (
-            <span className="search-strip-note"><Loader size={12} /> Searching people…</span>
-          )}
-          {shown && (
+          {showStarters && items.length > 0 && (
             <div role="listbox" id={listId} aria-label="Search results" className="search-strip-list">
               {items.map((it, i) => chip(it, i))}
             </div>
           )}
-          {opened && empty && <span className="search-strip-note">No matches for “{debounced}”.</span>}
-          {opened && morePeople && <span className="search-strip-note">More people match — keep typing</span>}
         </div>
         {edges.right > 0 && (
           // For a pointer only: the keys already reach every chip, and a reader of the listbox has them all.
@@ -880,60 +1019,7 @@ export function SearchBox({
           boxShadow: CARD_SHADOW,
         }}
       >
-        {empty ? (
-          <Text size="sm" c="dimmed" px="md" py={10}>
-            No matches for “{debounced}”.
-          </Text>
-        ) : grouped ? (
-          // Grouped: People, then Titles, then Divisions, each a labelled group of options. Where the
-          // box is wide, people take the left column and titles and divisions the right, so all three
-          // show without scrolling (app.css, .search-groups).
-          <div className="search-groups" style={{ padding: t.island }} role="listbox" id={listId} aria-label="Search results">
-            {showPeopleGroup && (
-              <div role="group" aria-labelledby={`${listId}-people`} className="search-group" data-group="people">
-                <GroupLabel id={`${listId}-people`}>{usingFuzzy ? 'People — no exact match, did you mean' : 'People'}</GroupLabel>
-                {nPeople === 0 && peopleBusy && (
-                  <Group gap={8} px={10} py={t.rowPad} className="search-status">
-                    <Loader size={12} />
-                    <Text fz={t.subFont} c="dimmed">Searching people…{pendingEnter != null ? ' Enter opens the first match once they arrive.' : ''}</Text>
-                  </Group>
-                )}
-                {peopleShown.map((h, i) => personRow(h, i))}
-                {morePeople && (
-                  <Text fz={t.subFont} c="dimmed" px={10} py={4} className="search-status">
-                    More people match — keep typing to narrow them.
-                  </Text>
-                )}
-              </div>
-            )}
-            {(titles.length > 0 || divisions.length > 0) && (
-            <div role="presentation" className="search-side">
-            {titles.length > 0 && (
-              <div role="group" aria-labelledby={`${listId}-titles`} className="search-group" data-group="titles">
-                <GroupLabel id={`${listId}-titles`}>Titles</GroupLabel>
-                {titles.map((h, j) => titleRow(h, nPeople + j))}
-              </div>
-            )}
-            {divisions.length > 0 && (
-              <div role="group" aria-labelledby={`${listId}-divisions`} className="search-group" data-group="divisions">
-                <GroupLabel id={`${listId}-divisions`}>Divisions</GroupLabel>
-                {divisions.map((h, j) => divisionRow(h, nPeople + titles.length + j))}
-              </div>
-            )}
-            </div>
-            )}
-          </div>
-        ) : items.length > 0 ? (
-          // Island buffer; rows are rounded chips inset from the walls + clear of the scrollbar.
-          <Stack gap={1} p={t.island} role="listbox" id={listId}>
-            {usingFuzzy && (
-              <Text size="xs" c="dimmed" fs="italic" px={10} pt={6} pb={2}>
-                No exact match — did you mean:
-              </Text>
-            )}
-            {peopleShown.map((h, i) => personRow(h, i))}
-          </Stack>
-        ) : null}
+        {listBody(false)}
       </Popover.Dropdown>
     </Popover>
   );
