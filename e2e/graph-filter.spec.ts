@@ -39,6 +39,7 @@ const xOf = (v: number) => ((v - LO) / (HI - LO)) * 1000;
 /** The search's index of titles, as the page loads it. */
 const INDEX = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/search-index.json', import.meta.url)), 'utf8')) as {
   titles: [string, string | null, number, number | null][];
+  divisions: [string, number, number | null][];
 };
 /** A title as a filter names it: with its code, where another title in the index has the same name —
  *  "Research Associate" is PD012 and PD012N, and picked, the filter must still say which. */
@@ -399,4 +400,118 @@ test('with two filters on, the bar and the group’s label pass a strict accessi
   await expect(page.locator('.hero-dist-group-flag')).toBeVisible();
   const axe = await new AxeBuilder({ page }).include('.hero-full').analyze();
   expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+});
+
+/** The options the full page's strip is showing, by key. */
+const stripKeys = (page: Page) => page.locator('.hero-dist-full [role="option"]').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.key));
+
+/**
+ * With nothing typed the strip is not empty: it offers groups to put on. Nothing on, the index's largest
+ * schools and titles, turn about; a school on, the titles most of its people are paid in; a title on, the
+ * schools that pay most of it; both on, nothing left to add. Each restated here from its rule.
+ */
+test('with nothing typed the strip offers groups to filter by, and what it offers follows the filters', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fullPage(page);
+  const byN = <T extends [string, ...unknown[]]>(n: (r: T) => number) => (a: T, b: T) => n(b) - n(a) || (a[0] < b[0] ? -1 : 1);
+  const schools = [...INDEX.divisions].sort(byN((r) => r[1])).slice(0, 3).map((r) => `d:${r[0]}`);
+  const titles = [...INDEX.titles].filter((r) => r[1]).sort(byN((r) => r[2])).slice(0, 3).map((r) => `t:${r[0]}`);
+  await expect.poll(() => stripKeys(page), { message: 'nothing on: not the largest schools and titles', timeout: 30_000 })
+    .toEqual(schools.flatMap((s, i) => [s, titles[i]]));
+  await expect(page.locator('.search-strip-note', { hasText: 'Try' })).toBeVisible();
+
+  // A school on: the titles most of its people are paid in, as far as the index knows them.
+  await page.locator(`.hero-dist-full [role="option"][data-key="d:${SCHOOL}"]`).click();
+  await expect(tokens(page)).toHaveText([SCHOOL]);
+  const inSchool = await oracle<{ code: string }>(
+    `SELECT job_code code FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND school = '${SCHOOL}'
+     GROUP BY job_code ORDER BY count(DISTINCT person_key) DESC, job_code LIMIT 5`,
+  );
+  const known = new Set(INDEX.titles.map((r) => r[0]));
+  await expect.poll(() => stripKeys(page), { message: 'a school on: not its largest titles', timeout: 60_000 })
+    .toEqual(inSchool.filter((r) => known.has(r.code)).map((r) => `t:${r.code}`));
+
+  // Pressing one puts it on beside the school: both on, and nothing more to offer.
+  const first = inSchool.find((r) => known.has(r.code))!.code;
+  await page.locator(`.hero-dist-full [role="option"][data-key="t:${first}"]`).click();
+  await expect(tokens(page)).toHaveCount(2);
+  await expect.poll(() => stripKeys(page), { message: 'both on, and still offering more' }).toEqual([]);
+  await expect(page.locator('.search-strip-note', { hasText: 'Try' })).toHaveCount(0);
+
+  // The school off, the title alone: the schools that pay most of it. Reached by the keys, and put on with Enter.
+  await page.getByRole('button', { name: `Remove filter: ${SCHOOL}` }).click();
+  const forTitle = await oracle<{ school: string }>(
+    `SELECT school FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND job_code = '${first}' AND school IS NOT NULL
+     GROUP BY school ORDER BY count(DISTINCT person_key) DESC, school LIMIT 4`,
+  );
+  const knownSchools = new Set(INDEX.divisions.map((r) => r[0]));
+  const want = forTitle.filter((r) => knownSchools.has(r.school)).map((r) => `d:${r.school}`);
+  await expect.poll(() => stripKeys(page), { message: 'a title on: not the schools that pay most of it', timeout: 60_000 }).toEqual(want);
+  await bar(page).focus();
+  await bar(page).press('ArrowDown');
+  await bar(page).press('Enter');
+  await expect(tokens(page), 'Enter on a starter did not put it on').toHaveCount(2);
+  await expect(page.locator('.hero-dist-full .hero-dist-main')).toHaveAttribute('data-filter', new RegExp(` in ${want[1].slice(2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+});
+
+/**
+ * The way in from the page's own search: a title or school row offers "Show on graph" beside opening its
+ * page. It opens the graph full page with that group put on and the box emptied, leaving no list behind; the
+ * keyboard's way is Shift+Enter on the row; the row itself still opens the title's page.
+ */
+test('"Show on graph" in the page’s search opens the graph full page with that group on', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  const code = await codeOf('Research Associate');
+  const name = titleName('Research Associate', code);
+  const box = page.getByRole('combobox', { name: /Search a person/ });
+  const row = page.locator(`[role="option"][data-key="t:${code}"]`);
+
+  // By pointer.
+  await box.fill('research assoc');
+  await expect(row).toBeVisible({ timeout: 60_000 });
+  await row.locator('.search-show-on-graph').click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+  await expect(tokens(page)).toHaveText([name]);
+  await expect(bar(page), 'the query went full page with the group').toHaveValue('');
+  await expect(page.locator('.search-dropdown'), 'the page’s list was left over the graph').toHaveCount(0);
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  expect(new URL(page.url()).pathname, 'it opened the title’s page instead').toMatch(/\/UW-Madison_Salaries\/$/);
+
+  // By keyboard: back out, and Shift+Enter on the row.
+  await page.getByRole('button', { name: 'Exit full page' }).click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'off');
+  await box.fill('research assoc');
+  await expect(row).toBeVisible({ timeout: 60_000 });
+  for (let k = 0; k < 8 && (await row.getAttribute('aria-selected')) !== 'true'; k++) await box.press('ArrowDown');
+  await expect(row).toHaveAttribute('aria-selected', 'true');
+  await box.press('Shift+Enter');
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+  await expect(tokens(page)).toHaveText([name]);
+
+  // And the row itself still opens the title's page. Full page closes over a moment ("closing"), with its
+  // own box still the one on screen: type only once it is gone.
+  await page.getByRole('button', { name: 'Exit full page' }).click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'off');
+  await box.fill('research assoc');
+  await expect(row).toBeVisible({ timeout: 60_000 });
+  await row.click({ position: { x: 20, y: 10 } });
+  await expect(page).toHaveURL(new RegExp(`/paycheck\\?code=${code}`));
+});
+
+test('the page’s search list, with "Show on graph" on its rows, passes a strict accessibility scan', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await page.getByRole('combobox', { name: /Search a person/ }).fill('medicine');
+  await expect(page.locator('.search-show-on-graph').first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(500);
+  const axe = await new AxeBuilder({ page }).include('.search-dropdown').include('[role="combobox"]').analyze();
+  expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+  expect(await page.getByRole('combobox', { name: /Search a person/ }).getAttribute('aria-describedby'), 'the keyboard’s way to it is not said').toBeTruthy();
 });

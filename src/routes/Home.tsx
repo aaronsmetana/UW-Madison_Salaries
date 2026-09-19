@@ -16,10 +16,10 @@ import { usd, usdCompact, num, vsCampus } from '../lib/format';
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
 import { measureText, placeNearLabels } from '../lib/labelLayout';
 import { useCountUp, prefersReducedMotion } from '../lib/motion';
-import { SearchBox, type FilterToken, type ShownPerson } from '../components/SearchBox';
+import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { Sparkline } from '../components/chart/Sparkline';
 import { useReveal } from '../components/PersonReveal';
-import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, type DotSpot, type Emphasis, type HomePerson } from '../lib/homePeople';
+import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, topSchoolsForSql, topTitlesInSql, type DotSpot, type Emphasis, type HomePerson } from '../lib/homePeople';
 import type { DivisionHit, TitleHit } from '../lib/search';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -200,7 +200,7 @@ const FOUND_CARD_W = 240;
 
 function Distribution({
   bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
-  search, onFullChange, group = null, onPeel,
+  search, onFullChange, group = null, onPeel, openFullRef,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -233,6 +233,8 @@ function Distribution({
   group?: GraphGroup | null;
   /** Asked first when Escape would close full page: true if it took a filter off instead. */
   onPeel?: () => boolean;
+  /** Set to open full page from outside the panel: the landing search's "Show on graph". */
+  openFullRef?: MutableRefObject<(() => void) | null>;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -625,6 +627,13 @@ function Distribution({
   };
   const closeFullRef = useRef(closeFull);
   closeFullRef.current = closeFull;
+  // Home opens full page itself when the landing search's "Show on graph" is pressed. Assigned every render,
+  // as `openFull` is made every render.
+  useEffect(() => {
+    if (!openFullRef) return;
+    openFullRef.current = () => openFull();
+    return () => { openFullRef.current = null; };
+  });
   const openFull = () => {
     const el = panelRef.current;
     if (!el || fullRef.current) return;
@@ -1934,7 +1943,7 @@ export default function Home() {
   );
   // A title's name alone can be two titles — "Research Associate" is PD012 and PD012N — so where the index
   // has another under the same name, the filter names its code too; picked, it must still say which it was.
-  const { data: searchIndex } = useSearchIndex(!!title);
+  const { data: searchIndex } = useSearchIndex(graphFull || !!title);
   const titleName = useMemo(() => {
     if (!title) return null;
     const shared = (searchIndex?.titles ?? []).filter(([, t]) => t === title.title).length > 1;
@@ -1953,6 +1962,38 @@ export default function Home() {
     };
     return { name, pending: false, ...emphasis(spots, filterRows.map((r) => ({ person_key: r.person_key, pay: Number(r.pay) })), sizes) };
   }, [filters.length, titleName, school, filterRows, spots, artifactUsable, homeStats]);
+  // What the full page's bar offers with nothing typed. Nothing on: the index's largest schools and titles,
+  // turn about, so a narrow strip still shows both kinds. A school on: its largest titles; a title on: the
+  // schools that employ most of it — each a small query of the filter's own rows, asked once the filter's
+  // own answer is in (DuckDB answers one query at a time). Both on: nothing left to add.
+  const { data: topTitles } = useSql<{ code: string }>(
+    ['graph-top-titles', peopleSnap, school?.school ?? ''],
+    school && !title && peopleSnap ? topTitlesInSql(peopleSnap, school.school) : '',
+    !!peopleSnap && !!school && !title && !!filterRows,
+  );
+  const { data: topSchools } = useSql<{ school: string }>(
+    ['graph-top-schools', peopleSnap, title?.code ?? ''],
+    title && !school && peopleSnap ? topSchoolsForSql(peopleSnap, title.code) : '',
+    !!peopleSnap && !!title && !school && !!filterRows,
+  );
+  const starters = useMemo<SearchPick[]>(() => {
+    if (!searchIndex || (title && school)) return [];
+    const asTitle = ([code, name, n, med]: [string, string | null, number, number | null]): SearchPick =>
+      ({ kind: 'title', hit: { code, title: name ?? code, n, med } });
+    const asSchool = ([name, n, med]: [string, number, number | null]): SearchPick => ({ kind: 'division', hit: { school: name, n, med } });
+    if (!title && !school) {
+      const schools = [...searchIndex.divisions].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(asSchool);
+      const titles = [...searchIndex.titles].filter((r) => r[1]).sort((a, b) => b[2] - a[2] || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(asTitle);
+      return schools.flatMap((s, i) => (titles[i] ? [s, titles[i]] : [s]));
+    }
+    if (school) {
+      const byCode = new Map(searchIndex.titles.map((r) => [r[0], r]));
+      return (topTitles ?? []).flatMap((r) => { const row = byCode.get(r.code); return row ? [asTitle(row)] : []; });
+    }
+    const bySchool = new Map(searchIndex.divisions.map((r) => [r[0], r]));
+    return (topSchools ?? []).flatMap((r) => { const row = bySchool.get(r.school); return row ? [asSchool(row)] : []; });
+  }, [searchIndex, title, school, topTitles, topSchools]);
+  const openFullRef = useRef<(() => void) | null>(null);
   const tokens = useMemo<FilterToken[]>(() => filters.map((f) => ({
     key: filterKey(f),
     kind: f.kind,
@@ -2153,8 +2194,10 @@ export default function Home() {
                   onRemoveToken={takeFilter}
                   onPickTitle={(hit) => putFilter({ kind: 'title', hit })}
                   onPickDivision={(hit) => putFilter({ kind: 'division', hit })}
+                  starters={starters}
                 />
               )}
+              openFullRef={openFullRef}
               group={group}
               onPeel={() => {
                 if (!filters.length) return false;
@@ -2181,6 +2224,9 @@ export default function Home() {
               size="lg"
               autoFocus={firstSearchRef.current}
               keepBelow={() => document.querySelector<HTMLElement>('.hero-dist-main')}
+              // The way in to the full page's filters from the page's own search: a title or school shown
+              // on the graph rather than opened. The box empties itself, so no list is left behind.
+              onShowOnGraph={(pick) => { putFilter(pick); openFullRef.current?.(); }}
             />
           )}
 

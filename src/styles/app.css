@@ -1987,6 +1987,29 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   font-weight: 600;
   cursor: pointer;
 }
+/* "Show on graph" on a title or division row of the page's own search: the way from searching for a group to
+   seeing it on the full page's graph. There on every such row, so it is found; quiet until its row is the
+   active one. The row makes room for it, so a long name ends before it rather than running under it. */
+[data-showable] { position: relative; padding-right: 138px !important; }
+.search-show-on-graph {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+[aria-selected='true'] > .search-show-on-graph { color: var(--mantine-color-accent-7); border-color: var(--mantine-color-accent-6); }
+.search-show-on-graph:hover { background: var(--mantine-color-accent-light); color: var(--mantine-color-accent-7); }
 /* The filters in force, between the box and its results: filled where a result chip is outlined, so what
    is on reads apart from what could be put on. Each comes off with its own ×. */
 .search-tokens { flex: none; display: flex; align-items: center; gap: 6px; max-width: 45%; min-width: 0; }

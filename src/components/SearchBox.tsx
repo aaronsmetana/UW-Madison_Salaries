@@ -1,6 +1,6 @@
 import { useState, useMemo, useId, useEffect, useLayoutEffect, useCallback, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { TextInput, Popover, Loader, Stack, UnstyledButton, Text, Group, Tooltip, Badge, Box } from '@mantine/core';
-import { IconSearch, IconAlertTriangle, IconUser, IconBriefcase, IconBuilding } from '@tabler/icons-react';
+import { IconSearch, IconAlertTriangle, IconUser, IconBriefcase, IconBuilding, IconArrowsMaximize } from '@tabler/icons-react';
 import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql, useSummary, useSearchIndex } from '../lib/hooks';
@@ -49,6 +49,9 @@ interface PersonHit {
   /** Actual pay in their latest snapshot. */
   pay: number | null;
 }
+
+/** A title or a division, as something a page can do with rather than open: filter a graph by it. */
+export type SearchPick = { kind: 'title'; hit: TitleHit } | { kind: 'division'; hit: DivisionHit };
 
 /** A filter the box is holding, shown at its start as a token with a way to take it off. */
 export interface FilterToken {
@@ -157,6 +160,8 @@ export function SearchBox({
   results = 'list',
   tokens,
   onRemoveToken,
+  starters,
+  onShowOnGraph,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -200,6 +205,12 @@ export function SearchBox({
    *  an empty box, or with Escape once the box is empty. */
   tokens?: readonly FilterToken[];
   onRemoveToken?: (key: string) => void;
+  /** What the strip offers while nothing is typed (strip only): titles and divisions to put on with one
+   *  press, so an empty line says what the bar can do rather than nothing. Options like any result. */
+  starters?: readonly SearchPick[];
+  /** Offered on every title and division row of the list (list only), beside opening its page: show it on
+   *  the graph instead. A pointer presses it; the keyboard has Shift+Enter on the row. */
+  onShowOnGraph?: (pick: SearchPick) => void;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
@@ -315,16 +326,22 @@ export function SearchBox({
 
   // Keyboard navigation for the autocomplete (combobox semantics): one flat list across the groups,
   // in the order they are drawn.
+  // With nothing typed, a strip's options are its starters, reached by the same keys and picked the same way.
+  const showStarters = strip && !enabled && !!starters?.length;
   const items = useMemo<Item[]>(
-    () => [
-      ...peopleShown.map((hit): Item => ({ kind: 'person', key: `p:${hit.person_key}`, hit })),
-      ...titles.map((hit): Item => ({ kind: 'title', key: `t:${hit.code}`, hit })),
-      ...divisions.map((hit): Item => ({ kind: 'division', key: `d:${hit.school}`, hit })),
-    ],
-    [peopleShown, titles, divisions]
+    () => showStarters
+      ? starters!.map((s): Item => (s.kind === 'title'
+        ? { kind: 'title', key: `t:${s.hit.code}`, hit: s.hit }
+        : { kind: 'division', key: `d:${s.hit.school}`, hit: s.hit }))
+      : [
+        ...peopleShown.map((hit): Item => ({ kind: 'person', key: `p:${hit.person_key}`, hit })),
+        ...titles.map((hit): Item => ({ kind: 'title', key: `t:${hit.code}`, hit })),
+        ...divisions.map((hit): Item => ({ kind: 'division', key: `d:${hit.school}`, hit })),
+      ],
+    [showStarters, starters, peopleShown, titles, divisions]
   );
   // A strip covers nothing, so it has no reason to hold its results back from a query it was handed.
-  const opened = enabled && (strip || !handed);
+  const opened = (enabled && (strip || !handed)) || showStarters;
 
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
@@ -452,6 +469,12 @@ export function SearchBox({
     onSelect?.();
   };
 
+  const showOnGraph = (it: Item) => {
+    if (!onShowOnGraph || it.kind === 'person') return;
+    onShowOnGraph(it.kind === 'title' ? { kind: 'title', hit: it.hit } : { kind: 'division', hit: it.hit });
+    setTerm('');
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     // An Escape that clears the text has been used, and says so: a page that also closes on Escape —
     // the graph's full page — then leaves it alone, and the next one is the one that closes it. Without
@@ -475,6 +498,11 @@ export function SearchBox({
       return;
     }
     if (!opened) return;
+    if (e.key === 'Enter' && e.shiftKey && onShowOnGraph && items[active] && items[active].kind !== 'person') {
+      e.preventDefault();
+      showOnGraph(items[active]);
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       const i = enterPick(active, items.length, peopleBusy, moved);
@@ -509,6 +537,7 @@ export function SearchBox({
     role: 'option',
     'aria-selected': i === active,
     'data-kind': it.kind,
+    'data-key': it.key,
     onMouseEnter: () => { setActive(i); setMoved(true); },
     onClick: () => select(it),
     px: 10,
@@ -576,8 +605,22 @@ export function SearchBox({
     );
   };
 
+  // "Show on graph" on a title or division row: part of the option, not a control inside it — a focusable
+  // button in an option is an interactive element where only the option may be — so it is hidden from the
+  // accessibility tree, and the keyboard's way to it (Shift+Enter) is said on the box instead.
+  const showable = !!onShowOnGraph;
+  const showMark = (i: number) => showable && (
+    <span
+      className="search-show-on-graph"
+      aria-hidden
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => { e.stopPropagation(); e.preventDefault(); showOnGraph(items[i]); }}
+    >
+      Show on graph <IconArrowsMaximize size={12} />
+    </span>
+  );
   const titleRow = (h: TitleHit, i: number) => (
-    <UnstyledButton key={items[i].key} {...optionProps(i, items[i])}>
+    <UnstyledButton key={items[i].key} {...optionProps(i, items[i])} data-showable={showable || undefined}>
       <Group wrap="nowrap" gap="xs" align="center" style={{ minWidth: 0 }}>
         <Text fz={t.nameFont} fw={600} truncate="end" style={{ minWidth: 0 }}>{h.title}</Text>
         <span className="code-pill">{h.code}</span>
@@ -585,15 +628,17 @@ export function SearchBox({
       <Text fz={t.subFont} c="dimmed" mt={1}>
         {num(h.n)} {h.n === 1 ? 'person' : 'people'}{h.med != null ? ` · median ${usd(h.med)}` : ''}
       </Text>
+      {showMark(i)}
     </UnstyledButton>
   );
 
   const divisionRow = (h: DivisionHit, i: number) => (
-    <UnstyledButton key={items[i].key} {...optionProps(i, items[i])}>
+    <UnstyledButton key={items[i].key} {...optionProps(i, items[i])} data-showable={showable || undefined}>
       <Text fz={t.nameFont} fw={600} truncate="end">{h.school}</Text>
       <Text fz={t.subFont} c="dimmed" mt={1}>
         {num(h.n)} {h.n === 1 ? 'person' : 'people'}{h.med != null ? ` · median ${usd(h.med)}` : ''}
       </Text>
+      {showMark(i)}
     </UnstyledButton>
   );
 
@@ -705,6 +750,7 @@ export function SearchBox({
             if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY;
           }}
         >
+          {showStarters && <span className="search-strip-note">Try</span>}
           {opened && usingFuzzy && <span className="search-strip-note">Did you mean</span>}
           {opened && peopleBusy && nPeople === 0 && (
             <span className="search-strip-note"><Loader size={12} /> Searching people…</span>
@@ -787,10 +833,17 @@ export function SearchBox({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={opened && items.length ? optId(active) : undefined}
+            // The keyboard's way to "Show on graph", said on the box. As Mantine's description, not an
+            // aria-describedby of our own: the input takes that attribute from its description and would
+            // drop any other.
+            description={showable ? 'Shift+Enter on a title or division shows it on the graph, full page.' : undefined}
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
-            classNames={large ? { input: 'hero-search-input' } : undefined}
+            classNames={{ ...(large ? { input: 'hero-search-input' } : {}), ...(showable ? { description: 'visually-hidden' } : {}) }}
             styles={{
+              // Mantine spaces the box 5px below a description; this one is visually hidden, so the space
+              // would be for nothing — the landing page grew 5px taller for it.
+              ...(showable ? { wrapper: { marginTop: 0 } } : {}),
               input: {
                 fontSize: t.inputFont,
                 ...(large ? { fontWeight: 500 } : {}),

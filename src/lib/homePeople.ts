@@ -168,3 +168,20 @@ export function emphasis(
   pays.sort((a, b) => a - b);
   return { main, pile, count: pays.length, median: medianOf(pays), pays };
 }
+
+/**
+ * A school's largest titles, by people with a paid appointment of that title in the school — the rows a
+ * filter covers, so a title offered here is one that lights someone when put on beside the school.
+ */
+export function topTitlesInSql(snapshot: string, school: string, limit = 5): string {
+  return `SELECT job_code AS code, count(DISTINCT person_key) AS n FROM salaries
+    WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0 AND school = ${sqlStr(school)}
+    GROUP BY job_code ORDER BY n DESC, job_code LIMIT ${Math.max(1, Math.floor(limit))}`;
+}
+
+/** The schools that employ most of a title, by people paid in it there — the same rows again. */
+export function topSchoolsForSql(snapshot: string, jobCode: string, limit = 4): string {
+  return `SELECT school, count(DISTINCT person_key) AS n FROM salaries
+    WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0 AND job_code = ${sqlStr(jobCode)} AND school IS NOT NULL
+    GROUP BY school ORDER BY n DESC, school LIMIT ${Math.max(1, Math.floor(limit))}`;
+}

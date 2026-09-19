@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, medianOf, type HomePerson, type PayCounts } from './homePeople';
+import { dotSpots, emphasis, filterPeopleSql, homePeopleSql, medianOf, topSchoolsForSql, topTitlesInSql, type HomePerson, type PayCounts } from './homePeople';
 import { peopleFromCounts } from './dotLayout';
 
 const CAP = 250000;
@@ -152,5 +152,27 @@ describe('emphasis', () => {
     const odd = new Map([['a', { field: 'main' as const, index: 0 }], ['z', { field: 'main' as const, index: 9 }]]);
     const e = emphasis(odd, [{ person_key: 'a', pay: 1 }, { person_key: 'a', pay: 1 }, { person_key: 'z', pay: 2 }], { main: 2, pile: 0 });
     expect(e.count).toBe(1);
+  });
+});
+
+describe('the drill-down starters', () => {
+  it("offer a school's titles by people paid in them there, most first, ties by code", () => {
+    const sql = topTitlesInSql('2026-03', 'L&S', 5);
+    expect(sql).toContain('salary > 0');
+    expect(sql).toContain("school = 'L&S'");
+    expect(sql).toMatch(/count\(DISTINCT person_key\)/);
+    expect(sql).toMatch(/ORDER BY n DESC, job_code LIMIT 5/);
+  });
+  it("offer a title's schools the same way, leaving out appointments with no school", () => {
+    const sql = topSchoolsForSql('2026-03', 'FA020', 4);
+    expect(sql).toContain('salary > 0');
+    expect(sql).toContain("job_code = 'FA020'");
+    expect(sql).toContain('school IS NOT NULL');
+    expect(sql).toMatch(/ORDER BY n DESC, school LIMIT 4/);
+  });
+  it('quote what they are given and keep the limit a whole number of at least one', () => {
+    expect(topTitlesInSql('s', "O'Brien")).toContain("school = 'O''Brien'");
+    expect(topSchoolsForSql('s', 'X', 0)).toMatch(/LIMIT 1$/);
+    expect(topTitlesInSql('s', 'Y', 2.7)).toMatch(/LIMIT 2$/);
   });
 });
