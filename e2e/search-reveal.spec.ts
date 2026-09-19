@@ -67,7 +67,7 @@ for (const over of [false, true]) {
     // Drawn: the canvas at the mark is the found ink, once it has grown in.
     await page.waitForTimeout(1000);
     const [m] = await marksOf(page, field);
-    const ink = await page.locator(`${field} canvas`).evaluate((c: HTMLCanvasElement, at) => {
+    const ink = await page.locator(`${field} .dot-field-ink`).evaluate((c: HTMLCanvasElement, at) => {
       const k = c.width / c.clientWidth;
       const d = c.getContext('2d')!.getImageData(Math.round(at.x * k), Math.round(at.y * k), 1, 1).data;
       return [d[0], d[1], d[2], d[3]];

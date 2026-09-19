@@ -1369,7 +1369,7 @@ test('soloing a category leaves exactly its people, and the readout counts them;
   await expect(page.locator('.hero-dots-over')).toHaveAttribute('data-visible', String(cats[faculty].ovr));
   // Nothing of the others is drawn: no pixel of the Academic Staff ink is left on the canvas.
   const academic = parseColor((await dots.getAttribute('data-inks'))!.split('|')[cats.findIndex((c) => c.cat === 'Academic Staff')]);
-  const left = await page.locator('.hero-dots canvas').evaluate((c: HTMLCanvasElement, ink) => {
+  const left = await page.locator('.hero-dots .dot-field-ink').evaluate((c: HTMLCanvasElement, ink) => {
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
     let n = 0;
     for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 180 && Math.abs(d[i] - ink[0]) + Math.abs(d[i + 1] - ink[1]) + Math.abs(d[i + 2] - ink[2]) < 24) n++;

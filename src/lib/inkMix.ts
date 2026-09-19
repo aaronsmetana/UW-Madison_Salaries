@@ -56,6 +56,12 @@ export function mixOklab(a: string, b: string, t: number): string {
   return `rgb(${r}, ${g}, ${bl})`;
 }
 
+/** A colour's OKLab coordinates, for how far apart two colours look. Null for anything unparseable. */
+export function oklab(css: string): [number, number, number] | null {
+  const rgb = parseRgb(css);
+  return rgb ? toOklab(rgb) : null;
+}
+
 /** WCAG relative luminance of an sRGB colour, 0–255 channels. */
 export function luminance([r, g, b]: [number, number, number]): number {
   const f = (v: number) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
@@ -87,13 +93,119 @@ export function strongerInk(ink: string, text: string, apart = 1.5): string {
   return out;
 }
 
+
+/** OKLab to linear sRGB, unclamped — out of gamut where a channel leaves [0, 1]. */
+function oklabToLinear([L, a, b]: [number, number, number]): [number, number, number] {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+
+/** An OKLCH colour — lightness, chroma, hue (radians) — as `rgb()`, its chroma taken down until it fits
+ *  sRGB rather than a channel clipped: clipping a channel moves the hue, and these are meant to keep it. */
+function oklch(L: number, C: number, h: number): string {
+  const Lc = Math.min(1, Math.max(0, L));
+  const c = gamutChroma(Lc, C, h);
+  const [r, g, b] = fromOklab([Lc, c * Math.cos(h), c * Math.sin(h)]);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** The most of chroma `C` that sRGB can show at OKLCH lightness `L` and hue `h`. */
+function gamutChroma(L: number, C: number, h: number): number {
+  const fits = (c: number) => oklabToLinear([L, c * Math.cos(h), c * Math.sin(h)]).every((v) => v >= -1e-4 && v <= 1 + 1e-4);
+  const c = Math.max(0, C);
+  if (fits(c)) return c;
+  let lo = 0, hi = c;
+  for (let k = 0; k < 20; k++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+  return lo;
+}
+
+/** How far toward `L` a tone can go from `L0` and still show `keep` of chroma `C` at hue `h`. Near white
+ *  (or black) sRGB has little colour left to give: a violet crest raised to the ceiling kept 40% of its
+ *  chroma and read as a pale lavender nearer the grey ink than its own. Held short instead, it stays violet. */
+function lightnessKeeping(L0: number, L: number, C: number, h: number, keep: number): number {
+  if (gamutChroma(L, C, h) >= keep * C) return L;
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 20; k++) {
+    const mid = (lo + hi) / 2;
+    if (gamutChroma(L0 + (L - L0) * mid, C, h) >= keep * C) lo = mid; else hi = mid;
+  }
+  return L0 + (L - L0) * lo;
+}
+
+/** The share of an ink's chroma every tone keeps: lightness gives way before colour does. */
+export const KEEP_CHROMA = 0.75;
+
+/** How a field's dots are shaded (see `dotTones`). */
+export interface DotLook {
+  /** Depth steps from the ink out to the crest (dark page) or the floor (light page). */
+  steps: number;
+  /** How far the last step moves, as a share of the room the ink has left toward the lightness limit on
+   *  its side (`LIGHT_CEILING` on a dark page, `LIGHT_FLOOR` on a light one) — not a fixed amount, which
+   *  ran an ink that starts light, like orange, into the gamut's white corner, where it has no colour left. */
+  reach: number;
+  /** Hue variants of every step: the ink's own hue, then turned either way by `turn` degrees. */
+  hues: number;
+  turn: number;
+  /** The crest's rim: on a dark page a further share of the room past the last step; on a light page a
+   *  chroma boost at the ink's own lightness. */
+  rimLift: number;
+  rimChroma: number;
+}
+
 /**
- * A dot's tones: `n` versions of `ink`, from the ink itself to `span` of the way toward black (a light
- * card, dark `text`) or white (a dark card) — always away from the card, so no tone has less contrast
- * against it than the ink, which is the one the 3:1 rule was checked on. The first is the ink.
+ * A dot's tones, as a flat list indexed `step * look.hues + hue`: `look.steps` depth steps of `ink`, then
+ * the crest rim, each in `look.hues` hue variants — the first of all being the ink itself.
+ *
+ * Depth moves OKLCH lightness away from the card with chroma held, eased so the change gathers near the
+ * crest (a dark page) or the floor (a light one): a crest that catches the light rather than one mixed
+ * toward white, which only washes a colour out to pastel. Away from the card only, so no step has less
+ * contrast against it than the ink. Where sRGB could only reach a step's lightness by giving up more than
+ * a quarter of the ink's chroma, the step stops short (`KEEP_CHROMA`). A hue variant turns the hue at the
+ * same lightness and chroma; one that would fall below `min` against `card` is turned less, down to none.
  */
-export function toneInks(ink: string, text: string, n = 8, span = 0.16): string[] {
+/** The lightness a crest may reach on a dark page, and a floor may sink to on a light one (OKLCH). */
+export const LIGHT_CEILING = 0.9;
+export const LIGHT_FLOOR = 0.3;
+
+export function dotTones(ink: string, text: string, card: string, look: DotLook, min = 3): string[] {
+  const rgb = parseRgb(ink);
+  if (!rgb) return Array.from({ length: (look.steps + 1) * look.hues }, () => ink);
   const t = parseRgb(text);
-  const toward = t && luminance(t) < 0.5 ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)';
-  return Array.from({ length: n }, (_, i) => (i === 0 ? mixOklab(ink, ink, 0) : mixOklab(ink, toward, (span * i) / Math.max(1, n - 1))));
+  const dark = !!t && luminance(t) > 0.5;
+  const [L0, a0, b0] = toOklab(rgb);
+  const C0 = Math.hypot(a0, b0);
+  const h0 = Math.atan2(b0, a0);
+  // The room this ink has on its side, and a step's lightness as a share of it.
+  const room = dark ? Math.max(0, LIGHT_CEILING - L0) : -Math.max(0, L0 - LIGHT_FLOOR);
+  const turns = Array.from({ length: look.hues }, (_, k) => (k === 0 ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2) * look.turn));
+  const floor = contrastRatio(ink, card);
+  const out: string[] = [];
+  for (let s = 0; s <= look.steps; s++) {
+    const rim = s === look.steps;
+    const eased = look.steps > 1 ? (s / (look.steps - 1)) ** 1.6 : 0;
+    const L = rim ? (dark ? L0 + room * Math.min(1, look.reach + look.rimLift) : L0) : L0 + room * look.reach * eased;
+    const C = rim && !dark ? C0 * look.rimChroma : C0;
+    for (const deg of turns) {
+      if (s === 0 && deg === 0) { out.push(mixOklab(ink, ink, 0)); continue; }
+      // Turned less, halving, while the variant would fall under the bar the ink itself clears.
+      const tone = (deg: number) => {
+        const h = h0 + (deg * Math.PI) / 180;
+        return oklch(lightnessKeeping(L0, L, C, h, KEEP_CHROMA), C, h);
+      };
+      let turn = deg;
+      let c = tone(turn);
+      for (let k = 0; k < 4 && turn !== 0 && contrastRatio(c, card) < Math.min(min, floor); k++) {
+        turn /= 2;
+        c = tone(turn);
+      }
+      out.push(c);
+    }
+  }
+  return out;
 }

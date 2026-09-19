@@ -69,7 +69,7 @@ export function bead(ink: string, radius: number, glow: boolean): Bead {
   ctx.arc(c, c, radius, 0, Math.PI * 2);
   ctx.fill();
   const out = { img, half: c };
-  if (cache.size > 600) cache.clear();
+  if (cache.size > 4000) cache.clear();
   cache.set(key, out);
   return out;
 }
@@ -82,7 +82,7 @@ export function halo(ink: string, radius: number): Bead {
   const { img, ctx, c } = sprite(radius * HALO_REACH);
   drawHalo(ctx, c, ink, radius);
   const out = { img, half: c };
-  if (cache.size > 600) cache.clear();
+  if (cache.size > 4000) cache.clear();
   cache.set(key, out);
   return out;
 }

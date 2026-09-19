@@ -5,19 +5,19 @@ import {
   bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirKick, stirSizes, stirTopUp, thrown, trailAt, wakeExtent,
   type Kick, type Pose,
 } from '../../lib/dotPhysics';
-import { luminance, parseRgb, strongerInk, toneInks } from '../../lib/inkMix';
+import { dotTones, luminance, parseRgb, strongerInk, type DotLook } from '../../lib/inkMix';
 import { bead, beadInk, halo, type Bead, type BeadInk } from '../../lib/dotSprites';
 import { prefersReducedMotion } from '../../lib/motion';
+import { bounceCap, fallAt, rainSchedule } from '../../lib/rain';
 
 /** Played once per session: after that the dots are simply there. */
 const SEEN_KEY = 'dotfield-entrance';
-/** Each dot's own fall, once it starts. */
-const FALL_MS = 650;
 /**
- * The entrance as rainfall: a column fills from the floor up, each dot waiting for the one beneath it,
- * so the thin tails are done in a moment and the crowded middle keeps raining. `RAIN_GAP` is the wait
- * between one dot in a column and the next, and `RAIN_MS` caps the tallest column — the whole thing
- * lands inside RAIN_MS + FALL_MS, about six seconds.
+ * The entrance as rainfall (lib/rain): a column fills from the floor up, each dot waiting for the one
+ * beneath it, so the thin tails are done in a moment and the crowded middle keeps raining. `RAIN_GAP` is
+ * the mean wait between one dot in a column and the next, and `RAIN_MS` caps the tallest column — the
+ * whole thing lands inside RAIN_MS and the longest fall, about six seconds. Each drop falls under the
+ * field's gravity from a little above the plot, and the timing is irregular but seeded by the play.
  *
  * It replaces a sweep across x: every column started at a time fixed by where it stood, so a column of
  * four and a column of four hundred took exactly as long as each other, which is the one thing about
@@ -36,10 +36,22 @@ const PACKED_ALPHA = 1;
 /** A highlighted dot's ink: its own, moved toward black (light page) or white (dark page) until it
  *  stands this far apart from it (lib/inkMix). */
 export const STRONG_APART = 1.5;
-/** Each ink's tones (lib/inkMix `toneInks`), and how many of them depth in the stack spans; the rest
- *  of the range is the per-dot jitter. */
-const TONES = 8;
-const DEPTH_TONES = 5;
+/** A dot's shading (lib/inkMix `dotTones`): depth steps from the ink out to the crest on a dark page, or the
+ *  floor on a light one, then the crest's rim — each in a few hue variants, so a patch of one colour has a
+ *  painter's variety rather than one flat tint. `TONES` is how many a kind has in all. */
+const DEPTH_STEPS = 12;
+const HUES = 3;
+const TONES = (DEPTH_STEPS + 1) * HUES;
+/** How far the shading goes: further on a dark page, where a crest can brighten a long way, than on a light
+ *  one, where more would turn the floor muddy. The light page's rim is a richer ink, not a paler one. */
+export const LOOK_DARK: DotLook = { steps: DEPTH_STEPS, reach: 0.5, hues: HUES, turn: 8, rimLift: 0.3, rimChroma: 1 };
+export const LOOK_LIGHT: DotLook = { steps: DEPTH_STEPS, reach: 0.4, hues: HUES, turn: 8, rimLift: 0, rimChroma: 1.3 };
+/** Any other field's shading: a quiet depth ramp, one hue, no rim. A sparse strip's dots nearly all crown
+ *  their own one-pixel column, so a rim there lit almost every dot, and the person page's grey peers came
+ *  to outshine the green ones they are the context for. */
+export const LOOK_PLAIN: DotLook = { steps: DEPTH_STEPS, reach: 0.2, hues: HUES, turn: 0, rimLift: 0, rimChroma: 1 };
+/** Which hue variant a dot wears: fixed per dot, spread evenly. */
+const hueOf = (i: number) => (Math.imul(i + 7, 0x9e3779b1) >>> 16) % HUES;
 /** A dot's state of motion: at rest; in flight (a soloed group's dot falling to its place, or raining
  *  back in and bouncing into it); leaving through the floor; gone (a group soloed away); or bursting —
  *  thrown aside by a click or a drag, or rocked by a ripple, on a spring home. */
@@ -297,8 +309,14 @@ export const DotField = forwardRef<DotFieldHandle, {
   moveTo?: { key: number; pts: Float32Array | null } | null;
   /** Bump to play the fall into place again. */
   replay?: number;
+  /** Told when a rain has finished — every drop landed and settled — and only then: not after a burst, a
+   *  stir, a filter or a re-stack, and never under Reduce Motion, where there is no rain. */
+  onRained?: () => void;
   /** A faint halo round each dot on a dark page, so a dense field glows a little. */
   glow?: boolean;
+  /** The landing graph's full shading: a deep depth ramp, a rim on each column's crest and a few hue
+   *  variants (`LOOK_DARK`, `LOOK_LIGHT`). Without it, `LOOK_PLAIN`. */
+  rich?: boolean;
   /** Called after every paint: a magnifying glass over the field redraws with it. */
   onFrame?: () => void;
   /** The name each animated frame is measured under (`performance.measure`), so a page's fields can
@@ -307,10 +325,13 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, dim = null, solo = null, marks = null, markBig = null, squeeze = 1, moveTo = null, replay = 0, glow = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, dim = null, solo = null, marks = null, markBig = null, squeeze = 1, moveTo = null, replay = 0, onRained, glow = false, rich = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // The glow beneath the field on a dark page: a copy of the dots at rest, which CSS blurs (app.css
+  // `.dot-field-bloom`) — one layer under the field, repainted with it, never in a frame of its own.
+  const bloomRef = useRef<HTMLCanvasElement>(null);
   const inkRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const airRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -404,10 +425,13 @@ export const DotField = forwardRef<DotFieldHandle, {
       const h = heightAt(Math.floor(pts[2 * i]) + 0.5, width);
       depth[i] = Math.min(1, Math.max(0, (height - r - y) / Math.max(1e-6, h - 2 * r)));
     }
-    // When each dot rains in: its place up its own column, counted from the floor. Columns are read
-    // off the laid-out x (`order` already has them in x order), and within one, the lowest dot is the
-    // first to land — the pile builds upward, as a pile does.
-    const rain = new Float32Array(n);
+    // Each dot's place up its own column, counted from the floor, and which column: the rain's order
+    // (lib/rain `rainSchedule`). Columns are read off the laid-out x (`order` already has them in x
+    // order), and within one, the lowest dot is the first to land — the pile builds upward, as a pile does.
+    const rank = new Float32Array(n);
+    const column = new Int32Array(n);
+    const crest = new Uint8Array(n);
+    let columns = 0;
     let deepest = 0;
     for (let j = 0; j < n; ) {
       let k = j;
@@ -416,16 +440,17 @@ export const DotField = forwardRef<DotFieldHandle, {
       // slivers and the whole field would rain in at the same moment.
       const at = Math.floor(pts[2 * order[j]]);
       while (k < n && Math.floor(pts[2 * order[k]]) === at) k++;
-      const column = Array.from(order.subarray(j, k)).sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1]);
-      column.forEach((i, rank) => { rain[i] = rank; });
-      deepest = Math.max(deepest, column.length - 1);
+      const col = Array.from(order.subarray(j, k)).sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1]);
+      col.forEach((i, up) => { rank[i] = up; column[i] = columns; });
+      if (col.length) crest[col[col.length - 1]] = 1;
+      deepest = Math.max(deepest, col.length - 1);
+      columns++;
       j = k;
     }
-    // Every dot in every field falls at the same rate, so a taller column plainly takes longer — until
-    // the tallest would run past RAIN_MS, which sets the rate for the whole field instead.
-    const gap = Math.min(RAIN_GAP, RAIN_MS / Math.max(1, deepest));
-    for (let i = 0; i < n; i++) rain[i] *= gap;
-    return { pts, r, order, sortedX, depth, width, crowded, maxShift, separate, rain, rainSpan: deepest * gap };
+    // Every column rains at the same mean rate, so a taller column plainly takes longer — until the
+    // tallest would run past RAIN_MS, which sets the rate for the whole field instead.
+    const rainGap = Math.min(RAIN_GAP, RAIN_MS / Math.max(1, deepest));
+    return { pts, r, order, sortedX, depth, width, crowded, maxShift, separate, rank, column, crest, rainGap };
   }, [width, values, toX, heightAt, height, rIn, stackKey, spill, packDpr]);
 
   const alpha = layout?.separate ? PACKED_ALPHA : DOT_ALPHA;
@@ -521,6 +546,16 @@ export const DotField = forwardRef<DotFieldHandle, {
   });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  // The rain for this play: when each drop leaves and from how high, seeded by the play — the first is
+  // always the same, and each "Drop again" is a new one (lib/rain).
+  const rainPlan = useMemo(
+    () => (layout ? rainSchedule(layout.rank, layout.column, layout.pts.filter((_, k) => k % 2 === 1), layout.r, { gap: layout.rainGap, span: RAIN_MS, seed: replay }) : null),
+    [layout, replay],
+  );
+  const rainRef = useRef(rainPlan);
+  rainRef.current = rainPlan;
+  const rainedRef = useRef(onRained);
+  rainedRef.current = onRained;
   const prevLayout = useRef<typeof layout>(null);
   const prevStack = useRef<typeof stackKey>(undefined);
   const prevSolo = useRef<number | null>(solo);
@@ -555,9 +590,10 @@ export const DotField = forwardRef<DotFieldHandle, {
       const from = L.restackFrom[i];
       y = from + (y - from) * easeOutBack(p);
     }
-    if (L.entranceStart != null) {
-      const p = Math.min(1, Math.max(0, (now - L.entranceStart - delay - lay.rain[i]) / FALL_MS));
-      y = -lay.r + (y + lay.r) * easeOutBack(p);
+    const plan = rainRef.current;
+    if (L.entranceStart != null && plan) {
+      // Falling under gravity from a little above the plot, then one small settle (lib/rain `fallAt`).
+      y = fallAt(now - L.entranceStart - delay - plan.start[i], -lay.r - plan.lift[i], y, bounceCap(lay.r));
     }
     if (L.mvStart != null && L.mvFrom) {
       const to = L.mvTo ? L.mvTo[2 * i + 1] : lay.pts[2 * i + 1];
@@ -753,6 +789,16 @@ export const DotField = forwardRef<DotFieldHandle, {
       drawTrail(ctx, L.trail, now, (x, y) => ({ x: x * dpr, y: y * dpr, scale: 1 }), dpr);
     }
     ctx.restore();
+    // The glow's copy of what was just painted: at rest only. A moving field is painted as squares every
+    // frame, and its glow is faded out until it comes to rest (app.css), so nothing is copied then.
+    const bloom = bloomRef.current;
+    if (!fast && bloom && glow && L.dark) {
+      const bctx = bloom.getContext('2d');
+      if (bctx) {
+        bctx.clearRect(a, 0, b - a, canvas.height);
+        bctx.drawImage(canvas, a, 0, b - a, canvas.height, a, 0, b - a, canvas.height);
+      }
+    }
     onFrameRef.current?.();
   };
   const paintRef = useRef(paint);
@@ -1012,7 +1058,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     let full = false;
     let moving = false;
     if (L.entranceStart != null) {
-      if (now - L.entranceStart >= delay + lay.rainSpan + FALL_MS) { L.entranceStart = null; setSettled(true); }
+      if (now - L.entranceStart >= delay + (rainRef.current?.end ?? 0)) { L.entranceStart = null; setSettled(true); rainedRef.current?.(); }
       else moving = true;
       full = true;
     }
@@ -1152,6 +1198,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(lay.width * dpr);
     canvas.height = Math.round(height * dpr);
+    if (bloomRef.current) { bloomRef.current.width = canvas.width; bloomRef.current.height = canvas.height; }
     const text = textRef.current ? getComputedStyle(textRef.current).color : 'rgb(0, 0, 0)';
     const base = getComputedStyle(canvas).color;
     const nInks = inks?.length ? inks.length : 2;
@@ -1164,8 +1211,12 @@ export const DotField = forwardRef<DotFieldHandle, {
     // A dark page is one whose text is light.
     const t = parseRgb(text);
     L.dark = !!t && luminance(t) > 0.5;
-    L.tones = L.ink.map((c) => toneInks(c, text, TONES));
-    L.strongTones = L.strong.map((c) => toneInks(c, text, TONES));
+    // The page's own colour, which a hue variant must keep its contrast against.
+    const card = rimRef.current ? getComputedStyle(rimRef.current).color : (L.dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
+    const look: DotLook = !rich ? LOOK_PLAIN : L.dark ? LOOK_DARK : LOOK_LIGHT;
+    const shade = (c: string) => dotTones(c, text, card, look);
+    L.tones = L.ink.map(shade);
+    L.strongTones = L.strong.map(shade);
     const rd = lay.r * dpr;
     // The beads, and on a dark page with a glow their halos, drawn beneath them all.
     const glowing = glow && L.dark;
@@ -1179,8 +1230,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.strongFast = L.strongTones.map((ts) => ts.map(inkOf));
     // The air's kinds: their tones, plain and highlighted, and what each lays down as a square.
     const airInk = (airInks ?? []).map((c, k) => { const el = airRefs.current[k]; return el ? getComputedStyle(el).color : c; });
-    L.airTones = airInk.map((c) => toneInks(c, text, TONES));
-    L.airStrongTones = airInk.map((c) => toneInks(strongerInk(c, text, STRONG_APART), text, TONES));
+    L.airTones = airInk.map(shade);
+    L.airStrongTones = airInk.map((c) => shade(strongerInk(c, text, STRONG_APART)));
     L.airFast = L.airTones.map((ts) => ts.map(inkOf));
     L.airStrongFast = L.airStrongTones.map((ts) => ts.map(inkOf));
     L.ringInk = ringRef.current ? getComputedStyle(ringRef.current).color : '';
@@ -1191,13 +1242,14 @@ export const DotField = forwardRef<DotFieldHandle, {
       : { core: '', glow: '', clear: '', rim: '' };
     const ringRgb = parseRgb(L.ringInk);
     L.ringClear = ringRgb ? `rgba(${ringRgb[0]}, ${ringRgb[1]}, ${ringRgb[2]}, 0)` : 'rgba(0, 0, 0, 0)';
-    // Each dot's tone: its depth in the stack — deeper toward the bottom on a light page, brighter
-    // toward the top on a dark one — give or take one.
+    // Each dot's tone: its depth in the stack — deeper toward the bottom on a light page, brighter toward
+    // the top on a dark one — give or take a step; the rim if it crowns its column; and its hue variant.
     const n = values.length;
     const tone = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
-      const shade = L.dark ? lay.depth[i] : 1 - lay.depth[i];
-      tone[i] = Math.min(TONES - 1, Math.max(0, Math.round(shade * DEPTH_TONES) + jitter(i)));
+      const lit = L.dark ? lay.depth[i] : 1 - lay.depth[i];
+      const step = rich && lay.crest[i] ? DEPTH_STEPS : Math.min(DEPTH_STEPS - 1, Math.max(0, Math.round(lit * (DEPTH_STEPS - 1)) + jitter(i)));
+      tone[i] = step * HUES + hueOf(i);
     }
     L.tone = tone;
     const groups: number[][] = Array.from({ length: L.tones.length * TONES }, () => []);
@@ -1315,7 +1367,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     return () => { if (L.raf) { cancelAnimationFrame(L.raf); L.raf = 0; } };
     // `scheme` is read through getComputedStyle, which is why a theme change must re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, height, entrance, kinds, inks, airInks, scheme, glow, solo]);
+  }, [layout, height, entrance, kinds, inks, airInks, scheme, glow, rich, solo]);
 
   // Drop again: the fall into place, played on demand.
   const replayRef = useRef(replay);
@@ -1537,6 +1589,8 @@ export const DotField = forwardRef<DotFieldHandle, {
       data-max-shift={layout && pack ? layout.maxShift.toFixed(2) : undefined}
       data-alpha={alpha}
       data-settled={settled ? 'true' : 'false'}
+      data-glow={glow || undefined}
+      data-look={rich ? 'rich' : 'plain'}
       data-kinds={kindCounts}
       data-stack={stack ? 'on' : 'off'}
       data-highlight={hlLo != null ? lit : undefined}
@@ -1549,6 +1603,8 @@ export const DotField = forwardRef<DotFieldHandle, {
       aria-hidden
     >
       <canvas ref={canvasRef} className="dot-field-ink" style={{ position: 'absolute', inset: 0, width: '100%', height }} />
+      {/* After the ink in the page, so the ink stays the field's first canvas, and drawn beneath it (app.css). */}
+      {glow && <canvas ref={bloomRef} className="dot-field-bloom" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height }} />}
       {/* The text colour, which a highlighted dot's ink is mixed toward. */}
       <span ref={textRef} style={{ color: 'var(--mantine-color-text)' }} hidden />
       {/* The shockwave's ring, in the curve's accent. */}

@@ -334,6 +334,10 @@ function Distribution({
   const motion = !prefersReducedMotion();
   // The fall into place, on demand ("Drop again"), and the one staff category shown alone, if any.
   const [replay, setReplay] = useState(0);
+  // When a rain has landed — the first on a visit, or one asked for with "Drop again" — one soft band of
+  // light crosses the mountain, once. Keyed so each rain gets its own; gone when it has crossed.
+  const [sheen, setSheen] = useState(0);
+  const [sheenOn, setSheenOn] = useState(false);
   const [solo, setSolo] = useState<number | null>(null);
   // A readout a finger tapped stays until a tap elsewhere; a touch pointer "leaves" as it lifts.
   const [tapped, setTapped] = useState(false);
@@ -861,6 +865,26 @@ function Distribution({
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p}`).join(' ');
   // The area under the curve, down to the baseline: the wash behind the dots.
   const area = `${line} L${X(hi).toFixed(1)},${H} L${X(lo).toFixed(1)},${H} Z`;
+  // The wash's colour along the pay axis, by employment type: at each stretch of pay, the two most common
+  // types above it, blended by their share — so the wash is a hint of the colours over it, not one teal.
+  // In one ink (Generic) it stays the accent.
+  const washStops = (() => {
+    const cats = payCounts?.categories;
+    if (!colour || !cats?.length || !payCounts) return null;
+    const S = 24;
+    const sums = Array.from({ length: S }, () => new Array<number>(cats.length).fill(0));
+    for (let b = 0; b < payCounts.counts.length; b++) {
+      const seg = Math.min(S - 1, Math.max(0, Math.floor((((payCounts.lo100 + b) * 100 - lo) / span) * S)));
+      cats.forEach((c, k) => { sums[seg][k] += c.counts[b] ?? 0; });
+    }
+    return sums.map((row, seg) => {
+      const [a, b] = row.map((n, k) => ({ n, k })).sort((p, q) => q.n - p.n);
+      const offset = (seg + 0.5) / S;
+      if (!a || a.n === 0) return { offset, color: 'var(--mantine-color-accent-6)' };
+      if (!b || b.n === 0) return { offset, color: categoryInk(cats[a.k].name) };
+      return { offset, color: `color-mix(in oklab, ${categoryInk(cats[a.k].name)} ${Math.round((a.n / (a.n + b.n)) * 100)}%, ${categoryInk(cats[b.k].name)})` };
+    });
+  })();
   // The group's curve in the same box, scaled to its own peak at the campus peak's height: its shape
   // beside everyone's, not its size — the lit dots and the count on its label give that.
   const groupMax = groupShape ? Math.max(0, ...groupShape.curve.map((b) => b.n)) : 0;
@@ -1410,7 +1434,7 @@ function Distribution({
       )}
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
       <div
-        ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} style={{ position: 'relative' }}
+        ref={mainBoxRef} className="hero-dist-main" data-lens={lensAt ? 'on' : 'off'} data-sheens={sheen} style={{ position: 'relative' }}
         data-filter={group?.name} data-group-count={lit?.count} data-group-median={lit?.median ?? undefined}
         data-group-points={groupShape?.curve.length}
         onPointerMove={onMove} onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onLeave(); stirRef.current = null; } }}
@@ -1427,16 +1451,37 @@ function Distribution({
       <div style={{ position: 'absolute', inset: 0, height: H }}>
         {/* A faint wash under the curve, beneath the dots, so its shape reads even in the thin tails. */}
         <svg className="hero-dist-wash" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ position: 'absolute', inset: 0, display: 'block' }}>
-          <defs>{areaGradDef(washId, 'var(--mantine-color-accent-6)', 'var(--curve-wash)')}</defs>
-          <g ref={washGRef}><path d={area} fill={`url(#${washId}-area-grad)`} /></g>
+          <defs>
+            {areaGradDef(washId, 'var(--mantine-color-accent-6)', 'var(--curve-wash)')}
+            {washStops && (
+              <>
+                <linearGradient id={`${washId}-hue`} className="hero-dist-wash-hue" x1="0" x2="1" y1="0" y2="0" data-from={lo} data-to={hi}>
+                  {washStops.map((st) => <stop key={st.offset} offset={st.offset} style={{ stopColor: st.color }} />)}
+                </linearGradient>
+                {/* Its strength down the plot is the shared area profile, in white, as a mask over those colours. */}
+                {areaGradDef(`${washId}-fade`, '#fff', 'var(--curve-wash)')}
+                <mask id={`${washId}-fade-mask`}><rect x={0} y={0} width={W} height={H} fill={`url(#${washId}-fade-area-grad)`} /></mask>
+              </>
+            )}
+            {/* The floor's shadow: a band along the baseline under the mountain, so it sits on the axis. */}
+            <linearGradient id={`${washId}-floor`} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={H - 18} y2={H}>
+              <stop offset="0" style={{ stopColor: 'var(--floor-shadow)', stopOpacity: 0 }} />
+              <stop offset="1" style={{ stopColor: 'var(--floor-shadow)', stopOpacity: 1 }} />
+            </linearGradient>
+          </defs>
+          <g ref={washGRef}>
+            <path d={area} fill={washStops ? `url(#${washId}-hue)` : `url(#${washId}-area-grad)`} mask={washStops ? `url(#${washId}-fade-mask)` : undefined} />
+            <path className="hero-dist-floor" d={area} fill={`url(#${washId}-floor)`} />
+          </g>
         </svg>
         <DotField
           ref={mainDotsRef}
           className="hero-dots" values={people} toX={dotX} heightAt={dotHeight} height={H}
           kinds={colour ? cats : null} inks={inkList} stack={colour}
           airKinds={colour ? null : cats} airInks={colour ? undefined : inks}
-          entrance={entrance} highlight={highlight} glow pack={PACK}
+          entrance={entrance} highlight={highlight} glow rich pack={PACK}
           solo={shownSolo} replay={replay} marks={mainMarks} markBig={bigMain} squeeze={tailSqueeze}
+          onRained={() => { setSheen((k) => k + 1); setSheenOn(true); }}
           dim={lit?.main ?? null}
           onFrame={lensAt ? redrawLens : undefined}
         />
@@ -1444,7 +1489,14 @@ function Distribution({
       <svg className="hero-dist-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden style={{ display: 'block' }}>
         <g ref={plotGRef}>
         {/* A soft glow under the curve's line, stronger on a dark page. */}
-        <path className="hero-dist-curve-glow" d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+        {/* The line's glow is brightest at the peak and fades toward the tails. */}
+        <defs>
+          <linearGradient id={`${washId}-glow`} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={HEAD} y2={H}>
+            <stop offset="0" stopColor="var(--mantine-color-accent-6)" stopOpacity={1} />
+            <stop offset="1" stopColor="var(--mantine-color-accent-6)" stopOpacity={0.3} />
+          </linearGradient>
+        </defs>
+        <path className="hero-dist-curve-glow" d={line} fill="none" stroke={`url(#${washId}-glow)`} strokeWidth={6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
         <path d={line} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={1.75} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
         {marks.map((m) => (
           <line
@@ -1456,6 +1508,21 @@ function Distribution({
             vectorEffect="non-scaling-stroke"
           />
         ))}
+        {/* The finishing sheen, clipped to the area under the curve: it lights the dots, not the page. */}
+        {sheenOn && (
+          <g key={sheen} clipPath={`url(#${washId}-sheen-clip)`} aria-hidden>
+            <defs>
+              <clipPath id={`${washId}-sheen-clip`}><path d={area} /></clipPath>
+              <linearGradient id={`${washId}-sheen`} x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0" stopColor="#fff" stopOpacity={0} />
+                <stop offset="0.5" stopColor="#fff" stopOpacity={0.5} />
+                <stop offset="1" stopColor="#fff" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <rect className="hero-dist-sheen" x={-W * 0.3} y={0} width={W * 0.2} height={H} fill={`url(#${washId}-sheen)`}
+              onAnimationEnd={() => setSheenOn(false)} />
+          </g>
+        )}
         {/* The group's own shape and its median, dashed in the page's text ink: apart from the accent
             campus curve and from the green of the search's marks, on either scheme. */}
         {groupLine && (
@@ -1619,7 +1686,7 @@ function Distribution({
               ref={pileDotsRef}
               className="hero-dots-over" values={pile.values} toX={pileX} heightAt={pileHeight} height={H}
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
-              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow pack={PACK}
+              entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow rich pack={PACK}
               solo={shownSolo} replay={replay} marks={pileMarks} markBig={bigPile}
               dim={lit?.pile ?? null}
               onFrame={lensAt ? redrawLens : undefined}
@@ -1650,7 +1717,7 @@ function Distribution({
           <DotField
             ref={tailDotsRef}
             className="hero-dots-tail" values={tailPays} toX={tailX} heightAt={tailHeight} height={H}
-            kinds={colour ? pile.kinds : null} inks={inkList} stack={colour} glow pack={PACK}
+            kinds={colour ? pile.kinds : null} inks={inkList} stack={colour} glow rich pack={PACK}
             solo={shownSolo} marks={pileMarks} markBig={bigPile} frameMark="tail-frame" onFrame={tailDrawn}
             moveTo={{ key: tail.key, pts: tail.key === 2 ? null : tail.from }}
             // The unrolled pile is the pile's own people in the pile's own order, so its mask is the pile's.
@@ -1792,7 +1859,11 @@ function Distribution({
               aria-pressed={shownSolo === i}
               onClick={() => setSolo((s) => (s === i ? null : i))}
             >
-              <span className="hero-dist-swatch" style={{ background: shownSolo == null || shownSolo === i ? inks[i] : 'transparent', borderColor: inks[i] }} aria-hidden />
+              <span
+                className="hero-dist-swatch" aria-hidden
+                data-empty={shownSolo == null || shownSolo === i ? undefined : true}
+                style={{ backgroundColor: shownSolo == null || shownSolo === i ? inks[i] : 'transparent', borderColor: inks[i] }}
+              />
               <Text span size="xs" fw={600}>{c.name}</Text>
               <Text span size="xs" c="dimmed">{num(c.n)}<span className="hero-dist-legend-median"> · median {fmtK(c.median)}</span></Text>
             </button>

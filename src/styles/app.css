@@ -206,6 +206,8 @@
   /* The landing curve's glow under its line, and the faint wash under the curve behind the dots. */
   --curve-glow: 0.14;
   --curve-wash: 0.09;
+  --floor-shadow: rgba(20, 30, 50, 0.06);
+  --plot-light: rgba(255, 196, 128, 0.11);
   --lens-rim-outer: rgba(0, 0, 0, 0.22);
   --lens-rim-inner: rgba(255, 255, 255, 0.9);
   --lens-sheen: rgba(255, 255, 255, 0.55);
@@ -304,6 +306,8 @@ body {
   --glass-sheen: rgba(255, 255, 255, 0.07);
   --curve-glow: 0.3;
   --curve-wash: 0.14;
+  --floor-shadow: rgba(0, 0, 0, 0.55);
+  --plot-light: rgba(64, 104, 170, 0.17);
   --lens-rim-outer: rgba(0, 0, 0, 0.65);
   --lens-rim-inner: rgba(255, 255, 255, 0.2);
   --lens-sheen: rgba(255, 255, 255, 0.16);
@@ -1832,6 +1836,14 @@ button.hero-dist-legend-item:hover { background: var(--mantine-color-default-hov
 button.hero-dist-legend-item[aria-pressed='true'] { background: color-mix(in srgb, var(--mantine-color-accent-6) 14%, transparent); }
 button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
 .hero-dist-swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1.5px solid transparent; box-sizing: border-box; }
+/* A swatch is the field's own dot, shaded as a bead is (lib/dotSprites): a highlight up and to the left and a
+   slightly deeper edge — the key looks like what it is a key to. An empty ring (another type shown alone)
+   stays a plain ring. */
+.hero-dist-swatch:not([data-empty]) {
+  background-image:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 48%),
+    radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.2) 100%);
+}
 /* The canvas is for pointing at, pressing and tapping: no text selection to drag out of it. */
 .hero-dist-main { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 /* The plot is a slider for the keyboard: a ring when a keyboard brings focus to it, none for a click. */
@@ -2010,6 +2022,32 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 [aria-selected='true'] > .search-show-on-graph { color: var(--mantine-color-accent-7); border-color: var(--mantine-color-accent-6); }
 .search-show-on-graph:hover { background: var(--mantine-color-accent-light); color: var(--mantine-color-accent-7); }
+/* The plot's backdrop: a soft light behind the mountain, strongest behind its peak — deep blue on a dark
+   page, which the glow reads against, and a faint warm light on a light one. */
+.hero-dist-main { background: radial-gradient(ellipse 55% 75% at 32% 62%, var(--plot-light), transparent 72%); }
+/* The glow on a dark page: the field's own copy, blurred and faint beneath it, so the dense core glows.
+   Faded out while the dots move — a rain, a re-stack, a burst or a stir — since the copy is of the field
+   at rest, and back once they settle. */
+.dot-field-bloom { display: none; }
+/* In the field's own stacking context, so these reach nothing outside it: the glow beneath the ink. */
+.dot-field[data-glow] { isolation: isolate; }
+.dot-field[data-glow] .dot-field-ink { z-index: var(--z-content); }
+.dot-field[data-glow] .dot-field-bloom { z-index: var(--z-behind); }
+:root[data-mantine-color-scheme='dark'] .dot-field[data-glow] .dot-field-bloom {
+  display: block;
+  filter: blur(5px) saturate(1.4);
+  opacity: 0.55;
+  transition: opacity 320ms ease;
+}
+:root[data-mantine-color-scheme='dark'] .dot-field[data-settled='false'] .dot-field-bloom,
+:root[data-mantine-color-scheme='dark'] .dot-field[data-flight='moving'] .dot-field-bloom { opacity: 0; }
+/* The finishing sheen: when a rain has landed, one soft band of light crosses the mountain once, left to
+   right. Travel in the plot's own units (its viewBox is 1000 wide); gone under Reduce Motion, where there
+   is no rain to finish anyway. */
+.hero-dist-sheen { animation: hero-sheen 700ms cubic-bezier(0.4, 0, 0.3, 1) 1 forwards; }
+:root[data-mantine-color-scheme='light'] .hero-dist-sheen { opacity: 0.8; }
+@keyframes hero-sheen { from { transform: translateX(0); } to { transform: translateX(1400px); } }
+@media (prefers-reduced-motion: reduce) { .hero-dist-sheen { display: none; } }
 /* The filters in force, between the box and its results: filled where a result chip is outlined, so what
    is on reads apart from what could be put on. Each comes off with its own ×. */
 .search-tokens { flex: none; display: flex; align-items: center; gap: 6px; max-width: 45%; min-width: 0; }
