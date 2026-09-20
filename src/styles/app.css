@@ -2439,14 +2439,25 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .home-band .showcase-title { font-size: clamp(var(--mantine-font-size-md), 1.35cqi, 1.45rem) !important; }
 .home-band .showcase-blurb { font-size: clamp(var(--mantine-font-size-sm), 1.05cqi, 1.1rem); }
 .home-band .showcase-stat { font-size: clamp(var(--mantine-font-size-xs), 0.85cqi, 0.95rem); }
-/* Full page, who the magnifying glass's dot is: beside the glass, a fixed size so it holds still as the
-   pointer crosses dot after dot — the name and pay on one line, then the title, then the school, each cut
-   short rather than let the caption grow. */
+/* Full page, who a dot is: beside the glass over the graph, beside the pile, over the pile unrolled. A
+   fixed size so it holds still as the pointer crosses dot after dot — the name and pay on one line, then
+   the title, then the school, each cut short rather than let the caption grow. */
 .hero-lens-who { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 10px; box-sizing: border-box; overflow: hidden; }
 .hero-lens-who-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .hero-lens-who-name { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hero-lens-who-pay { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hero-lens-who-detail { font-size: 11.5px; line-height: 1.3; color: var(--mantine-color-dimmed); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Full page on a phone, the nudge that says a dot can be held to see who it is: over the top of the plot,
+   once a visit (Home `HOLD_HINT_KEY`), gone when the reader holds one or after a few seconds. It is the
+   only way to find the glass without a pointer to move. */
+.hero-hold-hint {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+  z-index: var(--z-local); pointer-events: none; white-space: nowrap;
+  padding: 4px 10px; font-size: var(--mantine-font-size-xs);
+  animation: hold-hint-in 240ms ease-out both;
+}
+@keyframes hold-hint-in { from { opacity: 0; transform: translate(-50%, -4px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .hero-hold-hint { animation: none; } }
 /* Full page, the bar's results: a list under the box, over the graph only while the box is in use
    (SearchBox `bar`); it goes when the reader turns back to the graph, the query and its marks staying.
    Placed and sized by the box (`listPlace`): under its left edge, no wider than the panel and no taller than

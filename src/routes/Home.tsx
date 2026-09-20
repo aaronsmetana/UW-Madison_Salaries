@@ -174,9 +174,51 @@ type WhoIs = (field: 'main' | 'pile', index: number) => DotWho | null;
 /** How close to the glass's centre a dot is named from, past its own radius, CSS px: about a dot, so a
  *  gap between dots names no one. */
 const WHO_REACH = 1.5;
+/** How far past that the dot already named is kept, CSS px. In the packed middle a dot's neighbours are
+ *  a pixel away, so the nearest changes with the smallest movement and the caption flickers between
+ *  people. The one being read holds the caption until the pointer has plainly left it — a hand resting
+ *  on a dot keeps naming that dot, and crossing the field still names each dot in turn. */
+const WHO_STICK = 6;
 /** The caption that names it: a fixed size, so it holds still while the pointer crosses dot after dot. */
 const WHO_W = 264;
 const WHO_H = 60;
+/** Full page with a pointer, the glass is one hover away, so the names are fetched once the field has
+ *  settled rather than on that first hover — long enough after opening that a filter put on straight
+ *  away goes first (DuckDB runs one query at a time). */
+const WHO_EARLY_MS = 1200;
+/** The nudge that says a phone can hold a dot to see who it is: once a visit, and only while it has not
+ *  been held yet. */
+const HOLD_HINT_KEY = 'home-hold-hint';
+const HOLD_HINT_MS = 6000;
+
+/**
+ * The caption that names a dot, wherever a dot is named: under the glass over the graph, beside the pile,
+ * over the pile unrolled. One box of a fixed size, so crossing dot after dot never moves or resizes it,
+ * and `data-who` says who it is naming for the guards.
+ */
+function WhoCaption({ who, at, className }: { who: DotWho | 'loading'; at: { left: number; top: number }; className?: string }) {
+  return (
+    <div
+      className={`chart-tip hero-lens-who${className ? ` ${className}` : ''}`} aria-hidden
+      data-who={who === 'loading' ? undefined : who.key}
+      style={{ position: 'absolute', zIndex: Z.local, pointerEvents: 'none', left: at.left, top: at.top, width: WHO_W, height: WHO_H }}
+    >
+      {who === 'loading' ? (
+        <div className="hero-lens-who-detail">Finding who’s who…</div>
+      ) : (
+        <>
+          <div className="hero-lens-who-line">
+            <span className="hero-lens-who-name">{who.name}</span>
+            {who.pay != null && <span className="hero-lens-who-pay">{fmtK(who.pay)}</span>}
+          </div>
+          {/* A line each, so the school — what tells two people of one title apart — is not what is cut. */}
+          {who.title && <div className="hero-lens-who-detail">{who.title}</div>}
+          {who.school && <div className="hero-lens-who-detail">{who.school}</div>}
+        </>
+      )}
+    </div>
+  );
+}
 
 /** A filter the full page's bar holds: a title or a school, as the search's index gives them. */
 type GraphFilterItem = { kind: 'title'; hit: TitleHit } | { kind: 'division'; hit: DivisionHit };
@@ -292,6 +334,13 @@ function Distribution({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // The pile of people above the cap is under the pointer.
   const [hoverPile, setHoverPile] = useState(false);
+  // Where a mouse is over the pile, and over the pile unrolled: what names the dot under it, full page.
+  const [pileAt, setPileAt] = useState<{ x: number; y: number } | null>(null);
+  const [tailAt, setTailAt] = useState<{ x: number; y: number } | null>(null);
+  const tailHeld = tailAt != null;
+  // A phone names a dot by holding a finger on it, and nothing on the page says so — a mouse finds the
+  // glass by moving. Once a visit, full page, until the reader holds something.
+  const [holdHint, setHoldHint] = useState(false);
   // Rendered width of the plot, in px. The axis needs it: how many salary labels fit is a question
   // about pixels, not about the dollar range, and answering it from the range alone put "$200k" and
   // "$250k+" flush against each other at 375px.
@@ -771,7 +820,10 @@ function Distribution({
       const id = window.setTimeout(() => setTail((t) => (t && t.phase === 'opening' ? { ...t, phase: 'open' } : t)), MOVE_MS + MOVE_STAGGER);
       return () => window.clearTimeout(id);
     }
+    // Not while a pointer is on it: the names are read there (`tailShow`), and a field that folded itself
+    // back mid-name would take the name with it. Moving off starts the wait again from the top.
     if (tailPhase === 'open') {
+      if (tailHeld) return;
       const id = window.setTimeout(closeTail, TAIL_OPEN_MS);
       return () => window.clearTimeout(id);
     }
@@ -779,7 +831,7 @@ function Distribution({
       const id = window.setTimeout(() => setTail(null), MOVE_MS + MOVE_STAGGER);
       return () => window.clearTimeout(id);
     }
-  }, [tailPhase, tailKey, closeTail]);
+  }, [tailPhase, tailKey, tailHeld, closeTail]);
   useEffect(() => {
     if (tailPhase !== 'open' || !tailPays) { setTailTopAt(null); return; }
     let top = 0;
@@ -871,15 +923,73 @@ function Distribution({
     });
   }, [tail, plotW, foundMain, foundAt, activeKey, phone, namesBox]);
 
+  // Full page without a pointer, a hold is the only way to a name and nothing on the page says so.
+  useEffect(() => {
+    if (!full || canHover) return;
+    // Blocked site data throws rather than returning nothing, and a nudge is not worth a broken page:
+    // there, it counts as seen.
+    let seen = true;
+    try { seen = sessionStorage.getItem(HOLD_HINT_KEY) === '1'; } catch { /* private mode */ }
+    if (seen) return;
+    try { sessionStorage.setItem(HOLD_HINT_KEY, '1'); } catch { /* private mode */ }
+    setHoldHint(true);
+    const t = window.setTimeout(() => setHoldHint(false), HOLD_HINT_MS);
+    return () => window.clearTimeout(t);
+  }, [full, canHover]);
+  // Held: it has been found, and saying it again would be in the way of it.
+  useEffect(() => { if (magnify) setHoldHint(false); }, [magnify]);
+
   // Full page, the glass names the dot at its centre — the pointer, or the fingertip under a held glass:
   // the nearest within about a dot of it, and with a filter on, only among the ones it lights. Who the
-  // dots are is looked up the first time the glass is up full page, not before.
+  // dots are is looked up once, and only by the full page.
   const glassUp = full && lensAt != null && !tail;
   const wantWhoRef = useRef(onWantWho);
   wantWhoRef.current = onWantWho;
   useEffect(() => { if (glassUp) wantWhoRef.current?.(); }, [glassUp]);
-  const lensDot = glassUp && whoIs ? mainDotsRef.current?.dotAt(lensAt!.x, lensAt!.y, WHO_REACH, { litOnly: !!lit }) ?? null : null;
+  // With a pointer, they are asked for as the page opens instead of on that first hover, so the first dot
+  // under the glass is named outright (WHO_EARLY_MS) — late enough that a filter put on straight away
+  // goes first, DuckDB running one query at a time. A phone waits for the hold: there, 22k rows would sit
+  // in front of whatever the reader does next.
+  useEffect(() => {
+    if (!full || !canHover) return;
+    const t = window.setTimeout(() => wantWhoRef.current?.(), WHO_EARLY_MS);
+    return () => window.clearTimeout(t);
+  }, [full, canHover]);
+  // The dot a pointer names in a field: the nearest, except that the one already named is kept while the
+  // pointer is still plainly on it (WHO_STICK), and dropped as soon as a filter stops lighting it.
+  const nameDot = (handle: DotFieldHandle | null, at: { x: number; y: number } | null, held: MutableRefObject<number | null>, mask: Uint8Array | null) => {
+    if (!handle || !at) { held.current = null; return null; }
+    const next = handle.dotAt(at.x, at.y, WHO_REACH, { litOnly: !!mask }) ?? null;
+    const keep = held.current;
+    if (keep != null && keep !== next && (!mask || mask[keep] === 0)) {
+      const p = handle.positionOf(keep);
+      // The dot's own radius, not `positionOf`'s: that one is a mark's, and would hold a name on from
+      // four dots away.
+      if (p && Math.hypot(p.x - at.x, p.y - at.y) <= handle.dotR() + WHO_REACH + WHO_STICK) return keep;
+    }
+    held.current = next;
+    return next;
+  };
+  const lensHeldRef = useRef<number | null>(null);
+  const lensDot = nameDot(whoIs ? mainDotsRef.current : null, glassUp ? lensAt : null, lensHeldRef, lit?.main ?? null);
   const lensWho = lensDot != null && typeof whoIs === 'function' ? whoIs('main', lensDot) : null;
+  // The pile and the pile unrolled are named the same way, from the pointer over them. The glass is never
+  // up over either — the pile clears it, and an unrolled graph is squeezed, so nothing under the glass
+  // would read as it looks — so the dot being named is ringed in the field itself (DotField `ring`).
+  const pileHeldRef = useRef<number | null>(null);
+  const pileDot = nameDot(full && whoIs ? pileDotsRef.current : null, tail ? null : pileAt, pileHeldRef, lit?.pile ?? null);
+  const pileWho = pileDot != null && typeof whoIs === 'function' ? whoIs('pile', pileDot) : null;
+  const tailHeldRef = useRef<number | null>(null);
+  const tailDot = nameDot(full && whoIs && tailPhase === 'open' ? tailDotsRef.current : null, tailAt, tailHeldRef, lit?.pile ?? null);
+  // The unrolled field is the pile's own people in the pile's own order, so a dot there is a pile dot.
+  const tailWho = tailDot != null && typeof whoIs === 'function' ? whoIs('pile', tailDot) : null;
+  const tailWhoAt = tailWho ? tailDotsRef.current?.positionOf(tailDot!) ?? null : null;
+  // What each of them puts up: the person, or "finding" while the names are still coming; nothing where
+  // the pointer is in the gaps between dots, and nothing for a dot no one was found for.
+  const showWho = (dot: number | null, who: DotWho | null): DotWho | 'loading' | null =>
+    (dot == null ? null : who ?? (whoIs === 'loading' ? 'loading' : null));
+  const pileShow = showWho(pileDot, pileWho);
+  const tailShow = showWho(tailDot, tailWho);
   // For the glass's own drawing, which rings the dot it names.
   const lensWhoRef = useRef<number | null>(null);
   lensWhoRef.current = lensWho ? lensDot : null;
@@ -1741,26 +1851,8 @@ function Distribution({
       ))}
       {foundCard('main')}
       {lensAt && <FisheyeLens ref={lensRef} at={lensAt} offsetY={lensLift} draw={drawLens} />}
-      {whoPlace && (
-        <div
-          className="chart-tip hero-lens-who" aria-hidden data-who={lensWho?.key}
-          style={{ position: 'absolute', zIndex: Z.local, pointerEvents: 'none', left: whoPlace.left, top: whoPlace.top, width: WHO_W, height: WHO_H }}
-        >
-          {lensWho ? (
-            <>
-              <div className="hero-lens-who-line">
-                <span className="hero-lens-who-name">{lensWho.name}</span>
-                {lensWho.pay != null && <span className="hero-lens-who-pay">{fmtK(lensWho.pay)}</span>}
-              </div>
-              {/* A line each, so the school — what tells two people of one title apart — is not what is cut. */}
-              {lensWho.title && <div className="hero-lens-who-detail">{lensWho.title}</div>}
-              {lensWho.school && <div className="hero-lens-who-detail">{lensWho.school}</div>}
-            </>
-          ) : (
-            <div className="hero-lens-who-detail">Finding who’s who…</div>
-          )}
-        </div>
-      )}
+      {whoPlace && <WhoCaption who={lensWho ?? 'loading'} at={whoPlace} />}
+      {holdHint && <div className="chart-tip hero-hold-hint" aria-hidden>Hold a dot to see who it is</div>}
       </div>
 
 
@@ -1782,11 +1874,15 @@ function Distribution({
               setHoverIdx(null);
               setLensAt(null);
               const f = e.pointerType === 'mouse' ? markHit('pile', e) : null;
-              if (f) { if (card?.key !== f.person_key) setCard({ key: f.person_key, pinned: false }); setHoverPile(false); return; }
+              if (f) { if (card?.key !== f.person_key) setCard({ key: f.person_key, pinned: false }); setHoverPile(false); setPileAt(null); return; }
               if (card && !card.pinned) setCard(null);
               setHoverPile(true);
+              // Full page, the dot under the pointer is named beside the pile. A finger is left out: on
+              // the pile a tap unrolls it, and a hold is how the unrolled field is read.
+              const box = e.currentTarget.getBoundingClientRect();
+              setPileAt(full && e.pointerType === 'mouse' ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
             }}
-            onPointerLeave={() => { setHoverPile(false); setCard((c) => (c?.pinned ? c : null)); }}
+            onPointerLeave={() => { setHoverPile(false); setPileAt(null); setCard((c) => (c?.pinned ? c : null)); }}
             onPointerDown={(e) => { dismissSearch(e); }}
             onPointerUp={(e) => {
               if (dismissedRef.current === e.pointerId) { dismissedRef.current = null; return; }
@@ -1803,10 +1899,12 @@ function Distribution({
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
               entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow rich pack={PACK}
               solo={shownSolo} replay={replay} marks={pileMarks} markBig={bigPile}
-              dim={lit?.pile ?? null}
+              dim={lit?.pile ?? null} ring={pileShow ? pileDot : null}
               onFrame={lensAt ? redrawLens : undefined}
             />
-            {hoverPile && headcount != null && (
+            {/* Not while a dot is named: the caption stands where this pill does, and the pile's own count
+                is not what the reader is reading then. */}
+            {hoverPile && headcount != null && !pileShow && (
               <div aria-hidden style={{ position: 'absolute', right: 0, top: H - pileH - 30, zIndex: Z.local, pointerEvents: 'none' }}>
                 <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>
                   {soloCat
@@ -1817,12 +1915,33 @@ function Distribution({
             )}
             {foundCard('pile')}
             {foundName('pile')}
+            {/* Beside the pile, not in it: the pile is a column a few dots wide, and this is a card. It
+                hangs off its left, over the sky above the curve's own tail. */}
+            {pileShow && pileAt && (
+              <WhoCaption who={pileShow} at={{ left: -(WHO_W + 8), top: Math.max(0, Math.min(H - WHO_H, pileAt.y - WHO_H / 2)) }} />
+            )}
           </div>
         </>
       )}
       {/* The pile unrolled: its people at their own pay across the whole row, and where the axis ends. */}
       {tail && tailPays && (
-        <div className="hero-dist-tail" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: H, pointerEvents: 'none' }}>
+        <div
+          className="hero-dist-tail"
+          style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: H, pointerEvents: tailPhase === 'open' ? 'auto' : 'none' }}
+          // Open, it lies over both fields, so it takes the pointer itself: a mouse names the dot under
+          // it, and a press folds the field back the way a press on either of them did.
+          onPointerMove={(e) => {
+            if (e.pointerType !== 'mouse') return;
+            const box = e.currentTarget.getBoundingClientRect();
+            setTailAt(full ? { x: e.clientX - box.left, y: e.clientY - box.top } : null);
+          }}
+          onPointerLeave={() => setTailAt(null)}
+          onPointerDown={(e) => { dismissSearch(e); }}
+          onPointerUp={(e) => {
+            if (dismissedRef.current === e.pointerId) { dismissedRef.current = null; return; }
+            closeTail();
+          }}
+        >
           {/* Where the graph ended: everything left of this line is the graph, squeezed. */}
           {cap != null && tailTop > cap && (
             <div className="hero-dist-tail-edge" aria-hidden style={{ left: `${((cap - lo) / (tailTop - lo)) * 100}%`, top: HEAD, height: H - HEAD }}>
@@ -1834,6 +1953,7 @@ function Distribution({
             className="hero-dots-tail" values={tailPays} toX={tailX} heightAt={tailHeight} height={H}
             kinds={colour ? pile.kinds : null} inks={inkList} stack={colour} glow rich pack={PACK}
             solo={shownSolo} marks={pileMarks} markBig={bigPile} frameMark="tail-frame" onFrame={tailDrawn}
+            ring={tailShow ? tailDot : null}
             moveTo={{ key: tail.key, pts: tail.key === 2 ? null : tail.from }}
             // The unrolled pile is the pile's own people in the pile's own order, so its mask is the pile's.
             dim={lit?.pile ?? null}
@@ -1844,6 +1964,17 @@ function Distribution({
               <span className="chart-value-pill hero-dist-tail-top-label">{usd(tailTop)} · the top salary</span>
             </div>
           )}
+          {/* By the dot it names: above it where there is room, below it at the top of the plot. The
+              unrolled field is one row of dots, so a caption over it covers only sky. */}
+          {tailShow && tailWhoAt && (
+            <WhoCaption
+              who={tailShow}
+              at={{
+                left: Math.max(0, Math.min(tail.rowW - WHO_W, tailWhoAt.x - WHO_W / 2)),
+                top: tailWhoAt.y - tailWhoAt.r - 8 - WHO_H >= 0 ? tailWhoAt.y - tailWhoAt.r - 8 - WHO_H : tailWhoAt.y + tailWhoAt.r + 8,
+              }}
+            />
+          )}
           <div className="chart-tip hero-dist-tail-note" aria-live="polite">
             <Text size="sm" fw={700}>The top salary, {usd(tailTop)}, is {Math.round(tailTop / (cap ?? hi))}× the {fmtK(cap ?? hi)} edge of the graph</Text>
             <Text size="xs" c="dimmed">{num(tailPays.length)} people at {fmtK(cap ?? hi)} or more, each at their own pay · {canHover ? 'click' : 'tap'} or press Esc to fold them back</Text>
@@ -1853,8 +1984,8 @@ function Distribution({
                 to fold it back, and the graph folds itself either way. */}
             {tail.phase === 'open' && (
               <span
-                key={tail.key} aria-hidden className="hero-dist-tail-timer"
-                style={{ animationDuration: `${TAIL_OPEN_MS}ms` } as CSSProperties}
+                key={`${tail.key}-${tailHeld}`} aria-hidden className="hero-dist-tail-timer"
+                style={{ animationDuration: `${TAIL_OPEN_MS}ms`, animationPlayState: tailHeld ? 'paused' : 'running' } as CSSProperties}
               />
             )}
           </div>

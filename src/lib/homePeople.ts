@@ -40,8 +40,9 @@ export interface HomeName {
  * Everyone's name in `snapshot`, with the title and school of the appointment their dot is coloured by:
  * their highest-paid, ties broken as `homePeopleSql` breaks them. The same rows it counts, so everyone who
  * has a dot has a name here. Its own query rather than more columns on that one, which runs whenever the
- * page's search marks someone and inside every filter's (`filterPeopleSql`): this is only asked for once
- * the glass is up full page.
+ * page's search marks someone and inside every filter's (`filterPeopleSql`): this is asked for only by the
+ * full page, where dots are named — as it opens where there is a pointer, and on the first hold where
+ * there is not (Home `WHO_EARLY_MS`). It is 22k rows, so it is never in front of what a reader does next.
  */
 export function homeNamesSql(snapshot: string): string {
   return `SELECT person_key, first_name AS fn, last_name AS ln, title, school FROM (

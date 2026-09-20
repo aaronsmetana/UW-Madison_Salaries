@@ -213,3 +213,66 @@ test('the page’s own graph names no one, and looks no one up', async ({ browse
   await expect(who(page)).toHaveCount(0);
   await ctx.close();
 });
+
+test('the glass keeps the name it is on while the pointer barely moves', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const { ctx, page } = await open(browser, { scheme: 'dark' });
+  await goFull(page);
+  const b = await ready(page);
+  const at = async () => ((await who(page).count()) ? await who(page).getAttribute('data-who') : null);
+  // A dot with sky right above it: the topmost of a column in the packed middle. Nowhere inside the
+  // middle will do — there a dot is within reach of every pixel, so a hold proves nothing there.
+  const off = { x: b.x + b.width * 0.28, y: b.y - 20 };
+  /** Where the pointer names, arriving with nothing held: off the plot first, then straight to the spot,
+   *  by way of `from` when the walk is supposed to be carrying a name. */
+  const land = async (to: { x: number; y: number }, from?: { x: number; y: number }) => {
+    await page.mouse.move(off.x, off.y); // off the plot: the glass goes down and lets go of its name
+    await expect(main(page)).toHaveAttribute('data-lens', 'off');
+    if (from) {
+      await page.mouse.move(from.x, from.y);
+      await page.waitForTimeout(40);
+    }
+    await page.mouse.move(to.x, to.y);
+    await page.waitForTimeout(40);
+    return at();
+  };
+  let spot: { x: number; y: number } | null = null;
+  let key: string | null = null;
+  for (const fx of [0.28, 0.34, 0.4]) {
+    const x = b.x + b.width * fx;
+    // Down through the sky until a name appears: roughly, then a pixel at a time from well above it.
+    let rough = 0;
+    for (let y = b.y + b.height * 0.1; y < b.y + b.height * 0.95 && !rough; y += 5) {
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(30);
+      if (await at()) rough = y;
+    }
+    if (!rough) continue;
+    for (let y = rough - 8; y <= rough && !spot; y++) {
+      const k = await land({ x, y });
+      if (y === rough - 8) expect(k, 'the sweep started inside the dots, not above them').toBeNull();
+      if (k) { spot = { x, y }; key = k; }
+    }
+    if (spot) break;
+  }
+  expect(key, 'the glass named no one to hold on to').toBeTruthy();
+  // A hand resting on a dot: a pixel this way or that is not a move to somebody else.
+  for (const [dx, dy] of [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) {
+    await page.mouse.move(spot!.x + dx, spot!.y + dy);
+    await page.waitForTimeout(40);
+    expect(await at(), 'the name changed under a still hand').toBe(key);
+  }
+  // Held, not locked. Every row above that dot is sky — the sweep down just landed in it and named nobody
+  // — so nothing but the hold can name anyone up there. Walking up from the dot, the name comes along for
+  // several pixels, and then it goes: a hold, not a lock.
+  let carry = 0;
+  for (let k = 1; k <= 20 && !carry; k++) {
+    if ((await land({ x: spot!.x, y: spot!.y - k }, spot!)) !== key) carry = k;
+  }
+  expect(carry, 'the glass never let the name go').toBeGreaterThan(0);
+  expect(carry, 'the hold did not carry the name past the reach of every dot').toBeGreaterThan(4);
+  // A hold, not a lock: about WHO_STICK past a dot's own radius. Measured from a marked dot's radius it
+  // would be five times that, and a name would follow the pointer dots away from whose it is.
+  expect(carry, 'the name followed the pointer far past its dot').toBeLessThan(9);
+  await ctx.close();
+});

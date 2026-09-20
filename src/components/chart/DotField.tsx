@@ -84,6 +84,12 @@ const MARK_PULSE = 4;
 /** The one mark the search list has picked out is drawn this much bigger again, so which of the marked
  *  people is being read is answered by the field itself rather than only by the list. */
 const MARK_BIG = 2;
+/** The named dot's ring: how far outside the dot it runs and how thick it is, CSS px. Wide enough of the
+ *  dot to read as a ring round it rather than a bigger dot, thin enough not to cover its neighbours. */
+const RING_GAP = 3;
+const RING_W = 1.5;
+/** How far a ring reaches from its dot's centre, so a repaint covers where one was. */
+const ringExtent = (r: number) => r + RING_GAP + RING_W;
 /** A marked dot's radius, CSS px, in a field whose dots are `r`; and how far from its centre it draws. */
 export const markRadius = (r: number, big = false) => Math.max(MARK_MIN_R, r * MARK_SCALE) * (big ? MARK_BIG : 1);
 const markExtent = (r: number, big = false) => markRadius(r, big) * Math.max(MARK_HALO, MARK_PULSE) + 2;
@@ -237,6 +243,9 @@ export interface DotFieldHandle {
    *  plus `reach`; null in the gaps between dots and in the sky. With `litOnly`, a dot a filter dims is
    *  passed over: it is the context, not who the filter is about. */
   dotAt(x: number, y: number, reach: number, o?: { litOnly?: boolean }): number | null;
+  /** A dot's own radius, CSS px: what `dotAt` measures from, and what a reader sees as the dot. Not
+   *  `positionOf`'s radius, which is a marked dot's — five times this — so that a label can clear it. */
+  dotR(): number;
 }
 
 /** A drag's stir at one point of its path: how hard (0 to 1), and which way the drag goes (a unit vector). */
@@ -304,6 +313,10 @@ export const DotField = forwardRef<DotFieldHandle, {
   /** The one marked dot to draw at `MARK_BIG` times a mark's size (the person the search list has
    *  active). An index into `values`, or null for none. */
   markBig?: number | null;
+  /** The one dot to ring: thinly, in the page's text colour, just outside the dot. It says which dot of a
+   *  packed field a caption beside it is naming — what the magnifying glass draws inside itself, for the
+   *  fields it is never up over. An index into `values`, or null for none. */
+  ring?: number | null;
   /** Draw the field this many times as wide along x, from its left edge (1: as laid out); a change eases
    *  over MOVE_MS. Nothing is laid out again: squeezed, the field is its own picture, narrowed. */
   squeeze?: number;
@@ -329,7 +342,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, dim = null, solo = null, marks = null, markBig = null, squeeze = 1, moveTo = null, replay = 0, onRained, glow = false, rich = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, dim = null, solo = null, marks = null, markBig = null, ring = null, squeeze = 1, moveTo = null, replay = 0, onRained, glow = false, rich = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -536,6 +549,9 @@ export const DotField = forwardRef<DotFieldHandle, {
     marks: [] as { i: number; born: number; big: boolean }[],
     markInk: { core: '', glow: '', clear: '', rim: '' },
     markRaf: 0,
+    /** The dot a caption beside the field is naming, ringed in the page's own text colour. */
+    ring: null as number | null,
+    textInk: '',
     /** The squeeze: from, to, and when it started easing (null once there). */
     sqFrom: 1,
     sqTo: 1,
@@ -753,6 +769,22 @@ export const DotField = forwardRef<DotFieldHandle, {
         const x = xOf(m.i, now);
         if (x + ext < a / dpr || x - ext > b / dpr) continue;
         drawMark(ctx, x * dpr, yOf(m.i, now) * dpr, markRadius(r, m.big) * dpr, now - m.born, dpr, L.markInk);
+      }
+    }
+    // The named dot's ring, over the rest: which dot of the field a caption beside it is naming. Thin and
+    // in the page's text colour, the ring the magnifying glass draws inside itself, for the fields it is
+    // never up over — the pile, and the pile unrolled.
+    if (L.ring != null && L.ring < values.length && L.textInk && (!mode || mode[L.ring] !== GONE)) {
+      const x = xOf(L.ring, now);
+      const ext = ringExtent(r);
+      if (x + ext >= a / dpr && x - ext <= b / dpr) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = L.textInk;
+        ctx.lineWidth = RING_W * dpr;
+        ctx.beginPath();
+        ctx.arc(x * dpr, yOf(L.ring, now) * dpr, (r + RING_GAP) * dpr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = alpha;
       }
     }
     // The shockwaves, over the dots: a bloom swelling at each click and fading as the dots burst out of
@@ -1028,6 +1060,9 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
       return best;
     },
+    dotR() {
+      return layout?.r ?? 0;
+    },
     dotAt(x, y, reach, o) {
       const lay = layout;
       const L = live.current;
@@ -1237,6 +1272,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     // A dark page is one whose text is light.
     const t = parseRgb(text);
     L.dark = !!t && luminance(t) > 0.5;
+    L.textInk = text;
     // The page's own colour, which a hue variant must keep its contrast against.
     const card = rimRef.current ? getComputedStyle(rimRef.current).color : (L.dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
     const look: DotLook = !rich ? LOOK_PLAIN : L.dark ? LOOK_DARK : LOOK_LIGHT;
@@ -1586,6 +1622,28 @@ export const DotField = forwardRef<DotFieldHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markKey, markBig, layout]);
   useEffect(() => () => { const L = live.current; if (L.markRaf) { cancelAnimationFrame(L.markRaf); L.markRaf = 0; } }, []);
+
+  // The ring goes from dot to dot with the pointer: the dot it has left and the dot it is on are both
+  // repainted, or the one it left keeps its ring until something else repaints that strip.
+  useEffect(() => {
+    const L = live.current;
+    const next = ring != null && ring >= 0 && ring < values.length ? ring : null;
+    const was = L.ring;
+    if (was === next) return;
+    L.ring = next;
+    const lay = layoutRef.current;
+    if (!lay) return;
+    const ext = ringExtent(lay.r) + 1;
+    const now = performance.now();
+    const busy = L.flying > 0 || L.rings.length > 0 || L.trail.length > 0 || L.entranceStart != null || L.restackStart != null;
+    for (const i of [was, next]) {
+      if (i == null) continue;
+      const x = xOfRef.current(i);
+      paintRef.current(now, x - ext, x + ext, busy);
+      if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x - ext); L.dirtyHi = Math.max(L.dirtyHi, x + ext); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ring, values.length, layout]);
 
   // What the guards read: how many dots of each kind, and how many the highlight covers.
   const kindCounts = useMemo(() => {
