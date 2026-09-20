@@ -276,3 +276,22 @@ test('the glass keeps the name it is on while the pointer barely moves', async (
   expect(carry, 'the name followed the pointer far past its dot').toBeLessThan(9);
   await ctx.close();
 });
+
+test('crossing the packed middle names each dot in turn, not one dot in several', async ({ browser }) => {
+  // The other half of the hold. It steadies a name under a still hand, but it must not be so firm that a
+  // reader has to drag the glass clear of a dot to reach the next one: held by a fixed distance from the
+  // dot it named, a name in the packed middle stayed on while the pointer crossed several of its
+  // neighbours — one new name every 9.8px, where the dots are about a pixel apart. Yielding to whoever is
+  // the nearer instead makes that 4.1, so how firmly a name is held follows how close together the dots
+  // are rather than a distance that is only right where the field is sparse.
+  const { ctx, page } = await open(browser);
+  await goFull(page);
+  const b = await ready(page);
+  const keys = (await sweep(page, b)).map((s) => s.key);
+  expect(keys.filter(Boolean).length, 'the sweep left the dots, so it says nothing about a packed field').toBe(keys.length);
+  let changes = 0;
+  for (let i = 1; i < keys.length; i++) if (keys[i] && keys[i] !== keys[i - 1]) changes++;
+  // 60 steps of 1.3px: 78px across the core. Held by a fixed distance this is 8.
+  expect(changes, 'the glass carried one name across several dots').toBeGreaterThanOrEqual(13);
+  await ctx.close();
+});

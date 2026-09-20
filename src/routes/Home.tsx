@@ -174,11 +174,15 @@ type WhoIs = (field: 'main' | 'pile', index: number) => DotWho | null;
 /** How close to the glass's centre a dot is named from, past its own radius, CSS px: about a dot, so a
  *  gap between dots names no one. */
 const WHO_REACH = 1.5;
-/** How far past that the dot already named is kept, CSS px. In the packed middle a dot's neighbours are
- *  a pixel away, so the nearest changes with the smallest movement and the caption flickers between
- *  people. The one being read holds the caption until the pointer has plainly left it — a hand resting
- *  on a dot keeps naming that dot, and crossing the field still names each dot in turn. */
+/** How far off its dot a name is carried into the sky, CSS px, when there is no other dot to name: a
+ *  hand that drifts off the end of a field keeps what it was reading. */
 const WHO_STICK = 6;
+/** How much nearer the next dot must be before it takes the name, CSS px, when there is one. A hand
+ *  resting on a dot does not move a whole pixel, so this only has to outlast a tremor — measured against
+ *  whoever is competing for the name rather than as a distance from the dot holding it, so that how long
+ *  a name holds on follows how close together the dots are. Held by a fixed distance instead, a name in
+ *  the packed middle stayed on while the pointer crossed several of its neighbours. */
+const WHO_YIELD = 2;
 /** The caption that names it: a fixed size, so it holds still while the pointer crosses dot after dot. */
 const WHO_W = 264;
 const WHO_H = 60;
@@ -955,17 +959,22 @@ function Distribution({
     const t = window.setTimeout(() => wantWhoRef.current?.(), WHO_EARLY_MS);
     return () => window.clearTimeout(t);
   }, [full, canHover]);
-  // The dot a pointer names in a field: the nearest, except that the one already named is kept while the
-  // pointer is still plainly on it (WHO_STICK), and dropped as soon as a filter stops lighting it.
+  // The dot a pointer names in a field: the nearest, except that the one already named is given a little
+  // the better of it so the caption does not flicker, and dropped as soon as a filter stops lighting it.
   const nameDot = (handle: DotFieldHandle | null, at: { x: number; y: number } | null, held: MutableRefObject<number | null>, mask: Uint8Array | null) => {
     if (!handle || !at) { held.current = null; return null; }
     const next = handle.dotAt(at.x, at.y, WHO_REACH, { litOnly: !!mask }) ?? null;
     const keep = held.current;
     if (keep != null && keep !== next && (!mask || mask[keep] === 0)) {
       const p = handle.positionOf(keep);
-      // The dot's own radius, not `positionOf`'s: that one is a mark's, and would hold a name on from
-      // four dots away.
-      if (p && Math.hypot(p.x - at.x, p.y - at.y) <= handle.dotR() + WHO_REACH + WHO_STICK) return keep;
+      const away = p ? Math.hypot(p.x - at.x, p.y - at.y) : Infinity;
+      const q = next == null ? null : handle.positionOf(next);
+      // Nobody else under the pointer: carry the name off the dot for a moment (WHO_STICK). The dot's own
+      // radius, not `positionOf`'s: that one is a mark's, and would carry a name four dots away.
+      if (next == null) { if (away <= handle.dotR() + WHO_REACH + WHO_STICK) return keep; }
+      // Somebody else under it: they take the name as soon as they are the nearer by WHO_YIELD. Whoever
+      // the pointer is really on wins, however tightly the dots are packed.
+      else if (q && away <= Math.hypot(q.x - at.x, q.y - at.y) + WHO_YIELD) return keep;
     }
     held.current = next;
     return next;
