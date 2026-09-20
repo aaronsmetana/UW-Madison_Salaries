@@ -2041,6 +2041,16 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 :root[data-mantine-color-scheme='dark'] .dot-field[data-settled='false'] .dot-field-bloom,
 :root[data-mantine-color-scheme='dark'] .dot-field[data-flight='moving'] .dot-field-bloom { opacity: 0; }
+/* A squeeze or a move, the same: the glow is a copy of the last frame painted, and those frames are not
+   copied while the field moves (DotField `paint`), so what is left on this layer is the picture the field
+   is leaving — the whole graph, blurred, standing where it used to be while its dots slide out from under
+   it. It goes the instant the move starts rather than easing away over it, which is what left a ghost of
+   the old graph lying over the new one; it eases back when the field is still and the glow is its own
+   again. */
+:root[data-mantine-color-scheme='dark'] .dot-field[data-move='moving'] .dot-field-bloom {
+  opacity: 0;
+  transition-duration: 0s;
+}
 /* The finishing sheen: when a rain has landed, one soft band of light crosses the mountain once, left to
    right. Travel in the plot's own units (its viewBox is 1000 wide); gone under Reduce Motion, where there
    is no rain to finish anyway. */

@@ -480,3 +480,65 @@ for (const scheme of ['dark', 'light'] as const) {
     await ctx.close();
   });
 }
+
+test('the glow does not stay behind where the field has moved on', async ({ browser }) => {
+  // The glow is a copy of the last frame the field painted, and it is not copied while the field moves
+  // (too dear a frame). Left showing, what it holds is the picture the field is leaving: the whole graph,
+  // blurred, standing where it used to be while its dots slide out from under it — a ghost of the old
+  // graph lying over the new one. So it goes as the move starts, and is read for twice: once at the very
+  // top of the move, because easing it away over the move is the same ghost more slowly, and once well
+  // into it over ground the field has plainly left.
+  const { ctx, page } = await open(browser, { scheme: 'dark', motion: true });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.clock.install({ time: new Date('2026-09-12T12:00:00') });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await unpeeked(page);
+  // Time stopped, so each pair of reads below is of one instant: the only thing that differs across a
+  // pair is the glow itself.
+  await page.clock.pauseAt(new Date('2026-09-12T12:01:00'));
+  const b = (await page.locator('.hero-dots').boundingBox())!;
+  /** The glow out of the way and back, rather than for good: the later reads need it showing again. */
+  const glow = (on: boolean) => page.evaluate((show) => {
+    const id = 'e2e-glow-off';
+    document.getElementById(id)?.remove();
+    if (show) return;
+    const s = document.createElement('style');
+    s.id = id;
+    s.textContent = '.hero-dots .dot-field-bloom { visibility: hidden !important; }';
+    document.head.append(s);
+  }, on);
+  /** What the glow adds over `clip`, as bytes: nothing, and the two shots are the same file. */
+  const adds = async (clip: { x: number; y: number; width: number; height: number }) => {
+    const lit = await page.screenshot({ clip });
+    await glow(false);
+    const off = await page.screenshot({ clip });
+    await glow(true);
+    return Buffer.compare(lit, off) !== 0;
+  };
+  // At rest it is the field's own picture, so it does show: that is what makes the reads below mean
+  // something.
+  const field = { x: b.x, y: b.y, width: b.width, height: b.height * 0.9 };
+  expect(await adds(field), 'no glow under the field at rest, so nothing here is being tested').toBe(true);
+
+  await page.getByRole('button', { name: /at \$250k\+$/ }).click();
+  await page.clock.runFor(60);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-move', 'moving');
+  expect(await adds(field), 'the glow is still showing as the field sets off').toBe(false);
+
+  await page.clock.runFor(640);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-move', 'moving');
+  // A band the graph has left: the middle of the plot, where the mountain stood and the squeezed field no
+  // longer reaches. Above the baseline, so the axis and its labels stay out of it.
+  const gone = { x: b.x + b.width * 0.35, y: b.y + b.height * 0.45, width: b.width * 0.3, height: b.height * 0.3 };
+  const ink = await page.locator('.hero-dots .dot-field-ink').evaluate((c: HTMLCanvasElement, r) => {
+    const k = c.width / (c.getBoundingClientRect().width || 1);
+    const d = c.getContext('2d')!.getImageData(Math.round(r.dx * k), Math.round(r.dy * k), Math.round(r.w * k), Math.round(r.h * k)).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) n++;
+    return n;
+  }, { dx: gone.x - b.x, dy: gone.y - b.y, w: gone.width, h: gone.height });
+  expect(ink, 'the field has not left this band, so it proves nothing about what is left behind').toBe(0);
+  expect(await adds(gone), 'the glow is still showing the graph the field has left').toBe(false);
+  await ctx.close();
+});
