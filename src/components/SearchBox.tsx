@@ -482,9 +482,12 @@ export function SearchBox({
   const measureStrip = useCallback(() => {
     const el = stripRef.current;
     if (!el) return;
-    const end = el.scrollLeft + el.clientWidth;
+    // By where a chip is drawn, not by `offsetLeft` and `offsetWidth`: those are whole pixels, and a chip
+    // ending a fraction past the edge rounds back inside — so "+N" said one fewer than a reader can see,
+    // on the machines whose fonts land it that way.
+    const end = el.getBoundingClientRect().right;
     let right = 0;
-    el.querySelectorAll<HTMLElement>('[role="option"]').forEach((c) => { if (c.offsetLeft + c.offsetWidth > end + 1) right++; });
+    el.querySelectorAll<HTMLElement>('[role="option"]').forEach((c) => { if (c.getBoundingClientRect().right > end + 1) right++; });
     const left = el.scrollLeft > 1;
     setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
   }, []);
