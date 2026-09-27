@@ -121,6 +121,22 @@ for (const theme of THEMES) {
     expect(bad).toEqual([]);
   });
 
+  // The phone's menu is a sheet, closed on every route above: a dialog over the page, reached from the
+  // burger, with a close button, a divider and seven links of its own.
+  test(`a11y: the phone's menu, open (${theme}), has no critical/serious violations`, async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+    const page = await ctx.newPage();
+    await page.goto('./data');
+    await setTheme(page, theme);
+    await expect(page.locator('body')).toBeVisible({ timeout: 60_000 });
+    await page.getByRole('button', { name: 'Toggle navigation' }).tap();
+    await expect(page.getByRole('dialog', { name: 'Menu' })).toBeVisible();
+    await settled(page);
+    const bad = await runAxe(page);
+    expect(bad).toEqual([]);
+    await ctx.close();
+  });
+
   // The grouped results: a listbox of labelled groups, each holding options. The routes above scan
   // the box closed, so its list — people, titles and divisions together — is only checked here.
   test(`a11y: grouped search results (${theme}) have no critical/serious violations`, async ({ page }) => {

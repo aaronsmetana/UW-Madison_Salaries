@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { AppShell, Group, NavLink, Box, Anchor, Burger, Tooltip, Divider, Button, Stack, Text, Drawer } from '@mantine/core';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
@@ -38,9 +38,42 @@ function visitStarted(): boolean {
   }
 }
 
+/** The site's mark: ascending bars (a salary distribution) on the accent-gradient tile. */
+function LogoMark() {
+  return (
+    <Box
+      w={34}
+      h={34}
+      style={{
+        borderRadius: 10,
+        background: 'var(--accent-grad)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <svg width={19} height={19} viewBox="0 0 18 18" aria-hidden role="img">
+        <rect x={1.5} y={10} width={3.4} height={6.5} rx={1.2} fill="white" fillOpacity={0.72} />
+        <rect x={7.3} y={6} width={3.4} height={10.5} rx={1.2} fill="white" fillOpacity={0.88} />
+        <rect x={13.1} y={2} width={3.4} height={14.5} rx={1.2} fill="white" />
+      </svg>
+    </Box>
+  );
+}
+
+/** The phone's menu: a sheet over the page rather than the desktop's sidebar. */
+const SHEET_ID = 'app-nav-sheet';
+const SHEET_W = 280;
+
 export function AppShellLayout() {
   const loc = useLocation();
-  const [mobileOpened, { toggle: toggleMobile }] = useDisclosure(false);
+  const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure(false);
+  // At `sm` and up the sidebar is beside the page; below it the menu is a sheet (the AppShell's own
+  // `breakpoint`). Read at once rather than in an effect, so a phone never paints a sidebar first.
+  const wide = useMediaQuery('(min-width: 48em)', true, { getInitialValueInEffect: false }) ?? true;
+  // A sheet left open as the window widens past a phone's would sit over a page that has its sidebar back.
+  useEffect(() => { if (wide) closeMobile(); }, [wide, closeMobile]);
   const [collapsed, { toggle: toggleDesktop }] = useDisclosure(true);
   const [peek, setPeek] = useState<'open' | 'closing' | null>(() =>
     typeof window !== 'undefined' && !visitStarted() && !!window.matchMedia?.('(min-width: 48em)').matches ? 'open' : null);
@@ -105,16 +138,22 @@ export function AppShellLayout() {
   const isActive = (to: string) => (to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(to));
   const showControl = CONTROL_PATHS.some((p) => loc.pathname.startsWith(p));
 
-  const renderLink = (n: NavItem, dimmed = false) => {
+  // The phone's sheet always names its links. It used to share the sidebar's `labelled`, which follows the
+  // desktop rail — collapsed from the start — so the sheet opened on a column of bare icons.
+  const renderLink = (n: NavItem, { dimmed = false, sheet = false }: { dimmed?: boolean; sheet?: boolean } = {}) => {
     const Icon = n.icon;
     const active = isActive(n.to);
+    const named = sheet || labelled;
     const link = (
       <NavLink
         component={Link}
         to={n.to}
-        label={labelled ? n.label : undefined}
+        // A tap in the sheet closes it, the page it names included: there the path does not change, so
+        // nothing else would.
+        onClick={sheet ? closeMobile : undefined}
+        label={named ? n.label : undefined}
         // An icon alone names nothing: the rail's links carry their names for a screen reader.
-        aria-label={labelled ? undefined : n.label}
+        aria-label={named ? undefined : n.label}
         leftSection={<Icon size={20} stroke={1.7} />}
         active={active}
         variant="light"
@@ -128,12 +167,12 @@ export function AppShellLayout() {
             boxShadow: active ? 'inset 3px 0 0 0 var(--mantine-color-accent-7), inset 0 0 0 1px rgba(14,110,131,.10)' : undefined,
           },
           label: { fontWeight: active ? 700 : 500 },
-          section: labelled ? undefined : { marginInlineEnd: 0 },
-          body: labelled ? undefined : { display: 'none' },
+          section: named ? undefined : { marginInlineEnd: 0 },
+          body: named ? undefined : { display: 'none' },
         }}
       />
     );
-    return !labelled ? (
+    return !named ? (
       <Tooltip key={n.to} label={n.label} position="right" withArrow>
         {link}
       </Tooltip>
@@ -156,7 +195,9 @@ export function AppShellLayout() {
         // so the bar spilled past the header and collided with the page content beneath it. Measured
         // values plus a little slack, per breakpoint.
         header={{ height: showControl ? { base: 136, sm: 116 } : 64 }}
-        navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: !mobileOpened } }}
+        // Never opened below `sm`: there the menu is the sheet (below), over the page rather than a
+        // full-width panel in place of it.
+        navbar={{ width: collapsed ? 64 : 330, breakpoint: 'sm', collapsed: { mobile: true } }}
         // Fixed only from `sm` up. On a phone a fixed 40px band took the bottom of every screen, its text
         // wrapped to three lines so "Source on GitHub" was clipped, and the tray sat on top of it; there
         // the same footer ends the page instead (below, and `.mantine-AppShell-footer` in app.css).
@@ -166,29 +207,19 @@ export function AppShellLayout() {
         <AppShell.Header>
           <Group h={64} px="md" justify="space-between" wrap="nowrap">
             <Group gap="sm" wrap="nowrap">
-              {/* Mobile-only burger opens the nav drawer; desktop collapse lives at the bottom of the sidebar. */}
-              <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
+              {/* Mobile-only burger opens the menu's sheet; desktop collapse lives at the bottom of the sidebar. */}
+              <Burger
+                opened={mobileOpened}
+                onClick={toggleMobile}
+                hiddenFrom="sm"
+                size="sm"
+                aria-label="Toggle navigation"
+                aria-expanded={mobileOpened}
+                aria-controls={mobileOpened ? SHEET_ID : undefined}
+              />
               <Anchor component={Link} to="/" underline="never" c="inherit">
                 <Group gap={11} wrap="nowrap" align="center">
-                  {/* Logo mark: ascending bars (salary distribution) on the accent-gradient tile. */}
-                  <Box
-                    w={34}
-                    h={34}
-                    style={{
-                      borderRadius: 10,
-                      background: 'var(--accent-grad)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg width={19} height={19} viewBox="0 0 18 18" aria-hidden role="img">
-                      <rect x={1.5} y={10} width={3.4} height={6.5} rx={1.2} fill="white" fillOpacity={0.72} />
-                      <rect x={7.3} y={6} width={3.4} height={10.5} rx={1.2} fill="white" fillOpacity={0.88} />
-                      <rect x={13.1} y={2} width={3.4} height={14.5} rx={1.2} fill="white" />
-                    </svg>
-                  </Box>
+                  <LogoMark />
                   {/* Two-tone wordmark + small uppercase eyebrow for a masthead feel. */}
                   <Stack gap={0} style={{ lineHeight: 1.05 }}>
                     {/* Deliberately not `Eyebrow`, though it looks like one: the wide 0.14em tracking is
@@ -226,30 +257,68 @@ export function AppShellLayout() {
           {showControl && <ControlBar />}
         </AppShell.Header>
 
+        {/* Empty below `sm`. Mantine only slides a collapsed navbar off-screen, so its links would still be
+            tab stops there, behind the sheet that carries the same ones. */}
         <AppShell.Navbar p="sm" ref={navRef} className={peek ? 'app-navbar-peek' : undefined} data-peek={peek ?? undefined}>
-          <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
-          <Divider my="xs" />
-          {renderLink(ABOUT, true)}
-          {/* Collapse/expand toggle anchored at the bottom of the sidebar (desktop only). */}
-          <Tooltip label="Expand menu" position="right" withArrow disabled={labelled}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="sm"
-              mt="xs"
-              fullWidth
-              visibleFrom="sm"
-              justify={labelled ? 'flex-start' : 'center'}
-              px={labelled ? undefined : 0}
-              // During its first look, collapsing is tucking it in now.
-              onClick={() => (peek === 'open' ? setPeek(prefersReducedMotion() ? null : 'closing') : toggleDesktop())}
-              leftSection={labelled ? <IconChevronLeft size={18} /> : undefined}
-              aria-label={labelled ? 'Collapse navigation' : 'Expand navigation'}
-            >
-              {labelled ? <span className="app-navbar-toggle-label">Collapse</span> : <IconChevronRight size={18} />}
-            </Button>
-          </Tooltip>
+          {wide && (
+            <>
+              <Box style={{ flex: 1 }}>{NAV.map((n) => renderLink(n))}</Box>
+              <Divider my="xs" />
+              {renderLink(ABOUT, { dimmed: true })}
+              {/* Collapse/expand toggle anchored at the bottom of the sidebar (desktop only). */}
+              <Tooltip label="Expand menu" position="right" withArrow disabled={labelled}>
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  mt="xs"
+                  fullWidth
+                  visibleFrom="sm"
+                  justify={labelled ? 'flex-start' : 'center'}
+                  px={labelled ? undefined : 0}
+                  // During its first look, collapsing is tucking it in now.
+                  onClick={() => (peek === 'open' ? setPeek(prefersReducedMotion() ? null : 'closing') : toggleDesktop())}
+                  leftSection={labelled ? <IconChevronLeft size={18} /> : undefined}
+                  aria-label={labelled ? 'Collapse navigation' : 'Expand navigation'}
+                >
+                  {labelled ? <span className="app-navbar-toggle-label">Collapse</span> : <IconChevronRight size={18} />}
+                </Button>
+              </Tooltip>
+            </>
+          )}
         </AppShell.Navbar>
+
+        {/* The phone's menu: a sheet over a dimmed page, not a panel as wide as the screen in place of it.
+            A tap outside it or Escape closes it, the keyboard stays inside it while it is open and goes
+            back to the burger after. Named by `aria-label`: the wordmark at its top is not its title. */}
+        <Drawer.Root
+          opened={mobileOpened && !wide}
+          onClose={closeMobile}
+          position="left"
+          size={SHEET_W}
+          transitionProps={{ duration: prefersReducedMotion() ? 0 : 200 }}
+        >
+          <Drawer.Overlay />
+          <Drawer.Content id={SHEET_ID} aria-label="Menu" className="app-nav-sheet">
+            <Drawer.Header>
+              <Group gap={11} wrap="nowrap" align="center">
+                <LogoMark />
+                <Text component="span" fz="lg" fw={700} lts="-0.02em" style={{ lineHeight: 1.1 }}>
+                  <Text span inherit c="bright">UW–Madison </Text>
+                  <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
+                </Text>
+              </Group>
+              <Drawer.CloseButton aria-label="Close menu" />
+            </Drawer.Header>
+            {/* Not `Drawer.Body`: Mantine points the dialog's `aria-describedby` at it, and a screen reader
+                would read every link out as the menu's description before reaching any of them. */}
+            <Box px="sm" pb="md">
+              {NAV.map((n) => renderLink(n, { sheet: true }))}
+              <Divider my="xs" />
+              {renderLink(ABOUT, { dimmed: true, sheet: true })}
+            </Box>
+          </Drawer.Content>
+        </Drawer.Root>
 
         <AppShell.Main
           id="main-content"
