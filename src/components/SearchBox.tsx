@@ -264,6 +264,12 @@ export function SearchBox({
   // Fetched on first focus — on the landing page that is the page load, since its box is autofocused. A
   // bar is on screen from the moment it mounts, so it does not wait to be focused.
   const [focused, setFocused] = useState(autoFocus);
+  // Whether the reader has turned to the box: pressed it, typed in it, arrowed in it, or come to it once the
+  // page was up. The page's own autofocus at load is none of these: it happens as the box mounts, before
+  // `mountedRef` is set, and must not open a list and scroll the page before anyone has touched it.
+  const [engaged, setEngaged] = useState(false);
+  const mountedRef = useRef(false);
+  useEffect(() => { mountedRef.current = true; }, []);
   const { data: index } = useSearchIndex((focused || bar) && grouped);
   const titles = useMemo(() => (kinds.includes('titles') ? matchTitles(index, q) : []), [kinds, index, q]);
   const divisions = useMemo(() => (kinds.includes('divisions') ? matchDivisions(index, q) : []), [kinds, index, q]);
@@ -355,25 +361,28 @@ export function SearchBox({
   // Keyboard navigation for the autocomplete (combobox semantics): one flat list across the groups,
   // in the order they are drawn.
   // With nothing typed, a bar's options are its starters, reached by the same keys and picked the same way.
-  const showStarters = bar && !enabled && !!starters?.length;
+  // A list offers the same once the reader has turned to its empty box — the most common titles, then the
+  // largest divisions — so an empty box says it takes more than names, rather than saying nothing.
+  const showStarters = !!starters?.length && (bar ? !enabled : !term.trim() && focused && engaged);
   const items = useMemo<Item[]>(
     () => showStarters
-      ? starters!.map((s): Item => (s.kind === 'title'
-        ? { kind: 'title', key: `t:${s.hit.code}`, hit: s.hit }
-        : { kind: 'division', key: `d:${s.hit.school}`, hit: s.hit }))
+      ? (bar ? starters! : [...starters!.filter((s) => s.kind === 'title'), ...starters!.filter((s) => s.kind === 'division')])
+        .map((s): Item => (s.kind === 'title'
+          ? { kind: 'title', key: `t:${s.hit.code}`, hit: s.hit }
+          : { kind: 'division', key: `d:${s.hit.school}`, hit: s.hit }))
       : [
         ...peopleShown.map((hit): Item => ({ kind: 'person', key: `p:${hit.person_key}`, hit })),
         ...titles.map((hit): Item => ({ kind: 'title', key: `t:${hit.code}`, hit })),
         ...divisions.map((hit): Item => ({ kind: 'division', key: `d:${hit.school}`, hit })),
       ],
-    [showStarters, starters, peopleShown, titles, divisions]
+    [showStarters, bar, starters, peopleShown, titles, divisions]
   );
   // The bar's list lies over the graph, so it is open only while the box is in use: typed into and focused,
   // and not holding a query it was handed and has not been turned to. It goes the moment the reader turns
   // back to the graph; the query stays, and so do the people it marked there.
   // And only while there is text to answer: emptied, it shuts at once rather than a debounce later.
   const listOpen = bar && enabled && term.trim().length >= 2 && focused && !handed;
-  const opened = bar ? listOpen || showStarters : enabled && !handed && (!whileFocused || focused);
+  const opened = bar ? listOpen || showStarters : (enabled && !handed && (!whileFocused || focused)) || showStarters;
   // What lies over the page, for `onListOpen`: the bar's list, not its line of chips; a list's whole menu.
   const covering = bar ? listOpen : opened;
 
@@ -554,6 +563,14 @@ export function SearchBox({
     // An empty box's Escape peels the last filter instead, and says so in the same way: layer by layer,
     // the text, then the filters, then — at the page — full page itself.
     const lastToken = tokens?.length && onRemoveToken ? tokens[tokens.length - 1] : null;
+    // An empty list box's suggestions: Escape puts them away, and an arrow brings them (a combobox's
+    // own way to open its list), as a press on the box would.
+    if (!bar && !term && showStarters && e.key === 'Escape') {
+      e.preventDefault();
+      setEngaged(false);
+      return;
+    }
+    if (!bar && !term && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) setEngaged(true);
     if (e.key === 'Escape') {
       if (term) {
         e.preventDefault();
@@ -563,6 +580,8 @@ export function SearchBox({
       }
       setTerm('');
       setPendingEnter(null);
+      // Put away, not swapped for the suggestions: an Escape that empties the box is not a turn to it.
+      setEngaged(false);
       return;
     }
     if (e.key === 'Backspace' && !term && lastToken) {
@@ -787,6 +806,28 @@ export function SearchBox({
     </>
   );
 
+  // A list's suggestions for its empty box (`starters`): the most common titles, then the largest divisions,
+  // each an ordinary row — Enter opens it, Shift+Enter or "Show on graph" shows it on the graph.
+  const nTitles = showStarters ? items.filter((it) => it.kind === 'title').length : 0;
+  const startersBody = (
+    <div className="search-groups" data-suggestions style={{ padding: t.island }} role="listbox" id={listId} aria-label="Suggestions">
+      {nTitles > 0 && (
+        <div role="group" aria-labelledby={`${listId}-try-titles`} className="search-group" data-group="titles">
+          <GroupLabel id={`${listId}-try-titles`}>Most common titles</GroupLabel>
+          {items.slice(0, nTitles).map((it, i) => (it.kind === 'title' ? titleRow(it.hit, i) : null))}
+        </div>
+      )}
+      {items.length > nTitles && (
+        <div role="presentation" className="search-side">
+          <div role="group" aria-labelledby={`${listId}-try-divisions`} className="search-group" data-group="divisions">
+            <GroupLabel id={`${listId}-try-divisions`}>Largest divisions</GroupLabel>
+            {items.slice(nTitles).map((it, j) => (it.kind === 'division' ? divisionRow(it.hit, nTitles + j) : null))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   if (bar) {
     // With nothing typed, the box's line offers starters as chips, which lie over nothing. Typed into, the
     // box drops its results in a list under it, over the graph — only while it is in use (`listOpen`).
@@ -979,9 +1020,10 @@ export function SearchBox({
             leftSectionWidth={large ? 56 : undefined}
             placeholder={placeholderText}
             value={term}
-            onChange={(e) => setTerm(e.currentTarget.value)}
+            onChange={(e) => { setEngaged(true); setTerm(e.currentTarget.value); }}
             onKeyDown={onKeyDown}
-            onFocus={() => { setFocused(true); setHanded(false); }}
+            onPointerDown={() => setEngaged(true)}
+            onFocus={() => { setFocused(true); setHanded(false); if (mountedRef.current) setEngaged(true); }}
             onBlur={() => setFocused(false)}
             rightSection={peopleBusy ? <Loader size="sm" /> : null}
             aria-label={grouped ? 'Search a person, title or division' : 'Search a person'}
@@ -1040,7 +1082,7 @@ export function SearchBox({
           boxShadow: CARD_SHADOW,
         }}
       >
-        {listBody(false)}
+        {showStarters ? startersBody : listBody(false)}
       </Popover.Dropdown>
     </Popover>
   );

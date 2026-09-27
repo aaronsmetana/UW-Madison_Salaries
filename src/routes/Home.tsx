@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Tooltip, Anchor, Button, ActionIcon, FocusTrap } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
@@ -2205,7 +2205,42 @@ export default function Home() {
   // The query lives here, not in either search box, because the graph's full page is a portal: going
   // full page remounts the panel and everything in it. One box is on the page and the other inside the
   // panel, never both, and each is handed the query the other was holding.
-  const [query, setQuery] = useState('');
+  //
+  // And in the address (`?q=`), so a search can be kept or sent, and Back from a person opened out of it
+  // comes back to it: the box holding it, its marks on the graph, its list shut until the box is turned to
+  // (the box's `handed` rule). Written as the reader types but without adding to the history, and kept when
+  // a pick empties the box — that pick is what Back comes back from.
+  const [params, setParams] = useSearchParams();
+  const urlQuery = params.get('q') ?? '';
+  const [query, setQuery] = useState(urlQuery);
+  // Arrived holding a query: the box is not given the caret, which would open its list and move the page.
+  const arrivedWithQuery = useRef(urlQuery.trim().length >= 2);
+  const writtenRef = useRef(urlQuery);
+  const keepUrlRef = useRef(false);
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
+  useEffect(() => {
+    const want = query.trim().length >= 2 ? query.trim() : '';
+    if (!want && keepUrlRef.current) return;
+    if (want) keepUrlRef.current = false;
+    if (want === writtenRef.current) return;
+    const t = window.setTimeout(() => {
+      writtenRef.current = want;
+      setParamsRef.current((p) => {
+        const n = new URLSearchParams(p);
+        if (want) n.set('q', want); else n.delete('q');
+        return n;
+      }, { replace: true });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [query]);
+  // The address changed by itself — a link to this page, Back or Forward within it — and the box follows.
+  useEffect(() => {
+    if (urlQuery === writtenRef.current) return;
+    writtenRef.current = urlQuery;
+    keepUrlRef.current = false;
+    setQuery(urlQuery);
+  }, [urlQuery]);
   const [graphFull, setGraphFull] = useState(false);
   // What the full page's bar is filtering the graph to: at most one title and one school, in the order they
   // were put on (Escape and Backspace take the last one off first). Full page only — the landing graph has
@@ -2229,6 +2264,7 @@ export default function Home() {
     onPeopleShown: setShown,
     onActiveItem: setActiveItem,
     onPick: (h: { person_key: string; name: string }) => {
+      keepUrlRef.current = true;
       if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`);
     },
   };
@@ -2467,11 +2503,13 @@ export default function Home() {
     <SearchBox
       {...searchProps}
       size="lg"
-      autoFocus={firstSearchRef.current}
+      autoFocus={firstSearchRef.current && !arrivedWithQuery.current}
       keepBelow={phone ? undefined : () => document.querySelector<HTMLElement>('.hero-dist-main')}
       whileFocused={phone}
       listLimit={phone ? midPlot : undefined}
       onListOpen={phone ? (open) => { searchOpenRef.current = open; } : undefined}
+      // Focused and empty, it suggests where to start: the full page's starters, with no filter on.
+      starters={starters}
       // The way in to the full page's filters from the page's own search: a title or school shown
       // on the graph rather than opened. The box empties itself, so no list is left behind.
       onShowOnGraph={(pick) => { putFilter(pick); openFullRef.current?.(); }}
