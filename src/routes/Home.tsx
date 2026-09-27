@@ -2,10 +2,10 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Stack, Title, Text, Group, SimpleGrid, Tooltip, Anchor, Button, ActionIcon, FocusTrap } from '@mantine/core';
-import { useMediaQuery } from '@mantine/hooks';
+import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import {
   IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
-  IconArrowsMaximize, IconArrowsMinimize,
+  IconArrowsMaximize, IconX,
 } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useRelease } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -350,8 +350,13 @@ function Distribution({
     : groupFlagFull;
   const flagRef = useRef<HTMLDivElement>(null);
   const [flagBox, setFlagBox] = useState({ w: 0, h: 0 });
+  // How far down the plot the label sits: at its top, unless the panel's controls are there. Full page the
+  // controls are a line above the plot; on the page they lie over its top right, where a group paid well —
+  // Professor's median is $223k — put its label on "Full page". It then drops below them.
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [flagTop, setFlagTop] = useState(2);
   // The names the search hangs on its dots start below the label, so none is laid over it.
-  const flagRoom = groupFlagText ? flagBox.h + 6 : 2;
+  const flagRoom = groupFlagText ? flagTop + flagBox.h + 4 : 2;
   // The group's label, measured whenever it or the plot changes: its box places it and keeps the names off it.
   useLayoutEffect(() => {
     const el = flagRef.current;
@@ -989,6 +994,18 @@ function Distribution({
   useEffect(() => { redrawLens(); }, [lensWho?.key, redrawLens]);
   // The press that put the search's list away (`dismissSearch`), so its release is not acted on either.
   const dismissedRef = useRef<number | null>(null);
+  // Across, the label is where it is drawn; down, it is read at the plot's top, so a label already moved
+  // does not decide its own move back.
+  useLayoutEffect(() => {
+    const f = flagRef.current, c = controlsRef.current, m = mainBoxRef.current;
+    let top = 2;
+    if (f && c && m) {
+      const fr = f.getBoundingClientRect(), cr = c.getBoundingClientRect(), mr = m.getBoundingClientRect();
+      const ft = mr.top + 2;
+      if (fr.left < cr.right && fr.right > cr.left && ft < cr.bottom && ft + fr.height > cr.top) top = Math.ceil(cr.bottom - mr.top) + 4;
+    }
+    setFlagTop((t) => (t === top ? t : top));
+  }, [groupFlagText, flagBox.w, flagBox.h, plotW, full]);
 
   if (bins.length < 3) return null;
 
@@ -1555,21 +1572,27 @@ function Distribution({
     ctx.restore();
   };
 
-  // Full page, or back: one button, over the panel's corner with the rest of its controls.
+  // Full page, or back: one button, in the panel's top right corner, last on its line of controls — where a
+  // way out is looked for. It is the one control there with a colour of its own: tinted on the page, so the
+  // full page graph is found; filled full page, with its key beside it, so leaving it is never a search.
+  // It was a quiet text button between "Drop again" and the colour switch, easy to miss either way.
   const fullToggle = phone ? (
     <ActionIcon
-      ref={toggleRef} variant="subtle" size="md" className="hero-dist-full-toggle"
-      aria-label={full ? 'Exit full page' : 'Full page'} onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
+      ref={toggleRef} variant={full ? 'filled' : 'light'} color="accent" size="md"
+      className={`hero-dist-full-toggle${full ? '' : ' accent-adaptive-text'}`}
+      aria-label={full ? 'Exit full page' : 'Full page graph'} onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
     >
-      {full ? <IconArrowsMinimize size={16} /> : <IconArrowsMaximize size={16} />}
+      {full ? <IconX size={16} /> : <IconArrowsMaximize size={16} />}
     </ActionIcon>
   ) : (
     <Button
-      ref={toggleRef} variant="subtle" size="compact-xs" className="hero-dist-full-toggle"
-      leftSection={full ? <IconArrowsMinimize size={14} /> : <IconArrowsMaximize size={14} />}
+      ref={toggleRef} variant={full ? 'filled' : 'light'} color="accent" size="compact-sm"
+      className={`hero-dist-full-toggle${full ? '' : ' accent-adaptive-text'}`}
+      leftSection={full ? <IconX size={14} /> : <IconArrowsMaximize size={14} />}
+      rightSection={full ? <span className="hero-dist-esc" aria-hidden>Esc</span> : undefined}
       onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
     >
-      {full ? 'Exit full page' : 'Full page'}
+      {full ? 'Exit full page' : 'Full page graph'}
     </Button>
   );
 
@@ -1586,7 +1609,7 @@ function Distribution({
       style={{ '--pile-gap': `${hasPile ? PILE_GAP : 0}px`, '--pile-w': hasPile ? `max(${PILE_MIN_W}px, calc((100% - ${PILE_GAP}px) * ${(pileShare / (1 + pileShare)).toFixed(5)}))` : '0px' } as CSSProperties}
     >
       {(
-        <div className="hero-dist-controls">
+        <div className="hero-dist-controls" ref={controlsRef}>
           {/* Full page, the page's own search box is behind the scrim, so the panel carries one, leading the
               line of controls above the plot: the box, with starters beside it while nothing is typed, and
               its results in a list under it while it is in use. The list lies over the graph only then — it
@@ -1604,8 +1627,8 @@ function Distribution({
               Drop again
             </Button>
           ))}
-          {fullToggle}
           {controls}
+          {fullToggle}
         </div>
       )}
       <div ref={rowRef} className="hero-dist-row" style={{ position: 'relative' }}>
@@ -1722,8 +1745,8 @@ function Distribution({
             )}
             {groupMedianX != null && (
               <>
-                <line className="hero-dist-group-casing" x1={groupMedianX} x2={groupMedianX} y1={flagBox.h + 4} y2={H} vectorEffect="non-scaling-stroke" />
-                <line className="hero-dist-group-median" x1={groupMedianX} x2={groupMedianX} y1={flagBox.h + 4} y2={H}
+                <line className="hero-dist-group-casing" x1={groupMedianX} x2={groupMedianX} y1={flagTop + flagBox.h + 2} y2={H} vectorEffect="non-scaling-stroke" />
+                <line className="hero-dist-group-median" x1={groupMedianX} x2={groupMedianX} y1={flagTop + flagBox.h + 2} y2={H}
                   stroke="var(--mantine-color-text)" strokeWidth={1.75} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
               </>
             )}
@@ -1735,7 +1758,7 @@ function Distribution({
           ref={flagRef}
           className="hero-dist-group-flag"
           data-pending={group?.pending || undefined}
-          style={{ position: 'absolute', top: 2, left: flagLeft, maxWidth: plotW }}
+          style={{ position: 'absolute', top: flagTop, left: flagLeft, maxWidth: plotW }}
         >
           {groupFlagText}
         </div>
@@ -2201,6 +2224,8 @@ export default function Home() {
   const navigate = useNavigate();
   const [shown, setShown] = useState<ShownPerson[]>([]);
   const [activeItem, setActiveItem] = useState<string | null>(null);
+  // Whether the reader put the search on that row (a pointer, an arrow), not the list opening on it.
+  const [activeChosen, setActiveChosen] = useState(false);
   const openRef = useRef<((key: string) => boolean) | null>(null);
   // The query lives here, not in either search box, because the graph's full page is a portal: going
   // full page remounts the panel and everything in it. One box is on the page and the other inside the
@@ -2262,7 +2287,7 @@ export default function Home() {
     onQueryChange: setQuery,
     keepFoundOnUnmount: true,
     onPeopleShown: setShown,
-    onActiveItem: setActiveItem,
+    onActiveItem: (key: string | null, chosen: boolean) => { setActiveItem(key); setActiveChosen(chosen); },
     onPick: (h: { person_key: string; name: string }) => {
       keepUrlRef.current = true;
       if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`);
@@ -2272,7 +2297,16 @@ export default function Home() {
   // magnifying glass is first up full page — by when DuckDB is up.
   const peopleSnap = artifactUsable ? homeStats.snapshot_id : '';
   const [wantWho, setWantWho] = useState(false);
-  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && (shown.length > 0 || filters.length > 0 || wantWho));
+  // A title or division row on the page's list — the suggestions, or a result — shown on the graph above it
+  // while the reader is on it: its dots lit and the rest faded, as a filter shows it full page. Only a row
+  // the reader chose, and one they rest on (150ms), so opening the list lights nothing and a pointer
+  // passing over the rows does not repaint the field for each; gone as soon as they leave it.
+  const listRow = !graphFull && activeItem != null && /^[td]:/.test(activeItem) ? activeItem : null;
+  const previewWanted = listRow && activeChosen ? listRow : null;
+  const [previewSettled] = useDebouncedValue(previewWanted, 150);
+  const preview = previewWanted != null && previewSettled === previewWanted ? previewWanted : null;
+  // The dots are named once, before the first row is chosen: a list of titles and divisions is open.
+  const { data: homePeople } = useSql<HomePerson>(['home-people', peopleSnap], homePeopleSql(peopleSnap), !!peopleSnap && (shown.length > 0 || filters.length > 0 || wantWho || listRow != null));
   // And their names, for the glass to name a dot with: only once it has been up full page.
   const { data: homeNames } = useSql<HomeName>(['home-names', peopleSnap], homeNamesSql(peopleSnap), !!peopleSnap && wantWho);
   const spots = useMemo(
@@ -2303,27 +2337,46 @@ export default function Home() {
     filters.length && peopleSnap ? filterPeopleSql(peopleSnap, { jobCode: title?.code, school: school?.school }) : '',
     !!peopleSnap && filters.length > 0,
   );
+  // The previewed row's people: the filter's own query, so showing it full page next reuses the answer.
+  const pvCode = preview?.startsWith('t:') ? preview.slice(2) : null;
+  const pvSchool = preview?.startsWith('d:') ? preview.slice(2) : null;
+  const { data: previewRows } = useSql<{ person_key: string; pay: number }>(
+    ['graph-filter', peopleSnap, pvCode ?? '', pvSchool ?? ''],
+    preview && peopleSnap ? filterPeopleSql(peopleSnap, { jobCode: pvCode ?? undefined, school: pvSchool ?? undefined }) : '',
+    !!peopleSnap && preview != null,
+  );
   // A title's name alone can be two titles — "Research Associate" is PD012 and PD012N — so where the index
   // has another under the same name, the filter names its code too; picked, it must still say which it was.
-  const { data: searchIndex } = useSearchIndex(graphFull || !!title);
-  const titleName = useMemo(() => {
-    if (!title) return null;
-    const shared = (searchIndex?.titles ?? []).filter(([, t]) => t === title.title).length > 1;
-    return shared ? `${title.title} (${title.code})` : title.title;
-  }, [title, searchIndex]);
-  const group = useMemo<GraphGroup | null>(() => {
-    if (!filters.length || !artifactUsable || !homeStats.pay_counts) return null;
-    const name = titleName && school ? `${titleName} in ${school.school}` : (titleName ?? school?.school ?? '');
-    // Not yet known: the query is out, or the dots are not yet named. The field is left as it is until
-    // the answer is in, rather than dimmed to nothing and lit a moment later.
-    if (!filterRows || !spots) return { name, pending: true };
+  const { data: searchIndex } = useSearchIndex(graphFull || !!title || listRow != null);
+  const nameOfTitle = useCallback((code: string, name: string | null) => {
+    const t = name ?? (searchIndex?.titles ?? []).find(([c]) => c === code)?.[1] ?? code;
+    const shared = (searchIndex?.titles ?? []).filter(([, n]) => n === t).length > 1;
+    return shared ? `${t} (${code})` : t;
+  }, [searchIndex]);
+  const titleName = title ? nameOfTitle(title.code, title.title) : null;
+  // A group's lit dots, from its people: not yet known while the query is out or the dots are not yet
+  // named — the field is then left as it is until the answer is in, rather than dimmed to nothing and lit
+  // a moment later.
+  const groupOf = useCallback((name: string, rows: { person_key: string; pay: number }[] | undefined): GraphGroup | null => {
+    if (!artifactUsable || !homeStats.pay_counts) return null;
+    if (!rows || !spots) return { name, pending: true };
     const pc = homeStats.pay_counts;
     const sizes = {
       main: pc.counts.reduce((t, n) => t + n, 0),
       pile: (pc.categories ?? []).reduce((t, c) => t + c.over, 0),
     };
-    return { name, pending: false, ...emphasis(spots, filterRows.map((r) => ({ person_key: r.person_key, pay: Number(r.pay) })), sizes) };
-  }, [filters.length, titleName, school, filterRows, spots, artifactUsable, homeStats]);
+    return { name, pending: false, ...emphasis(spots, rows.map((r) => ({ person_key: r.person_key, pay: Number(r.pay) })), sizes) };
+  }, [artifactUsable, homeStats, spots]);
+  const filterGroup = useMemo<GraphGroup | null>(() => {
+    if (!filters.length) return null;
+    return groupOf(titleName && school ? `${titleName} in ${school.school}` : (titleName ?? school?.school ?? ''), filterRows);
+  }, [filters.length, titleName, school, filterRows, groupOf]);
+  const previewGroup = useMemo<GraphGroup | null>(() => {
+    if (!preview) return null;
+    return groupOf(pvCode ? nameOfTitle(pvCode, null) : (pvSchool ?? ''), previewRows);
+  }, [preview, pvCode, pvSchool, previewRows, nameOfTitle, groupOf]);
+  // On the page, a row the reader is on in the search's list; full page, its filters.
+  const group = !graphFull && previewGroup ? previewGroup : filterGroup;
   // What the full page's bar offers with nothing typed. Nothing on: the index's largest schools and titles,
   // turn about, so a narrow strip still shows both kinds. A school on: its largest titles; a title on: the
   // schools that employ most of it — each a small query of the filter's own rows, asked once the filter's

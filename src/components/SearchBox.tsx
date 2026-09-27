@@ -187,8 +187,9 @@ export function SearchBox({
   /** Told the people the open list shows, in order, whenever they change — and none once it closes. */
   onPeopleShown?: (people: ShownPerson[]) => void;
   /** Told the active row's key ('p:<person_key>', 't:<code>' or 'd:<school>') as it moves; null when the
-   *  list is closed. */
-  onActiveItem?: (key: string | null) => void;
+   *  list is closed. `chosen` is whether the reader put it there — a pointer on it, or an arrow key — rather
+   *  than the list opening on its first row. */
+  onActiveItem?: (key: string | null, chosen: boolean) => void;
   /** Keep the list below the box, never flipped up over what is above it — the element this returns (the
    *  landing graph, whose dots the search marks). Opening the list scrolls the page to give it room below,
    *  but never so far that the element's top passes under the header. */
@@ -217,7 +218,7 @@ export function SearchBox({
    *  as chips on the box's line, so an empty line says what the bar can do rather than nothing. */
   starters?: readonly SearchPick[];
   /** Offered on every title and division row of the list (list only), beside opening its page: show it on
-   *  the graph instead. A pointer presses it; the keyboard has Shift+Enter on the row. */
+   *  the full page graph instead. A pointer presses it; the keyboard has Shift+Enter on the row. */
   onShowOnGraph?: (pick: SearchPick) => void;
   /** Told whether the list is open: while it is, a press on what it lies over should only put it away. The
    *  bar's, and a list's that lies over the graph (the landing box above it on a phone). */
@@ -406,6 +407,8 @@ export function SearchBox({
   const itemKeys = items.map((i) => i.key).join('|');
   useEffect(() => { setActive(0); }, [itemKeys]);
   useEffect(() => { setMoved(false); }, [q]);
+  // A list that closes forgets the choice: opened again, it is on its first row as the list put it there.
+  useEffect(() => { if (!opened) setMoved(false); }, [opened]);
   // `inline` for the strip, which scrolls sideways; a list only ever needs `block`.
   useEffect(() => { document.getElementById(`${listId}-opt-${active}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [active, listId]);
 
@@ -427,7 +430,7 @@ export function SearchBox({
   const activeKey = opened && items[active] ? items[active].key : null;
   const activeRef = useRef(onActiveItem);
   activeRef.current = onActiveItem;
-  useEffect(() => { activeRef.current?.(activeKey); }, [activeKey]);
+  useEffect(() => { activeRef.current?.(activeKey, moved); }, [activeKey, moved]);
   // Gone from the page, so nothing of this box's is still being shown — unless the parent owns that
   // list and is handing this box's query to another one. That goes for the active row as much as for the
   // people: the box going away can be the later of the two — the landing box leaves a render after the
@@ -437,7 +440,7 @@ export function SearchBox({
   useEffect(() => () => {
     if (keepRef.current) return;
     shownRef.current.onPeopleShown?.([]);
-    activeRef.current?.(null);
+    activeRef.current?.(null, false);
   }, []);
 
   // Opened under a figure it must not cover: room for the list below, from the page's scroll.
@@ -623,17 +626,26 @@ export function SearchBox({
     borderRadius: 6,
     background: i === active ? 'var(--mantine-color-default-hover)' : undefined,
   });
+  // A pointer moving onto a row chooses it — not a row moved under a pointer at rest. Opening the list can
+  // scroll the page to keep it below the box (`keepBelow`), sliding a row beneath a resting pointer: the
+  // browser fires its enter and a still mousemove, and taking either as a choice set the active row, and
+  // showed a row on the graph, that the reader never went to.
+  const chooseOnMove = (i: number) => (e: { movementX: number; movementY: number }) => {
+    if (!e.movementX && !e.movementY) return;
+    setActive(i);
+    setMoved(true);
+  };
   const optionProps = (i: number, it: Item) => ({
     id: optId(i),
     role: 'option',
     'aria-selected': i === active,
     'data-kind': it.kind,
     'data-key': it.key,
-    onMouseEnter: () => { setActive(i); setMoved(true); },
+    onMouseMove: chooseOnMove(i),
     onClick: () => select(it),
     // In the bar, and in a list open only while the box has the focus, the box keeps it, as a combobox
     // does: a press on a row that took it would shut the list before the press landed, and the keys reach
-    // every row from the box.
+    // every row from the box. (The suggestions an empty box offers keep it by the list's own press, below.)
     ...(bar || whileFocused ? { tabIndex: -1, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {}),
     px: 10,
     py: t.rowPad,
@@ -701,7 +713,7 @@ export function SearchBox({
     );
   };
 
-  // "Show on graph" on a title or division row: part of the option, not a control inside it — a focusable
+  // "Show on full page graph" on a title or division row: part of the option, not a control inside it — a focusable
   // button in an option is an interactive element where only the option may be — so it is hidden from the
   // accessibility tree, and the keyboard's way to it (Shift+Enter) is said on the box instead.
   const showable = !!onShowOnGraph;
@@ -712,7 +724,7 @@ export function SearchBox({
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => { e.stopPropagation(); e.preventDefault(); showOnGraph(items[i]); }}
     >
-      Show on graph <IconArrowsMaximize size={12} />
+      Show on full page graph <IconArrowsMaximize size={12} />
     </span>
   );
   const titleRow = (h: TitleHit, i: number) => (
@@ -721,7 +733,7 @@ export function SearchBox({
         <Text fz={t.nameFont} fw={600} truncate="end" style={{ minWidth: 0 }}>{h.title}</Text>
         <span className="code-pill">{h.code}</span>
       </Group>
-      <Text fz={t.subFont} c="dimmed" mt={1}>
+      <Text fz={t.subFont} c="dimmed" mt={1} className="search-row-sub">
         {num(h.n)} {h.n === 1 ? 'person' : 'people'}{h.med != null ? ` · median ${usd(h.med)}` : ''}
       </Text>
       {showMark(i)}
@@ -731,7 +743,7 @@ export function SearchBox({
   const divisionRow = (h: DivisionHit, i: number) => (
     <UnstyledButton key={items[i].key} {...optionProps(i, items[i])} data-showable={showable || undefined}>
       <Text fz={t.nameFont} fw={600} truncate="end">{h.school}</Text>
-      <Text fz={t.subFont} c="dimmed" mt={1}>
+      <Text fz={t.subFont} c="dimmed" mt={1} className="search-row-sub">
         {num(h.n)} {h.n === 1 ? 'person' : 'people'}{h.med != null ? ` · median ${usd(h.med)}` : ''}
       </Text>
       {showMark(i)}
@@ -807,7 +819,7 @@ export function SearchBox({
   );
 
   // A list's suggestions for its empty box (`starters`): the most common titles, then the largest divisions,
-  // each an ordinary row — Enter opens it, Shift+Enter or "Show on graph" shows it on the graph.
+  // each an ordinary row — a click or Enter opens it, Shift+Enter or "Show on full page graph" shows it there.
   const nTitles = showStarters ? items.filter((it) => it.kind === 'title').length : 0;
   const startersBody = (
     <div className="search-groups" data-suggestions style={{ padding: t.island }} role="listbox" id={listId} aria-label="Suggestions">
@@ -846,7 +858,7 @@ export function SearchBox({
         tabIndex: -1,
         className: 'search-chip',
         onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
-        onMouseEnter: () => { setActive(i); setMoved(true); },
+        onMouseMove: chooseOnMove(i),
         onClick: () => select(it),
       };
       if (it.kind === 'person') {
@@ -1032,10 +1044,10 @@ export function SearchBox({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={opened && items.length ? optId(active) : undefined}
-            // The keyboard's way to "Show on graph", said on the box. As Mantine's description, not an
+            // The keyboard's way to "Show on full page graph", said on the box. As Mantine's description, not an
             // aria-describedby of our own: the input takes that attribute from its description and would
             // drop any other.
-            description={showable ? 'Shift+Enter on a title or division shows it on the graph, full page.' : undefined}
+            description={showable ? 'Shift+Enter on a title or division shows it on the full page graph.' : undefined}
             data-autofocus={autoFocus || undefined}
             autoFocus={autoFocus}
             classNames={{ ...(large ? { input: 'hero-search-input' } : {}), ...(showable ? { description: 'visually-hidden' } : {}) }}
@@ -1064,9 +1076,10 @@ export function SearchBox({
       <Popover.Dropdown
         p={0}
         className="search-dropdown"
-        // Open only while the box has the focus, a press anywhere in the list — a heading, the space between
-        // rows — must leave it there, or the list would go from under the press.
-        onMouseDown={whileFocused ? (e) => e.preventDefault() : undefined}
+        // Open only while the box has the focus — the phone's list, and the suggestions an empty box offers —
+        // a press anywhere in the list, a row, a heading, the space between rows, must leave it there, or the
+        // list would go from under the press. On a desktop a click on a suggestion did nothing but close them.
+        onMouseDown={whileFocused || showStarters ? (e) => e.preventDefault() : undefined}
         style={{
           // Grouped, the list holds up to 13 rows in two columns; the tier's height would cut the
           // people column off above its sixth row on the landing box.

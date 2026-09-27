@@ -225,3 +225,42 @@ test('full page on a phone: a finger drags through the dots and stirs them, hold
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'moving');
   await ctx.close();
 });
+
+/**
+ * The way in and the way out are found at a glance: the panel's one coloured control, in its top right
+ * corner and last on its line — tinted on the page, so a reader learns there is a full page graph; filled
+ * full page, with Esc beside it, so leaving is never a search. Both were quiet text buttons in the middle
+ * of the line.
+ */
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test(`the full page toggle is in the panel's top right corner and stands out, both ways (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await settledHome(page);
+    const place = () => page.evaluate(() => {
+      const t = document.querySelector('.hero-dist-full-toggle')!;
+      const line = document.querySelector('.hero-dist-controls')!;
+      const p = document.querySelector('.hero-dist')!.getBoundingClientRect();
+      const r = t.getBoundingClientRect();
+      const lastInLine = [...line.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')].filter((e) => (e as HTMLElement).offsetParent).pop() === t;
+      return { fromRight: p.right - r.right, fromTop: r.top - p.top, lastInLine, bg: getComputedStyle(t).backgroundColor };
+    });
+    const onPage = await place();
+    expect(onPage.lastInLine, 'on the page, the toggle is not last on its line').toBe(true);
+    expect(onPage.fromRight, 'on the page, the toggle is not at the right').toBeLessThan(24);
+    expect(onPage.fromTop, 'on the page, the toggle is not at the top').toBeLessThan(60);
+    expect(onPage.bg, 'on the page, the toggle has no colour of its own').not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+
+    await page.locator('.hero-dist-full-toggle').click();
+    await expect(panel(page)).toHaveAttribute('data-full', 'on');
+    await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
+    const full = await place();
+    expect(full.lastInLine, 'full page, the way out is not last on its line').toBe(true);
+    expect(full.fromRight, 'full page, the way out is not at the right').toBeLessThan(24);
+    expect(full.fromTop, 'full page, the way out is not at the top').toBeLessThan(width > 500 ? 60 : 140);
+    // Filled: the accent itself, not a tint over the panel.
+    const filled = await page.evaluate(() => getComputedStyle(document.querySelector('.hero-dist-full-toggle')!).backgroundColor);
+    expect(filled).not.toBe(onPage.bg);
+    await expect(page.getByRole('button', { name: 'Exit full page' })).toBeVisible();
+    if (width > 500) await expect(page.locator('.hero-dist-full-toggle .hero-dist-esc')).toHaveText('Esc');
+  });
+}

@@ -1994,29 +1994,50 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   font-weight: 600;
   cursor: pointer;
 }
-/* "Show on graph" on a title or division row of the page's own search: the way from searching for a group to
-   seeing it on the full page's graph. There on every such row, so it is found; quiet until its row is the
-   active one. The row makes room for it, so a long name ends before it rather than running under it. */
-[data-showable] { position: relative; padding-right: 138px !important; }
+/* "Show on full page graph" on a title or division row of the page's own search: the way from searching for
+   a group to seeing it on the full page's graph. There on every such row, and in the accent on every one, so
+   a reader finds there is a full page graph; filled on the row they are on. It sits beside the row's short
+   line — the count and the median — so the name above keeps the row's width: beside the name, "School of
+   Medicine and Public Health" ran out of room at 1440px. */
+[data-showable] { position: relative; }
+[data-showable] .search-row-sub { padding-right: 196px; }
 .search-show-on-graph {
   position: absolute;
-  top: 50%;
+  bottom: 11px;
   right: 10px;
-  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--hairline);
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--mantine-color-accent-6) 55%, transparent);
   border-radius: 999px;
-  color: var(--mantine-color-dimmed);
+  background: var(--mantine-color-accent-light);
+  /* Each scheme's own text shade of the accent (--text-accent): accent-7 read 2.81:1 on a dark row. */
+  color: var(--text-accent);
   font-size: var(--mantine-font-size-xs);
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color var(--dur-instant) ease, color var(--dur-instant) ease;
 }
-[aria-selected='true'] > .search-show-on-graph { color: var(--mantine-color-accent-7); border-color: var(--mantine-color-accent-6); }
-.search-show-on-graph:hover { background: var(--mantine-color-accent-light); color: var(--mantine-color-accent-7); }
+[aria-selected='true'] > .search-show-on-graph,
+.search-show-on-graph:hover {
+  background: var(--mantine-color-accent-filled);
+  border-color: var(--mantine-color-accent-filled);
+  color: var(--mantine-color-white);
+}
+/* On the page, the way to the full page graph carries the chips' accent edge as well as their tint, so it
+   reads as the panel's one coloured control rather than a pale patch. */
+.hero-dist:not(.hero-dist-full) .hero-dist-full-toggle { border: 1px solid color-mix(in srgb, var(--mantine-color-accent-6) 55%, transparent); }
+/* Full page, the way out says its key: a small keycap beside "Exit full page". */
+.hero-dist-esc {
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, currentColor 55%, transparent);
+  border-radius: 4px;
+  font-size: var(--mantine-font-size-xxs);
+  font-weight: 600;
+  line-height: 1.4;
+}
 /* The plot's backdrop: a soft light behind the mountain, strongest behind its peak — deep blue on a dark
    page, which the glow reads against, and a faint warm light on a light one. */
 .hero-dist-main { background: radial-gradient(ellipse 55% 75% at 32% 62%, var(--plot-light), transparent 72%); }

@@ -1024,8 +1024,9 @@ test('the keyboard walks the readout along the pay, bursts the dots at it, and p
   const pill = page.locator('.chart-value-pill').first();
   const bucket = async () => Number(await main.getAttribute('aria-valuenow'));
   const counted = async () => Number((((await pill.textContent()) ?? '').match(/([\d,]+) people/)?.[1] ?? '').replace(/,/g, ''));
-  // From the toggle just before it, Tab brings the keyboard to the plot: the readout starts at the median.
-  await page.locator('.hero-dist-toggle input:checked').focus();
+  // From the control just before it — the full page graph's, last on the panel's line — Tab brings the
+  // keyboard to the plot: the readout starts at the median.
+  await page.locator('.hero-dist-full-toggle').focus();
   await page.keyboard.press('Tab');
   await expect(main).toBeFocused();
   await expect(pill).toBeVisible();

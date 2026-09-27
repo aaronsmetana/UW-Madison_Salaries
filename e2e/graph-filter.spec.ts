@@ -468,11 +468,11 @@ test('with nothing typed the strip offers groups to filter by, and what it offer
 });
 
 /**
- * The way in from the page's own search: a title or school row offers "Show on graph" beside opening its
+ * The way in from the page's own search: a title or school row offers "Show on full page graph" beside opening its
  * page. It opens the graph full page with that group put on and the box emptied, leaving no list behind; the
  * keyboard's way is Shift+Enter on the row; the row itself still opens the title's page.
  */
-test('"Show on graph" in the page’s search opens the graph full page with that group on', async ({ page }) => {
+test('"Show on full page graph" in the page’s search opens the graph full page with that group on', async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
@@ -515,7 +515,7 @@ test('"Show on graph" in the page’s search opens the graph full page with that
   await expect(page).toHaveURL(new RegExp(`/paycheck\\?code=${code}`));
 });
 
-test('the page’s search list, with "Show on graph" on its rows, passes a strict accessibility scan', async ({ page }) => {
+test('the page’s search list, with "Show on full page graph" on its rows, passes a strict accessibility scan', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
