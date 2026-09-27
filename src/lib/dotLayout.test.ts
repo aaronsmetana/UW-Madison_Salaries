@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutDots, packDots, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
+import { LIT_SIZES, layoutDots, litScale, packDots, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
 
 const curve = (x: number) => 60 * Math.exp(-(((x - 300) / 120) ** 2)) + 4;
 
@@ -228,5 +228,28 @@ describe('peopleFromCounts', () => {
   it('refuses categories that do not add up to the counts', () => {
     expect(peopleFromCounts(500, [2], [{ counts: [1] }]).kinds).toBeNull();
     expect(peopleFromCounts(500, [2], null).kinds).toBeNull();
+  });
+});
+
+describe('litScale', () => {
+  it('grows a small group’s dots the most, and a large one’s least', () => {
+    expect(litScale(0.01)).toBe(1.5);
+    expect(litScale(0.058)).toBe(1.5);
+    expect(litScale(0.27)).toBe(1.15);
+    expect(litScale(0.9)).toBe(1.15);
+  });
+
+  it('never grows a larger group more than a smaller one, and always grows it', () => {
+    let last = Infinity;
+    for (let s = 0; s <= 1; s += 0.01) {
+      const g = litScale(s);
+      expect(g).toBeLessThanOrEqual(last);
+      expect(g).toBeGreaterThan(1);
+      last = g;
+    }
+  });
+
+  it('comes in the sizes made ahead', () => {
+    for (let s = 0; s <= 1; s += 0.013) expect(LIT_SIZES).toContain(litScale(s));
   });
 });

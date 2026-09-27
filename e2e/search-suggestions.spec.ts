@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
-import { HOME_STATS, spots } from './homeDots';
+import { HOME_STATS, places, spots } from './homeDots';
 
 /**
  * The landing search's suggestions — with the box empty, the most common titles and largest divisions —
@@ -189,6 +189,97 @@ test('"Show on full page graph" is in the accent on every row, and leaves every 
     expect(l.truncated, `${keys[i]}: the name is cut short`).toBe(false);
     expect(l.overName, `${keys[i]}: the button lies beside the name`).toBe(false);
   }
+});
+
+/**
+ * The dots of a group shown on the graph are drawn bigger, and everyone else's smaller and fainter — the
+ * group is what the eye finds even where its dots are few among many — and on the page nothing moves: a
+ * pointer passing over the list only repaints. Read from the canvas round dots of each, before and after,
+ * at 2x, where a dot is some pixels across and a packed field's dots never overlap; on the light page, whose
+ * dots have no glow round them to measure too. A dot's size is read from the pixels it covers at least half
+ * of, whose edge is its disc's.
+ */
+test.describe('at 2x', () => {
+  test.use({ deviceScaleFactor: 2, colorScheme: 'light' });
+
+  test('a group shown on the graph is drawn bigger, everyone else smaller, and no dot moves', async ({ page }) => {
+    test.setTimeout(120_000);
+    await suggestions(page);
+    const [c] = await oracle<{ code: string }>(
+      `SELECT job_code code FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND title = 'Professor'
+       GROUP BY 1 ORDER BY count(DISTINCT person_key) DESC, 1 LIMIT 1`,
+    );
+    const who = await covered({ code: c.code });
+    const at = await spots();
+    const lit = new Set(who.map((p) => at.get(p.person_key)).filter((s) => s?.field === 'main').map((s) => s!.index));
+    const field = '.hero-dist-main .hero-dots';
+    const before = await places(page, field);
+    const n = before.length / 2;
+    // A small part of the field, whose dots are grown the most.
+    expect(lit.size / n, 'the premise: Professor is a small part of the field').toBeLessThan(0.06);
+    expect(await dots(page).getAttribute('data-alpha'), 'the premise: the field is packed, its dots apart').toBe('1');
+    const r = Number(await dots(page).getAttribute('data-r'));
+    // How near the nearest of `among` is to dot i.
+    const near = (i: number, among: Iterable<number>) => {
+      let d = Infinity;
+      for (const j of among) if (j !== i) d = Math.min(d, Math.hypot(before[2 * j] - before[2 * i], before[2 * j + 1] - before[2 * i + 1]));
+      return d;
+    };
+    const litList = [...lit];
+    // The group's dots with none of the group near enough to reach into a window round one grown half again;
+    // everyone else's with none of the group near enough to reach into its own.
+    const mine = litList.filter((i) => near(i, litList) > 3 * r + 1).slice(0, 40);
+    const rest: number[] = [];
+    for (let i = 0; i < n && rest.length < 40; i += 97) if (!lit.has(i) && near(i, litList) > 2.5 * r + 1) rest.push(i);
+    expect(mine.length, 'too few of the group stand clear of each other to measure').toBeGreaterThanOrEqual(10);
+    expect(rest.length).toBeGreaterThanOrEqual(10);
+    const ink = (idx: number[], w: number) => page.evaluate(([sel, pts, w]) => {
+      const cv = document.querySelector(`${sel} canvas`) as HTMLCanvasElement;
+      const k = cv.width / cv.getBoundingClientRect().width;
+      const ctx = cv.getContext('2d')!;
+      return pts.map(([x, y]) => {
+        const x0 = Math.floor((x - w) * k), y0 = Math.floor((y - w) * k), s = Math.ceil(2 * w * k) + 1;
+        const d = ctx.getImageData(x0, y0, s, s).data;
+        let half = 0, any = 0, sum = 0;
+        for (let q = 0; q < s * s; q++) {
+          // Only within the window's circle: its corners reach toward the neighbours.
+          const px = x0 + (q % s) + 0.5, py = y0 + Math.floor(q / s) + 0.5;
+          if (Math.hypot(px - x * k, py - y * k) > w * k) continue;
+          const al = d[4 * q + 3];
+          sum += al;
+          if (al >= 128) half++;
+          if (al > 8) any++;
+        }
+        return { half, any, sum, k };
+      });
+    }, [field, idx.map((i) => [before[2 * i], before[2 * i + 1]] as [number, number]), w] as const);
+    const median = (xs: number[]) => [...xs].sort((p, q) => p - q)[xs.length >> 1];
+    // A dot's radius as drawn, as a share of the field's own, from the pixels it half covers.
+    const size = (m: { half: number; k: number }) => Math.sqrt(m.half / Math.PI) / (r * m.k);
+    const edge = 0.5 / 2;
+    const mineWas = await ink(mine, r + edge);
+    const restWas = await ink(rest, r + edge);
+    expect(median(mineWas.map(size)), 'the measure does not read an unfiltered dot at its own size').toBeGreaterThan(0.85);
+    expect(median(mineWas.map(size)), 'the measure does not read an unfiltered dot at its own size').toBeLessThan(1.15);
+
+    await box(page).fill('professor');
+    const row = page.locator(`[role="option"][data-key="t:${c.code}"]`);
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    await row.hover();
+    await expect(dots(page)).toHaveAttribute('data-lit', await mainPrint(who), { timeout: 60_000 });
+    await expect(dots(page), 'a mark over the field would be measured with it').not.toHaveAttribute('data-marks', /./);
+    await page.waitForTimeout(500);
+    const mineNow = await ink(mine, 1.5 * r + edge);
+    const restNow = await ink(rest, r + edge);
+    // Half as big again across. The rest 0.6 as big across at 0.3 of their ink: a third of the pixels, and
+    // about a tenth of the ink.
+    expect(median(mineNow.map(size)), 'the group’s dots were not drawn bigger').toBeGreaterThan(1.3);
+    expect(median(mineNow.map(size)), 'the group’s dots were drawn bigger than half again').toBeLessThan(1.7);
+    expect(median(restNow.map((m, q) => m.any / restWas[q].any)), 'everyone else’s dots were not drawn smaller').toBeLessThan(0.65);
+    expect(median(restNow.map((m, q) => m.sum / restWas[q].sum)), 'everyone else’s dots were not drawn faint').toBeLessThan(0.2);
+    expect(median(restNow.map((m, q) => m.sum / restWas[q].sum)), 'everyone else’s dots were hidden, not drawn faint').toBeGreaterThan(0.04);
+    expect(await places(page, field), 'a preview moved the dots').toEqual(before);
+  });
 });
 
 for (const scheme of ['light', 'dark'] as const) {

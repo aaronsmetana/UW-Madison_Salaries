@@ -82,3 +82,8 @@ export async function barOverPlot(page: Page) {
       .map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 60));
   });
 }
+
+/** Where each of a field's dots is laid out (DotField `dotPlaces`), x then y, in the field's CSS px. */
+export async function places(page: Page, field: string): Promise<number[]> {
+  return page.evaluate((sel) => (document.querySelector(sel) as HTMLElement & { dotPlaces?: () => number[] | null }).dotPlaces?.() ?? [], field);
+}

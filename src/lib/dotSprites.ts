@@ -26,6 +26,10 @@ export interface Bead {
 }
 
 const cache = new Map<string, Bead>();
+/** How many sprites are kept before the cache starts again: every field's beads, at its own size and at the
+ *  three a filter's lit dots come in and the one its faint dots do, in every tone — about 3,000 a field —
+ *  and the glass's sizes besides. Each is a few hundred bytes. */
+const CACHE_MAX = 16000;
 
 /** A sprite canvas `reach` device px about its centre: odd-sized, the centre on a pixel centre. */
 function sprite(reach: number) {
@@ -69,7 +73,7 @@ export function bead(ink: string, radius: number, glow: boolean): Bead {
   ctx.arc(c, c, radius, 0, Math.PI * 2);
   ctx.fill();
   const out = { img, half: c };
-  if (cache.size > 4000) cache.clear();
+  if (cache.size > CACHE_MAX) cache.clear();
   cache.set(key, out);
   return out;
 }
@@ -82,7 +86,7 @@ export function halo(ink: string, radius: number): Bead {
   const { img, ctx, c } = sprite(radius * HALO_REACH);
   drawHalo(ctx, c, ink, radius);
   const out = { img, half: c };
-  if (cache.size > 4000) cache.clear();
+  if (cache.size > CACHE_MAX) cache.clear();
   cache.set(key, out);
   return out;
 }

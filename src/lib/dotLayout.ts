@@ -268,6 +268,18 @@ export function packDots({ xs, heightAt, baseY, width, dpr, spill, seed = 1, sta
 }
 
 /**
+ * A filter's dots against everyone else's (DotField `dim`). The rest are drawn at FAINT_SCALE of their
+ * radius, so the context recedes in size as well as ink. The lit ones grow: by half again while they are
+ * under a tenth of the field, less for a larger part. Grown as much, a school's thousands in the packed
+ * middle ran together into one mass. Three sizes only, so the beads for each can be made ahead.
+ */
+export const FAINT_SCALE = 0.6;
+export const LIT_SIZES = [1.5, 1.3, 1.15] as const;
+export function litScale(share: number): number {
+  return share < 0.1 ? LIT_SIZES[0] : share < 0.2 ? LIT_SIZES[1] : LIT_SIZES[2];
+}
+
+/**
  * The people a count-per-$100 histogram describes, as pays: each bucket's people spread evenly across
  * its $100, so a dot lands inside the dollars its person earns.
  */
