@@ -88,7 +88,18 @@ async function settle(page: Page) {
     await page.setViewportSize({ width: vp.width + 1, height: vp.height });
     await page.setViewportSize(vp);
   }
-  await expect(page.locator('.global-loading-bar')).toHaveCount(0, { timeout: 60_000 });
+  // Clear, and staying clear for half a second. A query shows its bar only 200ms after it starts
+  // (Loading.tsx), so one begun just before a single check slipped past it into the shot: full page starts
+  // its name lookup about a second after it opens (Home `WHO_EARLY_MS`), whose bar, 1.35–2.5s in, landed
+  // across the top of the dark shot on one run and missed it on another.
+  await page.evaluate(() => { (window as unknown as { quietSince?: number }).quietSince = undefined; });
+  await page.waitForFunction(() => {
+    const w = window as unknown as { quietSince?: number };
+    const now = performance.now();
+    if (document.querySelector('.global-loading-bar')) { w.quietSince = now; return false; }
+    w.quietSince ??= now;
+    return now - w.quietSince >= 500;
+  }, null, { timeout: 60_000, polling: 50 });
   // The loading bar only tracks React Query. `/data` sizes its download buttons from a bare HEAD
   // request outside that (`useAssetSize` in DataHealth.tsx), so "Manifest (JSON)" gains "· 15 KB"
   // whenever the probe happens to land before the shutter — which is a coin flip, and was flipping.
