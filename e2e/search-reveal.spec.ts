@@ -193,6 +193,11 @@ test('on a phone a tap on a mark shows its card, and the card opens them', async
   await searchBox(page).fill(who.name);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
   await page.waitForTimeout(800);
+  // On a phone the box is above the graph, and while it is in use its list lies over the top of the plot:
+  // the first tap on the graph puts it away and does nothing else (the next test), so the mark is free.
+  const plot = (await page.locator('.hero-dist-main').boundingBox())!;
+  await page.touchscreen.tap(plot.x + plot.width / 2, plot.y + plot.height - 12);
+  await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'false');
   const [m] = await marksOf(page, '.hero-dots');
   const at = await onScreen(page, '.hero-dots', m);
   await page.touchscreen.tap(at.x, at.y);
@@ -203,6 +208,48 @@ test('on a phone a tap on a mark shows its card, and the card opens them', async
   await card.getByRole('button', { name: /^Open / }).tap();
   await expect(page.locator('.person-reveal')).toHaveAttribute('data-phase', 'swell');
   await expect(page).toHaveURL(new RegExp(`/person/${encodeURIComponent(who.person_key)}`), { timeout: 4000 });
+  await ctx.close();
+});
+
+test('on a phone the search is above the graph, and its list leaves the lower half of the plot in sight', async ({ browser }) => {
+  // Under the graph, the page's search began at y=974 on an 812px phone: the one thing a visitor comes to
+  // do was off the first screen. Above the graph, its list lies over the plot — so it is the full page's
+  // on a phone: open only while the box is in use, stopping halfway down the plot so the marks landing
+  // as the reader types stay in sight, and put away by a tap on the graph rather than that tap
+  // scattering the dots.
+  const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 }, reducedMotion: 'no-preference' });
+  const page = await ctx.newPage();
+  await home(page);
+  const box = (await searchBox(page).boundingBox())!;
+  const panel = (await page.locator('.hero-dist').boundingBox())!;
+  expect(box.y + box.height, 'the search is not above the graph').toBeLessThanOrEqual(panel.y);
+  expect(box.y + box.height, 'the search is off the first screen').toBeLessThanOrEqual(812);
+
+  await searchBox(page).tap();
+  await searchBox(page).fill('smith');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'true');
+  await page.waitForTimeout(500);
+  const plot = (await page.locator('.hero-dist-main').boundingBox())!;
+  const list = (await page.locator('.search-dropdown').boundingBox())!;
+  expect(list.y + list.height, 'the list reaches past the middle of the plot').toBeLessThanOrEqual(plot.y + plot.height / 2 + 1);
+
+  // A tap on the graph: the list goes, the dots stay where they are, the search and its marks stay.
+  const marks = await page.locator('.hero-dots').getAttribute('data-marks');
+  await page.touchscreen.tap(plot.x + plot.width / 2, plot.y + plot.height - 12);
+  await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.search-dropdown')).toHaveCount(0);
+  await page.waitForTimeout(400);
+  await expect(page.locator('.hero-dots'), 'the tap that put the list away scattered the dots').toHaveAttribute('data-flight', 'idle');
+  await expect(searchBox(page)).toHaveValue('smith');
+  expect(await page.locator('.hero-dots').getAttribute('data-marks')).toBe(marks);
+
+  // Back to the box, the list is back; a tap on a person in it opens them.
+  await searchBox(page).tap();
+  await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'true');
+  const first = page.locator('[data-group="people"] [role="option"]').first();
+  await first.tap();
+  await expect(page).toHaveURL(/\/person\//, { timeout: 10_000 });
   await ctx.close();
 });
 

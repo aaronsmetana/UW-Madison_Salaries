@@ -503,24 +503,41 @@ test.describe('the landing distribution', () => {
   }
 
   // Capped at 1200px, a wide screen left a third of itself empty either side of the chart. The chart and
-  // the search now run the page's width, the plot grows taller with it (up to 520px), and what sits under
-  // the search — the figures and the showcase tiles — grows with it too, from its size at 1440px.
-  test('runs the page\'s width on a wide screen, and what is under the search grows with it', async ({ page }) => {
+  // the search run the page's width, and the plot grows taller with it (up to 520px). What sits under the
+  // search does not: the figures and the ways on used to grow with the band too — to 51px figures, a size
+  // away from the title and four times the graph's own labels, and 23px card titles — which made them the
+  // loudest things on the page after its name. They are the graph's supporting detail: set no larger than
+  // the search's own text, the same size on any screen, and the page's title is the largest text on it.
+  test('runs the page\'s width on a wide screen, and what is under the search stays the size of its detail', async ({ page }) => {
     await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
     const read = async (width: number) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto('./', { waitUntil: 'networkidle' });
       await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator('.home-stat-value').first()).not.toHaveText('—', { timeout: 60_000 });
       await page.waitForTimeout(500);
       return page.evaluate(() => {
         const main = document.querySelector('#main-content')!;
         const cs = getComputedStyle(main);
         const room = main.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         const w = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().width;
-        const fs = (sel: string) => parseFloat(getComputedStyle(document.querySelector(sel)!).fontSize);
+        const sizes = (sel: string) => [...document.querySelectorAll(sel)].map((el) => parseFloat(getComputedStyle(el).fontSize));
+        // Every piece of text on the page outside the graph's panel and the search's own box.
+        const outside: { text: string; size: number }[] = [];
+        const walk = document.createTreeWalker(document.querySelector('#main-content')!, NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+          const el = n.parentElement!;
+          if (!(n.textContent ?? '').trim() || el.closest('.hero-dist, .mantine-TextInput-root, .visually-hidden')) continue;
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          outside.push({ text: (n.textContent ?? '').trim().slice(0, 30), size: parseFloat(getComputedStyle(el).fontSize) });
+        }
         return {
           room, chart: w('.hero-dist'), search: w('.hero-search-input'), plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height,
-          figure: fs('.home-kpi-value'), title: fs('.showcase-title'), blurb: fs('.showcase-blurb'), icon: w('.showcase-icon'),
+          searchFont: parseFloat(getComputedStyle(document.querySelector('.hero-search-input')!).fontSize),
+          title: parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),
+          under: [...sizes('.home-stat-value'), ...sizes('.home-stat-label'), ...sizes('.home-stats-browse'), ...sizes('.showcase-title'), ...sizes('.showcase-blurb')],
+          outside,
         };
       });
     };
@@ -529,16 +546,44 @@ test.describe('the landing distribution', () => {
     for (const [name, r] of [['1440px', laptop], ['2560px', wide]] as const) {
       expect(Math.abs(r.chart - r.room), `at ${name} the chart is ${r.chart}px of ${r.room}px`).toBeLessThanOrEqual(1);
       expect(Math.abs(r.search - r.room), `at ${name} the search is ${r.search}px of ${r.room}px`).toBeLessThanOrEqual(1);
+      expect(r.under.length, `at ${name} the figures and links under the search are not there to measure`).toBeGreaterThanOrEqual(14);
+      for (const s of r.under) expect(s, `at ${name} something under the search is set larger than the search itself`).toBeLessThanOrEqual(r.searchFont);
+      const loudest = r.outside.filter((o) => o.size >= r.title);
+      expect(loudest.map((o) => o.text), `at ${name} text outside the graph is as large as the page's title`).toEqual(['UW–Madison', 'Salaries']);
     }
     expect(laptop.plotH, 'the plot at 1440px').toBe(375);
     expect(wide.plotH, 'the plot did not grow taller with a wide screen').toBe(520);
-    expect(wide.figure, 'the figures did not grow').toBeGreaterThan(laptop.figure * 1.3);
-    expect(wide.title, 'the tiles\' titles did not grow').toBeGreaterThan(laptop.title * 1.2);
-    expect(wide.blurb, 'the tiles\' text did not grow').toBeGreaterThan(laptop.blurb * 1.15);
-    expect(wide.icon, 'the tiles\' icons did not grow').toBeGreaterThan(laptop.icon * 1.3);
-    // And never past a size that stops reading as a caption.
-    expect(wide.blurb).toBeLessThanOrEqual(18);
+    expect(wide.under, 'what is under the search grew with the screen').toEqual(laptop.under);
   });
+
+  // The graph and the search are the page, and they are in the first screen together. At 1440x900 the
+  // search began at y=897, behind the 40px footer fixed at the window's foot: a visitor arrived to a graph
+  // and had to scroll to find the one thing the page is for. The title block above spent ~200px on the
+  // site's name, already in the masthead. On a phone the search began at y=974 of 812, and is now above the
+  // graph (search-reveal.spec). At 1280x800 the graph and the search do not both fit without squeezing the
+  // plot, so it is not held to this here.
+  for (const [width, height] of [[1440, 900], [1920, 1080], [2000, 1300]] as const) {
+    test(`the graph and the search are both in the first screen (${width}x${height})`, async ({ page }) => {
+      await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
+      await page.setViewportSize({ width, height });
+      await page.goto('./', { waitUntil: 'networkidle' });
+      await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
+      await page.waitForTimeout(500);
+      const seen = await page.evaluate(() => {
+        const footer = document.querySelector('.mantine-AppShell-footer')!;
+        const bottom = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().bottom;
+        return {
+          scrollY,
+          end: innerHeight - (getComputedStyle(footer).display === 'none' ? 0 : footer.getBoundingClientRect().height),
+          panel: bottom('.hero-dist'),
+          search: bottom('.hero-search-input'),
+        };
+      });
+      expect(seen.scrollY).toBe(0);
+      expect(seen.panel, 'the graph runs past the first screen').toBeLessThanOrEqual(seen.end);
+      expect(seen.search, 'the search is below the first screen').toBeLessThanOrEqual(seen.end);
+    });
+  }
 
   test('is glass over a backdrop that actually reaches it', async ({ page }) => {
     await page.goto('./');

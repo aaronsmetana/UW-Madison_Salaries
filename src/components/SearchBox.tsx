@@ -167,6 +167,7 @@ export function SearchBox({
   onShowOnGraph,
   onListOpen,
   listLimit,
+  whileFocused = false,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -218,13 +219,17 @@ export function SearchBox({
   /** Offered on every title and division row of the list (list only), beside opening its page: show it on
    *  the graph instead. A pointer presses it; the keyboard has Shift+Enter on the row. */
   onShowOnGraph?: (pick: SearchPick) => void;
-  /** Told whether the bar's list is open (bar only): while it is, a press on what it lies over should only
-   *  put it away. */
+  /** Told whether the list is open: while it is, a press on what it lies over should only put it away. The
+   *  bar's, and a list's that lies over the graph (the landing box above it on a phone). */
   onListOpen?: (open: boolean) => void;
-  /** The lowest the bar's list may reach, px from the window's top, where the page wants some of what it
-   *  lies over left in sight (a phone's graph, under a list as wide as it); null for no limit but the
-   *  panel's. Past it the list scrolls. */
+  /** The lowest the list may reach, px from the window's top, where the page wants some of what it lies
+   *  over left in sight (a phone's graph, under a list as wide as it); null for no limit but the panel's or
+   *  the screen's. Past it the list scrolls. */
   listLimit?: () => number | null;
+  /** The list is open only while the box has the focus (list only; the bar always is): for a list that lies
+   *  over something the reader is looking at, as the landing box's does on a phone, where it sits above the
+   *  graph. A press on one of its rows keeps the focus in the box, so the list is still there to take it. */
+  whileFocused?: boolean;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
@@ -368,7 +373,9 @@ export function SearchBox({
   // back to the graph; the query stays, and so do the people it marked there.
   // And only while there is text to answer: emptied, it shuts at once rather than a debounce later.
   const listOpen = bar && enabled && term.trim().length >= 2 && focused && !handed;
-  const opened = bar ? listOpen || showStarters : enabled && !handed;
+  const opened = bar ? listOpen || showStarters : enabled && !handed && (!whileFocused || focused);
+  // What lies over the page, for `onListOpen`: the bar's list, not its line of chips; a list's whole menu.
+  const covering = bar ? listOpen : opened;
 
   // Detect homonyms within the current results (same display name, different person).
   const nameCounts = useMemo(() => {
@@ -446,7 +453,7 @@ export function SearchBox({
   listOpenRef.current = onListOpen;
   const listLimitRef = useRef(listLimit);
   listLimitRef.current = listLimit;
-  useEffect(() => { listOpenRef.current?.(listOpen); }, [listOpen]);
+  useEffect(() => { listOpenRef.current?.(covering); }, [covering]);
   useEffect(() => () => listOpenRef.current?.(false), []);
   const barRef = useRef<HTMLDivElement>(null);
   const barInputRef = useRef<HTMLInputElement>(null);
@@ -605,9 +612,10 @@ export function SearchBox({
     'data-key': it.key,
     onMouseEnter: () => { setActive(i); setMoved(true); },
     onClick: () => select(it),
-    // In the bar the box keeps the focus, as a combobox does: a press on a row that took it would shut the
-    // list before the press landed, and the keys reach every row from the box.
-    ...(bar ? { tabIndex: -1, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {}),
+    // In the bar, and in a list open only while the box has the focus, the box keeps it, as a combobox
+    // does: a press on a row that took it would shut the list before the press landed, and the keys reach
+    // every row from the box.
+    ...(bar || whileFocused ? { tabIndex: -1, onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : {}),
     px: 10,
     py: t.rowPad,
     style: rowStyle(i),
@@ -945,13 +953,19 @@ export function SearchBox({
       // The list is never taller than the room below (or above) the box: in the ⌘K palette on a 720px
       // screen it ran past the modal and the screen's bottom, and its titles were off-screen. The room
       // is handed to the style below as a variable, so the tier's own cap still applies where it is lower.
+      // Given a limit (`listLimit`), it stops there too, and never turns up over the box to find more room.
       middlewares={{
-        flip: !keepBelow,
+        flip: !keepBelow && !listLimit,
         shift: true,
         size: {
           padding: 12,
           apply({ availableHeight, elements }) {
-            elements.floating.style.setProperty('--search-room', `${Math.max(180, Math.floor(availableHeight))}px`);
+            const cap = listLimitRef.current?.();
+            const below = targetRef.current?.getBoundingClientRect().bottom;
+            const room = cap != null && below != null
+              ? Math.max(120, Math.floor(Math.min(availableHeight, cap - below - 8)))
+              : Math.max(180, Math.floor(availableHeight));
+            elements.floating.style.setProperty('--search-room', `${room}px`);
           },
         },
       }}
@@ -968,6 +982,7 @@ export function SearchBox({
             onChange={(e) => setTerm(e.currentTarget.value)}
             onKeyDown={onKeyDown}
             onFocus={() => { setFocused(true); setHanded(false); }}
+            onBlur={() => setFocused(false)}
             rightSection={peopleBusy ? <Loader size="sm" /> : null}
             aria-label={grouped ? 'Search a person, title or division' : 'Search a person'}
             role="combobox"
@@ -1007,6 +1022,9 @@ export function SearchBox({
       <Popover.Dropdown
         p={0}
         className="search-dropdown"
+        // Open only while the box has the focus, a press anywhere in the list — a heading, the space between
+        // rows — must leave it there, or the list would go from under the press.
+        onMouseDown={whileFocused ? (e) => e.preventDefault() : undefined}
         style={{
           // Grouped, the list holds up to 13 rows in two columns; the tier's height would cut the
           // people column off above its sixth row on the landing box.

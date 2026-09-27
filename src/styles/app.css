@@ -246,15 +246,11 @@
      5.29:1 there and 4.83:1 on the deeper orange-1, and still reads orange rather than brown. */
   --text-warn: #b3400d;
 
-  /* The display step: the landing page's title, the largest type in the app. Sized for a line of
-     words rather than a short number — it briefly held the median at up to 68px, which is right for
-     "$75,763" and far too wide for "UW–Madison Salaries".
-
-     `--fs-stat` is the figure register beneath it, for the system-wide numbers on the landing page.
-     Those are the page's data now that the headline is its name again, so they carry real size
-     instead of the 22px they were given while something bigger sat above them. */
-  --fs-display: clamp(2.25rem, 5vw, 3.5rem);
-  --fs-stat: clamp(1.75rem, 3.2vw, 2.25rem);
+  /* The display step: the landing page's title. A page header's size, not a poster's: the page is
+     about the graph and the search under it, and at up to 56px, centred over a two-line paragraph,
+     the title spent ~200px repeating the masthead's name before the graph began. (It once held the
+     median at 68px, which is right for "$75,763" and far too wide for a line of words.) */
+  --fs-display: clamp(1.5rem, 2vw, 1.875rem);
 
   /* Layout widths. Fifteen call sites carried seven different `maw` numbers — 420, 480, 620, 640,
      720, 860, 900, 1100 — none of which knew about the others.
@@ -1255,7 +1251,6 @@ button:active,
 
 .hero-dist {
   position: relative;
-  margin-top: var(--mantine-spacing-lg);
   padding: var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-sm);
   border: 1px solid var(--hairline);
   border-radius: var(--mantine-radius-lg);
@@ -1264,27 +1259,27 @@ button:active,
 /* Both fallbacks land on the same place: the panel goes solid. A translucent surface with nothing
    filtering it is not a softer version of glass, it is a washed-out card — worse than the opaque one
    on every count, and the dots behind it stay sharp enough to read through the text. */
-/* Showcase band below the hero: the arrow slides on hover, matching the stats card's own affordance
-   so the two read as the same gesture. */
+/* The landing page's links on (the row at its foot, the way to Divisions under the figures): the arrow
+   slides on hover, one gesture for both. */
 .showcase-arrow {
   display: inline-block;
   transition: transform 160ms ease;
   color: var(--text-accent);
 }
-.showcase-card:hover .showcase-arrow { transform: translateX(3px); }
+.showcase-link:hover .showcase-arrow { transform: translateX(3px); }
 
-/* The supporting-figures row links to General Comparisons; its arrow nudges on hover. */
 .browse-arrow { display: inline-block; transition: transform 160ms ease; }
-.home-stats:hover .browse-arrow { transform: translateX(3px); }
+.home-stats-browse:hover .browse-arrow { transform: translateX(3px); }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-rise > * { animation: none; }
   /* `.browse-arrow` was never in this block — the showcase arrow was guarded and the stats row's
      matching gesture was not, so one of the two identical affordances still moved. */
   .showcase-arrow,
+  .showcase-title,
   .browse-arrow { transition: none; }
-  .showcase-card:hover .showcase-arrow,
-  .home-stats:hover .browse-arrow { transform: none; }
+  .showcase-link:hover .showcase-arrow,
+  .home-stats-browse:hover .browse-arrow { transform: none; }
 }
 
 /* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the
@@ -1884,7 +1879,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .hero-full-frame { position: relative; margin-block: auto; width: 100%; }
 /* Full page the panel sits on the scrim, not the page: a denser tint, so the blurred page is a hint. */
-.hero-dist.hero-dist-full { margin-top: 0; --glass-tint: 88%; }
+.hero-dist.hero-dist-full { --glass-tint: 88%; }
 /* No page to scroll or zoom there: a finger's drag is the dots' (Home `onMove`). */
 .hero-dist-full .hero-dist-main { touch-action: none; }
 /* Full page the controls are a bar across the top of the panel, in the flow and led by the search: the
@@ -2145,8 +2140,6 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .hero-dist-full .search-tokens { flex: 0 1 auto; max-width: 75%; }
   .hero-dist-full .search-strip { flex: 1 1 0; }
 }
-/* The panel's place on the page while it is full page, the same height, so nothing below it moves. */
-.hero-dist-placeholder { margin-top: var(--mantine-spacing-lg); }
 .strip-dots { color: var(--mark-peer); }
 .strip-dots .dot-field-accent { color: var(--mark-peer-same-school); }
 /* The magnifying glass on the landing chart (FisheyeLens): the card's own surface under a thin light
@@ -2433,22 +2426,78 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .app-navbar-peek { transition: none; }
 }
 
-/* Home's bands run the page's width (routes/Home). What sits under the search grows with the band — the
-   figures and their icons (not their eyebrow labels, one size app-wide), the showcase tiles' type, icons
-   and padding — from its size in the 1200px band it
-   used to be capped at, to half again at most on a wide screen: container units, so it follows the band
-   (a sidebar opening, full page) rather than the window. */
-.home-band { container-type: inline-size; }
-.home-band .home-kpi-value { font-size: clamp(1.75rem, 2.7cqi, 3.4rem) !important; }
-/* Mantine writes a ThemeIcon's size and a Text's `fz` inline, so these override them outright. */
-.home-band .home-kpi-icon { width: clamp(26px, 2.1cqi, 40px) !important; height: clamp(26px, 2.1cqi, 40px) !important; min-width: 0 !important; min-height: 0 !important; }
-.home-band .home-kpi-icon svg { width: clamp(16px, 1.3cqi, 24px); height: clamp(16px, 1.3cqi, 24px); }
-.home-band .showcase-card { padding: clamp(20px, 1.9cqi, 36px); }
-.home-band .showcase-icon { width: clamp(34px, 2.8cqi, 52px) !important; height: clamp(34px, 2.8cqi, 52px) !important; min-width: 0 !important; min-height: 0 !important; }
-.home-band .showcase-icon svg { width: clamp(20px, 1.6cqi, 30px); height: clamp(20px, 1.6cqi, 30px); }
-.home-band .showcase-title { font-size: clamp(var(--mantine-font-size-md), 1.35cqi, 1.45rem) !important; }
-.home-band .showcase-blurb { font-size: clamp(var(--mantine-font-size-sm), 1.05cqi, 1.1rem); }
-.home-band .showcase-stat { font-size: clamp(var(--mantine-font-size-xs), 0.85cqi, 0.95rem); }
+/* The landing page (routes/Home) in two weights. The graph and the search are the page: the only things on
+   it with a surface and a border. Everything else is text on the page — the header, the figures, the ways
+   on, the notes — set no larger than the search's own and the same size on any screen. The figures and
+   tiles under the search used to grow with the band, to 51px figures and 23px titles on a wide screen,
+   which made them the loudest things on it after the title. */
+.home { padding-block: clamp(12px, 2.5vh, 28px) clamp(24px, 6vh, 64px); }
+/* The page's header, on the same left edge as the panel under it: the title and its lead on the left,
+   when the data is from on the right, level with the lead. */
+.home-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px 24px;
+  margin-bottom: 4px;
+}
+.home-head-main { min-width: 0; }
+.home-lead { margin-top: 2px; }
+.home-asof { flex: none; padding-bottom: 3px; }
+/* A phone: stacked, when first, as the eyebrow it reads as. */
+@media (max-width: 36em) {
+  .home-head { flex-direction: column; align-items: flex-start; }
+  .home-asof { order: -1; padding-bottom: 0; }
+}
+/* The figures under the search, read as phrases: "22,009 employees", hairlines between them, and the way
+   to every school and title at the line's end. */
+.home-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 24px;
+  margin-top: 2px;
+}
+.home-stat-row { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 4px; }
+.home-stat { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.home-stat + .home-stat { border-left: 1px solid var(--hairline); margin-left: 14px; padding-left: 14px; }
+.home-stat-value {
+  font-size: var(--mantine-font-size-md);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--mantine-color-text);
+}
+.home-stat-label { font-size: var(--mantine-font-size-sm); color: var(--mantine-color-dimmed); }
+.home-stats-browse { font-size: var(--mantine-font-size-xs); font-weight: 600; }
+/* A phone: two figures a line, no hairline at a line's start. */
+@media (max-width: 36em) {
+  .home-stat-row { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; width: 100%; }
+  .home-stat + .home-stat { border-left: 0; margin-left: 0; padding-left: 0; }
+}
+/* The rest of the site, at the page's foot: plain links under a hairline, no cards. */
+.home-more { border-top: 1px solid var(--hairline); padding-top: var(--mantine-spacing-md); }
+.home-more-title { margin-bottom: var(--mantine-spacing-sm); }
+.showcase-link {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: var(--mantine-radius-sm);
+  outline-offset: 4px;
+}
+.showcase-icon { flex: none; display: inline-flex; margin-top: 1px; color: var(--text-accent); }
+.showcase-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.showcase-title { font-size: var(--mantine-font-size-sm); font-weight: 650; color: var(--mantine-color-text); transition: color 160ms ease; }
+.showcase-link:hover .showcase-title { color: var(--text-accent); }
+.showcase-blurb {
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.45;
+  color: var(--mantine-color-dimmed);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 /* Full page, who a dot is: beside the glass over the graph, beside the pile, over the pile unrolled. A
    fixed size so it holds still as the pointer crosses dot after dot — the name and pay on one line, then
    the title, then the school, each cut short rather than let the caption grow. */

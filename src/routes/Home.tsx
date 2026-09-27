@@ -1,10 +1,10 @@
-import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import { Box, Stack, Title, Text, Group, SimpleGrid, Divider, Tooltip, ThemeIcon, Anchor, Card, Button, ActionIcon, FocusTrap } from '@mantine/core';
+import { Box, Stack, Title, Text, Group, SimpleGrid, Tooltip, Anchor, Button, ActionIcon, FocusTrap } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import {
-  IconReportMoney, IconUsers, IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
+  IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
   IconArrowsMaximize, IconArrowsMinimize,
 } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex } from '../lib/hooks';
@@ -15,7 +15,7 @@ import { usd, usdCompact, num, vsCampus, fullName } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
 import { measureText, placeNearLabels } from '../lib/labelLayout';
-import { useCountUp, prefersReducedMotion } from '../lib/motion';
+import { prefersReducedMotion } from '../lib/motion';
 import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { Sparkline } from '../components/chart/Sparkline';
 import { useReveal } from '../components/PersonReveal';
@@ -23,7 +23,6 @@ import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotP
 import type { DivisionHit, TitleHit } from '../lib/search';
 import { Eyebrow } from '../components/Eyebrow';
 import { useDocTitle } from '../lib/useDocTitle';
-import { ICON } from '../lib/ui';
 import { Z } from '../lib/layers';
 import { DotField, MOVE_MS, MOVE_STAGGER, SPREAD_MS, useEntranceOnce, type DotFieldHandle } from '../components/chart/DotField';
 import { squeezeFactor, tailHeights } from '../lib/tail';
@@ -36,39 +35,23 @@ import { areaGradDef } from '../components/chartDefs';
 import type { HomeStats } from '../lib/manifest';
 import { ordinal } from '../lib/stats';
 
-interface KpiData { icon: ReactNode; label: string; value: number | null; format: (n: number) => string; color: string; hint?: string }
+interface StatData { label: string; value: number | null; format: (n: number) => string; hint?: string }
 
 /**
- * One system-wide stat: centered icon+label over its value, which counts up from 0 as the data loads.
+ * One system-wide figure on the line under the search: the number, then what it counts, read as a phrase.
  *
- * These are the landing page's figures. They were sized at 22px when a 68px number sat above them and
- * they were explicitly supporting cast; with the headline back to being the site's name, they are the
- * data on the page and are sized to be read from across a desk (`--fs-stat`, 28-36px).
+ * These were four headline tiles — an icon, an eyebrow and a number that counted up, at 51px on a wide
+ * screen: a size away from the page's title, four times the graph's own labels, and growing with the
+ * screen. They are the graph's supporting detail, so they are set as text, smaller than the search's own,
+ * and hold still: a count-up is motion, and motion on the page's quietest line drew the eye to it first.
  */
-function Kpi({ icon, label, value, format, color, hint }: KpiData) {
-  const animated = useCountUp(value, 1000);
-  const valueNode = (
-    <Text
-      fw={700}
-      ta="center"
-      className="home-kpi-value"
-      style={{ fontSize: 'var(--fs-stat)', lineHeight: 1.1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}
-    >
-      {animated == null ? '—' : format(Math.round(animated))}
-    </Text>
-  );
+function StatItem({ label, value, format, hint }: StatData) {
+  const figure = <span className="home-stat-value">{value == null ? '—' : format(value)}</span>;
   return (
-    <Stack gap={8} align="center" className="home-kpi" style={{ flex: 1, minWidth: 0, paddingInline: 12 }}>
-      {/* The icon leaves ~110px for the label, so a second line is allowed and its height reserved on
-          every tile — otherwise a tile whose label wraps drops its value off the shared baseline. */}
-      <Group gap={7} justify="center" align="center" wrap="nowrap" mih={30}>
-        <ThemeIcon size={26} radius="md" variant="light" color={color} className="home-kpi-icon">
-          {icon}
-        </ThemeIcon>
-        <Eyebrow ta="center" lineClamp={2} style={{ lineHeight: 1.2 }}>{label}</Eyebrow>
-      </Group>
-      {hint ? <Tooltip label={hint} withArrow>{valueNode}</Tooltip> : valueNode}
-    </Stack>
+    <span className="home-stat">
+      {hint ? <Tooltip label={hint} withArrow>{figure}</Tooltip> : figure}
+      <span className="home-stat-label">{label}</span>
+    </span>
   );
 }
 
@@ -2155,29 +2138,25 @@ function Distribution({
 }
 
 /**
- * One "here is what this thing does" tile in the band below the fold. Each carries a live figure from
- * summary.json / home-stats.json rather than a static blurb, so the band can never drift out of date
- * with the data — and so the landing page still renders without booting DuckDB.
+ * One of the other places in the site, in the row at the page's foot: an icon, a name and a line on what
+ * it does. They were cards — a tile each, 264px tall on a wide screen with 23px titles — and took the
+ * bottom third of the first screen from the graph they sit under. A way on, not a feature of this page,
+ * so a plain link: no card, set no larger than the search. The live counts they carried are on the stat
+ * line above.
  */
-function ShowcaseCard({ icon, title, blurb, stat, to }: {
+function ShowcaseLink({ icon, title, blurb, to }: {
   icon: ReactNode;
   title: string;
   blurb: string;
-  stat: ReactNode;
   to: string;
 }) {
   return (
-    <Anchor component={Link} to={to} underline="never" c="inherit" style={{ display: 'block', height: '100%' }}>
-      <Card className="card-hover showcase-card" padding="lg" style={{ height: '100%' }}>
-        <ThemeIcon size={34} radius="md" variant="light" color="accent" mb="sm" className="showcase-icon">
-          {icon}
-        </ThemeIcon>
-        <Text fw={700} fz="md" className="showcase-title" style={{ letterSpacing: '-0.01em' }}>
-          {title} <span className="showcase-arrow">→</span>
-        </Text>
-        <Text size="sm" c="dimmed" mt={4} className="showcase-blurb" style={{ lineHeight: 1.5 }}>{blurb}</Text>
-        <Text size="xs" c="dimmed" mt="sm" fw={600} className="showcase-stat">{stat}</Text>
-      </Card>
+    <Anchor component={Link} to={to} underline="never" c="inherit" className="showcase-link">
+      <span className="showcase-icon" aria-hidden>{icon}</span>
+      <span className="showcase-text">
+        <span className="showcase-title">{title} <span className="showcase-arrow" aria-hidden>→</span></span>
+        <span className="showcase-blurb">{blurb}</span>
+      </span>
     </Anchor>
   );
 }
@@ -2239,6 +2218,8 @@ export default function Home() {
   // a box returning to a page the reader is already looking at, and full page hands focus to its own
   // exit button, which this would take straight back off it.
   const firstSearchRef = useRef(true);
+  // A phone by the plot's own measure (Distribution's `phone`): there the page's search is above the graph.
+  const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   useEffect(() => { firstSearchRef.current = false; }, []);
   /** What both boxes share: the one query, the one list of found people, and the one way to open them. */
   const searchProps = {
@@ -2464,58 +2445,72 @@ export default function Home() {
   const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
   const latestLabel = summary?.latest?.label;
 
-  // Labels are kept to one word each so all five wrap identically (i.e. not at all): "MEDIAN SALARY"
-  // and "UNIQUE TITLES" were the only two that broke to a second line, which left the row visibly
-  // ragged even with the reserved label height. The precise figure stays in the hover for Payroll.
-  // Median is no longer here — it is the page's headline (see the hero below), which is the whole point
-  // of leading with the data. Four supporting figures remain.
-  const kpis: KpiData[] = [
-    { label: 'Employees', value: summary?.latest?.headcount ?? null, format: num, icon: <IconUsers size={ICON.control} />, color: 'accent' },
-    { label: 'Payroll', value: payroll, format: usdCompact, hint: payroll != null ? usd(payroll) : undefined, icon: <IconReportMoney size={ICON.control} />, color: 'accent' },
-    { label: 'Divisions', value: dims?.schools ?? null, format: num, icon: <IconBuildingBank size={ICON.control} />, color: 'accent' },
-    { label: 'Titles', value: dims?.titles ?? null, format: num, icon: <IconBriefcase size={ICON.control} />, color: 'accent' },
+  // The figures on the line under the search, each a number and what it counts. Median is not among them:
+  // it is in the lead under the title, and the graph is a picture of it. The exact payroll is on hover.
+  const stats: StatData[] = [
+    { label: 'employees', value: summary?.latest?.headcount ?? null, format: num },
+    { label: 'payroll', value: payroll, format: usdCompact, hint: payroll != null ? usd(payroll) : undefined },
+    { label: 'divisions', value: dims?.schools ?? null, format: num },
+    { label: 'titles', value: dims?.titles ?? null, format: num },
   ];
 
+  // The page's own search. Under the graph its list drops below the plot, never over it (`keepBelow`). On a
+  // phone it is above the graph instead, where it is in sight at load — under the graph it started below the
+  // first screen — and there its list lies over the plot, so it is the full page's on a phone: open only
+  // while the box is in use, stopping halfway down the plot so the marks landing as the reader types stay in
+  // sight, and put away by a press on the graph (`searchOpenRef`) rather than that press scattering the dots.
+  const midPlot = () => {
+    const plot = document.querySelector('.hero-dist-main')?.getBoundingClientRect();
+    return plot ? plot.top + plot.height / 2 : null;
+  };
+  const pageSearch = !graphFull && (
+    <SearchBox
+      {...searchProps}
+      size="lg"
+      autoFocus={firstSearchRef.current}
+      keepBelow={phone ? undefined : () => document.querySelector<HTMLElement>('.hero-dist-main')}
+      whileFocused={phone}
+      listLimit={phone ? midPlot : undefined}
+      onListOpen={phone ? (open) => { searchOpenRef.current = open; } : undefined}
+      // The way in to the full page's filters from the page's own search: a title or school shown
+      // on the graph rather than opened. The box empties itself, so no list is left behind.
+      onShowOnGraph={(pick) => { putFilter(pick); openFullRef.current?.(); }}
+    />
+  );
+
+  // Two weights. The graph and the search are the page: the only things on it with a surface and a border,
+  // and together in the first screen. Everything else is text on the page, no larger than the search's own
+  // and the same size on any screen — the figures, the ways on, the notes. The title block used to be
+  // centred at up to 56px over a two-line paragraph, ~200px repeating the masthead's name before the graph,
+  // and with the figures and tiles scaled up to match it the search began below the first screen at 1440×900.
   return (
-    <Box style={{ paddingBlock: 'clamp(24px, 6vh, 64px)', position: 'relative' }}>
+    <Box className="home" style={{ position: 'relative' }}>
       <div className="hero-dotgrid" aria-hidden />
       <Stack gap="xl" w="100%" style={{ position: 'relative', zIndex: Z.content }}>
-        {/* The page leads with the site's name. It briefly led with the median instead — a 68px
-            "$75,763" — which put the most interesting fact in the largest type, but left a visitor
-            landing cold with no statement of what the site is. The median has not gone anywhere: it
-            is in the sentence below, and the curve beneath that is a picture of it. */}
-        <Stack gap={6} align="center" className="hero-rise">
-          <Eyebrow>
-            {summary?.latest?.headcount != null ? `${num(summary.latest.headcount)} employees` : 'All employees'}
-            {latestLabel ? ` · ${latestLabel}` : ''}
-          </Eyebrow>
-          <Title order={1} ta="center" fz="var(--fs-display)" lh={1.05}>
-            <Text span inherit c="bright">UW–Madison </Text>
-            <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
-          </Title>
-          <Text c="dimmed" ta="center" maw="var(--measure)">
-            Search anyone by name to see their pay, how it changed, and how they compare to everyone
-            with the same title.
-            {/* "UW–Madison" is the title directly above; repeating it here pushed the figure onto a
-                line of its own. */}
-            {summary?.latest?.median != null && (
-              <> The median salary is{' '}
-                <Text span inherit fw={700} c="var(--mantine-color-text)">{usd(summary.latest.median)}</Text>.
-              </>
-            )}
-          </Text>
-        </Stack>
+        {/* The page's width, not a reading measure: a figure is not prose, and the plot grows taller with
+            its width (PLOT_ASPECT). The header is set on the same left edge as the panel under it. */}
+        <Stack gap="sm" w="100%" className="hero-rise">
+          <div className="home-head">
+            <div className="home-head-main">
+              <Title order={1} fz="var(--fs-display)" lh={1.15} className="home-title">
+                <Text span inherit c="bright">UW–Madison </Text>
+                <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
+              </Title>
+              <Text size="sm" c="dimmed" className="home-lead">
+                Search anyone by name to see their pay, how it changed, and how they compare to everyone
+                with the same title.
+                {summary?.latest?.median != null && (
+                  <> The median salary is{' '}
+                    <Text span inherit fw={700} c="var(--mantine-color-text)">{usd(summary.latest.median)}</Text>.
+                  </>
+                )}
+              </Text>
+            </div>
+            {/* When, not how many: the headcount is the first figure on the line under the search. */}
+            {latestLabel && <span className="home-asof"><Eyebrow span>Data as of {latestLabel}</Eyebrow></span>}
+          </div>
 
-        {/* The distribution sits directly under the median that labels it, so the marker under the
-            headline number is the same number. Then search — the action — then the supporting figures. */}
-        {/* The page's full width, like the showcase band below — NOT the `--measure` the headline's
-            paragraph keeps. The narrow hero column is a reading measure, and a figure is not prose:
-            at 880px the plot was a 4.9:1 box, and capped at 1200px it left a third of a wide screen
-            empty either side of a chart with more to show. The plot grows taller with its width
-            (PLOT_ASPECT), and the search field matches the figure it sits under: it is the page's
-            primary action, and reads as underweight at anything narrower. What sits under it scales
-            with the band (app.css `.home-band`). */}
-        <Stack gap="lg" w="100%" className="hero-rise home-band">
+          {phone && pageSearch}
           <div className="hero-dist-wrap" data-people-mapped={spots ? spots.size : undefined}>
             <Distribution
               bins={bins}
@@ -2574,87 +2569,53 @@ export default function Home() {
               ) : undefined}
             />
           </div>
-
           {/* Away while the graph is full page, which carries the same search itself. Its place is not
               held: the scrim over it is a blur of the page, not a picture of it. */}
-          {!graphFull && (
-            <SearchBox
-              {...searchProps}
-              size="lg"
-              autoFocus={firstSearchRef.current}
-              keepBelow={() => document.querySelector<HTMLElement>('.hero-dist-main')}
-              // The way in to the full page's filters from the page's own search: a title or school shown
-              // on the graph rather than opened. The box empties itself, so no list is left behind.
-              onShowOnGraph={(pick) => { putFilter(pick); openFullRef.current?.(); }}
-            />
-          )}
+          {!phone && pageSearch}
 
-          {/* Four supporting figures on a hairline rule — no card. The stats used to sit in a bordered
-              Paper with a straddling "System-Wide" badge, which made them compete with the headline. */}
-          <Anchor component={Link} to="/explore" underline="never" c="inherit" style={{ display: 'block' }}>
-            <Box className="home-stats" pt="md" style={{ borderTop: '1px solid var(--hairline)' }}>
-              <Group gap={0} wrap="nowrap" align="stretch" visibleFrom="xs">
-                {kpis.map((k, i) => (
-                  <Fragment key={k.label}>
-                    {i > 0 && <Divider orientation="vertical" />}
-                    <Kpi {...k} />
-                  </Fragment>
-                ))}
-              </Group>
-              <SimpleGrid cols={2} spacing="md" verticalSpacing="lg" hiddenFrom="xs">
-                {kpis.map((k) => <Kpi key={k.label} {...k} />)}
-              </SimpleGrid>
-              <Text size="xs" c="accent.7" className="accent7-text" fw={600} ta="center" mt="md">
-                Browse every school and title under Divisions <span className="browse-arrow">→</span>
-              </Text>
-            </Box>
-          </Anchor>
+          <div className="home-stats">
+            <div className="home-stat-row">
+              {stats.map((s) => <StatItem key={s.label} {...s} />)}
+            </div>
+            <Anchor component={Link} to="/explore" underline="never" className="home-stats-browse accent7-text" c="accent.7">
+              Browse every school and title under Divisions <span className="browse-arrow" aria-hidden>→</span>
+            </Anchor>
+          </div>
         </Stack>
 
-        {/* Below the fold. The hero column above stays narrow on purpose; this band is wider because
-            its job is different — the page used to end here, ~450px above the fold on a laptop, with
-            nothing indicating that Compare, Reports, Screening or the division pages existed at all.
-            Everything here reads from the same two JSON artifacts the stats card uses, so the landing
-            page still never touches DuckDB. */}
-        <Stack gap="md" w="100%" mt="xl" className="home-band">
-          <Group justify="center" gap={8}>
-            <Eyebrow c="dimmed">Also in here</Eyebrow>
-          </Group>
-          <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md">
-            <ShowcaseCard
+        {/* The rest of the site, below the fold: the page used to end with nothing to say that Compare,
+            Reports, Screening or the division pages existed. Links, not features of this page. */}
+        <nav className="home-more" aria-labelledby="home-more-title">
+          <div id="home-more-title" className="home-more-title"><Eyebrow span>Also in here</Eyebrow></div>
+          <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="lg" verticalSpacing="md">
+            <ShowcaseLink
               to="/paycheck"
-              icon={<IconBriefcase size={ICON.nav} />}
+              icon={<IconBriefcase size={18} stroke={1.8} />}
               title="Look up a title"
               blurb="See a title's full pay distribution, who holds it, and how it varies by school."
-              stat={dims?.titles != null ? `${num(dims.titles)} titles` : '\u00a0'}
             />
-            <ShowcaseCard
+            <ShowcaseLink
               to="/explore"
-              icon={<IconBuildingBank size={ICON.nav} />}
+              icon={<IconBuildingBank size={18} stroke={1.8} />}
               title="Compare divisions"
               blurb="Headcount, median pay and top earners side by side across every school."
-              stat={dims?.schools != null ? `${num(dims.schools)} divisions` : '\u00a0'}
             />
-            <ShowcaseCard
+            <ShowcaseLink
               to="/reports"
-              icon={<IconReportAnalytics size={ICON.nav} />}
+              icon={<IconReportAnalytics size={18} stroke={1.8} />}
               title="Build an equity case"
               blurb="Run the UW salary guidelines for one person and print the brief for HR."
-              stat="Parity · compression · market"
             />
-            <ShowcaseCard
+            <ShowcaseLink
               to="/screening"
-              icon={<IconListSearch size={ICON.nav} />}
+              icon={<IconListSearch size={18} stroke={1.8} />}
               title="Screen a whole unit"
               blurb="Rank everyone in a school or department by how strong their case looks."
-              stat={summary?.latest?.headcount != null ? `${num(summary.latest.headcount)} employees` : '\u00a0'}
             />
           </SimpleGrid>
-        </Stack>
+        </nav>
 
-        {/* Footnotes. These used to sit between the stats and the showcase band, which pushed the band
-            below the fold — they are the least urgent thing on the page and were occupying the most
-            valuable space on it. */}
+        {/* Footnotes: the least urgent thing on the page, at its end. */}
         <Stack gap="xs" maw="var(--content-prose)" mx="auto" w="100%">
           <RotatingFact facts={facts} />
 
