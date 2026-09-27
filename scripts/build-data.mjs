@@ -21,7 +21,8 @@ import duckdb from 'duckdb';
 import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
   snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, latestGradeBands,
-  prepareSheet,
+  prepareSheet, mapDepartment, departmentChanges, DEPT_RENAME_SHARE, DEPT_RENAME_MIN, structureChange, releasedWith,
+  divisionReorganizations,
 } from './lib/normalize.mjs';
 import { computeHomeStats, serializeHomeStats } from './lib/home-stats.mjs';
 import { computeRaiseSteps } from './lib/raise-steps.mjs';
@@ -170,7 +171,12 @@ function clean(v) {
   return s === '' ? null : s;
 }
 
-/** Read the optional pay-band reference table (data/reference/salary-grades.{csv,xlsx}). */
+/**
+ * Read the optional pay-band reference table (data/reference/salary-grades.{csv,xlsx}): every row, every
+ * year. A row with a minimum and no maximum is a floor — HR publishes only a minimum for most of grades
+ * 51–99 — and is kept: a floor says whether pay is below it, though it has no midpoint to place pay by.
+ * `latestGradeBands` then keeps the newest row per grade and schedule.
+ */
 function readGrades() {
   const dir = path.join(ROOT, 'data', 'reference');
   let file = null;
@@ -178,7 +184,8 @@ function readGrades() {
     if (fs.existsSync(path.join(dir, f))) { file = path.join(dir, f); break; }
   }
   if (!file) return [];
-  const wb = XLSX.readFile(file, { raw: true });
+  // Every cell as text: `raw` would read a retrieval date as a day count.
+  const wb = XLSX.readFile(file, { raw: true, cellDates: false });
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
   const pick = (r, k) => {
     const key = Object.keys(r).find((x) => norm(x) === norm(k));
@@ -193,10 +200,12 @@ function readGrades() {
         min: parseMoney(pick(r, 'min')),
         max: parseMoney(pick(r, 'max')),
         effective_year: parseNum(pick(r, 'effective_year')),
+        retrieved: clean(pick(r, 'retrieved')),
+        source: clean(pick(r, 'source')),
       };
     })
-    .filter((x) => x.grade != null && x.min != null && x.max != null);
-  return latestGradeBands(parsed);
+    .filter((x) => x.grade != null && x.min != null && (x.max == null || x.max > x.min));
+  return parsed;
 }
 
 function readWorkbook(filePath) {
@@ -402,6 +411,53 @@ async function main() {
     for (const d of drift) console.log(`  [${d.rename ? 'rename?' : 'reorg'}] ${d.snapshot}: ${d.line}`);
   }
 
+  // Department renames: the same evidence one level down, read both ways (normalize `departmentChanges`),
+  // on the names as the source wrote them. value-map.json's `department` block carries the ones found;
+  // each step's renames, mergers and other departments that ended go to departments.json for the Data
+  // page, and a rename the block does not yet carry is reported here — as a message, not a warning:
+  // departments churn every release, and most of it is reorganization rather than renaming.
+  const DEPT_MAP = VALUE_MAP.department || {};
+  const unitsBySnap = new Map();
+  for (const r of allRows) {
+    if (!unitsBySnap.has(r.snapshot_id)) unitsBySnap.set(r.snapshot_id, []);
+    unitsBySnap.get(r.snapshot_id).push({ person_key: r.person_key, school: r.school, department: r.department });
+  }
+  const deptLines = [];
+  const deptSteps = [];
+  const reorganizations = [];
+  const r3 = (x) => (x == null ? x : Math.round(x * 1000) / 1000);
+  const shares = (o) => ({ ...o, share: r3(o.share), ...(o.reverse != null ? { reverse: r3(o.reverse) } : {}) });
+  for (let i = 1; i < dataSnaps.length; i++) {
+    const prev = dataSnaps[i - 1], cur = dataSnaps[i];
+    const { renames, mergers, gone } = departmentChanges(unitsBySnap.get(prev.snapshot_id) ?? [], unitsBySnap.get(cur.snapshot_id) ?? []);
+    const carried = renames.filter((r) => mapDepartment(DEPT_MAP, r.school, r.from) === mapDepartment(DEPT_MAP, r.school, r.to));
+    const uncarried = renames.filter((r) => !carried.includes(r));
+    // A new division formed from whole departments of others (CCAI, Sep 2026): published in summary.json.
+    for (const r of divisionReorganizations(unitsBySnap.get(prev.snapshot_id) ?? [], unitsBySnap.get(cur.snapshot_id) ?? [])) {
+      reorganizations.push({ from_id: prev.snapshot_id, to_id: cur.snapshot_id, ...r });
+      deptLines.push(`  [reorganized] ${cur.snapshot_id}: "${r.school}" formed from ${r.from.map((f) => `${f.people} of "${f.school}" (${f.departments.join(', ')})`).join('; ')}`);
+    }
+    deptSteps.push({
+      from: prev.snapshot_id, to: cur.snapshot_id,
+      carried: carried.map(shares), uncarried: uncarried.map(shares),
+      mergers: mergers.map((m) => ({ ...m, reverse: r3(m.reverse), from: m.from.map(shares) })),
+      gone: gone.map(shares),
+    });
+    for (const r of uncarried) {
+      const line = `"${r.from}" (${r.school}) looks renamed to "${r.to}": ${Math.round(r.share * 100)}% of its ${r.carried} carried-over people went there, and ${Math.round(r.reverse * 100)}% of the new department's came from it`;
+      cur.messages.push(`${line} — add "${r.school}|${r.from}" to the "department" block in data/value-map.json`);
+      deptLines.push(`  [rename?] ${cur.snapshot_id}: ${line}`);
+    }
+    for (const r of carried) deptLines.push(`  [carried] ${cur.snapshot_id}: "${r.from}" → "${r.to}" (${r.school})`);
+    for (const m of mergers) deptLines.push(`  [merged] ${cur.snapshot_id}: ${m.from.map((f) => `"${f.department}"`).join(' + ')} → "${m.to}" (${m.school}), not carried`);
+  }
+  if (deptLines.length) {
+    console.log('\nDepartment names that changed between snapshots:');
+    for (const l of deptLines) console.log(l);
+  }
+  // Now carry them, so every snapshot files a renamed department under its name today.
+  for (const r of allRows) r.department = mapDepartment(DEPT_MAP, r.school, r.department);
+
   // Hard gate — the NEWEST snapshot only. A >40% paid-headcount swing vs its immediate predecessor is
   // far outside anything seen in this dataset's history and more likely a mapping/ingestion break than
   // a real staffing change. This fails the CI job (site keeps serving the last good deploy) instead of
@@ -451,6 +507,14 @@ async function main() {
     if (m.snapshot_id && notes[m.snapshot_id]) m.note = notes[m.snapshot_id];
   }
 
+  // Department renames carried, mergers left separate, and the other departments each step ended (above).
+  fs.writeFileSync(path.join(OUT_DIR, 'departments.json'), JSON.stringify({
+    generated_at: new Date().toISOString(),
+    rule: { share: DEPT_RENAME_SHARE, min: DEPT_RENAME_MIN },
+    mapped: Object.keys(DEPT_MAP).filter((k) => !k.startsWith('_')).length,
+    steps: deptSteps,
+  }));
+
   // manifest + summary
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify({
     generated_at: new Date().toISOString(),
@@ -466,12 +530,16 @@ async function main() {
     snapshot_count: dataSnaps.length,
     // `median` is over PEOPLE (their summed actual pay), matching the headcount beside it and every
     // median in the app; `median_rows` keeps the per-appointment figure the source's rows give.
-    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, median: s.salary_median_people, median_rows: s.salary_median })),
+    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, headcount: s.distinct_people_paid, median: s.salary_median_people, median_rows: s.salary_median })),
     latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median_people, median_rows: latest.salary_median } : null,
+    // Divisions formed from whole departments of others (normalize `divisionReorganizations`), so a move
+    // of every member of a department is read as the reorganization it is.
+    reorganizations,
   }, null, 2));
 
-  // pay-band reference (grade → range) + freshness status
-  const grades = readGrades();
+  // pay-band reference (grade → range, or → minimum) + freshness status
+  const gradeRows = readGrades();
+  const grades = latestGradeBands(gradeRows).map((g) => ({ grade: g.grade, basis: g.basis, min: g.min, max: g.max ?? null, effective_year: g.effective_year }));
   fs.writeFileSync(path.join(OUT_DIR, 'grades.json'), JSON.stringify(grades, null, 2));
 
   // precomputed landing-page stats (latest snapshot only) — lets Home render without booting
@@ -504,21 +572,38 @@ async function main() {
   // freshness check, so the pay-band panels render a confident-looking average over a tiny slice of
   // people. Measure against the rows that *have* a grade in the source (many appointments legitimately
   // aren't on the graded structure at all) — that's the population the reference is supposed to band.
-  const gradeKeys = new Set(grades.map((g) => `${g.grade}|${norm(g.basis ?? '')}`));
+  //
+  // Ranges and floors are counted apart. A floor answers one question (is pay below the grade's minimum?)
+  // and a range the rest — position in range, compa-ratio, the market floor — so coverage, and whether the
+  // pay-band figures are "sparse", is the ranges'.
+  const rangeKeys = new Set(grades.filter((g) => g.max != null).map((g) => `${g.grade}|${norm(g.basis ?? '')}`));
+  const floorKeys = new Set(grades.filter((g) => g.max == null).map((g) => `${g.grade}|${norm(g.basis ?? '')}`));
   const latestRows = latest ? allRows.filter((r) => r.snapshot_id === latest.snapshot_id) : [];
   const gradedRows = latestRows.filter((r) => r.grade_number != null);
-  const matchedRows = gradedRows.filter((r) => gradeKeys.has(`${r.grade_number}|${norm(r.grade_basis ?? '')}`));
+  const keyOf = (r) => `${r.grade_number}|${norm(r.grade_basis ?? '')}`;
+  const matchedRows = gradedRows.filter((r) => rangeKeys.has(keyOf(r)));
+  const floorRows = gradedRows.filter((r) => floorKeys.has(keyOf(r)));
   const coverage = gradedRows.length ? matchedRows.length / gradedRows.length : null;
   const SPARSE_BELOW = 0.5;
+  // Where the newest figures came from, and when: HR states no effective date, so the day they were read.
+  const newest = gradeRows.filter((g) => g.effective_year === maxEff);
+  const retrievedAt = newest.map((g) => g.retrieved).filter(Boolean).sort().pop() ?? null;
 
   const refStatus = {
     generated_at: new Date().toISOString(),
-    grades_count: grades.length,
+    grades_count: new Set(grades.filter((g) => g.max != null).map((g) => g.grade)).size,
+    floors_count: new Set(grades.filter((g) => g.max == null).map((g) => g.grade)).size,
     max_effective_year: maxEff,
     latest_snapshot_year: latestYear,
     graded_rows: gradedRows.length,
     matched_rows: matchedRows.length,
     coverage,
+    floor_rows: floorRows.length,
+    floor_coverage: gradedRows.length ? floorRows.length / gradedRows.length : null,
+    retrieved_at: retrievedAt,
+    source_url: newest.map((g) => g.source).find(Boolean) ?? null,
+    structure_change: structureChange(gradeRows),
+    released_with: releasedWith(dataSnaps, retrievedAt),
     status:
       grades.length === 0
         ? 'missing'
@@ -530,7 +615,8 @@ async function main() {
   };
   fs.writeFileSync(path.join(OUT_DIR, 'reference-status.json'), JSON.stringify(refStatus, null, 2));
 
-  console.log(`\nDone. ${allRows.length} rows across ${dataSnaps.length} snapshots, ${grades.length} grade ranges -> public/data/`);
+  console.log(`\nDone. ${allRows.length} rows across ${dataSnaps.length} snapshots, ${grades.length} grade ranges and minimums -> public/data/`);
+  console.log(`Pay bands: ranges cover ${matchedRows.length} of ${gradedRows.length} graded appointments (${Math.round((coverage ?? 0) * 100)}%), minimums ${floorRows.length} more; structure ${refStatus.structure_change == null ? 'change unknown' : `${refStatus.structure_change > 0 ? '+' : ''}${(refStatus.structure_change * 100).toFixed(1)}%`}, released with ${refStatus.released_with ?? '—'}, status ${refStatus.status}`);
   const warnings = manifest.filter((m) => m.status === 'warning' || m.status === 'error');
   if (warnings.length) {
     console.log('\nHealth flags:');

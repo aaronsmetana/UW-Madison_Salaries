@@ -6,6 +6,7 @@ import {
   norm, excelSerialToISO, parseDate, parseMoney, parseNum, parseGrade,
   makePersonKey, snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median,
   latestGradeBands, harmonizeHourly, isAnnualizedRate, prepareSheet, HOURS_PER_YEAR, FTE_PLACEHOLDER,
+  mapDepartment, departmentChanges, structureChange, releasedWith, divisionReorganizations,
 } from './lib/normalize.mjs';
 
 describe('dates', () => {
@@ -210,5 +211,144 @@ describe('preparing a sheet', () => {
     // $15 x 2,080 = $31,200: two appointments, one written as a rate and one as an annual figure.
     const rows = prep([line(15, 0.25), line(31200, FTE_PLACEHOLDER)]);
     expect(rows.map((r) => [r.salary, r.fte])).toEqual([[31200, 0.25], [31200, 0]]);
+  });
+});
+
+describe('department renames', () => {
+  it('maps a department by school and name, ignoring case, and leaves every other alone', () => {
+    const map = { 'School A|Human Oncology': 'Radiation Medicine' };
+    expect(mapDepartment(map, 'School A', 'Human Oncology')).toBe('Radiation Medicine');
+    expect(mapDepartment(map, 'school a', 'HUMAN ONCOLOGY')).toBe('Radiation Medicine');
+    // The same name in another school is another unit.
+    expect(mapDepartment(map, 'School B', 'Human Oncology')).toBe('Human Oncology');
+    expect(mapDepartment(map, 'School A', null)).toBeNull();
+    expect(mapDepartment(undefined, 'School A', 'Human Oncology')).toBe('Human Oncology');
+  });
+
+  // Each unit is one way a department can change name, or not.
+  const at = (school, department, ...keys) => keys.map((person_key) => ({ person_key, school, department }));
+  const before = [
+    ...at('S', 'Botany', 'b1', 'b2', 'b3', 'b4'),
+    ...at('S', 'Integrative Biology', 'i1', 'i2', 'i3', 'i4', 'i5'),
+    ...at('S', 'Old', 'o1', 'o2', 'o3'),
+    ...at('S', 'Small', 's1', 's2', 's3'),
+    ...at('S', 'Stays', ...Array.from({ length: 20 }, (_, i) => `t${i}`)),
+    ...at('S', 'Stat', 'x1', 'x2', 'x3'),
+    ...at('S', 'Tiny', 'y1', 'y2'),
+  ];
+  const after = [
+    // A merger of equals: both send their people to a new unit made of them. One of Integrative
+    // Biology's stays under the old name.
+    ...at('S', 'Biology', 'b1', 'b2', 'b3', 'b4', 'i1', 'i2', 'i3', 'i4', 'n1'),
+    ...at('S', 'Integrative Biology', 'i5'),
+    ...at('S', 'New', 'o1', 'o2', 'o3'),
+    // Absorbed: Small's people all went to Big, but Big is mostly people from Stays, which still exists.
+    ...at('S', 'Big', 's1', 's2', 's3', 't0', 't1', 't2', 't3', 't4', 't5', 't6'),
+    ...at('S', 'Stays', ...Array.from({ length: 13 }, (_, i) => `t${i + 7}`)),
+    // Moved to another school, keeping its name: a real move, not a rename.
+    ...at('T', 'Stat', 'x1', 'x2', 'x3'),
+    // Too few people to tell.
+    ...at('S', 'Tiny2', 'y1', 'y2'),
+  ];
+
+  it('carries a rename, with its evidence', () => {
+    const { renames } = departmentChanges(before, after);
+    expect(renames).toEqual([{ school: 'S', from: 'Old', to: 'New', carried: 3, share: 1, reverse: 1 }]);
+  });
+
+  it('reports a merger without carrying it: carrying would file both old units under the new name', () => {
+    const { renames, mergers, gone } = departmentChanges(before, after);
+    expect(mergers).toEqual([{
+      school: 'S', to: 'Biology', reverse: 1,
+      // Four of Integrative Biology's five continuing people went; the fifth stayed under the old name.
+      from: [{ department: 'Botany', carried: 4, share: 1 }, { department: 'Integrative Biology', carried: 5, share: 0.8 }],
+    }]);
+    expect(renames.some((r) => r.to === 'Biology')).toBe(false);
+    expect(gone.some((g) => g.department === 'Botany')).toBe(false);
+  });
+
+  it('does not carry a unit absorbed into another, a move between schools, or too few people', () => {
+    const { renames, gone } = departmentChanges(before, after);
+    expect(renames.some((r) => ['Small', 'Stat', 'Tiny'].includes(r.from))).toBe(false);
+    const by = Object.fromEntries(gone.map((g) => [g.department, g]));
+    expect(Object.keys(by).sort()).toEqual(['Small', 'Stat', 'Tiny']);
+    expect(by.Small).toMatchObject({ to: 'Big', share: 1, reverse: 0.3 });
+    expect(by.Stat).toMatchObject({ to: 'Stat', to_school: 'T', share: 1 });
+    expect(by.Tiny).toMatchObject({ to: 'Tiny2', carried: 2 });
+  });
+
+  it('follows a chain of renames to the name in use now, and stops on a loop', () => {
+    const map = { 'S|A': 'B', 'S|B': 'C', 'S|X': 'Y', 'S|Y': 'X' };
+    expect(mapDepartment(map, 'S', 'A')).toBe('C');
+    expect(mapDepartment(map, 'S', 'B')).toBe('C');
+    expect(['X', 'Y']).toContain(mapDepartment(map, 'S', 'X'));
+  });
+});
+
+describe('pay-band reference: the structure change and the release it came with', () => {
+  const rows = [
+    { grade: 15, basis: 'annual_12mo', min: 35360, max: 65770, effective_year: 2025 },
+    { grade: 27, basis: 'annual_12mo', min: 95824, max: 178232, effective_year: 2025 },
+    { grade: 15, basis: 'annual_12mo', min: 36421, max: 67743, effective_year: 2026 },
+    { grade: 27, basis: 'annual_12mo', min: 98699, max: 183579, effective_year: 2026 },
+    // Published for the first time: no earlier figure to measure from, so not in the median.
+    { grade: 16, basis: 'annual_12mo', min: 39335, max: 73162, effective_year: 2026 },
+    // A minimum only: a floor, kept.
+    { grade: 61, basis: 'annual_12mo', min: 45250, max: null, effective_year: 2026 },
+  ];
+
+  it('measures the change over the grades published in both years', () => {
+    expect(structureChange(rows)).toBe(0.03);
+    expect(structureChange(rows.filter((r) => r.effective_year === 2026))).toBeNull();
+  });
+
+  it('keeps a floor as the newest row for its grade', () => {
+    const latest = latestGradeBands(rows);
+    expect(latest.find((g) => g.grade === 61)).toMatchObject({ min: 45250, max: null });
+    expect(latest.filter((g) => g.grade === 15)).toEqual([rows[2]]);
+  });
+
+  it('dates the ranges to the newest snapshot on or before the day they were read', () => {
+    const snaps = [
+      { snapshot_id: '2026-03', snapshot_date: '2026-03-01' },
+      { snapshot_id: '2026-09', snapshot_date: '2026-09-01' },
+      { snapshot_id: '2027-03', snapshot_date: '2027-03-01' },
+    ];
+    expect(releasedWith(snaps, '2026-09-26')).toBe('2026-09');
+    expect(releasedWith(snaps, '2026-09-01')).toBe('2026-09');
+    expect(releasedWith(snaps, '2026-08-31')).toBe('2026-03');
+    expect(releasedWith(snaps, null)).toBeNull();
+  });
+});
+
+describe('division reorganizations', () => {
+  const at = (school, department, ...keys) => keys.map((person_key) => ({ person_key, school, department }));
+  const before = [
+    ...at('LS', 'CS', 'c1', 'c2', 'c3', 'c4'),
+    ...at('LS', 'Stat', 's1', 's2', 's3'),
+    ...at('LS', 'Admin', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'),
+    ...at('LS', 'History', 'h1', 'h2', 'h3'),
+    ...at('BUS', 'BUS', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6'),
+  ];
+  const after = [
+    // CS and Statistics move whole, with two of eight from L&S's administration and one from Business.
+    ...at('CCAI', 'CS', 'c1', 'c2', 'c3', 'c4'),
+    ...at('CCAI', 'Stat', 's1', 's2', 's3'),
+    ...at('CCAI', 'Admin', 'a1', 'a2', 'b1', 'n1'),
+    ...at('LS', 'Admin', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'),
+    ...at('LS', 'History', 'h1', 'h2', 'h3'),
+    ...at('BUS', 'BUS', 'b2', 'b3', 'b4', 'b5', 'b6'),
+    // A new division no whole department moved into is new, not a reorganization.
+    ...at('NEWBIE', 'X', 'h1', 'x2', 'x3'),
+  ];
+
+  it('names a new division formed from whole departments, and who came from where', () => {
+    expect(divisionReorganizations(before, after)).toEqual([
+      { school: 'CCAI', people: 11, from: [{ school: 'LS', people: 9, departments: ['CS', 'Stat'] }] },
+    ]);
+  });
+
+  it('finds none when no division is new', () => {
+    expect(divisionReorganizations(before, before)).toEqual([]);
   });
 });

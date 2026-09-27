@@ -29,10 +29,38 @@ Everything is driven by the files in **`data/raw/`**, edited right on github.com
 
 ## Pay-band reference (optional)
 
-`data/reference/salary-grades.{xlsx,csv}` holds the official grade→salary-range table
-(`grade, basis, min, max, effective_year`), copy/pasted from the
-[Salary Structure page](https://hr.wisc.edu/pay/salary-structure/). It powers the pay-band view for
-the latest snapshot. (Auto-harvest workflow is planned; copy/paste is the reliable baseline.)
+`data/reference/salary-grades.{xlsx,csv}` holds UW–Madison's published pay structure
+(`grade, basis, min, max, effective_year, retrieved, source`), from the
+[Salary Structure page](https://hr.wisc.edu/pay/salary-structure/). The page loads its tables from
+`https://hr.wisc.edu/db/api.php?q=salary-t1` (grades 15–35) and `?q=salary-t2` (grades 51–99).
+
+- **Units.** Every row is HR's **12-month salary** figure, on all three schedules the data uses
+  (`annual_12mo`, `hourly`, `annual_9mo`). The source annualizes hourly pay over 2,080 hours and, since
+  Sep 2025, reports 9-month appointments at their 12-month equivalent — 98% of graded 9-month rates sit in
+  the 12-month range and none below it. Rows from before Sep 2025 (`comp_basis` "Academic") carried the
+  9-month amount, HR's 12-month figure × 9/11; the app scales the band for those rows
+  (`src/lib/bands.ts`).
+- **Minimums.** Most of grades 51–99 are published with a minimum only: leave `max` empty. The app uses a
+  minimum for "below the grade minimum" and nothing that needs a range. Skip grades HR lists as "Contact your
+  division", "Varies by job title" or "Not applicable".
+- **Dates.** HR states no effective date, so `retrieved` records the day the figures were read. Keep older
+  years' rows: the newest year per grade and schedule is used, and `npm run data` measures the structure
+  change against the year before (`reference-status.json` `structure_change`). The release the figures came
+  out with (`released_with`, the newest snapshot on or before `retrieved`) decides when the app announces
+  them.
+
+`npm run data` prints what the ranges and minimums cover in the newest snapshot. Pay-band figures are flagged
+as partial while ranges cover under half of graded appointments.
+
+## Department renames
+
+The source renames departments between releases (Sep 2025 rewrote 146 of them). `npm run data` checks every
+step between snapshots and reports a department that looks renamed — at least 75% of its continuing people
+now in one department that is new, in the same school, and at least 75% of that department's continuing
+people from it. Add it to the `department` block of `data/value-map.json`, keyed `"School|Old department"`,
+and every snapshot files it under its current name. Several departments merging into one are reported but not
+carried: carrying a merger would file every older unit under the new name. The Data · About page lists each
+release's renames, mergers and other departments that ended.
 
 ## One-time GitHub setup
 
@@ -48,7 +76,7 @@ Node 20+ required.
 
 ```bash
 npm install
-npm run data     # ETL: data/raw/* → public/data/{salaries.parquet,manifest.json,summary.json,home-stats.json,raise-steps.json,search-index.json}
+npm run data     # ETL: data/raw/* → public/data/{salaries.parquet,manifest.json,summary.json,home-stats.json,raise-steps.json,search-index.json,departments.json,grades.json,reference-status.json}
 npm run dev      # http://localhost:5173/UW-Madison_Salaries/
 npm run build    # typecheck + production build
 npm run test     # vitest — pure-function + ETL unit tests

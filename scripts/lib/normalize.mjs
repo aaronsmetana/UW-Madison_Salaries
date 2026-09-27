@@ -266,3 +266,193 @@ export function latestGradeBands(rows) {
   }
   return [...latest.values()];
 }
+
+/**
+ * A department renamed within its school — value-map.json's `department` block, keyed
+ * `School|Department` with the school's canonical (already harmonized) name. The source reuses
+ * department names across schools ("Administration" is twelve units), so a name alone cannot be a key.
+ * Matched exactly, then ignoring case, and followed through a chain (A was renamed B, which was later
+ * renamed C: A reads C). An unmapped department is returned as it is.
+ */
+export function mapDepartment(map, school, department) {
+  if (!map || department == null) return department;
+  const seen = new Set();
+  let cur = department;
+  for (;;) {
+    const key = `${school ?? ''}|${cur}`;
+    let next = typeof map[key] === 'string' ? map[key] : null;
+    if (next == null) {
+      const lower = key.toLowerCase();
+      const hit = Object.keys(map).find((k) => !k.startsWith('_') && k.toLowerCase() === lower);
+      next = hit ? map[hit] : null;
+    }
+    if (next == null || next === cur || seen.has(next.toLowerCase())) return cur;
+    seen.add(cur.toLowerCase());
+    cur = next;
+  }
+}
+
+/** The share of people either way, and the fewest carried over, that make two department names one unit. */
+export const DEPT_RENAME_SHARE = 0.75;
+export const DEPT_RENAME_MIN = 3;
+
+/**
+ * Which departments of `before` became which of `after`, judged by where their people went: the evidence
+ * the division detector uses, one level down and in both directions.
+ *
+ * A department sends its people to a new one when, within its school, at least three quarters of its
+ * people who are still here sit in one department that is new in `after`, and at least three of them do.
+ * The new department is then made of the old ones sending to it when three quarters or more of its own
+ * continuing people came from them. One sender is a rename, and is carried. Several are a merger, and are
+ * reported, not carried: carrying a merger files every older, finer unit under the new name, and wipes
+ * their histories. Mar 2026 showed what that costs — Vet Med and Pharmacy stopped naming departments and
+ * put everyone under "Divisionwide", which reads as twenty units merging into one.
+ *
+ * Rows are `{ person_key, school, department }`. Returns the renames with their evidence, the mergers, and
+ * the departments gone from `after` that are in neither, with where most of their people went.
+ */
+export function departmentChanges(before, after, { share = DEPT_RENAME_SHARE, min = DEPT_RENAME_MIN } = {}) {
+  const unit = (r) => `${r.school ?? ''}\u0000${r.department}`;
+  const split = (u) => { const [school, department] = u.split('\u0000'); return { school: school || null, department }; };
+  const members = (rows) => {
+    const m = new Map();
+    for (const r of rows) {
+      if (r.department == null) continue;
+      if (!m.has(unit(r))) m.set(unit(r), new Set());
+      m.get(unit(r)).add(r.person_key);
+    }
+    return m;
+  };
+  const was = members(before), now = members(after);
+  const peopleBefore = new Set(before.map((r) => r.person_key)), peopleAfter = new Set(after.map((r) => r.person_key));
+  const unitsNow = new Map(); // person → the units they sit in after
+  for (const [u, keys] of now) for (const k of keys) (unitsNow.get(k) ?? unitsNow.set(k, []).get(k)).push(u);
+
+  // Forward: each old unit's continuing people, and the new unit in its school most of them now sit in.
+  const forward = [];
+  const gone = [];
+  for (const [u, keys] of was) {
+    const { school } = split(u);
+    const carried = [...keys].filter((k) => peopleAfter.has(k));
+    const dest = new Map();
+    for (const k of carried) for (const v of unitsNow.get(k) ?? []) dest.set(v, (dest.get(v) ?? 0) + 1);
+    const [top, n] = [...dest.entries()].filter(([v]) => v !== u).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0] ?? [null, 0];
+    const fwd = carried.length ? n / carried.length : 0;
+    const t = top && split(top);
+    if (t && t.school === school && !was.has(top) && carried.length >= min && fwd >= share) {
+      forward.push({ from: u, to: top, carried: carried.length, share: fwd });
+    } else if (!now.has(u)) {
+      gone.push({ ...split(u), people: keys.size, carried: carried.length, to: t ? t.department : null, to_school: t ? t.school : null, share: fwd });
+    }
+  }
+  // Reverse: of each new unit's continuing people, how many came from the old units sending to it.
+  const renames = [];
+  const mergers = [];
+  for (const to of new Set(forward.map((f) => f.to))) {
+    const from = forward.filter((f) => f.to === to);
+    const cont = [...now.get(to)].filter((k) => peopleBefore.has(k));
+    const fromKeys = new Set(from.flatMap((f) => [...was.get(f.from)]));
+    const rev = cont.length ? cont.filter((k) => fromKeys.has(k)).length / cont.length : 0;
+    const b = split(to);
+    if (rev >= share && from.length === 1) {
+      const a = split(from[0].from);
+      renames.push({ school: a.school, from: a.department, to: b.department, carried: from[0].carried, share: from[0].share, reverse: rev });
+    } else if (rev >= share) {
+      mergers.push({
+        school: b.school, to: b.department, reverse: rev,
+        from: from.map((f) => ({ department: split(f.from).department, carried: f.carried, share: f.share })).sort((x, y) => x.department.localeCompare(y.department)),
+      });
+    } else {
+      for (const f of from) {
+        if (!now.has(f.from)) gone.push({ ...split(f.from), people: was.get(f.from).size, carried: f.carried, to: b.department, to_school: b.school, share: f.share, reverse: rev });
+      }
+    }
+  }
+  const key = (x) => `${x.school ?? ''}|${x.from ?? x.to ?? x.department}`;
+  const order = (x, y) => key(x).localeCompare(key(y));
+  return { renames: renames.sort(order), mergers: mergers.sort(order), gone: gone.sort(order) };
+}
+
+/**
+ * How much the pay structure moved between the two newest `effective_year`s in the reference table: the
+ * median change in range minimum over the grade and schedule pairs published in both. The repo carried
+ * two grades from Jun 2026; HR's Sep 2026 figures put all four of their numbers exactly 3.0% higher, and
+ * that measured figure — not a claim about the grades not carried before — is what the app states.
+ * `null` when no pair is in both.
+ */
+export function structureChange(rows) {
+  const years = [...new Set(rows.map((r) => r.effective_year).filter((y) => y != null))].sort((a, b) => b - a);
+  if (years.length < 2) return null;
+  const [now, before] = years;
+  const key = (r) => `${r.grade}|${norm(r.basis ?? '')}`;
+  const prev = new Map(rows.filter((r) => r.effective_year === before && r.min > 0).map((r) => [key(r), r.min]));
+  const changes = rows
+    .filter((r) => r.effective_year === now && prev.has(key(r)))
+    .map((r) => r.min / prev.get(key(r)) - 1)
+    .sort((a, b) => a - b);
+  if (!changes.length) return null;
+  const mid = changes.length >> 1;
+  const m = changes.length % 2 ? changes[mid] : (changes[mid - 1] + changes[mid]) / 2;
+  return Math.round(m * 10000) / 10000;
+}
+
+/**
+ * The release the ranges came out with: the newest snapshot dated on or before the day they were
+ * retrieved. The app says "salary ranges updated" only while that is the newest snapshot, so the next
+ * release retires the announcement with nothing to remember to remove.
+ */
+export function releasedWith(snapshots, retrievedISO) {
+  if (!retrievedISO) return null;
+  const eligible = snapshots.filter((s) => s.snapshot_date && String(s.snapshot_date) <= retrievedISO);
+  eligible.sort((a, b) => (a.snapshot_date < b.snapshot_date ? 1 : a.snapshot_date > b.snapshot_date ? -1 : 0));
+  return eligible[0]?.snapshot_id ?? null;
+}
+
+/**
+ * Divisions formed out of others between two snapshots: a division new in `after` that whole departments
+ * moved into — at least three quarters of a department's continuing people, and at least three of them.
+ * Sep 2026's College of Computing and Artificial Intelligence took Computer Sciences, Statistics and the
+ * Information School from Letters & Science: 256 people who, counted by division, read as leaving one and
+ * joining the other, and who changed nothing but the name above their department.
+ *
+ * Rows are `{ person_key, school, department }`. Returns, per new division, how many people it has, and
+ * from each division that departments moved out of: how many people came, and which departments came
+ * whole.
+ */
+export function divisionReorganizations(before, after, { share = DEPT_RENAME_SHARE, min = DEPT_RENAME_MIN } = {}) {
+  const schoolsBefore = new Set(before.map((r) => r.school).filter(Boolean));
+  const now = new Map(); // person → their divisions after
+  for (const r of after) if (r.school) (now.get(r.person_key) ?? now.set(r.person_key, new Set()).get(r.person_key)).add(r.school);
+  const created = [...new Set(after.map((r) => r.school).filter((s) => s && !schoolsBefore.has(s)))];
+  if (!created.length) return [];
+  // Each department before, keyed by division, with its people.
+  const depts = new Map();
+  const schoolOf = new Map(); // person → their divisions before
+  for (const r of before) {
+    if (r.school) (schoolOf.get(r.person_key) ?? schoolOf.set(r.person_key, new Set()).get(r.person_key)).add(r.school);
+    if (!r.school || r.department == null) continue;
+    const k = `${r.school}\u0000${r.department}`;
+    (depts.get(k) ?? depts.set(k, new Set()).get(k)).add(r.person_key);
+  }
+  const out = [];
+  for (const to of created.sort()) {
+    const whole = new Map(); // from division → departments that came whole
+    for (const [k, keys] of depts) {
+      const cont = [...keys].filter((p) => now.has(p));
+      const moved = cont.filter((p) => now.get(p).has(to));
+      if (cont.length >= min && moved.length >= min && moved.length / cont.length >= share) {
+        const [school, department] = k.split('\u0000');
+        (whole.get(school) ?? whole.set(school, []).get(school)).push(department);
+      }
+    }
+    if (!whole.size) continue;
+    const members = [...now.entries()].filter(([, s]) => s.has(to)).map(([p]) => p);
+    const from = [...whole.entries()].map(([school, departments]) => ({
+      school,
+      people: members.filter((p) => schoolOf.get(p)?.has(school)).length,
+      departments: departments.sort((a, b) => a.localeCompare(b)),
+    })).sort((a, b) => b.people - a.people || a.school.localeCompare(b.school));
+    out.push({ school: to, people: members.length, from });
+  }
+  return out;
+}

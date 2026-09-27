@@ -2,5 +2,6 @@
   "_comment": "Optional maintainer notes per snapshot id (shown on Data Health and where relevant). Keyed by snapshot_id (e.g. '2021-11-post').",
   "2021-11-pre": "Pre-TTC taxonomy — titles, job codes, and grades as they were before the Nov 7, 2021 restructure.",
   "2021-11-post": "Post-TTC restructure: on Nov 7, 2021 nearly every title/job code/grade changed at once. Title changes across this boundary are a structural reclassification, not promotions.",
-  "2023-10": "Headcount drops ~21% vs 2022 — this dump appears to exclude students/trainees. Joiner/leaver and headcount comparisons across this point partly reflect a scope change, not real hiring/attrition."
+  "2023-10": "Headcount drops ~21% vs 2022 — this dump appears to exclude students/trainees. Joiner/leaver and headcount comparisons across this point partly reflect a scope change, not real hiring/attrition.",
+  "2026-09": "A new division, the College of Computing and Artificial Intelligence (281 people), was formed mostly from Letters & Science: Computer Sciences (127), Statistics (59), the Information School (42) and 28 from L&S Administration moved into it together. That is a reorganization, not people leaving L&S. Pay moved in one across-the-board step: 81% of the 18,314 people who kept the same title and appointment since Mar 2026 were raised 2.0%. 381 job titles are now spelled out in full (\"Admin Asst Dir\" became \"Administrative Assistant Director\") without any change of job, and nine departments were renamed; each is carried under its new name."
 }

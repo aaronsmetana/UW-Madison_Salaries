@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { titlesQuery, divisionsQuery, serializeSearchIndex, SEARCH_INDEX_BUDGET } from './lib/search-index.mjs';
+import { titlesQuery, formerTitlesQuery, divisionsQuery, serializeSearchIndex, SEARCH_INDEX_BUDGET } from './lib/search-index.mjs';
 import { peopleSql } from '../src/lib/queries.ts';
 
 /**
@@ -10,10 +10,10 @@ import { peopleSql } from '../src/lib/queries.ts';
  * carrying each case that separates people from rows.
  */
 
-const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'job_code', 'title', 'school', 'salary', 'salary_fte_adjusted', 'base_pay', 'fte', 'comp_basis'];
+const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'job_code', 'title', 'school', 'salary', 'salary_fte_adjusted', 'base_pay', 'fte', 'comp_basis', 'ttc_variant'];
 const r = (snap, person, job, title, school, salary, extra = {}) => ({
   snapshot_id: snap, snapshot_date: snap === 's1' ? '2025-09-01' : '2026-03-01', person_key: person, job_code: job, title, school,
-  salary, salary_fte_adjusted: null, base_pay: null, fte: 1, comp_basis: 'Annual', ...extra,
+  salary, salary_fte_adjusted: null, base_pay: null, fte: 1, comp_basis: 'Annual', ttc_variant: null, ...extra,
 });
 const ROWS = [
   // An earlier snapshot, which the index must not count.
@@ -33,6 +33,15 @@ const ROWS = [
   r('s2', 'zero', 'Z1', 'Emeritus', 'A', 0),
   r('s2', 'nocode', null, 'No Code', 'A', 50000),
   r('s2', 'noschool', 'J1', 'Engineer', null, 65000),
+  // Written out in full: the old text is another name for the same job code.
+  r('s1', 'd1', 'J2', 'Admin Asst Dir', 'A', 70000),
+  r('s2', 'd1', 'J2', 'Administrative Assistant Director', 'A', 71400),
+  // Before the TTC restructure job codes were another numbering: its text is not this code's.
+  r('s0', 'd0', 'J2', 'Clerk', 'A', 40000, { snapshot_date: '2021-11-01', ttc_variant: 'pre' }),
+  // Two spellings in the latest snapshot: the rarer is an alias too.
+  r('s2', 'l1', 'J3', 'Lab Tech', 'A', 50000),
+  r('s2', 'l2', 'J3', 'Lab Tech', 'A', 51000),
+  r('s2', 'l3', 'J3', 'Laboratory Technician', 'A', 52000),
 ];
 
 let db;
@@ -43,7 +52,7 @@ beforeAll(async () => {
   db = new duckdb.Database(':memory:');
   const lit = (v) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
   await all(`CREATE TABLE salaries (snapshot_id VARCHAR, snapshot_date DATE, person_key VARCHAR, job_code VARCHAR, title VARCHAR,
-    school VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE, base_pay DOUBLE, fte DOUBLE, comp_basis VARCHAR)`);
+    school VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE, base_pay DOUBLE, fte DOUBLE, comp_basis VARCHAR, ttc_variant VARCHAR)`);
   await all(`INSERT INTO salaries VALUES ${ROWS.map((row) => `(${COLS.map((c) => lit(row[c])).join(', ')})`).join(',\n')}`);
 });
 afterAll(() => db.close());
@@ -71,6 +80,12 @@ describe('search-index.json', () => {
   it("names a title by its most common spelling", async () => {
     const [j1] = (await all(titlesQuery('salaries', 's2'))).filter((x) => x.code === 'J1');
     expect(j1.title).toBe('Engineer');
+  });
+
+  it("gives a title the other names its job code has carried since the TTC, not its case variants", async () => {
+    const former = Object.fromEntries((await all(formerTitlesQuery('salaries', 's2'))).map((x) => [x.code, x.former]));
+    // J1's "ENGINEER" is its own name in capitals; J2's pre-TTC "Clerk" belonged to another numbering.
+    expect(former).toEqual({ J2: ['Admin Asst Dir'], J3: ['Laboratory Technician'] });
   });
 
   it('refuses an index over its gzipped budget', () => {

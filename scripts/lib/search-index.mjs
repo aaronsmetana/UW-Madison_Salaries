@@ -30,6 +30,23 @@ export const titlesQuery = (src, snap) =>
    FROM pe LEFT JOIN named USING (job_code)
    GROUP BY job_code HAVING count(*) FILTER (WHERE pay > 0) > 0 ORDER BY n DESC, code`;
 
+/**
+ * Each title's other names: every other spelling its job code has carried, in this snapshot or an earlier
+ * one since the TTC restructure (whose job codes before Nov 7, 2021 were another numbering). Sep 2026 wrote
+ * out 382 abbreviated titles in full — "Admin Asst Dir" is now "Administrative Assistant Director" — and a
+ * search that knew only the new text stopped finding them by the words people had used for years. Search
+ * matches these; it shows the current name. Case variants are one name.
+ */
+export const formerTitlesQuery = (src, snap) =>
+  `WITH spellings AS (SELECT job_code, title, count(*) c FROM ${src} WHERE snapshot_id = '${snap}' AND job_code IS NOT NULL AND title IS NOT NULL GROUP BY job_code, title),
+        cur AS (SELECT job_code, first(title ORDER BY c DESC, title) title FROM spellings GROUP BY job_code),
+        texts AS (
+          SELECT job_code, lower(title) k, first(title ORDER BY title) t FROM ${src}
+          WHERE job_code IS NOT NULL AND title IS NOT NULL AND coalesce(ttc_variant, '') <> 'pre' GROUP BY job_code, lower(title)
+        )
+   SELECT texts.job_code code, list(texts.t ORDER BY texts.t) former
+   FROM texts JOIN cur USING (job_code) WHERE texts.k <> lower(cur.title) GROUP BY texts.job_code ORDER BY code`;
+
 /** Every division in the snapshot, with the headcount and median the Divisions table gives it. */
 export const divisionsQuery = (src, snap) =>
   `WITH pe AS (${people(src, snap, 'school')})
@@ -38,7 +55,7 @@ export const divisionsQuery = (src, snap) =>
 
 /**
  * What search can offer before the database loads: titles and divisions in the latest snapshot, as
- * compact rows — `[code, title, headcount, median]` and `[division, headcount, median]`.
+ * compact rows — `[code, title, headcount, median, former names?]` and `[division, headcount, median]`.
  */
 export function computeSearchIndex(parquetPath, latest) {
   return new Promise((resolve, reject) => {
@@ -50,11 +67,12 @@ export function computeSearchIndex(parquetPath, latest) {
     const usd = (v) => (v == null ? null : Math.round(Number(v)));
     (async () => {
       const titles = await run(titlesQuery(src, snap));
+      const former = new Map((await run(formerTitlesQuery(src, snap))).map((r) => [r.code, r.former]));
       const divisions = await run(divisionsQuery(src, snap));
       return {
         snapshot: latest.snapshot_id,
         label: latest.snapshot_label,
-        titles: titles.map((r) => [r.code, r.title, Number(r.n), usd(r.med)]),
+        titles: titles.map((r) => [r.code, r.title, Number(r.n), usd(r.med), ...(former.has(r.code) ? [former.get(r.code)] : [])]),
         divisions: divisions.map((r) => [r.school, Number(r.n), usd(r.med)]),
       };
     })()
