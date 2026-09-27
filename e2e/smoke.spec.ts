@@ -121,7 +121,8 @@ for (const { name, width, height } of [
     expect(box, 'the distribution should have a layout box').not.toBeNull();
     // 375px wide and up, 275 on a phone: at 180 the chart was a strip, its dots too small to tell apart,
     // and at 300 they still had too little room each.
-    expect(box!.height, 'the distribution is not at its full height').toBe(width > 480 ? 375 : 275);
+    // To the pixel, not the float: a box at a fractional offset measures 374.99997 (a deploy failed on it).
+    expect(Math.abs(box!.height - (width > 480 ? 375 : 275)), `the distribution is not at its full height (${box!.height})`).toBeLessThan(0.5);
     expect(box!.width, 'the distribution has no width').toBeGreaterThan(200);
 
     // A curve, not a flat line: the area path has to describe real vertical variation.
