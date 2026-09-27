@@ -33,7 +33,9 @@ registerSW({
   },
   onRegisteredSW(_swUrl, r) {
     if (!r) return;
-    const check = () => { if (navigator.onLine) r.update().catch(() => {}); };
+    // Not gated on `navigator.onLine`: some browsers report offline while pages load fine, and a tab
+    // that believed it never checked again. Offline, the update simply fails and is dropped.
+    const check = () => { r.update().catch(() => {}); };
     setInterval(check, 60 * 60 * 1000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
   },

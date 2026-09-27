@@ -56,21 +56,42 @@ export function DataErrorBanner() {
   );
 }
 
-/** Quiet banner shown while the browser is offline — the PWA's cached shell/data still work, so this
- *  is reassurance rather than an error. */
+/**
+ * Quiet banner shown while the site is really unreachable — the PWA's cached shell and data still work,
+ * so it is reassurance rather than an error.
+ *
+ * `navigator.onLine` is a hint, not a fact: some browsers and networks report offline while every page
+ * loads, and the banner then sat over the site for good. When the browser says offline, the site is
+ * asked — a HEAD request, which the service worker (it caches GETs) passes straight to the network —
+ * and only a failed answer shows it.
+ */
 export function OfflineBanner() {
-  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  const [offline, setOffline] = useState(false);
   useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
+    let alive = true;
+    let asked = 0;
+    const check = async () => {
+      const mine = ++asked;
+      if (navigator.onLine) { setOffline(false); return; }
+      let reached = false;
+      try {
+        const r = await fetch(`${import.meta.env.BASE_URL}data/summary.json`, { method: 'HEAD', cache: 'no-store' });
+        reached = r.ok;
+      } catch {
+        reached = false;
+      }
+      if (alive && mine === asked) setOffline(!reached);
+    };
+    void check();
+    window.addEventListener('online', check);
+    window.addEventListener('offline', check);
     return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
+      alive = false;
+      window.removeEventListener('online', check);
+      window.removeEventListener('offline', check);
     };
   }, []);
-  if (online) return null;
+  if (!offline) return null;
   return (
     <Alert color="gray" variant="light" icon={<IconWifiOff size={ICON.control} />} mb="md">
       <Text size="sm">Offline — showing cached data. Some pages or snapshots may be unavailable until you're back online.</Text>

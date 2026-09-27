@@ -74,11 +74,14 @@ export default defineConfig({
             options: { cacheName: 'wasm-cache', expiration: { maxEntries: 4 } },
           },
           {
-            // The parquet + manifest/summary/grades/home-stats/raise-steps/search-index JSON: serve instantly from cache,
-            // refresh in the background so a stale visit still gets this deploy's data next time.
+            // The parquet and every JSON beside it: the network first, the cache only when it fails or
+            // is slow to answer. Stale-while-revalidate served a returning visitor the previous deploy's
+            // data — the Sep 2026 release read as Mar 2026 until a second visit — and could pair one
+            // deploy's summary with another's parquet. The browser's own HTTP cache still makes a repeat
+            // visit a cheap revalidation; this cache is what an offline visit reads.
             urlPattern: ({ url }) => url.pathname.includes('/data/'),
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'data-cache', expiration: { maxEntries: 20 } },
+            handler: 'NetworkFirst',
+            options: { cacheName: 'data-cache', networkTimeoutSeconds: 5, expiration: { maxEntries: 20 } },
           },
         ],
       },
