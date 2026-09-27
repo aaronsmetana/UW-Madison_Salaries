@@ -10,7 +10,7 @@ import {
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useRelease } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
-import { binsFromCounts, countBelow, countWithin, groupCounts, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
+import { binsFromCounts, countBelow, countWithin, groupCounts, groupLine as groupLinePath, groupSigma, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
 import { usd, usdCompact, num, vsCampus, fullName } from '../lib/format';
 // Same compact currency the peer-range quartile labels use, so the two charts read alike.
 import { fmtK, assignLabelRows } from '../lib/chartStyle';
@@ -298,15 +298,16 @@ function Distribution({
     [payCounts, bins],
   );
   const curve = useMemo(() => smoothBins(curveBins), [curveBins]);
-  // The group's own curve: its pays counted on the campus grid and run through the campus curve's own
-  // kernel and step (lib/distribution `groupCounts`), so the two lines differ only by who is in them. Its
-  // $1k bins answer the readout's "how many of them within ±$5k" as `bins` answers it for everyone.
+  // The group's own curve: its pays counted on the campus grid, at the campus curve's step (lib/distribution
+  // `groupCounts`), and smoothed as wide as a group its size needs (`groupSigma`): the campus kernel left a
+  // thousand people zigzagging. Its $1k bins answer the readout's "how many of them within ±$5k" as `bins`
+  // answers it for everyone.
   const lit = group && !group.pending ? group : null;
   const groupShape = useMemo(() => {
     if (!lit || !payCounts?.counts.length || cap == null) return null;
     const g = groupCounts(lit.pays, payCounts.lo100, payCounts.counts.length, cap);
     return {
-      curve: smoothBins(binsFromCounts(payCounts.lo100, g.counts, CURVE_STEP)),
+      curve: smoothBins(binsFromCounts(payCounts.lo100, g.counts, CURVE_STEP), groupSigma(lit.pays, cap)),
       bins1k: binsFromCounts(payCounts.lo100, g.counts, BIN_DOLLARS),
     };
   }, [lit, payCounts, cap]);
@@ -1044,21 +1045,10 @@ function Distribution({
       return { offset, color: `color-mix(in oklab, ${categoryInk(cats[a.k].name)} ${Math.round((a.n / (a.n + b.n)) * 100)}%, ${categoryInk(cats[b.k].name)})` };
     });
   })();
-  // The group's curve in the same box, scaled to its own peak at the campus peak's height: its shape
-  // beside everyone's, not its size — the lit dots and the count on its label give that.
-  const groupMax = groupShape ? Math.max(0, ...groupShape.curve.map((b) => b.n)) : 0;
-  // From its first point with anyone to its last: the flat zero either side only doubled the axis in dashes.
-  const groupSpan = (() => {
-    if (!groupShape || !(groupMax > 0)) return null;
-    const c = groupShape.curve, floor = groupMax * 0.002;
-    let a = 0, z = c.length - 1;
-    while (a < z && c[a].n <= floor) a++;
-    while (z > a && c[z].n <= floor) z--;
-    return c.slice(Math.max(0, a - 1), Math.min(c.length, z + 2));
-  })();
-  const groupLine = groupSpan
-    ? groupSpan.map((b, i) => `${i ? 'L' : 'M'}${X(b.bucket).toFixed(1)},${(H - (b.n / groupMax) * (H - HEAD - 2) - 2).toFixed(1)}`).join(' ')
-    : null;
+  // The group's curve in the same box and on the campus curve's scale: how many of them there are at each
+  // pay, never more than everyone. Scaled to its own peak, it drew Professor's 1,275 people towering over
+  // campus's 21,962. Left out for a group too small to rise off the floor (lib/distribution `groupLine`).
+  const groupLine = groupShape ? groupLinePath(groupShape.curve, curve, { W, H, head: HEAD }) : null;
   // Its median, as a line down the plot — unless it is past the cap, where the plot ends and the pile
   // begins; the label then sits at the plot's right end, over the pile.
   const groupMedianX = lit && lit.count > 0 && lit.median != null && lit.median < hi ? X(lit.median) : null;

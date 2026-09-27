@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binStep, binsFromCounts, countBelow, countWithin, densify, groupCounts, smoothBins, CURVE_STEP, KERNEL_SIGMA, type Bin } from './distribution';
+import { binStep, binsFromCounts, countBelow, countWithin, densify, groupCounts, groupLine, groupSigma, smoothBins, CURVE_STEP, GROUP_MIN_PX, KERNEL_SIGMA, type Bin } from './distribution';
 
 const bins = (step: number, counts: number[], from = 0): Bin[] =>
   counts.map((n, i) => ({ bucket: from + i * step, n }));
@@ -303,5 +303,69 @@ describe('groupCounts', () => {
     const g = groupCounts(pays, lo100, counts.length, 1e9);
     expect(g.counts).toEqual(counts);
     expect(smoothBins(binsFromCounts(lo100, g.counts, CURVE_STEP))).toEqual(smoothBins(binsFromCounts(lo100, counts, CURVE_STEP)));
+  });
+});
+
+describe('groupSigma', () => {
+  const spread = (n: number, lo: number, hi: number) => Array.from({ length: n }, (_, i) => lo + ((hi - lo) * (i + 0.5)) / n);
+
+  it('is Silverman’s rule, halved, over the pays under the cap', () => {
+    const pays = spread(1000, 150_000, 250_000);
+    const mean = pays.reduce((t, p) => t + p, 0) / pays.length;
+    const sd = Math.sqrt(pays.reduce((t, p) => t + (p - mean) ** 2, 0) / (pays.length - 1));
+    // Evenly spread over $100k, the sd (about $29k) is the smaller of it and the IQR over 1.34 (about $37k).
+    const iqr = 50_000 / 1.34;
+    expect(groupSigma(pays, 300_000)).toBeCloseTo(0.45 * Math.min(sd, iqr) * 1000 ** -0.2, 0);
+    // Pays past the cap are not drawn, so they do not widen it.
+    expect(groupSigma([...pays, 900_000, 1_200_000], 300_000)).toBeCloseTo(groupSigma(pays, 300_000), 6);
+  });
+
+  it('is never narrower than the campus kernel: a tight title keeps its step', () => {
+    expect(groupSigma(spread(800, 61_000, 63_000), 250_000)).toBe(KERNEL_SIGMA);
+    expect(groupSigma([62_000], 250_000)).toBe(KERNEL_SIGMA);
+    expect(groupSigma(Array(50).fill(62_000), 250_000)).toBe(KERNEL_SIGMA);
+  });
+
+  it('smooths a smaller group more widely than a larger one of the same spread', () => {
+    expect(groupSigma(spread(30, 50_000, 150_000), 250_000)).toBeGreaterThan(groupSigma(spread(3000, 50_000, 150_000), 250_000));
+  });
+});
+
+describe('groupLine', () => {
+  const box = { W: 1000, H: 300, head: 40 };
+  const campus = bins(1000, [0, 10, 40, 100, 40, 10, 0]);
+  const ys = (d: string) => d.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => Number(p.split(',')[1]));
+  const xs = (d: string) => d.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => Number(p.split(',')[0]));
+
+  it('is on the campus curve’s scale: everyone draws as campus does, half of them half as high', () => {
+    const all = groupLine(campus, campus, box)!;
+    expect(Math.min(...ys(all))).toBeCloseTo(box.head, 1);
+    const half = groupLine(campus.map((b) => ({ ...b, n: b.n / 2 })), campus, box)!;
+    expect(box.H - 2 - Math.min(...ys(half))).toBeCloseTo((box.H - box.head - 2) / 2, 1);
+  });
+
+  it('is never above everyone', () => {
+    const wide = bins(1000, [5, 30, 60, 90, 60, 30, 5]);
+    const d = groupLine(wide, campus, box)!;
+    const top = (n: number) => box.H - (n / 100) * (box.H - box.head - 2) - 2;
+    const pts = d.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => p.split(',').map(Number));
+    for (const [x, y] of pts) {
+      const b = campus[Math.round((x / box.W) * (campus.length - 1))];
+      expect(y).toBeGreaterThanOrEqual(top(b.n) - 1e-6);
+    }
+  });
+
+  it('runs only where the group has anyone, a point either side', () => {
+    const g = bins(1000, [0, 0, 0, 50, 0, 0, 0]);
+    expect(xs(groupLine(g, campus, box)!)).toEqual([333.3, 500, 666.7]);
+  });
+
+  it('is left out when it would not rise off the floor', () => {
+    const tall = (n: number) => (n / 100) * (box.H - box.head - 2);
+    const under = bins(1000, [0, 0, 0, 100 * ((GROUP_MIN_PX - 0.5) / (box.H - box.head - 2)), 0, 0, 0]);
+    expect(tall(under[3].n)).toBeLessThan(GROUP_MIN_PX);
+    expect(groupLine(under, campus, box)).toBeNull();
+    const over = bins(1000, [0, 0, 0, 100 * ((GROUP_MIN_PX + 0.5) / (box.H - box.head - 2)), 0, 0, 0]);
+    expect(groupLine(over, campus, box)).not.toBeNull();
   });
 });

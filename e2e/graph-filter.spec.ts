@@ -107,27 +107,55 @@ async function put(page: Page, query: string, key: string) {
   await expect(bar(page)).toHaveValue('');
 }
 
-/** The group's shape against campus's, and where its label ends, in the plot's own px. */
+/** The group's curve and campus's, as the plot draws them — each point's x and its height off the floor —
+ *  and where the group's label ends, in the plot's own px. */
 function shape(page: Page) {
   return page.evaluate(() => {
-    const minY = (d: string) => Math.min(...d.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => Number(p.split(',')[1])));
-    const paths = [...document.querySelectorAll('.hero-dist-full .hero-dist-plot g > path')];
+    const pts = (d: string) => d.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => p.split(',').map(Number) as [number, number]);
+    const svg = document.querySelector('.hero-dist-full .hero-dist-plot')!;
+    const H = Number(svg.getAttribute('viewBox')!.split(' ')[3]);
+    const paths = [...svg.querySelectorAll('g > path')];
     const campus = paths.find((p) => !p.classList.contains('hero-dist-curve-glow') && !p.classList.contains('hero-dist-group-curve'))!;
     const group = document.querySelector('.hero-dist-group-curve');
     const main = document.querySelector('.hero-dist-full .hero-dist-main')!.getBoundingClientRect();
     const flag = document.querySelector('.hero-dist-group-flag')?.getBoundingClientRect();
     const line = document.querySelector('.hero-dist-group-median');
-    const xs = group ? group.getAttribute('d')!.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => Number(p.split(',')[0])) : [];
+    const campusPts = pts(campus.getAttribute('d')!);
+    const groupPts = group ? pts(group.getAttribute('d')!) : [];
+    // Off the floor: the plot's baseline is 2px above its bottom.
+    const up = (p: [number, number][]) => p.map(([x, y]) => [x, H - 2 - y] as [number, number]);
     return {
-      groupFrom: xs.length ? Math.min(...xs) : null,
-      groupTo: xs.length ? Math.max(...xs) : null,
-      campusPeak: minY(campus.getAttribute('d')!),
-      groupPeak: group ? minY(group.getAttribute('d')!) : null,
+      campus: up(campusPts),
+      group: group ? up(groupPts) : null,
+      groupFrom: groupPts.length ? Math.min(...groupPts.map((p) => p[0])) : null,
+      groupTo: groupPts.length ? Math.max(...groupPts.map((p) => p[0])) : null,
+      campusPeak: Math.min(...campusPts.map((p) => p[1])),
       flagBottom: flag ? flag.bottom - main.top : null,
       lineX: line ? Number(line.getAttribute('x1')) : null,
+      lineShown: !!line,
       plotW: main.width,
     };
   });
+}
+
+/** How wide a group's curve is smoothed, restated: Silverman's rule of thumb over the pays under the cap,
+ *  halved, and never under the campus kernel's $1,200. */
+function sigmaOf(pays: number[]) {
+  const v = pays.filter((p) => p > 0 && p < HOME_STATS.bin_cap).sort((a, b) => a - b), n = v.length;
+  if (n < 2) return 1200;
+  const mean = v.reduce((t, p) => t + p, 0) / n;
+  const sd = Math.sqrt(v.reduce((t, p) => t + (p - mean) ** 2, 0) / (n - 1));
+  const iqr = (v[Math.floor(0.75 * (n - 1))] - v[Math.floor(0.25 * (n - 1))]) / 1.34;
+  return Math.max(1200, 0.45 * (iqr > 0 ? Math.min(sd, iqr) : sd) * n ** -0.2);
+}
+
+/** Everyone the plot draws under the cap. */
+const UNDER_CAP = counts.reduce((t, n) => t + n, 0);
+
+/** Each of the group's points with campus's at the same x: the two share one grid. */
+function paired(s: { campus: [number, number][]; group: [number, number][] | null }) {
+  const at = new Map(s.campus.map(([x, h]) => [x.toFixed(1), h]));
+  return (s.group ?? []).map(([x, h]) => ({ x, h, campus: at.get(x.toFixed(1)) }));
 }
 
 test('a title, a school, and a title within a school light exactly their people, and say how many and how their median sits', async ({ page }) => {
@@ -155,16 +183,89 @@ test('a title, a school, and a title within a school light exactly their people,
       .toHaveText(`${c.name} · ${num(who.length)} · median ${fmtK(med)} · ${vs(med, HOME_STATS.p50)}`);
 
     const s = await shape(page);
-    expect(s.groupPeak, `${c.name}: its curve does not peak at campus's height`).toBeCloseTo(s.campusPeak, 1);
     // Above the curve's highest point there are no dots, so a label that ends there covers none.
     expect(s.flagBottom!, `${c.name}: its label reaches down over the dots`).toBeLessThan(s.campusPeak);
     expect(Math.abs(((s.lineX! - xOf(med)) / 1000) * s.plotW), `${c.name}: its median line is off its median`).toBeLessThan(0.5);
-    // Its own people's curve, not anyone's: it runs only as far as their pays do, and the kernel's
-    // reach (σ $1,200) past them. Everyone's curve at the group's height would pass every check above.
+    // On campus's scale: how many of them there are at each pay, so never above everyone, and all of it
+    // together the share of everyone under the cap they are. Scaled to its own peak, it drew any group at
+    // campus's height, and the share test fails by a factor of ten and more.
     const under = who.map((p) => p.pay).filter((p) => p < HOME_STATS.bin_cap);
-    expect(s.groupFrom!, `${c.name}: its curve starts below anyone in it`).toBeGreaterThanOrEqual(xOf(Math.min(...under) - 6000));
-    expect(s.groupTo!, `${c.name}: its curve runs on past anyone in it`).toBeLessThanOrEqual(xOf(Math.max(...under) + 6000));
+    const pairs = paired(s);
+    expect(pairs.length, `${c.name}: no curve drawn`).toBeGreaterThan(10);
+    for (const q of pairs) {
+      expect(q.campus, `${c.name}: its point at ${q.x} is off campus's grid`).toBeDefined();
+      expect(q.h, `${c.name}: its curve rises above everyone at ${q.x}`).toBeLessThanOrEqual(q.campus! + 0.1);
+    }
+    const area = pairs.reduce((t, q) => t + q.h, 0) / s.campus.reduce((t, [, h]) => t + h, 0);
+    expect(area / (under.length / UNDER_CAP), `${c.name}: its curve holds ${area.toFixed(4)} of everyone, not their ${(under.length / UNDER_CAP).toFixed(4)}`).toBeGreaterThan(0.97);
+    expect(area / (under.length / UNDER_CAP), `${c.name}: its curve holds ${area.toFixed(4)} of everyone, not their ${(under.length / UNDER_CAP).toFixed(4)}`).toBeLessThan(1.03);
+    // Its own people's curve, not anyone's: it runs only as far as their pays do, and its kernel's reach
+    // past them — a kernel as wide as a group its size needs.
+    const reach = 5 * sigmaOf(under);
+    expect(s.groupFrom!, `${c.name}: its curve starts below anyone in it`).toBeGreaterThanOrEqual(xOf(Math.min(...under) - reach));
+    expect(s.groupTo!, `${c.name}: its curve runs on past anyone in it`).toBeLessThanOrEqual(xOf(Math.max(...under) + reach));
   }
+});
+
+/**
+ * Where nearly everyone is a Professor, a Professor's curve all but meets everyone's: at $200k–$240k it
+ * stands, on the average, at the share of everyone paid there who holds the title, and never above them. A
+ * curve at its own scale stood there at twice campus's height and more; one smoothed as narrowly as campus's
+ * zigzagged through it.
+ */
+test('where most are a title, its curve stands at their share of everyone, smoothly', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fullPage(page);
+  const code = await codeOf('Professor');
+  await put(page, 'professor', `t:${code}`);
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  const who = await covered({ code });
+  const [all] = await oracle<{ n: number }>(
+    `SELECT count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY 1)
+     WHERE pay >= 200000 AND pay < 240000`,
+  );
+  const share = who.filter((p) => p.pay >= 200_000 && p.pay < 240_000).length / Number(all.n);
+  expect(share, 'the premise: most paid $200k–$240k are Professors').toBeGreaterThan(0.5);
+  const all2 = paired(await shape(page));
+  // Here, where the title is most of everyone, a wider kernel than campus's would lift it over a narrow dip
+  // in everyone's: held to everyone, it never is.
+  for (const q of all2) expect(q.h, `its curve rises above everyone at ${q.x}`).toBeLessThanOrEqual(q.campus! + 0.1);
+  const pairs = all2.filter((q) => q.x >= xOf(200_000) && q.x < xOf(240_000));
+  const mean = (xs: number[]) => xs.reduce((t, v) => t + v, 0) / xs.length;
+  const stands = mean(pairs.map((q) => q.h)) / mean(pairs.map((q) => q.campus!));
+  expect(Math.abs(stands - share), `its curve stands at ${stands.toFixed(2)} of campus's, their share is ${share.toFixed(2)}`).toBeLessThan(0.1);
+  // Smoothed as a group its size needs, it rises and falls a few times: through the campus kernel it had 14
+  // peaks standing a pixel or more over the ground either side, chance in a thousand people; now 3.
+  const h = all2.map((q) => q.h);
+  let peaks = 0;
+  for (let k = 1; k < h.length - 1; k++) {
+    if (!(h[k] > h[k - 1] && h[k] >= h[k + 1])) continue;
+    let l = h[k], r = h[k];
+    for (let j = k - 1; j >= 0 && h[j] <= h[k]; j--) l = Math.min(l, h[j]);
+    for (let j = k + 1; j < h.length && h[j] <= h[k]; j++) r = Math.min(r, h[j]);
+    if (h[k] - Math.max(l, r) > 1) peaks++;
+  }
+  expect(peaks, `its curve zigzags: ${peaks} peaks`).toBeLessThanOrEqual(6);
+});
+
+/** A group too small to rise off the floor draws no curve — a dashed line along the axis says nothing — but
+ *  keeps its median line and its label. */
+test('a group too small to rise off the floor has no curve, and keeps its median and label', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fullPage(page);
+  // A title of about twenty, named once in the index, so the bar finds it by name.
+  const rows = await oracle<{ code: string; title: string; n: number }>(
+    `SELECT job_code code, any_value(title) title, count(DISTINCT person_key) n FROM $SAL
+     WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY 1 HAVING n BETWEEN 18 AND 24 ORDER BY n DESC, 1`,
+  );
+  const t = rows.find((r) => INDEX.titles.filter(([, name]) => name === r.title).length === 1 && /^[A-Za-z ]+$/.test(r.title))!;
+  expect(t, 'no title of about twenty to try').toBeDefined();
+  await put(page, t.title.toLowerCase(), `t:${t.code}`);
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator('.hero-dist-group-flag')).toContainText(`${t.title} · ${t.n} · median`);
+  const s = await shape(page);
+  expect(s.group, `${t.title}: a curve along the floor was drawn`).toBeNull();
+  expect(s.lineShown, `${t.title}: its median line went with the curve`).toBe(true);
 });
 
 /**

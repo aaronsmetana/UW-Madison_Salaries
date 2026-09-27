@@ -199,3 +199,55 @@ export function groupCounts(pays: readonly number[], lo100: number, length: numb
   }
   return { counts, over };
 }
+
+/**
+ * How wide a group's curve is smoothed, in dollars. The campus kernel suits 22,000 people. A group of a
+ * thousand run through it zigzagged with chance, $10k to $10k across Professor's range, and at its own
+ * scale every zig drew as a peak. Silverman's rule of thumb, `0.9·min(sd, IQR/1.34)·n^-1/5`, halved:
+ * the rule aims at the smoothest honest curve, and half of it keeps a step a title's pay really has
+ * (Research Associate's at $62k). Never under the campus kernel. Over the pays under the cap, which are
+ * all the curve draws.
+ */
+export function groupSigma(pays: readonly number[], cap: number): number {
+  const v = pays.filter((p) => p > 0 && p < cap).sort((a, b) => a - b);
+  const n = v.length;
+  if (n < 2) return KERNEL_SIGMA;
+  const mean = v.reduce((t, p) => t + p, 0) / n;
+  const sd = Math.sqrt(v.reduce((t, p) => t + (p - mean) ** 2, 0) / (n - 1));
+  const q = (f: number) => {
+    const x = f * (n - 1), i = Math.floor(x);
+    return v[i] + (v[Math.min(n - 1, i + 1)] - v[i]) * (x - i);
+  };
+  const iqr = (q(0.75) - q(0.25)) / 1.34;
+  const spread = iqr > 0 ? Math.min(sd, iqr) : sd;
+  return Math.max(KERNEL_SIGMA, 0.45 * spread * n ** -0.2);
+}
+
+/** How far a group's curve must rise off the floor to be drawn, px. */
+export const GROUP_MIN_PX = 12;
+
+/**
+ * A group's curve over everyone's, as the plot draws them: `W` wide and `H` tall, the campus curve's peak
+ * `head` below the top. On the campus curve's own scale, so its height is how many of the group are at a
+ * pay, and on the same grid, where it is held to everyone's: a group is never more than all of campus,
+ * though its wider kernel would lift it over a narrow dip in everyone's. It runs from its first point with
+ * anyone to its last; the flat zero either side only doubled the axis in dashes. Null when it rises less
+ * than `GROUP_MIN_PX`: a line along the axis says nothing its dots and median do not.
+ */
+export function groupLine(group: readonly Bin[], campus: readonly Bin[], box: { W: number; H: number; head: number }): string | null {
+  if (!group.length || !campus.length) return null;
+  const lo = campus[0].bucket, hi = campus[campus.length - 1].bucket, span = hi - lo || 1;
+  const max = Math.max(1, ...campus.map((b) => b.n));
+  const everyone = new Map(campus.map((b) => [b.bucket, b.n]));
+  const pts = group.map((b) => ({ bucket: b.bucket, n: Math.min(b.n, everyone.get(b.bucket) ?? 0) }));
+  const tall = (n: number) => (n / max) * (box.H - box.head - 2);
+  const peak = Math.max(0, ...pts.map((p) => p.n));
+  if (tall(peak) < GROUP_MIN_PX) return null;
+  const floor = peak * 0.002;
+  let a = 0, z = pts.length - 1;
+  while (a < z && pts[a].n <= floor) a++;
+  while (z > a && pts[z].n <= floor) z--;
+  return pts.slice(Math.max(0, a - 1), Math.min(pts.length, z + 2))
+    .map((b, i) => `${i ? 'L' : 'M'}${(((b.bucket - lo) / span) * box.W).toFixed(1)},${(box.H - tall(b.n) - 2).toFixed(1)}`)
+    .join(' ');
+}
