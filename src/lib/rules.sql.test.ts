@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, sameQuantitySql, scopeWhere } from './queries';
+import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, sameQuantitySql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt } from './queries';
 import { raiseStepsSql } from './raises';
 
 /**
@@ -167,5 +167,62 @@ describe('scopeWhere', () => {
   });
   it('keeps a legacy name-only department link working', () => {
     expect(scopeWhere({ kind: 'department', value: 'Administration', school: null })).toBe("department = 'Administration'");
+  });
+});
+
+describe('GRADED_APPT', () => {
+  // Each person is one way of getting the band's pay wrong.
+  const G: Row[] = [
+    // Half-time: the band is compared with the full-time rate, not the pay it earns.
+    r('g', '2026-01-01', 'half', 'J1', 60000, { grade_number: 15, fte: 0.5 }),
+    // Two graded appointments: the one that pays most carries the grade, not their combined earnings.
+    r('g', '2026-01-01', 'two', 'J1', 50000, { grade_number: 15, fte: 0.6 }),
+    r('g', '2026-01-01', 'two', 'J2', 80000, { grade_number: 20, grade_basis: 'hourly', fte: 0.3 }),
+    // The best-paid appointment has no grade: the graded one is read, however small.
+    r('g', '2026-01-01', 'ungraded', 'J3', 100000, { grade_number: null, grade_basis: null }),
+    r('g', '2026-01-01', 'ungraded', 'J1', 40000, { grade_number: 17, fte: 0.2 }),
+    // The top appointment records no schedule: grade and schedule still come from the same row.
+    r('g', '2026-01-01', 'nobasis', 'J1', 90000, { grade_number: 22, grade_basis: null }),
+    r('g', '2026-01-01', 'nobasis', 'J2', 30000, { grade_number: 16, fte: 0.5 }),
+    // Equal pay: the higher rate wins, whatever order the rows come in.
+    r('g', '2026-01-01', 'tie', 'J1', 40000, { grade_number: 18, fte: 1 }),
+    r('g', '2026-01-01', 'tie', 'J2', 80000, { grade_number: 25, fte: 0.5 }),
+    // Unpaid, graded: nothing to place.
+    r('g', '2026-01-01', 'unpaid', 'J1', 0, { grade_number: 15 }),
+    r('g', '2026-01-01', 'unpaid', 'J3', 70000, { grade_number: null, grade_basis: null }),
+  ];
+  const WANT = {
+    half: { grade: 15, basis: 'annual_12mo', rate: 60000 },
+    two: { grade: 15, basis: 'annual_12mo', rate: 50000 },
+    ungraded: { grade: 17, basis: 'annual_12mo', rate: 40000 },
+    nobasis: { grade: 22, basis: null, rate: 90000 },
+    tie: { grade: 25, basis: 'annual_12mo', rate: 80000 },
+    unpaid: null,
+  };
+
+  it('reads each band against the full-time rate of the appointment that carries the grade', async () => {
+    const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
+    await all(`CREATE TABLE graded AS SELECT * FROM salaries WHERE FALSE`);
+    await all(`INSERT INTO graded VALUES ${G.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n')}`);
+    const rows = await all<{ person_key: string; grade_number: number | null; grade_basis: string | null; band_rate: number | null }>(
+      `SELECT person_key, ${gradedCols()} FROM (SELECT person_key, ${GRADED_APPT} graded FROM graded GROUP BY person_key) ORDER BY person_key`
+    );
+    const got = Object.fromEntries(rows.map((x) => [x.person_key, x.grade_number == null ? null : { grade: x.grade_number, basis: x.grade_basis, rate: x.band_rate }]));
+    expect(got).toEqual(WANT);
+  });
+
+  it('picks the same appointment client-side, in either row order', () => {
+    for (const order of [G, [...G].reverse()]) {
+      const got = Object.fromEntries(
+        Object.keys(WANT).map((k) => [
+          k,
+          gradedAppt(order.filter((x) => x.person_key === k).map((x) => ({
+            salary: x.salary as number, salary_fte_adjusted: x.salary_fte_adjusted as number | null, fte: x.fte as number | null,
+            grade_number: x.grade_number as number | null, grade_basis: x.grade_basis as string | null,
+          }))),
+        ])
+      );
+      expect(got).toEqual(WANT);
+    }
   });
 });

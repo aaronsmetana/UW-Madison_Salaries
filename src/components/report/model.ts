@@ -351,11 +351,13 @@ export interface GuidelineProvision {
 export interface MarketPosition {
   grade: number;
   mid: number; // band midpoint
-  compa: number; // pay ÷ midpoint
-  pir: number; // (pay − min) ÷ (max − min)
+  compa: number; // full-time rate ÷ midpoint
+  pir: number; // (rate − min) ÷ (max − min)
+  rate: number; // the full-time rate of the graded appointment — what the band is read against
   position: 'Emerging in Grade' | 'Established in Grade' | 'Advanced in Grade';
   belowCompetitive: boolean; // compa < 85% OR pir < 25% → the guideline's market-request trigger
-  floorPay: number; // 85% of midpoint, rounded — the opt-in market-competitive floor target
+  floorPay: number; // 85% of midpoint, rounded — the market-competitive floor, as a full-time rate
+  floorAsk: number; // the same raise carried to the subject's pay — the opt-in target
 }
 
 // ── Market standing — a distribution view of the active cohort + a multi-pool percentile table. ──

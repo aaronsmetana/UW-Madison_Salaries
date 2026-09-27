@@ -7,7 +7,7 @@ function subject(overrides: Partial<ScreeningSubject> = {}): ScreeningSubject {
   return {
     person_key: 'subj', name: 'Jordan Rivers', title: 'Senior Analyst', job_code: 'J1',
     school: 'College of Letters & Science', department: 'Statistics', pay: 60_000, tenure: 8,
-    grade_number: 10, grade_basis: '12mo', comp_basis: '12 Month', flsa_status: 'Exempt',
+    grade_number: 10, grade_basis: '12mo', band_rate: 60_000, comp_basis: '12 Month', flsa_status: 'Exempt',
     ...overrides,
   };
 }
@@ -114,7 +114,7 @@ describe('computeScreeningResults', () => {
   it('flags below-market-floor pay against the grade band', () => {
     const grades: GradeBand[] = [{ grade: 10, basis: '12mo', min: 80_000, max: 120_000 }]; // mid=100k, 85% floor=85k
     const results = computeScreeningResults({
-      subjects: [subject({ pay: 70_000 })], // compa = 0.70, well under 0.85
+      subjects: [subject({ pay: 70_000, band_rate: 70_000 })], // compa = 0.70, well under 0.85
       cohortRows: [],
       payHistory: [],
       grades,
@@ -128,7 +128,7 @@ describe('computeScreeningResults', () => {
   it('does not flag a subject within the market-competitive range', () => {
     const grades: GradeBand[] = [{ grade: 10, basis: '12mo', min: 80_000, max: 120_000 }];
     const results = computeScreeningResults({
-      subjects: [subject({ pay: 100_000 })], // compa = 1.0
+      subjects: [subject({ pay: 100_000, band_rate: 100_000 })], // compa = 1.0
       cohortRows: [],
       payHistory: [],
       grades,
@@ -136,6 +136,37 @@ describe('computeScreeningResults', () => {
       toReal: noReal,
     });
     expect(results[0].belowMarket).toBe(false);
+  });
+
+  it('reads the band against the full-time rate, not the pay a part-time appointment earns', () => {
+    const grades: GradeBand[] = [{ grade: 10, basis: '12mo', min: 80_000, max: 120_000 }];
+    const results = computeScreeningResults({
+      // Half-time on a $100k rate: earns $50k, which is compa 0.50 against the band — but the rate is mid-range.
+      subjects: [subject({ pay: 50_000, band_rate: 100_000 })],
+      cohortRows: [],
+      payHistory: [],
+      grades,
+      minCohortN: 4,
+      toReal: noReal,
+    });
+    expect(results[0].belowMarket).toBe(false);
+    expect(results[0].marketCompa).toBeCloseTo(1, 6);
+    expect(results[0].bandRate).toBe(100_000);
+  });
+
+  it('has no band figure without a graded rate', () => {
+    const grades: GradeBand[] = [{ grade: 10, basis: '12mo', min: 80_000, max: 120_000 }];
+    const results = computeScreeningResults({
+      subjects: [subject({ pay: 50_000, band_rate: null })],
+      cohortRows: [],
+      payHistory: [],
+      grades,
+      minCohortN: 4,
+      toReal: noReal,
+    });
+    expect(results[0].belowMarket).toBe(false);
+    expect(results[0].marketCompa).toBeNull();
+    expect(results[0].bandRate).toBeNull();
   });
 
   it('flags real-dollar erosion when nominal pay rose but real pay fell', () => {

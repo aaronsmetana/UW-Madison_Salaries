@@ -63,7 +63,7 @@ export function ReportSetup({
   evidenceChecklist: { label: string; ok: boolean; note?: string; sectionId?: string }[];
   /** The SAG market-competitive floor (85% of the grade midpoint) when the subject is below it — powers
    *  the opt-in floor target next to the target Select. Null when no published band / already competitive. */
-  marketFloor: { floorPay: number; compa: number; grade: number } | null;
+  marketFloor: { floorPay: number; floorAsk: number; compa: number; grade: number } | null;
   /** SAG performance-adjustment coaching for the Performance factor (5–10% general range + the annual-
    *  review matrix cell for the subject's position in grade, with midrange dollar suggestions). */
   performanceGuide: {
@@ -240,14 +240,14 @@ export function ReportSetup({
           <Checkbox
             mt={10}
             size="xs"
-            label={`Set target to the market-competitive floor — 85% of grade ${marketFloor.grade}'s midpoint (${usd(marketFloor.floorPay)}) · UW salary guideline`}
+            label={`Set target to the market-competitive floor — 85% of grade ${marketFloor.grade}'s midpoint (${usd(marketFloor.floorPay)} full-time${marketFloor.floorAsk !== marketFloor.floorPay ? `, ${usd(marketFloor.floorAsk)} at this appointment` : ''}) · UW salary guideline`}
             checked={config.marketFloorTarget}
             onChange={(e) => set({ marketFloorTarget: e.currentTarget.checked })}
           />
         )}
         {marketFloor && (
           <Text size="xs" c="dimmed" mt={4}>
-            Current pay is a {marketFloor.compa.toFixed(2)} compa-ratio — below the guideline's 0.85 market-competitive floor. The highest opted-in guideline anchor wins; it never lowers the ask.
+            The full-time rate is a {marketFloor.compa.toFixed(2)} compa-ratio — below the guideline's 0.85 market-competitive floor. The highest opted-in guideline anchor wins; it never lowers the ask.
           </Text>
         )}
       </Card>

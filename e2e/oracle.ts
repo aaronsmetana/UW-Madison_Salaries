@@ -1,5 +1,6 @@
 import duckdb from 'duckdb';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 /**
  * Expected values for data-dependent assertions, computed in the test process straight from the
@@ -37,3 +38,22 @@ export async function latestSnapshot(): Promise<string> {
 
 /** A person's pay the way a reader would see it formatted: "$76,694". */
 export const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+
+/**
+ * The official ranges the app loads (public/data/grades.json), as a SQL relation `(grade, basis, mn, mx)`
+ * — ranges only: a grade published with a minimum and no maximum has no midpoint to read against.
+ */
+export function rangesSql(): string {
+  const all: { grade: number; basis: string; min: number; max: number | null }[] = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../public/data/grades.json', import.meta.url)), 'utf8')
+  );
+  const rows = all.filter((g) => g.max != null && g.max > g.min).map((g) => `(${g.grade}, '${g.basis}', ${g.min}, ${g.max})`);
+  return `(SELECT * FROM (VALUES ${rows.join(', ')}) t(grade, basis, mn, mx))`;
+}
+
+/**
+ * Of a person's paid appointments that carry a grade, the one that pays them most — its grade, schedule
+ * and full-time rate, from that one row; ties to the higher rate. A pay band is a range of full-time
+ * rates, so this is what one is read against. Use in a `GROUP BY person_key`.
+ */
+export const GRADED = `arg_max({grade: grade_number, basis: grade_basis, rate: salary}, {p: ${PAY}, r: salary, g: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;

@@ -6,7 +6,7 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
@@ -44,6 +44,7 @@ interface Row {
   pay: number | null;
   earn: number | null;
   rate_raw: number | null;
+  salary_fte_adjusted: number | null;
   comp_basis: string | null;
   fte: number | null;
   date_of_hire: string | null;
@@ -88,7 +89,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],
     `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
-            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, comp_basis, fte, date_of_hire, grade_number, grade_basis
+            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, salary_fte_adjusted, comp_basis, fte, date_of_hire, grade_number, grade_basis
      FROM salaries WHERE person_key = ${sqlStr(personKey)} ORDER BY snapshot_date`,
     !!personKey
   );
@@ -125,12 +126,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         const appts = g.rows.length;
         // Single appointment → metric value; multiple concurrent → FTE-blended actual earnings.
         const salary = appts > 1 ? g.rows.reduce((s, r) => s + (r.earn ?? 0), 0) : (g.rows[0].pay ?? 0);
-        const rate = g.rows.reduce((s, r) => s + (r.rate_raw ?? 0), 0); // full-time rate (for the pay band)
         const primary = g.rows.reduce((best, r) => {
           const bf = best.fte ?? 0, rf = r.fte ?? 0;
           return rf > bf || (rf === bf && (r.pay ?? 0) > (best.pay ?? 0)) ? r : best;
         }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -256,7 +256,6 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
   const firstSalary = trend[0]?.salary ?? null;
   const lastSalary = trend[trend.length - 1]?.salary ?? null;
-  const lastRate = trend[trend.length - 1]?.rate ?? null; // full-time rate, for the pay-band placement
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
   // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
   const firstDate = trend[0]?.date ?? null;
@@ -286,10 +285,15 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return `${[at, t].filter(Boolean).join(' · ')}${growth}.`;
   }, [trend, rows, totalChange, spanYears]);
 
+  // As on /person: the band is read against the appointment that carries the grade, at its full-time rate.
+  const graded = useMemo(
+    () => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id).map((r) => ({ ...r, salary: r.rate_raw }))),
+    [rows, latest]
+  );
   const band = useMemo(() => {
-    if (!latest || latest.grade_number == null || !grades) return null;
-    return grades.find((g) => g.grade === latest.grade_number && g.basis === latest.grade_basis) ?? null;
-  }, [latest, grades]);
+    if (!graded || !grades) return null;
+    return grades.find((g) => g.grade === graded.grade && g.basis === graded.basis) ?? null;
+  }, [graded, grades]);
 
   const lastSnap = latest?.snapshot_id ?? '';
   // standingSql: the query /person uses, so the printed report cannot rank this person differently.
@@ -605,10 +609,10 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       )}
 
       {/* Pay band */}
-      {band && lastRate != null && (
+      {band && graded && (
         <Card withBorder padding="lg">
-          <CardTitle>Pay band — grade {latest?.grade_number} (full-time rate vs the official range)</CardTitle>
-          <PayBandBar min={band.min} max={band.max} value={lastRate} />
+          <CardTitle>Pay band — grade {graded.grade} (full-time rate vs the official range)</CardTitle>
+          <PayBandBar min={band.min} max={band.max} value={graded.rate} />
           <PayBandNote />
         </Card>
       )}

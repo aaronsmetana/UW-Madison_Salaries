@@ -9,7 +9,7 @@ import { useSummary, useSql, useActiveSnapshotId, useGrades, useReferenceStatus 
 import { payBandNote } from '../components/PayBandNote';
 import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql } from '../lib/queries';
+import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, pct, fullName, fmtDate, plural } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -39,6 +39,8 @@ interface Subject {
   pay: number | null; title: string | null; job_code: string | null;
   grade_number: number | null; grade_basis: string | null; school: string | null; date_of_hire: string | null;
   flsa_status: string | null; comp_basis: string | null;
+  /** The full-time rate of the appointment that carries the grade — what the band is read against. */
+  band_rate: number | null;
 }
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
@@ -155,11 +157,14 @@ export default function Reports() {
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
-    `SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
-        arg_max(grade_number, ${expr}) grade_number, arg_max(grade_basis, ${expr}) grade_basis,
-        arg_max(flsa_status, ${expr}) flsa_status, arg_max(comp_basis, ${expr}) comp_basis,
-        any_value(school) school, min(date_of_hire) date_of_hire
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')}`,
+    // The grade, its schedule and the rate the band is read against all come from the graded appointment
+    // (GRADED_APPT); the metric decides the pay every other figure uses.
+    `SELECT * EXCLUDE (graded), ${gradedCols()} FROM (
+       SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
+          ${GRADED_APPT} graded,
+          arg_max(flsa_status, ${expr}) flsa_status, arg_max(comp_basis, ${expr}) comp_basis,
+          any_value(school) school, min(date_of_hire) date_of_hire
+       FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')})`,
     cmpReady
   );
   const subj = subjRows?.[0];
@@ -525,20 +530,28 @@ export default function Reports() {
   );
 
   // Market-competitive position — the SAG's compa-ratio / PIR framework against the subject's official
-  // pay-grade band (only computable for grades with a published range, currently 15 & 27). Below the
-  // 85%-compa / 25%-PIR floor triggers the guideline's "market competitive pay request".
+  // pay-grade band (only computable for grades with a published range). Below the 85%-compa / 25%-PIR
+  // floor triggers the guideline's "market competitive pay request".
+  //
+  // Read on the full-time rate of the graded appointment: a band is a range of full-time rates, and the
+  // metric's pay is scaled by the appointment percentage and summed across appointments — a half-time
+  // subject on a mid-range rate read as compa 0.50. The floor is a rate too; as an ask it is the same
+  // raise carried to the pay the report works in (`floorAsk`), so a half-time subject is asked half.
+  const bandRate = subj?.band_rate != null && subj.band_rate > 0 ? subj.band_rate : null;
   const marketPosition = useMemo(() => {
-    if (subjectPay == null || band == null || grade == null || band.max <= band.min) return null;
+    if (subjectPay == null || bandRate == null || band == null || grade == null || band.max <= band.min) return null;
     const mid = (band.min + band.max) / 2;
-    const compa = subjectPay / mid;
-    const pir = (subjectPay - band.min) / (band.max - band.min);
+    const compa = bandRate / mid;
+    const pir = (bandRate - band.min) / (band.max - band.min);
+    const floorPay = Math.round(POLICY.marketCompetitive.compaLow * mid);
     return {
-      grade, mid, compa, pir,
+      grade, mid, compa, pir, rate: bandRate,
       position: POLICY.gradePosition(compa),
       belowCompetitive: compa < POLICY.marketCompetitive.compaLow || pir < POLICY.marketCompetitive.pirLow,
-      floorPay: Math.round(POLICY.marketCompetitive.compaLow * mid),
+      floorPay,
+      floorAsk: Math.round(subjectPay * (floorPay / bandRate)),
     };
-  }, [subjectPay, band, grade]);
+  }, [subjectPay, bandRate, band, grade]);
 
   // Performance-adjustment coaching (setup-pane only): the SAG's 5–10% general range, plus the annual-
   // review matrix cell for the subject's position in grade (Emerging/Established/Advanced) when a band
@@ -613,10 +626,12 @@ export default function Reports() {
       });
     }
     if (config.marketFloorTarget && marketPosition?.belowCompetitive) {
+      // A part-time or split subject's ask is the floor's raise carried to their pay; say which rate that is.
+      const fullTime = marketPosition.floorAsk !== marketPosition.floorPay ? `, a full-time rate of ${usd(marketPosition.floorPay)}` : '';
       out.push({
-        key: 'marketFloor', pay: marketPosition.floorPay,
-        base: `the market-competitive floor for grade ${marketPosition.grade} — 85% of the band midpoint (UW Salary Administration Guidelines)`,
-        basis: `to reach the market-competitive floor for grade ${marketPosition.grade} (85% of the band midpoint)`,
+        key: 'marketFloor', pay: marketPosition.floorAsk,
+        base: `the market-competitive floor for grade ${marketPosition.grade} — 85% of the band midpoint${fullTime} (UW Salary Administration Guidelines)`,
+        basis: `to reach the market-competitive floor for grade ${marketPosition.grade} (85% of the band midpoint${fullTime})`,
       });
     }
     return out;
@@ -696,7 +711,7 @@ export default function Reports() {
       const mp = marketPosition;
       const posPct = Math.round(mp.pir * 100);
       if (posPct < 50) {
-        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · compa-ratio ${mp.compa.toFixed(2)}` });
+        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · full-time rate ${usd(mp.rate)} · compa-ratio ${mp.compa.toFixed(2)}` });
       }
       if (mp.belowCompetitive) {
         out.push({ kind: 'marketFloor', value: mp.compa.toFixed(2), label: `compa-ratio — below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
@@ -778,7 +793,7 @@ export default function Reports() {
         key: 'marketFloor',
         name: 'Market competitive pay request',
         quote: POLICY.marketRequestQuote,
-        supportedBy: `compa-ratio ${marketPosition.compa.toFixed(2)} — below the guideline's 85% market-competitive floor for grade ${marketPosition.grade}`,
+        supportedBy: `compa-ratio ${marketPosition.compa.toFixed(2)} on a full-time rate of ${usd(marketPosition.rate)} — below the guideline's 85% market-competitive floor for grade ${marketPosition.grade}`,
       });
     }
     if (config.factors.performance.on) {
@@ -970,7 +985,7 @@ export default function Reports() {
         }}
         onRemoveSupervisee={(key) => setConfig({ ...config, supervisees: config.supervisees.filter((k) => k !== key) })}
         evidenceChecklist={evidenceChecklist}
-        marketFloor={marketPosition?.belowCompetitive ? { floorPay: marketPosition.floorPay, compa: marketPosition.compa, grade: marketPosition.grade } : null}
+        marketFloor={marketPosition?.belowCompetitive ? { floorPay: marketPosition.floorPay, floorAsk: marketPosition.floorAsk, compa: marketPosition.compa, grade: marketPosition.grade } : null}
         performanceGuide={performanceGuide}
       />
     </Box>

@@ -16,6 +16,9 @@ export interface ScreeningSubject {
   tenure: number | null;
   grade_number: number | null;
   grade_basis: string | null;
+  /** The full-time rate of the appointment that carries the grade (queries `GRADED_APPT`) — what the
+   *  band is compared with. `pay` is the metric's pay, summed across appointments: not a band's unit. */
+  band_rate: number | null;
   comp_basis: string | null;
   flsa_status: string | null;
 }
@@ -58,6 +61,8 @@ export interface ScreeningResult {
   compressionInvertedCount: number;
   belowMarket: boolean;
   marketCompa: number | null;
+  /** The rate the band was read against, when there was a band. */
+  bandRate: number | null;
   realErosion: boolean; // nominal pay grew, but real (CPI-adjusted) pay declined
   score: number;
   scoreLabel: CaseStrength['label'];
@@ -131,13 +136,16 @@ export function computeScreeningResults(opts: {
     const exempt = s.flsa_status === 'Exempt' ? true : s.flsa_status ? false : null;
     const gc = tooFewPeers ? null : buildGuidelineCompression(s.pay, s.tenure, cohortForStats, exempt);
 
+    // The band against the full-time rate of the graded appointment, never against `pay`: a half-time
+    // appointment earns half its rate, and would read as far below any band.
     const band = grades.find((g) => g.grade === s.grade_number && g.basis === s.grade_basis);
+    const rate = s.band_rate;
     let belowMarket = false;
     let marketCompa: number | null = null;
-    if (band && band.max > band.min) {
+    if (band && rate != null && rate > 0 && band.max > band.min) {
       const mid = (band.min + band.max) / 2;
-      const compa = s.pay / mid;
-      const pir = (s.pay - band.min) / (band.max - band.min);
+      const compa = rate / mid;
+      const pir = (rate - band.min) / (band.max - band.min);
       marketCompa = compa;
       belowMarket = compa < POLICY.marketCompetitive.compaLow || pir < POLICY.marketCompetitive.pirLow;
     }
@@ -182,6 +190,7 @@ export function computeScreeningResults(opts: {
       compressionInvertedCount: gc?.invertedCount ?? 0,
       belowMarket,
       marketCompa,
+      bandRate: marketCompa != null ? rate : null,
       realErosion,
       score: strength.score,
       scoreLabel: strength.label,

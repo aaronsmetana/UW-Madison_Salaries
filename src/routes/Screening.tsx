@@ -14,7 +14,7 @@ import { usd, num, fmtYears, fullName } from '../lib/format';
 import { toReal } from '../lib/cpi';
 import { useSql, useActiveSnapshotId, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay } from '../lib/queries';
+import { personPay, GRADED_APPT, gradedCols } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { computeScreeningResults, type ScreeningResult } from '../lib/screening';
 import { downloadCSV } from '../lib/csv';
@@ -24,7 +24,7 @@ const TENURE_EXPR = `date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_
 interface SubjectRow {
   person_key: string; fn: string | null; ln: string | null; title: string | null; job_code: string | null;
   school: string | null; department: string | null; pay: number; tenure: number | null;
-  grade_number: number | null; grade_basis: string | null; comp_basis: string | null; flsa_status: string | null;
+  grade_number: number | null; grade_basis: string | null; band_rate: number | null; comp_basis: string | null; flsa_status: string | null;
 }
 interface CohortRowSql { person_key: string; job_code: string; comp_basis: string | null; pay: number; tenure: number | null }
 interface HistRowSql { person_key: string; snapshot_date: string; pay: number }
@@ -111,13 +111,13 @@ export default function Screening() {
     `WITH pp AS (
        SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title,
          any_value(job_code) job_code, any_value(school) school, any_value(department) department,
-         any_value(grade_number) grade_number, any_value(grade_basis) grade_basis,
+         ${GRADED_APPT} graded,
          any_value(comp_basis) comp_basis, any_value(flsa_status) flsa_status,
          ${personPay('fte')} pay, any_value(${TENURE_EXPR}) tenure
        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${scopeWhere}
        GROUP BY person_key
      )
-     SELECT * FROM pp WHERE pay > 0`,
+     SELECT * EXCLUDE (graded), ${gradedCols()} FROM pp WHERE pay > 0`,
     !!runParams && !!snap
   );
 
@@ -162,7 +162,7 @@ export default function Screening() {
       subjects: subjects.map((s) => ({
         person_key: s.person_key, name: fullName(s.fn, s.ln) || s.person_key, title: s.title, job_code: s.job_code,
         school: s.school, department: s.department, pay: s.pay, tenure: s.tenure,
-        grade_number: s.grade_number, grade_basis: s.grade_basis, comp_basis: s.comp_basis, flsa_status: s.flsa_status,
+        grade_number: s.grade_number, grade_basis: s.grade_basis, band_rate: s.band_rate, comp_basis: s.comp_basis, flsa_status: s.flsa_status,
       })),
       cohortRows: (cohortRows ?? []).map((r) => ({ person_key: r.person_key, job_code: r.job_code, comp_basis: r.comp_basis, pay: r.pay, tenure: r.tenure })),
       payHistory: (histRows ?? []).map((r) => ({ person_key: r.person_key, year: Number(String(r.snapshot_date).slice(0, 4)), pay: r.pay })),
@@ -211,6 +211,8 @@ export default function Screening() {
         gap_to_median: r.gapToMed != null ? Math.round(r.gapToMed) : '',
         tenure_inversions: r.tenureInvCount,
         compression: r.compressionCount,
+        full_time_rate: r.bandRate != null ? Math.round(r.bandRate) : '',
+        compa_ratio: r.marketCompa != null ? r.marketCompa.toFixed(2) : '',
         below_market: r.belowMarket ? 'yes' : 'no',
         real_dollar_decline: r.realErosion ? 'yes' : 'no',
         case_strength: r.scoreLabel,
@@ -365,7 +367,7 @@ export default function Screening() {
           {/* "Below market floor" is a pay-band figure, so it carries what the loaded bands cover. */}
           {results.some((r) => r.belowMarket) && (
             <Box px="md" pt="xs" className="below-market-note">
-              <Text size="xs" c="dimmed">"Below market floor" compares pay with 85% of the grade's official band midpoint.</Text>
+              <Text size="xs" c="dimmed">"Below market floor" compares the full-time rate of the appointment that carries the grade with 85% of that grade's official band midpoint.</Text>
               <PayBandNote mt={2} />
             </Box>
           )}

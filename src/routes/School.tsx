@@ -21,7 +21,7 @@ import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql, filterWhere, filterKey } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -152,14 +152,15 @@ export default function School() {
 
   const { data: bandRows } = useSql<{ banded: number; graded: number; avg_pos: number | null; over_max: number; below_min: number }>(
     ['school-band', name, snap ?? '', metric, fk],
-    `SELECT count(*) FILTER (WHERE g."grade" IS NOT NULL) banded,
+    // One row per person, placed by the full-time rate of the appointment that carries the grade
+    // (GRADED_APPT) — as every other band in the app is.
+    `WITH p AS (SELECT ${gradedCols()} FROM (SELECT person_key, ${GRADED_APPT} graded FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key))
+     SELECT count(*) FILTER (WHERE g."grade" IS NOT NULL) banded,
         count(*) FILTER (WHERE p.grade_number IS NOT NULL) graded,
-        avg((p.pay - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.pay BETWEEN g."min" AND g."max") avg_pos,
-        count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay > g."max") over_max,
-        count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.pay < g."min") below_min
-     FROM (SELECT person_key, grade_number, grade_basis, ${personPay('full')} pay
-           FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1, 2, 3) p
-     LEFT JOIN grades g ON g."grade" = p.grade_number AND g."basis" = p.grade_basis`,
+        avg((p.band_rate - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.band_rate BETWEEN g."min" AND g."max") avg_pos,
+        count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.band_rate > g."max") over_max,
+        count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.band_rate < g."min") below_min
+     FROM p LEFT JOIN grades g ON g."grade" = p.grade_number AND g."basis" = p.grade_basis`,
     enabled
   );
   const band = bandRows?.[0];

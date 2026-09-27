@@ -28,7 +28,7 @@ import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconTrendingDown, Ic
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
-import { personPay, actualPay, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
+import { personPay, actualPay, gradedAppt, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange } from '../lib/format';
@@ -559,10 +559,15 @@ export default function Person() {
     return `${[at, latestTitle].filter(Boolean).join(' · ')}.`;
   }, [trend, latest, rows]);
 
+  // The band is read against the appointment that carries the grade, at its full-time rate (queries
+  // `gradedAppt`). `lastRate` sums every appointment's rate, and the last row fetched is whichever came
+  // last: for someone holding two, neither is the band's.
+  const graded = useMemo(() => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id)), [rows, latest]);
+  const bandRate = graded?.rate ?? null;
   const band = useMemo(() => {
-    if (!latest || latest.grade_number == null || !grades) return null;
-    return grades.find((g) => g.grade === latest.grade_number && g.basis === latest.grade_basis) ?? null;
-  }, [latest, grades]);
+    if (!graded || !grades) return null;
+    return grades.find((g) => g.grade === graded.grade && g.basis === graded.basis) ?? null;
+  }, [graded, grades]);
 
   const lastSnap = latest?.snapshot_id ?? '';
   // Where this pay stands in each pool the person belongs to (standingSql — the one query the printed
@@ -701,14 +706,18 @@ export default function Person() {
   }, [trend, raiseCtx.typical]);
 
   const [trendMode, setTrendMode] = useState<'actual' | 'rate'>('actual');
+  // The band's lines only where the line drawn is in the band's unit: a full-time rate, and the rate of the
+  // graded appointment. A half-time actual-pay line under a full-time range reads as half the band below it.
+  const shown = trendMode === 'rate' ? lastRate : lastSalary;
+  const trendBand = band && bandRate != null && shown != null && Math.round(shown) === Math.round(bandRate) ? band : null;
   const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
   // Round steps from $0 to the highest line or grade-band edge drawn (lib/rangeScale): Recharts' own
   // read $0 / $45,000 / $90,000.
   const trendTicks = useMemo(() => {
     const vals = trendPlot.flatMap((r) => (trendMode === 'actual' ? [r.salary, r.med, r.typical] : [r.rate, r.medRate]));
-    const top = Math.max(1, ...vals.filter((v): v is number => v != null && Number.isFinite(v)), band?.max ?? 0);
+    const top = Math.max(1, ...vals.filter((v): v is number => v != null && Number.isFinite(v)), trendBand?.max ?? 0);
     return moneyTicks(0, top);
-  }, [trendPlot, trendMode, band]);
+  }, [trendPlot, trendMode, trendBand]);
 
   // Long titles (e.g. "Professor") can have 1000+ peers — page the table instead of rendering
   // every row. Auto-expand if the subject would otherwise be scrolled off the first page.
@@ -791,14 +800,17 @@ export default function Person() {
     return { uw, title, own };
   }, [trend, raiseSteps, ownRaises]);
   const r1 = (x: number) => Math.round(x * 10) / 10;
-  const projectedRate = lastRate != null ? lastRate * Math.pow(1 + pctRaise / 100, years) : null;
-  // Quick-target presets: the annualized %/yr needed to reach a target rate over the current `years`.
-  const targetRaisePct = (t: number | null | undefined) =>
-    lastRate != null && lastRate > 0 && years > 0 && t != null && t > lastRate
-      ? r1((Math.pow(t / lastRate, 1 / years) - 1) * 100)
+  const growth = Math.pow(1 + pctRaise / 100, years);
+  const projectedRate = lastRate != null ? lastRate * growth : null;
+  // On the band, the graded appointment's rate moves by the same raise.
+  const projectedBandRate = bandRate != null ? bandRate * growth : null;
+  // Quick-target presets: the annualized %/yr needed to take `from` to a target rate over the current `years`.
+  const targetRaisePct = (t: number | null | undefined, from: number | null = lastRate) =>
+    from != null && from > 0 && years > 0 && t != null && t > from
+      ? r1((Math.pow(t / from, 1 / years) - 1) * 100)
       : null;
   const medTargetPct = targetRaisePct(peer?.med_rate);
-  const maxTargetPct = band ? targetRaisePct(band.max) : null;
+  const maxTargetPct = band ? targetRaisePct(band.max, bandRate) : null;
 
   if (isLoading) return <LoadingState label="Loading person…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
@@ -1238,22 +1250,27 @@ export default function Person() {
 
       {/* 4b — Pay band: full-time rate within the OFFICIAL grade range + headroom. (Title median/p75 live on
               the Overview title bar, so this card is purely the HR grade-structure lens.) */}
-      {band && lastRate != null && (
-        <Card withBorder padding="lg">
+      {band && bandRate != null && (
+        <Card withBorder padding="lg" className="person-payband">
           <CardTitle
-            sub={<>Where the full-time rate sits in grade {latest?.grade_number}'s official min–max, and the room to the top.</>}
+            sub={<>Where the full-time rate sits in grade {graded?.grade}'s official min–max, and the room to the top.</>}
           >
-            Pay band — grade {latest?.grade_number} · official HR range
+            Pay band — grade {graded?.grade} · official HR range
           </CardTitle>
-          <PayBandBar min={band.min} max={band.max} value={lastRate} quartiles />
+          <PayBandBar min={band.min} max={band.max} value={bandRate} quartiles />
+          {bandRate !== lastRate && (
+            <Text size="xs" c="dimmed" mt={4} className="payband-rate">
+              Placed on the full-time rate of the appointment in grade {graded?.grade}, {usd(bandRate)}.
+            </Text>
+          )}
           <PayBandNote mt="sm" />
-          {lastRate >= band.max ? (
+          {bandRate >= band.max ? (
             <Text size="sm" mt="md">
-              At or above the top of grade {latest?.grade_number}'s band (max {usd(band.max)}) — effectively maxed out.
+              At or above the top of grade {graded?.grade}'s band (max {usd(band.max)}) — effectively maxed out.
             </Text>
           ) : (
             <Text size="sm" mt="md">
-              <Text span fw={700} c="pos.7" className="pos-adaptive-text">{usd(band.max - lastRate)}</Text> of headroom to the top of grade {latest?.grade_number}'s band
+              <Text span fw={700} c="pos.7" className="pos-adaptive-text">{usd(band.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
               <Text span c="dimmed"> (grade max {usd(band.max)}).</Text>
             </Text>
           )}
@@ -1305,21 +1322,21 @@ export default function Person() {
             </div>
           </Group>
 
-          {band && projectedRate != null && (
+          {band && bandRate != null && projectedBandRate != null && (
             <div style={{ marginTop: 'var(--mantine-spacing-md)' }}>
               <Text size="xs" c="dimmed" mb={6}>Projected position in {years}y (gray tick = today)</Text>
-              <PayBandBar min={band.min} max={band.max} value={projectedRate} benchmarks={[{ value: lastRate, label: 'today' }]} />
+              <PayBandBar min={band.min} max={band.max} value={projectedBandRate} benchmarks={[{ value: bandRate, label: 'today' }]} />
             </div>
           )}
 
-          {band && lastRate >= band.max && (
+          {band && bandRate != null && bandRate >= band.max && (
             <Text size="xs" c="dimmed" mt="md">
-              This rate is already at or above the top of grade {latest?.grade_number}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
+              This rate is already at or above the top of grade {graded?.grade}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
             </Text>
           )}
-          {band && lastRate < band.max && pctRaise > 0 && (
+          {band && bandRate != null && bandRate < band.max && pctRaise > 0 && (
             <Text size="xs" c="dimmed" mt="md">
-              At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / lastRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
+              At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / bandRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
             </Text>
           )}
           {pctRaise === 0 && (
@@ -1387,11 +1404,11 @@ export default function Person() {
             <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
             {/* The grade's official band, floor and ceiling (kept as separate siblings — Recharts does not
                 traverse a Fragment's children). Their values are in the legend. */}
-            {band && (
-              <ReferenceLine yAxisId="pay" y={band.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
+            {trendBand && (
+              <ReferenceLine yAxisId="pay" y={trendBand.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
             )}
-            {band && (
-              <ReferenceLine yAxisId="pay" y={band.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
+            {trendBand && (
+              <ReferenceLine yAxisId="pay" y={trendBand.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
             )}
             {/* Title-change dividers segment the chart into title eras; each era's title sits above it
                 (the first at the left edge, which has no divider), unless they could not all fit. */}
@@ -1520,7 +1537,7 @@ export default function Person() {
             the step across it is not a raise.
           </Text>
         )}
-        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={band ? { grade: latest?.grade_number ?? null, min: band.min, max: band.max } : null} mode={trendMode} hasTypical={trendMode === 'actual' && raiseCtx.typical.size > 1} />
+        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={trendBand ? { grade: graded?.grade ?? null, min: trendBand.min, max: trendBand.max } : null} mode={trendMode} hasTypical={trendMode === 'actual' && raiseCtx.typical.size > 1} />
         <ChartData
           caption={dollarMode === 'real' ? `Salary over time (in ${REAL_BASE_YEAR} dollars)` : 'Salary over time'}
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}

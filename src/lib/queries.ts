@@ -102,6 +102,45 @@ export function personPay(metric: Metric): string {
 }
 
 /**
+ * The appointment a person's pay band is read against: of their paid appointments that carry a grade,
+ * the one that pays them most — its grade, its schedule, and its full-time rate, all from that one row.
+ *
+ * A band is a range of full-time rates. Screening and Reports compared it with the person's pay under
+ * the metric: actual pay, scaled by the appointment percentage and summed across appointments. A
+ * half-time Grade 15 on a mid-range rate read as "below market floor", and someone holding two
+ * appointments was placed by their combined earnings. With two grades loaded that misread a handful;
+ * with the whole structure it misread about a thousand of the 13,210 people graded 15–35. The person
+ * pages placed the rate, but summed across appointments and took the grade from whichever row came
+ * last. Every band now reads this.
+ *
+ * One `arg_max` over a struct, so the three come from the same row: separate `arg_max` calls each skip
+ * the rows where their own column is NULL, and could each land on a different appointment. Ties go to
+ * the higher rate, then the higher grade, so the pick never depends on row order.
+ *
+ * Use as a column in a `GROUP BY person_key` query, then read it with `gradedCols` one level up.
+ */
+export const GRADED_APPT = `arg_max({grade: grade_number, basis: grade_basis, rate: salary}, {pay: ${ACTUAL_PAY}, rate: salary, grade: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
+
+/** `GRADED_APPT`'s fields as plain columns: `grade_number`, `grade_basis` and `band_rate`. */
+export const gradedCols = (col = 'graded') =>
+  `${col}.grade AS grade_number, ${col}.basis AS grade_basis, ${col}.rate AS band_rate`;
+
+/** `GRADED_APPT` for rows already fetched — the person pages read one snapshot's rows client-side. */
+export function gradedAppt(
+  rows: readonly { salary: number | null; salary_fte_adjusted: number | null; fte: number | null; grade_number: number | null; grade_basis: string | null }[]
+): { grade: number; basis: string | null; rate: number } | null {
+  let best: { grade: number; basis: string | null; rate: number; pay: number } | null = null;
+  for (const r of rows) {
+    if (!(r.salary && r.salary > 0) || r.grade_number == null) continue;
+    const pay = actualPay(r);
+    if (!best || pay > best.pay || (pay === best.pay && (r.salary > best.rate || (r.salary === best.rate && r.grade_number > best.grade)))) {
+      best = { grade: r.grade_number, basis: r.grade_basis, rate: r.salary, pay };
+    }
+  }
+  return best && { grade: best.grade, basis: best.basis, rate: best.rate };
+}
+
+/**
  * One row per person per group, at their pay within that group — the population every median,
  * quartile and distribution in the app describes.
  *
