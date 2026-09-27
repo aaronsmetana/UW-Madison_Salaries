@@ -11,10 +11,28 @@ import { oracle, PAY, latestSnapshot, usd } from './oracle';
 
 // Research Associate: 653 people, $495 to $133,676, half of them between $60k and $65k.
 const KENDALL = 'kendallbarrett|2017-05-28';
-// The lowest-paid Research Associate ($495): outside the window, under it.
-const LOWEST = 'jianzhicheong|2017-08-01';
-// Clinical Assistant Professor: its middle 90% spans just over half its range, so it is drawn whole.
-const WHOLE = 'amymuchow|2006-07-01';
+/** Someone whose one paid appointment in the latest snapshot is `jobCode`, so their page is that title's,
+ *  paid `order` first ('pay' lowest, else by key). Fixtures named outright went stale with a release. */
+async function soleHolder(jobCode: string, order: 'pay' | 'key' = 'key') {
+  const snap = await latestSnapshot();
+  const [r] = await oracle<{ person_key: string }>(
+    `SELECT person_key FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY person_key
+     HAVING count(*) = 1 AND any_value(job_code) = '${jobCode}' ORDER BY ${order === 'pay' ? `any_value(${PAY}), ` : ''}person_key LIMIT 1`,
+  );
+  return r.person_key;
+}
+
+/** A title of 40 or more whose middle 90% spans at least half its range, so it is drawn whole — the
+ *  largest such, and the rule restated in SQL (`quantile_cont` interpolates as `windowOf` does). */
+async function wholeTitle() {
+  const snap = await latestSnapshot();
+  const [r] = await oracle<{ code: string }>(
+    `WITH pp AS (SELECT person_key, job_code, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1, 2),
+          t AS (SELECT job_code code, count(*) n, quantile_cont(pay, 0.05) p5, quantile_cont(pay, 0.95) p95, min(pay) lo, max(pay) hi FROM pp WHERE pay > 0 GROUP BY 1)
+     SELECT code FROM t WHERE n >= 40 AND p95 - p5 >= 0.5 * (hi - lo) ORDER BY n DESC, code LIMIT 1`,
+  );
+  return r.code;
+}
 
 /** Each person holding `jobCode` in the latest snapshot at their pay in it (several appointments in the
  *  title summed), their school, and whether a hire date is recorded. */
@@ -100,9 +118,10 @@ test('someone paid outside the window is marked over their pile', async ({ page 
   await page.setViewportSize({ width: 1440, height: 900 });
   const people = await holders('PD012');
   const w = windowOf(people.map((p) => p.pay))!;
-  const self = people.find((p) => p.person_key === LOWEST)!;
-  expect(self.pay, 'the fixture is no longer under the window').toBeLessThan(w.lo);
-  await openPerson(page, LOWEST);
+  const lowest = await soleHolder('PD012', 'pay');
+  const self = people.find((p) => p.person_key === lowest)!;
+  expect(self.pay, 'the lowest-paid Research Associate is not under the window').toBeLessThan(w.lo);
+  await openPerson(page, lowest);
   const strip = page.locator('.peer-strip');
   const low = strip.locator('[data-pile="-1"]');
   const lb = (await low.boundingBox())!;
@@ -117,11 +136,12 @@ test('someone paid outside the window is marked over their pile', async ({ page 
 
 test('a title whose middle 90% already fills its axis is drawn whole', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const people = await holders('IC011');
+  const code = await wholeTitle();
+  const people = await holders(code);
   const pays = people.map((p) => p.pay).sort((a, b) => a - b);
   expect(people.length).toBeGreaterThanOrEqual(40);
-  expect(windowOf(pays), 'Clinical Assistant Professor now squeezes: pick another fixture').toBeNull();
-  await openPerson(page, WHOLE);
+  expect(windowOf(pays), `${code}: the SQL and the rule disagree on whether it squeezes`).toBeNull();
+  await openPerson(page, await soleHolder(code));
   const strip = page.locator('.peer-strip');
   await expect(strip).not.toHaveAttribute('data-window', /.*/);
   await expect(strip.locator('[data-pile]')).toHaveCount(0);

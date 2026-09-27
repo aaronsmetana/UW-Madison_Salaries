@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button } from '@mantine/core';
+import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Badge } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList, Customized } from 'recharts';
 import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
@@ -158,6 +158,27 @@ export function ChangesPanel() {
   );
   const s = sumData?.[0];
 
+  // One raise shared by most continuing staff is a pay-plan step, not a spread of raises: said in a line,
+  // since the distribution's 1% bins round "exactly 2.0%" into "+2%". Read at 0.1%, raise-steps' resolution.
+  const { data: modeRows } = useSql<{ k: number; c: number; n: number }>(
+    ['chg-mode', fromId, toId, scopeKey, metric],
+    `WITH c AS (SELECT round(r, 3) k FROM ${crs})
+     SELECT k, count(*) c, (SELECT count(*) FROM c) n FROM c GROUP BY k ORDER BY c DESC, k LIMIT 1`,
+    enabled
+  );
+  const commonRaise = modeRows?.[0] && modeRows[0].n > 0 && modeRows[0].k > 0 && modeRows[0].c / modeRows[0].n >= 0.5 ? modeRows[0] : null;
+
+  // Divisions formed from whole departments of others within this pair (summary `reorganizations`): their
+  // people moved division without changing anything else, and are said to have.
+  const reorgs = useMemo(() => {
+    const date = (id: string | null) => snaps.find((x) => x.id === id)?.date ?? null;
+    const [a, b] = [date(fromId), date(toId)];
+    if (!a || !b) return [];
+    return (summary?.reorganizations ?? []).filter((r) => { const d = date(r.to_id); return !!d && d > a && d <= b; });
+  }, [summary, snaps, fromId, toId]);
+  const reorgMove = (from: string | null, to: string | null) =>
+    reorgs.some((r) => r.school === to && r.from.some((f) => f.school === from));
+
   const moverSelect = `${cte}
      SELECT c.person_key, b.fn, b.ln, b.title, b.school, c.pay_from a_pay, c.pay_to b_pay, (c.pay_to - c.pay_from) delta, c.r pct
      FROM ${crs} c JOIN b ON b.person_key = c.person_key`;
@@ -294,15 +315,15 @@ export function ChangesPanel() {
   // Down below 0, up above it, and the no-change bar neutral.
   const distColorSlot = (bucket: number) => (bucket < 0 ? 'red5' : bucket === 0 ? 'gray4' : 'pos5');
 
-  // Between two snapshots with no pay-plan raise in them almost everyone's pay stands still: from Sep
-  // 2025 to Mar 2026, 18,122 of 19,273 were at 0% and the largest raise bin held 391, so on one scale
-  // every raise was a sliver under a single grey bar. Past 3× the largest other bin, the axis stops at
-  // that bin (×1.25) and the no-change bar runs off its top, broken, with its count written on it.
+  // One bin can hold nearly everyone. Between two snapshots with no pay-plan raise almost everyone's pay
+  // stands still — Sep 2025 to Mar 2026, 18,122 of 19,273 at 0% against 391 in the largest raise bin —
+  // and a pay-plan step puts them all at one raise instead: Mar to Sep 2026, 14,810 in the +2% bin. On one
+  // scale every other bin is a sliver under that one bar. Past 3× the next largest, the axis stops at that
+  // one (×1.25) and the tall bar runs off its top, broken, with its count written on it.
   const distCap = useMemo(() => {
-    const d = raiseDist ?? [];
-    const zero = d.find((r) => r.bucket === 0)?.n ?? 0;
-    const other = Math.max(0, ...d.filter((r) => r.bucket !== 0).map((r) => r.n));
-    return other > 0 && zero > 3 * other ? niceCeil(other * 1.25) : null;
+    const d = [...(raiseDist ?? [])].sort((a, b) => b.n - a.n);
+    const [top, next] = d;
+    return top && next && next.n > 0 && top.n > 3 * next.n ? { bucket: top.bucket, cap: niceCeil(next.n * 1.25) } : null;
   }, [raiseDist]);
   // Labels every 2% (5% on a narrow card) and always at 0%, which the automatic thinning dropped — the
   // one bin the note below names. The ends are the open tails, "< −10%" and "> +20%".
@@ -384,6 +405,24 @@ export function ChangesPanel() {
           an FTE change or a change in how pay is reported is not a raise.
         </Text>
       )}
+
+      {s && enabled && commonRaise && (
+        <Text size="sm" className="changes-step-note" data-common-raise={commonRaise.k} data-common-share={(commonRaise.c / commonRaise.n).toFixed(4)}>
+          <b>An across-the-board step:</b> {pct(commonRaise.c / commonRaise.n, 0)} of the {num(commonRaise.n)} who kept the same title and
+          appointment{scopeText} were raised exactly {(commonRaise.k * 100).toFixed(1)}%.
+        </Text>
+      )}
+
+      {reorgs.map((r) => (
+        <Alert key={`${r.to_id}|${r.school}`} color="accent" variant="light" className="changes-reorg" title={`A reorganization: ${r.school}`}>
+          Formed in {snaps.find((x) => x.id === r.to_id)?.label ?? r.to_id} from whole departments of{' '}
+          {r.from.map((f, i) => (
+            <span key={f.school}>{i > 0 ? '; ' : ''}{f.school} ({f.departments.join(', ')}: {num(f.people)} people)</span>
+          ))}
+          . Their moves between divisions below are that, not people changing jobs — and in a view of one of these
+          divisions they count as joining or leaving it.
+        </Alert>
+      ))}
 
       <Alert color="gray" variant="light" icon={<IconInfoCircle size={18} />} title="People are matched by name only">
         No employee ID exists in the public records, so joined/left counts (the ≈ figures above) are
@@ -476,7 +515,8 @@ export function ChangesPanel() {
         className="raise-dist-card"
         data-raise-bins={(raiseDist ?? []).map((r) => r.bucket).join(',')}
         data-raise-counts={(raiseDist ?? []).filter((r) => r.n > 0).map((r) => `${r.bucket}:${r.n}`).join(',')}
-        data-raise-cap={distCap ?? ''}
+        data-raise-cap={distCap?.cap ?? ''}
+        data-raise-capped={distCap?.bucket ?? ''}
         ref={distBoxRef}
       >
         <CardTitle mb="sm">Raise distribution (% change, continuing staff)</CardTitle>
@@ -486,8 +526,8 @@ export function ChangesPanel() {
             <defs>{barGradientDefs(`${uid}-dist`, distGradientColors)}</defs>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} ticks={distTicks} interval={0} />
-            <YAxis width={48} tick={AXIS_TICK} domain={distCap ? [0, distCap] : [0, 'auto']} allowDataOverflow={!!distCap}
-              ticks={distCap ? Array.from({ length: Math.round(distCap / niceStep(distCap / 5)) + 1 }, (_, i) => i * niceStep(distCap / 5)) : undefined}
+            <YAxis width={48} tick={AXIS_TICK} domain={distCap ? [0, distCap.cap] : [0, 'auto']} allowDataOverflow={!!distCap}
+              ticks={distCap ? Array.from({ length: Math.round(distCap.cap / niceStep(distCap.cap / 5)) + 1 }, (_, i) => i * niceStep(distCap.cap / 5)) : undefined}
               tickFormatter={(v: number) => num(v)} />
             <Tooltip formatter={(v: number) => [num(v), 'People']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} contentStyle={TIP_STYLE} />
             {medBucketLabel && (
@@ -511,21 +551,23 @@ export function ChangesPanel() {
                 />
               ))}
               {/* The no-change bar says how many: under the continuing-raise rule these are people whose
-                  pay did not move at all. */}
+                  pay did not move at all. A cut bar says how many too, since its height no longer can. */}
               <LabelList
                 dataKey="n"
                 position="top"
                 content={(props) => {
                   const { x, y, width, value, index } = props as { x: number; y: number; width: number; value: number; index: number };
-                  if (raiseDist?.[index]?.bucket !== 0 || !value) return null;
-                  if (!distCap) return <text className="raise-zero-label" x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
+                  const bucket = raiseDist?.[index]?.bucket;
+                  if (!value || (bucket !== 0 && bucket !== distCap?.bucket)) return null;
+                  const zero = bucket === 0 ? ' raise-zero-label' : '';
+                  if (bucket !== distCap?.bucket) return <text className={`raise-count-label${zero}`} x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
                   // Capped: the bar is cut at the top of the plot (DIST_TOP, the chart's top margin), so
                   // it gets a break across it and its count just under the break.
                   const top = DIST_TOP;
                   return (
                     <g>
-                      <path className="raise-zero-break" d={`M${x - 2} ${top + 7} L${x + width + 2} ${top + 2} M${x - 2} ${top + 12} L${x + width + 2} ${top + 7}`} stroke="var(--mantine-color-body)" strokeWidth={2.5} />
-                      <text className="raise-zero-label" x={x + width / 2} y={top + 26} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)" stroke="var(--mantine-color-body)" strokeWidth={3} paintOrder="stroke">{num(value)}</text>
+                      <path className="raise-cap-break" d={`M${x - 2} ${top + 7} L${x + width + 2} ${top + 2} M${x - 2} ${top + 12} L${x + width + 2} ${top + 7}`} stroke="var(--mantine-color-body)" strokeWidth={2.5} />
+                      <text className={`raise-count-label raise-cap-label${zero}`} x={x + width / 2} y={top + 26} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)" stroke="var(--mantine-color-body)" strokeWidth={3} paintOrder="stroke">{num(value)}</text>
                     </g>
                   );
                 }}
@@ -534,9 +576,10 @@ export function ChangesPanel() {
           </BarChart>
         </ResponsiveContainer>
         <Text size="xs" c="dimmed">
-          1% bins: "+3%" is a raise above 2% up to 3%, and "0%" is pay that did not move at all. Changes past
+          1% bins of raises as this site prints them, to a tenth of a percent: "+3%" is a raise above 2.0% up to 3.0%,
+          and "0%" is pay that did not move. Changes past
           −10% or +20% are gathered at the ends. Green = raise, red = cut, grey = no change; the dashed line
-          marks the median.{distCap ? ' The no-change bar runs past the top of the scale, broken, so the raises are not slivers beside it; its count is written on it.' : ''}
+          marks the median.{distCap ? ` The ${distCap.bucket === 0 ? 'no-change' : `"${raiseBucketLabel(distCap.bucket)}"`} bar runs past the top of the scale, broken, so the other bins are not slivers beside it; its count is written on it.` : ''}
         </Text>
         <ChartData
           caption="Raise distribution (% change)"
@@ -696,7 +739,10 @@ export function ChangesPanel() {
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(m.person_key)}`}>{fullName(m.fn, m.ln)}</Anchor>
                   </Table.Td>
-                  <Table.Td><Text size="sm">{m.a_school ?? '—'} → {m.b_school ?? '—'}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{m.a_school ?? '—'} → {m.b_school ?? '—'}</Text>
+                    {reorgMove(m.a_school, m.b_school) && <Badge size="xs" variant="light" color="gray" className="reorg-badge">Reorganization</Badge>}
+                  </Table.Td>
                   <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'pos' : 'red'}>
                     {m.delta == null ? '—' : `${m.delta >= 0 ? '+' : ''}${usd(m.delta)}`}
                   </Table.Td>

@@ -40,7 +40,9 @@ export function DeltaChip({
 /** ▲/▼ pay-rank movement vs the previous snapshot (or "new" for a rank that didn't exist before).
  *  Always `signed` — an individual moving up in pay rank is the kind of change worth flagging. */
 export function RankDeltaChip({ prev, cur }: { prev?: number; cur: number }) {
-  if (prev == null) return <Text span style={{ fontSize: 10 }} c="accent.6">new</Text>;
+  // --text-accent, not accent.6: at 10px on a striped row accent.6 read 4.35:1. No release before Sep 2026
+  // put a new name among the top earners, so no scan had one to measure.
+  if (prev == null) return <Text span style={{ fontSize: 10 }} className="accent-adaptive-text">new</Text>;
   const d = prev - cur;
   if (d === 0) return <Text span style={{ fontSize: 10 }} c="dimmed">—</Text>;
   const up = d > 0;

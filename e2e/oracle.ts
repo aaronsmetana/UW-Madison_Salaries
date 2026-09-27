@@ -52,8 +52,9 @@ export function rangesSql(): string {
 }
 
 /**
- * Of a person's paid appointments that carry a grade, the one that pays them most — its grade, schedule
- * and full-time rate, from that one row; ties to the higher rate. A pay band is a range of full-time
- * rates, so this is what one is read against. Use in a `GROUP BY person_key`.
+ * Of a person's paid appointments that carry a grade, the one that pays them most — its grade, schedule,
+ * full-time rate and `comp_basis` (which says the units the rate was reported in), from that one row; ties
+ * to the higher rate. A pay band is a range of full-time rates, so this is what one is read against. Use in
+ * a `GROUP BY person_key`.
  */
-export const GRADED = `arg_max({grade: grade_number, basis: grade_basis, rate: salary}, {p: ${PAY}, r: salary, g: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
+export const GRADED = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, {p: ${PAY}, r: salary, g: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;

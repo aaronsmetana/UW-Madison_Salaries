@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { query, getDB } from './duckdb';
-import { fetchData, type HomeStats, type Manifest, type RaiseSteps, type SearchIndex, type Summary } from './manifest';
+import { fetchData, type DepartmentChanges, type HomeStats, type Manifest, type RaiseSteps, type Reorganization, type SearchIndex, type Summary } from './manifest';
 import { useControls } from '../state/controls';
+import type { GradeBand } from './bands';
 
 /**
  * Resolves once DuckDB-WASM + the Parquet have loaded; errors if the dataset can't be loaded.
@@ -37,6 +38,64 @@ export function useSearchIndex(enabled: boolean) {
   return useQuery({ queryKey: ['search-index'], queryFn: () => fetchData<SearchIndex>('search-index.json'), staleTime: Infinity, retry: false, enabled });
 }
 
+/** Each step's department renames, mergers and endings (departments.json) — the Data page's alone. */
+export function useDepartmentChanges() {
+  return useQuery({ queryKey: ['departments'], queryFn: () => fetchData<DepartmentChanges>('departments.json'), staleTime: Infinity, retry: false });
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** A snapshot's month in full, as a reader says it: "September 2026". */
+export const fullMonth = (date: string | null | undefined) =>
+  date ? `${MONTHS[Number(String(date).slice(5, 7)) - 1] ?? ''} ${String(date).slice(0, 4)}`.trim() : '';
+
+export interface Release {
+  latest: Summary['snapshots'][number];
+  previous: Summary['snapshots'][number] | null;
+  /** "September 2026". */
+  month: string;
+  /** The salary ranges came out with this release (reference-status `released_with`). */
+  rangesUpdated: boolean;
+  ref: ReferenceStatus | undefined;
+  /** Divisions this release formed from whole departments of others. */
+  reorganizations: Reorganization[];
+}
+
+/**
+ * The newest release, and what came with it. Everything that announces new data reads it, and none of
+ * it is written down by hand: when the next workbook lands, the next release is "new" and these ranges
+ * are not, with nothing to remember to take out.
+ */
+export function useRelease(): Release | null {
+  const { data: summary } = useSummary();
+  const { data: ref } = useReferenceStatus();
+  const snaps = summary?.snapshots ?? [];
+  const latest = snaps[snaps.length - 1];
+  if (!latest) return null;
+  return {
+    latest,
+    previous: snaps.length > 1 ? snaps[snaps.length - 2] : null,
+    month: fullMonth(latest.date),
+    rangesUpdated: !!ref?.released_with && ref.released_with === latest.id,
+    ref,
+    reorganizations: (summary?.reorganizations ?? []).filter((r) => r.to_id === latest.id),
+  };
+}
+
+/**
+ * The newest step's most common raise, from raise-steps.json (0.1% bins, continuing staff, `metric`):
+ * a pay-plan step shows as one bin holding most people. `share` of `n` got exactly `raise`.
+ */
+export function useLatestStep(metric: 'fte' | 'full' | 'base' = 'fte') {
+  const { data } = useRaiseSteps();
+  const steps = data?.metrics[metric] ?? [];
+  const st = steps[steps.length - 1];
+  if (!st || !data) return null;
+  const total = st.hist.reduce((t, [, c]) => t + c, 0);
+  const [k, c] = st.hist.reduce((best, h) => (h[1] > best[1] ? h : best), [0, 0] as [number, number]);
+  return total ? { from_id: st.from_id, to_id: st.to_id, n: total, raise: k * data.hist_step, share: c / total, median: st.med } : null;
+}
+
 export function useManifest() {
   return useQuery({ queryKey: ['manifest'], queryFn: () => fetchData<Manifest>('manifest.json') });
 }
@@ -50,11 +109,8 @@ export function useHomeStats() {
   return useQuery({ queryKey: ['home-stats'], queryFn: () => fetchData<HomeStats>('home-stats.json'), retry: false });
 }
 
-export interface GradeRange {
-  grade: number;
-  basis: string;
-  min: number;
-  max: number;
+/** One grade on one schedule as grades.json carries it — a range, or a minimum only (lib/bands). */
+export interface GradeRange extends GradeBand {
   effective_year: number | null;
 }
 
@@ -65,15 +121,28 @@ export function useGrades() {
 
 export interface ReferenceStatus {
   generated_at: string;
+  /** Grades published with a range (a minimum and a maximum). */
   grades_count: number;
+  /** Grades published with a minimum only. */
+  floors_count?: number;
   max_effective_year: number | null;
   latest_snapshot_year: number | null;
   /** Latest-snapshot rows carrying a grade in the source — the population the reference should band. */
   graded_rows: number;
-  /** Of those, how many matched a grade→range row in the reference table. */
+  /** Of those, how many matched a grade's range in the reference table. */
   matched_rows: number;
   /** matched_rows / graded_rows, or null when nothing in the snapshot carries a grade. */
   coverage: number | null;
+  /** Of the graded rows, how many matched a grade's minimum only. */
+  floor_rows?: number;
+  floor_coverage?: number | null;
+  /** The day the newest figures were read from HR (it states no effective date), and where. */
+  retrieved_at?: string | null;
+  source_url?: string | null;
+  /** The median change in range minimum between the two newest years of figures, e.g. 0.03. */
+  structure_change?: number | null;
+  /** The newest snapshot dated on or before `retrieved_at`: the release the ranges came out with. */
+  released_with?: string | null;
   status: 'ok' | 'stale' | 'missing' | 'sparse';
 }
 

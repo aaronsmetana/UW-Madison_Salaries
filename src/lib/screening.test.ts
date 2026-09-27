@@ -169,6 +169,37 @@ describe('computeScreeningResults', () => {
     expect(results[0].bandRate).toBeNull();
   });
 
+  it('flags a rate below a minimum-only grade, with no market figure to give', () => {
+    const grades: GradeBand[] = [{ grade: 61, basis: '12mo', min: 45_250, max: null }];
+    const [below, above] = computeScreeningResults({
+      subjects: [
+        subject({ person_key: 'a', grade_number: 61, pay: 44_000, band_rate: 44_000 }),
+        subject({ person_key: 'b', grade_number: 61, pay: 30_000, band_rate: 60_000 }),
+      ],
+      cohortRows: [],
+      payHistory: [],
+      grades,
+      minCohortN: 4,
+      toReal: noReal,
+    });
+    expect(below).toMatchObject({ belowMin: true, belowMarket: false, marketCompa: null, bandRate: 44_000 });
+    // Half-time on a rate above the minimum: not below it, though its pay is.
+    expect(above).toMatchObject({ belowMin: false, belowMarket: false, marketCompa: null });
+  });
+
+  it('flags a rate below a range’s minimum as below the grade minimum and below the market floor', () => {
+    const grades: GradeBand[] = [{ grade: 10, basis: '12mo', min: 80_000, max: 120_000 }];
+    const [r] = computeScreeningResults({
+      subjects: [subject({ pay: 79_000, band_rate: 79_000 })],
+      cohortRows: [],
+      payHistory: [],
+      grades,
+      minCohortN: 4,
+      toReal: noReal,
+    });
+    expect(r).toMatchObject({ belowMin: true, belowMarket: true });
+  });
+
   it('flags real-dollar erosion when nominal pay rose but real pay fell', () => {
     const payHistory: PayPoint[] = [
       { person_key: 'subj', year: 2021, pay: 50_000 },

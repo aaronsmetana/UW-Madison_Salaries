@@ -13,6 +13,9 @@ const INDEX: SearchIndex = {
     ['IT040', 'System Engineer IV', 48, 116991],
     ['IT050', 'Systems Analyst', 60, 90000],
     ['FA040', 'Assistant Professor', 654, 139321],
+    // Written out in full in Sep 2026: its former name is a search alias.
+    ['AD101', 'Administrative Assistant Director', 12, 70000, ['Admin Asst Dir']],
+    ['AD102', 'Assistant Director of Admissions', 40, 72000],
   ],
   divisions: [
     ['School of Medicine and Public Health', 5840, 72107],
@@ -46,6 +49,22 @@ describe('matchTitles', () => {
   });
   it('waits for two characters', () => {
     expect(matchTitles(INDEX, 's')).toEqual([]);
+  });
+});
+
+describe('matchTitles, former names', () => {
+  it('finds a retitled job by its new name and by its old one, showing the new', () => {
+    expect(matchTitles(INDEX, 'administrative assistant').map((h) => h.code)).toEqual(['AD101']);
+    expect(matchTitles(INDEX, 'asst dir')).toEqual([{ code: 'AD101', title: 'Administrative Assistant Director', n: 12, med: 70000 }]);
+    expect(matchTitles(INDEX, 'admin asst dir').map((h) => h.title)).toEqual(['Administrative Assistant Director']);
+  });
+  it('puts a match on a current name ahead of the same match on a former one', () => {
+    const index: SearchIndex = {
+      ...INDEX,
+      titles: [['B1', 'Budget Analyst', 50, 70000, ['Fin Analyst']], ['F1', 'Fin Specialist', 2, 60000]],
+    };
+    // Both start with "fin" — one by its name today, the larger only by its old name.
+    expect(matchTitles(index, 'fin').map((h) => h.code)).toEqual(['F1', 'B1']);
   });
 });
 

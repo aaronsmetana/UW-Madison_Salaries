@@ -2443,11 +2443,46 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .home-head-main { min-width: 0; }
 .home-lead { margin-top: 2px; }
-.home-asof { flex: none; padding-bottom: 3px; }
-/* A phone: stacked, when first, as the eyebrow it reads as. */
+/* What came with the newest release, where "Data as of" was: one small link to the Data page's account,
+   a tag and a line at the size of the lead. Nothing in it is dated by hand (useRelease). */
+.home-news {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+  padding: 3px 10px 3px 3px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 999px;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.35;
+  transition: border-color 120ms ease;
+}
+.home-news:hover { border-color: var(--mantine-color-accent-5); }
+.home-news-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--mantine-color-accent-light);
+  color: var(--text-accent);
+  font-size: var(--mantine-font-size-xxs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.home-news-sep { color: var(--mantine-color-dimmed); }
+.home-news-arrow { color: var(--text-accent); transition: transform 120ms ease; }
+.home-news:hover .home-news-arrow { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .home-news, .home-news-arrow { transition: none; }
+  .home-news:hover .home-news-arrow { transform: none; }
+}
+/* A phone: stacked, and first, above the title. */
 @media (max-width: 36em) {
   .home-head { flex-direction: column; align-items: flex-start; }
-  .home-asof { order: -1; padding-bottom: 0; }
+  /* Two lines at a phone's width: a rounded box rather than a stretched pill. */
+  .home-news { order: -1; margin-bottom: 2px; border-radius: 12px; }
 }
 /* The figures under the search, read as phrases: "22,009 employees", hairlines between them, and the way
    to every school and title at the line's end. */

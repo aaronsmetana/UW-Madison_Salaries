@@ -580,8 +580,11 @@ test('the department-change dot names what it was', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
   const rows = await readHistory(page);
   const dotted = rows.filter((r) => r.dotLabel);
-  // Only Sep 2025, where the source really did rename both of her units.
-  expect(dotted.map((r) => r.snapshot)).toEqual(['Sep 2025', 'Sep 2025']);
+  // Only Sep 2025, where the source moved her Russian-area center into Regional Centers. It respelled
+  // "German, Nordic & Slavic" the same day; that is one department under two spellings, carried as one
+  // (value-map.json `department`), so it is no change and has no dot.
+  expect(dotted.map((r) => `${r.snapshot}: ${r.dept}`)).toEqual(['Sep 2025: Regional Centers']);
+  expect(dotted[0].dotLabel).toContain('CTR for Rus East Eur Cent Asia');
   for (const r of dotted) {
     expect(r.dotLabel, 'the dot must carry an accessible name').not.toBe('');
     expect(r.dotLabel, 'and it must name the previous value, not just say something changed')
@@ -656,7 +659,7 @@ test('each row sits on its own appointment line as a letter', async ({ page }) =
  * A snapshot that holds one appointment, inside a history that elsewhere holds two, still letters its
  * row. The letter used to be hidden there ("A of 1" says nothing), but it is the line's name now: a
  * bare mark at the foot of the table would leave the reader tracing the line up to learn which one it
- * is. Gulnara's Mar 2026 is the only such snapshot on her page, and it continues her German line.
+ * is. Gulnara's Mar and Sep 2026 are the only such snapshots on her page, and both continue her German line.
  */
 test('the only appointment in a snapshot still names its line', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
@@ -664,7 +667,7 @@ test('the only appointment in a snapshot still names its line', async ({ page })
   const lone = [...bySnapshot(rows).entries()]
     .filter(([, g]) => g.length === 1)
     .map(([snapshot, g]) => `${snapshot}: ${g[0].lane || '(no letter)'} ${g[0].tracked ? 'filled' : 'dashed'}`);
-  expect(lone).toEqual(['Mar 2026: A filled']);
+  expect(lone).toEqual(['Mar 2026: A filled', 'Sep 2026: A filled']);
 });
 
 /**

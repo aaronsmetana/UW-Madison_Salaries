@@ -7,7 +7,7 @@ import {
   IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
   IconArrowsMaximize, IconArrowsMinimize,
 } from '@tabler/icons-react';
-import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useRelease } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
 import { binsFromCounts, countBelow, countWithin, groupCounts, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
@@ -32,7 +32,7 @@ import { STIR_STEP, dragSpeed, stirPath, stirStrength, wakeTurn } from '../lib/d
 import { usePref } from '../lib/prefs';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { areaGradDef } from '../components/chartDefs';
-import type { HomeStats } from '../lib/manifest';
+import type { HomeStats, SearchIndex } from '../lib/manifest';
 import { ordinal } from '../lib/stats';
 
 interface StatData { label: string; value: number | null; format: (n: number) => string; hint?: string }
@@ -2340,7 +2340,7 @@ export default function Home() {
   );
   const starters = useMemo<SearchPick[]>(() => {
     if (!searchIndex || (title && school)) return [];
-    const asTitle = ([code, name, n, med]: [string, string | null, number, number | null]): SearchPick =>
+    const asTitle = ([code, name, n, med]: SearchIndex['titles'][number]): SearchPick =>
       ({ kind: 'title', hit: { code, title: name ?? code, n, med } });
     const asSchool = ([name, n, med]: [string, number, number | null]): SearchPick => ({ kind: 'division', hit: { school: name, n, med } });
     if (!title && !school) {
@@ -2480,6 +2480,7 @@ export default function Home() {
   const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
   const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
   const latestLabel = summary?.latest?.label;
+  const release = useRelease();
 
   // The figures on the line under the search, each a number and what it counts. Median is not among them:
   // it is in the lead under the title, and the graph is a picture of it. The exact payroll is on hover.
@@ -2544,8 +2545,24 @@ export default function Home() {
                 )}
               </Text>
             </div>
-            {/* When, not how many: the headcount is the first figure on the line under the search. */}
-            {latestLabel && <span className="home-asof"><Eyebrow span>Data as of {latestLabel}</Eyebrow></span>}
+            {/* When, not how many — the headcount is the first figure on the line under the search — and
+                what came with it: new data, and the salary ranges when they came out with it. One link to
+                the Data page's account of both, set small; it stays until the next release is the new one. */}
+            {release && (
+              <Anchor
+                component={Link}
+                to="/data#whats-new"
+                className="home-news"
+                underline="never"
+                aria-label={`New: ${release.month} data${release.rangesUpdated ? ', and updated salary ranges' : ''}. What's new`}
+              >
+                <span className="home-news-tag" aria-hidden>New</span>
+                <span className="home-news-text" aria-hidden>
+                  {release.month} data{release.rangesUpdated ? <> <span className="home-news-sep">·</span> Salary ranges updated</> : null}
+                </span>
+                <span className="home-news-arrow" aria-hidden>→</span>
+              </Anchor>
+            )}
           </div>
 
           {phone && pageSearch}

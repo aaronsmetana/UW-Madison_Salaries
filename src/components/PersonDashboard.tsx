@@ -20,6 +20,7 @@ import { usd, num, pct, fullName, fmtDate, spanLabel, fmtChange } from '../lib/f
 import { TipSurface } from './chart/ChartTooltip';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
+import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
 import { PercentileNote } from './PercentileNote';
@@ -290,10 +291,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     () => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id).map((r) => ({ ...r, salary: r.rate_raw }))),
     [rows, latest]
   );
-  const band = useMemo(() => {
-    if (!graded || !grades) return null;
-    return grades.find((g) => g.grade === graded.grade && g.basis === graded.basis) ?? null;
-  }, [graded, grades]);
+  const band = useMemo(() => (graded ? bandFor(grades, graded.grade, graded.basis, graded.comp) : null), [graded, grades]);
 
   const lastSnap = latest?.snapshot_id ?? '';
   // standingSql: the query /person uses, so the printed report cannot rank this person differently.
@@ -609,11 +607,22 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       )}
 
       {/* Pay band */}
-      {band && graded && (
+      {isRange(band) && graded && (
         <Card withBorder padding="lg">
           <CardTitle>Pay band — grade {graded.grade} (full-time rate vs the official range)</CardTitle>
           <PayBandBar min={band.min} max={band.max} value={graded.rate} />
-          <PayBandNote />
+          <PayBandNote snapshotId={latest?.snapshot_id} />
+        </Card>
+      )}
+      {band && !isRange(band) && graded && (
+        <Card withBorder padding="lg">
+          <CardTitle>Grade minimum — grade {graded.grade} (full-time rate vs the official minimum)</CardTitle>
+          <Text size="sm">
+            {belowMinimum(graded.rate, band, graded.basis)
+              ? `The full-time rate, ${usd(graded.rate)}, is ${usd(band.min - graded.rate)} below grade ${graded.grade}'s minimum of ${usd(band.min)}.`
+              : `The full-time rate, ${usd(graded.rate)}, is at or above grade ${graded.grade}'s minimum of ${usd(band.min)}. HR publishes no maximum for this grade.`}
+          </Text>
+          <PayBandNote snapshotId={latest?.snapshot_id} />
         </Card>
       )}
 

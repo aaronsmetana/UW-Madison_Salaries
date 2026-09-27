@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, Switch, ThemeIcon, Select, ScrollArea, VisuallyHidden } from '@mantine/core';
 import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconStack2, IconArrowUp, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId } from '../lib/hooks';
@@ -17,6 +18,8 @@ import { REAL_BASE_YEAR } from '../lib/cpi';
 import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
 import { ICON } from '../lib/ui';
+import { NewBadge } from '../components/NewBadge';
+import { WhatsNew, SalaryRanges, DepartmentRenames } from '../components/WhatsNew';
 
 // 'pos' (not stock Mantine 'green') — the app's own vetted positive palette; plain 'green's light-variant
 // text (green-7, ~2.4:1 on this badge's pale fill) fails WCAG AA, 'pos' clears it comfortably (~5:1).
@@ -140,6 +143,25 @@ function chromeTop(): number {
  *  section is currently in view. */
 function JumpNav({ items }: { items: [string, string][] }) {
   const [active, setActive] = useState(items[0]?.[0] ?? '');
+  // The chrome's height is the nav's own, measured: eleven chips wrap to two lines on a laptop, and a
+  // fixed 108px then landed each section's heading under the second line. Sticky or not, the token the
+  // sections' `scroll-margin-top` and the scrollspy below read follows it.
+  const navRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = navRef.current;
+    if (!el) return undefined;
+    const root = document.documentElement.style;
+    const set = () => {
+      const cs = getComputedStyle(el);
+      if (cs.position === 'sticky') root.setProperty('--data-chrome-top', `${Math.ceil((parseFloat(cs.top) || 0) + el.offsetHeight)}px`);
+      else root.removeProperty('--data-chrome-top');
+    };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    window.addEventListener('resize', set);
+    return () => { ro.disconnect(); window.removeEventListener('resize', set); root.removeProperty('--data-chrome-top'); };
+  }, []);
   useEffect(() => {
     const ids = items.map(([h]) => h.slice(1));
     const els = ids.map((id) => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
@@ -158,7 +180,7 @@ function JumpNav({ items }: { items: [string, string][] }) {
     return () => obs.disconnect();
   }, [items]);
   return (
-    <Group gap="sm" wrap="wrap" className="data-jumpnav">
+    <Group gap="sm" wrap="wrap" className="data-jumpnav" ref={navRef}>
       <Eyebrow>Jump to</Eyebrow>
       {items.map(([href, label]) => (
         <Anchor key={href} href={href} size="xs" underline="never" className={`data-jump-chip${active === href ? ' active' : ''}`}>
@@ -183,6 +205,15 @@ export default function DataHealth() {
   const manifestUrl = `${import.meta.env.BASE_URL}data/manifest.json`;
   const parquetSize = useFileSize(parquetUrl);
   const manifestSize = useFileSize(manifestUrl);
+  // A link from another page to a section here (the landing page's "What's new", a pay band's "salary
+  // structure") lands on it: the router does not scroll to a hash, and the sections only exist once the
+  // manifest is in.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (isLoading || !hash) return undefined;
+    const raf = requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }));
+    return () => cancelAnimationFrame(raf);
+  }, [isLoading, hash]);
 
   // The ingestion table's own box, measured rather than inferred. Held as state, not a ref, so the
   // effect re-runs when the viewport actually mounts — it does not exist during the loading skeleton.
@@ -284,13 +315,16 @@ export default function DataHealth() {
   }
 
   const toc: [string, string][] = [
+    ['#whats-new', "What's new"],
     ['#source', 'Source'],
     ['#disclaimer', 'Accuracy'],
     ['#privacy', 'Privacy'],
     ['#how-it-works', 'Figures'],
+    ['#salary-ranges', 'Ranges'],
     ['#pipeline', 'Pipeline'],
     ['#methodology', 'Method'],
     ['#snapshots', 'Snapshots'],
+    ['#departments', 'Departments'],
     ['#duplicates', 'Duplicates'],
   ];
 
@@ -310,6 +344,10 @@ export default function DataHealth() {
       />
 
       <JumpNav items={toc} />
+
+      <Zone title="What's new" blurb="The newest release, and what came with it.">
+        <WhatsNew />
+      </Zone>
 
       <Zone
         title="What this data is"
@@ -428,6 +466,8 @@ export default function DataHealth() {
           </Text>
         </Stack>
       </Card>
+
+      <SalaryRanges />
 
       </Zone>
 
@@ -590,7 +630,7 @@ export default function DataHealth() {
             return (
             <Table.Tr key={s.snapshot_id} style={{ background: s.note ? 'var(--mantine-color-default-hover)' : undefined }}>
               <Table.Td>
-                <Text size="sm" fw={500}>{s.snapshot_label}</Text>
+                <Text size="sm" fw={500}>{s.snapshot_label}{s.snapshot_id === latestSnap?.snapshot_id && <NewBadge ml={6} />}</Text>
                 {!compact && <Code className="kbd-chip">{s.snapshot_id}</Code>}
               </Table.Td>
               {!compact && (
@@ -645,9 +685,11 @@ export default function DataHealth() {
         </ScrollArea.Autosize>
         <Text size="xs" c="dimmed" mt="sm">
           Hover any column heading for its definition. A <b>shaded row</b> carries a note worth reading — the
-          Nov-2021 TTC relabel, or the Oct-2023 scope change.
+          Nov-2021 TTC relabel, the Oct-2023 scope change, or what the newest release changed.
         </Text>
       </Card>
+
+      <DepartmentRenames />
 
       <DuplicateIdentities snap={snapId} />
       </Zone>

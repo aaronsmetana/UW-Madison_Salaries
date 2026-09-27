@@ -7,6 +7,8 @@ import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutt
 import { actualPay, sameBasis, reportingChange } from '../lib/queries';
 import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
+import { useSummary } from '../lib/hooks';
+import { NewBadge } from './NewBadge';
 
 /**
  * The person page's title & salary history table.
@@ -115,6 +117,8 @@ export function HistoryTable({ rows, comparisons }: {
    *  keyed by the snapshot it ends at. Absent until loaded. */
   comparisons?: ReadonlyMap<string, { text: string }>;
 }) {
+  // The newest release's rows carry "New" (NewBadge), until the next release is the new one.
+  const newestId = useSummary().data?.latest?.id ?? null;
   // Appointment count per snapshot, for the station's tooltip ("A of 2", or "the only one").
   const apptCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -328,13 +332,16 @@ export function HistoryTable({ rows, comparisons }: {
                 )}
                 <Table.Td className="appt-snapshot" data-fold>
                   {apptFirstRow.get(r.snapshot_id) === i && (
-                    <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                    <>
+                      <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
+                      {r.snapshot_id === newestId && <NewBadge ml={4} />}
+                    </>
                   )}
                 </Table.Td>
                 <Table.Td>
                   {/* On a phone the snapshot, the title and the department are one cell. */}
                   {apptFirstRow.get(r.snapshot_id) === i && (
-                    <div className="fold-under"><Badge variant="light" size="sm" mb={4}>{r.snapshot_label}</Badge></div>
+                    <div className="fold-under"><Badge variant="light" size="sm" mb={4}>{r.snapshot_label}</Badge>{r.snapshot_id === newestId && <NewBadge ml={4} />}</div>
                   )}
                   {r.title ?? '—'}
                   {isNew && (

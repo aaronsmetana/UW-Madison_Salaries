@@ -42,14 +42,22 @@ export function matchRank(text: string, q: string): number | null {
 const byRank = <T extends { n: number }>(a: { rank: number; hit: T; name: string }, b: { rank: number; hit: T; name: string }) =>
   a.rank - b.rank || b.hit.n - a.hit.n || a.name.localeCompare(b.name);
 
-/** Titles whose name or job code matches, the closest and then the largest first. */
+/**
+ * Titles whose name, job code or a former name matches, the closest and then the largest first. A former
+ * name (search-index `formerTitlesQuery`: "Admin Asst Dir", now written out) finds the title under its
+ * name today, a half-step behind the same match on the current name.
+ */
 export function matchTitles(index: SearchIndex | undefined, q: string, limit: number = GROUP_LIMIT.titles): TitleHit[] {
   if (!index || norm(q).length < 2) return [];
   const out: { rank: number; hit: TitleHit; name: string }[] = [];
-  for (const [code, title, n, med] of index.titles) {
+  for (const [code, title, n, med, former] of index.titles) {
     const byCode = norm(code) === norm(q) ? 0 : norm(code).startsWith(norm(q)) ? 1 : null;
     const byName = matchRank(title ?? '', q);
-    const rank = Math.min(byCode ?? 9, byName ?? 9);
+    const byFormer = (former ?? []).reduce<number | null>((best, f) => {
+      const r = matchRank(f, q);
+      return r == null ? best : Math.min(best ?? 9, r + 0.5);
+    }, null);
+    const rank = Math.min(byCode ?? 9, byName ?? 9, byFormer ?? 9);
     if (rank < 9) out.push({ rank, hit: { code, title: title ?? code, n, med }, name: title ?? code });
   }
   return out.sort(byRank).slice(0, limit).map((x) => x.hit);

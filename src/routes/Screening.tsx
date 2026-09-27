@@ -15,6 +15,7 @@ import { toReal } from '../lib/cpi';
 import { useSql, useActiveSnapshotId, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, GRADED_APPT, gradedCols } from '../lib/queries';
+import { belowMinimumSql, bandScaleSql } from '../lib/bands';
 import { useTray } from '../state/tray';
 import { computeScreeningResults, type ScreeningResult } from '../lib/screening';
 import { downloadCSV } from '../lib/csv';
@@ -24,13 +25,16 @@ const TENURE_EXPR = `date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_
 interface SubjectRow {
   person_key: string; fn: string | null; ln: string | null; title: string | null; job_code: string | null;
   school: string | null; department: string | null; pay: number; tenure: number | null;
-  grade_number: number | null; grade_basis: string | null; band_rate: number | null; comp_basis: string | null; flsa_status: string | null;
+  grade_number: number | null; grade_basis: string | null; band_rate: number | null; band_comp: string | null;
+  comp_basis: string | null; flsa_status: string | null;
 }
 interface CohortRowSql { person_key: string; job_code: string; comp_basis: string | null; pay: number; tenure: number | null }
 interface HistRowSql { person_key: string; snapshot_date: string; pay: number }
 
 const PAGE_SIZE = 100;
 const DEFAULT_MIN_N = 4;
+/** `?flag=below-min`: the run is of the people paid below their grade's minimum only — Data's link here. */
+const BELOW_MIN = 'below-min';
 
 export default function Screening() {
   /** The scope card, so the empty state can put the cursor in it. */
@@ -55,6 +59,7 @@ export default function Screening() {
       // so a department without one is dropped rather than silently merging every school's unit.
       department: params.get('sch') ? params.get('dept') ?? '' : '',
       minN: Number.isFinite(n) && n >= 2 ? n : DEFAULT_MIN_N,
+      belowMin: params.get('flag') === BELOW_MIN,
     };
   }, [params]);
 
@@ -106,8 +111,11 @@ export default function Screening() {
     return parts.join(' AND ');
   }, [runParams]);
 
+  // Below the minimum, decided here in SQL (lib/bands, the rule the flag uses) so a run of everyone below
+  // it scores those few hundred rather than the whole campus.
+  const belowOnly = !!runParams?.belowMin;
   const { data: subjects, isFetching: loadingSubjects } = useSql<SubjectRow>(
-    ['screen-subjects', snap ?? '', scopeWhere],
+    ['screen-subjects', snap ?? '', scopeWhere, belowOnly],
     `WITH pp AS (
        SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title,
          any_value(job_code) job_code, any_value(school) school, any_value(department) department,
@@ -117,7 +125,9 @@ export default function Screening() {
        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${scopeWhere}
        GROUP BY person_key
      )
-     SELECT * EXCLUDE (graded), ${gradedCols()} FROM pp WHERE pay > 0`,
+     SELECT pp.* EXCLUDE (graded), ${gradedCols('pp.graded')} FROM pp
+     ${belowOnly ? `JOIN grades g ON g."grade" = pp.graded.grade AND g."basis" = pp.graded.basis` : ''}
+     WHERE pay > 0 ${belowOnly ? `AND ${belowMinimumSql('pp.graded.rate', `g."min" * ${bandScaleSql('pp.graded.comp')}`, 'pp.graded.basis')}` : ''}`,
     !!runParams && !!snap
   );
 
@@ -136,14 +146,16 @@ export default function Screening() {
     !!runParams && !!snap && jobCodes.length > 0
   );
 
+  const subjectKeysIn = belowOnly ? (subjects ?? []).map((x) => sqlStr(x.person_key)).join(',') : '';
   const { data: histRows, isFetching: loadingHist } = useSql<HistRowSql>(
-    ['screen-hist', scopeWhere, snap ?? ''],
+    ['screen-hist', scopeWhere, snap ?? '', subjectKeysIn],
     // Scope decides WHO (membership at the latest snapshot), not which rows — then pull each scoped
     // person's FULL pay history regardless of the school/department they held it under. Filtering
     // every snapshot by the scope would truncate a school-mover's earlier pay points and skew the
     // real-erosion flag (which reads the first vs. last point of the series).
     `WITH scoped AS (
        SELECT DISTINCT person_key FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${scopeWhere}
+         ${belowOnly ? `AND person_key IN (${subjectKeysIn || 'NULL'})` : ''}
      ),
      pp AS (
        SELECT s.person_key, s.snapshot_id, any_value(s.snapshot_date) snapshot_date, ${personPay('fte')} pay
@@ -151,7 +163,7 @@ export default function Screening() {
        GROUP BY s.person_key, s.snapshot_id
      )
      SELECT person_key, snapshot_date, pay FROM pp WHERE pay > 0`,
-    !!runParams && !!snap
+    !!runParams && !!snap && (!belowOnly || !!subjects)
   );
 
   const loading = loadingSubjects || loadingCohort || loadingHist;
@@ -162,7 +174,7 @@ export default function Screening() {
       subjects: subjects.map((s) => ({
         person_key: s.person_key, name: fullName(s.fn, s.ln) || s.person_key, title: s.title, job_code: s.job_code,
         school: s.school, department: s.department, pay: s.pay, tenure: s.tenure,
-        grade_number: s.grade_number, grade_basis: s.grade_basis, band_rate: s.band_rate, comp_basis: s.comp_basis, flsa_status: s.flsa_status,
+        grade_number: s.grade_number, grade_basis: s.grade_basis, band_rate: s.band_rate, band_comp: s.band_comp, comp_basis: s.comp_basis, flsa_status: s.flsa_status,
       })),
       cohortRows: (cohortRows ?? []).map((r) => ({ person_key: r.person_key, job_code: r.job_code, comp_basis: r.comp_basis, pay: r.pay, tenure: r.tenure })),
       payHistory: (histRows ?? []).map((r) => ({ person_key: r.person_key, year: Number(String(r.snapshot_date).slice(0, 4)), pay: r.pay })),
@@ -213,12 +225,16 @@ export default function Screening() {
         compression: r.compressionCount,
         full_time_rate: r.bandRate != null ? Math.round(r.bandRate) : '',
         compa_ratio: r.marketCompa != null ? r.marketCompa.toFixed(2) : '',
+        below_grade_minimum: r.belowMin ? 'yes' : 'no',
         below_market: r.belowMarket ? 'yes' : 'no',
         real_dollar_decline: r.realErosion ? 'yes' : 'no',
         case_strength: r.scoreLabel,
         score: r.score,
       }))
     );
+
+  const clearBelowMin = () =>
+    setParams((prev) => { const n = new URLSearchParams(prev); n.delete('flag'); return n; }, { replace: true });
 
   const draftReport = (r: ScreeningResult) => {
     add({ type: 'person', id: r.key, label: r.name });
@@ -303,17 +319,29 @@ export default function Screening() {
         />
       ) : loading ? (
         <LoadingState label="Screening…" />
+      ) : results.length === 0 && belowOnly ? (
+        <EmptyState
+          icon={<IconListSearch size={ICON.feature} />}
+          title="No one in scope is paid below their grade's minimum"
+          hint="Screen everyone in scope to rank them on every test."
+          action={<Button variant="light" onClick={clearBelowMin}>Screen everyone in scope</Button>}
+        />
       ) : results.length === 0 ? (
         <EmptyState icon={<IconListSearch size={ICON.feature} />} title="No one in scope" hint="Try a broader school/department." />
       ) : (
         <Card withBorder padding={0}>
           <Group justify="space-between" p="md" pb="xs" wrap="wrap" gap="sm">
-            <Text size="sm" c="dimmed">
-              {results.length} people ranked by case strength{showAll || results.length <= PAGE_SIZE ? '' : ` — showing top ${PAGE_SIZE}`}.
+            <Text size="sm" c="dimmed" className="screen-count">
+              {results.length} {belowOnly ? `${results.length === 1 ? 'person' : 'people'} paid below their grade's minimum, ranked` : 'people ranked'} by case strength{showAll || results.length <= PAGE_SIZE ? '' : ` — showing top ${PAGE_SIZE}`}.
             </Text>
-            <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.inline} />} onClick={exportCsv}>
-              CSV
-            </Button>
+            <Group gap="xs">
+              {belowOnly && (
+                <Button size="xs" variant="subtle" onClick={clearBelowMin}>Screen everyone in scope</Button>
+              )}
+              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.inline} />} onClick={exportCsv}>
+                CSV
+              </Button>
+            </Group>
           </Group>
           <ScrollArea.Autosize mah={720} type="auto">
             <Table stickyHeader striped highlightOnHover>
@@ -342,9 +370,10 @@ export default function Screening() {
                         {r.tooFewPeers && <Badge size="sm" variant="light" color="gray">Too few peers</Badge>}
                         {r.tenureInvCount > 0 && <Badge size="sm" variant="light" color="red">Inversion ×{r.tenureInvCount}</Badge>}
                         {r.compressionCount > 0 && <Badge size="sm" variant="light" color={r.compressionInvertedCount > 0 ? 'red' : 'orange'}>Compression ×{r.compressionCount}</Badge>}
+                        {r.belowMin && <Badge size="sm" variant="light" color="red">Below grade minimum</Badge>}
                         {r.belowMarket && <Badge size="sm" variant="light" color="orange">Below market floor</Badge>}
                         {r.realErosion && <Badge size="sm" variant="light" color="orange">Real-dollar decline</Badge>}
-                        {!r.tooFewPeers && r.tenureInvCount === 0 && r.compressionCount === 0 && !r.belowMarket && !r.realErosion && (
+                        {!r.tooFewPeers && r.tenureInvCount === 0 && r.compressionCount === 0 && !r.belowMin && !r.belowMarket && !r.realErosion && (
                           <Badge size="sm" variant="light" color="gray">No flags</Badge>
                         )}
                       </Group>
@@ -364,11 +393,15 @@ export default function Screening() {
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
-          {/* "Below market floor" is a pay-band figure, so it carries what the loaded bands cover. */}
-          {results.some((r) => r.belowMarket) && (
+          {/* The two band flags are pay-band figures, so they carry what the loaded bands cover. */}
+          {results.some((r) => r.belowMarket || r.belowMin) && (
             <Box px="md" pt="xs" className="below-market-note">
-              <Text size="xs" c="dimmed">"Below market floor" compares the full-time rate of the appointment that carries the grade with 85% of that grade's official band midpoint.</Text>
-              <PayBandNote mt={2} />
+              <Text size="xs" c="dimmed">
+                Both flags read the full-time rate of the appointment that carries the grade. "Below grade minimum"
+                compares it with the grade's published minimum, to HR's rounding; "Below market floor" with 85% of the
+                band's midpoint, where HR publishes a range.
+              </Text>
+              <PayBandNote mt={2} snapshotId={snap} />
             </Box>
           )}
           {!showAll && results.length > PAGE_SIZE && (

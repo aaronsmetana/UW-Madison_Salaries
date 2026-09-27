@@ -36,14 +36,14 @@ test('box plots on Titles and Schools give every row the same pixels per $10k', 
   }
 });
 
-test('the pay-band note sits beside pay-band figures, not in a banner over Divisions', async ({ page }) => {
+test('the pay-band note sits beside pay-band figures, not in a banner over Divisions, and names its source', async ({ page }) => {
   const ref = JSON.parse(readFileSync(new URL('reference-status.json', DATA), 'utf8'));
-  const grades: { grade: number; basis: string }[] = JSON.parse(readFileSync(new URL('grades.json', DATA), 'utf8'));
-  expect(ref.status, 'the reference is partial, so there is a note to give').not.toBe('ok');
+  const grades: { grade: number; basis: string; max: number | null }[] = JSON.parse(readFileSync(new URL('grades.json', DATA), 'utf8'));
+  expect(ref.status, 'the whole structure is loaded, so the note names where it comes from').toBe('ok');
   const snap = await latestSnapshot();
   const [p] = await oracle<{ pk: string }>(
     `SELECT person_key pk FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0
-       AND (${grades.map((g) => `(grade_number = ${g.grade} AND grade_basis = '${g.basis}')`).join(' OR ')})
+       AND (${grades.filter((g) => g.max != null).map((g) => `(grade_number = ${g.grade} AND grade_basis = '${g.basis}')`).join(' OR ')})
      GROUP BY person_key HAVING count(*) = 1 ORDER BY 1 LIMIT 1`
   );
 
@@ -55,7 +55,14 @@ test('the pay-band note sits beside pay-band figures, not in a banner over Divis
   await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=pay`);
   const card = page.locator('.mantine-Card-root').filter({ hasText: 'official HR range' });
   await expect(card).toBeVisible({ timeout: 60_000 });
-  await expect(card.locator('.payband-note')).toContainText(`${ref.matched_rows.toLocaleString('en-US')} of ${ref.graded_rows.toLocaleString('en-US')} graded appointments`);
+  const retrieved = new Date(`${ref.retrieved_at}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  await expect(card.locator('.payband-note')).toHaveText(`Official ranges: UW–Madison salary structure, retrieved ${retrieved}.`);
+  // The coverage caveat is for a partial reference, and this one is not.
+  await expect(card.locator('.payband-note')).not.toContainText('graded appointments');
+  // Its source is a link to the ranges themselves, and lands on them.
+  await card.locator('.payband-source').click();
+  await expect(page).toHaveURL(/\/data#salary-ranges$/);
+  await expect(page.locator('#salary-ranges')).toBeInViewport({ timeout: 60_000 });
 });
 
 test('a school row opens the school; its chevron and add button do not; its departments link inside it', async ({ page }) => {
@@ -211,25 +218,68 @@ test('Retention by hire year labels its years without overlap on a phone, in bot
   }
 });
 
-test('Changes: when almost no one moved, the no-change bar is cut and the raises are drawn to scale', async ({ page }) => {
+/** Changes, on the pair `from` → `to` (snapshot labels), once its raise distribution is in. */
+async function changesPair(page: Page, from: string, to: string) {
   await tab(page, 'changes');
   const card = page.locator('.raise-dist-card');
   await expect(card).toHaveAttribute('data-raise-counts', /,/, { timeout: 60_000 });
+  for (const [label, value] of [['From', from], ['To', to]] as const) {
+    await page.getByRole('textbox', { name: label, exact: true }).click();
+    await page.getByRole('option', { name: value, exact: true }).click();
+  }
+  await expect(page.getByText(`Between ${from} and ${to}`)).toBeVisible({ timeout: 60_000 });
+  await expect(card).toHaveAttribute('data-raise-counts', /,/, { timeout: 60_000 });
+  await page.waitForTimeout(500);
   const counts = (await card.getAttribute('data-raise-counts'))!.split(',').map((x) => x.split(':').map(Number));
+  return { card, counts };
+}
+
+test('Changes: when almost no one moved, the no-change bar is cut and the raises are drawn to scale', async ({ page }) => {
+  // Sep 2025 → Mar 2026 had no pay-plan step: nearly everyone's pay stood still.
+  const { card, counts } = await changesPair(page, 'Sep 2025', 'Mar 2026');
   const zero = counts.find(([k]) => k === 0)?.[1] ?? 0;
   const other = Math.max(...counts.filter(([k]) => k !== 0).map(([, n]) => n));
-  // The default step, Sep 2025 → Mar 2026, is such a period; if a data build ever changes that, this
-  // test needs another period rather than a weaker assertion.
-  expect(zero, 'the default step has far more people at 0% than in any raise bin').toBeGreaterThan(3 * other);
+  expect(zero, 'that step has far more people at 0% than in any raise bin').toBeGreaterThan(3 * other);
   await expect(card).toHaveAttribute('data-raise-cap', /^\d+$/);
+  await expect(card).toHaveAttribute('data-raise-capped', '0');
   const ticks = (await card.locator('.recharts-yAxis .recharts-cartesian-axis-tick-value').allTextContents()).map((t) => Number(t.replace(/,/g, '')));
   expect(Math.max(...ticks), 'the axis stops below the no-change count').toBeLessThan(zero);
   await expect(card.locator('.raise-zero-label')).toHaveText(zero.toLocaleString('en-US'));
-  await expect(card.locator('.raise-zero-break')).toHaveCount(1);
+  await expect(card.locator('.raise-cap-break')).toHaveCount(1);
   const plot = (await card.locator('.recharts-cartesian-grid').boundingBox())!;
   const tallest = Math.max(...(await card.locator('.raise-bin-up').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))));
   expect(tallest / plot.height, 'the largest raise bin fills most of the plot').toBeGreaterThanOrEqual(0.6);
   expect(await card.locator('.recharts-xAxis .recharts-cartesian-axis-tick-value').allTextContents()).toContain('0%');
+  // No one raise is shared by most: no step to name.
+  await expect(page.locator('.changes-step-note')).toHaveCount(0);
+});
+
+/**
+ * Mar → Sep 2026 is the other shape: a pay-plan step put 81% at one raise. Its bar is cut in turn, so the
+ * rest read, and the step is said in a line — at 0.1%, as raise-steps.json (the ETL's own count) has it.
+ * Binned raw, cent rounding had split that one raise across "+2%" and "+3%".
+ */
+test('Changes: a pay-plan step is one bar, cut to let the rest read, and said in a line', async ({ page }) => {
+  const steps = JSON.parse(readFileSync(new URL('raise-steps.json', DATA), 'utf8'));
+  const st = steps.metrics.fte.at(-1);
+  const total = st.hist.reduce((t: number, [, c]: [number, number]) => t + c, 0);
+  const [k, c] = st.hist.reduce((b: [number, number], h: [number, number]) => (h[1] > b[1] ? h : b), [0, 0]);
+  expect(c / total, 'the newest step is no longer a pay-plan step; this needs another pair').toBeGreaterThan(0.5);
+  await tab(page, 'changes');
+  const card = page.locator('.raise-dist-card');
+  await expect(card).toHaveAttribute('data-raise-counts', /,/, { timeout: 60_000 });
+  const counts = new Map((await card.getAttribute('data-raise-counts'))!.split(',').map((x) => x.split(':').map(Number) as [number, number]));
+  const bin = Math.ceil(k * steps.hist_step * 100 - 1e-9);
+  // Every raise printed as that one is in its bin: none spilled into the next.
+  expect(counts.get(bin)!, 'the step spilled out of its bin').toBeGreaterThanOrEqual(c);
+  expect(counts.get(bin)! - c, 'more in the step\'s bin than raises near it').toBeLessThan(total * 0.02);
+  await expect(card).toHaveAttribute('data-raise-capped', String(bin));
+  await expect(card.locator('.raise-cap-label')).toHaveText(counts.get(bin)!.toLocaleString('en-US'));
+  await expect(card.locator('.raise-cap-break')).toHaveCount(1);
+  const note = page.locator('.changes-step-note');
+  await expect(note).toHaveAttribute('data-common-raise', String(Math.round(k * steps.hist_step * 1000) / 1000));
+  await expect(note).toContainText(`${Math.round((c / total) * 100)}% of the ${total.toLocaleString('en-US')} who kept the same title`);
+  await expect(note).toContainText(`raised exactly ${(k * steps.hist_step * 100).toFixed(1)}%`);
 });
 
 for (const scheme of ['light', 'dark'] as const) {

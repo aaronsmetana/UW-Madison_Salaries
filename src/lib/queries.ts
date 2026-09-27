@@ -117,27 +117,32 @@ export function personPay(metric: Metric): string {
  * the rows where their own column is NULL, and could each land on a different appointment. Ties go to
  * the higher rate, then the higher grade, so the pick never depends on row order.
  *
+ * Its `comp_basis` comes along: it says which units that snapshot reported the rate in (lib/bands `bandFor`).
+ *
  * Use as a column in a `GROUP BY person_key` query, then read it with `gradedCols` one level up.
  */
-export const GRADED_APPT = `arg_max({grade: grade_number, basis: grade_basis, rate: salary}, {pay: ${ACTUAL_PAY}, rate: salary, grade: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
+export const GRADED_APPT = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, {pay: ${ACTUAL_PAY}, rate: salary, grade: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
 
-/** `GRADED_APPT`'s fields as plain columns: `grade_number`, `grade_basis` and `band_rate`. */
+/** `GRADED_APPT`'s fields as plain columns: `grade_number`, `grade_basis`, `band_rate` and `band_comp`. */
 export const gradedCols = (col = 'graded') =>
-  `${col}.grade AS grade_number, ${col}.basis AS grade_basis, ${col}.rate AS band_rate`;
+  `${col}.grade AS grade_number, ${col}.basis AS grade_basis, ${col}.rate AS band_rate, ${col}.comp AS band_comp`;
 
 /** `GRADED_APPT` for rows already fetched — the person pages read one snapshot's rows client-side. */
 export function gradedAppt(
-  rows: readonly { salary: number | null; salary_fte_adjusted: number | null; fte: number | null; grade_number: number | null; grade_basis: string | null }[]
-): { grade: number; basis: string | null; rate: number } | null {
-  let best: { grade: number; basis: string | null; rate: number; pay: number } | null = null;
+  rows: readonly {
+    salary: number | null; salary_fte_adjusted: number | null; fte: number | null;
+    grade_number: number | null; grade_basis: string | null; comp_basis?: string | null;
+  }[]
+): { grade: number; basis: string | null; rate: number; comp: string | null } | null {
+  let best: { grade: number; basis: string | null; rate: number; comp: string | null; pay: number } | null = null;
   for (const r of rows) {
     if (!(r.salary && r.salary > 0) || r.grade_number == null) continue;
     const pay = actualPay(r);
     if (!best || pay > best.pay || (pay === best.pay && (r.salary > best.rate || (r.salary === best.rate && r.grade_number > best.grade)))) {
-      best = { grade: r.grade_number, basis: r.grade_basis, rate: r.salary, pay };
+      best = { grade: r.grade_number, basis: r.grade_basis, rate: r.salary, comp: r.comp_basis ?? null, pay };
     }
   }
-  return best && { grade: best.grade, basis: best.basis, rate: best.rate };
+  return best && { grade: best.grade, basis: best.basis, rate: best.rate, comp: best.comp };
 }
 
 /**

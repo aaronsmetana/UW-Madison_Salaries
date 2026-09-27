@@ -4,6 +4,9 @@
 import { cohortStats, buildGuidelineCompression, caseStrength, type CaseStrength } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { sameBasis } from './queries';
+import { bandFor, belowMinimum, isRange, type GradeBand } from './bands';
+
+export type { GradeBand };
 
 export interface ScreeningSubject {
   person_key: string;
@@ -19,6 +22,8 @@ export interface ScreeningSubject {
   /** The full-time rate of the appointment that carries the grade (queries `GRADED_APPT`) — what the
    *  band is compared with. `pay` is the metric's pay, summed across appointments: not a band's unit. */
   band_rate: number | null;
+  /** That appointment's `comp_basis`, which says what units its rate is in (lib/bands `bandFor`). */
+  band_comp?: string | null;
   comp_basis: string | null;
   flsa_status: string | null;
 }
@@ -35,13 +40,6 @@ export interface PayPoint {
   person_key: string;
   year: number;
   pay: number;
-}
-
-export interface GradeBand {
-  grade: number;
-  basis: string;
-  min: number;
-  max: number;
 }
 
 export interface ScreeningResult {
@@ -63,6 +61,8 @@ export interface ScreeningResult {
   marketCompa: number | null;
   /** The rate the band was read against, when there was a band. */
   bandRate: number | null;
+  /** The full-time rate is below the grade's published minimum — a range's or a minimum-only grade's. */
+  belowMin: boolean;
   realErosion: boolean; // nominal pay grew, but real (CPI-adjusted) pay declined
   score: number;
   scoreLabel: CaseStrength['label'];
@@ -137,12 +137,14 @@ export function computeScreeningResults(opts: {
     const gc = tooFewPeers ? null : buildGuidelineCompression(s.pay, s.tenure, cohortForStats, exempt);
 
     // The band against the full-time rate of the graded appointment, never against `pay`: a half-time
-    // appointment earns half its rate, and would read as far below any band.
-    const band = grades.find((g) => g.grade === s.grade_number && g.basis === s.grade_basis);
+    // appointment earns half its rate, and would read as far below any band. A grade published with a
+    // minimum only can say one thing — whether the rate is below it.
+    const band = bandFor(grades, s.grade_number, s.grade_basis, s.band_comp);
     const rate = s.band_rate;
+    const belowMin = belowMinimum(rate, band, s.grade_basis);
     let belowMarket = false;
     let marketCompa: number | null = null;
-    if (band && rate != null && rate > 0 && band.max > band.min) {
+    if (isRange(band) && rate != null && rate > 0) {
       const mid = (band.min + band.max) / 2;
       const compa = rate / mid;
       const pir = (rate - band.min) / (band.max - band.min);
@@ -190,7 +192,8 @@ export function computeScreeningResults(opts: {
       compressionInvertedCount: gc?.invertedCount ?? 0,
       belowMarket,
       marketCompa,
-      bandRate: marketCompa != null ? rate : null,
+      bandRate: band && rate != null && rate > 0 ? rate : null,
+      belowMin,
       realErosion,
       score: strength.score,
       scoreLabel: strength.label,

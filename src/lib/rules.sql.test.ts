@@ -191,12 +191,13 @@ describe('GRADED_APPT', () => {
     r('g', '2026-01-01', 'unpaid', 'J1', 0, { grade_number: 15 }),
     r('g', '2026-01-01', 'unpaid', 'J3', 70000, { grade_number: null, grade_basis: null }),
   ];
+  // The appointment's comp_basis comes along: it says the units its rate was reported in (lib/bands).
   const WANT = {
-    half: { grade: 15, basis: 'annual_12mo', rate: 60000 },
-    two: { grade: 15, basis: 'annual_12mo', rate: 50000 },
-    ungraded: { grade: 17, basis: 'annual_12mo', rate: 40000 },
-    nobasis: { grade: 22, basis: null, rate: 90000 },
-    tie: { grade: 25, basis: 'annual_12mo', rate: 80000 },
+    half: { grade: 15, basis: 'annual_12mo', rate: 60000, comp: 'Annual' },
+    two: { grade: 15, basis: 'annual_12mo', rate: 50000, comp: 'Annual' },
+    ungraded: { grade: 17, basis: 'annual_12mo', rate: 40000, comp: 'Annual' },
+    nobasis: { grade: 22, basis: null, rate: 90000, comp: 'Annual' },
+    tie: { grade: 25, basis: 'annual_12mo', rate: 80000, comp: 'Annual' },
     unpaid: null,
   };
 
@@ -204,10 +205,10 @@ describe('GRADED_APPT', () => {
     const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
     await all(`CREATE TABLE graded AS SELECT * FROM salaries WHERE FALSE`);
     await all(`INSERT INTO graded VALUES ${G.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n')}`);
-    const rows = await all<{ person_key: string; grade_number: number | null; grade_basis: string | null; band_rate: number | null }>(
+    const rows = await all<{ person_key: string; grade_number: number | null; grade_basis: string | null; band_rate: number | null; band_comp: string | null }>(
       `SELECT person_key, ${gradedCols()} FROM (SELECT person_key, ${GRADED_APPT} graded FROM graded GROUP BY person_key) ORDER BY person_key`
     );
-    const got = Object.fromEntries(rows.map((x) => [x.person_key, x.grade_number == null ? null : { grade: x.grade_number, basis: x.grade_basis, rate: x.band_rate }]));
+    const got = Object.fromEntries(rows.map((x) => [x.person_key, x.grade_number == null ? null : { grade: x.grade_number, basis: x.grade_basis, rate: x.band_rate, comp: x.band_comp }]));
     expect(got).toEqual(WANT);
   });
 
@@ -219,6 +220,7 @@ describe('GRADED_APPT', () => {
           gradedAppt(order.filter((x) => x.person_key === k).map((x) => ({
             salary: x.salary as number, salary_fte_adjusted: x.salary_fte_adjusted as number | null, fte: x.fte as number | null,
             grade_number: x.grade_number as number | null, grade_basis: x.grade_basis as string | null,
+            comp_basis: x.comp_basis as string | null,
           }))),
         ])
       );

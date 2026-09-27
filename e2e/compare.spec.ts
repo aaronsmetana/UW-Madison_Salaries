@@ -1,15 +1,19 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY } from './oracle';
+import { oracle, PAY, latestSnapshot } from './oracle';
 
 const AARON = 'aaronsmetana|2014-10-15';
 
-/** Two of Aaron's System Engineer IV colleagues who held one appointment in every snapshot. */
+/** Two of Aaron's System Engineer IV colleagues who held one appointment in every snapshot there is. */
 async function colleagues() {
-  return oracle<{ pk: string; nm: string }>(
+  const snap = await latestSnapshot();
+  const people = await oracle<{ pk: string; nm: string }>(
     `SELECT person_key pk, arg_max(first_name || ' ' || last_name, snapshot_date) nm FROM $SAL
-     WHERE person_key IN (SELECT person_key FROM $SAL WHERE snapshot_id = '2026-03' AND job_code = 'IT040') AND person_key <> '${AARON}'
-     GROUP BY 1 HAVING count(*) = count(DISTINCT snapshot_id) AND count(DISTINCT snapshot_id) = 10 ORDER BY 1 LIMIT 2`
+     WHERE person_key IN (SELECT person_key FROM $SAL WHERE snapshot_id = '${snap}' AND job_code = 'IT040') AND person_key <> '${AARON}'
+     GROUP BY 1 HAVING count(*) = count(DISTINCT snapshot_id) AND count(DISTINCT snapshot_id) = (SELECT count(DISTINCT snapshot_id) FROM $SAL)
+     ORDER BY 1 LIMIT 2`
   );
+  expect(people, 'no two colleagues are in every snapshot, so the charts would draw Aaron alone').toHaveLength(2);
+  return people;
 }
 
 /** Compare, opened on a shared link holding these people. */

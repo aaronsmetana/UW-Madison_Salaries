@@ -39,6 +39,7 @@ import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
+import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { PeerStrip } from '../components/PeerStrip';
 import { ChartData } from '../components/ChartData';
 import { PercentileNote } from '../components/PercentileNote';
@@ -116,7 +117,7 @@ function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
  */
 const TREND_DASH = { median: '6 4', gradeBand: '4 4', era: '2 4', typical: '2 3' } as const;
 
-function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = false }: { hasTitleChange: boolean; hasFte: boolean; gradeBand: { grade: number | null; min: number; max: number } | null; mode: 'actual' | 'rate'; hasTypical?: boolean }) {
+function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = false }: { hasTitleChange: boolean; hasFte: boolean; gradeBand: { grade: number | null; min: number; max: number | null } | null; mode: 'actual' | 'rate'; hasTypical?: boolean }) {
   const item = (swatch: ReactNode, label: string) => (
     <Group gap={6} wrap="nowrap" align="center">
       {swatch}
@@ -141,7 +142,10 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} /></svg>,
         // The values used to sit on the lines themselves, right-aligned — exactly where the latest
         // snapshot's chip lands, so "grade min $70,720" printed through "+3.0%".
-        `${gradeBand.grade != null ? `Grade ${gradeBand.grade}` : 'Grade'} band ${usd(gradeBand.min)} – ${usd(gradeBand.max)}`,
+        // A grade published with a minimum only draws that one line, and says so.
+        gradeBand.max == null
+          ? `${gradeBand.grade != null ? `Grade ${gradeBand.grade}` : 'Grade'} minimum ${usd(gradeBand.min)}`
+          : `${gradeBand.grade != null ? `Grade ${gradeBand.grade}` : 'Grade'} band ${usd(gradeBand.min)} – ${usd(gradeBand.max)}`,
       )}
       {hasFte && item(
         <svg width={22} height={12} aria-hidden>
@@ -564,10 +568,10 @@ export default function Person() {
   // last: for someone holding two, neither is the band's.
   const graded = useMemo(() => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id)), [rows, latest]);
   const bandRate = graded?.rate ?? null;
-  const band = useMemo(() => {
-    if (!graded || !grades) return null;
-    return grades.find((g) => g.grade === graded.grade && g.basis === graded.basis) ?? null;
-  }, [graded, grades]);
+  // The grade's range, or its minimum when HR publishes only that (lib/bands) — in the units the person's
+  // own latest snapshot reports pay in.
+  const band = useMemo(() => (graded ? bandFor(grades, graded.grade, graded.basis, graded.comp) : null), [graded, grades]);
+  const range = isRange(band) ? band : null;
 
   const lastSnap = latest?.snapshot_id ?? '';
   // Where this pay stands in each pool the person belongs to (standingSql — the one query the printed
@@ -810,7 +814,7 @@ export default function Person() {
       ? r1((Math.pow(t / from, 1 / years) - 1) * 100)
       : null;
   const medTargetPct = targetRaisePct(peer?.med_rate);
-  const maxTargetPct = band ? targetRaisePct(band.max, bandRate) : null;
+  const maxTargetPct = range ? targetRaisePct(range.max, bandRate) : null;
 
   if (isLoading) return <LoadingState label="Loading person…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
@@ -1250,30 +1254,46 @@ export default function Person() {
 
       {/* 4b — Pay band: full-time rate within the OFFICIAL grade range + headroom. (Title median/p75 live on
               the Overview title bar, so this card is purely the HR grade-structure lens.) */}
-      {band && bandRate != null && (
+      {range && bandRate != null && (
         <Card withBorder padding="lg" className="person-payband">
           <CardTitle
             sub={<>Where the full-time rate sits in grade {graded?.grade}'s official min–max, and the room to the top.</>}
           >
             Pay band — grade {graded?.grade} · official HR range
           </CardTitle>
-          <PayBandBar min={band.min} max={band.max} value={bandRate} quartiles />
+          <PayBandBar min={range.min} max={range.max} value={bandRate} quartiles />
           {bandRate !== lastRate && (
             <Text size="xs" c="dimmed" mt={4} className="payband-rate">
               Placed on the full-time rate of the appointment in grade {graded?.grade}, {usd(bandRate)}.
             </Text>
           )}
-          <PayBandNote mt="sm" />
-          {bandRate >= band.max ? (
+          <PayBandNote mt="sm" snapshotId={latest?.snapshot_id} />
+          {bandRate >= range.max ? (
             <Text size="sm" mt="md">
-              At or above the top of grade {graded?.grade}'s band (max {usd(band.max)}) — effectively maxed out.
+              At or above the top of grade {graded?.grade}'s band (max {usd(range.max)}) — effectively maxed out.
             </Text>
           ) : (
             <Text size="sm" mt="md">
-              <Text span fw={700} c="pos.7" className="pos-adaptive-text">{usd(band.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
-              <Text span c="dimmed"> (grade max {usd(band.max)}).</Text>
+              <Text span fw={700} c="pos.7" className="pos-adaptive-text">{usd(range.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
+              <Text span c="dimmed"> (grade max {usd(range.max)}).</Text>
             </Text>
           )}
+        </Card>
+      )}
+      {/* A grade HR publishes with a minimum only: whether the rate clears it, and no band to place it in. */}
+      {band && !range && bandRate != null && (
+        <Card withBorder padding="lg" className="person-payband person-payfloor">
+          <CardTitle sub={<>HR publishes a minimum for grade {graded?.grade} and no maximum, so there is no range to place the rate in.</>}>
+            Grade minimum — grade {graded?.grade} · official HR minimum
+          </CardTitle>
+          <Text size="sm" className="payfloor-line">
+            {belowMinimum(bandRate, band, graded?.basis) ? (
+              <>The full-time rate, {usd(bandRate)}, is <Text span fw={700} className="red-adaptive-text">{usd(band.min - bandRate)} below</Text> grade {graded?.grade}&apos;s minimum of {usd(band.min)}.</>
+            ) : (
+              <>The full-time rate, {usd(bandRate)}, is at or above grade {graded?.grade}&apos;s minimum of {usd(band.min)}.</>
+            )}
+          </Text>
+          <PayBandNote mt="sm" snapshotId={latest?.snapshot_id} />
         </Card>
       )}
 
@@ -1322,24 +1342,24 @@ export default function Person() {
             </div>
           </Group>
 
-          {band && bandRate != null && projectedBandRate != null && (
+          {range && bandRate != null && projectedBandRate != null && (
             <div style={{ marginTop: 'var(--mantine-spacing-md)' }}>
               <Text size="xs" c="dimmed" mb={6}>Projected position in {years}y (gray tick = today)</Text>
-              <PayBandBar min={band.min} max={band.max} value={projectedBandRate} benchmarks={[{ value: bandRate, label: 'today' }]} />
+              <PayBandBar min={range.min} max={range.max} value={projectedBandRate} benchmarks={[{ value: bandRate, label: 'today' }]} />
             </div>
           )}
 
-          {band && bandRate != null && bandRate >= band.max && (
+          {range && bandRate != null && bandRate >= range.max && (
             <Text size="xs" c="dimmed" mt="md">
-              This rate is already at or above the top of grade {graded?.grade}'s pay band ({usd(band.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
+              This rate is already at or above the top of grade {graded?.grade}'s pay band ({usd(range.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
             </Text>
           )}
-          {band && bandRate != null && bandRate < band.max && pctRaise > 0 && (
+          {range && bandRate != null && bandRate < range.max && pctRaise > 0 && (
             <Text size="xs" c="dimmed" mt="md">
-              At {pctRaise}%/yr, ~{Math.ceil(Math.log(band.max / bandRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(band.max)}).
+              At {pctRaise}%/yr, ~{Math.ceil(Math.log(range.max / bandRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(range.max)}).
             </Text>
           )}
-          {pctRaise === 0 && (
+          {range && pctRaise === 0 && (
             <Text size="xs" c="dimmed" mt="md">Enter a raise above 0% to project years to the band max.</Text>
           )}
         </Card>
@@ -1407,7 +1427,7 @@ export default function Person() {
             {trendBand && (
               <ReferenceLine yAxisId="pay" y={trendBand.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
             )}
-            {trendBand && (
+            {trendBand?.max != null && (
               <ReferenceLine yAxisId="pay" y={trendBand.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
             )}
             {/* Title-change dividers segment the chart into title eras; each era's title sits above it

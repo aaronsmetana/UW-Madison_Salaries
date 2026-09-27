@@ -73,6 +73,13 @@ async function ready(page: Page) {
 async function sweep(page: Page, b: { x: number; y: number; width: number; height: number }, steps = 60) {
   type Box = { x: number; y: number; width: number; height: number };
   const out: { key: string | null; cap: Box | null; lens: Box }[] = [];
+  // Slid into, the way a hand arrives, rather than jumped to: the packed core has gaps a pixel or two wide,
+  // where by design no one is named (WHO_REACH), and a pointer set down in one names no one until it moves.
+  // The Sep 2026 field put one exactly on the first step.
+  for (let dx = 8; dx > 0; dx--) {
+    await page.mouse.move(b.x + b.width * 0.28 - dx, b.y + b.height * 0.78);
+    await page.waitForTimeout(15);
+  }
   for (let k = 0; k < steps; k++) {
     await page.mouse.move(b.x + b.width * 0.28 + k * 1.3, b.y + b.height * 0.78);
     await page.waitForTimeout(40);
@@ -250,12 +257,14 @@ test('the glass keeps the name it is on while the pointer barely moves', async (
     if (!rough) continue;
     for (let y = rough - 8; y <= rough && !spot; y++) {
       const k = await land({ x, y });
-      if (y === rough - 8) expect(k, 'the sweep started inside the dots, not above them').toBeNull();
+      // A stray dot a few pixels above the column's top, with sky between — the coarse sweep stepped over
+      // it. That is not a top with sky right above it, so this column cannot show a hold; try the next.
+      if (y === rough - 8 && k) break;
       if (k) { spot = { x, y }; key = k; }
     }
     if (spot) break;
   }
-  expect(key, 'the glass named no one to hold on to').toBeTruthy();
+  expect(key, 'no column had a top with sky above it, or the glass named no one to hold on to').toBeTruthy();
   // A hand resting on a dot: a pixel this way or that is not a move to somebody else.
   for (const [dx, dy] of [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) {
     await page.mouse.move(spot!.x + dx, spot!.y + dy);

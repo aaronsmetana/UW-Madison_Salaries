@@ -36,8 +36,37 @@ export interface Summary {
   snapshot_count: number;
   /** `median` is over people (summed actual pay per person), like every median in the app;
    *  `median_rows` is the per-appointment figure, for the data-health page. */
-  snapshots: { id: string; label: string; date: string; rows: number; median: number | null; median_rows?: number | null }[];
+  snapshots: { id: string; label: string; date: string; rows: number; headcount?: number | null; median: number | null; median_rows?: number | null }[];
   latest: { id: string; label: string; headcount: number; median: number | null; median_rows?: number | null } | null;
+  /** Divisions formed from whole departments of others, step by step (normalize `divisionReorganizations`). */
+  reorganizations?: Reorganization[];
+}
+
+/** A division new at `to_id`, formed from whole departments of the divisions in `from`. */
+export interface Reorganization {
+  from_id: string;
+  to_id: string;
+  school: string;
+  /** Its people at `to_id`. */
+  people: number;
+  /** Each division whole departments came from: how many people came from it, and which departments. */
+  from: { school: string; people: number; departments: string[] }[];
+}
+
+/** departments.json: each step's department renames carried, mergers left apart, and others that ended. */
+export interface DepartmentChanges {
+  generated_at: string;
+  rule: { share: number; min: number };
+  /** Renames carried in value-map.json's `department` block. */
+  mapped: number;
+  steps: {
+    from: string;
+    to: string;
+    carried: { school: string | null; from: string; to: string; carried: number; share: number; reverse: number }[];
+    uncarried: { school: string | null; from: string; to: string; carried: number; share: number; reverse: number }[];
+    mergers: { school: string | null; to: string; reverse: number; from: { department: string; carried: number; share: number }[] }[];
+    gone: { school: string | null; department: string; people: number; carried: number; to: string | null; to_school: string | null; share: number; reverse?: number }[];
+  }[];
 }
 
 /** Precomputed landing-page stats for the latest snapshot (see scripts/build-data.mjs). */
@@ -109,8 +138,8 @@ export async function fetchData<T>(file: string): Promise<T> {
 export interface SearchIndex {
   snapshot: string;
   label: string;
-  /** [job code, title, headcount, median actual pay] */
-  titles: [string, string | null, number, number | null][];
+  /** [job code, title, headcount, median actual pay, the code's other names (matched, never shown)] */
+  titles: [string, string | null, number, number | null, string[]?][];
   /** [division, headcount, median actual pay] */
   divisions: [string, number, number | null][];
 }

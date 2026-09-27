@@ -8,6 +8,7 @@ import { paidHeadcount } from '../lib/queries';
 import { num } from '../lib/format';
 import { FilterControls, ActiveFilters } from '../components/FilterControls';
 import { SegmentedToggle } from '../components/SegmentedToggle';
+import { NewBadge } from '../components/NewBadge';
 import { Eyebrow } from '../components/Eyebrow';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
@@ -219,7 +220,8 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
               <Group justify="space-between" wrap="nowrap" gap="sm" w="100%">
                 <Group gap={6} wrap="nowrap">
                   <Text span size="xs" lineClamp={1}>{option.label}</Text>
-                  {option.value === latest?.id && <Badge size="xs" variant="light" color="accent">latest</Badge>}
+                  {/* The newest release is new until the next one lands; "Latest (…)" above already names it latest. */}
+                  {option.value === latest?.id && <NewBadge />}
                 </Group>
                 {rows != null && <Text span size="xs" c="dimmed" style={{ flexShrink: 0 }}>{num(rows)} rows</Text>}
               </Group>

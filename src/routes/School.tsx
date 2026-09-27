@@ -18,10 +18,11 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
-import { useSql, useActiveSnapshotId, useActiveSnapshotLabel } from '../lib/hooks';
+import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
+import { belowMinimumSql, bandScaleSql } from '../lib/bands';
 import { useTray } from '../state/tray';
 import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -76,6 +77,22 @@ export default function School() {
   // The id keys the SQL; the label is what a chart footer shows a reader.
   const snapLabel = useActiveSnapshotLabel();
   const { metric, filters } = useControls();
+  // Reorganizations this division took part in (summary `reorganizations`): formed by one, or giving whole
+  // departments to one. Its headcount and median move there for that, and a reader should hear so.
+  const { data: summary } = useSummary();
+  const reorgNotes = useMemo(() => {
+    const label = (sid: string) => summary?.snapshots.find((x) => x.id === sid)?.label ?? sid;
+    const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+    return (summary?.reorganizations ?? []).flatMap((r) => {
+      if (r.school === name) {
+        return [`Formed in ${label(r.to_id)} from whole departments of ${r.from.map((f) => `${f.school} (${list(f.departments)})`).join('; ')} — a reorganization. Its trend starts there.`];
+      }
+      const gave = r.from.find((f) => f.school === name);
+      return gave
+        ? [`${label(r.to_id)}: ${list(gave.departments)} — ${num(gave.people)} people — moved, whole, to the new ${r.school}. A reorganization: they are not departures.`]
+        : [];
+    });
+  }, [summary, name]);
   const expr = salaryExpr(metric);
   const { add, has } = useTray();
   const nav = useNavigate();
@@ -150,17 +167,21 @@ export default function School() {
   );
   const trendRows = useMemo(() => withSnapX(trend ?? []), [trend]);
 
-  const { data: bandRows } = useSql<{ banded: number; graded: number; avg_pos: number | null; over_max: number; below_min: number }>(
+  const { data: bandRows } = useSql<{ banded: number; floored: number; graded: number; avg_pos: number | null; over_max: number; below_min: number }>(
     ['school-band', name, snap ?? '', metric, fk],
     // One row per person, placed by the full-time rate of the appointment that carries the grade
-    // (GRADED_APPT) — as every other band in the app is.
-    `WITH p AS (SELECT ${gradedCols()} FROM (SELECT person_key, ${GRADED_APPT} graded FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key))
-     SELECT count(*) FILTER (WHERE g."grade" IS NOT NULL) banded,
-        count(*) FILTER (WHERE p.grade_number IS NOT NULL) graded,
-        avg((p.band_rate - g."min") / NULLIF(g."max" - g."min", 0)) FILTER (WHERE g."grade" IS NOT NULL AND p.band_rate BETWEEN g."min" AND g."max") avg_pos,
-        count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.band_rate > g."max") over_max,
-        count(*) FILTER (WHERE g."grade" IS NOT NULL AND p.band_rate < g."min") below_min
-     FROM p LEFT JOIN grades g ON g."grade" = p.grade_number AND g."basis" = p.grade_basis`,
+    // (GRADED_APPT), against the band in that snapshot's units (lib/bands) — as every other band in the
+    // app is. A grade HR publishes with a minimum only counts toward "below the minimum" and nothing else.
+    `WITH p AS (SELECT ${gradedCols()} FROM (SELECT person_key, ${GRADED_APPT} graded FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key)),
+     b AS (SELECT p.*, g."grade" IS NOT NULL has_band, g."min" * ${bandScaleSql('p.band_comp')} mn, g."max" * ${bandScaleSql('p.band_comp')} mx
+           FROM p LEFT JOIN grades g ON g."grade" = p.grade_number AND g."basis" = p.grade_basis)
+     SELECT count(*) FILTER (WHERE mx IS NOT NULL) banded,
+        count(*) FILTER (WHERE has_band AND mx IS NULL) floored,
+        count(*) FILTER (WHERE grade_number IS NOT NULL) graded,
+        avg((band_rate - mn) / NULLIF(mx - mn, 0)) FILTER (WHERE mx IS NOT NULL AND band_rate BETWEEN mn AND mx) avg_pos,
+        count(*) FILTER (WHERE mx IS NOT NULL AND band_rate > mx) over_max,
+        count(*) FILTER (WHERE has_band AND ${belowMinimumSql('band_rate', 'mn', 'grade_basis')}) below_min
+     FROM b`,
     enabled
   );
   const band = bandRows?.[0];
@@ -250,31 +271,36 @@ export default function School() {
 
       <Card withBorder padding="lg">
         <CardTitle>Pay-band utilization</CardTitle>
-        {band && band.banded > 0 ? (
+        {band && band.banded + band.floored > 0 ? (
           <>
-            <SimpleGrid cols={{ base: 2, sm: 4 }}>
+            <SimpleGrid cols={{ base: 2, sm: 4 }} className="school-band-stats">
               <Stat label="Avg band position" value={band.avg_pos == null ? '—' : `${Math.round(band.avg_pos * 100)}%`} />
               {/* The denominator is the point: with only a couple of grades seeded, a bare "90" reads as a
                   school-wide finding when it covers a sliver of the graded population. */}
               <Stat label="People with a grade range" value={`${num(band.banded)} of ${num(band.graded)}`} />
               <Stat label="Over max" value={num(band.over_max)} />
-              <Stat label="Below min" value={num(band.below_min)} />
+              <Stat label="Below grade minimum" value={num(band.below_min)} />
             </SimpleGrid>
+            {band.floored > 0 && (
+              <Text size="xs" c="dimmed" mt="sm" className="school-band-floors">
+                {num(band.floored)} more {band.floored === 1 ? 'has a grade' : 'have grades'} HR publishes with a minimum only: counted
+                in &ldquo;Below grade minimum&rdquo;, and in nothing that needs a range.
+              </Text>
+            )}
             {/* Says what the number covers, not how a maintainer would widen the coverage. The repo
                 path this used to print belongs in the README's pay-band section, where the person who
                 can act on it will actually be. */}
             {band.graded > 0 && band.banded / band.graded < 0.5 && (
-              <Text size="xs" c="dimmed" mt="sm">
-                Based on {Math.round((band.banded / band.graded) * 100)}% of this division&apos;s graded
-                appointments. Official pay-band ranges are only loaded for some of UW&apos;s grades, so read
-                this as describing that slice rather than the whole division.
+              <Text size="xs" c="dimmed" mt="sm" className="school-band-share">
+                The average band position and &ldquo;Over max&rdquo; describe the {Math.round((band.banded / band.graded) * 100)}% of this
+                division&apos;s graded appointments whose grade HR publishes with a range, not the whole division.
               </Text>
             )}
           </>
         ) : (
           <Text size="sm" c="dimmed">
-            No official pay-band ranges are loaded for this division&apos;s grades, so there is nothing to
-            measure its salaries against here.
+            HR publishes no range or minimum for this division&apos;s grades, so there is nothing to measure its
+            salaries against here.
           </Text>
         )}
       </Card>
@@ -332,6 +358,10 @@ export default function School() {
             <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
           </LineChart>
         </ResponsiveContainer>
+        {/* A reorganization moved whole departments in or out: the trend's step there is that, and says so. */}
+        {reorgNotes.map((t) => (
+          <Text key={t} size="xs" c="dimmed" mt="xs" className="school-reorg-note">{t}</Text>
+        ))}
         <ChartData
           caption="Median salary over time"
           columns={['Snapshot', 'Median', 'Headcount']}

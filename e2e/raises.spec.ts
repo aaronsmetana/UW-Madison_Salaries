@@ -57,6 +57,9 @@ test('each continuing raise says how it compares with that step, campus-wide', a
   expect(await changeCellText(page, 'Aug 2022')).not.toMatch(/larger than|smaller than|the same as/);
 });
 
+/** How many canonical snapshots the data holds (the Pre-TTC twin is not one): "in every snapshot". */
+const CANONICAL = `(SELECT count(DISTINCT snapshot_id) FROM $SAL WHERE snapshot_id NOT LIKE '%-pre')`;
+
 /** People whose full name is unique in the data. */
 const UNIQUE_NAME = `(SELECT person_key FROM (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln FROM $SAL GROUP BY person_key)
    QUALIFY count(*) OVER (PARTITION BY lower(fn), lower(ln)) = 1)`;
@@ -67,7 +70,7 @@ test('the typical line starts after the TTC relabel and ends where every step at
   // the two coincide (+2.0% on a +2.0% step), so only the second can tell where the line starts.
   const [other] = await oracle<{ pk: string }>(
     `WITH s AS (SELECT person_key, snapshot_id, sum(${PAY}) pay, count(*) k, lower(any_value(comp_basis)) b FROM $SAL GROUP BY 1, 2),
-          f AS (SELECT person_key FROM s WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(*) = 9 AND max(k) = 1)
+          f AS (SELECT person_key FROM s WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(*) = ${CANONICAL} AND max(k) = 1)
      SELECT a.person_key pk FROM s a JOIN s b USING (person_key)
      WHERE a.snapshot_id = '2021-11-post' AND b.snapshot_id = '2022-03' AND a.pay > 0
        AND abs(b.pay / a.pay - 1 - ${meds[0].med}) > 0.05
@@ -172,7 +175,7 @@ test("a 9-month member's growth card gives typical raises without the reporting 
   // In every canonical snapshot, one appointment each, 9-month pay reported the new way from Sep 2025.
   const [p] = await oracle<{ pk: string }>(
     `WITH s AS (SELECT person_key, snapshot_id, count(*) k, any_value(comp_basis) b, any_value(job_code) j FROM $SAL WHERE salary > 0 GROUP BY 1, 2),
-          f AS (SELECT person_key FROM s WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(*) = 9 AND max(k) = 1)
+          f AS (SELECT person_key FROM s WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(*) = ${CANONICAL} AND max(k) = 1)
      SELECT a.person_key pk FROM s a JOIN s b USING (person_key)
      WHERE a.snapshot_id = '2025-04' AND b.snapshot_id = '2025-09' AND a.b = 'Academic' AND b.b = '9 Month' AND a.j = b.j
        AND person_key IN (SELECT person_key FROM f) ORDER BY pk LIMIT 1`

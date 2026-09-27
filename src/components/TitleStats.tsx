@@ -12,6 +12,8 @@ import type { Metric } from '../state/controls';
 import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
+import { bandFor, isRange } from '../lib/bands';
+import { PayBandNote } from './PayBandNote';
 import { CardTitle } from './CardTitle';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
@@ -105,14 +107,17 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   const titleRow = pct?.find((r) => r.scope === 'title');
   const schoolRow = pct?.find((r) => r.scope === 'title_school');
 
-  const { data: gradeRow } = useSql<{ grade_number: number; grade_basis: string }>(
+  // The title's grade (its most common, where appointments differ), and the median full-time rate of the
+  // appointments in it: a band is a range of full-time rates, so that is the median it can be read against.
+  const { data: gradeRow } = useSql<{ grade_number: number; grade_basis: string; comp_basis: string | null; med_rate: number | null }>(
     ['ts-grade', jobCode, snap],
-    `SELECT grade_number, grade_basis FROM salaries WHERE ${titleBase} AND grade_number IS NOT NULL
-     GROUP BY grade_number, grade_basis ORDER BY count(*) DESC LIMIT 1`,
+    `SELECT grade_number, grade_basis, any_value(comp_basis) comp_basis, median(salary) med_rate
+     FROM salaries WHERE ${titleBase} AND grade_number IS NOT NULL AND salary > 0
+     GROUP BY grade_number, grade_basis ORDER BY count(*) DESC, grade_number LIMIT 1`,
     enabled
   );
   const g = gradeRow?.[0];
-  const band = g && grades ? grades.find((x) => x.grade === g.grade_number && x.basis === g.grade_basis) : undefined;
+  const band = g ? bandFor(grades, g.grade_number, g.grade_basis, g.comp_basis) : null;
 
   // Where an entered salary would rank within the (scoped) title population.
   const rank = useMemo(() => {
@@ -219,16 +224,27 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
         <Text size="xs" c="dimmed" mt={4}>Click a bar to filter the people list below to that range.</Text>
       </Card>
 
-      {band && (
-        <Card withBorder padding="lg">
+      {isRange(band) && (
+        <Card withBorder padding="lg" className="title-payband">
           <CardTitle>Official pay band — grade {g?.grade_number}</CardTitle>
           <PayBandBar
             min={band.min}
             max={band.max}
             value={pinned ? pinSalary : null}
             quartiles
-            benchmarks={s.med != null ? [{ value: s.med, label: 'title median' }] : []}
+            benchmarks={g?.med_rate != null ? [{ value: g.med_rate, label: 'title median full-time rate' }] : []}
           />
+          <PayBandNote snapshotId={snap} />
+        </Card>
+      )}
+      {band && !isRange(band) && (
+        <Card withBorder padding="lg" className="title-payband title-payfloor">
+          <CardTitle>Official minimum — grade {g?.grade_number}</CardTitle>
+          <Text size="sm">
+            HR publishes a minimum of {usd(band.min)} for grade {g?.grade_number} and no maximum
+            {g?.med_rate != null ? <>; this title&apos;s median full-time rate is {usd(g.med_rate)}</> : null}.
+          </Text>
+          <PayBandNote snapshotId={snap} />
         </Card>
       )}
 

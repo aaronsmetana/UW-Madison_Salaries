@@ -6,7 +6,8 @@ import { IconDownload, IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, I
 import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades, useReferenceStatus } from '../lib/hooks';
-import { payBandNote } from '../components/PayBandNote';
+import { payBandNote, olderSnapshotNote } from '../components/PayBandNote';
+import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols } from '../lib/queries';
@@ -41,6 +42,8 @@ interface Subject {
   flsa_status: string | null; comp_basis: string | null;
   /** The full-time rate of the appointment that carries the grade — what the band is read against. */
   band_rate: number | null;
+  /** That appointment's `comp_basis`: the units its snapshot reported the rate in (lib/bands `bandFor`). */
+  band_comp: string | null;
 }
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
@@ -185,10 +188,8 @@ export default function Reports() {
   // status falls back to the conservative 5% floor (under-claims rather than over-claims).
   const exempt = subj?.flsa_status == null ? null : !/^non/i.test(subj.flsa_status);
   const { data: grades } = useGrades();
-  const band = useMemo(() => {
-    if (!subj || subj.grade_number == null || !grades) return null;
-    return grades.find((g) => g.grade === subj.grade_number && g.basis === subj.grade_basis) ?? null;
-  }, [subj, grades]);
+  // The grade's range, or its minimum where HR publishes only that (lib/bands).
+  const band = useMemo(() => (subj ? bandFor(grades, subj.grade_number, subj.grade_basis, subj.band_comp) : null), [subj, grades]);
 
   // As-of the snapshot date (not today) — matches every peer-side tenure calc below (all computed via
   // date_diff(..., snapshot_date)), so the subject's own tenure agrees with the peer matrix/inversions.
@@ -539,7 +540,7 @@ export default function Reports() {
   // raise carried to the pay the report works in (`floorAsk`), so a half-time subject is asked half.
   const bandRate = subj?.band_rate != null && subj.band_rate > 0 ? subj.band_rate : null;
   const marketPosition = useMemo(() => {
-    if (subjectPay == null || bandRate == null || band == null || grade == null || band.max <= band.min) return null;
+    if (subjectPay == null || bandRate == null || !isRange(band) || grade == null) return null;
     const mid = (band.min + band.max) / 2;
     const compa = bandRate / mid;
     const pir = (bandRate - band.min) / (band.max - band.min);
@@ -707,7 +708,11 @@ export default function Reports() {
       });
     }
     if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
-    if (marketPosition && band) {
+    // A grade with a minimum only has no range to be placed in; the one thing it can say is "below it".
+    if (band && !isRange(band) && bandRate != null && belowMinimum(bandRate, band, subj?.grade_basis)) {
+      out.push({ kind: 'gradeband', value: `${usd(band.min - bandRate)} below`, label: `the grade ${grade} minimum`, detail: `grade ${grade} minimum ${usd(band.min)} · full-time rate ${usd(bandRate)}` });
+    }
+    if (marketPosition && isRange(band)) {
       const mp = marketPosition;
       const posPct = Math.round(mp.pir * 100);
       if (posPct < 50) {
@@ -729,7 +734,7 @@ export default function Reports() {
       });
     }
     return out;
-  }, [subjectPay, stats, longevity, docCohortLabel, band, compression, subjectFirst, supervisoryCase, tenureRegression, guidelineCompression, marketPosition]);
+  }, [subjectPay, stats, longevity, docCohortLabel, band, bandRate, grade, subj?.grade_basis, compression, subjectFirst, supervisoryCase, tenureRegression, guidelineCompression, marketPosition]);
 
   // Time-to-parity: absent an adjustment, how long a raise alone would take to reach today's cohort
   // median — reinforces that "wait and see" isn't a neutral option. Uses this title's own observed
@@ -838,9 +843,13 @@ export default function Reports() {
     : '';
 
   const { data: refStatus } = useReferenceStatus();
+  // Where the ranges come from, and — read in a snapshot older than the ranges — that they are today's.
+  const releasedSnap = summary?.snapshots.find((x) => x.id === refStatus?.released_with);
+  const bandNote = [payBandNote(refStatus), olderSnapshotNote(refStatus, summary?.snapshots.find((x) => x.id === snap), releasedSnap?.label, releasedSnap?.date)]
+    .filter(Boolean).join(' ') || null;
   const model: BriefModel = {
     subjectName, subjectFirst, subjectPay, headerMeta, generated, snapLabel,
-    payBandNote: payBandNote(refStatus),
+    payBandNote: bandNote,
     recommended, belowTarget, targetDelta, targetPct,
     basisLabel: config.headline.trim() || basisLabel,
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure,
@@ -873,8 +882,8 @@ export default function Reports() {
       { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers', sectionId: 'highlights' },
       { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below', sectionId: 'highlights' },
       { label: 'Tenure-trend regression', ok: tenureTrendMeaningful, note: tenureRegression == null ? `need ≥${TENURE_MIN_PEERS} same-title peers with tenure` : tenureRegression.verdict === 'above' ? 'paid above the tenure trend' : tenureRegression.verdict === 'on' ? 'gap under 2% of pay — omitted as too small to claim' : undefined, sectionId: 'highlights' },
-      { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : 'above the band midpoint', sectionId: 'highlights' },
-      { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? `no published range for grade ${grade ?? '—'}` : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range', sectionId: 'highlights' },
+      { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : isRange(band) ? 'above the band midpoint' : `at or above the grade ${grade} minimum, the only figure published`, sectionId: 'highlights' },
+      { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? (band == null ? `no published range for grade ${grade ?? '—'}` : `grade ${grade} is published with a minimum only`) : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range', sectionId: 'highlights' },
       { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : raiseSubjectOutpaced ? 'subject out-raised peers — subject line omitted from document' : undefined, sectionId: 'history' },
       { label: 'Sustained-deficit history', ok: longevity.streak > 0, note: longevity.streak > 0 ? `${plural(longevity.streakYears, 'yr')} below median` : 'not below median on record', sectionId: 'history' },
       { label: 'Retention & replacement cost', ok: has('risk'), note: has('risk') ? undefined : 'off by default (can enable in Report sections)', sectionId: 'risk' },
