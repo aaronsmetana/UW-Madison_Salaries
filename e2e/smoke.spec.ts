@@ -459,7 +459,7 @@ test.describe('the landing distribution', () => {
       await page.goto('./', { waitUntil: 'networkidle' });
       const panel = page.locator('.hero-dist');
       await expect(panel).toBeVisible({ timeout: 60_000 });
-      // The sidebar's first look lies over the plot's left edge for its first two seconds.
+      // The sidebar's first look lies over the plot's left edge for its first second.
       await expect(page.locator('.app-navbar-peek')).toHaveCount(0, { timeout: 10_000 });
       const box = (await panel.boundingBox())!;
       // Swept across the PLOT, not the panel: the panel carries padding, so the first and last few

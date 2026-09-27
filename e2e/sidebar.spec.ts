@@ -2,31 +2,65 @@ import { test, expect, type Page } from '@playwright/test';
 
 /**
  * The sidebar's first look (app/AppShell): on a visit's first load it is open, over the page's left edge —
- * the page beneath is laid out for the collapsed rail, so nothing on it moves — and two seconds on it
- * narrows into the rail. Not again that visit; not out from under a pointer resting on it; at once under
- * Reduce Motion; never on a phone, whose menu is a sheet over the page (the tests at the end).
+ * the page beneath is laid out for the collapsed rail, so nothing on it moves — and a second on it narrows
+ * into the rail. Not again that visit; not out from under a pointer resting on it; at once under Reduce
+ * Motion; never on a phone, whose menu is a sheet over the page (the tests at the end).
+ *
+ * A second is shorter than a page takes to load on a busy machine, so these do not look at the sidebar
+ * after `goto` and hope it is still open: every state it passes through is recorded as it happens.
  */
 
 const nav = (page: Page) => page.locator('.mantine-AppShell-navbar');
 const navWidth = async (page: Page) => Math.round((await nav(page).boundingBox())!.width);
 
-test("a visit's first load opens the sidebar over the page, then tucks it into the rail — once", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('./');
-  await expect(nav(page)).toHaveAttribute('data-peek', 'open');
-  expect(await navWidth(page), 'the sidebar did not open').toBe(330);
-  await expect(nav(page).getByRole('link', { name: 'Titles', exact: true })).toContainText('Titles');
-  // Over the page, not beside it: the page is already where it will be with the rail.
-  const panelAt = Math.round((await page.locator('.hero-dist').boundingBox())!.x);
-  const main = page.locator('#main-content');
-  const mainPad = await main.evaluate((el) => getComputedStyle(el).paddingLeft);
+interface PeekState { v: string; t: number; w: number; named: boolean; panelX: number | null; pad: string | null }
+/** Every state the sidebar passes through, as it happens: when, how wide, whether its links are named, and
+ *  where the page beside it is. */
+async function recordPeek(page: Page) {
+  await page.addInitScript(() => {
+    const seen: PeekState[] = [];
+    (window as unknown as { peekSeen: PeekState[] }).peekSeen = seen;
+    new MutationObserver(() => {
+      const el = document.querySelector('.mantine-AppShell-navbar');
+      if (!el) return;
+      const v = el.getAttribute('data-peek') ?? 'none';
+      if (seen.length && seen[seen.length - 1].v === v) return;
+      const panel = document.querySelector('.hero-dist');
+      const main = document.querySelector('#main-content');
+      seen.push({
+        v, t: performance.now(), w: Math.round(el.getBoundingClientRect().width),
+        named: [...el.querySelectorAll('.mantine-NavLink-label')].some((l) => l.textContent === 'Titles'),
+        panelX: panel ? Math.round(panel.getBoundingClientRect().x) : null,
+        pad: main ? getComputedStyle(main).paddingLeft : null,
+      });
+    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-peek'] });
+  });
+}
+const peekSeen = (page: Page) => page.evaluate(() => (window as unknown as { peekSeen: PeekState[] }).peekSeen);
+/** Until the sidebar has come to rest in the rail. */
+const tucked = (page: Page) => expect.poll(async () => (await peekSeen(page)).at(-1)?.v, { timeout: 6000 }).toBe('none');
 
-  // Narrowing, then the rail.
-  await expect(nav(page)).toHaveAttribute('data-peek', 'closing', { timeout: 3000 });
-  await expect(nav(page)).not.toHaveAttribute('data-peek', /./, { timeout: 2000 });
+test("a visit's first load opens the sidebar over the page, then tucks it into the rail after a second — once", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await recordPeek(page);
+  await page.goto('./');
+  await tucked(page);
+  const [open, closing, rail] = await peekSeen(page);
+  expect([open?.v, closing?.v, rail?.v]).toEqual(['open', 'closing', 'none']);
+  expect(open.w, 'the sidebar did not open').toBe(330);
+  expect(open.named, 'the open sidebar does not name its links').toBe(true);
+  // A second open: long enough to see what is there, not so long it stands over the graph. It was two.
+  const held = closing.t - open.t;
+  expect(held, `it tucked in after ${Math.round(held)}ms`).toBeGreaterThanOrEqual(950);
+  expect(held, `it held open for ${Math.round(held)}ms`).toBeLessThan(1750);
+  // Over the page, not beside it: the page is already where it will be with the rail.
   expect(await navWidth(page), 'the sidebar did not tuck into the rail').toBe(64);
-  expect(Math.round((await page.locator('.hero-dist').boundingBox())!.x), 'the page moved under the sidebar').toBe(panelAt);
-  expect(await main.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe(mainPad);
+  const main = page.locator('#main-content');
+  const settled = { x: Math.round((await page.locator('.hero-dist').boundingBox())!.x), pad: await main.evaluate((el) => getComputedStyle(el).paddingLeft) };
+  for (const s of [open, closing]) {
+    if (s.panelX != null) expect(s.panelX, `the page moved under the sidebar (${s.v})`).toBe(settled.x);
+    if (s.pad != null) expect(s.pad).toBe(settled.pad);
+  }
   // The rail's links still say where they go.
   for (const name of ['People', 'Titles', 'Divisions', 'Compare', 'Reports', 'Screening']) {
     await expect(nav(page).getByRole('link', { name, exact: true })).toHaveCount(1);
@@ -42,20 +76,25 @@ test("a visit's first load opens the sidebar over the page, then tucks it into t
 
 test('a pointer resting on the sidebar keeps it open until it leaves', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('./');
-  await expect(nav(page)).toHaveAttribute('data-peek', 'open');
+  await recordPeek(page);
+  // Resting there as the page comes up, rather than arriving some unknown part of the second in.
   await page.mouse.move(120, 200);
-  await page.waitForTimeout(3000);
-  await expect(nav(page), 'the sidebar closed from under the pointer').toHaveAttribute('data-peek', 'open');
+  await page.goto('./');
+  await expect.poll(async () => (await peekSeen(page))[0]?.v).toBe('open');
+  await page.waitForTimeout(2500);
+  expect((await peekSeen(page)).map((s) => s.v), 'the sidebar closed from under the pointer').toEqual(['open']);
   await page.mouse.move(900, 500);
-  await expect(nav(page)).not.toHaveAttribute('data-peek', /./, { timeout: 2000 });
+  await tucked(page);
   expect(await navWidth(page)).toBe(64);
 });
 
 test('its collapse button tucks it in at once', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  await recordPeek(page);
+  // The pointer on the sidebar holds it open for as long as it takes to reach the button.
+  await page.mouse.move(120, 200);
   await page.goto('./');
-  await expect(nav(page)).toHaveAttribute('data-peek', 'open');
+  await expect.poll(async () => (await peekSeen(page))[0]?.v).toBe('open');
   await page.getByRole('button', { name: 'Collapse navigation' }).click();
   await expect(nav(page)).not.toHaveAttribute('data-peek', 'open', { timeout: 300 });
   await expect(nav(page)).not.toHaveAttribute('data-peek', /./, { timeout: 1500 });
@@ -68,22 +107,12 @@ test('its collapse button tucks it in at once', async ({ page }) => {
 test('under Reduce Motion it goes straight to the rail', async ({ browser }) => {
   const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
-  // Every state the sidebar passes through, recorded as it happens.
-  await page.addInitScript(() => {
-    const seen: string[] = [];
-    (window as unknown as { peekSeen: string[] }).peekSeen = seen;
-    new MutationObserver(() => {
-      const el = document.querySelector('.mantine-AppShell-navbar');
-      const v = el?.getAttribute('data-peek') ?? 'none';
-      if (el && seen[seen.length - 1] !== v) seen.push(v);
-    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-peek'] });
-  });
+  await recordPeek(page);
   await page.goto('./');
-  await expect(nav(page)).toHaveAttribute('data-peek', 'open');
-  await expect(nav(page)).not.toHaveAttribute('data-peek', /./, { timeout: 3000 });
+  await tucked(page);
   expect(await navWidth(page)).toBe(64);
   // No narrowing stage: straight from open to the rail.
-  expect(await page.evaluate(() => (window as unknown as { peekSeen: string[] }).peekSeen)).toEqual(['open', 'none']);
+  expect((await peekSeen(page)).map((s) => s.v)).toEqual(['open', 'none']);
   await ctx.close();
 });
 

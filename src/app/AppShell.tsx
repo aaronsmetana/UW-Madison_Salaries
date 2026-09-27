@@ -24,9 +24,12 @@ const CONTROL_PATHS = ['/school'];
  * The sidebar's first look, once a visit: open, over the page's left edge — the page beneath is laid out
  * for the collapsed rail from the start, so nothing on it moves — for PEEK_MS, then narrowed into the rail
  * over PEEK_CLOSE_MS (app.css `.app-navbar-peek`), its labels fading as it goes. Not while a pointer is on
- * it or the keyboard is in it: then once they leave. Desktop only; a phone's sidebar is a drawer.
+ * it or the keyboard is in it: then once they leave. Desktop only; a phone's menu is a sheet.
+ *
+ * A second: long enough to see the labels are there, short enough not to stand over the graph. At two it
+ * held the left of the plot for longer than a first look needs.
  */
-const PEEK_MS = 2000;
+const PEEK_MS = 1000;
 const PEEK_CLOSE_MS = 450;
 const PEEK_KEY = 'nav-peek';
 /** This visit has already loaded the site: the sidebar has had its look, or the landing dots their fall. */
