@@ -234,13 +234,19 @@ test('on a phone the search is above the graph, and its list leaves the lower ha
   const list = (await page.locator('.search-dropdown').boundingBox())!;
   expect(list.y + list.height, 'the list reaches past the middle of the plot').toBeLessThanOrEqual(plot.y + plot.height / 2 + 1);
 
-  // A tap on the graph: the list goes, the dots stay where they are, the search and its marks stay.
+  // A tap on the graph: the list goes, the dots stay where they are, the search and its marks stay. Every
+  // state the dots pass through from the tap on is recorded: a burst can be over before a single look.
   const marks = await page.locator('.hero-dots').getAttribute('data-marks');
+  await page.locator('.hero-dots').evaluate((el) => {
+    const seen: string[] = [];
+    (window as unknown as { flights: string[] }).flights = seen;
+    new MutationObserver(() => seen.push(el.getAttribute('data-flight') ?? '')).observe(el, { attributes: true, attributeFilter: ['data-flight'] });
+  });
   await page.touchscreen.tap(plot.x + plot.width / 2, plot.y + plot.height - 12);
   await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('.search-dropdown')).toHaveCount(0);
   await page.waitForTimeout(400);
-  await expect(page.locator('.hero-dots'), 'the tap that put the list away scattered the dots').toHaveAttribute('data-flight', 'idle');
+  expect(await page.evaluate(() => (window as unknown as { flights: string[] }).flights), 'the tap that put the list away scattered the dots').toEqual([]);
   await expect(searchBox(page)).toHaveValue('smith');
   expect(await page.locator('.hero-dots').getAttribute('data-marks')).toBe(marks);
 
