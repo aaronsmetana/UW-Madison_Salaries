@@ -249,7 +249,9 @@ const DIRECT: Array<[name: string, route: string, opts?: { maxDiffPixels?: numbe
   // table fits a phone, its sticky header row is in the mobile shot, and "MEDIAN" with its sort glyph
   // (rows 1499-1505, x 232-271) re-rasterises half a pixel over in-suite — 70 px, no body row touched.
   ['divisions', './explore', { maxDiffPixels: STICKY_HEADER_JITTER }],
-  ['divisions-titles-tab', './explore?tab=titles'],
+  // The same header re-raster on the Titles tab's table ("MEDIAN" and its sort glyph, 42 px, twice on
+  // 2026-09-27), decoded the same way.
+  ['divisions-titles-tab', './explore?tab=titles', { maxDiffPixels: STICKY_HEADER_JITTER }],
   ['compare-empty', './compare'],
   ['data-about', './data'],
   ['screening-empty', './screening'],
