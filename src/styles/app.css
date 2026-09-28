@@ -2113,6 +2113,11 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .search-token-x:hover { background: var(--mantine-color-default); color: var(--mantine-color-text); }
 .search-token-x:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
+/* While a group is lit, the wash under the campus curve eases back to half: the one fill behind the dots
+   still at full strength, it competed with the group's own dots for the eye. The campus line stays. */
+.hero-dist-wash { transition: opacity 200ms ease-out; }
+.hero-dist-main[data-group-count] .hero-dist-wash { opacity: 0.5; }
+@media (prefers-reduced-motion: reduce) { .hero-dist-wash { transition: none; } }
 /* The group's label, at the top of the plot where the curve never reaches: its name, how many, their
    median and how that sits against campus, over its own dashed median line. */
 .hero-dist-group-flag {

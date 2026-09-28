@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FAINT_SCALE, LIT_SIZES, layoutDots, litScale, packDots } from '../../lib/dotLayout';
+import { FAINT_SCALE, LIT_SIZES, layoutDots, litScale, packDots, settleLit } from '../../lib/dotLayout';
 import {
   AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, TRAIL_ALPHA, TRAIL_MIN, TRAIL_MS, TRAIL_W, WAVE_MS,
   bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirKick, stirSizes, stirTopUp, thrown, trailAt, wakeExtent,
@@ -310,6 +310,10 @@ export const DotField = forwardRef<DotFieldHandle, {
    *  The people a filter is not about stay in the picture as its context, and the ones it is about stand
    *  out of it. Only a repaint — nothing moves or is laid out again. */
   dim?: Uint8Array | null;
+  /** With `dim`, the dots it lights take the lowest places in each column, the rest stacked above them: the
+   *  group settles into a shape of its own inside everyone's, on the same scale. Each dot moves only up or
+   *  down its own column. */
+  sink?: boolean;
   /** Show one kind alone: the others fall through the floor, and it falls to the floor in its own
    *  shape (stacked first). Null for all. Needs `stack`. */
   solo?: number | null;
@@ -348,7 +352,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   className?: string;
 }>(function DotField({
   values, kinds, inks, stack = false, toX, heightAt, height, r: rIn, pack = null, entrance = false, delay = 0,
-  airKinds = null, airInks, highlight = null, dim = null, solo = null, marks = null, markBig = null, ring = null, squeeze = 1, moveTo = null, replay = 0, onRained, glow = false, rich = false, onFrame, frameMark = 'dot-frame', className,
+  airKinds = null, airInks, highlight = null, dim = null, sink = false, solo = null, marks = null, markBig = null, ring = null, squeeze = 1, moveTo = null, replay = 0, onRained, glow = false, rich = false, onFrame, frameMark = 'dot-frame', className,
 }, ref) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -411,10 +415,21 @@ export const DotField = forwardRef<DotFieldHandle, {
     for (let i = 0; i < kinds.length; i++) k[i] = kinds[i] === solo ? 0 : 1 + kinds[i];
     return k;
   }, [stack, kinds, solo]);
+  // Settled by a filter: its lit dots at the floor of their columns (a packed field only, whose columns are
+  // the dots at one x). What a change of stacking is, as the re-stack's easing sees it: the key or the mask.
+  const sunk = sink && pack && dim && dim.length === values.length ? dim : null;
+  const stacking = useMemo(() => ({ stackKey, sunk }), [stackKey, sunk]);
+  // How many are drawn faint — only when the mask is one this field draws with: a mask of any other length
+  // is ignored by the paint, and a test must not read one as applied.
+  const dimmed = useMemo(() => (dim && dim.length === values.length ? dim.reduce((t, v) => t + v, 0) : null), [dim, values.length]);
+  // How much bigger its lit dots are drawn: by how small a part of the field they are.
+  const litGrowth = dimmed != null ? litScale(1 - dimmed / Math.max(1, values.length)) : 1;
   const spill = pack ? pack.spill : null;
 
   const packDpr = pack ? dpr : 1;
-  const layout = useMemo(() => {
+  // Where each dot goes: packed or laid out, and the dots in x order, for finding the ones in a strip of the
+  // canvas without visiting them all. A filter's settling moves none of them across, so it keeps these.
+  const placed = useMemo(() => {
     if (!(width > 0) || !values.length) return null;
     const n = values.length;
     const xs = new Float64Array(n);
@@ -423,7 +438,9 @@ export const DotField = forwardRef<DotFieldHandle, {
     let pts: Float32Array;
     let crowded = 0, maxShift = 0.5, separate = false;
     if (spill != null) {
+      const t0 = performance.now();
       const packed = packDots({ xs, heightAt: (x) => heightAt(x, width), baseY: height, width, dpr: packDpr, spill, stack: stackKey });
+      try { performance.measure('dot-layout', { start: t0 }); } catch { /* diagnostic only */ }
       ({ pts, r, crowded, maxShift, separate } = packed);
     } else {
       if (r == null) {
@@ -435,12 +452,24 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
       pts = layoutDots({ xs, heightAt: (x) => heightAt(x, width), baseY: height, r, stack: stackKey });
     }
-    // The dots in x order, for finding the ones in a strip of the canvas without visiting them all.
     const order = new Uint32Array(n);
     for (let i = 0; i < n; i++) order[i] = i;
     order.sort((a, b) => pts[2 * a] - pts[2 * b]);
     const sortedX = new Float32Array(n);
     for (let j = 0; j < n; j++) sortedX[j] = pts[2 * order[j]];
+    return { pts, r, order, sortedX, crowded, maxShift, separate };
+  }, [width, values, toX, heightAt, height, rIn, stackKey, spill, packDpr]);
+
+  // Each dot's height, as placed or settled by a filter, and what that shades and sets raining. Timed with
+  // the packing, as `dot-layout`: a filter's settling is all of this, and must fit a frame.
+  const layout = useMemo(() => {
+    if (!placed) return null;
+    const t0 = performance.now();
+    const n = values.length;
+    const { order, sortedX, r, crowded, maxShift, separate } = placed;
+    // A kind soloed stays first, settled within itself (lib/dotLayout `settleLit`).
+    const first = sunk && solo != null && kinds ? Uint8Array.from(kinds as ArrayLike<number>, (k) => (k === solo ? 0 : 1)) : null;
+    const pts = sunk ? settleLit(placed.pts, sunk, order, first) : placed.pts;
     // How high each dot sits in its stack (0 at the baseline, 1 under the curve), which shades it.
     const depth = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -466,6 +495,17 @@ export const DotField = forwardRef<DotFieldHandle, {
       const col = Array.from(order.subarray(j, k)).sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1]);
       col.forEach((i, up) => { rank[i] = up; column[i] = columns; });
       if (col.length) crest[col[col.length - 1]] = 1;
+      // A settled group is a mountain of its own: its dots shade from the floor to its own top, which
+      // takes the crest's rim. Shaded by the column's height, they would all be the column's darkest foot.
+      if (sunk) {
+        let top = -1;
+        for (const i of col) if (!sunk[i] && (top < 0 || pts[2 * i + 1] < pts[2 * top + 1])) top = i;
+        if (top >= 0) {
+          const span = height - r - pts[2 * top + 1];
+          for (const i of col) if (!sunk[i]) depth[i] = span > 1e-6 ? Math.min(1, Math.max(0, (height - r - pts[2 * i + 1]) / span)) : 1;
+          crest[top] = 1;
+        }
+      }
       deepest = Math.max(deepest, col.length - 1);
       columns++;
       j = k;
@@ -473,8 +513,9 @@ export const DotField = forwardRef<DotFieldHandle, {
     // Every column rains at the same mean rate, so a taller column plainly takes longer — until the
     // tallest would run past RAIN_MS, which sets the rate for the whole field instead.
     const rainGap = Math.min(RAIN_GAP, RAIN_MS / Math.max(1, deepest));
+    try { performance.measure('dot-layout', { start: t0 }); } catch { /* diagnostic only */ }
     return { pts, r, order, sortedX, depth, width, crowded, maxShift, separate, rank, column, crest, rainGap };
-  }, [width, values, toX, heightAt, height, rIn, stackKey, spill, packDpr]);
+  }, [placed, sunk, solo, kinds, values.length, heightAt, width, height]);
 
   const alpha = layout?.separate ? PACKED_ALPHA : DOT_ALPHA;
   // Everything the animation loop and the painter read, kept current without re-running effects.
@@ -595,7 +636,7 @@ export const DotField = forwardRef<DotFieldHandle, {
   const rainedRef = useRef(onRained);
   rainedRef.current = onRained;
   const prevLayout = useRef<typeof layout>(null);
-  const prevStack = useRef<typeof stackKey>(undefined);
+  const prevStack = useRef<typeof stacking | null>(null);
   const prevSolo = useRef<number | null>(solo);
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
@@ -896,6 +937,42 @@ export const DotField = forwardRef<DotFieldHandle, {
   const paintRef = useRef(paint);
   paintRef.current = paint;
 
+  // The whole field repainted in beads, nothing moved, in strips a frame each: a filter's dimming, and the
+  // end of a re-stack. Strips of equal dots, not equal width: the field crowds between $40k and $80k, and
+  // equal widths cost 1ms at the edges and 22ms in the middle; cut at the dots' own x quantiles, each is an
+  // eighth of the work. Each strip is measured, as the animated frames are, so a test can hold it to a
+  // frame's budget. A new sweep cancels the last. Dots set moving under one leave the rest of the field to
+  // go back into beads with theirs, once all is still; `done` is told either way.
+  const sweepRaf = useRef(0);
+  const sweep = (done?: () => void) => {
+    const L = live.current;
+    const lay = layoutRef.current;
+    cancelAnimationFrame(sweepRaf.current);
+    if (!lay) { done?.(); return; }
+    const { sortedX } = lay;
+    const cut = (k: number) => sortedX[Math.min(sortedX.length - 1, Math.floor((k * sortedX.length) / DIM_STRIPS))];
+    let k = 0;
+    const step = () => {
+      sweepRaf.current = 0;
+      if (layoutRef.current !== lay) { done?.(); return; }
+      if (L.flying > 0 || L.rings.length > 0 || L.trail.length > 0 || L.restackStart != null || L.entranceStart != null) {
+        L.dirtyLo = -Infinity;
+        L.dirtyHi = Infinity;
+        done?.();
+        return;
+      }
+      const t0 = performance.now();
+      paintRef.current(t0, k === 0 ? -Infinity : cut(k), k === DIM_STRIPS - 1 ? Infinity : cut(k + 1), false);
+      performance.measure('dim-paint', { start: t0 });
+      if (++k < DIM_STRIPS) sweepRaf.current = requestAnimationFrame(step);
+      else done?.();
+    };
+    sweepRaf.current = requestAnimationFrame(step);
+  };
+  const sweepRef = useRef(sweep);
+  sweepRef.current = sweep;
+  useEffect(() => () => cancelAnimationFrame(sweepRaf.current), []);
+
   useImperativeHandle(ref, () => ({
     drawInto(ctx, { cx, cy, R, ox, oy, dpr, map }) {
       const lay = layout;
@@ -1184,13 +1261,14 @@ export const DotField = forwardRef<DotFieldHandle, {
     const t0 = performance.now();
     let full = false;
     let moving = false;
+    let restacked = false;
     if (L.entranceStart != null) {
       if (now - L.entranceStart >= delay + (rainRef.current?.end ?? 0)) { L.entranceStart = null; setSettled(true); rainedRef.current?.(); }
       else moving = true;
       full = true;
     }
     if (L.restackStart != null) {
-      if (now - L.restackStart >= RESTACK_MS) { L.restackStart = null; L.restackFrom = null; setSettled(true); }
+      if (now - L.restackStart >= RESTACK_MS) { L.restackStart = null; L.restackFrom = null; restacked = true; }
       else moving = true;
       full = true;
     }
@@ -1295,8 +1373,13 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
     }
     L.lastTick = now;
-    // In squares while the whole field is moving; the frame that ends the move paints it in beads.
-    if (full) paintRef.current(now, -Infinity, Infinity, moving);
+    // In squares while the whole field is moving; the frame that ends the move paints it in beads — but for
+    // the end of a re-stack with nothing else going, which is squares at rest and then beads a strip a frame
+    // (`sweep`): the whole field in beads at once held that frame 55ms at CI's pace. Settled once in beads.
+    const toBeads = restacked && !moving && L.entranceStart == null && L.sqStart == null && L.mvStart == null && L.flying === 0;
+    if (full) paintRef.current(now, -Infinity, Infinity, moving || toBeads);
+    if (toBeads) sweepRef.current(() => setSettled(true));
+    else if (restacked) setSettled(true);
     L.slackLast = slackNow;
     if (full || flightFrame) {
       const name = flightFrame ? 'flight-frame' : frameMark;
@@ -1322,6 +1405,11 @@ export const DotField = forwardRef<DotFieldHandle, {
     const lay = layout;
     if (!canvas || !lay) return;
     const L = live.current;
+    // The mask this layout was made with, before anything is painted: a filter that settles its dots lays
+    // the field out again, and the dim effect, which runs after this one, would leave its first frame in the
+    // mask before.
+    L.dim = dim;
+    L.litScale = litGrowth;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(lay.width * dpr);
     canvas.height = Math.round(height * dpr);
@@ -1399,7 +1487,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     const motionOk = !prefersReducedMotion() && !document.hidden;
     const prev = prevLayout.current;
     const sameField = !!prev && prev !== lay && prev.width === lay.width && prev.pts.length === lay.pts.length;
-    const restacked = sameField && prevStack.current !== stackKey;
+    const restacked = sameField && prevStack.current !== stacking;
     const soloMoved = prevSolo.current !== solo;
     // Each dot's motion belongs to one layout, and a new one starts it at rest — but for a group
     // soloed away, which stays gone.
@@ -1437,7 +1525,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     L.dirtyLo = Infinity;
     L.dirtyHi = -Infinity;
     prevLayout.current = lay;
-    prevStack.current = stackKey;
+    prevStack.current = stacking;
     prevSolo.current = solo;
     const now = performance.now();
     if (sameField && soloMoved && motionOk && oldMode) {
@@ -1473,9 +1561,10 @@ export const DotField = forwardRef<DotFieldHandle, {
       paint(now, -Infinity, Infinity, true);
       kick();
     } else if (restacked && motionOk) {
-      // From where each dot is now to its slot in the new stacking, up or down its own column.
+      // From where each dot is drawn now to its slot in the new stacking, up or down its own column — a
+      // dot still swinging from a burst sets off from its swing, not from its old place.
       const from = new Float32Array(values.length);
-      for (let i = 0; i < values.length; i++) from[i] = prev.pts[2 * i + 1];
+      for (let i = 0; i < values.length; i++) from[i] = prev.pts[2 * i + 1] + (oldOff ? oldOff[i] : 0);
       L.restackFrom = from;
       L.restackStart = now;
       setSettled(false);
@@ -1553,55 +1642,41 @@ export const DotField = forwardRef<DotFieldHandle, {
     if (busy) { L.dirtyLo = Math.min(L.dirtyLo, x0); L.dirtyHi = Math.max(L.dirtyHi, x1); }
   }, [hlLo, hlHi, layout, toX]);
 
+
   // The dimming: the whole field repainted, nothing moved — in strips, a frame each. A field of 22k beads
   // takes about 55ms to repaint whole at CI's pace, three frames and more held up at once; `DIM_STRIPS`
   // strips each fit a frame, and read as the dimming passing across the field in about a tenth of a second.
   // Whole and at once where strips would not help: dots in the air are being repainted every frame anyway,
   // a field drawn away from its places (the pile unrolled, a squeeze) is only ever repainted whole, and
   // under Reduce Motion a sweep is motion.
-  // How many are drawn faint — only when the mask is one this field draws with: a mask of any other length
-  // is ignored by the paint, and a test must not read one as applied.
-  const dimmed = useMemo(() => (dim && dim.length === values.length ? dim.reduce((t, v) => t + v, 0) : null), [dim, values.length]);
-  // How much bigger its lit dots are drawn: by how small a part of the field they are.
-  const litGrowth = dimmed != null ? litScale(1 - dimmed / Math.max(1, values.length)) : 1;
-  const dimRaf = useRef(0);
   const dimWas = useRef<Uint8Array | null>(null);
+  const dimLayout = useRef<typeof layout>(null);
   useEffect(() => {
     const L = live.current;
     L.dim = dim;
     L.litScale = litGrowth;
     const lay = layout;
-    // Only a change in which dots are faint repaints here. A new layout is painted by the field itself, which
-    // reads the mask as it goes; and the same mask again — rebuilt with the same people in — changes nothing.
-    // Sweeping on those too repainted the whole field twice over on the way into full page, mask or none.
+    // Only a change in which dots are faint repaints here. A new layout is painted by the field itself, the
+    // mask set first (the layout effect) — a filter that settles its dots lays the field out again — and the
+    // same mask again, rebuilt with the same people in, changes nothing. Sweeping on those too repainted the
+    // whole field twice over on the way into full page, mask or none.
+    const fresh = dimLayout.current !== lay;
+    dimLayout.current = lay;
     const was = dimWas.current;
     dimWas.current = dim;
     if (was === dim || (!!was && !!dim && was.length === dim.length && was.every((v, i) => v === dim[i]))) return;
-    cancelAnimationFrame(dimRaf.current);
-    if (!lay || L.entranceStart != null || L.restackStart != null) return;
+    if (fresh || !lay || L.entranceStart != null || L.restackStart != null) return;
     const busy = L.flying > 0 || L.rings.length > 0 || L.trail.length > 0;
-    // Measured, as the animated frames are, so a test can hold each repaint to a frame's budget.
-    const paint = (x0: number, x1: number, fast: boolean) => {
-      const t0 = performance.now();
-      paintRef.current(t0, x0, x1, fast);
-      performance.measure('dim-paint', { start: t0 });
-    };
     if (busy || displaced() || prefersReducedMotion() || document.hidden) {
-      paint(-Infinity, Infinity, busy);
+      cancelAnimationFrame(sweepRaf.current);
+      const t0 = performance.now();
+      paintRef.current(t0, -Infinity, Infinity, busy);
+      performance.measure('dim-paint', { start: t0 });
       return;
     }
-    // Strips of equal dots, not equal width: the field crowds between $40k and $80k, and equal widths cost
-    // 1ms at the edges and 22ms in the middle. Cut at the dots' own x quantiles, each is an eighth of the work.
-    const { sortedX } = lay;
-    const cut = (k: number) => sortedX[Math.min(sortedX.length - 1, Math.floor((k * sortedX.length) / DIM_STRIPS))];
-    let k = 0;
-    const step = () => {
-      paint(k === 0 ? -Infinity : cut(k), k === DIM_STRIPS - 1 ? Infinity : cut(k + 1), false);
-      if (++k < DIM_STRIPS) dimRaf.current = requestAnimationFrame(step);
-    };
-    dimRaf.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(dimRaf.current);
-    // `displaced` reads the live state, not props.
+    sweep();
+    return () => cancelAnimationFrame(sweepRaf.current);
+    // `displaced` and `sweep` read the live state, not props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dim, layout, litGrowth]);
   // Which dots are lit, as a fingerprint a test can rebuild from its own list: how many, and the sum and the

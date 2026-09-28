@@ -268,6 +268,45 @@ export function packDots({ xs, heightAt, baseY, width, dpr, spill, seed = 1, sta
 }
 
 /**
+ * A packed field with the dots `lit` picks (`lit[i]` 0) moved to the lowest places of their own columns,
+ * the rest above them, each part in the order it had up the column. The rows of a column are the same
+ * whatever `packDots`' key (its random draws do not depend on it), so this is what packing again with the
+ * lit first would lay out, but for which of two dots on one row of a crowded column takes it — at a
+ * fraction of the cost: 21ms to pack the landing field again at CI's pace. `order` is the dots sorted by x;
+ * a column is the dots at one exact x, which is where packDots puts one. `first` (1 for the rest) keeps
+ * one kind's dots below the others', each settled within itself. Returns new places.
+ */
+export function settleLit(pts: Float32Array, lit: ArrayLike<number>, order: ArrayLike<number>, first?: ArrayLike<number> | null): Float32Array {
+  const out = new Float32Array(pts);
+  const n = order.length;
+  const col: number[] = [];
+  const ys: number[] = [];
+  // Bottom to top: with `first` (a kind soloed, whose dots are stacked first and the rest gone), its lit,
+  // then the rest of it, then the others' lit and the rest of them — so its faint dots sit on its own lit
+  // ones and not over a gap where the others' were. Without it, all the lit and then the rest.
+  const blocks: number[][] = [[], [], [], []];
+  for (let j = 0; j < n; ) {
+    const x = pts[2 * order[j]];
+    let k = j;
+    col.length = 0;
+    while (k < n && pts[2 * order[k]] === x) col.push(order[k++]);
+    j = k;
+    if (col.length < 2) continue;
+    // Bottom first: as the column was stacked.
+    col.sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1] || a - b);
+    ys.length = 0;
+    for (const b of blocks) b.length = 0;
+    for (const i of col) {
+      ys.push(pts[2 * i + 1]);
+      blocks[(first && first[i] ? 2 : 0) + (lit[i] ? 1 : 0)].push(i);
+    }
+    let q = 0;
+    for (const b of blocks) for (const i of b) out[2 * i + 1] = ys[q++];
+  }
+  return out;
+}
+
+/**
  * A filter's dots against everyone else's (DotField `dim`). The rest are drawn at FAINT_SCALE of their
  * radius, so the context recedes in size as well as ink. The lit ones grow: by half again while they are
  * under a tenth of the field, less for a larger part. Grown as much, a school's thousands in the packed

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
-import { HOME_STATS, spots, plotShape, barOverPlot } from './homeDots';
+import { HOME_STATS, spots, plotShape, barOverPlot, places, people } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -268,6 +268,223 @@ test('a group too small to rise off the floor has no curve, and keeps its median
   expect(s.lineShown, `${t.title}: its median line went with the curve`).toBe(true);
 });
 
+/** Where the dots of the field and the pile are laid out, full page. */
+const FIELDS = { main: '.hero-dist-full .hero-dots', pile: '.hero-dist-full .hero-dots-over' } as const;
+async function laidOut(page: Page) {
+  return { main: await places(page, FIELDS.main), pile: await places(page, FIELDS.pile) };
+}
+/** Columns where one of the group sits above anyone else in it — among the dots `shown` keeps — and dots
+ *  moved across from `was`. A column is the dots at one x, where the field packs them. */
+function unsettled(now: { main: number[]; pile: number[] }, was: { main: number[]; pile: number[] }, lit: { main: Set<number>; pile: Set<number> },
+  shown: (field: 'main' | 'pile', i: number) => boolean = () => true) {
+  const bad: string[] = [];
+  for (const field of ['main', 'pile'] as const) {
+    const pts = now[field];
+    const cols = new Map<number, { low: number; high: number }>();
+    for (let i = 0; i < pts.length / 2; i++) {
+      if (pts[2 * i] !== was[field][2 * i]) bad.push(`${field} dot ${i} moved across`);
+      if (!shown(field, i)) continue;
+      const c = cols.get(pts[2 * i]) ?? { low: Infinity, high: -Infinity };
+      // y runs down: the group's highest is its least y, and everyone else's lowest their greatest.
+      if (lit[field].has(i)) c.low = Math.min(c.low, pts[2 * i + 1]);
+      else c.high = Math.max(c.high, pts[2 * i + 1]);
+      cols.set(pts[2 * i], c);
+    }
+    for (const [x, c] of cols) if (c.low < c.high) bad.push(`${field} column at ${x}: one of the group above someone else`);
+  }
+  return bad;
+}
+/** A field's lit dots as the page prints them (`data-lit`): how many, and the sum and sum of squares of places. */
+const printOf = (lit: Set<number>) => { let n = 0, sum = 0, sq = 0; for (const i of lit) { n++; sum += i; sq += i * i; } return `${n}:${sum}:${sq}`; };
+/** Which dots of each field a filter's people are. */
+function litOf(who: { person_key: string }[], at: Map<string, { field: 'main' | 'pile'; index: number }>) {
+  const lit = { main: new Set<number>(), pile: new Set<number>() };
+  for (const p of who) { const s = at.get(p.person_key); if (s) lit[s.field].add(s.index); }
+  return lit;
+}
+
+/**
+ * Full page, a filter settles its group to the floor: in every column of the field and the pile none of
+ * them sits above anyone else, and no dot moves across — the group becomes a shape of its own inside
+ * everyone's, on the same scale. Taken off, every dot is back exactly where it was. In both colourings,
+ * and with an employment type seen alone, where its own group settles under the rest of it. On the page, a
+ * preview moves nothing (search-suggestions.spec).
+ */
+test('a filter settles its group to the floor of each column, and taking it off puts every dot back', async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fullPage(page);
+  const at = await spots();
+  const ra = await codeOf('Research Associate');
+  const prof = await codeOf('Professor');
+  const dots = page.locator(FIELDS.main);
+  const settled = async (lit: string | null) => {
+    if (lit) await expect(dots).toHaveAttribute('data-lit', lit, { timeout: 60_000 });
+    else await expect(dots).not.toHaveAttribute('data-lit', /./);
+    await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    await expect(page.locator(FIELDS.pile)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+  };
+  for (const colouring of ['By employment type', 'Generic']) {
+    if (colouring === 'Generic') {
+      await page.locator('.hero-dist-full .hero-dist-toggle').getByText('Generic', { exact: true }).click();
+      await expect(dots).toHaveAttribute('data-stack', 'off');
+      await settled(null);
+    }
+    const was = await laidOut(page);
+    for (const [label, on, f] of [
+      ['Research Associate', () => put(page, 'research assoc', `t:${ra}`), { code: ra }],
+      ['Professor', () => put(page, 'professor', `t:${prof}`), { code: prof }],
+      [SCHOOL, async () => { await page.locator('.search-token-x').click(); await put(page, 'medicine', `d:${SCHOOL}`); }, { school: SCHOOL }],
+    ] as const) {
+      await on();
+      const lit = litOf(await covered(f), at);
+      await settled(printOf(lit.main));
+      const now = await laidOut(page);
+      expect(unsettled(now, was, lit), `${colouring}, ${label}`).toEqual([]);
+      let moved = 0;
+      for (let i = 0; i < now.main.length; i++) if (now.main[i] !== was.main[i]) moved++;
+      expect(moved, `${colouring}, ${label}: nothing moved, so nothing here is tested`).toBeGreaterThan(100);
+    }
+    await page.locator('.search-token-x').click();
+    await settled(null);
+    expect(await laidOut(page), `${colouring}: taking the filter off left dots out of place`).toEqual(was);
+  }
+  // One employment type alone, and a filter within it: Faculty, and Professor.
+  await page.locator('.hero-dist-full .hero-dist-toggle').getByText('By employment type', { exact: true }).click();
+  await expect(dots).toHaveAttribute('data-stack', 'on');
+  await settled(null);
+  const cats = HOME_STATS.pay_counts.categories.map((c) => c.name);
+  const faculty = cats.indexOf('Faculty');
+  await page.locator('.hero-dist-full .hero-dist-legend-item[data-category="Faculty"]').click();
+  await expect(dots).toHaveAttribute('data-solo', String(faculty));
+  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 10_000 });
+  const was = await laidOut(page);
+  await put(page, 'professor', `t:${prof}`);
+  const lit = litOf(await covered({ code: prof }), at);
+  await settled(printOf(lit.main));
+  const everyone = await people();
+  const isFaculty = { main: new Set<number>(), pile: new Set<number>() };
+  for (const p of everyone) { const s = at.get(p.person_key); if (s && p.cat === 'Faculty') isFaculty[s.field].add(s.index); }
+  expect(unsettled(await laidOut(page), was, lit, (field, i) => isFaculty[field].has(i)), 'Faculty alone, Professor on').toEqual([]);
+  // And a group across the types: the School of Medicine is faculty and staff alike. The type seen alone
+  // keeps the bottom of every column, and the school's part of it settles to the floor under the rest of it.
+  await page.locator('.search-token-x').click();
+  await put(page, 'medicine', `d:${SCHOOL}`);
+  const med = litOf(await covered({ school: SCHOOL }), at);
+  await settled(printOf(med.main));
+  const now = await laidOut(page);
+  expect(unsettled(now, was, med, (field, i) => isFaculty[field].has(i)), 'Faculty alone, Medicine on').toEqual([]);
+  expect(unsettled(now, was, isFaculty), 'Faculty alone, Medicine on: someone else under the type seen alone').toEqual([]);
+});
+
+/**
+ * The names the search hangs on its dots follow them when a filter settles or lifts the field — under
+ * Reduce Motion too, where the dots jump and no moving ever ends to say read them again: each leader still
+ * starts at its own dot's rim. Taking the filter off with names up moves every marked dot it touches.
+ */
+test('the search’s names follow their dots when a filter comes off, under Reduce Motion too', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await fullPage(page);
+  await put(page, 'medicine', `d:${SCHOOL}`);
+  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await bar(page).fill('smith');
+  await expect(page.locator('.hero-found-label').first()).toBeVisible({ timeout: 60_000 });
+  const marksWere = await page.locator(FIELDS.main).getAttribute('data-marks');
+  // Off with its ×, the names still up.
+  await page.locator('.search-token-x').click();
+  await expect(page.locator(FIELDS.main)).not.toHaveAttribute('data-lit', /./);
+  await expect(bar(page)).toHaveValue('smith');
+  await page.waitForTimeout(400);
+  const marks = (await page.locator(FIELDS.main).getAttribute('data-marks'))!;
+  expect(marks, 'no marked dot moved when the filter came off, so nothing here is tested').not.toBe(marksWere);
+  const r = Number(await page.locator(FIELDS.main).getAttribute('data-mark-r'));
+  const dots = marks.split(' ').map((m) => m.split(':').slice(1).map(Number));
+  const starts = await page.locator('.hero-found-leaders line').evaluateAll((ls) => ls.map((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('y1'))]));
+  expect(starts.length, 'no names were hung on the dots').toBeGreaterThan(2);
+  for (const [x, y] of starts) {
+    const d = Math.min(...dots.map(([dx, dy]) => Math.hypot(dx - x, dy - y)));
+    expect(d, `a name's leader starts ${d.toFixed(1)}px from any marked dot: it points where the dot was`).toBeLessThan(r * 2 + 3);
+  }
+  await ctx.close();
+});
+
+/**
+ * A settled group is shaded as a shape of its own: in each column its top dot takes the crest's light and
+ * its foot the floor's shade, as everyone's do in theirs. Shaded by the whole column's height, the group
+ * would sit at the foot of every column and all of it would be the field's darkest. On a dark page, in one
+ * ink, so light is all that differs between dots; read at each dot's middle, inside its neighbours' reach.
+ */
+test('a settled group is shaded from its own floor to its own top', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext({ colorScheme: 'dark', viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await fullPage(page);
+  const dots = page.locator(FIELDS.main);
+  await page.locator('.hero-dist-full .hero-dist-toggle').getByText('Generic', { exact: true }).click();
+  await expect(dots).toHaveAttribute('data-stack', 'off');
+  await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+  const at = await spots();
+  await put(page, 'medicine', `d:${SCHOOL}`);
+  const lit = litOf(await covered({ school: SCHOOL }), at).main;
+  await expect(dots).toHaveAttribute('data-lit', printOf(lit), { timeout: 60_000 });
+  await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+  await page.waitForTimeout(600);
+  const pts = await places(page, FIELDS.main);
+  const r = Number(await dots.getAttribute('data-r'));
+  // Each column's group, top and foot.
+  const cols = new Map<number, number[]>();
+  for (const i of lit) cols.set(pts[2 * i], [...(cols.get(pts[2 * i]) ?? []), i]);
+  const ends = [...cols.values()].filter((c) => c.length >= 6).map((c) => {
+    c.sort((a, b) => pts[2 * a + 1] - pts[2 * b + 1]);
+    return [c[0], c[c.length - 1]];
+  });
+  expect(ends.length, 'too few columns hold enough of the group to have a top and a foot').toBeGreaterThan(40);
+  const light = await page.evaluate(([sel, xy, w]) => {
+    const cv = document.querySelector(`${sel} canvas`) as HTMLCanvasElement;
+    const k = cv.width / cv.getBoundingClientRect().width;
+    const ctx = cv.getContext('2d')!;
+    return xy.map(([x, y]) => {
+      const x0 = Math.floor((x - w) * k), y0 = Math.floor((y - w) * k), s = Math.ceil(2 * w * k) + 1;
+      const d = ctx.getImageData(x0, y0, s, s).data;
+      let t = 0, n = 0;
+      for (let q = 0; q < s * s; q++) {
+        const px = x0 + (q % s) + 0.5, py = y0 + Math.floor(q / s) + 0.5;
+        if (Math.hypot(px - x * k, py - y * k) > w * k) continue;
+        t += ((0.2126 * d[4 * q] + 0.7152 * d[4 * q + 1] + 0.0722 * d[4 * q + 2]) * d[4 * q + 3]) / 255;
+        n++;
+      }
+      return t / Math.max(1, n);
+    });
+  }, [FIELDS.main, ends.flatMap(([top, foot]) => [[pts[2 * top], pts[2 * top + 1]], [pts[2 * foot], pts[2 * foot + 1]]] as [number, number][]), 0.6 * r] as const);
+  const ratios = ends.map((_, q) => light[2 * q] / Math.max(1, light[2 * q + 1])).sort((a, b) => a - b);
+  // Measured: about 1.4 shaded as its own, about 1.05 shaded by the column (the foot of every column is
+  // about as dark as the next dot up).
+  const median = ratios[ratios.length >> 1];
+  expect(median, `the group's top is not lit above its foot (top ÷ foot ${median.toFixed(2)}, at the median of ${ends.length} columns)`).toBeGreaterThan(1.25);
+  await ctx.close();
+});
+
+/**
+ * While a group is shown, the wash under everyone's curve fades to half, so the group's own shape at the
+ * floor is what reads as filled; everyone's curve itself stays. Taken off, the wash comes back.
+ */
+test('the wash under everyone’s curve fades to half while a group is shown', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fullPage(page);
+  const wash = page.locator('.hero-dist-full .hero-dist-wash');
+  await expect(wash).toHaveCount(1);
+  const opacity = () => wash.evaluate((el) => Number(getComputedStyle(el).opacity));
+  expect(await opacity()).toBe(1);
+  await put(page, 'medicine', `d:${SCHOOL}`);
+  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect.poll(opacity).toBeCloseTo(0.5, 2);
+  expect(await page.locator('.hero-dist-full .hero-dist-plot').evaluate((el) => Number(getComputedStyle(el).opacity)), 'everyone’s curve faded too').toBe(1);
+  await page.locator('.search-token-x').click();
+  await expect.poll(opacity).toBe(1);
+});
+
 /**
  * The dots a filter is not about are drawn faint, not left alone and not hidden: over a stretch of pay with
  * none of the group in it, the field's ink falls to about a fifth. `data-lit` only says which dots the mask
@@ -427,27 +644,51 @@ test('filtering never moves the plot, and nothing it draws lies on a dot', async
   }
 });
 
-test('putting a filter on and taking it off repaint within a frame, at CI’s pace', async ({ page }) => {
+/**
+ * Putting a filter on and taking it off, full page, the group settles to the floor and back: each column's
+ * places are dealt again with its lit dots first, every dot eases up or down its own column in squares, and the
+ * field goes back into beads a strip a frame. Each of those is timed, at CI's pace. What this guards
+ * against is the field repainted whole in beads at once — about 55ms at that pace, which the end of a
+ * re-stack did until it swept in strips.
+ */
+test('putting a filter on and taking it off settle and repaint within a frame, at CI’s pace', async ({ page }) => {
   await atCiPace(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   const code = await codeOf('Research Associate');
-  await page.evaluate(() => performance.clearMeasures('dim-paint'));
+  const marks = ['dim-paint', 'dot-frame', 'pile-frame', 'dot-layout'];
+  await page.evaluate((m) => m.forEach((n) => performance.clearMeasures(n)), marks);
   await put(page, 'research assoc', `t:${code}`);
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true');
   await page.waitForTimeout(800);
   await page.locator('.search-token-x').click();
+  await expect(page.locator('.hero-dist-full .hero-dots')).not.toHaveAttribute('data-lit', /./);
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true');
   await page.waitForTimeout(800);
-  const paints = await page.evaluate(() => performance.getEntriesByName('dim-paint').map((e) => e.duration));
-  expect(paints.length, 'the dimming was never repainted, so nothing was timed').toBeGreaterThanOrEqual(2);
-  // One repaint may run over, by less than a frame; no two may. A deploy failed on a single 14.4ms repaint
-  // among thirty-odd of 0.1–10.4 on a shared runner, a hiccup of the machine and not of the code. What these
-  // guard against is the field repainted whole at once — about 55ms at CI's pace, on putting a filter on or
-  // taking it off, so one slow repaint of that size still fails here, and a slow strip fails on the second.
-  const slow = [...paints].sort((a, b) => b - a);
-  const all = `${paints.map((d) => d.toFixed(1)).join(', ')}ms`;
-  expect(slow[0], `a repaint held two frames: ${all}`).toBeLessThan(2 * FRAME_MS);
-  expect(slow[1], `more than one repaint held a frame: ${all}`).toBeLessThan(FRAME_MS);
+  const t = await page.evaluate((m) => Object.fromEntries(m.map((n) => [n, performance.getEntriesByName(n).map((e) => e.duration)])), marks);
+  expect(t['dim-paint'].length, 'the field never went back into beads in strips, so nothing was timed').toBeGreaterThanOrEqual(2 * 8);
+  expect(t['dot-frame'].length, 'the dots never moved, so no frame was timed').toBeGreaterThanOrEqual(4);
+  expect(t['dot-layout'].length, 'the field was never packed again').toBeGreaterThanOrEqual(2);
+  // The frames of the move are judged as every moving frame in this suite is, by the median (dots.spec,
+  // tail.spec), and none may hold two frames: every dot of the field is in each of them, and at this pace
+  // they run close to the budget throughout, so the slowest of twenty is the machine's as often as not.
+  for (const [what, ds] of [['moving frame', t['dot-frame']], ['moving frame of the pile', t['pile-frame']]] as const) {
+    if (!ds.length) continue;
+    const sorted = [...ds].sort((a, b) => a - b);
+    const all = `${ds.map((d) => d.toFixed(1)).join(', ')}ms`;
+    expect(sorted[Math.floor(sorted.length / 2)], `a ${what}, ms, at the median: ${all}`).toBeLessThan(FRAME_MS);
+    expect(sorted[sorted.length - 1], `a ${what} held two frames: ${all}`).toBeLessThan(2 * FRAME_MS);
+  }
+  // The repaints and the packings are each one piece of work: one of each may run over, by less than a
+  // frame; no two may. A deploy failed on a single 14.4ms repaint among thirty-odd of 0.1–10.4 on a shared
+  // runner, a hiccup of the machine and not of the code.
+  for (const [what, ds] of [['repaint', t['dim-paint']], ['packing', t['dot-layout']]] as const) {
+    const slow = [...ds].sort((a, b) => b - a);
+    const all = `${ds.map((d) => d.toFixed(1)).join(', ')}ms`;
+    expect(slow[0], `a ${what} held two frames: ${all}`).toBeLessThan(2 * FRAME_MS);
+    if (slow.length > 1) expect(slow[1], `more than one ${what} held a frame: ${all}`).toBeLessThan(FRAME_MS);
+  }
 });
 
 test('the search’s names start below the group’s label, and none touches it', async ({ page }) => {

@@ -1671,7 +1671,7 @@ function Distribution({
           entrance={entrance} highlight={highlight} glow rich pack={PACK}
           solo={shownSolo} replay={replay} marks={mainMarks} markBig={bigMain} squeeze={tailSqueeze}
           onRained={() => { setSheen((k) => k + 1); setSheenOn(true); }}
-          dim={lit?.main ?? null}
+          dim={lit?.main ?? null} sink={full}
           onFrame={lensAt ? redrawLens : undefined}
         />
       </div>
@@ -1728,7 +1728,10 @@ function Distribution({
           <g ref={groupGRef}>
             {groupLine && (
               <>
-                <path className="hero-dist-group-casing" d={groupLine} fill="none" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                {/* Full page the group has settled to the floor and this runs along the top of its dots: a
+                    narrow casing, or the channel it cuts takes the group's own crest with it. */}
+                <path className="hero-dist-group-casing" d={groupLine} fill="none" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
+                  style={full ? ({ '--group-casing-w': '4px' } as CSSProperties) : undefined} />
                 <path className="hero-dist-group-curve" d={groupLine} fill="none" stroke="var(--mantine-color-text)" strokeWidth={2.25}
                   strokeDasharray="6 4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
               </>
@@ -1904,7 +1907,7 @@ function Distribution({
               kinds={colour ? pile.kinds : null} inks={inkList} stack={colour}
               entrance={entrance} delay={SPREAD_MS} highlight={pileHighlight} frameMark="pile-frame" glow rich pack={PACK}
               solo={shownSolo} replay={replay} marks={pileMarks} markBig={bigPile}
-              dim={lit?.pile ?? null} ring={pileShow ? pileDot : null}
+              dim={lit?.pile ?? null} sink={full} ring={pileShow ? pileDot : null}
               onFrame={lensAt ? redrawLens : undefined}
             />
             {/* Not while a dot is named: the caption stands where this pill does, and the pile's own count

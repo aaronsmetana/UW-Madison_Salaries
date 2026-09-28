@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LIT_SIZES, layoutDots, litScale, packDots, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
+import { LIT_SIZES, layoutDots, litScale, packDots, settleLit, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
 
 const curve = (x: number) => 60 * Math.exp(-(((x - 300) / 120) ** 2)) + 4;
 
@@ -251,5 +251,63 @@ describe('litScale', () => {
 
   it('comes in the sizes made ahead', () => {
     for (let s = 0; s <= 1; s += 0.013) expect(LIT_SIZES).toContain(litScale(s));
+  });
+});
+
+describe('settleLit', () => {
+  const curve = (x: number) => 40 * Math.exp(-(((x - 150) / 60) ** 2)) + 3;
+  const xs = Array.from({ length: 3000 }, (_, i) => 20 + ((i * 7919) % 26000) / 100);
+  const kinds = Uint8Array.from(xs, (_, i) => (i * 31) % 4);
+  const lit = Uint8Array.from(xs, (_, i) => ((i * 2654435761) >>> 0) % 7 === 0 ? 0 : 1);
+  const order = (pts: Float32Array) => Uint32Array.from(xs, (_, i) => i).sort((a, b) => pts[2 * a] - pts[2 * b]);
+  const columns = (pts: Float32Array) => {
+    const m = new Map<number, number[]>();
+    for (let i = 0; i < xs.length; i++) m.set(pts[2 * i], [...(m.get(pts[2 * i]) ?? []), i]);
+    return m;
+  };
+
+  for (const dpr of [1, 2]) {
+    for (const stacked of [false, true]) {
+      it(`settles the lit to the floor of their own columns, each part in its order (dpr ${dpr}, ${stacked ? 'stacked by kind' : 'unstacked'})`, () => {
+        const base = packDots({ xs, heightAt: curve, baseY: 60, width: 300, dpr, spill: 3, stack: stacked ? kinds : undefined });
+        const out = settleLit(base.pts, lit, order(base.pts));
+        const was = columns(base.pts);
+        let moved = 0;
+        for (const [x, col] of was) {
+          const ys = (pts: Float32Array) => col.map((i) => pts[2 * i + 1]);
+          // The same rows, only who takes which.
+          expect([...ys(out)].sort()).toEqual([...ys(base.pts)].sort());
+          for (const i of col) {
+            expect(out[2 * i], 'a dot moved across').toBe(x);
+            if (out[2 * i + 1] !== base.pts[2 * i + 1]) moved++;
+          }
+          const litYs = col.filter((i) => !lit[i]).map((i) => out[2 * i + 1]);
+          const restYs = col.filter((i) => lit[i]).map((i) => out[2 * i + 1]);
+          if (litYs.length && restYs.length) expect(Math.min(...litYs), 'a lit dot above an unlit one').toBeGreaterThanOrEqual(Math.max(...restYs));
+          // Each part keeps its order up the column: stacked by kind, the lit are still by kind.
+          for (const part of [col.filter((i) => !lit[i]), col.filter((i) => lit[i])]) {
+            for (const a of part) for (const b of part) {
+              if (base.pts[2 * a + 1] > base.pts[2 * b + 1]) expect(out[2 * a + 1]).toBeGreaterThanOrEqual(out[2 * b + 1]);
+            }
+          }
+        }
+        expect(moved, 'nothing moved, so nothing here is tested').toBeGreaterThan(100);
+      });
+    }
+  }
+
+  it('with a kind first, settles within it and within the rest, the kind below the rest', () => {
+    const solo = 2;
+    const base = packDots({ xs, heightAt: curve, baseY: 60, width: 300, dpr: 2, spill: 3, stack: Uint8Array.from(kinds, (k) => (k === solo ? 0 : 1 + k)) });
+    const first = Uint8Array.from(kinds, (k) => (k === solo ? 0 : 1));
+    const out = settleLit(base.pts, lit, order(base.pts), first);
+    for (const col of columns(base.pts).values()) {
+      const y = (sel: (i: number) => boolean) => col.filter(sel).map((i) => out[2 * i + 1]);
+      const bands = [y((i) => !first[i] && !lit[i]), y((i) => !first[i] && !!lit[i]), y((i) => !!first[i] && !lit[i]), y((i) => !!first[i] && !!lit[i])];
+      for (let b = 1; b < 4; b++) {
+        if (!bands[b].length) continue;
+        for (let a = 0; a < b; a++) if (bands[a].length) expect(Math.min(...bands[a]), `band ${a} above band ${b}`).toBeGreaterThanOrEqual(Math.max(...bands[b]));
+      }
+    }
   });
 });
