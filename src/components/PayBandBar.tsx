@@ -41,8 +41,8 @@ export function PayBandBar({
   };
 
   return (
-    // `chart-plot` marks this as a plotted figure for the chart-card rule in app.css — the same job
-    // `.recharts-responsive-container` does for the Recharts charts, which this one is not.
+    // `chart-plot` marks a plotted figure built from divs rather than Recharts, which is how the tests
+    // find one.
     <div className="chart-plot">
       <div
         ref={trackRef}

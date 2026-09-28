@@ -128,7 +128,7 @@ export function PeerRangeBar({
   };
 
   return (
-    // See PayBandBar: `chart-plot` is how a hand-rolled figure tells the stylesheet it is one.
+    // See PayBandBar: `chart-plot` marks a hand-rolled figure.
     <div className="chart-plot">
       {/* current-value pin above the dot — caret points down to it so the value reads as the dot's, not
           the median's. Both label + caret sweep in with the dot on mount. */}

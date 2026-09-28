@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine, Legend, Customized } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine, Customized } from 'recharts';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
@@ -18,6 +18,7 @@ import {
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, fmtDate, spanLabel, fmtChange } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
+import { EndLabels } from './chart/EndLabels';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
 import { bandFor, belowMinimum, isRange } from '../lib/bands';
@@ -391,12 +392,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       <Card withBorder padding="lg">
         <CardTitle>Salary over time</CardTitle>
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={trendPlot} margin={{ left: 12, right: 12 }}>
+          {/* Top margin: room above a line that ends at the top of the plot for its name (EndLabels). */}
+          <LineChart {...chartKeys('Salary over time')} data={trendPlot} margin={{ left: 12, right: 12, top: 18 }}>
             <CartesianGrid {...GRID} />
             <XAxis {...trendAxis} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
-            <Legend />
             <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.figure)} />
             {raiseCtx.typical.size > 1 && (
               <Line type="monotone" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
@@ -411,13 +412,28 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 <ReferenceDot key={`tc-${t.id}`} x={snapX(t.date, t.id)} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
               ) : null
             )}
+            <Customized
+              component={
+                <EndLabels
+                  endSeries={[
+                    { key: 'salary', text: 'Salary', color: 'var(--text-accent)' },
+                    { key: 'med', text: 'Title median', color: 'var(--mantine-color-dimmed)' },
+                    ...(raiseCtx.typical.size > 1 ? [{ key: 'typical', text: 'If raises had been typical', color: 'var(--mantine-color-dimmed)' }] : []),
+                  ]}
+                  endBreaks={breakMarks.map((b) => ({ at: b.x, texts: b.texts }))}
+                  endBreakEdge="bottom"
+                />
+              }
+            />
           </LineChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed" mt={4}>
-          Ringed dots mark a title/role change; the dashed line is the median for the title held at the time.
-          {reporting.changes[0] ? ` The line breaks at ${reporting.changes[0].sinceLabel}, the change in ${reporting.changes[0].what} (×${reporting.changes[0].ratio}).` : ''}
-        </Text>
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median', 'If raises had been typical']} rows={trendData.map((t) => [t.label, t.salary, t.med, raiseCtx.typical.get(t.id) ?? null])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))} />
+        {reporting.changes[0] && (
+          <Text size="xs" c="dimmed" mt={4}>
+            The line breaks at {reporting.changes[0].sinceLabel}, the change in {reporting.changes[0].what} (×{reporting.changes[0].ratio}).
+          </Text>
+        )}
+        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median', 'If raises had been typical']} rows={trendData.map((t) => [t.label, t.salary, t.med, raiseCtx.typical.get(t.id) ?? null])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))}
+          about="Ringed dots mark a title or role change. The title median is the median for the title held at the time." />
       </Card>
 
       {raiseCtx.breakdown && raiseCtx.breakdown.shares.length > 0 && (

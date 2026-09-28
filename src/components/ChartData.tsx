@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { VisuallyHidden, ActionIcon, Tooltip, Table, Button, Text } from '@mantine/core';
-import { IconTable, IconDownload } from '@tabler/icons-react';
+import { useState, type ReactNode } from 'react';
+import { VisuallyHidden, ActionIcon, Tooltip, Table, Button, Text, Popover } from '@mantine/core';
+import { IconTable, IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { downloadCSV } from '../lib/csv';
 import { ICON } from '../lib/ui';
 import { SourceNote } from './SourceNote';
@@ -43,6 +43,12 @@ function cell(v: string | number | null | undefined): string {
  * The table renders whether or not it is visible, so its size is a real cost even when nobody opens
  * it: a 3,000-point scatter put 3,000 rows of raw floats into the accessibility tree and onto the
  * printed page. It is capped now, and the cap says so.
+ *
+ * `about` is the chart's how-to-read note — what a bin holds, what each colour and line means — behind
+ * an info button in the same strip. Those notes used to run two and three lines under every plot, read
+ * once and then scrolled past on every visit after. A note that states a fact about THIS data (a bar
+ * cut at the top of the scale, a coverage change, a small group) is not a how-to-read note: it stays
+ * on the card, where nobody has to ask for it.
  */
 export function ChartData({
   caption,
@@ -51,6 +57,7 @@ export function ChartData({
   n,
   unit,
   period,
+  about,
 }: {
   caption: string;
   columns: string[];
@@ -59,6 +66,8 @@ export function ChartData({
   n?: number | null;
   unit?: string;
   period?: string | null;
+  /** How to read the chart, opened from the footer's info button. */
+  about?: ReactNode;
 }) {
   const [visible, setVisible] = useState(false);
   if (!rows.length) return null;
@@ -83,6 +92,21 @@ export function ChartData({
       period={period}
       actions={
         <>
+          {about && (
+            // `trapFocus` moves focus into the note as it opens: Mantine hears Escape only from inside
+            // the dropdown, so with focus left on the button the note could not be closed by keyboard.
+            // `returnFocus` hands focus back to the button when it closes.
+            <Popover width={320} position="top-end" withArrow shadow="md" trapFocus returnFocus>
+              <Popover.Target>
+                <ActionIcon size="sm" variant="subtle" color="gray" aria-label="How to read this chart" className="chart-about">
+                  <IconInfoCircle size={ICON.compact} />
+                </ActionIcon>
+              </Popover.Target>
+              <Popover.Dropdown className="chart-about-note">
+                <Text size="xs">{about}</Text>
+              </Popover.Dropdown>
+            </Popover>
+          )}
           <Button
             size="compact-xs"
             variant="subtle"

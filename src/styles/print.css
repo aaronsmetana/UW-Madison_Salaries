@@ -97,8 +97,8 @@
     -webkit-print-color-adjust: exact;
   }
 
-  /* The chart-card specular is screen elevation. Paper has no light source, and
-     `print-color-adjust: exact` above would otherwise commit the bloom to the page. */
+  /* Card shadows are screen elevation. Paper has no light source, and `print-color-adjust: exact`
+     above would otherwise commit them to the page. */
   .mantine-Paper-root {
     box-shadow: none !important;
   }

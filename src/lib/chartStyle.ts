@@ -19,7 +19,13 @@ export const AXIS_TICK = { fontSize: 12, fill: 'var(--mantine-color-dimmed)' } a
 // on both grounds — 1.13:1 on the light card (so light mode effectively had no gridlines at all)
 // and 2.11:1 on the dark one. `--hairline-strong` carries its own per-scheme alpha, so the blanket
 // opacity goes with it: keeping both would multiply 0.16 by 0.3 and erase the grid entirely.
-export const GRID = { strokeDasharray: '3 3', stroke: 'var(--hairline-strong)', vertical: false } as const;
+// Solid, not dashed: a dash means a reference line on these charts (a median, a target, the usual
+// raise, a reporting break), and a dashed grid made those read as one more gridline — the person
+// trend carried four dash patterns at once.
+// `fill` is the plot surface: a faint tint on the rectangle inside the axes, so the eye finds where
+// the data lives. It replaced a bloom across the whole chart card, which lit the title and the footer
+// as much as the plot. Keep it faint — it marks the plot's extent and must never read as a band.
+export const GRID = { stroke: 'var(--hairline-strong)', vertical: false, fill: 'var(--plot-surface)' } as const;
 export const Y_PAD = { top: 6, bottom: 6 } as const;
 
 /**
@@ -44,6 +50,27 @@ export const TIP_STYLE: CSSProperties = {
   padding: '6px 10px',
 };
 export const TIP_LABEL_STYLE: CSSProperties = { color: 'var(--mantine-color-text)', fontWeight: 600 };
+
+/**
+ * Keyboard access and a name for a Recharts chart: Tab reaches it, and the left and right arrow keys
+ * step the tooltip through its points — the tooltip had been a mouse-only way into the numbers.
+ * Recharts' `accessibilityLayer` does the stepping; it makes the chart an `application`, so it needs a
+ * name, and the name says which keys work there.
+ *
+ * `aria-label`, not Recharts' `title` prop: that becomes an SVG `<title>`, which browsers show as a
+ * native tooltip over the whole plot, on top of the chart's own.
+ *
+ * Only for a chart whose tooltip shows something. A synced sub-panel that suppresses its own
+ * tooltip (the headcount under the median, the FTE under a person's pay) would be a Tab stop where
+ * the keys do nothing, and a scatter has no order to step through. Never inside an `aria-hidden`
+ * wrapper (the tenure scatter's): a focusable there is announced as nothing.
+ */
+export function chartKeys(name: string) {
+  return {
+    accessibilityLayer: true,
+    'aria-label': `${name}. Left and right arrow keys step through the values.`,
+  } as const;
+}
 
 /** Rounded data-end / square baseline for bar marks: [topLeft, topRight, bottomRight, bottomLeft]. */
 export const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];

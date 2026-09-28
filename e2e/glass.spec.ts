@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { deltaE, readSurface, samplePixels, setScheme, transparencyEmulator } from './glass';
-import { afterReveal } from './reveal';
 
 /**
  * The chart tooltip is the surface every graph in the app produces, so it is where a "sheen" reaches
@@ -109,19 +108,17 @@ test.describe('the chart tooltip', () => {
  * `#trend-area-grad`, and every `url(#…)` in the document would resolve to whichever mounted first —
  * so one chart would silently paint with the other's gradient, or with nothing.
  *
- * `barGradientDefs` was already called with `useId()` at all four of its sites; `lineGlowDefs` was
- * passed the literals 'trend' and 'expltrend', safe only by the accident of living on different
- * routes. This asserts the property rather than the fix: every reference resolves, and no id is
- * defined twice — which stays true however the ids are generated.
+ * The glow filter was once passed the literals 'trend' and 'expltrend', safe only by the accident of
+ * living on different routes. This asserts the property rather than the fix: every reference
+ * resolves, and no id is defined twice — which stays true however the ids are generated.
  */
 test.describe('chart gradient ids', () => {
+  // The two trend charts are what still define a gradient (the wash under the line, `areaGradDef`):
+  // the bars went flat and the glow line went, so the changes, retention and school-distribution
+  // routes now carry none and the vacuity check below would (correctly) refuse them.
   for (const [name, route] of [
     ['explore trends', './explore?tab=trends'],
-    ['explore changes', './explore?tab=changes'],
-    ['explore retention', './explore?tab=cohorts'],
-    // Not /compare or /paycheck: both render an empty state until something is selected, so they
-    // carry no gradients and the vacuity check below (correctly) refuses them.
-    ['school distribution', `./school/${encodeURIComponent('School of Medicine and Public Health')}?tab=dist`],
+    ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`],
   ] as const) {
     test(`resolve, and none is defined twice: ${name}`, async ({ page }) => {
       await page.goto(route, { waitUntil: 'networkidle' });
@@ -166,15 +163,6 @@ test.describe('chart gradient ids', () => {
 });
 
 /**
- * The chart-card specular.
- *
- * A card holding a plotted figure is lit from its top edge; every other card in the app stays flat.
- * That distinction is the whole design: the inset highlight that once sat on all 86 bordered
- * surfaces was removed as "the single most dated thing the app was doing", and this only earns its
- * place by being narrower than that — so a test that the ~28 figure cards are lit is only half the
- * contract, and the other half is that nothing else is.
- */
-/**
  * Home's hero distribution was the one chart bypassing `chartDefs` entirely: hand-written stops
  * (0.34 -> 0.02 against the factory's 0.28 -> 0) under a hardcoded id. Its fill is now the people
  * themselves, one dot each (DotField); the one gradient it keeps is a faint wash under the curve,
@@ -218,162 +206,89 @@ test('the hero distribution draws its people as dots, with no private area fill'
   for (const f of fades) expect(f, 'the tinted wash is not faded by areaGradDef').toMatch(/-area-grad\)$/);
 });
 
-test.describe('the chart-card specular', () => {
-  const MARKERS = '.recharts-responsive-container, .hist-plot, .peer-strip, .chart-plot';
-
+/**
+ * The plot surface.
+ *
+ * A chart card used to carry a bloom across its whole face — an inset shadow lit from the top edge,
+ * over the title and the footer as much as the plot. What a chart needs is narrower: the rectangle
+ * where its data lives, marked off from the card by a faint tint (`GRID`'s `fill`, `--plot-surface`).
+ */
+test.describe('the plot surface', () => {
   /**
-   * It has to be SEEN, in both schemes. `--glass-sheen` was unusable here precisely because white
-   * over the white light card composites to dE 0.00 — a rule that applies, computes, and shows
-   * nothing. The floor catches that; the ceiling is what keeps "restrained" enforceable, since a
-   * wash past ~8 stops reading as light and starts reading as a coloured panel.
+   * It has to be SEEN, in both schemes, and stay faint. The floor is the ~2.3 JND: a token that
+   * applies and composites to nothing is the white-on-white failure. The ceiling keeps it a surface
+   * rather than a band a reader might take for data.
    */
   for (const scheme of ['light', 'dark'] as const) {
-    test(`is actually visible on a rendered card (${scheme})`, async ({ page }) => {
+    test(`is visible and faint (${scheme})`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 1000 });
       await page.goto('./explore?tab=changes', { waitUntil: 'networkidle' });
       await setScheme(page, scheme);
-      await page.waitForTimeout(3_000);
-
-      const card = page.locator('.mantine-Paper-root[data-with-border]')
-        .filter({ has: page.locator('.recharts-responsive-container') }).first();
-      await expect(card).toBeVisible({ timeout: 60_000 });
-      await card.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(400);
-      const box = (await card.boundingBox())!;
-
-      // A clean strip inside the left padding: card face top to bottom, no text, no marks. The lit
-      // sample sits 2px in; the reference is far enough down that the bloom has fully decayed.
-      const x = Math.round(box.x + 6);
-      const [lit, face] = await samplePixels(page, [
-        { x, y: Math.round(box.y + 2) },
-        { x, y: Math.round(box.y + 150) },
+      const card = page.locator('.raise-dist-card');
+      await expect(card.locator('.recharts-cartesian-grid-bg')).toBeAttached({ timeout: 60_000 });
+      // Centred, not merely in view: at the top edge the sticky header covers the plot, and both
+      // samples read the header's white.
+      await card.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+      await page.waitForTimeout(1_000);
+      const cardBox = (await card.boundingBox())!;
+      const plot = (await card.locator('.recharts-cartesian-grid-bg').boundingBox())!;
+      // Between the plot's top two gridlines, just inside its left edge (no bar starts there — the
+      // first bin is the "< −10%" catch-all), against the card face in its left padding.
+      // Inside the plot only: a capped chart draws one gridline above it.
+      const lines = (await card.locator('.recharts-cartesian-grid-horizontal line').evaluateAll((ls) =>
+        ls.map((l) => l.getBoundingClientRect().y).sort((a, b) => a - b)))
+        .filter((ly) => ly >= plot.y && ly <= plot.y + plot.height);
+      expect(lines.length, 'the chart drew fewer than two gridlines in its plot').toBeGreaterThanOrEqual(2);
+      const y = Math.round((lines[0] + lines[1]) / 2);
+      // Nothing but the card in front of either point: not the sticky header, not a tooltip.
+      const hits = await page.evaluate(([px, fx, yy]) => [px, fx].map((x) =>
+        document.elementFromPoint(x, yy)?.closest('.raise-dist-card') ? 'card' : 'covered'), [Math.round(plot.x + 3), Math.round(cardBox.x + 6), y]);
+      expect(hits, 'the samples are not on the card').toEqual(['card', 'card']);
+      const [inside, face] = await samplePixels(page, [
+        { x: Math.round(plot.x + 3), y },
+        { x: Math.round(cardBox.x + 6), y },
       ]);
-      const d = deltaE(lit, face);
-
-      expect(d, `the specular is invisible in ${scheme} — rgb(${lit}) against rgb(${face}) is dE ${d.toFixed(2)}, at or under the ~2.3 JND. A rule that applies and shows nothing is the white-on-white failure this token exists to avoid.`)
-        .toBeGreaterThan(2.5);
-      expect(d, `the specular is too strong in ${scheme} (dE ${d.toFixed(2)}) — past ~8 it stops reading as light on a surface and starts reading as a tinted card`)
-        .toBeLessThan(8);
+      const d = deltaE(inside, face);
+      expect(d, `the plot surface is invisible in ${scheme}: rgb(${inside}) against the card's rgb(${face}) is dE ${d.toFixed(2)}`)
+        .toBeGreaterThan(2.3);
+      expect(d, `the plot surface is too strong in ${scheme} (dE ${d.toFixed(2)}): past ~6 it reads as a band, not a surface`)
+        .toBeLessThan(6);
     });
   }
 
   /**
-   * Tests the EFFECT, not the class: a card can only pass by actually resolving an inset shadow, so
-   * this fails if the selector stops reaching it for any reason at all.
-   *
-   * The routes are chosen to exercise all four markers between them, and the assertion below
-   * enforces that. An earlier version used three Explore/School routes that between them contained
-   * only `.recharts-responsive-container` — so deleting `.hist-plot` from the marker set left the
-   * whole suite green, which is a coverage test that does not cover.
+   * Every Recharts grid has one, and it lies under the data. A chart that spreads its own grid
+   * props instead of `GRID` would lose it; a grid drawn after a reference area paints the tint over
+   * it — the person trend's title-era bands sat under the grid until it moved first.
    */
-  const REACH: Array<[string, string, (p: import('@playwright/test').Page) => Promise<void>, string[]]> = [
-    ['explore changes', './explore?tab=changes', async () => {}, ['recharts-responsive-container']],
-    ['school distribution', `./school/${encodeURIComponent('School of Medicine and Public Health')}?tab=dist`, async () => {}, ['recharts-responsive-container']],
-    /**
-     * SalaryHistogram is the only source of `.hist-plot`, and it needs a title chosen.
-     *
-     * KNOWN GAP, stated rather than papered over: deleting `.hist-plot` from the rule does NOT fail
-     * this test. Above 60 holders the histogram renders through Recharts, so its card is already
-     * matched by `.recharts-responsive-container` and the marker is redundant. It is only
-     * load-bearing on the unit-mode path (`MAX_FOR_UNIT_MODE = 60` in SalaryHistogram), which draws
-     * absolutely-positioned divs and no Recharts container at all — and no title reachable through
-     * the picker in a test lands under that threshold (the rarest the dropdown offers has 75, and
-     * filtering the list renders no histogram to select). So `.hist-plot` stays in the set because
-     * it is correct for that path, not because anything here proves it.
-     */
-    ['titles with a title', './paycheck', async (p) => {
-      const title = p.getByRole('textbox', { name: 'Title' });
-      await expect(title).toBeVisible({ timeout: 60_000 });
-      await title.click();
-      const first = p.getByRole('option').first();
-      await expect(first).toBeVisible({ timeout: 30_000 });
-      await first.click();
-      await expect(p.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
-    }, ['hist-plot']],
-    // PeerStrip on the overview tab; PercentileBar (`.chart-plot`) on the pay tab.
-    ['person', './', async (p) => {
-      await p.getByRole('combobox', { name: 'Search a person' }).fill('Kenneth Poss');
-      await p.getByRole('option').first().click();
-      await afterReveal(p);
-      await expect(p.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
-    }, ['peer-strip']],
-    ['person pay tab', './', async (p) => {
-      await p.getByRole('combobox', { name: 'Search a person' }).fill('Kenneth Poss');
-      await p.getByRole('option').first().click();
-      await afterReveal(p);
-      await expect(p.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
-      await p.getByRole('tab', { name: 'Pay & standing' }).click();
-      await expect(p.locator('.chart-plot').first()).toBeVisible({ timeout: 30_000 });
-    }, ['chart-plot']],
-  ];
-
-  for (const [name, route, prepare, expectMarkers] of REACH) {
-    test(`reaches every card holding a figure: ${name}`, async ({ page }) => {
+  for (const [name, route] of [
+    ['explore changes', './explore?tab=changes'],
+    ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`],
+  ] as const) {
+    test(`is on every grid, under the marks, and the card itself is not lit: ${name}`, async ({ page }) => {
       await page.goto(route, { waitUntil: 'networkidle' });
-      await prepare(page);
-      await page.waitForTimeout(2_500);
-
-      // The marker this route exists to exercise must actually be here, or dropping it from the
-      // rule would leave this test green — which is the bug this list was rewritten to fix.
-      for (const marker of expectMarkers) {
-        expect(
-          await page.locator('.' + marker).filter({ visible: true }).count(),
-          `${name} was chosen to cover .${marker} and does not contain one`,
-        ).toBeGreaterThan(0);
-      }
-
-      const report = await page.evaluate((sel) => {
-        const cards = new Map<Element, string>();
-        for (const plot of document.querySelectorAll(sel)) {
-          const card = plot.closest('.mantine-Paper-root[data-with-border]');
-          if (!card || card.getBoundingClientRect().height === 0) continue;
-          cards.set(card, card.querySelector('h2, h3, .mantine-Title-root')?.textContent?.trim() ?? '(untitled)');
+      await expect(page.locator('.recharts-cartesian-grid').first()).toBeAttached({ timeout: 60_000 });
+      await page.waitForTimeout(2_000);
+      const report = await page.evaluate(() => {
+        const grids = [...document.querySelectorAll<SVGGElement>('.recharts-cartesian-grid')];
+        const bare = grids.filter((g) => !g.querySelector('.recharts-cartesian-grid-bg')).length;
+        const over: string[] = [];
+        for (const g of grids) {
+          const svg = g.ownerSVGElement!;
+          for (const m of svg.querySelectorAll('.recharts-reference-area, .recharts-bar, .recharts-line, .recharts-area')) {
+            if (m.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING) over.push(m.getAttribute('class') ?? '');
+          }
         }
-        const unlit: string[] = [];
-        for (const [card, title] of cards) {
-          if (!getComputedStyle(card).boxShadow.includes('inset')) unlit.push(title);
-        }
-        return { total: cards.size, unlit };
-      }, MARKERS);
-
-      expect(report.total, `${name} has no figure cards, so it cannot prove the rule reaches anything`)
-        .toBeGreaterThan(0);
-      expect(report.unlit, `${name}: ${report.unlit.length} of ${report.total} figure cards are unlit — ${report.unlit.join(' | ')}`)
-        .toEqual([]);
+        const lit = grids.map((g) => g.closest('.mantine-Paper-root[data-with-border]'))
+          .filter((c) => c && getComputedStyle(c).boxShadow.includes('inset')).length;
+        return { grids: grids.length, bare, over, lit };
+      });
+      expect(report.grids, `${name} drew no grid, so it cannot prove anything`).toBeGreaterThan(0);
+      expect(report.bare, `${name}: ${report.bare} of ${report.grids} grids have no plot surface`).toBe(0);
+      expect(report.over, `${name}: the plot surface is painted over ${report.over.join(', ')}`).toEqual([]);
+      expect(report.lit, `${name}: a chart card carries an inset bloom again — the surface belongs to the plot`).toBe(0);
     });
   }
-
-  /**
-   * `.report-brief` is a bordered Card that WRAPS two chart cards, so an unqualified `:has()` would
-   * light the whole 2,000px report sheet as well as the figures inside it. It is the only such
-   * wrapper today; this is what notices if a second one appears.
-   */
-  test('does not light a card that merely contains a figure card', async ({ page }) => {
-    await page.goto('./reports?type=comparison', { waitUntil: 'networkidle' });
-    const search = page.getByPlaceholder('Search yourself by name to begin…');
-    await expect(search).toBeVisible({ timeout: 60_000 });
-    await search.fill('Kenneth Poss');
-    const hit = page.getByRole('option').first();
-    await expect(hit).toBeVisible({ timeout: 15_000 });
-    await hit.click();
-
-    const brief = page.locator('.report-brief');
-    await expect(brief).toBeVisible({ timeout: 60_000 });
-    await page.waitForTimeout(1_500);
-
-    const shadow = await brief.evaluate((el) => getComputedStyle(el).boxShadow);
-    expect(shadow, 'the report sheet is lit as though it were itself a figure — it only contains them')
-      .not.toContain('inset');
-
-    // ...and the figure cards inside it still are.
-    const inner = await page.evaluate(() => {
-      const c = document.querySelector('.report-brief .recharts-responsive-container')
-        ?.closest('.mantine-Paper-root[data-with-border]');
-      return c ? getComputedStyle(c).boxShadow : '(no chart card inside the brief)';
-    });
-    expect(inner, 'excluding the report sheet also switched off the figure cards inside it')
-      .toContain('inset');
-  });
 });
 
 /**

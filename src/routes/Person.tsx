@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick, chartKeys } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, sameTitleText } from '../lib/payHistory';
@@ -22,7 +22,7 @@ import { StartingGroup } from '../components/StartingGroup';
 import { PayBandNote } from '../components/PayBandNote';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
 import { ttcRank } from '../lib/snapshotOrder';
-import { lineGlowDefs } from '../components/chartDefs';
+import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconTrendingDown, IconMinus, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
@@ -225,10 +225,8 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
   const tick = above ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-gray-6)';
   const sweep = `600ms ease-out ${delay}ms`;
   return (
-    // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: this is a plotted
-    // figure that happens to be built from divs rather than SVG, and the chart-card rule in app.css
-    // has no other way to know that. Without it the "Standing" card sat flat beside three lit chart
-    // cards on the neighbouring tab, which reads as a bug rather than as a distinction.
+    // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: a plotted figure built
+    // from divs rather than SVG.
     <Group className="chart-plot" wrap="nowrap" gap="md" align="center">
       <div style={{ width: 210, flexShrink: 0 }}>
         <Text size="sm" fw={500} lineClamp={2} title={label}>{label}</Text>
@@ -1397,8 +1395,10 @@ export default function Person() {
             this chart's x-axis. */}
         <div ref={trendBoxRef} className="person-trend">
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
-            <defs>{lineGlowDefs(gradId)}</defs>
+          <ComposedChart {...chartKeys('Salary over time')} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
+            <defs>{areaGradDef(gradId)}</defs>
+            {/* First, so the plot surface it paints lies under the era bands rather than over them. */}
+            <CartesianGrid {...GRID} />
             {/* Faint alternating background band per title era. */}
             {eras.length > 1 && eraSpans.map((sp) => (
               <ReferenceArea
@@ -1412,7 +1412,6 @@ export default function Person() {
                 ifOverflow="extendDomain"
               />
             ))}
-            <CartesianGrid {...GRID} />
             <XAxis
               {...trendAxis}
               tick={fteVaries ? false : AXIS_TICK}
@@ -1479,8 +1478,6 @@ export default function Person() {
             {trendMode === 'actual' && raiseCtx.typical.size > 1 && (
               <Line yAxisId="pay" className="typical-line" type="monotone" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
             )}
-            {/* Soft glow: a blurred, semi-transparent copy beneath the crisp line. */}
-            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
             {/* Primary line + haloed active dot. */}
             <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
             {titleChanges.map((t) => {

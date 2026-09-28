@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, LineChart, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps, snapX, reportingBreaks } from '../lib/snapTime';
 import { PageHeader } from '../components/PageHeader';
 import { CardTitle } from '../components/CardTitle';
@@ -416,7 +416,7 @@ export default function Compare() {
             <>
               <ResponsiveContainer width="100%" height={300}>
                 {xMode === 'date' ? (
-                  <LineChart data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
+                  <LineChart {...chartKeys('Salary by snapshot')} data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis {...snapAxisProps(trajectorySeries)} tick={AXIS_TICK} />
                     <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -476,7 +476,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <CardTitle>Pay gap to the top earner in this group</CardTitle>
           <ResponsiveContainer width="100%" height={240}>
-            <ComposedChart data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }} className="gap-chart">
+            <ComposedChart {...chartKeys('Pay gap to the top earner')} data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }} className="gap-chart">
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(gapSeries)} tick={AXIS_TICK} />
               {/* Distance behind, said as distance: "$10k behind", and the top line named for who is on it. */}
@@ -508,16 +508,16 @@ export default function Compare() {
               ))}
             </ComposedChart>
           </ResponsiveContainer>
-          <Text size="xs" c="dimmed">
-            How far each person was behind the group's top earner at each snapshot. Show only one person
-            (shift-click their dot) to shade their gap.
-          </Text>
           <ChartData
             caption="Pay gap to the top earner by snapshot"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={gapSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
             unit="snapshots"
             period={spanLabel(gapSeries.map((row) => row.label as string))}
+            about={<>
+              How far each person was behind the group's top earner at each snapshot. Show only one person
+              (shift-click their dot) to shade their gap.
+            </>}
           />
         </Card>
       )}
@@ -526,7 +526,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <CardTitle>Relative standing within school (percentile over time)</CardTitle>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
+            <LineChart {...chartKeys('Percentile within school over time')} data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(standingSeries)} tick={AXIS_TICK} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
@@ -536,13 +536,13 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
-          <Text size="xs" c="dimmed">Each person's percentile among peers in their own school at that snapshot.</Text>
           <ChartData
             caption="Percentile within school over time"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={standingSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
             unit="snapshots"
             period={spanLabel(standingSeries.map((row) => row.label as string))}
+            about="Each person's percentile among peers in their own school at that snapshot."
           />
         </Card>
       )}
@@ -657,7 +657,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <CardTitle>Titles — median salary over time</CardTitle>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={titleSeries} margin={{ left: 12, right: 12 }}>
+            <LineChart {...chartKeys('Median salary per title over time')} data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(titleSeries)} tick={AXIS_TICK} />
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -667,7 +667,6 @@ export default function Compare() {
               ))}
             </LineChart>
           </ResponsiveContainer>
-          <Text size="xs" c="dimmed">Median salary per title at each snapshot.</Text>
           <ChartData
             caption="Median salary per title over time"
             columns={['Snapshot', ...titles.map((t) => t.label)]}

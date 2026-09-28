@@ -141,3 +141,98 @@ test('every table header shares one style, chart data tables included', async ({
   expect(styles.length, 'the chart table and the peer table are both measured').toBeGreaterThanOrEqual(2);
   expect(new Set(styles).size, styles.join(' | ')).toBe(1);
 });
+
+/**
+ * A chart of two or three lines names each one where it ends (`EndLabels`), in place of Recharts'
+ * default legend — a row of swatches under the plot that had to be matched back to the lines by
+ * colour and dash. Checked as a reader meets them: one name per drawn line, no two names on top of
+ * one another, inside the chart, and legible text over the halo they are drawn on.
+ */
+for (const scheme of ['light', 'dark'] as const) {
+  test(`a line chart names its lines where they end (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    const charts: Array<[string, string, number]> = [
+      // The report's dashboard trend: pay, the title median and pay had raises been typical.
+      [`./reports?person=${encodeURIComponent(AARON)}`, '.print-area', 3],
+      // The headcount panel under the median, whose two lines end 10px apart at the top of the plot.
+      ['./explore?tab=trends', 'body', 2],
+    ];
+    for (const [route, scope, lines] of charts) {
+      await page.goto(route);
+      const labels = page.locator(`${scope} .end-label`);
+      await expect(labels).toHaveCount(lines, { timeout: 60_000 });
+      await page.waitForTimeout(1_000);
+      const report = await page.locator(scope).evaluate((root) => {
+        const svg = root.querySelector<SVGTextElement>('.end-label')!.ownerSVGElement!;
+        const box = svg.getBoundingClientRect();
+        const drawn = [...svg.querySelectorAll('.recharts-line-curve')].length;
+        const texts = [...svg.querySelectorAll<SVGTextElement>('.end-label')].map((t) => {
+          const r = t.getBoundingClientRect();
+          const cs = getComputedStyle(t);
+          return { text: t.textContent, l: r.left, r: r.right, t: r.top, b: r.bottom, fill: cs.fill, halo: cs.stroke };
+        });
+        const inside = texts.every((t) => t.l >= box.left && t.r <= box.right && t.t >= box.top && t.b <= box.bottom);
+        const overlaps = texts.flatMap((a, i) => texts.slice(i + 1)
+          .filter((b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b).map((b) => `${a.text} / ${b.text}`));
+        return { drawn, texts, inside, overlaps, legend: document.querySelectorAll('.recharts-legend-wrapper').length };
+      });
+      expect(report.texts.length, `${route}: a name for each of the ${report.drawn} lines drawn`).toBe(report.drawn);
+      expect(report.overlaps, `${route}: names drawn over one another`).toEqual([]);
+      expect(report.inside, `${route}: a name runs out of its chart`).toBe(true);
+      expect(report.legend, `${route}: Recharts' default legend is back`).toBe(0);
+      for (const t of report.texts) {
+        const ratio = contrast(parseColor(t.fill).slice(0, 3), parseColor(t.halo).slice(0, 3));
+        expect(ratio, `${route}: "${t.text}" reads at ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+}
+
+/**
+ * The tooltip was the only way into a chart's values short of its data table, and it answered only
+ * a pointer. `chartKeys` makes a chart one Tab stop whose left and right arrow keys walk the tooltip
+ * through its points in order — the order of the chart's own data table.
+ */
+test('the keyboard steps a chart through its points, in order', async ({ page }) => {
+  await page.goto('./explore?tab=trends');
+  const chart = page.locator('svg.recharts-surface[role="application"]').first();
+  await expect(chart).toBeAttached({ timeout: 60_000 });
+  await expect(chart).toHaveAttribute('aria-label', /^Median salary over time\. Left and right arrow keys/);
+  const table = page.locator('table').filter({ has: page.locator('caption', { hasText: /^Median salary, headcount/ }) });
+  const snaps = (await table.locator('tbody tr td:first-child').allTextContents()).slice(0, 3);
+  expect(snaps.length, 'the data table lists fewer than three snapshots').toBe(3);
+  const tip = page.locator('.recharts-tooltip-wrapper').first();
+
+  await chart.focus();
+  await expect(chart, 'focus from the keyboard shows where it is').toHaveCSS('outline-style', 'solid');
+  await expect(tip).toContainText(snaps[0]);
+  await page.keyboard.press('ArrowRight');
+  await expect(tip).toContainText(snaps[1]);
+  await page.keyboard.press('ArrowRight');
+  await expect(tip).toContainText(snaps[2]);
+  await page.keyboard.press('ArrowLeft');
+  await expect(tip).toContainText(snaps[1]);
+});
+
+/**
+ * How to read a chart — what a bin holds, what each colour means — is one click away in the chart's
+ * footer, not a paragraph under every plot. A fact about THIS data stays on the card: the broken bar's
+ * note is checked in divisions.spec.
+ */
+test("a chart's how-to-read note opens from its footer", async ({ page }) => {
+  await page.goto('./explore?tab=changes');
+  const card = page.locator('.raise-dist-card');
+  await expect(card.locator('.recharts-bar-rectangle').first()).toBeAttached({ timeout: 60_000 });
+  await expect(card.getByText(/1% bins of raises/)).toHaveCount(0);
+  const button = card.getByRole('button', { name: 'How to read this chart' });
+  await button.click();
+  const note = page.locator('.chart-about-note');
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('1% bins of raises');
+  await expect(note).toContainText('the dashed line marks the median');
+  // Closed from the keyboard too, and back where it was opened from.
+  await expect(note).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(note).toBeHidden();
+  await expect(button).toBeFocused();
+});

@@ -7,7 +7,8 @@ import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, poolPercentile } from '../lib/queries';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
-import { AXIS_TICK, GRID, fmtUsd } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtUsd, chartKeys } from '../lib/chartStyle';
+import { EndLabels } from './chart/EndLabels';
 import { moneyTicks } from '../lib/rangeScale';
 import { usd, num } from '../lib/format';
 import { ordinal } from '../lib/stats';
@@ -127,7 +128,7 @@ export function StartingGroup({ personKey, first }: {
         {start.pct != null && now.pct != null ? ` Started at the ${ordinal(start.pct)} percentile; now ${ordinal(now.pct)}.` : ''}
       </Text>
       <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={plot} margin={{ left: 12, right: 30, top: 16, bottom: 0 }}>
+        <ComposedChart {...chartKeys('The group this person started with')} data={plot} margin={{ left: 12, right: 30, top: 16, bottom: 0 }}>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
           <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} ticks={yTicks} domain={yTicks.length ? [yTicks[0], yTicks[yTicks.length - 1]] : undefined} />
@@ -139,17 +140,28 @@ export function StartingGroup({ personKey, first }: {
           <Line className="group-median" dataKey="median" stroke="var(--guide-strong)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
           <Line dataKey="mine" stroke={MARK_SELF} strokeWidth={2} dot isAnimationActive={false} connectNulls={false} />
           {showBreak && <Customized component={<BreakLabel at={brkX} texts={[brk.label, brk.short]} />} />}
+          <Customized
+            component={
+              <EndLabels
+                endSeries={[
+                  { key: 'mine', text: 'This person', color: 'var(--text-accent)' },
+                  { key: 'median', text: 'Group median', color: 'var(--mantine-color-dimmed)' },
+                ]}
+                endBreaks={showBreak ? [{ at: brkX, texts: [brk.label, brk.short] }] : []}
+              />
+            }
+          />
         </ComposedChart>
       </ResponsiveContainer>
-      <Text size="xs" c="dimmed" mt={4}>
-        Shaded: the middle 50% of the group, and lighter, the 10th to 90th percentiles; the grey line is the group's
-        median, the teal line this person. The bands stop where fewer than {MIN_RIBBON} of the group remain.
-      </Text>
       <ChartData
         caption={`The group that started as ${first.title} in ${when}`}
         columns={['Snapshot', 'Still here', '10th', '25th', 'Median', '75th', '90th', 'This person', 'Percentile']}
         rows={plot.map((r) => [r.label, r.n, r.p10, r.p25, r.med, r.p75, r.p90, r.mine, r.pct])}
         unit="snapshots"
+        about={<>
+          Shaded: the middle 50% of the group, and lighter, the 10th to 90th percentiles. The bands stop where
+          fewer than {MIN_RIBBON} of the group remain.
+        </>}
       />
     </Card>
   );

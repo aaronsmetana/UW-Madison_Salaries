@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown, IconArrowsMinimize, IconRuler2 } from '@tabler/icons-react';
 import { usd, pct, plural } from '../../lib/format';
-import { AXIS_TICK, GRID, fmtUsd } from '../../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtUsd, chartKeys } from '../../lib/chartStyle';
 import { snapX, snapAxisProps } from '../../lib/snapTime';
 import { PeerRangeBar } from '../PeerRangeBar';
 import { TenurePayScatter } from '../TenurePayScatter';
@@ -493,7 +493,7 @@ export function ReportBrief({ model, hovered, onHover }: {
               <Text size="sm" fw={700}>Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
-                <ComposedChart data={historyRows} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
+                <ComposedChart {...chartKeys('Pay vs. title median over time')} data={historyRows} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
                   <CartesianGrid {...GRID} />
                   <XAxis {...snapAxisProps(historyRows)} tick={AXIS_TICK} tickMargin={8} />
                   <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />

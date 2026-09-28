@@ -121,7 +121,7 @@ test('Changes bins raises by 1%, with no change neutral and counted, and cuts in
   expect(counts.filter(([k, n]) => k > 0 && k % 5 !== 0 && n > 0).length).toBeGreaterThan(2);
 
   const zero = card.locator('.raise-bin-zero').first();
-  await expect(zero).toHaveAttribute('fill', /gray4/);
+  await expect(zero).toHaveAttribute('fill', /gray-4/);
   await expect(card.locator('.raise-zero-label')).toHaveText(/^[\d,]+$/);
   for (const down of await card.locator('.raise-bin-down').all()) await expect(down).toHaveAttribute('fill', /red/);
   for (const up of await card.locator('.raise-bin-up').all()) await expect(up).toHaveAttribute('fill', /pos/);
@@ -246,6 +246,8 @@ test('Changes: when almost no one moved, the no-change bar is cut and the raises
   expect(Math.max(...ticks), 'the axis stops below the no-change count').toBeLessThan(zero);
   await expect(card.locator('.raise-zero-label')).toHaveText(zero.toLocaleString('en-US'));
   await expect(card.locator('.raise-cap-break')).toHaveCount(1);
+  // A fact about this data, so it stays on the card while how to read the bins moved to the footer.
+  await expect(card.locator('.raise-cap-note')).toContainText('The no-change bar runs past the top of the scale');
   const plot = (await card.locator('.recharts-cartesian-grid').boundingBox())!;
   const tallest = Math.max(...(await card.locator('.raise-bin-up').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))));
   expect(tallest / plot.height, 'the largest raise bin fills most of the plot').toBeGreaterThanOrEqual(0.6);

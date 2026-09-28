@@ -1,7 +1,7 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Badge } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList, Customized } from 'recharts';
-import { AXIS_TICK, GRID, BAR_RADIUS } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
 import { CardTitle } from './CardTitle';
 import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
@@ -16,7 +16,6 @@ import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
 import { TipSurface } from './chart/ChartTooltip';
-import { barGradientDefs } from './chartDefs';
 import { ICON } from '../lib/ui';
 import { raiseBucketSql } from '../lib/raiseBuckets';
 import { RaiseDistribution } from './RaiseDistribution';
@@ -59,7 +58,6 @@ function WaterfallConnectors({ steps, xAxisMap, yAxisMap }: {
 }
 
 export function ChangesPanel() {
-  const uid = useId();
   const [hoveredWf, setHoveredWf] = useState<number | null>(null);
   const { scope, metric, filters } = useControls();
   const where = whereAll(scope, filters);
@@ -291,14 +289,12 @@ export function ChangesPanel() {
       step('Net change', Math.min(0, tot), tot, 'net', tot),
     ];
   }, [d]);
-  // Slot name into the waterfall chart's own gradient <defs> (see wfGradientColors below) — kept
-  // distinct from the raw color so each bar renders its "lit from above" gradient rather than a flat fill.
-  const wfColorSlot = (kind: string, amount: number) =>
-    kind === 'net' ? (amount >= 0 ? 'accent6' : 'red6') : kind === 'pos' ? 'pos6' : 'red5';
-  const wfGradientColors = {
-    accent6: 'var(--mantine-color-accent-6)', red6: 'var(--mantine-color-red-6)',
-    pos6: 'var(--mantine-color-pos-6)', red5: 'var(--mantine-color-red-5)',
-  };
+  // A waterfall step's colour: the net bar in the accent (red when the net is a loss), gains green,
+  // losses red.
+  const wfColor = (kind: string, amount: number) =>
+    kind === 'net'
+      ? (amount >= 0 ? 'var(--mantine-color-accent-6)' : 'var(--mantine-color-red-6)')
+      : kind === 'pos' ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-red-5)';
 
   // Share of continuing staff who got any raise.
   const raisedPct = equity?.n_raised != null && s?.n_continuing ? equity.n_raised / s.n_continuing : null;
@@ -437,8 +433,7 @@ export function ChangesPanel() {
         )}
         {waterfall.length > 0 && (
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={waterfall} margin={{ left: 12, right: 12, top: 24 }}>
-              <defs>{barGradientDefs(uid, wfGradientColors)}</defs>
+            <BarChart {...chartKeys('Payroll change decomposition')} data={waterfall} margin={{ left: 12, right: 12, top: 24 }}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="name" tick={AXIS_TICK} />
               <YAxis width={56} tickFormatter={(v) => usdCompact(v)} tick={AXIS_TICK} />
@@ -469,7 +464,7 @@ export function ChangesPanel() {
                 {waterfall.map((w, i) => (
                   <Cell
                     key={i}
-                    fill={`url(#${uid}-bar-${wfColorSlot(w.kind, w.amount)})`}
+                    fill={wfColor(w.kind, w.amount)}
                     fillOpacity={hoveredWf != null && hoveredWf !== i ? 0.45 : 1}
                   />
                 ))}

@@ -1,11 +1,11 @@
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Stack, Card, Text, SimpleGrid } from '@mantine/core';
 import {
-  ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Customized,
+  ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Customized,
   ReferenceArea, ReferenceLine,
 } from 'recharts';
 import { BreakLabels } from './chart/BreakLabel';
-import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, TIP_LABEL_STYLE, fmtSnapTick } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, TIP_LABEL_STYLE, fmtSnapTick, chartKeys } from '../lib/chartStyle';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -18,7 +18,7 @@ import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
 import { SvgPill } from './chart/pills';
 import { TipSurface } from './chart/ChartTooltip';
-import { barGradientDefs } from './chartDefs';
+import { MarkerLegend } from './markers';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 import { knownBreak } from '../lib/snapTime';
 import { useWidth } from '../lib/useWidth';
@@ -65,7 +65,6 @@ function AreaPillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; 
 
 export function CohortPanel() {
   const reduceMotion = prefersReducedMotion();
-  const uid = useId();
   const { scope, filters } = useControls();
   const { data: summary } = useSummary();
   const latest = summary?.snapshots[summary.snapshots.length - 1];
@@ -185,15 +184,13 @@ export function CohortPanel() {
           Retention by hire year (share still here)
         </CardTitle>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chart} margin={{ left: 12, right: 12 }}>
-            <defs>{barGradientDefs(uid, { stayed: 'var(--mantine-color-pos-6)', lost: 'var(--mantine-color-gray-4)' })}</defs>
+          <BarChart {...chartKeys('Retention by hire year')} data={chart} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             {/* Labels thin themselves to the width: a fixed every-third-year still ran together on a
                 phone, and sorted by retention every bar was labelled. */}
             <XAxis dataKey="year" tick={AXIS_TICK} interval="preserveStartEnd" minTickGap={8} />
             <YAxis width={48} tick={AXIS_TICK} unit="%" domain={[0, 100]} />
             <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
-            <Legend />
             {/* Pre-2021 cohorts are left-censored: we only see those who survived to the first snapshot. */}
             {sortMode === 'year' && (
               <ReferenceArea x1="1990" x2="2021" fill="var(--mantine-color-default-border)" fillOpacity={0.35}
@@ -203,7 +200,7 @@ export function CohortPanel() {
               {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="retention"
               name="Retained"
-              fill={`url(#${uid}-bar-stayed)`}
+              fill="var(--mantine-color-pos-6)"
               stackId="r"
               stroke="var(--mantine-color-body)"
               strokeWidth={2}
@@ -213,7 +210,7 @@ export function CohortPanel() {
               {chart.map((c, i) => (
                 <Cell
                   key={i}
-                  fill={sortMode === 'retention' ? retColor(c.retention) : `url(#${uid}-bar-stayed)`}
+                  fill={sortMode === 'retention' ? retColor(c.retention) : 'var(--mantine-color-pos-6)'}
                   fillOpacity={hoveredYear != null && hoveredYear !== i ? 0.45 : 1}
                 />
               ))}
@@ -223,7 +220,7 @@ export function CohortPanel() {
               dataKey="lost"
               name="Left"
               stackId="r"
-              fill={`url(#${uid}-bar-lost)`}
+              fill="var(--mantine-color-gray-4)"
               stroke="var(--mantine-color-body)"
               strokeWidth={2}
               radius={BAR_RADIUS}
@@ -234,17 +231,21 @@ export function CohortPanel() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed">
-          Each bar is one hire-year cohort: green = share still present in the latest snapshot ({latest?.label}),
-          grey = share since gone. Snapshots begin in 2021, so the shaded pre-2021 cohorts reflect only survivors
-          already employed by then; the most recent cohorts are also immature (little time to attrit yet).
-        </Text>
+        <MarkerLegend items={[
+          { color: 'var(--mantine-color-pos-6)', label: 'Retained', bar: true },
+          { color: 'var(--mantine-color-gray-4)', label: 'Left', bar: true },
+        ]} />
         <ChartData
           caption="Retention by hire year"
           columns={['Hire year', 'Retained %', 'Left %']}
           rows={chart.map((c) => [c.year, c.retention, c.lost])}
           unit="hire-year cohorts"
           period={latest?.label ? `as of ${latest.label}` : undefined}
+          about={<>
+            Each bar is one hire-year cohort: green = share still present in the latest snapshot ({latest?.label}),
+            grey = share since gone. Snapshots begin in 2021, so the shaded pre-2021 cohorts reflect only survivors
+            already employed by then; the most recent cohorts are also immature (little time to attrit yet).
+          </>}
         />
       </Card>
 
@@ -256,8 +257,7 @@ export function CohortPanel() {
           <>
             <div className="turnover" data-coverage-at={coverageLabel ?? ''} ref={turnRef}>
             <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart data={turnover} margin={{ left: 12, right: 12, top: 18 }}>
-                <defs>{barGradientDefs(`${uid}-flow`, { joined: 'var(--mantine-color-pos-6)', departed: 'var(--mantine-color-red-6)' })}</defs>
+              <ComposedChart {...chartKeys('Workforce turnover')} data={turnover} margin={{ left: 12, right: 12, top: 18 }}>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
                 <YAxis width={56} tick={AXIS_TICK} />
@@ -280,7 +280,6 @@ export function CohortPanel() {
                   contentStyle={{ ...TIP_STYLE, whiteSpace: 'normal' }}
                   labelStyle={TIP_LABEL_STYLE}
                 />
-                <Legend />
                 {coverageLabel && (
                   <ReferenceLine x={coverageLabel} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="coverage-marker" />
                 )}
@@ -291,7 +290,7 @@ export function CohortPanel() {
                   {...chartAnim(reduceMotion, MOTION.reveal)}
                   dataKey="joined"
                   name="Joined"
-                  fill={`url(#${uid}-flow-bar-joined)`}
+                  fill="var(--mantine-color-pos-6)"
                   radius={BAR_RADIUS}
                   onMouseEnter={(_, i) => setHoveredFlow(i)}
                   onMouseLeave={() => setHoveredFlow(null)}
@@ -302,7 +301,7 @@ export function CohortPanel() {
                   {...chartAnim(reduceMotion, MOTION.reveal)}
                   dataKey="departed"
                   name="Left"
-                  fill={`url(#${uid}-flow-bar-departed)`}
+                  fill="var(--mantine-color-red-6)"
                   radius={BAR_RADIUS}
                   onMouseEnter={(_, i) => setHoveredFlow(i)}
                   onMouseLeave={() => setHoveredFlow(null)}
@@ -313,14 +312,11 @@ export function CohortPanel() {
               </ComposedChart>
             </ResponsiveContainer>
             </div>
-            <Text size="xs" c="dimmed">
-              Paid employees who joined vs left between each snapshot and the one before it; the accent line is the
-              net change. Counts paid staff only (unpaid $0 affiliates excluded); the duplicate Pre-TTC snapshot is
-              omitted. The dashed marker is Oct 2023, when the source's coverage changed (some reports excluded
-              students and trainees): joiners and leavers across it partly reflect coverage, not hiring or
-              attrition. The tooltip and the table also give those who left as a share of the staff at the start
-              of each step, per month, since steps run 4 to 14 months.
-            </Text>
+            <MarkerLegend items={[
+              { color: 'var(--mantine-color-pos-6)', label: 'Joined', bar: true },
+              { color: 'var(--mantine-color-red-6)', label: 'Left', bar: true },
+              { color: 'var(--mantine-color-accent-6)', label: 'Net change' },
+            ]} />
             <ChartData
               caption="Workforce turnover"
               columns={['As of', 'Joined', 'Left', 'Net', 'Staff at start', 'Months', 'Left, % of staff at start', 'Left, % a month']}
@@ -328,6 +324,14 @@ export function CohortPanel() {
                 x.leftShare != null ? pct(x.leftShare) : null, x.leftPerMonth != null ? pct(x.leftPerMonth, 2) : null])}
               unit="snapshot steps"
               period={spanLabel(turnover.map((x) => x.label))}
+              about={<>
+                Paid employees who joined vs left between each snapshot and the one before it, and the net change.
+                Counts paid staff only (unpaid $0 affiliates excluded); the duplicate Pre-TTC snapshot is
+                omitted. The dashed marker is Oct 2023, when the source's coverage changed (some reports excluded
+                students and trainees): joiners and leavers across it partly reflect coverage, not hiring or
+                attrition. The tooltip and the table also give those who left as a share of the staff at the start
+                of each step, per month, since steps run 4 to 14 months.
+              </>}
             />
           </>
         )}

@@ -91,6 +91,8 @@ export interface LegendItem {
   label: string;
   /** A dot (a person, a value) rather than a rule (a target, a trend, a threshold). */
   round?: boolean;
+  /** A filled square, for a bar series: a 4px rule reads as a line. */
+  bar?: boolean;
   /** Draw the rule dashed, matching GUIDE_STRONG — for a trend or target line. */
   dashed?: boolean;
 }
@@ -100,6 +102,8 @@ export interface LegendItem {
  *
  * The only legend in the app. The scatter used to carry its own, which is how its swatches drifted to
  * colours no other chart used — a legend that disagrees with the chart beside it is worse than none.
+ * Recharts' default `<Legend />` was the other holdout, on four charts; a line chart names its lines
+ * at their ends instead (`EndLabels`), and a bar chart uses this.
  */
 export function MarkerLegend({ items }: { items: LegendItem[] }) {
   return (
@@ -122,9 +126,9 @@ export function MarkerLegend({ items }: { items: LegendItem[] }) {
             <span
               style={{
                 display: 'inline-block',
-                width: 12,
-                height: it.round ? 12 : 4,
-                borderRadius: it.round ? '50%' : 1,
+                width: it.bar ? 10 : 12,
+                height: it.round ? 12 : it.bar ? 10 : 4,
+                borderRadius: it.round ? '50%' : it.bar ? 2 : 1,
                 background: it.color,
                 flexShrink: 0,
               }}

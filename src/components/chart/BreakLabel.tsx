@@ -11,22 +11,21 @@ type Props = {
   offset?: { left: number; top: number; width: number; height: number };
 };
 
+type Mark = { at: number | string; texts: readonly string[]; fill?: string };
+
 /**
- * The words beside known-break markers (snapTime's KNOWN_BREAKS), placed together so none runs into
- * another, and kept inside the plot's width: after the line when there is room, before it near the
- * right edge, the short wording on a narrow chart or where two would touch, a second row after that.
- * On the `top` edge they sit just above the plot, where no series runs — the chart needs a top margin
- * of about 14px, 26px where two rows may be needed; on the `bottom` edge, just inside the plot along
- * its baseline, for a chart whose top margin already carries other labels. Put it in a
- * `<Customized component={<BreakLabels … />} />` beside the markers' ReferenceLines, which draw the lines.
+ * Where each marker's words go, with the box each takes — shared by `BreakLabels`, which draws them,
+ * and `EndLabels`, which keeps the lines' names clear of them (the headcount's name and the scope
+ * change's words both want the top margin at the right of a phone's plot).
  */
-export function BreakLabels(props: Props & {
-  marks: readonly { at: number | string; texts: readonly string[]; fill?: string }[];
-  edge?: 'top' | 'bottom';
-}) {
-  const { marks, edge = 'top', xAxisMap, offset } = props;
+export function layoutBreakLabels(
+  marks: readonly Mark[],
+  edge: 'top' | 'bottom',
+  xAxisMap: Props['xAxisMap'],
+  offset: Props['offset'],
+) {
   const xa = xAxisMap ? Object.values(xAxisMap)[0] : undefined;
-  if (!xa || !offset || !marks.length) return null;
+  if (!xa || !offset || !marks.length) return [];
   // On a category axis the marker sits in the middle of its band, as a ReferenceLine draws it.
   const band = xa.scale.bandwidth?.() ?? 0;
   const xs = marks.map((m) => xa.scale(m.at) + band / 2);
@@ -37,17 +36,40 @@ export function BreakLabels(props: Props & {
     (t) => measureText(t, FONT),
   );
   const y = (row: number) => (edge === 'bottom' ? offset.top + offset.height - 4 - row * ROW : offset.top - 4 - row * ROW);
+  return placed.flatMap((p, i) => {
+    if (!p) return [];
+    const w = measureText(p.text, FONT);
+    const left = p.anchor === 'start' ? p.x : p.x - w;
+    const ly = y(p.row);
+    return [{ i, x: p.x, y: ly, text: p.text, anchor: p.anchor, box: { left, right: left + w, top: ly - FONT + 1, bottom: ly + 3 } }];
+  });
+}
+
+/**
+ * The words beside known-break markers (snapTime's KNOWN_BREAKS), placed together so none runs into
+ * another, and kept inside the plot's width: after the line when there is room, before it near the
+ * right edge, the short wording on a narrow chart or where two would touch, a second row after that.
+ * On the `top` edge they sit just above the plot, where no series runs — the chart needs a top margin
+ * of about 14px, 26px where two rows may be needed; on the `bottom` edge, just inside the plot along
+ * its baseline, for a chart whose top margin already carries other labels. Put it in a
+ * `<Customized component={<BreakLabels … />} />` beside the markers' ReferenceLines, which draw the lines.
+ */
+export function BreakLabels(props: Props & {
+  marks: readonly Mark[];
+  edge?: 'top' | 'bottom';
+}) {
+  const { marks, edge = 'top', xAxisMap, offset } = props;
   return (
     <g>
-      {placed.map((p, i) => p && (
+      {layoutBreakLabels(marks, edge, xAxisMap, offset).map((p) => (
         <text
-          key={i}
+          key={p.i}
           className="break-label"
           x={p.x}
-          y={y(p.row)}
+          y={p.y}
           textAnchor={p.anchor}
           fontSize={FONT}
-          fill={marks[i].fill ?? 'var(--mantine-color-dimmed)'}
+          fill={marks[p.i].fill ?? 'var(--mantine-color-dimmed)'}
         >
           {p.text}
         </text>

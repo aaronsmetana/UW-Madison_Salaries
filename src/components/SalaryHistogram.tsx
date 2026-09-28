@@ -1,10 +1,9 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK, BAR_RADIUS } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
-import { barGradientDefs } from './chartDefs';
 import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT, BAND_IQR } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
@@ -74,7 +73,6 @@ export function SalaryHistogram({
   onBinClick?: (range: { lo: number; hi: number }) => void;
 }) {
   const reduceMotion = prefersReducedMotion();
-  const uid = useId();
   const mounted = useMounted();
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   // Both render paths wrap in `.hist-plot`, so one measurement serves both. Only the axis labels need
@@ -172,7 +170,6 @@ export function SalaryHistogram({
   // Bars keep --bar: they are counts, not people, so they are not the peer dot in another shape.
   // The highlighted bin is a different thing — it is the subject, and the subject is marked the
   // same way in every chart in the app.
-  const gradientColors = { bar: 'var(--bar)', active: MARK_SELF };
 
   // Closes over `total`/`cumBelow` (bin-derived, not props) — must be a nested component rather than
   // a module-level one, and passed to Recharts as an element (`content={<BarsHistTip />}`) rather than
@@ -375,8 +372,8 @@ export function SalaryHistogram({
             </div>
           )}
         </div>
-        {guides.length === 3 && <Text size="xs" c="dimmed" mt={4}>1 block = 1 person · Dashed guides: p25 · median · p75.</Text>}
-        <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people" />
+        <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
+          about={guides.length === 3 ? '1 block = 1 person · Dashed guides: p25 · median · p75.' : '1 block = 1 person.'} />
       </>
     );
   }
@@ -385,8 +382,7 @@ export function SalaryHistogram({
     <>
       <div ref={plotRef} className="hist-plot" style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
-            <defs>{barGradientDefs(uid, gradientColors)}</defs>
+          <BarChart {...chartKeys('Salary distribution')} data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <CartesianGrid {...GRID} />
             <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tickFormatter={fmtK} tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} />
@@ -415,7 +411,7 @@ export function SalaryHistogram({
                 return (
                   <Cell
                     key={i}
-                    fill={i === markerBin ? `url(#${uid}-bar-active)` : `url(#${uid}-bar-bar)`}
+                    fill={i === markerBin ? MARK_SELF : 'var(--bar)'}
                     fillOpacity={dimmed ? 0.45 : 1}
                   />
                 );
@@ -472,8 +468,8 @@ export function SalaryHistogram({
           </div>
         )}
       </div>
-      {guides.length === 3 && <Text size="xs" c="dimmed" mt={4}>Dashed guides: p25 · median · p75.</Text>}
-      <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people" />
+      <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
+        about={guides.length === 3 ? 'Dashed guides: p25 · median · p75.' : undefined} />
     </>
   );
 }

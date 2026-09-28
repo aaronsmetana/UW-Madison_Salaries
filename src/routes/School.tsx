@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, Tabs,
   ScrollArea,
@@ -16,7 +16,7 @@ import { SegmentedToggle } from '../components/SegmentedToggle';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
-import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -30,7 +30,6 @@ import { ChartData } from '../components/ChartData';
 import { MARK_POPULATION } from '../components/markers';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { barGradientDefs } from '../components/chartDefs';
 import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
@@ -68,7 +67,6 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export default function School() {
   const reduceMotion = prefersReducedMotion();
-  const uid = useId();
   const [hoveredBin, setHoveredBin] = useState<number | null>(null);
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
@@ -332,24 +330,25 @@ export default function School() {
             />
           </ScatterChart>
         </ResponsiveContainer>
-        <Text size="xs" c="dimmed">
-          A flat or downward cloud suggests salary compression (newer hires paid like — or above — veterans).
-          {(tenurePay ?? []).length >= TENURE_PLOT_CAP &&
-            ` Divisions larger than ${num(TENURE_PLOT_CAP)} people are capped here, so this cloud is a sample rather than everyone.`}
-        </Text>
+        {(tenurePay ?? []).length >= TENURE_PLOT_CAP && (
+          <Text size="xs" c="dimmed">
+            Divisions larger than {num(TENURE_PLOT_CAP)} people are capped here, so this cloud is a sample rather than everyone.
+          </Text>
+        )}
         <ChartData
           caption="Tenure vs pay"
           columns={['Tenure (yrs)', 'Pay']}
           rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])}
           unit="people plotted"
           period={snapLabel ? `as of ${snapLabel}` : undefined}
+          about="A flat or downward cloud suggests salary compression (newer hires paid like — or above — veterans)."
         />
       </Card>
 
       <Card withBorder padding="lg">
         <CardTitle>Median salary over time</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={trendRows} margin={{ left: 12, right: 12 }}>
+          <LineChart {...chartKeys('Median salary over time')} data={trendRows} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis {...snapAxisProps(trendRows)} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -384,8 +383,7 @@ export default function School() {
           Salary distribution (current snapshot, $20k bins)
         </CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={distData} margin={{ left: 12, right: 12 }}>
-            <defs>{barGradientDefs(uid, { bar: 'var(--bar)' })}</defs>
+          <BarChart {...chartKeys('Salary distribution')} data={distData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis
@@ -400,7 +398,7 @@ export default function School() {
               {...chartAnim(reduceMotion, MOTION.reveal)}
               dataKey="n"
               name="People"
-              fill={`url(#${uid}-bar-bar)`}
+              fill="var(--bar)"
               radius={BAR_RADIUS}
               onMouseEnter={(_, i) => setHoveredBin(i)}
               onMouseLeave={() => setHoveredBin(null)}

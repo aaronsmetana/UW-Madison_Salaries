@@ -1,10 +1,9 @@
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Card, Text } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
-import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, chartKeys } from '../lib/chartStyle';
 import { CardTitle } from './CardTitle';
 import { ChartData } from './ChartData';
-import { barGradientDefs } from './chartDefs';
 import { num } from '../lib/format';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 import { raiseBucket, raiseBucketLabel, raiseBuckets } from '../lib/raiseBuckets';
@@ -28,7 +27,6 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
   period: string;
   className?: string;
 }) {
-  const uid = useId();
   const reduceMotion = prefersReducedMotion();
   const [hoveredDist, setHoveredDist] = useState<number | null>(null);
   const raiseDist = useMemo(() => {
@@ -36,11 +34,9 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
     const by = new Map(counts.map((r) => [Number(r.bucket), r.n]));
     return raiseBuckets().map((k) => ({ bucket: k, label: raiseBucketLabel(k), n: by.get(k) ?? 0 }));
   }, [counts]);
-  const distGradientColors = {
-    red5: 'var(--mantine-color-red-5)', gray4: 'var(--mantine-color-gray-4)', pos5: 'var(--mantine-color-pos-5)',
-  };
   // Down below 0, up above it, and the no-change bar neutral.
-  const distColorSlot = (bucket: number) => (bucket < 0 ? 'red5' : bucket === 0 ? 'gray4' : 'pos5');
+  const distColor = (bucket: number) =>
+    bucket < 0 ? 'var(--mantine-color-red-5)' : bucket === 0 ? 'var(--mantine-color-gray-4)' : 'var(--mantine-color-pos-5)';
 
   // One bin can hold nearly everyone. Between two snapshots with no pay-plan raise almost everyone's pay
   // stands still — Sep 2025 to Mar 2026, 18,122 of 19,273 at 0% against 391 in the largest raise bin —
@@ -78,8 +74,7 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
       <CardTitle mb="sm">{title}</CardTitle>
       <ResponsiveContainer width="100%" height={240}>
         {/* Right margin for the last label, "> +20%", centred on the last bin at the plot's edge. */}
-        <BarChart data={raiseDist ?? []} margin={{ left: 12, right: 24, top: DIST_TOP }} className="raise-dist">
-          <defs>{barGradientDefs(`${uid}-dist`, distGradientColors)}</defs>
+        <BarChart {...chartKeys('Raise distribution')} data={raiseDist ?? []} margin={{ left: 12, right: 24, top: DIST_TOP }} className="raise-dist">
           <CartesianGrid {...GRID} />
           <XAxis dataKey="label" tick={AXIS_TICK} ticks={distTicks} interval={0} />
           <YAxis width={48} tick={AXIS_TICK} domain={distCap ? [0, distCap.cap] : [0, 'auto']} allowDataOverflow={!!distCap}
@@ -102,7 +97,7 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
               <Cell
                 key={i}
                 className={`raise-bin raise-bin-${r.bucket < 0 ? 'down' : r.bucket === 0 ? 'zero' : 'up'}`}
-                fill={`url(#${uid}-dist-bar-${distColorSlot(r.bucket)})`}
+                fill={distColor(r.bucket)}
                 fillOpacity={hoveredDist != null && hoveredDist !== i ? 0.45 : 1}
               />
             ))}
@@ -131,12 +126,12 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      <Text size="xs" c="dimmed">
-        1% bins of raises as this site prints them, to a tenth of a percent: "+3%" is a raise above 2.0% up to 3.0%,
-        and "0%" is pay that did not move. Changes past
-        −10% or +20% are gathered at the ends. Green = raise, red = cut, grey = no change{marker ? `; the dashed line
-        marks the ${marker.name}` : ''}.{distCap ? ` The ${distCap.bucket === 0 ? 'no-change' : `"${raiseBucketLabel(distCap.bucket)}"`} bar runs past the top of the scale, broken, so the other bins are not slivers beside it; its count is written on it.` : ''}
-      </Text>
+      {/* A fact about this data, so it stays on the card; how to read the bins is behind the footer's info. */}
+      {distCap && (
+        <Text size="xs" c="dimmed" className="raise-cap-note">
+          The {distCap.bucket === 0 ? 'no-change' : `"${raiseBucketLabel(distCap.bucket)}"`} bar runs past the top of the scale, broken, so the other bins are not slivers beside it; its count is written on it.
+        </Text>
+      )}
       <ChartData
         caption="Raise distribution (% change)"
         columns={['% bin', 'People']}
@@ -144,6 +139,11 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
         n={(raiseDist ?? []).reduce((s, r) => s + r.n, 0)}
         unit="people"
         period={period}
+        about={<>
+          1% bins of raises as this site prints them, to a tenth of a percent: "+3%" is a raise above 2.0% up to 3.0%,
+          and "0%" is pay that did not move. Changes past −10% or +20% are gathered at the ends. Green = raise,
+          red = cut, grey = no change{marker ? `; the dashed line marks the ${marker.name}` : ''}.
+        </>}
       />
     </Card>
   );

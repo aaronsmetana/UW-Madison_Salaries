@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overlaps, packLabelRows, placeChips, placeNearLabels, placeSideLabel, placeSideLabels, segmentHitsBox, type Box } from './labelLayout';
+import { overlaps, packLabelRows, placeChips, placeEndLabels, placeNearLabels, placeSideLabel, placeSideLabels, segmentHitsBox, type Box } from './labelLayout';
 
 const plot: Box = { left: 0, right: 400, top: 0, bottom: 200 };
 
@@ -250,6 +250,112 @@ describe('placeNearLabels', () => {
     expect(out.length).toBeLessThan(6);
     for (let i = 0; i < out.length; i++) {
       for (let j = i + 1; j < out.length; j++) expect(overlaps(out[i].box, out[j].box)).toBe(false);
+    }
+  });
+});
+
+describe('placeEndLabels', () => {
+  const flat = (y: number, x0 = 0, x1 = 400) => [{ x: x0, y }, { x: x1, y }];
+  const crossesAny = (box: Box, lines: { x: number; y: number }[][]) =>
+    lines.some((l) => l.some((p, i) => i > 0 && segmentHitsBox(l[i - 1], p, box, 1)));
+
+  it('writes a name just above its line, back from the end', () => {
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 100, width: 60 }], [flat(100)], plot, 0);
+    expect(a).toMatchObject({ x: 396, y: 93, anchor: 'end' });
+  });
+
+  it('goes below a line that runs along the top of the chart', () => {
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 4, width: 60 }], [flat(4)], plot, 0);
+    expect(a.y).toBe(19);
+  });
+
+  it('gives two lines that end close together one side each', () => {
+    const lines = [flat(100), flat(106)];
+    const [a, b] = placeEndLabels([{ id: 'b', x: 400, y: 106, width: 60 }, { id: 'a', x: 400, y: 100, width: 60 }], lines, plot, 0);
+    expect(a).toMatchObject({ id: 'a', y: 93 });
+    expect(b.id).toBe('b');
+    expect(b.y).toBeGreaterThan(106);
+    expect(overlaps(a.box, b.box)).toBe(false);
+    for (const p of [a, b]) expect(crossesAny(p.box, lines), `${p.id} covers a line`).toBe(false);
+  });
+
+  it('keeps a name off another line that climbs through the corner above its own end', () => {
+    // A wide name above a flat line's end would lie across the steep one rising past it.
+    const steep = [{ x: 250, y: 120 }, { x: 400, y: 40 }];
+    const lines = [flat(110, 0, 400), steep];
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 110, width: 160 }], lines, plot, 0);
+    expect(crossesAny(a.box, lines)).toBe(false);
+    expect(a.y).toBeGreaterThan(110);
+  });
+
+  it('stays near its line rather than wandering off to find a clear place', () => {
+    // A thicket of lines everywhere near the end: the name takes the nearest place clear of other names.
+    const thicket = Array.from({ length: 40 }, (_, i) => flat(i * 5));
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 100, width: 60 }], thicket, plot, 0);
+    expect(a.y).toBe(93);
+  });
+
+  it("crosses a band's faint edge beside its own line rather than leave the line far behind", () => {
+    // The median runs inside a middle-50% band whose edges sit 12px above and below it: no place beside
+    // the end clears both, and the nearest place clear of them is over the band's edge, away from it.
+    const edges = [flat(88), flat(112)];
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 100, width: 60 }], [flat(100)], plot, 0, { edges });
+    expect(a.y).toBe(93);
+    // With room between the edges, the edge is kept clear.
+    const [b] = placeEndLabels([{ id: 'b', x: 400, y: 100, width: 60 }], [flat(100)], plot, 0, { edges: [flat(80), flat(130)] });
+    expect(crossesAny(b.box, [flat(80), flat(130)])).toBe(false);
+    expect(b.y).toBe(93);
+    // And an equally near place clear of the edge beats one across it: here, below.
+    const [c] = placeEndLabels([{ id: 'c', x: 400, y: 100, width: 60 }], [flat(100)], plot, 0, { edges: [flat(92)] });
+    expect(c.y).toBe(115);
+  });
+
+  it("keeps clear of a marker's words already on the chart", () => {
+    const words: Box = { left: 300, right: 420, top: 84, bottom: 96 };
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 100, width: 60 }], [flat(100)], plot, 0, { avoid: [words] });
+    expect(overlaps(a.box, words)).toBe(false);
+    expect(a.y).toBe(115);
+  });
+
+  it('never has another line, or words, between a name and its own line', () => {
+    // The end's room above is taken by a marker's words and a second line runs just below it, so
+    // neither side of the end will do, and nor will above the words: the name slides back along its
+    // line, past them.
+    const own = flat(100, 0, 400);
+    const other = flat(110, 300, 400);
+    const words: Box = { left: 330, right: 420, top: 80, bottom: 96 };
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 100, width: 60, line: own }], [own, other], plot, 0, { avoid: [words] });
+    expect(overlaps(a.box, words)).toBe(false);
+    expect(a.box.bottom).toBeLessThan(100);
+    expect(a.box.right).toBeLessThanOrEqual(330);
+  });
+
+  it('follows a sloping line as it slides back along it', () => {
+    const own = [{ x: 0, y: 190 }, { x: 400, y: 30 }];
+    const words: Box = { left: 330, right: 420, top: 0, bottom: 40 };
+    const others = [flat(45, 330, 400)];
+    const [a] = placeEndLabels([{ id: 'a', x: 400, y: 30, width: 60, line: own }], [own, ...others], plot, 0, { avoid: [words] });
+    const lineAtRight = 190 + (a.box.right / 400) * (30 - 190);
+    // Beside the line where the name now ends, not at the height of the line's end.
+    expect(a.box.right).toBeLessThan(330);
+    expect(Math.abs(a.y - lineAtRight)).toBeLessThan(20);
+  });
+
+  it('writes forward from a line that stops near the left edge', () => {
+    const [a] = placeEndLabels([{ id: 'a', x: 30, y: 100, width: 60 }], [flat(100, 0, 30)], plot, 0);
+    expect(a).toMatchObject({ x: 34, anchor: 'start' });
+    expect(a.box.left).toBe(34);
+  });
+
+  it('never leaves the chart, and never sets one name on another', () => {
+    const ends = [0, 3, 6, 9].map((y, i) => ({ id: String(i), x: 400, y: 190 + y, width: 60 }));
+    const placed = placeEndLabels(ends, [], plot, 0);
+    for (const p of placed) {
+      expect(p.box.top).toBeGreaterThanOrEqual(0);
+      expect(p.box.bottom).toBeLessThanOrEqual(plot.bottom);
+    }
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) expect(overlaps(placed[i].box, placed[j].box)).toBe(false);
     }
   });
 });

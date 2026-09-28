@@ -198,6 +198,8 @@
      reason the canvas lost its tint. */
   --hairline: rgba(16, 24, 32, 0.09);
   --hairline-strong: rgba(16, 24, 32, 0.16);
+  /* Behind a chart's plot area — see `GRID` in lib/chartStyle.ts. */
+  --plot-surface: rgba(16, 24, 32, 0.03);
 
   /* The lit top edge of a translucent panel — the one cue that separates "glass" from "a weak fill".
      It is a specular highlight rather than a surface, so it stays white in both schemes and only its
@@ -212,22 +214,10 @@
   --lens-rim-inner: rgba(255, 255, 255, 0.9);
   --lens-sheen: rgba(255, 255, 255, 0.55);
 
-  /* The lit face of a FIGURE — a broad tonal bloom at a chart card's top edge, not an edge line.
-     `--glass-sheen` cannot do this job: it is white, and white over the white light card composites
-     to exactly #ffffff (dE 0.00) — the same "blurring something invisible produces nothing" failure
-     recorded further down. So light goes COOLER instead of brighter, which is how glass over white
-     paper actually reads. The two schemes need different alphas, not one value: measured at the
-     rendered peak, light lands dE 3.33 and dark dE 3.51 against their own card faces, both above
-     the ~2.3 JND and far below the ~8 where a wash starts reading as a coloured panel. Dark needs
-     MORE alpha than light, not less.
-
-     The alphas are 0.14 / 0.09 rather than the 0.10 / 0.06 that computes to a matched dE ~3.3,
-     because a peak dE is not the whole story: measured on a rendered card, 0.10 falls under the JND
-     by 12px down, so it read as a faint edge on a 460px card rather than as a lit face. Reshaping
-     the shadow does not fix that — four geometries from 64px to 110px of blur all peaked at ~3.0
-     and died by 24px, because the ink is fixed by the alpha and spreading it just thins it. At
-     0.14 / 0.09 the peaks are 4.7 and 5.0, the visible band roughly doubles to ~24px, and the two
-     schemes finally match each other, which is what makes it one treatment rather than two. */
+  /* A chart tooltip's lit top edge (`.chart-tip`, and `TIP_STYLE` in lib/chartStyle.ts). Cooler, not
+     whiter, in light mode: white over a white plot composites to nothing (dE 0.00). It once also lit
+     the face of every chart card, as a broad bloom; that went, and the plot area took a faint surface
+     of its own instead (`--plot-surface`). */
   --chart-sheen: rgba(14, 110, 131, 0.14);
 
   /* Shared by the open search input and the menu it projects, so the two read as one card. It had
@@ -299,6 +289,7 @@ body {
 
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
+  --plot-surface: rgba(255, 255, 255, 0.03);
   --glass-sheen: rgba(255, 255, 255, 0.07);
   --curve-glow: 0.3;
   --curve-wash: 0.14;
@@ -345,6 +336,7 @@ body {
   --text-accent: var(--mantine-color-accent-4);
   --text-pos: var(--mantine-color-pos-4);
   --text-neg: var(--mantine-color-red-4);
+  --text-warn: var(--mantine-color-orange-4);
 
   /* Brighten low-contrast secondary text for readability against the surfaces above. Body text was
      Mantine's dark-0 (#c9c9c9) — a mid grey doing headline duty, the dark-mode twin of the problem
@@ -562,6 +554,15 @@ body {
 .recharts-cartesian-axis-tick-line {
   stroke: var(--hairline-strong);
 }
+/* A chart the keyboard can step through (`chartKeys` in lib/chartStyle.ts) is focused as a whole: the
+   ring goes round the chart, and the arrow keys move the tooltip inside it. Keyboard focus only — a
+   click on a bar is not a request for a ring. */
+.recharts-surface:focus { outline: none; }
+.recharts-surface:focus-visible {
+  outline: 2px solid var(--mantine-color-accent-6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 /* Scoped to `path` because bar charts render the cursor as a <rect> whose meaningful property is
    `fill` — and every bar chart here already passes its own `cursor={{ fill: … }}`. */
 path.recharts-tooltip-cursor {
@@ -577,40 +578,10 @@ path.recharts-tooltip-cursor {
   border-radius: 999px;
   white-space: nowrap;
   /* Unlike every card in the app, this chip is accent-coloured, so a white specular has somewhere to
-     go: 14% white over accent-7 measures dE 8.17. That is far stronger than the chart-card bloom on
-     purpose — this is a 1px line on a 17px chip, where the eye integrates almost no area, against a
-     field covering a third of a card. The shadow was a literal that bypassed the scale, which meant
-     it stayed dark-ink-on-dark after the dark elevation fix. */
+     go: 14% white over accent-7 measures dE 8.17 — strong, because this is a 1px line on a 17px chip,
+     where the eye integrates almost no area. The shadow was a literal that bypassed the scale, which
+     meant it stayed dark-ink-on-dark after the dark elevation fix. */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--mantine-shadow-md);
-}
-
-/* The lit face of a figure.
-   Scoped to cards that hold a PLOTTED FIGURE, and to nothing else. The inset top highlight that
-   used to sit on all 86 bordered surfaces is gone for good (see the note above
-   `.mantine-Paper-root[data-with-border]`) and this is not a revival of it: that was a 1px white
-   edge line on every card in the app, this is a broad tonal bloom on the ~28 that hold a chart. The
-   distinction has to be visible or it is just decoration.
-
-   Selected rather than announced: one declaration reaches every chart card, where a prop would be
-   something 28 call sites have to remember — the same reasoning the axis-tick rule and `chartStyle`
-   both record, and the same failure mode that left `isAnimationActive` off 22 marks.
-
-   The offset is 6px, not 0. `--accent-grad` is a 135deg gradient, so this app has already declared
-   that its light comes from the top-left; a bloom centred at top-dead-centre would quietly disagree
-   with every accent rail on the page.
-
-   `:not(.report-brief)` because that card WRAPS two chart cards, so an unqualified match would
-   paint the whole report sheet as well as the figures inside it. It is the only such wrapper —
-   Compare's nested Papers are borderless and never match `[data-with-border]` at all.
-
-   The `var(--paper-shadow, 0 0 transparent)` tail is load-bearing: Mantine omits `--paper-shadow`
-   entirely when a card has no `shadow` prop, and `box-shadow: none, inset …` is invalid, whereas
-   `0 0 transparent` is a legal no-op in a list. Without it the two `shadow="sm"` chart cards in
-   ReportBrief would lose their shadow. */
-.mantine-Paper-root[data-with-border]:not(.report-brief):has(
-  :is(.recharts-responsive-container, .hist-plot, .peer-strip, .chart-plot)
-) {
-  box-shadow: inset 6px 64px 64px -64px var(--chart-sheen), var(--paper-shadow, 0 0 transparent);
 }
 
 /* Hover on an interactive card: the border comes forward. It used to lift 2px and grow a shadow —

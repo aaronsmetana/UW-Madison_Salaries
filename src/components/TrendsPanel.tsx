@@ -1,13 +1,13 @@
 import { useId, useMemo } from 'react';
 import { Card, Text, Loader, Group } from '@mantine/core';
 import {
-  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceLine, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
 import { BreakLabel, BreakLabels } from './chart/BreakLabel';
-import { lineGlowDefs } from './chartDefs';
+import { areaGradDef } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
 import { useSql } from '../lib/hooks';
@@ -19,6 +19,7 @@ import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
 import { YoyChips } from './chart/pills';
+import { EndLabels } from './chart/EndLabels';
 import { usePref } from '../lib/prefs';
 
 interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
@@ -135,8 +136,8 @@ export function TrendsPanel() {
           though those lines render below); the headcount panel suppresses its own tooltip and relies on
           the synced crosshair, matching the same convention as Person's trend+FTE stack. */}
       <ResponsiveContainer width="100%" height={230}>
-        <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
-          <defs>{lineGlowDefs(gradId)}</defs>
+        <ComposedChart {...chartKeys('Median salary over time')} data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
+          <defs>{areaGradDef(gradId)}</defs>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={false} />
           <YAxis tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
@@ -146,9 +147,8 @@ export function TrendsPanel() {
           {ttcX != null && <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3" />}
           {nineX != null && <ReferenceLine x={nineX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
 
-          {/* Median: gradient area + soft-glow underlay + primary line. */}
+          {/* Median: gradient area + primary line. */}
           <Area type="monotone" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
-          <Line type="monotone" dataKey="med" stroke="var(--mantine-color-accent-6)" strokeWidth={6} strokeOpacity={0.4} dot={false} legendType="none" isAnimationActive={false} filter={`url(#${gradId}-line-glow)`} />
           <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
 
           {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
@@ -185,26 +185,29 @@ export function TrendsPanel() {
             label={{ value: 'Headcount', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-pos-6)', fontSize: 12, textAnchor: 'middle' } }}
           />
           <Tooltip content={() => null} />
-          <Legend />
 
           {coverageX != null && <ReferenceLine x={coverageX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
           {coverageX != null && <Customized component={<BreakLabel at={coverageX} texts={[scope23.label, scope23.short]} />} />}
 
           <Line type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-pos-6)" strokeWidth={2} dot strokeDasharray="4 2" isAnimationActive={!reduce} />
           <Line type="monotone" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--mantine-color-orange-6)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
+          <Customized
+            component={
+              <EndLabels
+                endSeries={[
+                  { key: 'hc', text: 'Headcount', color: 'var(--text-pos)' },
+                  { key: 'renew', text: 'Ongoing (renewable) appts', color: 'var(--text-warn)' },
+                ]}
+                endBreaks={coverageX != null ? [{ at: coverageX, texts: [scope23.label, scope23.short] }] : []}
+              />
+            }
+          />
         </ComposedChart>
       </ResponsiveContainer>
       <Text size="xs" c="dimmed" mt={4}>
         {dollarMode === 'real'
           ? `Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).`
-          : 'Nominal dollars (not inflation-adjusted).'}{' '}
-        Headcount = people with a paid appointment; unpaid $0 affiliate
-        appointments are excluded. <b>Ongoing (renewable)</b> = staff on a continuing (&ldquo;Regular&rdquo;)
-        appointment — excludes terminal and temporary ones; appointment type is only recorded from Sep 2025 on,
-        so that line starts there. The dashed markers are changes in the data, not in pay or staff: at Oct 2023
-        the source's coverage changed (some reports excluded students and trainees), so headcount across it
-        partly reflects coverage, not hiring or leaving; from Sep 2025 9-month pay is reported ×11/9, which
-        moves the median of a group with 9-month faculty.
+          : 'Nominal dollars (not inflation-adjusted).'}
       </Text>
       <ChartData
         caption={dollarMode === 'real' ? `Median salary, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : 'Median salary, headcount & renewable staff over time'}
@@ -212,6 +215,15 @@ export function TrendsPanel() {
         rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])}
         unit="snapshots"
         period={spanLabel(plot.map((d) => d.label))}
+        about={<>
+          Headcount = people with a paid appointment; unpaid $0 affiliate appointments are excluded.{' '}
+          <b>Ongoing (renewable)</b> = staff on a continuing (&ldquo;Regular&rdquo;) appointment — excludes terminal
+          and temporary ones; appointment type is only recorded from Sep 2025 on, so that line starts there. The
+          dashed markers are changes in the data, not in pay or staff: at Oct 2023 the source's coverage changed
+          (some reports excluded students and trainees), so headcount across it partly reflects coverage, not
+          hiring or leaving; from Sep 2025 9-month pay is reported ×11/9, which moves the median of a group with
+          9-month faculty.
+        </>}
       />
     </Card>
   );
