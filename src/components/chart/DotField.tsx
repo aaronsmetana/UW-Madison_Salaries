@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FAINT_SCALE, LIT_SIZES, layoutDots, litScale, packDots, settleLit } from '../../lib/dotLayout';
+import { FAINT_SCALE, LIT_SIZES, layoutDots, litScale, packDots, settleDeal, dealt, columnsFloorUp, type Columns } from '../../lib/dotLayout';
 import {
   AIR_BEFORE_REST, BURST_SPRING, CLICK_CAP, RING_ECHOES, RIPPLE_PERIOD, RIPPLE_SPRING, TRAIL_ALPHA, TRAIL_MIN, TRAIL_MS, TRAIL_W, WAVE_MS,
   bloomAt, burstKick, burstSizes, ringAlpha, rippleKick, springPose, springRestAfter, stepFall, stepThrough, stirKick, stirSizes, stirTopUp, thrown, trailAt, wakeExtent,
@@ -457,7 +457,12 @@ export const DotField = forwardRef<DotFieldHandle, {
     order.sort((a, b) => pts[2 * a] - pts[2 * b]);
     const sortedX = new Float32Array(n);
     for (let j = 0; j < n; j++) sortedX[j] = pts[2 * order[j]];
-    return { pts, r, order, sortedX, crowded, maxShift, separate };
+    // Every column floor-up, sorted here once: the packing's own (one exact x), which a filter deals out again
+    // to settle, and the picture's (one pixel), which shades and rains. A filter then needs no sort at all —
+    // sorting both again on every filter cost 13ms of a 16ms budget at CI's pace, and a collection tipped it over.
+    const cols: Columns = columnsFloorUp(pts, order);
+    const pix: Columns = columnsFloorUp(pts, order, Math.floor);
+    return { pts, r, order, sortedX, crowded, maxShift, separate, cols, pix };
   }, [width, values, toX, heightAt, height, rIn, stackKey, spill, packDpr]);
 
   // Each dot's height, as placed or settled by a filter, and what that shades and sets raining. Timed with
@@ -467,9 +472,11 @@ export const DotField = forwardRef<DotFieldHandle, {
     const t0 = performance.now();
     const n = values.length;
     const { order, sortedX, r, crowded, maxShift, separate } = placed;
-    // A kind soloed stays first, settled within itself (lib/dotLayout `settleLit`).
+    // A kind soloed stays first, settled within itself (lib/dotLayout `settleDeal`).
     const first = sunk && solo != null && kinds ? Uint8Array.from(kinds as ArrayLike<number>, (k) => (k === solo ? 0 : 1)) : null;
-    const pts = sunk ? settleLit(placed.pts, sunk, order, first) : placed.pts;
+    // Who now holds each place (`to[i]` sits where dot i sat), and the places that makes.
+    const to = sunk ? settleDeal(sunk, placed.cols, first) : null;
+    const pts = to ? dealt(placed.pts, to) : placed.pts;
     // How high each dot sits in its stack (0 at the baseline, 1 under the curve), which shades it.
     const depth = new Float32Array(n);
     for (let i = 0; i < n; i++) {
@@ -478,37 +485,36 @@ export const DotField = forwardRef<DotFieldHandle, {
       depth[i] = Math.min(1, Math.max(0, (height - r - y) / Math.max(1e-6, h - 2 * r)));
     }
     // Each dot's place up its own column, counted from the floor, and which column: the rain's order
-    // (lib/rain `rainSchedule`). Columns are read off the laid-out x (`order` already has them in x
-    // order), and within one, the lowest dot is the first to land — the pile builds upward, as a pile does.
+    // (lib/rain `rainSchedule`). One column is one pixel of the picture, not one exact x: a packed column
+    // spills its crowd a few pixels either way (lib/dotLayout), so grouping by an exact x would cut the
+    // pile into slivers and the whole field would rain in at the same moment. Within one, the lowest dot
+    // is the first to land — the pile builds upward, as a pile does. Settled, each place is the same
+    // height as placed, held by the dot the filter dealt it, so the order floor-up is the placed one, dealt.
     const rank = new Float32Array(n);
     const column = new Int32Array(n);
     const crest = new Uint8Array(n);
-    let columns = 0;
+    const { seq, starts } = placed.pix;
+    const at = (q: number) => (to ? to[seq[q]] : seq[q]);
     let deepest = 0;
-    for (let j = 0; j < n; ) {
-      let k = j;
-      // One column is one pixel of the picture, not one exact x: a packed column spills its crowd a
-      // few pixels either way (lib/dotLayout), so grouping by an exact x would cut the pile into
-      // slivers and the whole field would rain in at the same moment.
-      const at = Math.floor(pts[2 * order[j]]);
-      while (k < n && Math.floor(pts[2 * order[k]]) === at) k++;
-      const col = Array.from(order.subarray(j, k)).sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1]);
-      col.forEach((i, up) => { rank[i] = up; column[i] = columns; });
-      if (col.length) crest[col[col.length - 1]] = 1;
+    for (let c = 0; c + 1 < starts.length; c++) {
+      const a = starts[c], b = starts[c + 1];
+      for (let q = a; q < b; q++) { const i = at(q); rank[i] = q - a; column[i] = c; }
+      crest[at(b - 1)] = 1;
       // A settled group is a mountain of its own: its dots shade from the floor to its own top, which
       // takes the crest's rim. Shaded by the column's height, they would all be the column's darkest foot.
       if (sunk) {
         let top = -1;
-        for (const i of col) if (!sunk[i] && (top < 0 || pts[2 * i + 1] < pts[2 * top + 1])) top = i;
+        for (let q = a; q < b; q++) if (!sunk[at(q)]) top = at(q);
         if (top >= 0) {
           const span = height - r - pts[2 * top + 1];
-          for (const i of col) if (!sunk[i]) depth[i] = span > 1e-6 ? Math.min(1, Math.max(0, (height - r - pts[2 * i + 1]) / span)) : 1;
+          for (let q = a; q < b; q++) {
+            const i = at(q);
+            if (!sunk[i]) depth[i] = span > 1e-6 ? Math.min(1, Math.max(0, (height - r - pts[2 * i + 1]) / span)) : 1;
+          }
           crest[top] = 1;
         }
       }
-      deepest = Math.max(deepest, col.length - 1);
-      columns++;
-      j = k;
+      deepest = Math.max(deepest, b - a - 1);
     }
     // Every column rains at the same mean rate, so a taller column plainly takes longer — until the
     // tallest would run past RAIN_MS, which sets the rate for the whole field instead.

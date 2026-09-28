@@ -268,42 +268,76 @@ export function packDots({ xs, heightAt, baseY, width, dpr, spill, seed = 1, sta
 }
 
 /**
+ * A field's dots column by column, each column from the floor up: `seq` holds every dot, and column `c` is
+ * `seq[starts[c]]` to `seq[starts[c + 1] - 1]`. A column is the dots whose x has one `key`: the exact x for
+ * the packing's own columns, the pixel for the picture's (DotField's shading and rain). `order` is the dots
+ * sorted by x; dots at one height keep their place in it. Sorted once per packing: a filter after it only
+ * deals the places out again (`settleDeal`), which needs no sort.
+ */
+export interface Columns { seq: Uint32Array; starts: Uint32Array }
+export function columnsFloorUp(pts: Float32Array, order: ArrayLike<number>, key: (x: number) => number = (x) => x): Columns {
+  const n = order.length;
+  const seq = new Uint32Array(n);
+  const starts: number[] = [];
+  const at: number[] = [];
+  for (let j = 0; j < n; ) {
+    const x = key(pts[2 * order[j]]);
+    let k = j;
+    while (k < n && key(pts[2 * order[k]]) === x) k++;
+    // Bottom first (y runs down), ties by place in `order`.
+    at.length = 0;
+    for (let q = j; q < k; q++) at.push(q);
+    at.sort((a, b) => pts[2 * order[b] + 1] - pts[2 * order[a] + 1] || a - b);
+    starts.push(j);
+    for (let q = 0; q < at.length; q++) seq[j + q] = order[at[q]];
+    j = k;
+  }
+  starts.push(n);
+  return { seq, starts: Uint32Array.from(starts) };
+}
+
+/**
+ * Who takes each place when a filter settles its dots (`lit[i]` 0) to the floor of their own columns: `to[i]`
+ * is the dot that now sits where dot `i` sat. In each column, from the floor up: the lit, then the rest,
+ * each part in the order it had up the column — or, with `first` (1 for the rest), a kind seen alone keeps
+ * the bottom, its lit then the rest of it, then the others' lit and the rest of them, so its faint dots sit
+ * on its own lit ones and not over a gap where the others' were. O(n) over `columnsFloorUp`'s exact-x columns.
+ */
+export function settleDeal(lit: ArrayLike<number>, cols: Columns, first?: ArrayLike<number> | null): Uint32Array {
+  const { seq, starts } = cols;
+  const to = new Uint32Array(seq.length);
+  // Counted into place rather than gathered: it runs in the frame a filter goes on in, and garbage made
+  // there is collected there — a list per column per part put 10ms pauses into a 3ms deal at CI's pace.
+  const at = new Int32Array(4);
+  const part = (i: number) => (first && first[i] ? 2 : 0) + (lit[i] ? 1 : 0);
+  for (let c = 0; c + 1 < starts.length; c++) {
+    const a = starts[c], b = starts[c + 1];
+    at.fill(0);
+    for (let q = a; q < b; q++) at[part(seq[q])]++;
+    for (let k = 3, end = b; k >= 0; k--) { end -= at[k]; at[k] = end; }
+    for (let q = a; q < b; q++) { const i = seq[q]; to[seq[at[part(i)]++]] = i; }
+  }
+  return to;
+}
+
+/** Places after a deal: dot `to[i]` takes dot `i`'s height; nothing moves across. */
+export function dealt(pts: Float32Array, to: ArrayLike<number>): Float32Array {
+  const out = new Float32Array(pts);
+  for (let i = 0; i < to.length; i++) out[2 * to[i] + 1] = pts[2 * i + 1];
+  return out;
+}
+
+/**
  * A packed field with the dots `lit` picks (`lit[i]` 0) moved to the lowest places of their own columns,
  * the rest above them, each part in the order it had up the column. The rows of a column are the same
  * whatever `packDots`' key (its random draws do not depend on it), so this is what packing again with the
  * lit first would lay out, but for which of two dots on one row of a crowded column takes it — at a
  * fraction of the cost: 21ms to pack the landing field again at CI's pace. `order` is the dots sorted by x;
  * a column is the dots at one exact x, which is where packDots puts one. `first` (1 for the rest) keeps
- * one kind's dots below the others', each settled within itself. Returns new places.
+ * one kind's dots below the others', each settled within itself (`settleDeal`). Returns new places.
  */
-export function settleLit(pts: Float32Array, lit: ArrayLike<number>, order: ArrayLike<number>, first?: ArrayLike<number> | null): Float32Array {
-  const out = new Float32Array(pts);
-  const n = order.length;
-  const col: number[] = [];
-  const ys: number[] = [];
-  // Bottom to top: with `first` (a kind soloed, whose dots are stacked first and the rest gone), its lit,
-  // then the rest of it, then the others' lit and the rest of them — so its faint dots sit on its own lit
-  // ones and not over a gap where the others' were. Without it, all the lit and then the rest.
-  const blocks: number[][] = [[], [], [], []];
-  for (let j = 0; j < n; ) {
-    const x = pts[2 * order[j]];
-    let k = j;
-    col.length = 0;
-    while (k < n && pts[2 * order[k]] === x) col.push(order[k++]);
-    j = k;
-    if (col.length < 2) continue;
-    // Bottom first: as the column was stacked.
-    col.sort((a, b) => pts[2 * b + 1] - pts[2 * a + 1] || a - b);
-    ys.length = 0;
-    for (const b of blocks) b.length = 0;
-    for (const i of col) {
-      ys.push(pts[2 * i + 1]);
-      blocks[(first && first[i] ? 2 : 0) + (lit[i] ? 1 : 0)].push(i);
-    }
-    let q = 0;
-    for (const b of blocks) for (const i of b) out[2 * i + 1] = ys[q++];
-  }
-  return out;
+export function settleLit(pts: Float32Array, lit: ArrayLike<number>, order: ArrayLike<number>, first?: ArrayLike<number> | null, cols?: Columns): Float32Array {
+  return dealt(pts, settleDeal(lit, cols ?? columnsFloorUp(pts, order), first));
 }
 
 /**

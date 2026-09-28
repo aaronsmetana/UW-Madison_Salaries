@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LIT_SIZES, layoutDots, litScale, packDots, settleLit, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
+import { LIT_SIZES, layoutDots, litScale, packDots, settleLit, settleDeal, dealt, columnsFloorUp, paysFromCounts, peopleFromCounts, seeded } from './dotLayout';
 
 const curve = (x: number) => 60 * Math.exp(-(((x - 300) / 120) ** 2)) + 4;
 
@@ -265,6 +265,31 @@ describe('settleLit', () => {
     for (let i = 0; i < xs.length; i++) m.set(pts[2 * i], [...(m.get(pts[2 * i]) ?? []), i]);
     return m;
   };
+
+  // The field's own columns and the picture's, each sorted floor-up once per packing; a filter then deals the
+  // places out, and each column read in its placed order, dealt, is still floor-up — with no sort.
+  it('sorts each column floor-up once, and a deal keeps every column floor-up, by exact x and by pixel', () => {
+    const base = packDots({ xs, heightAt: curve, baseY: 60, width: 300, dpr: 2, spill: 3, stack: kinds });
+    const ord = order(base.pts);
+    for (const key of [(x: number) => x, Math.floor]) {
+      const { seq, starts } = columnsFloorUp(base.pts, ord, key);
+      expect([...seq].sort((a, b) => a - b)).toEqual(xs.map((_, i) => i));
+      const to = settleDeal(lit, columnsFloorUp(base.pts, ord), null);
+      const out = dealt(base.pts, to);
+      expect(out).toEqual(settleLit(base.pts, lit, ord));
+      let columnsSeen = 0;
+      for (let c = 0; c + 1 < starts.length; c++, columnsSeen++) {
+        for (let q = starts[c]; q < starts[c + 1]; q++) {
+          expect(key(base.pts[2 * seq[q]]), 'a column holds another key').toBe(key(base.pts[2 * seq[starts[c]]]));
+          if (q > starts[c]) {
+            expect(base.pts[2 * seq[q] + 1], 'placed, not floor-up').toBeLessThanOrEqual(base.pts[2 * seq[q - 1] + 1]);
+            expect(out[2 * to[seq[q]] + 1], 'dealt, not floor-up').toBeLessThanOrEqual(out[2 * to[seq[q - 1]] + 1]);
+          }
+        }
+      }
+      expect(columnsSeen).toBeGreaterThan(50);
+    }
+  });
 
   for (const dpr of [1, 2]) {
     for (const stacked of [false, true]) {
