@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { oracle, PAY } from './oracle';
+import { raisesCte } from './raiseOracle';
 import { parseColor, flatten, contrast } from './color';
 
 /**
@@ -10,19 +11,8 @@ import { parseColor, flatten, contrast } from './color';
 
 const AARON = 'aaronsmetana|2014-10-15';
 
-/** Continuing raises on ACTUAL pay, stated independently of the app and of scripts/lib/raise-steps.mjs. */
-const RAISES = `WITH snaps AS (SELECT snapshot_id, CAST(min(snapshot_date) AS VARCHAR) d,
-                               row_number() OVER (ORDER BY min(snapshot_date), snapshot_id) i
-                        FROM $SAL WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1),
-     one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(coalesce(nullif(fte, 0), 1)) f,
-                    lower(any_value(comp_basis)) b, any_value(${PAY}) pay
-             FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING count(*) = 1),
-     cr AS (SELECT a.snapshot_id fr, b.snapshot_id tt, sa.d dfr, sb.d dto, a.person_key, a.job, b.pay / a.pay - 1 r
-            FROM one a JOIN snaps sa USING (snapshot_id)
-            JOIN one b ON b.person_key = a.person_key AND b.job = a.job AND b.f = a.f
-            JOIN snaps sb ON sb.snapshot_id = b.snapshot_id AND sb.i = sa.i + 1
-            WHERE a.job IS NOT NULL AND a.pay > 0 AND b.pay > 0
-              AND (a.b IS NULL OR b.b IS NULL OR a.b = b.b OR (a.b = 'annual' AND b.b = '12 month')))`;
+/** Continuing raises on actual pay between consecutive snapshots (raiseOracle). */
+const RAISES = raisesCte();
 
 const pct = (d: number) => (Math.abs(d) < 0.0005 ? '0%' : `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(1)}%`);
 
