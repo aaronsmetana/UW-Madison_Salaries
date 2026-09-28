@@ -625,11 +625,14 @@ export const DotField = forwardRef<DotFieldHandle, {
   });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  // Where each dot is laid out, x then y (CSS px), for a test to read: a function on the field's box rather
-  // than an attribute, which would carry 44,000 numbers into the page's markup. Read-only, like `data-lit`.
+  // Where each dot is laid out, x then y (CSS px), and its place up its column counted from the floor (the
+  // rain's order), for a test to read: functions on the field's box rather than attributes, which would
+  // carry 44,000 numbers into the page's markup. Read-only, like `data-lit`.
   useEffect(() => {
-    const el = boxRef.current as (HTMLDivElement & { dotPlaces?: () => number[] | null }) | null;
-    if (el) el.dotPlaces = () => (layoutRef.current ? Array.from(layoutRef.current.pts) : null);
+    const el = boxRef.current as (HTMLDivElement & { dotPlaces?: () => number[] | null; dotRanks?: () => number[] | null }) | null;
+    if (!el) return;
+    el.dotPlaces = () => (layoutRef.current ? Array.from(layoutRef.current.pts) : null);
+    el.dotRanks = () => (layoutRef.current ? Array.from(layoutRef.current.rank) : null);
   }, []);
   // The rain for this play: when each drop leaves and from how high, seeded by the play — the first is
   // always the same, and each "Drop again" is a new one (lib/rain).

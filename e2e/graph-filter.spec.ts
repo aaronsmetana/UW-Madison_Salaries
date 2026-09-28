@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
-import { HOME_STATS, spots, plotShape, barOverPlot, places, people } from './homeDots';
+import { HOME_STATS, spots, plotShape, barOverPlot, places, people, ranks } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -294,6 +294,25 @@ function unsettled(now: { main: number[]; pile: number[] }, was: { main: number[
   }
   return bad;
 }
+/** Pixel columns whose dots' ranks (the rain's order, and what shading reads as a column's floor and top) do
+ *  not count up from the floor: in each, rank k must be the k-th lowest dot. */
+function misranked(pts: number[], rk: number[]) {
+  const cols = new Map<number, number[]>();
+  for (let i = 0; i < rk.length; i++) {
+    const c = Math.floor(pts[2 * i]);
+    const list = cols.get(c);
+    if (list) list.push(i); else cols.set(c, [i]);
+  }
+  const bad = new Set<string>();
+  for (const [c, ids] of cols) {
+    const up = [...ids].sort((a, b) => rk[a] - rk[b]);
+    up.forEach((i, k) => {
+      if (rk[i] !== k) bad.add(`column ${c}: its ranks are not 0 to ${ids.length - 1}`);
+      else if (k > 0 && pts[2 * i + 1] > pts[2 * up[k - 1] + 1] + 1e-6) bad.add(`column ${c}: rank ${k} sits below rank ${k - 1}`);
+    });
+  }
+  return [...bad].slice(0, 5);
+}
 /** A field's lit dots as the page prints them (`data-lit`): how many, and the sum and sum of squares of places. */
 const printOf = (lit: Set<number>) => { let n = 0, sum = 0, sq = 0; for (const i of lit) { n++; sum += i; sq += i * i; } return `${n}:${sum}:${sq}`; };
 /** Which dots of each field a filter's people are. */
@@ -341,6 +360,8 @@ test('a filter settles its group to the floor of each column, and taking it off 
       await settled(printOf(lit.main));
       const now = await laidOut(page);
       expect(unsettled(now, was, lit), `${colouring}, ${label}`).toEqual([]);
+      // Ranked afresh from the floor, as settled: the rain and the group's own crest read these.
+      expect(misranked(now.main, await ranks(page, FIELDS.main)), `${colouring}, ${label}: ranks`).toEqual([]);
       let moved = 0;
       for (let i = 0; i < now.main.length; i++) if (now.main[i] !== was.main[i]) moved++;
       expect(moved, `${colouring}, ${label}: nothing moved, so nothing here is tested`).toBeGreaterThan(100);

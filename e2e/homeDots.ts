@@ -83,6 +83,11 @@ export async function barOverPlot(page: Page) {
   });
 }
 
+/** Each of a field's dots' place up its column, counted from the floor (DotField `dotRanks`): the rain's order. */
+export async function ranks(page: Page, field: string): Promise<number[]> {
+  return page.evaluate((sel) => (document.querySelector(sel) as HTMLElement & { dotRanks?: () => number[] | null }).dotRanks?.() ?? [], field);
+}
+
 /** Where each of a field's dots is laid out (DotField `dotPlaces`), x then y, in the field's CSS px. */
 export async function places(page: Page, field: string): Promise<number[]> {
   return page.evaluate((sel) => (document.querySelector(sel) as HTMLElement & { dotPlaces?: () => number[] | null }).dotPlaces?.() ?? [], field);
