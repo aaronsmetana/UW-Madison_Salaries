@@ -511,6 +511,56 @@ test('the wash under everyone’s curve fades to half while a group is shown', a
  * none of the group in it, the field's ink falls to about a fifth. `data-lit` only says which dots the mask
  * lights; this is the paint.
  */
+/**
+ * While a filter settles its group the whole field is painted in squares, until it rests. Where none of the
+ * group is — the dense middle, filtered to a title all paid over $100k — the faint dots do not move, and in
+ * squares they must weigh what they do as beads at rest, as a moving field's still dots do (dots.spec). Sized
+ * from the field's full-size bead, a faint square laid down 13% more than its faint bead (measured 1.135),
+ * and the context darkened for the length of every settle; sized from its own bead, 1.003.
+ */
+for (const scheme of ['light', 'dark'] as const) test(`while a filter settles, the faint dots it leaves in place weigh what they do at rest (${scheme})`, async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  await fullPage(page);
+  const code = await codeOf('System Engineer IV');
+  const lowest = Math.min(...(await covered({ code })).map((p) => p.pay));
+  const band = [xOf(45_000), xOf(Math.min(85_000, lowest - 10_000))];
+  expect(band[1] - band[0], 'the premise: a stretch of the dense middle with none of the title in it').toBeGreaterThan(40);
+  // The ink over the band, on a scale of the plot's width in thousandths; read in the page the moment the
+  // field is moving — two frames after `data-settled` goes false, so squares are what is on the canvas.
+  await page.evaluate(([a, b]) => {
+    const w = window as unknown as { inkOver: (a: number, b: number) => number; movingInk?: number };
+    const field = document.querySelector('.hero-dist-full .hero-dots')!;
+    w.inkOver = (x0, x1) => {
+      const c = field.querySelector('canvas') as HTMLCanvasElement;
+      const k = c.width / c.clientWidth, cw = c.clientWidth;
+      const l = Math.round((x0 / 1000) * cw * k), r = Math.round((x1 / 1000) * cw * k);
+      const d = c.getContext('2d')!.getImageData(l, 0, r - l, c.height).data;
+      let t = 0;
+      for (let i = 3; i < d.length; i += 4) t += d[i];
+      return t;
+    };
+    new MutationObserver(() => {
+      if (field.getAttribute('data-settled') !== 'false' || w.movingInk != null) return;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (field.getAttribute('data-settled') === 'false' && w.movingInk == null) w.movingInk = w.inkOver(a, b);
+      }));
+    }).observe(field, { attributes: true, attributeFilter: ['data-settled'] });
+  }, band);
+  await put(page, 'system engineer iv', `t:${code}`);
+  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-settled', 'true');
+  await page.waitForTimeout(600);
+  const [moving, rest] = await page.evaluate(([a, b]) => {
+    const w = window as unknown as { inkOver: (a: number, b: number) => number; movingInk?: number };
+    return [w.movingInk ?? null, w.inkOver(a, b)];
+  }, band);
+  expect(moving, 'the field was never read while it moved, so nothing here is tested').not.toBeNull();
+  expect(Math.abs(moving! / rest - 1), `the faint dots in squares against at rest: ${Math.round(moving!)} of ${Math.round(rest)}`).toBeLessThan(0.06);
+  await ctx.close();
+});
+
 test('what a filter is not about is drawn faint, not hidden', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);

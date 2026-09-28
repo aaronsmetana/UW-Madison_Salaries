@@ -215,7 +215,9 @@ function lowerBound(a: ArrayLike<number>, v: number): number {
 
 /** A field's beads at a scale of its own dots' size — a filter's faint dots, and its lit ones (lib/dotLayout
  *  `FAINT_SCALE`, `litScale`) — per kind, per tone, as its own sets are. */
-interface SizedBeads { beads: Bead[][]; strongBeads: Bead[][]; halos: Bead[][]; strongHalos: Bead[][] }
+/** Beads at one size, with their halos where they glow, and what each lays down as a moving square: measured
+ *  from the bead at that size, since a small bead is not a large one scaled (lib/dotSprites `beadInk`). */
+interface SizedBeads { beads: Bead[][]; strongBeads: Bead[][]; halos: Bead[][]; strongHalos: Bead[][]; fast: BeadInk[][]; strongFast: BeadInk[][] }
 
 /** How many dots are not gone. */
 const countVisible = (mode: Uint8Array) => { let n = 0; for (let i = 0; i < mode.length; i++) if (mode[i] !== GONE) n++; return n; };
@@ -724,7 +726,7 @@ export const DotField = forwardRef<DotFieldHandle, {
     const L = live.current;
     const key = scale.toFixed(2);
     let set = L.sized.get(key);
-    if (!set) { set = { beads: [], strongBeads: [], halos: [], strongHalos: [] }; L.sized.set(key, set); }
+    if (!set) { set = { beads: [], strongBeads: [], halos: [], strongHalos: [], fast: [], strongFast: [] }; L.sized.set(key, set); }
     const k = set.beads.length;
     if (k >= L.tones.length) return true;
     // Never under half a device pixel across the radius, where a dot is lost.
@@ -736,6 +738,11 @@ export const DotField = forwardRef<DotFieldHandle, {
       set.halos.push(L.tones[k].map((c) => halo(c, rd)));
       set.strongHalos.push(L.strongTones[k].map((c) => halo(c, rd)));
     }
+    // Its squares' ink, from these beads (and halos) themselves. Scaled from the field's own, a faint square
+    // laid down 13% more than its faint bead, and the context darkened for the length of every settle.
+    const hk = set.halos[k], shk = set.strongHalos[k];
+    set.fast.push(set.beads[k].map((b, t) => beadInk(b, hk ? hk[t] : null)));
+    set.strongFast.push(set.strongBeads[k].map((b, t) => beadInk(b, shk ? shk[t] : null)));
     return set.beads.length >= L.tones.length;
   };
   const sizedBeads = (scale: number): SizedBeads => {
@@ -744,6 +751,8 @@ export const DotField = forwardRef<DotFieldHandle, {
     while (!sizedStep(scale)) { /* the kinds still missing */ }
     return L.sized.get(scale.toFixed(2))!;
   };
+  const sizedBeadsRef = useRef(sizedBeads);
+  sizedBeadsRef.current = sizedBeads;
   // How far a dot can be drawn from its centre: the field's radius, or a filter's lit dots' when bigger. A
   // strip is repainted this far out, so no bigger dot at its edge is left half in the old ink.
   const drawnR = (r: number) => r * (live.current.dim ? Math.max(1, live.current.litScale) : 1);
@@ -812,25 +821,34 @@ export const DotField = forwardRef<DotFieldHandle, {
       }
       for (let pass = dm ? 0 : 1; pass < 2; pass++) {
         ctx.globalAlpha = pass ? alpha : alpha * DIM_ALPHA;
-        // A square lays down its bead's ink over its bead's area: at another size, the same ink, as much wider.
+        // A square lays down its bead's ink: at another size, the ink of the bead at that size.
         const sc = pass ? litS : faintS;
+        const sz = sizedBeads(sc);
         for (let strong = 0; strong < 2; strong++) {
           if (strong && !hl) break;
           for (let g = 0; g < groups.length; g++) {
             const list = groups[g];
             if (!list.length) continue;
             const k = Math.floor(g / TONES);
-            const ink = k < kindsN ? (strong ? L.strongFast : L.fast)[k][g % TONES] : (strong ? L.airStrongFast : L.airFast)[k - kindsN][g % TONES];
-            const side = ink.side * sc;
+            const ink = k < kindsN ? (strong ? sz.strongFast : sz.fast)[k][g % TONES] : (strong ? L.airStrongFast : L.airFast)[k - kindsN][g % TONES];
+            const side = k < kindsN ? ink.side : ink.side * sc;
             ctx.fillStyle = ink.fill;
+            // In full ink, one path of every square and one fill: the same pixels as a fill each, where
+            // opaque squares of one colour overlap, at a fraction of the calls — a burst's frame at CI's
+            // pace went from about 7.1ms to 5.5ms of its 8. Faint, each square is its own fill, so where
+            // two overlap the ink adds up as their beads' does.
+            const batch = ctx.globalAlpha === 1;
+            if (batch) ctx.beginPath();
             for (let q = 0; q < list.length; q++) {
               const i = list[q];
               if (mode && mode[i] === GONE) continue;
               if (faint(i) === !!pass) continue;
               const lit = !!hl && values[i] >= hl[0] && values[i] < hl[1];
               if (lit !== !!strong) continue;
-              ctx.fillRect(xOf(i, now) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
+              if (batch) ctx.rect(xOf(i, now) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
+              else ctx.fillRect(xOf(i, now) * dpr - side / 2, yOf(i, now) * dpr - side / 2, side, side);
             }
+            if (batch) ctx.fill();
           }
         }
       }
@@ -1030,8 +1048,9 @@ export const DotField = forwardRef<DotFieldHandle, {
             // Toward the rim the glass barely magnifies, and a bead there is a dot's own size: a square
             // of its ink, at a fifth of a bead's cost — most of the glass's dots are out there.
             if (m.scale < 1.6) {
-              const ink = (up ? (strong ? L.airStrongFast : L.airFast) : (strong ? L.strongFast : L.fast))[k][tone];
-              const side = ink.side * m.scale * sc;
+              const own = sizedBeadsRef.current(sc);
+              const ink = (up ? (strong ? L.airStrongFast : L.airFast) : (strong ? own.strongFast : own.fast))[k][tone];
+              const side = ink.side * m.scale * (up ? sc : 1);
               ctx.fillStyle = ink.fill;
               ctx.fillRect(m.x * dpr - side / 2, m.y * dpr - side / 2, side, side);
               continue;
