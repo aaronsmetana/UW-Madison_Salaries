@@ -378,6 +378,15 @@ test('visual: titles with a title selected', async ({ page }) => {
   await shots(page, 'titles-detail', { mask: CHARTS(page), maxDiffPixels: STICKY_HEADER_JITTER });
 });
 
+test('visual: raises in one department', async ({ page }) => {
+  // One department, so both lists are short enough to be shot whole; the chart is masked like every other.
+  await page.goto(`./raises?sch=${encodeURIComponent('School of Medicine and Public Health')}&dept=Neurology`);
+  await expect(page.locator('.raise-summary')).toHaveAttribute('data-above', /^\d+$/, { timeout: 90_000 });
+  await expect(page.locator('.raise-title-changes')).toHaveAttribute('data-count', /^\d+$/, { timeout: 60_000 });
+  await expect(page.locator('.raise-account')).toBeVisible();
+  await shots(page, 'raises', { mask: CHARTS(page) });
+});
+
 test('visual: reports with a subject', async ({ page }) => {
   // The report prints the day it was generated (`fmtDate(new Date())` in Reports.tsx), so without a
   // fixed clock this baseline went stale on its own: it failed on Sep 10 with no code change, when a

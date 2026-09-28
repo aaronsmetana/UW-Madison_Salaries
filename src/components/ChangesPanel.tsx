@@ -100,6 +100,8 @@ export function ChangesPanel() {
   // Department names repeat across schools, so the department picker only opens once there is one.
   const deptSchool = filterSchool ?? (scope.kind === 'school' ? scope.value : scope.kind === 'department' ? scope.school : null);
   const deptSchoolClause = deptSchool ? ` AND school = ${sqlStr(deptSchool)}` : '';
+  // The department the Raises link carries: the panel's own pick, else the global scope's.
+  const linkDept = filterDept ?? (scope.kind === 'department' ? scope.value : null);
   const { data: deptOpts } = useSql<{ department: string }>(
     ['chg-depts', fromId, toId, deptSchool ?? ''],
     `SELECT department FROM (
@@ -373,6 +375,19 @@ export function ChangesPanel() {
           appointment{scopeText} were raised exactly {(commonRaise.k * 100).toFixed(1)}%.
         </Text>
       )}
+
+      {/* The same pair and unit on the Raises page, where the Pre-TTC twin is never an end. */}
+      {s && enabled && !fromId?.endsWith('-pre') && !toId?.endsWith('-pre') && (
+        <Anchor component={Link} size="sm" className="changes-raises-link"
+          to={`/raises?${new URLSearchParams({
+            from: fromId ?? '', to: toId ?? '',
+            ...(deptSchool ? { sch: deptSchool } : {}),
+            ...(deptSchool && linkDept ? { dept: linkDept } : {}),
+          })}`}>
+          See who got more than the usual raise, and what may explain it →
+        </Anchor>
+      )}
+
       {reorgs.map((r) => (
         <Alert key={`${r.to_id}|${r.school}`} color="accent" variant="light" className="changes-reorg" title={`A reorganization: ${r.school}`}>
           Formed in {snaps.find((x) => x.id === r.to_id)?.label ?? r.to_id} from whole departments of{' '}

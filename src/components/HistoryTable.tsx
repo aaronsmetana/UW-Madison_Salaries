@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
-import { Card, Table, Badge, Text, Group, Tooltip as MantineTooltip } from '@mantine/core';
+import { Link } from 'react-router-dom';
+import { Card, Table, Badge, Text, Group, Anchor, Tooltip as MantineTooltip } from '@mantine/core';
 import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
@@ -54,8 +55,9 @@ function ChangeFigure({ delta }: { delta: number }) {
  */
 function RaiseCell({ raise, note, reporting, compare, children }: {
   raise: Raise; note?: string | null; reporting?: string | null;
-  /** How a continuing raise compares with that step's raises campus-wide, or why this one is not compared. */
-  compare?: { text: string; compared: boolean } | null;
+  /** How a continuing raise compares with that step's raises campus-wide, or why this one is not compared;
+   *  `href`, the Raises page for that step and title. */
+  compare?: { text: string; compared: boolean; href?: string } | null;
   children: ReactNode;
 }) {
   // A new appointment under a title the person already held. Deliberately not an em dash: that
@@ -93,8 +95,14 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
     // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
     // in it looking like a pay change. Where that has happened the note says what the RATE did —
     // the number the reader came for, and the only one they cannot get elsewhere on the page.
+    // A compared raise opens the Raises page for its step and title: who else in it got more than the usual.
     const context = compare && (
-      <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} style={{ whiteSpace: 'nowrap' }}>{compare.text}</Text>
+      <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} style={{ whiteSpace: 'nowrap' }}>
+        {compare.href ? (
+          <Anchor component={Link} to={compare.href} inherit c="dimmed" underline="always" className="raise-compare-link"
+            aria-label={`${compare.text}: who in this title got more than the usual raise`}>{compare.text}</Anchor>
+        ) : compare.text}
+      </Text>
     );
     return note ? (<>{figure}<span className="appt-rate-note">{note}</span>{context}</>) : (<>{figure}{context}</>);
   }
@@ -294,10 +302,15 @@ export function HistoryTable({ rows, comparisons }: {
                 // the same title (a combined figure spans those).
                 // A paired change that is not a continuing raise says why it is not compared — the rule
                 // itself is continuingRaisesSql, which is what `comparisons` came from.
-                const compare = ((): { text: string; compared: boolean } | null => {
+                const compare = ((): { text: string; compared: boolean; href?: string } | null => {
                   if (!comparisons || raise.kind !== 'paired') return null;
                   const c = comparisons.get(r.snapshot_id);
-                  if (c) return { text: c.text, compared: true };
+                  if (c) {
+                    const href = from && r.job_code
+                      ? `/raises?${new URLSearchParams({ from: from.snapshot_id, to: r.snapshot_id, title: r.job_code })}`
+                      : undefined;
+                    return { text: c.text, compared: true, href };
+                  }
                   if (!from) return null;
                   const why = (apptCounts.get(r.snapshot_id) ?? 1) > 1 || (apptCounts.get(from.snapshot_id) ?? 1) > 1
                     ? 'several appointments'

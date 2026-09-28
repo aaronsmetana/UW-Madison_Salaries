@@ -62,7 +62,7 @@ test("a visit's first load opens the sidebar over the page, then tucks it into t
     if (s.pad != null) expect(s.pad).toBe(settled.pad);
   }
   // The rail's links still say where they go.
-  for (const name of ['People', 'Titles', 'Divisions', 'Compare', 'Reports', 'Screening']) {
+  for (const name of ['People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening']) {
     await expect(nav(page).getByRole('link', { name, exact: true })).toHaveCount(1);
   }
 
@@ -135,7 +135,7 @@ const phone = (browser: import('@playwright/test').Browser, opts: { reducedMotio
   browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, reducedMotion: opts.reducedMotion ?? 'no-preference' });
 const sheet = (page: Page) => page.getByRole('dialog', { name: 'Menu' });
 const burger = (page: Page) => page.getByRole('button', { name: 'Toggle navigation' });
-const NAMES = ['People', 'Titles', 'Divisions', 'Compare', 'Reports', 'Screening', 'About the data'];
+const NAMES = ['People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening', 'About the data'];
 
 test('on a phone the menu is a sheet over the dimmed page, and names every link', async ({ browser }) => {
   const ctx = await phone(browser);

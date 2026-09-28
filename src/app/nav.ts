@@ -1,6 +1,6 @@
 import {
   IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics,
-  IconInfoCircle, IconListSearch, type Icon,
+  IconInfoCircle, IconListSearch, IconTrendingUp, type Icon,
 } from '@tabler/icons-react';
 
 export interface NavItem {
@@ -24,6 +24,7 @@ export const NAV: NavItem[] = [
   { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
   { label: 'Divisions', to: '/explore', icon: IconBuildingBank },
   { label: 'Compare', to: '/compare', icon: IconArrowsDiff },
+  { label: 'Raises', to: '/raises', icon: IconTrendingUp },
   { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
   { label: 'Screening', to: '/screening', icon: IconListSearch },
 ];
