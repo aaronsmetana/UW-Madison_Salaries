@@ -21,7 +21,7 @@
  * combined one, so a tier earns its place by evidence, not by looking reasonable.
  */
 
-import { reportingChange, sameBasis } from './queries';
+import { reportingChange, sameBasisAcross } from './queries';
 
 /** The fields this module needs from one appointment row, whatever the caller's row type is. */
 export interface ApptFields {
@@ -357,7 +357,7 @@ export function matchAppointments<T>(rows: readonly T[], get: (row: T) => ApptFi
 /** The change for a lone appointment that moved title — see the `titleChange` kind of `Raise`. */
 export function titleChange(prior: ApptFields, cur: ApptFields): Extract<Raise, { kind: 'titleChange' }> {
   const reporting = reportingChange(prior.basis, cur.basis);
-  const note = reporting ? reporting.note : !sameBasis(prior.basis, cur.basis) ? 'basis changed' : null;
+  const note = reporting ? reporting.note : !sameBasisAcross(prior.basis, cur.basis) ? 'basis changed' : null;
   const delta = note != null || !(prior.pay > 0) ? null : snap((cur.pay - prior.pay) / prior.pay);
   const promoted =
     prior.grade != null && cur.grade != null &&

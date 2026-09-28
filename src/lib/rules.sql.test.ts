@@ -39,6 +39,11 @@ const ROWS: Row[] = [
   // Annual → 12 Month: a pure relabel. IS a raise.
   r('s2', '2022-08-01', 'twelve', 'J1', 80000, { comp_basis: 'Annual' }),
   r('s3', '2023-10-01', 'twelve', 'J1', 82400, { comp_basis: '12 Month' }),
+  // Hourly → 12 Month: the Sep 2025 relabel of the same hourly appointments. IS a raise — one way only.
+  r('s2', '2022-08-01', 'relabel', 'H2', 41600, { comp_basis: 'Hourly', school: 'C', department: 'D8', grade_number: null }),
+  r('s3', '2023-10-01', 'relabel', 'H2', 42848, { comp_basis: '12 Month', school: 'C', department: 'D8', grade_number: null }),
+  r('s2', '2022-08-01', 'backward', 'H3', 41600, { comp_basis: '12 Month', school: 'C', department: 'D8', grade_number: null }),
+  r('s3', '2023-10-01', 'backward', 'H3', 42848, { comp_basis: 'Hourly', school: 'C', department: 'D8', grade_number: null }),
   // No basis recorded on either side (every snapshot before Sep 2024). IS a raise.
   r('s1', '2022-03-01', 'nobasis', 'J1', 70000, { comp_basis: null }),
   r('s2', '2022-08-01', 'nobasis', 'J1', 72100, { comp_basis: null }),
@@ -69,9 +74,9 @@ describe('continuingRaisesSql', () => {
       `SELECT person_key, from_id, to_id, r FROM (${continuingRaisesSql({ metric: 'fte' })}) ORDER BY person_key, from_id`
     );
     const people = rows.map((x) => `${x.person_key}:${x.from_id}>${x.to_id}`);
-    // stay: post→s1 and s1→s2; nobasis: s1→s2 with no basis recorded; twelve: s2→s3 across the
-    // pure relabel. Nothing else.
-    expect(people).toEqual(['nobasis:s1>s2', 'stay:2021-11-post>s1', 'stay:s1>s2', 'twelve:s2>s3']);
+    // stay: post→s1 and s1→s2; nobasis: s1→s2 with no basis recorded; twelve and relabel: s2→s3 across
+    // the two pure relabels. Not backward, 12 Month → Hourly, which no release did. Nothing else.
+    expect(people).toEqual(['nobasis:s1>s2', 'relabel:s2>s3', 'stay:2021-11-post>s1', 'stay:s1>s2', 'twelve:s2>s3']);
     expect(rows.find((x) => x.person_key === 'stay' && x.from_id === 's1')!.r).toBeCloseTo(0.04, 6);
   });
 
@@ -103,7 +108,7 @@ describe('raiseStepsSql', () => {
     expect(rows.map((x) => [x.from_id, x.to_id, Number(x.n), Number(x.n_title)])).toEqual([
       ['2021-11-post', 's1', 1, 1],
       ['s1', 's2', 2, 2],
-      ['s2', 's3', 1, 1],
+      ['s2', 's3', 2, 1],
     ]);
     // s1 → s2: stay +4% and nobasis +3%. The promotion, the FTE change, the split and the 9-month
     // relabel are not raises, so none of them moves the median.
@@ -113,12 +118,13 @@ describe('raiseStepsSql', () => {
 });
 
 describe('sameQuantitySql', () => {
-  it('treats Annual → 12 Month as the same quantity and Academic → 9 Month as a reporting change', async () => {
-    const [x] = await all<{ relabel: boolean; reporting: boolean; missing: boolean; different: boolean }>(
-      `SELECT ${sameQuantitySql("'Annual'", "'12 Month'")} relabel, ${sameQuantitySql("'Academic'", "'9 Month'")} reporting,
+  it('treats Annual → 12 Month and Hourly → 12 Month as the same quantity and Academic → 9 Month as a reporting change', async () => {
+    const [x] = await all<{ relabel: boolean; hourly: boolean; reversed: boolean; reporting: boolean; missing: boolean; different: boolean }>(
+      `SELECT ${sameQuantitySql("'Annual'", "'12 Month'")} relabel, ${sameQuantitySql("'Hourly'", "'12 Month'")} hourly,
+              ${sameQuantitySql("'12 Month'", "'Hourly'")} reversed, ${sameQuantitySql("'Academic'", "'9 Month'")} reporting,
               ${sameQuantitySql('NULL', "'9 Month'")} missing, ${sameQuantitySql("'Annual'", "'9 Month'")} different`
     );
-    expect(x).toEqual({ relabel: true, reporting: false, missing: true, different: false });
+    expect(x).toEqual({ relabel: true, hourly: true, reversed: false, reporting: false, missing: true, different: false });
   });
 });
 

@@ -283,13 +283,38 @@ export function reportingAcross(bases: readonly (string | null | undefined)[]): 
 }
 
 /**
+ * The relabel that changed the word and not the quantity, from an earlier snapshot to a later one.
+ *
+ * At Sep 2025 the source stopped writing "Hourly" and wrote "12 Month" for the same hourly appointments,
+ * still annualized over 2,080 hours: of the University Staff who kept their job and FTE across it, 2,205
+ * of about 2,900 moved by exactly the 3.0% pay-plan raise. Read as a change of basis, every one of those
+ * raises dropped out of every raise figure on the site, and that step had no University Staff at all.
+ *
+ * Across time only. Within one snapshot an hourly rate and a salary are two cohorts (`sameBasis`), and the
+ * source kept them apart for as long as it said which was which.
+ */
+export const RELABELS = [{ from: 'hourly', to: '12 month', since: '2025-09', sinceLabel: 'Sep 2025' }] as const;
+
+/** Whether `earlier` → `later` is one of `RELABELS`. */
+export function relabelled(earlier: string | null | undefined, later: string | null | undefined): boolean {
+  const a = earlier?.trim().toLowerCase();
+  const b = later?.trim().toLowerCase();
+  return !!a && !!b && RELABELS.some((c) => c.from === a && c.to === b);
+}
+
+/** The same pay basis from an earlier snapshot to a later one: the same class, or relabelled between them. */
+export function sameBasisAcross(earlier: string | null | undefined, later: string | null | undefined): boolean {
+  return sameBasis(earlier, later) || relabelled(earlier, later);
+}
+
+/**
  * Whether a pay figure under `earlier` and one under `later` measure the same thing, so a change
  * between them is a change in pay. `sameBasis` answers "same class of appointment" for cohort
- * scoping, where both sides come from one snapshot; this answers it across time, where the 9-month
- * reporting change also has to be excluded.
+ * scoping, where both sides come from one snapshot; this answers it across time, where a relabel
+ * (`RELABELS`) is the same basis and the 9-month reporting change has to be excluded.
  */
 export function sameQuantity(earlier: string | null | undefined, later: string | null | undefined): boolean {
-  return sameBasis(earlier, later) && !reportingChange(earlier, later);
+  return sameBasisAcross(earlier, later) && !reportingChange(earlier, later);
 }
 
 /** SQL twin of `basisClass`: the normalized class label of a `comp_basis` column. */
@@ -300,18 +325,20 @@ function basisClassSql(col: string): string {
 
 /** SQL twin of `sameQuantity(a, b)` for two `comp_basis` columns, `a` the earlier. */
 export function sameQuantitySql(a: string, b: string): string {
-  const changes = REPORTING_CHANGES.map((c) => `(lower(trim(${a})) = ${sqlStr(c.from)} AND lower(trim(${b})) = ${sqlStr(c.to)})`).join(' OR ');
+  const pair = (c: { from: string; to: string }) => `(lower(trim(${a})) = ${sqlStr(c.from)} AND lower(trim(${b})) = ${sqlStr(c.to)})`;
+  const changes = REPORTING_CHANGES.map(pair).join(' OR ');
+  const relabels = RELABELS.map(pair).join(' OR ');
   // `coalesce(…, FALSE)`: with a NULL basis on either side (every snapshot before Sep 2024 has none)
   // the reporting-change test is NULL, and `NOT NULL` would drop the step from any WHERE.
-  return `((${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${basisClassSql(a)} = ${basisClassSql(b)}) AND NOT coalesce(${changes}, FALSE))`;
+  return `((${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${basisClassSql(a)} = ${basisClassSql(b)} OR ${relabels}) AND NOT coalesce(${changes}, FALSE))`;
 }
 
 /**
  * Every continuing raise: the one definition of "a raise" the app states anywhere.
  *
  * A step counts only when it measures pay and nothing else moved: the same person, holding ONE paid
- * appointment on each side, in the same job code, at the same FTE, on the same pay basis (and not
- * across the 9-month reporting change). Title changes, FTE changes, concurrent appointments and new
+ * appointment on each side, in the same job code, at the same FTE, on the same pay basis (a relabel,
+ * `RELABELS`, is the same basis; the 9-month reporting change is not). Title changes, FTE changes, concurrent appointments and new
  * hires are all excluded — each would otherwise pass for a raise or a cut. Snapshots follow their
  * canonical order with the pre-TTC twin dropped, so the TTC reclassification is never a step; with
  * `pair`, the step is exactly `from` → `to` instead (the Changes panel lets a reader pick both ends).

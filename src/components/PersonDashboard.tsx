@@ -6,7 +6,7 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, sameBasis, reportingChange, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, sameBasisAcross, reportingChange, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
@@ -475,7 +475,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               const rateNote = ((): string | null => {
                 const paired = matching.raises.get(r);
                 if (!from || paired?.kind !== 'paired') return null;
-                if (!sameBasis(r.comp_basis, from.comp_basis)) return 'basis changed';
+                if (!sameBasisAcross(from.comp_basis, r.comp_basis)) return 'basis changed';
                 if ((r.fte || 1) === (from.fte || 1)) return null;
                 if (!r.rate_raw || !from.rate_raw || from.rate_raw <= 0) return null;
                 const d = r.rate_raw / from.rate_raw - 1;

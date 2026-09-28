@@ -32,6 +32,10 @@ const ROWS = [
   r('s3', '2023-10-01', 'nine', 'F1', 113300, { comp_basis: '9 Month' }),
   r('s2', '2022-08-01', 'twelve', 'J1', 80000, { comp_basis: 'Annual' }),
   r('s3', '2023-10-01', 'twelve', 'J1', 82400, { comp_basis: '12 Month' }),
+  r('s2', '2022-08-01', 'relabel', 'H2', 41600, { comp_basis: 'Hourly' }),
+  r('s3', '2023-10-01', 'relabel', 'H2', 42848, { comp_basis: '12 Month' }),
+  r('s2', '2022-08-01', 'backward', 'H3', 41600, { comp_basis: '12 Month' }),
+  r('s3', '2023-10-01', 'backward', 'H3', 42848, { comp_basis: 'Hourly' }),
   r('s1', '2022-03-01', 'nobasis', 'J1', 70000, { comp_basis: null }),
   r('s2', '2022-08-01', 'nobasis', 'J1', 72100, { comp_basis: null }),
   r('s2', '2022-08-01', 'hourly0', 'H1', 41600, { fte: 0 }),
@@ -62,6 +66,9 @@ describe('raise-steps.json and continuingRaisesSql', () => {
       expect(shape(build)).toEqual(shape(app));
       // Guard against both being empty: the fixture has a continuing raise on every step.
       expect(build.length).toBe(3);
+      // And against both forgetting a relabel: s2 → s3 is twelve (Annual → 12 Month), relabel (Hourly →
+      // 12 Month) and hourly0; backward (12 Month → Hourly) and nine (the reporting change) are not raises.
+      expect(build.find((x) => x.from_id === 's2').n).toBe(3);
     });
   }
 

@@ -5,7 +5,7 @@ import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
-import { actualPay, sameBasis, reportingChange } from '../lib/queries';
+import { actualPay, sameBasisAcross, reportingChange } from '../lib/queries';
 import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 import { useSummary } from '../lib/hooks';
@@ -281,10 +281,10 @@ export function HistoryTable({ rows, comparisons }: {
                 // that contradicts what the rate did.
                 const rateNote = ((): string | null => {
                   if (!from || raise.kind !== 'paired') return null;
-                  // `sameBasis`, never `!==`. The source renamed its own vocabulary — Annual to 12 Month,
-                  // Academic to 9 Month — and left the column null before it existed, so a literal comparison
-                  // calls 35,313 pairs a basis change when 2,720 of them are.
-                  const basisMoved = !sameBasis(r.comp_basis, from.comp_basis);
+                  // `sameBasisAcross`, never `!==`. The source renamed its own vocabulary — Annual to 12 Month,
+                  // Academic to 9 Month, Hourly to 12 Month — and left the column null before it existed, so a
+                  // literal comparison calls 35,313 pairs a basis change when 2,720 of them are.
+                  const basisMoved = !sameBasisAcross(from.comp_basis, r.comp_basis);
                   // Matches FTE_MULT: a zero or missing FTE counts as full-time.
                   const fteMoved = (r.fte || 1) !== (from.fte || 1);
                   if (!basisMoved && !fteMoved) return null;
@@ -316,7 +316,7 @@ export function HistoryTable({ rows, comparisons }: {
                     ? 'several appointments'
                     : (r.fte || 1) !== (from.fte || 1)
                       ? 'FTE changed'
-                      : !sameBasis(r.comp_basis, from.comp_basis) || reportingChange(from.comp_basis, r.comp_basis)
+                      : !sameBasisAcross(from.comp_basis, r.comp_basis) || reportingChange(from.comp_basis, r.comp_basis)
                         ? 'pay basis changed'
                         : 'a snapshot is missing between';
                   return { text: `not compared: ${why}`, compared: false };

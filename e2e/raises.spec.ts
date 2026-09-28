@@ -97,6 +97,25 @@ test('the shares add up to the whole difference, and a promotion is where most o
   expect(rows[0]).toMatch(/Aug 2022 · promotion/);
 });
 
+test('an hourly raise across the Sep 2025 relabel is a raise, compared with its step', async ({ page }) => {
+  // The source wrote "Hourly" through Apr 2025 and "12 Month" from Sep 2025 for the same appointments.
+  const [p] = await oracle<{ pk: string }>(
+    `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(coalesce(nullif(fte, 0), 1)) f,
+                         lower(any_value(comp_basis)) b FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING count(*) = 1)
+     SELECT a.person_key pk FROM one a JOIN one b USING (person_key)
+     WHERE a.snapshot_id = '2025-04' AND b.snapshot_id = '2025-09' AND a.job = b.job AND a.f = b.f
+       AND a.b = 'hourly' AND b.b = '12 month' AND person_key IN ${UNIQUE_NAME} ORDER BY pk LIMIT 1`
+  );
+  expect(p, 'no one kept an hourly job across the relabel').toBeTruthy();
+  const [mine] = await oracle<{ n: number }>(`${RAISES} SELECT count(*) n FROM cr WHERE person_key = '${p.pk.replaceAll("'", "''")}' AND tt = '2025-09'`);
+  expect(mine.n, 'the oracle does not count it as a raise').toBe(1);
+  await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=history`);
+  await expect(page.locator('[data-raise-compare]').first()).toBeAttached({ timeout: 60_000 });
+  const cell = await changeCellText(page, 'Sep 2025');
+  expect(cell).toContain('typical');
+  expect(cell).not.toMatch(/not compared|basis changed/);
+});
+
 test("a 9-month member's breakdown names the reporting change on its own row", async ({ page }) => {
   const [p] = await oracle<{ pk: string }>(
     `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(comp_basis) basis FROM $SAL

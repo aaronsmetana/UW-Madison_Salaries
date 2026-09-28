@@ -204,8 +204,8 @@ test.describe('R4 — the brief says one thing about tenure', () => {
 
 /** A continuing raise, stated here independently of src/lib: one paid appointment on each side of
  *  consecutive canonical snapshots (the pre-TTC twin dropped), same job code and FTE, and a pay basis
- *  that is the same quantity — unknown on either side counts, Annual → 12 Month is a relabel, and
- *  Academic → 9 Month (the Sep 2025 reporting change) is not a raise. On the full-time rate. */
+ *  that is the same quantity — unknown on either side counts, Annual → 12 Month and Hourly → 12 Month are
+ *  relabels, and Academic → 9 Month (the Sep 2025 reporting change) is not a raise. On the full-time rate. */
 const RAISES = `WITH snaps AS (SELECT snapshot_id, CAST(min(snapshot_date) AS VARCHAR) d,
                                row_number() OVER (ORDER BY min(snapshot_date), snapshot_id) i
                         FROM $SAL WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1),
@@ -217,7 +217,7 @@ const RAISES = `WITH snaps AS (SELECT snapshot_id, CAST(min(snapshot_date) AS VA
             JOIN one b ON b.person_key = a.person_key AND b.job = a.job AND b.f = a.f
             JOIN snaps sb ON sb.snapshot_id = b.snapshot_id AND sb.i = sa.i + 1
             WHERE a.job IS NOT NULL
-              AND (a.b IS NULL OR b.b IS NULL OR a.b = b.b OR (a.b = 'annual' AND b.b = '12 month')))`;
+              AND (a.b IS NULL OR b.b IS NULL OR a.b = b.b OR (a.b IN ('annual', 'hourly') AND b.b = '12 month')))`;
 
 /** Compound step rates and express them per year of the time the steps span. */
 function perYear(steps: { dfr: string; dto: string; r: number }[]): number {

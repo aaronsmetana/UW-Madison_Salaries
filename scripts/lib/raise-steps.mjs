@@ -10,8 +10,8 @@ import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
  * The definition is `continuingRaisesSql` in src/lib/queries.ts, restated here in the build's own
  * SQL: one paid appointment on each side of consecutive canonical snapshots (the pre-TTC twin
  * dropped), the same job code, the same FTE, and a pay basis that is the same quantity — unknown on
- * either side counts, Annual → 12 Month is a relabel, Academic → 9 Month is the Sep 2025 reporting
- * change and never a raise. scripts/raise-steps.test.mjs runs both over one fixture and requires the
+ * either side counts, Annual → 12 Month and Hourly → 12 Month are relabels, Academic → 9 Month is the
+ * Sep 2025 reporting change and never a raise. scripts/raise-steps.test.mjs runs both over one fixture and requires the
  * same answer, so the two cannot drift apart unnoticed.
  */
 
@@ -20,6 +20,8 @@ const METRIC_SQL = { fte: ACTUAL_PAY_SQL, full: 'salary', base: 'COALESCE(base_p
 const BASIS_CLASSES = [['annual', '12 month'], ['academic', '9 month']];
 /** Mirrors REPORTING_CHANGES in src/lib/queries.ts (earlier → later). */
 const REPORTING = [['academic', '9 month']];
+/** Mirrors RELABELS in src/lib/queries.ts (earlier → later): the same quantity under a new word. */
+const RELABELS = [['hourly', '12 month']];
 /** The histogram's resolution: raises rounded to 0.1%, the precision the app prints them at. */
 export const HIST_STEP = 0.001;
 /** Tails are lumped into the end bins: −50% and +100% bound every comparison anyone reads. */
@@ -28,10 +30,10 @@ const HIST_MAX = 1000;
 
 const cls = (c) =>
   `(CASE lower(trim(${c})) ${BASIS_CLASSES.flatMap((k) => k.map((l) => `WHEN '${l}' THEN '${k[k.length - 1]}'`)).join(' ')} ELSE lower(trim(${c})) END)`;
+const pairSql = (a, b, pairs) => pairs.map(([f, t]) => `(lower(trim(${a})) = '${f}' AND lower(trim(${b})) = '${t}')`).join(' OR ');
 const sameQuantity = (a, b) =>
-  `((${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${cls(a)} = ${cls(b)}) AND NOT coalesce(${REPORTING.map(
-    ([f, t]) => `(lower(trim(${a})) = '${f}' AND lower(trim(${b})) = '${t}')`
-  ).join(' OR ')}, FALSE))`;
+  `((${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${cls(a)} = ${cls(b)} OR ${pairSql(a, b, RELABELS)})` +
+  ` AND NOT coalesce(${pairSql(a, b, REPORTING)}, FALSE))`;
 
 /** Every continuing raise over `src` (a table or read_parquet(...)), for one pay measure. */
 export function continuingRaisesQuery(src, metric) {

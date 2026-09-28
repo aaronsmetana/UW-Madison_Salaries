@@ -488,7 +488,8 @@ export default function Raises() {
         <Stack gap="xs">
           <Text size="sm">
             <b>A raise</b> is a change in pay for someone in the same job at the same FTE, on the same pay basis, with one
-            paid appointment in each snapshot — what a raise means everywhere on this site. A change of title is listed
+            paid appointment in each snapshot — what a raise means everywhere on this site. (The source began calling
+            hourly pay “12 Month” in Sep 2025; that is the same basis.) A change of title is listed
             apart; the rest are counted under “Everyone paid in both snapshots”.
           </Text>
           <Text size="sm">
