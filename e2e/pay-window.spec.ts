@@ -92,7 +92,8 @@ test('a title squeezed by a few far out zooms to its middle 90%, with the rest p
   await expect(high.locator('.strip-dots')).toHaveAttribute('data-dots', String(above.length));
   // The whole range is not on the axis any more.
   const text = await strip.innerText();
-  expect(text).not.toContain(usd(Math.min(...people.map((p) => p.pay))));
+  // (In $k, as an unzoomed axis would label its end: the axis never prints whole dollars.)
+  expect(text).not.toContain(k(Math.min(...people.map((p) => p.pay))));
   // The piles sit outside the plot at either end, and the subject's mark over the plot.
   const plot = (await strip.locator('svg').first().boundingBox())!;
   const lb = (await low.boundingBox())!, hb = (await high.boundingBox())!;
@@ -145,8 +146,9 @@ test('a title whose middle 90% already fills its axis is drawn whole', async ({ 
   const strip = page.locator('.peer-strip');
   await expect(strip).not.toHaveAttribute('data-window', /.*/);
   await expect(strip.locator('[data-pile]')).toHaveCount(0);
-  await expect(strip).toContainText(usd(pays[0]));
-  await expect(strip).toContainText(usd(pays[pays.length - 1]));
+  // The axis runs from the lowest pay to the highest, labelled in $k like the median between them.
+  await expect(strip).toContainText(k(pays[0]));
+  await expect(strip).toContainText(k(pays[pays.length - 1]));
   await expect(page.locator('.tenure-plot')).not.toHaveAttribute('data-window', /.*/);
   await expect(page.locator('.tenure-band')).toHaveCount(0);
 });
@@ -240,8 +242,9 @@ test('the tenure scatter zooms to the same window, pins the rest to its edges, a
   const at30 = await plot.evaluate((el) => {
     const grid = el.querySelector('.recharts-cartesian-grid')!.getBoundingClientRect();
     const tick = [...el.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick')].find((t) => t.textContent === '30y')!;
-    const line = tick.querySelector('line')!.getBoundingClientRect();
-    return (line.x - grid.x) / grid.width;
+    // The label's centre: axes draw no tick marks (app.css), and the label is centred on its tick.
+    const label = tick.querySelector('text')!.getBoundingClientRect();
+    return (label.x + label.width / 2 - grid.x) / grid.width;
   });
   expect(at30).toBeCloseTo(30 / end, 2);
 

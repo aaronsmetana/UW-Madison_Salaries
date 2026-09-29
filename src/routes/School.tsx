@@ -322,6 +322,8 @@ export default function School() {
               data={tenurePay ?? []}
               fill={MARK_POPULATION}
               fillOpacity={0.5}
+              // No rim (DOT_RIM): this is a crowd of up to 3,000, where overlapping half-tone dots are
+              // what shades the dense regions darker, and a rim on each cut that shading into bubbles.
               cursor="pointer"
               onClick={(pt: { person_key?: string; payload?: { person_key?: string } }) => {
                 const k = pt?.person_key ?? pt?.payload?.person_key;

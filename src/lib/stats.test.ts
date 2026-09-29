@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { percentile, leastSquares, ordinal, tenureFit, TENURE_MIN_PEERS } from './stats';
+import { percentile, leastSquares, ordinal, tenureFit, onCurveBand, TENURE_MIN_PEERS, TENURE_ON_BAND } from './stats';
 
 describe('ordinal', () => {
   it('suffixes 1/2/3 and everything else', () => {
@@ -77,6 +77,34 @@ describe('tenureFit', () => {
     expect(tenureFit(line, { x: 5, y: 105_000 - 1_000 })!.verdict).toBe('on'); // ~0.96% below
     expect(tenureFit(line, { x: 5, y: 105_000 - 3_000 })!.verdict).toBe('below'); // ~2.9% below
     expect(tenureFit(line, { x: 5, y: 105_000 + 3_000 })!.verdict).toBe('above');
+  });
+
+  // The scatter shades `onCurveBand` and the callout says "on the tenure curve"; a dot inside the band
+  // the callout calls anything else is a chart contradicting its own caption. So: across the whole
+  // plane of predictions and pays, the band is exactly the 2%-of-pay rule, and the verdict is the band.
+  it('draws "on the curve" as exactly the pays the verdict calls on it', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    let checked = 0, inside = 0;
+    for (let i = 0; i < 4000; i++) {
+      const e = 20_000 + rnd() * 400_000;
+      const y = e * (0.94 + rnd() * 0.12);
+      const [lo, hi] = onCurveBand(e);
+      // The rule as the brief states it, written independently of the band.
+      const rule = Math.abs(y - e) < TENURE_ON_BAND * Math.abs(y);
+      if (Math.min(Math.abs(y - lo), Math.abs(y - hi)) < 1e-6) continue; // on the edge itself
+      expect(y > lo && y < hi, `e ${e} y ${y}`).toBe(rule);
+      checked++;
+      if (rule) inside++;
+      // And tenureFit, through the same prediction: a flat line of peers at `e`.
+      if (i % 40 === 0) {
+        const flat = Array.from({ length: 10 }, (_, k) => ({ x: k, y: e }));
+        expect(tenureFit(flat, { x: 5, y })!.verdict === 'on', `fit e ${e} y ${y}`).toBe(rule);
+      }
+    }
+    // Both sides of the edge were sampled, or the check above proves nothing.
+    expect(inside).toBeGreaterThan(checked * 0.2);
+    expect(inside).toBeLessThan(checked * 0.5);
   });
 
   it('reports how much of the spread tenure explains', () => {

@@ -27,6 +27,11 @@ function runsOf(points: readonly Point[]): { x: number; y: number }[][] {
 
 const FONT = 11;
 
+/** A name written over a chart's marks: a stroke of the card colour painted under the letters, so a
+ *  gridline, a band or a dot behind them stops at the word instead of running through it. Shared, so
+ *  every name written on a plot carries the same halo. */
+export const HALO = { stroke: 'var(--mantine-color-body)', strokeWidth: 3, paintOrder: 'stroke' } as const;
+
 /**
  * Each line's name, written where it ends (`placeEndLabels`) — in place of Recharts' default
  * `<Legend />`, a row of swatches under the plot that had to be matched back to the lines by colour
@@ -87,9 +92,7 @@ export function EndLabels(props: {
             fontSize={FONT}
             fontWeight={600}
             fill={s.color}
-            stroke="var(--mantine-color-body)"
-            strokeWidth={3}
-            paintOrder="stroke"
+            {...HALO}
           >
             {s.text}
           </text>

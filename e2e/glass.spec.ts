@@ -257,7 +257,8 @@ test.describe('the plot surface', () => {
   }
 
   /**
-   * Every Recharts grid has one, and it lies under the data. A chart that spreads its own grid
+   * Every Recharts grid has one, and it lies under the data — with no tick marks or value-axis rule
+   * drawn over it (app.css). A chart that spreads its own grid
    * props instead of `GRID` would lose it; a grid drawn after a reference area paints the tint over
    * it — the person trend's title-era bands sat under the grid until it moved first.
    */
@@ -281,12 +282,26 @@ test.describe('the plot surface', () => {
         }
         const lit = grids.map((g) => g.closest('.mantine-Paper-root[data-with-border]'))
           .filter((c) => c && getComputedStyle(c).boxShadow.includes('inset')).length;
-        return { grids: grids.length, bare, over, lit };
+        const all = (sel: string) => [...document.querySelectorAll(sel)];
+        const shown = (sel: string) => all(sel).filter((e) => getComputedStyle(e).display !== 'none').length;
+        return {
+          grids: grids.length, bare, over, lit,
+          tickLines: all('.recharts-cartesian-axis-tick-line').length,
+          ticksShown: shown('.recharts-cartesian-axis-tick-line'),
+          yRules: shown('.recharts-yAxis .recharts-cartesian-axis-line'),
+          xRules: shown('.recharts-xAxis .recharts-cartesian-axis-line'),
+        };
       });
       expect(report.grids, `${name} drew no grid, so it cannot prove anything`).toBeGreaterThan(0);
       expect(report.bare, `${name}: ${report.bare} of ${report.grids} grids have no plot surface`).toBe(0);
       expect(report.over, `${name}: the plot surface is painted over ${report.over.join(', ')}`).toEqual([]);
       expect(report.lit, `${name}: a chart card carries an inset bloom again — the surface belongs to the plot`).toBe(0);
+      // The gridlines and the surface carry the scale, so the axes draw no second copy of it: no tick
+      // marks, and no rule up the value axis. The category axis keeps the baseline the marks stand on.
+      expect(report.tickLines, `${name} renders no tick marks, so hiding them cannot be checked`).toBeGreaterThan(0);
+      expect(report.ticksShown, `${name}: tick marks are drawn again`).toBe(0);
+      expect(report.yRules, `${name}: the value axis has its rule again`).toBe(0);
+      expect(report.xRules, `${name}: the baseline under the marks is gone`).toBeGreaterThan(0);
     });
   }
 });

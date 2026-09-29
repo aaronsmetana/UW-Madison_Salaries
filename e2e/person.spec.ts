@@ -175,7 +175,9 @@ test('peer strip marks the subject once, with a mark the peers do not use', asyn
 
 // Both charts on this tab draw the same cohort, so a reader moving between them has to be able to
 // carry the marking across. They agreed on nothing before: three different teals for "this person"
-// across the app, and the population pale teal in one chart and grey in the other.
+// across the app, and the population pale teal in one chart and grey in the other. Each names the
+// subject where they stand, in the same words; the key to the peers' colours is the strip's alone,
+// since the scatter directly under it would only repeat it.
 test('the strip and the scatter mark a person the same way', async ({ page }) => {
   await openPerson(page, 'Aaron Smetana');
   await expect(page.locator('.recharts-wrapper circle').first()).toBeVisible({ timeout: 60_000 });
@@ -194,14 +196,16 @@ test('the strip and the scatter mark a person the same way', async ({ page }) =>
       legends: [...document.querySelectorAll('.mantine-Text-root')]
         .map((e) => (e.textContent ?? '').trim())
         .filter((t) => t === 'This person' || t === 'Same school' || t === 'Others'),
+      stripName: strip?.querySelector('.peer-strip-you')?.textContent?.trim(),
+      scatterName: document.querySelector('.tenure-self-label')?.textContent?.trim(),
     };
   });
 
   expect(marks.stripSelf, 'subject fill').toBe(marks.scatterSelf);
   expect(marks.stripPeer, 'peer fill').toBe(marks.scatterPeer);
-  // Each chart names the same three roles, so the labels appear twice apiece.
-  expect(marks.legends.filter((t) => t === 'This person')).toHaveLength(2);
-  expect(marks.legends.filter((t) => t === 'Others')).toHaveLength(2);
+  expect(marks.stripName, 'the strip names no one').toMatch(/^Aaron · \$[\d,]+$/);
+  expect(marks.scatterName, 'the scatter names the subject differently').toBe(marks.stripName);
+  expect(marks.legends).toEqual(['Same school', 'Others']);
 });
 
 // PeerRangeBar's own p25/median/p75 labels are centered on their ticks, so a long-tailed cohort
@@ -272,7 +276,10 @@ test('the peer strip names the person under the cursor, and reads the axis betwe
   // A name and a pay figure — not the "~$X · Nth percentile" estimate.
   await expect(pill).toHaveText(/^[^~]+ · \$[\d,]+$/, { timeout: 5_000 });
 
-  await page.mouse.move(box.x + box.width / 2, box.y - 34);
+  // Straight up from that dot, in the lane over the population where only the subject's own mark
+  // stands (which the readout does not name): more than a dot's reach from every peer.
+  const plotTop = (await page.locator('.peer-strip svg:has(circle.chart-dot)').boundingBox())!.y;
+  await page.mouse.move(box.x + box.width / 2, plotTop + 2);
   await expect(pill).toHaveText(/^~\$[\d,]+/, { timeout: 5_000 });
 });
 

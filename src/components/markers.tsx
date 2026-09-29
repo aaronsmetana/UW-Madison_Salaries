@@ -43,9 +43,29 @@ export const MARK_TARGET = 'var(--mantine-color-pos-6)';
 /** Circle radii, in px. The strip and the scatter draw the same person the same size. */
 export const DOT_R = { peer: 4.5, self: 7.5 } as const;
 
+/**
+ * A dot's rim: 1px of the card colour just outside its fill, so dots that touch or overlap read as
+ * separate people rather than one blob — flat discs in a cluster merged into a single grey shape. The
+ * subject's mark always had one.
+ *
+ * Painted under the fill (`paintOrder`), so the 2px stroke shows only its outer half and the dot keeps
+ * the radius the strip's packer reserves for it (`rowHeight(DOT_R.peer)`); growing the radius instead
+ * would put every row-neighbour a pixel into the next. Not for a dot under 3px across a crowd, where
+ * the rim would be most of the dot.
+ */
+export const DOT_RIM = { stroke: 'var(--mantine-color-body)', strokeWidth: 2, paintOrder: 'stroke' } as const;
+
 /** A strong reference rule — a regression line, a target, anything the eye should follow. >=3:1, and a
  *  tighter dash than the soft guide's so the two are told apart by pattern, not only by weight. */
 export const GUIDE_STRONG = { stroke: 'var(--guide-strong)', dasharray: '4 3', width: 2 } as const;
+
+/**
+ * Where tenure alone would put someone's pay, give or take the 2% the tenure callout calls "on the
+ * curve" (`onCurveBand` in lib/stats.ts): a faint wash along the tenure line, with no edges. Its own
+ * tint, not BAND_IQR's — that one means "middle 50%" on every chart, and one look must not mean two
+ * things.
+ */
+export const FIT_BAND = { fill: 'var(--fit-band)' } as const;
 
 /** A quiet reference rule — quartiles, a median, the grid. Present, never competing with the data. */
 export const GUIDE_SOFT = { stroke: 'var(--mantine-color-gray-5)', dasharray: '3 3', width: 1 } as const;

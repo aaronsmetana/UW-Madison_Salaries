@@ -33,6 +33,7 @@ import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 import { focusControl } from '../components/EmptyState';
 import { Sparkline } from '../components/chart/Sparkline';
 import { cadenceOf, type CadencePoint } from '../lib/cadence';
+import { DOT_RIM } from '../components/markers';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
@@ -446,9 +447,11 @@ export default function Compare() {
                         key={p.id}
                         name={p.label}
                         data={(perPersonDisplay.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
-                        line
+                        // The joining line at its own 1px: the rim's 2px stroke would otherwise reach it.
+                        line={{ strokeWidth: 1 }}
                         fill={CHART_SERIES[p.colorIdx % CHART_SERIES.length]}
                         fillOpacity={mutedIds.has(p.id) ? 0.15 : 1}
+                        {...DOT_RIM}
                         onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
                         cursor="pointer"
                       />

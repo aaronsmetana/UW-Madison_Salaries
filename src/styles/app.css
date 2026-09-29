@@ -145,6 +145,10 @@
      8%, 1.11:1, with no edges at all. */
   --band-fill: rgba(73, 80, 87, 0.1);
   --band-edge: var(--mantine-color-gray-6);
+  /* The tenure line's "on the curve" wash (FIT_BAND in markers.tsx): the line's own grey, faint, and
+     edgeless, so it is never mistaken for a middle-50% band. One definition for both schemes, because
+     --guide-strong already is one per scheme. */
+  --fit-band: color-mix(in srgb, var(--guide-strong) 16%, transparent);
 
   --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
 
@@ -553,6 +557,13 @@ body {
 .recharts-cartesian-axis-line,
 .recharts-cartesian-axis-tick-line {
   stroke: var(--hairline-strong);
+}
+/* No tick marks, and no rule up the value axis: the gridlines run from every tick label across the
+   plot, and the plot surface (`GRID.fill`) marks where the plot begins, so both were a second drawing
+   of the scale. The category axis keeps its baseline, which is what the bars and areas stand on. */
+.recharts-cartesian-axis-tick-line,
+.recharts-yAxis .recharts-cartesian-axis-line {
+  display: none;
 }
 /* A chart the keyboard can step through (`chartKeys` in lib/chartStyle.ts) is focused as a whole: the
    ring goes round the chart, and the arrow keys move the tooltip inside it. Keyboard focus only — a

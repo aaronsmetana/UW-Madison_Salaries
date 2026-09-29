@@ -79,7 +79,9 @@ for (const scheme of ['light', 'dark'] as const) {
   });
 }
 
-test('the tenure callout is never a warning, even when the verdict is "below"', async ({ page }) => {
+/** Someone paid well under what tenure predicts for their title (15% or more), in a title large enough
+ *  to fit: the page's verdict for them is "below". */
+async function belowTheCurve(): Promise<string> {
   const snap = await latestSnapshot();
   const [p] = await oracle<{ pk: string }>(
     `WITH pp AS (SELECT person_key, any_value(job_code) job, sum(${PAY}) FILTER (WHERE salary > 0) pay,
@@ -91,7 +93,84 @@ test('the tenure callout is never a warning, even when the verdict is "below"', 
      WHERE pp.pay > 0 AND pp.pay < 0.85 * (fit.a + fit.b * pp.t) AND person_key IN ${UNIQUE_NAME}
      ORDER BY person_key LIMIT 1`
   );
-  await page.goto(`./person/${encodeURIComponent(p.pk)}`);
+  return p.pk;
+}
+
+/** The scatter's "on the curve" band and the subject's dot, in dollars: each edge of the band at the
+ *  dot's tenure, read off the pay axis's own tick labels, and where the dot sits between them. */
+async function bandAtSelf(page: Page) {
+  const g = await page.locator('.tenure-plot').evaluate((el) => {
+    const poly = el.querySelector('.tenure-fit-band polygon');
+    const pts = (poly?.getAttribute('points') ?? '').trim().split(/\s+/).map((p) => p.split(',').map(Number));
+    const dot = [...el.querySelectorAll<SVGCircleElement>('.tenure-self circle')].pop()!;
+    const ticks = [...el.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick text')].map((t) => ({
+      y: Number(t.getAttribute('y')),
+      v: Number((t.textContent ?? '').replace(/[$,k]/g, '')) * ((t.textContent ?? '').includes('k') ? 1000 : 1),
+    }));
+    return { pts, cx: Number(dot.getAttribute('cx')), cy: Number(dot.getAttribute('cy')), ticks };
+  });
+  expect(g.pts.length, 'the scatter draws no "on the curve" band').toBe(4);
+  expect(g.ticks.length, 'no pay-axis ticks to read the band by').toBeGreaterThanOrEqual(2);
+  const [a, b] = [g.ticks[0], g.ticks[g.ticks.length - 1]];
+  const dollars = (y: number) => a.v + ((y - a.y) / (b.y - a.y)) * (b.v - a.v);
+  const along = (p: number[], q: number[]) => p[1] + ((g.cx - p[0]) / (q[0] - p[0])) * (q[1] - p[1]);
+  // The polygon runs along the top edge (0 → 1), then back along the bottom (2 → 3).
+  const top = along(g.pts[0], g.pts[1]), bottom = along(g.pts[3], g.pts[2]);
+  return { hi: dollars(top), lo: dollars(bottom), top, bottom, dotY: g.cy };
+}
+
+/**
+ * The band round the tenure line is the callout's "on the tenure curve", drawn: its edges are exactly
+ * `expected / 0.98` and `expected / 1.02` (lib/stats `onCurveBand`), the subject the callout calls "on"
+ * sits inside it, and one it calls "below" under it. A band drawn to its own rule would be a second,
+ * disagreeing definition of the same words.
+ */
+test('the scatter shades exactly what the callout calls "on the tenure curve"', async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(AARON)}`);
+  const callout = page.locator('.tenure-callout');
+  await expect(callout).toHaveAttribute('data-verdict', 'on', { timeout: 60_000 });
+  const expected = Number((await callout.innerText()).match(/typically pays \$([\d,]+)/)![1].replace(/,/g, ''));
+  const on = await bandAtSelf(page);
+  // Half a pixel of the axis either way: the band is drawn to a tenth of one.
+  const tol = (on.hi - on.lo) * 0.1;
+  expect(Math.abs(on.hi - expected / 0.98), `the band's top is $${Math.round(on.hi)}, not $${Math.round(expected / 0.98)}`).toBeLessThan(tol);
+  expect(Math.abs(on.lo - expected / 1.02), `the band's bottom is $${Math.round(on.lo)}, not $${Math.round(expected / 1.02)}`).toBeLessThan(tol);
+  expect(on.dotY, 'the subject is "on the curve" but drawn above its band').toBeGreaterThan(on.top);
+  expect(on.dotY, 'the subject is "on the curve" but drawn below its band').toBeLessThan(on.bottom);
+
+  await page.goto(`./person/${encodeURIComponent(await belowTheCurve())}`);
+  await expect(page.locator('.tenure-callout')).toHaveAttribute('data-verdict', 'below', { timeout: 60_000 });
+  const below = await bandAtSelf(page);
+  expect(below.dotY, 'the subject is "below the curve" but drawn inside or over its band').toBeGreaterThan(below.bottom);
+});
+
+/**
+ * A peer dot carries a 1px rim of the card colour, painted under its fill, so dots that touch or
+ * overlap read as separate people rather than one grey blob. A crowd's 2px dots carry none: the rim
+ * would be most of the dot.
+ */
+test("a peer dot is rimmed in the card's colour, and a crowd's are not", async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(AARON)}`);
+  await expect(page.locator('.tenure-plot .chart-dot').first()).toBeAttached({ timeout: 60_000 });
+  const card = await cardOf(page, '.peer-strip');
+  for (const sel of ['.peer-strip circle.chart-dot', '.tenure-plot circle.chart-dot']) {
+    const rim = await page.locator(sel).first().evaluate((c) => {
+      const cs = getComputedStyle(c);
+      return { stroke: cs.stroke, width: cs.strokeWidth, order: cs.paintOrder };
+    });
+    expect(rim.stroke, `${sel}: the dot has no rim`).not.toBe('none');
+    expect(parseColor(rim.stroke).slice(0, 3), `${sel}: rim ${rim.stroke}`).toEqual(card);
+    expect(rim.width, sel).toBe('2px');
+    // Under the fill: only the outer pixel shows, and the dot keeps the radius the packer reserved.
+    expect(rim.order, sel).toMatch(/^stroke/);
+  }
+  await page.goto(`./person/${encodeURIComponent('kennethposs|2024-07-01')}`);
+  await expect(page.locator('.tenure-plot .chart-dot').first()).toBeAttached({ timeout: 60_000 });
+  expect(await page.locator('.tenure-plot circle.chart-dot').first().evaluate((c) => getComputedStyle(c).stroke)).toBe('none');
+});
+
+test('the tenure callout is never a warning, even when the verdict is "below"', async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(await belowTheCurve())}`);
   const callout = page.locator('.tenure-callout');
   await expect(callout).toHaveAttribute('data-verdict', 'below', { timeout: 60_000 });
   // A warning hue is saturated; the callout's surface and rule are neutral greys. Chroma is the

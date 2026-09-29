@@ -5,7 +5,7 @@ import { ordinal } from '../lib/stats';
 import { assignLabelRows, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import {
-  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_SOFT, BAND_IQR, peerDot,
+  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, DOT_RIM, GUIDE_SOFT, BAND_IQR, peerDot,
   MarkerLegend, type PeerPoint,
 } from './markers';
 import { binSalaries } from '../lib/histogram';
@@ -104,13 +104,15 @@ function pileDots(list: readonly PeerPoint[], w: number, ribbon: boolean) {
   };
 }
 
-/** What the caption says about a window's piles: the axis's span, and who is piled where. */
+/** What the caption says about a window's piles: the axis's span, and who is piled where. A fact about
+ *  this axis rather than a how-to-read, so it stays on the card when the rest goes behind the footer's
+ *  note. */
 function pileNote(w: PayWindow, below: number, above: number, listable: boolean): string {
   const people = (n: number) => `${num(n)} ${n === 1 ? 'person' : 'people'}`;
   const where = below && above
     ? `the ${people(below)} paid less and the ${people(above)} paid more are piled at each end`
     : below ? `the ${people(below)} paid less are piled at the left` : `the ${people(above)} paid more are piled at the right`;
-  return ` · the axis runs ${fmtK(w.lo)}–${fmtK(w.hi)}, where 90% of people with this title are paid; ${where}${listable ? ' (select a pile to list them)' : ''}`;
+  return `The axis runs ${fmtK(w.lo)}–${fmtK(w.hi)}, where 90% of people with this title are paid; ${where}${listable ? ' (select a pile to list them)' : ''}.`;
 }
 
 /**
@@ -231,6 +233,7 @@ export function PeerStrip({
    *  makes the legend's "Others" a lie. This is what the scatter does too. */
   const plotted = useMemo(() => peers.filter((p) => !p.isSelf && sideOf(zoom, p.pay) === 0), [peers, zoom]);
   const hasSameSchool = useMemo(() => peers.some((p) => !p.isSelf && p.sameSchool), [peers]);
+  const hasOthers = useMemo(() => peers.some((p) => !p.isSelf && !p.sameSchool), [peers]);
   /** Everyone in the cohort paid under and over the window, lowest first — the subject too, where they
    *  are one of them — and the pays drawn in the plot itself. */
   const lows = useMemo(() => peers.filter((p) => sideOf(zoom, p.pay) < 0), [peers, zoom]);
@@ -262,6 +265,19 @@ export function PeerStrip({
   const useRibbon = rowsNeeded > MAX_ROWS;
   const swarmH = useRibbon ? ribbonHeight(plotW) : Math.max(3, rowsNeeded) * ROW_H;
   const plotH = swarmH + SELF_LANE_H;
+  /**
+   * A dot's height from its packed row: the swarm is centred on a midline — row 0 on it, then one row
+   * above, one below, and so on outward — so a cluster bulges into a shape both ways and the people
+   * no one crowds string along the middle. Stacked up from the baseline instead, a small title read as
+   * pebbles on a floor: most of its dots on the axis, a few short towers.
+   *
+   * The packing is unchanged (`dotRows`); only where a row is drawn moves. One function for the drawn
+   * dots, the piles and the hover hit-test, so the dot a reader points at is the dot that is named.
+   * With fewer rows than the strip's least height, the midline sits in the middle of it.
+   */
+  const rowsBelow = Math.max(Math.floor(Math.max(0, rowsNeeded - 1) / 2), Math.floor((Math.max(3, rowsNeeded) - 1) / 2));
+  const midY = plotH - 1 - DOT_R.peer - rowsBelow * ROW_H;
+  const rowY = (k: number) => midY - (k % 2 ? (k + 1) / 2 : -k / 2) * ROW_H;
 
   /**
    * The density ribbon: a smoothed curve over the cohort, drawn as an area plus a line the way the
@@ -344,7 +360,9 @@ export function PeerStrip({
   // With piles, each end's label is its pile's — "29 under $50k" — under the pile, where the plot's own
   // end would restate the same figure a few pixels away.
   const px = (v: number) => at(v) * plotW;
-  const edge = (v: number, frac: number): AxisLabel => ({ px: px(v), text: zoom ? fmtK(v) : usd(v), anchor: anchorFor(frac) });
+  // In $k like the median beside them: the exact lowest and highest pay are in the data table, and a
+  // "$100,673" at one end of an axis whose middle reads "$119k" looked like a raw number left behind.
+  const edge = (v: number, frac: number): AxisLabel => ({ px: px(v), text: fmtK(v), anchor: anchorFor(frac) });
   const axisLabels: AxisLabel[] = [
     lows.length
       ? { px: -lowAside, text: `${num(lows.length)} under ${fmtK(axisMin)}`, anchor: 'start', className: 'peer-strip-pile-label' }
@@ -408,6 +426,16 @@ export function PeerStrip({
       ]}
       n={sorted.length}
       unit="people"
+      about={
+        <>
+          {/* Not "height = how many people": the curve is smoothed, so its height is a density and
+              reading a headcount off it would be wrong — see `smoothBins` in lib/distribution.ts. */}
+          {useRibbon
+            ? 'Taller = more people earn near that salary, and each dot under the curve is one of them.'
+            : '1 dot = 1 person; where many are paid alike, the dots spread above and below the middle.'}{' '}
+          The shaded box is the middle 50% of peers ({fmtK(p25)}–{fmtK(p75)}), and the dashed line the median.
+        </>
+      }
     />
   );
 
@@ -433,7 +461,7 @@ export function PeerStrip({
     let bestD = HOVER_SNAP_PX;
     for (let i = 0; i < plotted.length; i++) {
       const cx = at(plotted[i].pay) * plotW;
-      const cy = plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1;
+      const cy = rowY(rows[i] ?? 0);
       const d = Math.hypot(cx - hx, cy - hoverY);
       if (d < bestD) {
         bestD = d;
@@ -441,7 +469,8 @@ export function PeerStrip({
       }
     }
     return best;
-  }, [useRibbon, hoverPct, hoverY, plotW, plotH, plotted, rows, at]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rowY` is a function of `midY`
+  }, [useRibbon, hoverPct, hoverY, plotW, midY, plotted, rows, at]);
 
   const updateHover = (clientX: number, clientY: number, target: EventTarget | null) => {
     const el = plotRef.current;
@@ -509,10 +538,11 @@ export function PeerStrip({
                   className="chart-dot"
                   data-mark={p.sameSchool ? 'same-school' : 'peer'}
                   cx={dots.values[i] * w}
-                  cy={H - (dots.rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
+                  cy={rowY(dots.rows[i] ?? 0)}
                   r={dot.r}
                   fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
                   fillOpacity={dot.fillOpacity}
+                  {...DOT_RIM}
                 />
               );
             })}
@@ -580,13 +610,15 @@ export function PeerStrip({
               aria-hidden
             >
               {/* Middle 50% (BAND_IQR) — painted first so the ribbon's fade sits over it, with an edge at
-                  each end a reader can find. */}
+                  each end a reader can find. It spans the population, not the lane above it: run up
+                  through the subject's lane, it boxed the subject in with the people they are measured
+                  against. */}
               <rect
                 className="band-iqr"
                 x={at(p25) * plotW}
                 width={Math.max(0, (at(p75) - at(p25)) * plotW)}
-                y={0}
-                height={plotH}
+                y={SELF_LANE_H}
+                height={swarmH}
                 fill={BAND_IQR.fill}
               />
               {[p25, p75].map((q) => (
@@ -595,16 +627,17 @@ export function PeerStrip({
                   className="band-iqr-edge"
                   x1={at(q) * plotW}
                   x2={at(q) * plotW}
-                  y1={0}
+                  y1={SELF_LANE_H}
                   y2={plotH}
                   stroke={BAND_IQR.edge}
                   strokeWidth={BAND_IQR.edgeWidth}
                 />
               ))}
               <line
+                className="strip-median"
                 x1={at(median) * plotW}
                 x2={at(median) * plotW}
-                y1={0}
+                y1={SELF_LANE_H}
                 y2={plotH}
                 stroke={GUIDE_SOFT.stroke}
                 strokeDasharray={GUIDE_SOFT.dasharray}
@@ -636,10 +669,14 @@ export function PeerStrip({
                       className="chart-dot"
                       data-mark={p.sameSchool ? 'same-school' : 'peer'}
                       cx={at(p.pay) * plotW}
-                      cy={plotH - (rows[i] ?? 0) * ROW_H - DOT_R.peer - 1}
+                      cy={rowY(rows[i] ?? 0)}
+                      // The dot pointed at grows; the rest stay as they are. Dimming every other dot
+                      // made the whole strip flicker as a pointer crossed it, for a readout the pill
+                      // already gives.
                       r={hoveredPeer?.p === p ? dot.r + 2 : dot.r}
                       fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
-                      fillOpacity={hoveredPeer && hoveredPeer.p !== p ? 0.45 : dot.fillOpacity}
+                      fillOpacity={dot.fillOpacity}
+                      {...DOT_RIM}
                       opacity={mounted ? 1 : 0}
                       style={{ transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms` }}
                     />
@@ -725,26 +762,21 @@ export function PeerStrip({
        </div>
       </div>
 
+      {/* No "This person": the subject's mark is named where it stands. Same school in both modes — the
+          ribbon's dot field paints them in the same green (`.strip-dots .dot-field-accent`), and a
+          legend that leaves out a colour the chart draws leaves the reader to guess it. */}
       <MarkerLegend
         items={[
-          // "This person" verbatim, not the name — the scatter's legend on the same page says exactly
-          // this, and two legends a card apart disagreeing about what to call the same mark is the
-          // small kind of inconsistency that makes a page feel assembled rather than designed.
-          { color: MARK_SELF, round: true, label: 'This person' },
-          // The ribbon is one shape for the whole cohort — it cannot separate same-school peers, so the
-          // legend must not offer a mark the chart never draws.
-          ...(hasSameSchool && !useRibbon ? [{ color: MARK_PEER_SAME_SCHOOL, round: true, label: 'Same school' }] : []),
-          { color: MARK_PEER, round: true, label: useRibbon ? 'Everyone with this title' : 'Others' },
+          ...(hasSameSchool ? [{ color: MARK_PEER_SAME_SCHOOL, round: true, label: 'Same school' }] : []),
+          ...(hasOthers ? [{ color: MARK_PEER, round: true, label: 'Others' }] : []),
         ]}
       />
 
-      <Text size="xs" c="dimmed" mt={4}>
-        {/* Not "height = how many people": the curve is smoothed, so its height is a density and
-            reading a headcount off it would be wrong — see `smoothBins` in lib/distribution.ts. */}
-        {useRibbon ? 'Taller = more people earn near that salary · ' : '1 dot = 1 person · '}
-        middle 50% of peers {fmtK(p25)}–{fmtK(p75)}
-        {zoom && (lows.length || highs.length) ? pileNote(zoom, lows.length, highs.length, !!onPile) : ''}.
-      </Text>
+      {zoom && (lows.length || highs.length) ? (
+        <Text size="xs" c="dimmed" mt={4} className="peer-strip-note">
+          {pileNote(zoom, lows.length, highs.length, !!onPile)}
+        </Text>
+      ) : null}
 
       {summaryTable}
     </div>

@@ -378,6 +378,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                       zoom={tenureWindow}
                       self={selfScatterPt ? { tenure: selfScatterPt.tenure, pay: selfScatterPt.pay } : null}
                       titleLabel="this title"
+                      label={subjectFirst || 'This person'}
                     />
                   </Box>
                 )}

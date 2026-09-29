@@ -54,6 +54,19 @@ export const TENURE_MIN_PEERS = 8;
  *  omitted as too small to claim"), now the only rule: the person page called a 1.2% gap "Below". */
 export const TENURE_ON_BAND = 0.02;
 
+/**
+ * The pays "on the curve" at a point where tenure alone predicts `expected`: every pay whose gap from
+ * `expected` is under TENURE_ON_BAND *of that pay*, which is `expected / 1.02` to `expected / 0.98` —
+ * a hair wider above than below, because the 2% is of the person's pay, not of the prediction.
+ *
+ * The verdict and the scatter's shaded band are both this, so a dot drawn inside the band is always
+ * one the callout calls "on the tenure curve", and one outside it never is.
+ */
+export function onCurveBand(expected: number): [number, number] {
+  const a = expected / (1 + TENURE_ON_BAND), b = expected / (1 - TENURE_ON_BAND);
+  return a <= b ? [a, b] : [b, a];
+}
+
 export interface TenureFit {
   /** Peers in the fit — never the subject. */
   n: number;
@@ -95,7 +108,8 @@ export function tenureFit(peers: { x: number; y: number }[], self: { x: number; 
   const expected = at(self.x);
   const gap = self.y - expected;
   const below = residuals.filter((r) => r < gap).length;
-  const verdict: TenureFit['verdict'] = Math.abs(gap) < TENURE_ON_BAND * Math.abs(self.y) ? 'on' : gap > 0 ? 'above' : 'below';
+  const [onLo, onHi] = onCurveBand(expected);
+  const verdict: TenureFit['verdict'] = self.y > onLo && self.y < onHi ? 'on' : gap > 0 ? 'above' : 'below';
   return {
     n: peers.length,
     slope: reg.slope,

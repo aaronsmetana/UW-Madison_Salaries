@@ -674,6 +674,8 @@ export default function Person() {
   );
   const splitAppointment = cohortSelfPay != null && lastSalary != null && Math.round(cohortSelfPay) !== Math.round(lastSalary);
   const cohortPct = cohortSelfPay != null && cohortSelfPay > 0 && cohortPays.length > 1 ? percentile(cohortSelfPay, cohortPays) : null;
+  /** What both overview charts write beside this person's mark: "Aaron · $116,491". */
+  const selfLabel = latest?.first_name?.trim() || 'This person';
 
   // One cohort, marked once. Both charts on this tab are handed the same array so they cannot disagree
   // about who is the subject and who shares their school; the scatter simply drops the members whose
@@ -1062,13 +1064,26 @@ export default function Person() {
                 >
                   How this person compares to others with the same title
                 </CardTitle>
-                <Text size="xs" c="dimmed" mb="md">
+                {/* The title links to its page here, where the reader is already reading about it; a
+                    "Go to title page" button under the footnotes was one more row on the card. */}
+                <Text size="xs" c="dimmed" mb={cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo ? 4 : 'md'}>
                   {cohort === 'school'
-                    ? `Among ${num(cohortStats?.n ?? 0)} ${(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title ${latest?.title} — same title, same school (${latest?.school}).`
-                    : `Among ${num(allCount)} people with the title ${latest?.title} (job code ${jobCode}) in the latest snapshot.`}
+                    ? <>Among {num(cohortStats?.n ?? 0)} {(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor> — same title, same school ({latest?.school}).</>
+                    : <>Among {num(allCount)} people with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor> (job code {jobCode}) in the latest snapshot.</>}
                 </Text>
                 {cohortStats && cohortStats.n >= 2 ? (
                   <>
+                    {/* The finding, before the chart that shows it — it sat under the source line, after
+                        the footnotes. Nothing to be a percentile of when every holder of the title is on
+                        the same figure: "paid more than 0%" is true and useless, and the strip says
+                        there is no spread. */}
+                    {cohortStats.hi > cohortStats.lo && (
+                      <PercentileNote
+                        pct={cohortPct}
+                        pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
+                        mb="md"
+                      />
+                    )}
                     <PeerStrip
                       min={cohortStats.lo}
                       p25={cohortStats.p25}
@@ -1081,7 +1096,7 @@ export default function Person() {
                       zoom={payWin}
                       onPile={showPile}
                       pileShown={pileShown}
-                      label={latest?.first_name?.trim() || 'This person'}
+                      label={selfLabel}
                     />
                     {splitAppointment && (
                       <Text size="xs" c="dimmed" mt={4}>
@@ -1089,27 +1104,12 @@ export default function Person() {
                         total across every appointment is {usd(lastSalary!)}.
                       </Text>
                     )}
-                    {/* Nothing to be a percentile of when every holder of the title is on the same
-                        figure — "paid more than 0%" is true and useless, and the strip has already
-                        said there is no spread. */}
-                    {cohortStats.hi > cohortStats.lo && (
-                      <PercentileNote
-                        pct={cohortPct}
-                        pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
-                        mt="sm"
-                      />
-                    )}
                   </>
                 ) : (
                   <Text size="sm" c="dimmed">
                     {name} is the only person with this title in {latest?.school} — switch to “All {num(allCount)}” to compare against everyone with the title.
                   </Text>
                 )}
-                <Group justify="flex-end" mt="md">
-                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={ICON.compact} />}>
-                    Go to title page
-                  </Button>
-                </Group>
               </Card>
             )}
 
@@ -1127,7 +1127,7 @@ export default function Person() {
                 >
                   Pay vs. tenure — same title
                 </CardTitle>
-                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} />
+                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} legend={false} />
               </Card>
             )}
 
