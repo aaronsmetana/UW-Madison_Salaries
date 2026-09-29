@@ -409,7 +409,7 @@ export default function Compare() {
               </Group>
             }
           >
-            People — salary trajectory
+            Salary trajectories
           </CardTitle>
           {pLoading ? (
             <Loader />
@@ -527,7 +527,7 @@ export default function Compare() {
 
       {persons.length > 0 && standingSeries.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle>Relative standing within school (percentile over time)</CardTitle>
+          <CardTitle sub="Each person's percentile among their school's staff, snapshot by snapshot.">Standing within the school</CardTitle>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart {...chartKeys('Percentile within school over time')} data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
@@ -617,7 +617,7 @@ export default function Compare() {
 
       {titles.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle>Titles — side-by-side (current snapshot)</CardTitle>
+          <CardTitle sub="The latest snapshot.">Titles side by side</CardTitle>
           {tLoading ? (
             <Loader />
           ) : (
@@ -658,7 +658,7 @@ export default function Compare() {
 
       {titles.length > 0 && titleSeries.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle>Titles — median salary over time</CardTitle>
+          <CardTitle>Title medians over time</CardTitle>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart {...chartKeys('Median salary per title over time')} data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
@@ -682,7 +682,7 @@ export default function Compare() {
 
       {schools.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle>Schools — side-by-side (current snapshot)</CardTitle>
+          <CardTitle sub="The latest snapshot.">Schools side by side</CardTitle>
           {sLoading ? (
             <Loader />
           ) : (

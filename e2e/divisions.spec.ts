@@ -53,7 +53,8 @@ test('the pay-band note sits beside pay-band figures, not in a banner over Divis
   await expect(page.locator('.payband-note')).toHaveCount(0);
 
   await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=pay`);
-  const card = page.locator('.mantine-Card-root').filter({ hasText: 'official HR range' });
+  // By what the card is, not its title's words, which move when titles are edited.
+  const card = page.locator('.person-payband');
   await expect(card).toBeVisible({ timeout: 60_000 });
   const retrieved = new Date(`${ref.retrieved_at}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
   await expect(card.locator('.payband-note')).toHaveText(`Official ranges: UW–Madison salary structure, retrieved ${retrieved}.`);

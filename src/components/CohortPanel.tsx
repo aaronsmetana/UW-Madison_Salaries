@@ -180,8 +180,9 @@ export function CohortPanel() {
               options={[{ id: 'year', label: 'By year' }, { id: 'retention', label: 'By retention' }]}
             />
           }
+          sub="The share of each hire year still here."
         >
-          Retention by hire year (share still here)
+          Retention by hire year
         </CardTitle>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart {...chartKeys('Retention by hire year')} data={chart} margin={{ left: 12, right: 12 }}>
@@ -250,7 +251,7 @@ export function CohortPanel() {
       </Card>
 
       <Card withBorder padding="lg">
-        <CardTitle>Workforce turnover — paid staff joining vs leaving</CardTitle>
+        <CardTitle sub="Paid staff joining vs. leaving, step by step.">Workforce turnover</CardTitle>
         {flowFetching && !flow ? (
           <ChartSkeleton height={280} />
         ) : (

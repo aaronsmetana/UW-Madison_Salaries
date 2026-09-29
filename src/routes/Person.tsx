@@ -47,6 +47,7 @@ import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
 import { CardTitle } from '../components/CardTitle';
+import { FactPill } from '../components/FactPill';
 import { HistoryTable } from '../components/HistoryTable';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
@@ -177,40 +178,6 @@ function TitleChangeLabel({
     <text className="trend-era-label" x={viewBox.x + shift} y={viewBox.y - 5 - (row === 1 ? 14 : 0)} textAnchor="start" fontSize={10} fill="var(--mantine-color-dimmed)">
       {title}
     </text>
-  );
-}
-
-/** A metadata pill (label + bold value) surfacing one source column under the name. Renders nothing
- *  when the value is blank, so pills only appear for fields the data actually has. */
-/**
- * One source-column fact, as a chip: an uppercase label and its value.
- *
- * The label is an `Eyebrow` because that is the app's one small-label primitive — its own docstring
- * records that it replaced "a dozen-plus hand-rolled variants" of exactly the
- * `<Text size c="dimmed" style={{ fontSize: 11 }}>` this used to be, and this row is the one the
- * sweep missed. Now the chips read the same way as the stat cards directly beneath them.
- *
- * Outlined rather than filled: the old fill was `--mantine-color-default-hover` at 1.03:1 against
- * the card, so the chips were invisible *and* wearing the token the palette and search rows use to
- * mean "the cursor is here". A hairline edge is both legible and what every other surface in this
- * app uses to say "this is a thing".
- */
-function MetaPill({ label, value }: { label: ReactNode; value: ReactNode }) {
-  if (value == null || value === '') return null;
-  return (
-    <Group
-      gap={6}
-      wrap="nowrap"
-      style={{
-        display: 'inline-flex',
-        border: '1px solid var(--hairline)',
-        borderRadius: 'var(--mantine-radius-sm)',
-        padding: '2px 8px',
-      }}
-    >
-      <Eyebrow span>{label}</Eyebrow>
-      <Text span fw={500} size="xxs">{value}</Text>
-    </Group>
   );
 }
 
@@ -846,15 +813,16 @@ export default function Person() {
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
           {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
-          {/* Source columns the page otherwise hides, surfaced as a wrapping row of pills (null ones omitted). */}
-          <Group gap="xs" wrap="wrap" mt="sm">
-            <MetaPill label={<GlossaryTerm term="grade">Grade</GlossaryTerm>} value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
-            <MetaPill label="Job code" value={latest?.job_code} />
-            <MetaPill label={<GlossaryTerm term="flsa">FLSA</GlossaryTerm>} value={latest?.flsa_status} />
-            <MetaPill label={<GlossaryTerm term="basis">Basis</GlossaryTerm>} value={latest?.comp_basis ? fmtBasis(latest.comp_basis) : null} />
-            <MetaPill label="Pay type" value={latest?.pay_rate_type} />
-            <MetaPill label="Category" value={latest?.employee_category} />
-            <MetaPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
+          {/* Source columns the page otherwise hides, as a wrapping row of pills (null ones omitted): what
+              identifies the job first — its code, grade and category — then its terms. */}
+          <Group gap={6} wrap="wrap" mt="sm" className="fact-pills">
+            <FactPill label="Job code" value={latest?.job_code} />
+            <FactPill label={<GlossaryTerm term="grade">Grade</GlossaryTerm>} value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
+            <FactPill label="Category" value={latest?.employee_category} />
+            <FactPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
+            <FactPill label={<GlossaryTerm term="basis">Basis</GlossaryTerm>} value={latest?.comp_basis ? fmtBasis(latest.comp_basis) : null} />
+            <FactPill label="Pay type" value={latest?.pay_rate_type} />
+            <FactPill label={<GlossaryTerm term="flsa">FLSA</GlossaryTerm>} value={latest?.flsa_status} />
           </Group>
         </div>
         <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
@@ -1049,8 +1017,15 @@ export default function Person() {
 
             {peer && peer.n > 1 && lastSalary != null && jobCode && (
               <Card withBorder padding="lg">
+                {/* The sentence under the title is the card's `sub`, not a line of its own: every other card
+                    sets its explanation there. The title links to its page in it, where the reader is
+                    already reading about it; a "Go to title page" button under the footnotes was one more
+                    row on the card. */}
                 <CardTitle
-                  mb="xs"
+                  mb={cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo ? 'xs' : 'md'}
+                  sub={cohort === 'school'
+                    ? <>Among {num(cohortStats?.n ?? 0)} {(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor>, in the same school ({latest?.school}).</>
+                    : <>Among {num(allCount)} people with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor> (job code {jobCode}) in the latest snapshot.</>}
                   right={allCount > schoolCount && (
                     <SegmentedToggle
                       value={cohort}
@@ -1062,15 +1037,8 @@ export default function Person() {
                     />
                   )}
                 >
-                  How this person compares to others with the same title
+                  Among people with this title
                 </CardTitle>
-                {/* The title links to its page here, where the reader is already reading about it; a
-                    "Go to title page" button under the footnotes was one more row on the card. */}
-                <Text size="xs" c="dimmed" mb={cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo ? 4 : 'md'}>
-                  {cohort === 'school'
-                    ? <>Among {num(cohortStats?.n ?? 0)} {(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor> — same title, same school ({latest?.school}).</>
-                    : <>Among {num(allCount)} people with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor> (job code {jobCode}) in the latest snapshot.</>}
-                </Text>
                 {cohortStats && cohortStats.n >= 2 ? (
                   <>
                     {/* The finding, before the chart that shows it — it sat under the source line, after
@@ -1125,7 +1093,7 @@ export default function Person() {
                     {cohort === 'school' ? ` within ${latest?.school}` : ' across UW'}.
                   </>}
                 >
-                  Pay vs. tenure — same title
+                  Pay vs. tenure
                 </CardTitle>
                 <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} legend={false} />
               </Card>
@@ -1134,13 +1102,14 @@ export default function Person() {
             {peers && peers.length > 1 && (
               <Card withBorder padding="lg" ref={peerCardRef} className="peer-table-card">
                 <CardTitle
+                  sub={cohort === 'school' ? `In ${latest?.school}.` : undefined}
                   right={cohortRank != null && (
                     <Text size="sm" c="dimmed">
                       {name} ranks <b>#{cohortRank}</b> of {num(cohortList.length)} by salary
                     </Text>
                   )}
                 >
-                  Others with this title{cohort === 'school' ? ` · ${latest?.school}` : ''}
+                  Others with this title
                 </CardTitle>
                 {pileShown !== 0 && payWin && (
                   <Group gap="xs" mb="xs" className="peer-pile-filter">
@@ -1238,8 +1207,8 @@ export default function Person() {
       {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
       {standingPools.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle sub="Rank and percentile across each pool this person belongs to.">
-            Standing — where this pay ranks in each pool (latest snapshot)
+          <CardTitle sub="Where this pay ranks in each pool this person belongs to, in the latest snapshot.">
+            Standing
           </CardTitle>
           <Stack gap="sm">
             {standingPools.map((p, i) => (
@@ -1257,7 +1226,7 @@ export default function Person() {
           <CardTitle
             sub={<>Where the full-time rate sits in grade {graded?.grade}'s official min–max, and the room to the top.</>}
           >
-            Pay band — grade {graded?.grade} · official HR range
+            Grade {graded?.grade} pay band
           </CardTitle>
           <PayBandBar min={range.min} max={range.max} value={bandRate} quartiles />
           {bandRate !== lastRate && (
@@ -1282,7 +1251,7 @@ export default function Person() {
       {band && !range && bandRate != null && (
         <Card withBorder padding="lg" className="person-payband person-payfloor">
           <CardTitle sub={<>HR publishes a minimum for grade {graded?.grade} and no maximum, so there is no range to place the rate in.</>}>
-            Grade minimum — grade {graded?.grade} · official HR minimum
+            Grade {graded?.grade} minimum
           </CardTitle>
           <Text size="sm" className="payfloor-line">
             {belowMinimum(bandRate, band, graded?.basis) ? (

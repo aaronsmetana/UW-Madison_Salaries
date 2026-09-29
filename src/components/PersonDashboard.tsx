@@ -625,14 +625,14 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {/* Pay band */}
       {isRange(band) && graded && (
         <Card withBorder padding="lg">
-          <CardTitle>Pay band — grade {graded.grade} (full-time rate vs the official range)</CardTitle>
+          <CardTitle sub="The full-time rate against the official range.">Grade {graded.grade} pay band</CardTitle>
           <PayBandBar min={band.min} max={band.max} value={graded.rate} />
           <PayBandNote snapshotId={latest?.snapshot_id} />
         </Card>
       )}
       {band && !isRange(band) && graded && (
         <Card withBorder padding="lg">
-          <CardTitle>Grade minimum — grade {graded.grade} (full-time rate vs the official minimum)</CardTitle>
+          <CardTitle sub="The full-time rate against the official minimum.">Grade {graded.grade} minimum</CardTitle>
           <Text size="sm">
             {belowMinimum(graded.rate, band, graded.basis)
               ? `The full-time rate, ${usd(graded.rate)}, is ${usd(band.min - graded.rate)} below grade ${graded.grade}'s minimum of ${usd(band.min)}.`

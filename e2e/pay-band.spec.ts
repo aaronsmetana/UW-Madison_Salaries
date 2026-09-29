@@ -135,7 +135,7 @@ test.describe('a pay band reads the full-time rate of the graded appointment', (
     await page.goto(`./person/${encodeURIComponent(two.person_key)}?tab=pay`);
     const card = page.locator('.person-payband');
     await expect(card).toBeVisible({ timeout: 60_000 });
-    await expect(card).toContainText(`Pay band — grade ${two.grade}`);
+    await expect(card).toContainText(`Grade ${two.grade} pay band`);
     await expect(card.locator('.payband-rate')).toHaveText(
       `Placed on the full-time rate of the appointment in grade ${two.grade}, $${Math.round(two.rate).toLocaleString('en-US')}.`
     );

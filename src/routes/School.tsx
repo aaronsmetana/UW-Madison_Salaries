@@ -307,7 +307,7 @@ export default function School() {
         <Tabs.Panel value="dist" pt="md">
           <Stack gap="lg">
       <Card withBorder padding="lg">
-        <CardTitle>Tenure vs pay (compression check)</CardTitle>
+        <CardTitle sub="A compression check: whether longer-serving staff are paid more than newer ones.">Tenure vs. pay</CardTitle>
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
@@ -381,8 +381,9 @@ export default function School() {
               options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
             />
           }
+          sub="The latest snapshot, in $20k bins."
         >
-          Salary distribution (current snapshot, $20k bins)
+          Salary distribution
         </CardTitle>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart {...chartKeys('Salary distribution')} data={distData} margin={{ left: 12, right: 12 }}>

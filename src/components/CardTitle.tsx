@@ -16,9 +16,12 @@ import { ICON } from '../lib/ui';
  *
  * `order` defaults to 2 because a card normally sits directly beneath the page's `PageHeader` h1 —
  * including inside a `Tabs.Panel`, since a tab list is not a heading and does not open a level. Pass
- * `order={3}` where a card genuinely nests under an h2 of its own (the zones on /data). `fz="h5"`
+ * `order={3}` where a card genuinely nests under an h2 of its own (the zones on /data). `TITLE_SIZE`
  * keeps the type at card scale regardless: the correct-outline-at-the-right-size idiom `EmptyState`
  * already uses.
+ *
+ * One convention for the words, too (CardTitle.test.ts): a short noun phrase in sentence case, "vs."
+ * with its stop. What an em-dash tail or a parenthetical would say goes in `sub`.
  *
  * `sub` absorbs the dimmed one-liner that around forty of those call sites hand-rolled underneath
  * their title, and `right` the `<Group justify="space-between">` that wrapped a title plus its
@@ -34,6 +37,12 @@ import { ICON } from '../lib/ui';
  * `.data-about [id] { scroll-margin-top }` is keyed to it. Emitting it here too would put the same id
  * on two elements in every one of those cards.
  */
+/**
+ * A card title's size: 17px, a clear step over the 13px `sub` line under it. It was `h5`, 15px, which
+ * sat so close to the sub that a card's heading and its explanation read as one grey block.
+ */
+const TITLE_SIZE = '1.0625rem';
+
 export function CardTitle({
   children,
   sub,
@@ -58,7 +67,7 @@ export function CardTitle({
       ? `${window.location.origin}${window.location.pathname}#${anchorId}`
       : `#${anchorId}`;
 
-  const heading = <Title order={order} fz="h5">{children}</Title>;
+  const heading = <Title order={order} fz={TITLE_SIZE} fw={650} lts="-0.01em" lh={1.3} className="card-title">{children}</Title>;
 
   const head = (
     <Box>
@@ -85,7 +94,7 @@ export function CardTitle({
       ) : (
         heading
       )}
-      {sub != null && <Text size="xs" c="dimmed" mt={2}>{sub}</Text>}
+      {sub != null && <Text size="xs" c="dimmed" mt={4} className="card-title-sub">{sub}</Text>}
     </Box>
   );
 

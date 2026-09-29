@@ -494,8 +494,9 @@ export function ChangesPanel() {
               CSV
             </Button>
           }
+          sub="People in the same title at the same FTE in both snapshots."
         >
-          Biggest raises and cuts (same title, same FTE)
+          Biggest raises and cuts
         </CardTitle>
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder padding="lg">
@@ -584,7 +585,7 @@ export function ChangesPanel() {
               </Button>
             }
           >
-            Top title transitions (flows)
+            Top title transitions
           </CardTitle>
           <Table>
             <Table.Thead>
@@ -619,7 +620,7 @@ export function ChangesPanel() {
 
       {(mobility ?? []).length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle mb="sm">Internal moves (changed school)</CardTitle>
+          <CardTitle mb="sm" sub="People who changed school between the two snapshots.">Internal moves</CardTitle>
           <Table>
             <Table.Thead>
               <Table.Tr>

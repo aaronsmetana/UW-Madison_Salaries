@@ -352,7 +352,7 @@ test.describe('the newest release, said', () => {
     await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=pay`);
     const card = page.locator('.person-payfloor');
     await expect(card).toBeVisible({ timeout: 60_000 });
-    await expect(card).toContainText(`Grade minimum — grade ${p.grade}`);
+    await expect(card).toContainText(`Grade ${p.grade} minimum`);
     await expect(card.locator('.payfloor-line')).toContainText(`The full-time rate, ${usd(p.rate)}, is`);
     await expect(card.locator('.payfloor-line')).toContainText(`grade ${p.grade}'s minimum of ${usd(g.min)}`);
     await expect(card.locator('.chart-plot')).toHaveCount(0);

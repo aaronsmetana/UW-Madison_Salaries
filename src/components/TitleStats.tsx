@@ -226,7 +226,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
       {isRange(band) && (
         <Card withBorder padding="lg" className="title-payband">
-          <CardTitle>Official pay band — grade {g?.grade_number}</CardTitle>
+          <CardTitle sub="HR's official range for this title's grade.">Grade {g?.grade_number} pay band</CardTitle>
           <PayBandBar
             min={band.min}
             max={band.max}
@@ -239,7 +239,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       )}
       {band && !isRange(band) && (
         <Card withBorder padding="lg" className="title-payband title-payfloor">
-          <CardTitle>Official minimum — grade {g?.grade_number}</CardTitle>
+          <CardTitle>Grade {g?.grade_number} minimum</CardTitle>
           <Text size="sm">
             HR publishes a minimum of {usd(band.min)} for grade {g?.grade_number} and no maximum
             {g?.med_rate != null ? <>; this title&apos;s median full-time rate is {usd(g.med_rate)}</> : null}.
@@ -336,7 +336,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       </Card>
 
       <Card withBorder padding="lg">
-        <CardTitle>Pay by school (market view)</CardTitle>
+        <CardTitle sub="What this title pays in each school: the market inside UW.">Pay by school</CardTitle>
         <Table>
           <Table.Thead>
             <Table.Tr>

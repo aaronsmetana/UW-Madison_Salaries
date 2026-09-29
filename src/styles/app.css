@@ -203,6 +203,13 @@
   --hairline-strong: rgba(16, 24, 32, 0.16);
   /* Behind a chart's plot area — see `GRID` in lib/chartStyle.ts. */
   --plot-surface: rgba(16, 24, 32, 0.03);
+  /* A pill's own ground (FactPill, `.code-pill`): translucent, because a pill sits on the page in one
+     place and on a card or a dropdown in another, and has to separate from both. Not the hover token. */
+  --pill-bg: rgba(16, 24, 32, 0.065);
+  /* How much of a link's own colour its underline is drawn in (`.mantine-Anchor-root`): enough that the
+     underline — a link's one cue that is not colour (WCAG 1.4.1) — stays at 3:1 or better on its ground
+     for the faintest link there is, a dimmed one; measured in e2e/links.spec. */
+  --link-underline-mix: 72%;
 
   /* The lit top edge of a translucent panel — the one cue that separates "glass" from "a weak fill".
      It is a specular highlight rather than a surface, so it stays white in both schemes and only its
@@ -293,6 +300,8 @@ body {
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
   --plot-surface: rgba(255, 255, 255, 0.03);
+  --pill-bg: rgba(255, 255, 255, 0.075);
+  --link-underline-mix: 68%;
   --glass-sheen: rgba(255, 255, 255, 0.07);
   --curve-glow: 0.3;
   --curve-wash: 0.14;
@@ -495,6 +504,21 @@ body {
   border-left: 3px solid var(--mantine-color-accent-5);
   margin-left: calc(-1 * var(--mantine-spacing-xs));
   padding-left: calc(var(--mantine-spacing-xs) - 3px);
+}
+
+/* Every link keeps its underline (theme.ts: WCAG 1.4.1 — in a sentence, colour alone does not say
+   "link"), but a quieter one: a pixel, clear of the descenders, in part of the link's own colour, and
+   the full colour under a pointer or the keyboard. A full-strength rule under every teal word is what
+   made pages read as dated. A glossary term keeps its dotted underline, so the two stay apart. */
+.mantine-Anchor-root[data-underline='always'] {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor var(--link-underline-mix), transparent);
+  transition: text-decoration-color var(--dur-instant) ease;
+}
+.mantine-Anchor-root[data-underline='always']:hover,
+.mantine-Anchor-root[data-underline='always']:focus-visible {
+  text-decoration-color: currentColor;
 }
 
 /* Tabular, lining numerals everywhere so columns of money/counts align. */
@@ -1030,16 +1054,17 @@ textarea:focus-visible,
 /* Row add buttons (Schools, Titles, Top earners, a title's people, a person's peers): quiet until
    their row is hovered or focused, so a long list isn't a wall of repeated accent buttons, and full
    on touch, which has no hover. Quieted by colour and weight, never by opacity: at rest the icon and
-   label take the muted ink (7.5:1 light, 10:1 dark) on a hairline outline. The 60% fade they used to
-   wear put them under 3:1 on dark rows. */
+   label take the muted ink (7.5:1 light, 10:1 dark), with no outline — 25 hairline pills down the
+   right edge of a table were the wall again, drawn in grey. The row they belong to gives them the
+   accent and a light tint. The 60% fade they once wore put them under 3:1 on dark rows. */
 .peer-row .peer-add.accent-adaptive-text,
 .peer-row .peer-add.accent-adaptive-text .mantine-Button-label {
   color: var(--mantine-color-dimmed) !important;
   font-weight: 500;
 }
 .peer-row .peer-add.accent-adaptive-text {
-  --button-bd: 1px solid var(--hairline-strong) !important; /* Mantine sets it inline */
-  transition: color var(--dur-instant) ease, border-color var(--dur-instant) ease;
+  --button-bd: 1px solid transparent !important; /* Mantine sets it inline */
+  transition: color var(--dur-instant) ease, background-color var(--dur-instant) ease;
 }
 .peer-row:hover .peer-add.accent-adaptive-text,
 .peer-row:hover .peer-add.accent-adaptive-text .mantine-Button-label,
@@ -1050,7 +1075,7 @@ textarea:focus-visible,
 }
 .peer-row:hover .peer-add.accent-adaptive-text,
 .peer-row:focus-within .peer-add.accent-adaptive-text {
-  --button-bd: 1px solid var(--mantine-color-accent-6) !important;
+  --button-bg: var(--mantine-color-accent-light) !important;
 }
 @media (hover: none) {
   .peer-row .peer-add.accent-adaptive-text,
@@ -1059,7 +1084,7 @@ textarea:focus-visible,
     font-weight: 600;
   }
   .peer-row .peer-add.accent-adaptive-text {
-    --button-bd: 1px solid var(--mantine-color-accent-6) !important;
+    --button-bg: var(--mantine-color-accent-light) !important;
   }
 }
 
@@ -1714,18 +1739,37 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   .fold-table .peer-add .mantine-Button-section { margin: 0; }
 }
 
-/* A job code beside its title: small, monospace, on the hairline — the code is an identifier to
-   match against a pay plan, not a word to read. */
+/* A job code beside its title: small and monospace — the code is an identifier to match against a pay
+   plan, not a word to read. */
 .code-pill {
   flex-shrink: 0;
   font-family: var(--mantine-font-family-monospace);
   font-size: 11px;
   line-height: 16px;
-  padding: 0 5px;
-  border: 1px solid var(--hairline-strong, var(--mantine-color-default-border));
-  border-radius: 4px;
+  padding: 0 7px;
+  /* The pill's fill and shape (FactPill): every pill in the app is one thing. It was a hairline box. */
+  background: var(--pill-bg);
+  border-radius: 999px;
   color: var(--mantine-color-dimmed);
   white-space: nowrap;
+}
+/* One fact about the thing on the page (FactPill): a small-caps label and its value on the pill's own
+   tint. The value is the caption size, in body ink — it was 11px, the smallest text on the person page. */
+.fact-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  white-space: nowrap;
+  line-height: 1;
+}
+.fact-pill-value {
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  color: var(--mantine-color-text);
 }
 
 /* Search group headings, tracked like the table headers. */
