@@ -523,14 +523,22 @@ async function main() {
     snapshots: manifest,
   }, null, 2));
 
+  // The day each release went up on the site (data/releases.json): every "New" counts 30 days from it.
+  // Hand-kept on purpose — neither the snapshot date (the 1st of its month) nor this build's date (every
+  // deploy) says when readers first had the data.
+  const releases = readJsonIfExists(path.join(ROOT, 'data', 'releases.json')) || {};
+  const publishedOf = (id) => (/^\d{4}-\d{2}-\d{2}$/.test(releases[id] ?? '') ? releases[id] : null);
   const latest = dataSnaps[dataSnaps.length - 1];
+  if (latest && !publishedOf(latest.snapshot_id)) {
+    console.warn(`\nRelease: no date for ${latest.snapshot_id} in data/releases.json — NEW will count from its snapshot date (${latest.snapshot_date}).`);
+  }
   fs.writeFileSync(path.join(OUT_DIR, 'summary.json'), JSON.stringify({
     generated_at: new Date().toISOString(),
     total_rows: allRows.length,
     snapshot_count: dataSnaps.length,
     // `median` is over PEOPLE (their summed actual pay), matching the headcount beside it and every
     // median in the app; `median_rows` keeps the per-appointment figure the source's rows give.
-    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, rows: s.row_count, headcount: s.distinct_people_paid, median: s.salary_median_people, median_rows: s.salary_median })),
+    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, published: publishedOf(s.snapshot_id), rows: s.row_count, headcount: s.distinct_people_paid, median: s.salary_median_people, median_rows: s.salary_median })),
     latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median_people, median_rows: latest.salary_median } : null,
     // Divisions formed from whole departments of others (normalize `divisionReorganizations`), so a move
     // of every member of a department is read as the reorganization it is.

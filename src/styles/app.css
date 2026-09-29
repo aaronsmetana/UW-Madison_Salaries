@@ -71,7 +71,6 @@
   line-gap-override: 0%;
 }
 
-
 /* ── Design tokens ───────────────────────────────────────────────────────────────────────────────
    Everything visual that isn't expressible as a Mantine theme value lives here, defined ONCE per
    colour scheme. Pages compose these; no route or component hardcodes a colour. Changing a value
@@ -410,6 +409,49 @@ body {
   background-color: var(--chrome);
 }
 .mantine-AppShell-header { border-bottom: 1px solid var(--hairline); }
+/* Which release the app holds, beside its name on every page (ReleaseTag): a hairline off the wordmark,
+   then "Salary data as of September 2026" at the size of the credit opposite, led by the "New" badge for
+   the release's first 30 days. Dimmed: it qualifies the name, it is not a second headline. */
+.release-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: 4px;
+  padding-left: 12px;
+  border-left: 1px solid var(--hairline-strong);
+  height: 28px;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.release-tag:hover { color: var(--mantine-color-text); }
+.release-tag-sep { color: var(--mantine-color-dimmed); }
+/* Narrower, it gives way to the name and the credit: first the ranges note (below 1200px it ran into the
+   colour switch at 1024), then, below `md`, the place beside the name altogether (`.release-eyebrow`). */
+@media (max-width: 75em) {
+  .release-tag-ranges { display: none; }
+}
+/* Below `md`: over the name, where a wider header has "Open record salary data" (ReleaseEyebrow). Just
+   under 62em, to meet Mantine's `visibleFrom="md"` (min-width: 62em) without both showing at 992px. */
+.release-eyebrow { display: none; }
+@media (max-width: 61.99em) {
+  .release-tag { display: none; }
+  .release-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 2px;
+    color: var(--mantine-color-dimmed);
+    font-size: var(--mantine-font-size-xxs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .release-eyebrow .new-badge { height: 14px; padding-inline: 5px; font-size: 9px; }
+}
+
 .mantine-AppShell-navbar { border-right: 1px solid var(--hairline); }
 .mantine-AppShell-footer { border-top: 1px solid var(--hairline); }
 
@@ -2440,58 +2482,11 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
    tiles under the search used to grow with the band, to 51px figures and 23px titles on a wide screen,
    which made them the loudest things on it after the title. */
 .home { padding-block: clamp(12px, 2.5vh, 28px) clamp(24px, 6vh, 64px); }
-/* The page's header, on the same left edge as the panel under it: the title and its lead on the left,
-   when the data is from on the right, level with the lead. */
-.home-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 4px 24px;
-  margin-bottom: 4px;
-}
+/* The page's header, on the same left edge as the panel under it: the title and its lead. Which release
+   the page holds is beside the app's name, on every page (`.release-tag`). */
+.home-head { margin-bottom: 4px; }
 .home-head-main { min-width: 0; }
 .home-lead { margin-top: 2px; }
-/* What came with the newest release, where "Data as of" was: one small link to the Data page's account,
-   a tag and a line at the size of the lead. Nothing in it is dated by hand (useRelease). */
-.home-news {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
-  padding: 3px 10px 3px 3px;
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: 999px;
-  background: var(--mantine-color-body);
-  color: var(--mantine-color-text);
-  font-size: var(--mantine-font-size-xs);
-  line-height: 1.35;
-  transition: border-color 120ms ease;
-}
-.home-news:hover { border-color: var(--mantine-color-accent-5); }
-.home-news-tag {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--mantine-color-accent-light);
-  color: var(--text-accent);
-  font-size: var(--mantine-font-size-xxs);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.home-news-sep { color: var(--mantine-color-dimmed); }
-.home-news-arrow { color: var(--text-accent); transition: transform 120ms ease; }
-.home-news:hover .home-news-arrow { transform: translateX(2px); }
-@media (prefers-reduced-motion: reduce) {
-  .home-news, .home-news-arrow { transition: none; }
-  .home-news:hover .home-news-arrow { transform: none; }
-}
-/* A phone: stacked, and first, above the title. */
-@media (max-width: 36em) {
-  .home-head { flex-direction: column; align-items: flex-start; }
-  /* Two lines at a phone's width: a rounded box rather than a stretched pill. */
-  .home-news { order: -1; margin-bottom: 2px; border-radius: 12px; }
-}
 /* The figures under the search, read as phrases: "22,009 employees", hairlines between them, and the way
    to every school and title at the line's end. */
 .home-stats {

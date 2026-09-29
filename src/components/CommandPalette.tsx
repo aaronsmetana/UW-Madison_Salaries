@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Modal, Stack, Group, Text, UnstyledButton, Divider, Button, Code } from '@mantine/core';
+import { useEffect } from 'react';
+import { Modal, Stack, Group, Text, UnstyledButton, Divider } from '@mantine/core';
 import { useDisclosure, useHotkeys } from '@mantine/hooks';
-import { IconSearch } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { SearchBox } from './SearchBox';
 import { NAV, ABOUT } from '../app/nav';
@@ -10,6 +9,8 @@ import { ICON } from '../lib/ui';
 /**
  * ⌘K / Ctrl+K. The app is search-first — the landing page is a search box — yet there was no keyboard
  * path to it from anywhere else, so reaching search from the sixth tab of a person page meant a mouse.
+ * The header's "Search ⌘K" button that opened it is gone (the landing page's box and People in the
+ * sidebar are the way to search by pointer); the shortcut works on every page.
  *
  * Deliberately not `@mantine/spotlight`: it isn't installed, and adopting it would mean rebuilding
  * `SearchBox`'s combobox — the debounce, the Jaro-Winkler typo fallback, the homonym and departed-staff
@@ -22,35 +23,6 @@ export function usePalette() {
   // mid-thought in the wrong search box, which is the case it exists for.
   useHotkeys([['mod+K', open]], []);
   return { opened, open, close };
-}
-
-/** "⌘K" on Apple keyboards, "Ctrl K" elsewhere — the label has to match the key that actually works. */
-export function useModKey() {
-  const [mac, setMac] = useState(false);
-  useEffect(() => {
-    setMac(/Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
-  }, []);
-  return mac ? '⌘K' : 'Ctrl K';
-}
-
-/** The header affordance. A shortcut nobody can see is a shortcut nobody uses. */
-export function PaletteTrigger({ onClick }: { onClick: () => void }) {
-  const mod = useModKey();
-  return (
-    <Button
-      variant="default"
-      size="xs"
-      onClick={onClick}
-      leftSection={<IconSearch size={ICON.compact} />}
-      aria-label={`Search — ${mod}`}
-      visibleFrom="sm"
-    >
-      <Group gap="xs" wrap="nowrap">
-        <Text size="xs" c="dimmed">Search</Text>
-        <Code className="kbd-chip" c="dimmed">{mod}</Code>
-      </Group>
-    </Button>
-  );
 }
 
 export function CommandPalette({ opened, close }: { opened: boolean; close: () => void }) {

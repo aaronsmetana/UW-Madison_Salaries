@@ -178,6 +178,14 @@ const CHARTS = (page: Page) => [page.locator('.recharts-wrapper'), page.locator(
  */
 const PINNED_BUILD = '2026-09-04T12:00:00.000Z'; // renders as "Sep 4, 2026" — the date the committed baselines were captured with
 
+/**
+ * And pin the release as new. Every page's header says "New" for the 30 days after the newest release
+ * went up (`published`, from data/releases.json) and not after, so without this every baseline would
+ * change on the 31st day with no change to the code. Pinned the same way as the build: the newest
+ * snapshot's `published` rewritten to today, which keeps the page's own clock real.
+ */
+const TODAY = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+
 test.beforeEach(async ({ page }) => {
   // The sidebar's first look (sidebar.spec) is over by two and a half seconds; a scene is the page itself.
   await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
@@ -196,7 +204,12 @@ test.beforeEach(async ({ page }) => {
       const body = await response.text();
       let pinned: unknown;
       try {
-        pinned = { ...JSON.parse(body), generated_at: PINNED_BUILD };
+        const json = JSON.parse(body);
+        pinned = { ...json, generated_at: PINNED_BUILD };
+        if (artifact === 'summary.json' && Array.isArray(json.snapshots)) {
+          (pinned as { snapshots: unknown[] }).snapshots = json.snapshots.map((snap: object, i: number, all: object[]) =>
+            (i === all.length - 1 ? { ...snap, published: TODAY } : snap));
+        }
       } catch {
         return route.fulfill({ response });
       }

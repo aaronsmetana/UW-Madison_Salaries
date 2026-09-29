@@ -125,7 +125,7 @@ export function HistoryTable({ rows, comparisons }: {
    *  keyed by the snapshot it ends at. Absent until loaded. */
   comparisons?: ReadonlyMap<string, { text: string }>;
 }) {
-  // The newest release's rows carry "New" (NewBadge), until the next release is the new one.
+  // The newest release's rows carry "New" (NewBadge) for its first 30 days.
   const newestId = useSummary().data?.latest?.id ?? null;
   // Appointment count per snapshot, for the station's tooltip ("A of 2", or "the only one").
   const apptCounts = useMemo(() => {

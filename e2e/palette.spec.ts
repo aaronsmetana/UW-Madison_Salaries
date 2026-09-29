@@ -24,14 +24,15 @@ test('mod+K opens the palette and puts the cursor in the search box', async ({ p
 
 test('Escape closes it and hands focus back', async ({ page }) => {
   await ready(page);
-  const trigger = page.getByRole('button', { name: /^Search — / });
-  await trigger.click();
+  const field = page.getByPlaceholder('Search an employee by name…');
+  await field.click();
+  await page.keyboard.press('ControlOrMeta+k');
   await expect(page.locator(DIALOG)).toBeVisible();
 
   await page.keyboard.press('Escape');
 
   await expect(page.locator(DIALOG)).toHaveCount(0);
-  await expect(trigger).toBeFocused();
+  await expect(field).toBeFocused();
 });
 
 test('the shortcut still fires while a text field has focus', async ({ page }) => {
@@ -79,12 +80,26 @@ test('a destination navigates and closes the palette', async ({ page }) => {
   await expect(page).toHaveURL(/\/screening$/);
 });
 
-test('the trigger names the key that actually works', async ({ page }) => {
-  await ready(page);
-  const label = await page.getByRole('button', { name: /^Search — / }).getAttribute('aria-label');
-  // Playwright reports the platform it drives; the chip has to agree with it, or the hint is a lie.
-  const mac = process.platform === 'darwin';
-  expect(label).toBe(mac ? 'Search — ⌘K' : 'Search — Ctrl K');
+/**
+ * No search button in the header, on any page: the landing page's box is the search, People in the
+ * sidebar leads to it, and the shortcut opens the palette anywhere. The button stood a few hundred
+ * pixels from that box on the landing page, and a phone never showed it.
+ */
+test('the header has no search button on any page, and the shortcut opens the palette on each', async ({ page }) => {
+  for (const [route, ready] of [
+    ['./', '.hero-dist-main'],
+    [`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`, '.peer-strip'],
+    [`./school/${encodeURIComponent('School of Medicine and Public Health')}`, '.release-tag'],
+    ['./reports', 'h1'],
+  ] as const) {
+    await page.goto(route);
+    await expect(page.locator(ready).first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.mantine-AppShell-header').getByRole('button', { name: /search/i }), route).toHaveCount(0);
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.getByRole('dialog', { name: 'Search and go' }), route).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator(DIALOG)).toHaveCount(0);
+  }
 });
 
 test('on a 720px screen the results stay on it, titles included', async ({ page }) => {

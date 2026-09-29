@@ -7,7 +7,7 @@ import {
   IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch, IconArrowBarToDown,
   IconArrowsMaximize, IconX,
 } from '@tabler/icons-react';
-import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useRelease } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
 import { binsFromCounts, countBelow, countWithin, groupCounts, groupLine as groupLinePath, groupSigma, smoothBins, CURVE_STEP, READOUT_RADIUS, type Bin } from '../lib/distribution';
@@ -2523,10 +2523,6 @@ export default function Home() {
     return f;
   }, [summary, topTitle, topDivision, p90, dims, tenure, categoryMedians]);
 
-  const cleanLabel = (s?: string) => s?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? undefined;
-  const firstSnap = cleanLabel(summary?.snapshots?.[0]?.label);
-  const latestLabel = summary?.latest?.label;
-  const release = useRelease();
 
   // The figures on the line under the search, each a number and what it counts. Median is not among them:
   // it is in the lead under the title, and the graph is a picture of it. The exact payroll is on hover.
@@ -2591,24 +2587,6 @@ export default function Home() {
                 )}
               </Text>
             </div>
-            {/* When, not how many — the headcount is the first figure on the line under the search — and
-                what came with it: new data, and the salary ranges when they came out with it. One link to
-                the Data page's account of both, set small; it stays until the next release is the new one. */}
-            {release && (
-              <Anchor
-                component={Link}
-                to="/data#whats-new"
-                className="home-news"
-                underline="never"
-                aria-label={`New: ${release.month} data${release.rangesUpdated ? ', and updated salary ranges' : ''}. What's new`}
-              >
-                <span className="home-news-tag" aria-hidden>New</span>
-                <span className="home-news-text" aria-hidden>
-                  {release.month} data{release.rangesUpdated ? <> <span className="home-news-sep">·</span> Salary ranges updated</> : null}
-                </span>
-                <span className="home-news-arrow" aria-hidden>→</span>
-              </Anchor>
-            )}
           </div>
 
           {phone && pageSearch}
@@ -2719,14 +2697,6 @@ export default function Home() {
         {/* Footnotes: the least urgent thing on the page, at its end. */}
         <Stack gap="xs" maw="var(--content-prose)" mx="auto" w="100%">
           <RotatingFact facts={facts} />
-
-          {summary?.snapshot_count != null && firstSnap && latestLabel && (
-            <Text size="xs" c="dimmed" ta="center">
-              <Anchor component={Link} to="/data" c="dimmed" underline="hover">
-                Data based on {num(summary.snapshot_count)} snapshots ({firstSnap} – {latestLabel}) • Latest: {latestLabel}
-              </Anchor>
-            </Text>
-          )}
 
           <Text size="xs" c="dimmed" ta="center" fs="italic" maw="var(--measure)" mx="auto">
             Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between

@@ -220,7 +220,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
               <Group justify="space-between" wrap="nowrap" gap="sm" w="100%">
                 <Group gap={6} wrap="nowrap">
                   <Text span size="xs" lineClamp={1}>{option.label}</Text>
-                  {/* The newest release is new until the next one lands; "Latest (…)" above already names it latest. */}
+                  {/* The newest release is "New" for its first 30 days (NewBadge); "Latest (…)" above already names it latest. */}
                   {option.value === latest?.id && <NewBadge />}
                 </Group>
                 {rows != null && <Text span size="xs" c="dimmed" style={{ flexShrink: 0 }}>{num(rows)} rows</Text>}

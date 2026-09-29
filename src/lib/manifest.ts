@@ -36,7 +36,8 @@ export interface Summary {
   snapshot_count: number;
   /** `median` is over people (summed actual pay per person), like every median in the app;
    *  `median_rows` is the per-appointment figure, for the data-health page. */
-  snapshots: { id: string; label: string; date: string; rows: number; headcount?: number | null; median: number | null; median_rows?: number | null }[];
+  /** `published` is the day the release went up on the site (data/releases.json), where one is recorded. */
+  snapshots: { id: string; label: string; date: string; published?: string | null; rows: number; headcount?: number | null; median: number | null; median_rows?: number | null }[];
   latest: { id: string; label: string; headcount: number; median: number | null; median_rows?: number | null } | null;
   /** Divisions formed from whole departments of others, step by step (normalize `divisionReorganizations`). */
   reorganizations?: Reorganization[];

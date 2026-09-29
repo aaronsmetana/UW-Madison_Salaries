@@ -1,0 +1,4 @@
+{
+  "_comment": "The day each release went up on the site, by snapshot id (YYYY-MM-DD). Every 'New' in the app counts 30 days from it (src/lib/release.ts). Add the newest release's line when loading its workbook; without one, NEW counts from the snapshot date (the 1st of its month) and the build says so. Releases before Sep 2026 went up before the repo's history begins, and no longer need a date.",
+  "2026-09": "2026-09-27"
+}

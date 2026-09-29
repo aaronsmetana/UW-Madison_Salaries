@@ -9,7 +9,8 @@ import { Footer } from './Footer';
 import { ColorSchemeToggle } from '../components/ColorSchemeToggle';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
-import { CommandPalette, PaletteTrigger, usePalette } from '../components/CommandPalette';
+import { CommandPalette, usePalette } from '../components/CommandPalette';
+import { ReleaseTag, ReleaseEyebrow } from './ReleaseTag';
 import { NAV, ABOUT, type NavItem } from './nav';
 import { consumeUpdate } from '../lib/appUpdate';
 import { RevealProvider } from '../components/PersonReveal';
@@ -220,7 +221,7 @@ export function AppShellLayout() {
                 aria-expanded={mobileOpened}
                 aria-controls={mobileOpened ? SHEET_ID : undefined}
               />
-              <Anchor component={Link} to="/" underline="never" c="inherit">
+              <Anchor component={Link} to="/" underline="never" c="inherit" className="app-wordmark">
                 <Group gap={11} wrap="nowrap" align="center">
                   <LogoMark />
                   {/* Two-tone wordmark + small uppercase eyebrow for a masthead feel. */}
@@ -229,19 +230,25 @@ export function AppShellLayout() {
                         a masthead device, and Eyebrow's contract fixes its own spacing. The size is the
                         shared `xxs` token rather than the 9px literal it used to carry — below the
                         scale's floor, and the smallest text anywhere in the app. */}
-                    <Text fz="xxs" fw={700} lts="0.14em" tt="uppercase" c="dimmed" visibleFrom="xs">
+                    {/* From `md` up; narrower, this line is the release's (ReleaseEyebrow), which has no room
+                        beside the name there. */}
+                    <Text fz="xxs" fw={700} lts="0.14em" tt="uppercase" c="dimmed" visibleFrom="md">
                       Open record salary data
                     </Text>
-                    <Text component="span" fz="lg" fw={700} lts="-0.02em" style={{ lineHeight: 1.1 }}>
+                    <ReleaseEyebrow />
+                    <Text component="span" fz="lg" fw={700} lts="-0.02em" className="app-name" style={{ lineHeight: 1.1 }}>
                       <Text span inherit c="bright">UW–Madison </Text>
                       <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
                     </Text>
                   </Stack>
                 </Group>
               </Anchor>
+              <ReleaseTag />
             </Group>
+            {/* No search button here: the landing page's own box is the search, People in the sidebar
+                leads to it, and ⌘K opens the palette anywhere (CommandPalette). The button sat a few
+                hundred pixels from that box on the landing page, and phones never showed it. */}
             <Group gap="md" wrap="nowrap">
-              <PaletteTrigger onClick={palette.open} />
               <ColorSchemeToggle />
               {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
               <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>

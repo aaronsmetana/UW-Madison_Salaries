@@ -11,12 +11,15 @@ import { oracle, PAY, GRADED, usd, latestSnapshot } from './oracle';
 
 const DATA = new URL('../public/data/', import.meta.url);
 const read = <T,>(f: string): T => JSON.parse(readFileSync(new URL(f, DATA), 'utf8'));
-interface Summary { snapshots: { id: string; label: string; date: string; headcount: number; median: number }[]; reorganizations: { to_id: string; school: string; people: number; from: { school: string; people: number; departments: string[] }[] }[] }
+interface Summary { snapshots: { id: string; label: string; date: string; published?: string | null; headcount: number; median: number }[]; reorganizations: { to_id: string; school: string; people: number; from: { school: string; people: number; departments: string[] }[] }[] }
 interface Ref { status: string; retrieved_at: string; released_with: string; structure_change: number; coverage: number; floor_coverage: number; matched_rows: number; graded_rows: number }
 interface Grade { grade: number; basis: string; min: number; max: number | null }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const month = (date: string) => `${MONTHS[Number(date.slice(5, 7)) - 1]} ${date.slice(0, 4)}`;
+/** Noon, `days` after the day a release went up, on the reader's calendar. */
+const dayAfter = (published: string, days: number) => new Date(Date.parse(`${published}T12:00:00`) + days * 86_400_000);
+const AARON = 'aaronsmetana|2014-10-15';
 const change = (x: number) => (Math.abs(x) < 0.0005 ? '0%' : `${x > 0 ? '+' : '−'}${(Math.abs(x) * 100).toFixed(1)}%`);
 
 /** People whose full-time rate on their graded appointment is below its minimum, to HR's rounding: the
@@ -37,18 +40,35 @@ async function belowMinimum(snap: string) {
 test.describe('the newest release, said', () => {
   test.setTimeout(180_000);
 
-  test('the landing page says what came with it, links to the account of it, and sits above the title on a phone', async ({ page }) => {
+  /**
+   * Which release the app holds, beside its name on every page, and "New" for 30 days from the day it went
+   * up (data/releases.json) and then not: the landing page's pill said the month on one page only, and
+   * "New" until the next release, six months on. The day is pinned on the page's clock, so this reads the
+   * same on the day the release lands and a year later.
+   */
+  test("beside the app's name on every page: the release, new for 30 days, then plainly", async ({ page }) => {
     const s = read<Summary>('summary.json');
     const ref = read<Ref>('reference-status.json');
     const latest = s.snapshots.at(-1)!;
+    expect(latest.published, `no publication date for ${latest.id} in data/releases.json`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const withRanges = ref.released_with === latest.id;
+    const routes = ['./', `./person/${encodeURIComponent(AARON)}`, `./school/${encodeURIComponent('School of Medicine and Public Health')}`];
+    const tag = page.locator('.release-tag');
+
+    await page.clock.setFixedTime(dayAfter(latest.published!, 5));
+    for (const route of routes) {
+      await page.goto(route);
+      await expect(tag, route).toBeVisible({ timeout: 60_000 });
+      await expect(tag.locator('.new-badge'), route).toBeVisible();
+      await expect(tag.locator('.release-tag-long'), route).toHaveText(`Salary data as of ${month(latest.date)}${withRanges ? ' · salary ranges updated' : ''}`);
+      await expect(tag, route).toHaveAttribute('aria-label', `Salary data as of ${month(latest.date)}, new${withRanges ? ', with updated salary ranges' : ''}. What's new`);
+      await expect(tag, route).toHaveAttribute('href', /\/data#whats-new$/);
+    }
+    // The pill it replaced is gone from the landing page.
     await page.goto('./');
-    const news = page.locator('.home-news');
-    await expect(news).toBeVisible({ timeout: 60_000 });
-    await expect(news).toHaveText(`New${month(latest.date)} data${withRanges ? ' · Salary ranges updated' : ''}→`);
-    await expect(news).toHaveAttribute('aria-label', `New: ${month(latest.date)} data${withRanges ? ', and updated salary ranges' : ''}. What's new`);
-    await expect(news).toHaveAttribute('href', /\/data#whats-new$/);
-    await news.click();
+    await expect(tag).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.home-news')).toHaveCount(0);
+    await tag.click();
     await expect(page.locator('#whats-new')).toBeInViewport({ timeout: 60_000 });
     const head = await page.evaluate(() => {
       const nav = document.querySelector('.data-jumpnav')!.getBoundingClientRect();
@@ -56,11 +76,102 @@ test.describe('the newest release, said', () => {
     });
     expect(head, 'the section landed under the jump nav').toBeGreaterThanOrEqual(0);
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.clock.setFixedTime(dayAfter(latest.published!, 31));
+    for (const route of routes) {
+      await page.goto(route);
+      await expect(tag, route).toBeVisible({ timeout: 60_000 });
+      await expect(tag.locator('.new-badge'), route).toHaveCount(0);
+      await expect(tag.locator('.release-tag-long'), route).toHaveText(`Salary data as of ${month(latest.date)}`);
+      await expect(tag, route).toHaveAttribute('aria-label', `Salary data as of ${month(latest.date)}. About the data`);
+      await expect(tag, route).toHaveAttribute('href', /\/data$/);
+    }
+  });
+
+  /**
+   * On a phone there is no room beside the name — the tag ran off the screen and pushed the colour switch
+   * with it — so it is the line over the name, where a wider header says "Open record salary data".
+   */
+  test('on a phone the release is the line over the name, and the header still fits', async ({ page }) => {
+    const latest = read<Summary>('summary.json').snapshots.at(-1)!;
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.clock.setFixedTime(dayAfter(latest.published!, 5));
     await page.goto('./');
-    await expect(news).toBeVisible({ timeout: 60_000 });
-    const [n, h] = [await news.boundingBox(), await page.locator('h1').boundingBox()];
-    expect(n!.y + n!.height, 'on a phone the line comes first').toBeLessThanOrEqual(h!.y);
+    const eyebrow = page.locator('.release-eyebrow');
+    await expect(eyebrow).toBeVisible({ timeout: 60_000 });
+    await expect(eyebrow).toContainText(`Data as of ${latest.label}`);
+    await expect(eyebrow.locator('.new-badge')).toBeVisible();
+    await expect(page.locator('.release-tag')).toBeHidden();
+    const g = await page.evaluate(() => {
+      const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+      return { eyebrow: r('.release-eyebrow'), name: r('.app-wordmark') };
+    });
+    expect(g.eyebrow.bottom, 'the release is not over the name').toBeLessThanOrEqual(g.name.bottom - 10);
+  });
+
+  /**
+   * At every width the header holds the name on one line, the release beside or over it, and the credit,
+   * inside its 64px and the screen, with room between the release and the controls opposite. Squeezed by
+   * the release, the name broke into four lines at 1024px and spilled out of the header; on a phone the
+   * release ran off the screen.
+   */
+  test('the header fits at every width, the name on one line', async ({ page }) => {
+    const latest = read<Summary>('summary.json').snapshots.at(-1)!;
+    await page.clock.setFixedTime(dayAfter(latest.published!, 5));
+    for (const width of [375, 768, 991, 992, 1024, 1280, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`./person/${encodeURIComponent(AARON)}`);
+      await expect(page.locator('.release-tag, .release-eyebrow').locator('visible=true').first()).toBeVisible({ timeout: 60_000 });
+      const g = await page.evaluate(() => {
+        const header = document.querySelector('.mantine-AppShell-header')!.getBoundingClientRect();
+        const kids = [...document.querySelectorAll('.mantine-AppShell-header > .mantine-Group-root *')].map((e) => e.getBoundingClientRect())
+          .filter((b) => b.width > 0 && b.height > 0);
+        const name = document.querySelector('.app-name')!.getBoundingClientRect();
+        // The room between the release, where it is beside the name, and the controls and credit opposite.
+        const tag = document.querySelector('.release-tag');
+        const opposite = document.querySelector('.mantine-AppShell-header > .mantine-Group-root > :last-child')!.getBoundingClientRect();
+        const gap = tag && getComputedStyle(tag).display !== 'none' ? opposite.left - tag.getBoundingClientRect().right : null;
+        const shown = (e: Element | null) => !!e && getComputedStyle(e).display !== 'none';
+        const masthead = [...document.querySelectorAll('.app-wordmark *')].find((e) => !e.children.length && e.textContent?.trim().toLowerCase() === 'open record salary data') ?? null;
+        return {
+          h: header.height, right: Math.max(...kids.map((b) => b.right)), top: Math.min(...kids.map((b) => b.top)), bottom: Math.max(...kids.map((b) => b.bottom)), nameH: name.height, gap,
+          forms: [tag, document.querySelector('.release-eyebrow')].filter(shown).length,
+          eyebrowShown: shown(document.querySelector('.release-eyebrow')),
+          mastheadShown: shown(masthead) && masthead!.getBoundingClientRect().height > 0,
+        };
+      });
+      // One release, beside the name or over it; and the line over the name is one thing, never two.
+      expect(g.forms, `${width}px: the release is said ${g.forms} times`).toBe(1);
+      expect(g.mastheadShown, `${width}px: "Open record salary data" and the release both over the name`).toBe(!g.eyebrowShown);
+      expect(g.right, `${width}px: something in the header runs off the screen`).toBeLessThanOrEqual(width);
+      expect(g.top, `${width}px: something in the header spills above it`).toBeGreaterThanOrEqual(0);
+      expect(g.bottom, `${width}px: something in the header spills below it`).toBeLessThanOrEqual(g.h);
+      expect(g.nameH, `${width}px: the name broke onto a second line`).toBeLessThan(30);
+      // Not merely inside the header: at 1024px "· salary ranges updated" ran into the colour switch.
+      if (g.gap != null) expect(g.gap, `${width}px: the release runs into the controls opposite`).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  /**
+   * The snapshots the data spans, at the foot of every page, in place of the build's date ("data generated
+   * Sep 29, 2026"), which read as the data's and changed with every deploy. Said once: the landing page's
+   * "Data based on…" line and Divisions' own span are gone.
+   */
+  test('the footer names the snapshots the data spans, on every page, and no page says it again', async ({ page }) => {
+    const s = read<Summary>('summary.json');
+    const bare = (l: string) => l.replace(/\s*\((?:Pre|Post)-TTC\)/, '');
+    const span = `${s.snapshots.length} snapshots, ${bare(s.snapshots[0].label)} – ${bare(s.snapshots.at(-1)!.label)}`;
+    for (const route of ['./', `./person/${encodeURIComponent(AARON)}`, './explore', './data']) {
+      await page.goto(route);
+      const foot = page.locator('.mantine-AppShell-footer');
+      await expect(foot, route).toContainText(span, { timeout: 60_000 });
+      await expect(foot, route).not.toContainText('generated');
+    }
+    await page.goto('./');
+    await expect(page.locator('.hero-dist-main')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(/Data based on/)).toHaveCount(0);
+    // Divisions' own line keeps what is the page's: its rows, and the way to the data's health.
+    await page.goto('./explore');
+    await expect(page.locator('p', { hasText: 'data health →' })).toHaveText(/^[\d,]+ rows · data health →$/, { timeout: 60_000 });
   });
 
   test("What's new states the release against the one before, from the build and the data", async ({ page }) => {
@@ -146,27 +257,36 @@ test.describe('the newest release, said', () => {
     await expect(minimums.filter({ has: page.locator('td:first-child', { hasText: /^61$/ }) })).toHaveText(/^61\$45,250$/);
   });
 
-  test('"New" marks the newest snapshot, and only it, in the picker, a history and the ingestion table', async ({ page }) => {
+  // Every "New" is the header's: the newest snapshot, and only it, in the picker, a person's history and
+  // the ingestion table while the release is new, and in none of them a day past its 30.
+  test('"New" marks the newest snapshot, and only it, in the picker, a history and the ingestion table, for 30 days', async ({ page }) => {
     const s = read<Summary>('summary.json');
     const latest = s.snapshots.at(-1)!;
-    await page.goto('./explore');
-    await page.getByRole('textbox', { name: 'Snapshot' }).click();
-    const newOpts = page.getByRole('option').filter({ has: page.locator('.new-badge') });
-    await expect(newOpts).toHaveCount(1, { timeout: 30_000 });
-    await expect(newOpts).toContainText(latest.label);
-    await page.keyboard.press('Escape');
+    for (const [days, n] of [[5, 1], [31, 0]] as const) {
+      await page.clock.setFixedTime(dayAfter(latest.published!, days));
+      await page.goto('./explore');
+      await page.getByRole('textbox', { name: 'Snapshot' }).click();
+      await expect(page.getByRole('option').first()).toBeVisible({ timeout: 30_000 });
+      const newOpts = page.getByRole('option').filter({ has: page.locator('.new-badge') });
+      await expect(newOpts, `picker, day ${days}`).toHaveCount(n, { timeout: 30_000 });
+      if (n) await expect(newOpts).toContainText(latest.label);
+      await page.keyboard.press('Escape');
 
-    await page.goto(`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=history`);
-    const rows = page.locator('table.appt-history tbody tr');
-    await expect(rows.first()).toBeVisible({ timeout: 60_000 });
-    const marked = rows.filter({ has: page.locator('.appt-snapshot .new-badge') });
-    await expect(marked).toHaveCount(1);
-    await expect(marked.locator('.appt-snapshot')).toContainText(latest.label);
+      await page.goto(`./person/${encodeURIComponent(AARON)}?tab=history`);
+      const rows = page.locator('table.appt-history tbody tr');
+      await expect(rows.first()).toBeVisible({ timeout: 60_000 });
+      const marked = rows.filter({ has: page.locator('.appt-snapshot .new-badge') });
+      await expect(marked, `history, day ${days}`).toHaveCount(n);
+      if (n) await expect(marked.locator('.appt-snapshot')).toContainText(latest.label);
 
-    await page.goto('./data#snapshots');
-    const snapRows = page.locator('.data-snap-table tbody tr').filter({ has: page.locator('.new-badge') });
-    await expect(snapRows).toHaveCount(1, { timeout: 60_000 });
-    await expect(snapRows).toContainText(latest.label);
+      await page.goto('./data#snapshots');
+      await expect(page.locator('.data-snap-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+      const snapRows = page.locator('.data-snap-table tbody tr').filter({ has: page.locator('.new-badge') });
+      await expect(snapRows, `ingestion table, day ${days}`).toHaveCount(n, { timeout: 60_000 });
+      if (n) await expect(snapRows).toContainText(latest.label);
+      // Nor anywhere else on the Data page (What's new, the salary ranges) once the 30 days are out.
+      if (!n) await expect(page.locator('.new-badge')).toHaveCount(0);
+    }
   });
 
   test('a reorganization is said where its moves are counted: Changes, and both divisions’ pages', async ({ page }) => {

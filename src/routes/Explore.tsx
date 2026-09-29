@@ -18,7 +18,7 @@ import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hoo
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
-import { usd, usdCompact, num, fmtDate } from '../lib/format';
+import { usd, usdCompact, num } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { useCountUp } from '../lib/motion';
@@ -323,9 +323,8 @@ export default function Explore() {
 
       {summary && (
         <Text size="xs" c="dimmed" ta="right">
-          {num(summary.snapshot_count)} snapshots · {num(summary.total_rows)} rows · {snapsAsc[0]?.label} → {snapsAsc.at(-1)?.label}
-          {summary.generated_at ? ` · data generated ${fmtDate(summary.generated_at)}` : ''}
-          {' · '}<Anchor component={Link} to="/data" inherit>data health →</Anchor>
+          {/* The snapshots it spans are in the footer on every page; this line keeps what is this page's. */}
+          {num(summary.total_rows)} rows{' · '}<Anchor component={Link} to="/data" inherit>data health →</Anchor>
         </Text>
       )}
     </Stack>

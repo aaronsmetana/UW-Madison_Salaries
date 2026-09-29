@@ -3,6 +3,7 @@ import { query, getDB } from './duckdb';
 import { fetchData, type DepartmentChanges, type HomeStats, type Manifest, type RaiseSteps, type Reorganization, type SearchIndex, type Summary } from './manifest';
 import { useControls } from '../state/controls';
 import type { GradeBand } from './bands';
+import { isNewRelease } from './release';
 
 /**
  * Resolves once DuckDB-WASM + the Parquet have loaded; errors if the dataset can't be loaded.
@@ -59,12 +60,17 @@ export interface Release {
   ref: ReferenceStatus | undefined;
   /** Divisions this release formed from whole departments of others. */
   reorganizations: Reorganization[];
+  /** The day it went up on the site (data/releases.json), where recorded. */
+  published: string | null;
+  /** Still new: within NEW_DAYS of `published` (lib/release). Every "New" in the app reads this. */
+  isNew: boolean;
 }
 
 /**
- * The newest release, and what came with it. Everything that announces new data reads it, and none of
- * it is written down by hand: when the next workbook lands, the next release is "new" and these ranges
- * are not, with nothing to remember to take out.
+ * The newest release, and what came with it. Everything that announces new data reads it. Only the day it
+ * went up is written down by hand (data/releases.json), because nothing else in the data knows it: when
+ * the next workbook lands, the next release is the one described, and it is "new" for 30 days from that
+ * day (`isNewRelease`), with nothing to remember to take out.
  */
 export function useRelease(): Release | null {
   const { data: summary } = useSummary();
@@ -79,6 +85,8 @@ export function useRelease(): Release | null {
     rangesUpdated: !!ref?.released_with && ref.released_with === latest.id,
     ref,
     reorganizations: (summary?.reorganizations ?? []).filter((r) => r.to_id === latest.id),
+    published: latest.published ?? null,
+    isNew: isNewRelease(latest.published, latest.date),
   };
 }
 

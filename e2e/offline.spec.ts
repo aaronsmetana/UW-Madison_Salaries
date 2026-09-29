@@ -18,7 +18,7 @@ test('a browser that says offline while the site answers shows no offline banner
     Object.defineProperty(Navigator.prototype, 'onLine', { get: () => false, configurable: true });
   });
   await page.goto('./');
-  await expect(page.locator('.home-news')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.release-tag')).toBeVisible({ timeout: 60_000 });
   expect(await page.evaluate(() => navigator.onLine), 'the premise: the browser says offline').toBe(false);
   await page.evaluate(() => window.dispatchEvent(new Event('offline')));
   await page.waitForTimeout(1000);
@@ -27,7 +27,7 @@ test('a browser that says offline while the site answers shows no offline banner
 
 test('when the site is really unreachable the banner says so, and goes when it is back', async ({ page, context }) => {
   await page.goto('./');
-  await expect(page.locator('.home-news')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.release-tag')).toBeVisible({ timeout: 60_000 });
   await expect(banner(page)).toHaveCount(0);
   await context.setOffline(true);
   await expect(banner(page)).toBeVisible({ timeout: 10_000 });
@@ -44,7 +44,7 @@ test.describe('with the service worker', () => {
     // Controlled, and the data cached, as for any visitor who has been here before.
     await page.reload();
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
-    await expect(page.locator('.home-news')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.release-tag')).toBeVisible({ timeout: 60_000 });
     const cached = () => page.evaluate(async () => !!(await (await caches.open('data-cache')).match(new URL('data/summary.json', location.href).href)));
     await expect.poll(cached, { timeout: 30_000 }).toBe(true);
     // What the cache holds stands in for the previous deploy's summary.
@@ -54,7 +54,7 @@ test.describe('with the service worker', () => {
       await (await caches.open('data-cache')).put(new URL('data/summary.json', location.href).href, new Response(JSON.stringify(old), { headers: { 'content-type': 'application/json' } }));
     }, summary);
     await page.reload();
-    await expect(page.locator('.home-news')).toContainText(`${latestMonth} data`, { timeout: 60_000 });
-    await expect(page.locator('.home-news')).not.toContainText('1999');
+    await expect(page.locator('.release-tag')).toContainText(`as of ${latestMonth}`, { timeout: 60_000 });
+    await expect(page.locator('.release-tag')).not.toContainText('1999');
   });
 });
