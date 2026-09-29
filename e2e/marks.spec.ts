@@ -99,6 +99,10 @@ async function belowTheCurve(): Promise<string> {
 /** The scatter's "on the curve" band and the subject's dot, in dollars: each edge of the band at the
  *  dot's tenure, read off the pay axis's own tick labels, and where the dot sits between them. */
 async function bandAtSelf(page: Page) {
+  // The scatter draws after the callout above it: wait for what is read, not for a clock.
+  await expect(page.locator('.tenure-fit-band polygon')).toBeAttached({ timeout: 60_000 });
+  await expect(page.locator('.tenure-plot .tenure-self circle').first()).toBeAttached();
+  await expect(page.locator('.tenure-plot .recharts-yAxis .recharts-cartesian-axis-tick text').nth(1)).toBeAttached();
   const g = await page.locator('.tenure-plot').evaluate((el) => {
     const poly = el.querySelector('.tenure-fit-band polygon');
     const pts = (poly?.getAttribute('points') ?? '').trim().split(/\s+/).map((p) => p.split(',').map(Number));

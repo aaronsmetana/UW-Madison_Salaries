@@ -262,14 +262,19 @@ test.describe('the plot surface', () => {
    * props instead of `GRID` would lose it; a grid drawn after a reference area paints the tint over
    * it — the person trend's title-era bands sat under the grid until it moved first.
    */
-  for (const [name, route] of [
-    ['explore changes', './explore?tab=changes'],
-    ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`],
+  for (const [name, route, charts] of [
+    ['explore changes', './explore?tab=changes', 2],
+    ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`, 2],
   ] as const) {
     test(`is on every grid, under the marks, and the card itself is not lit: ${name}`, async ({ page }) => {
       await page.goto(route, { waitUntil: 'networkidle' });
-      await expect(page.locator('.recharts-cartesian-grid').first()).toBeAttached({ timeout: 60_000 });
-      await page.waitForTimeout(2_000);
+      // Every chart drawn, with its data: a chart puts up its grid before its query returns and its
+      // ticks after, and on a slow CI runner the first grid stood tickless for over two seconds — a
+      // fixed wait read that as "no tick marks rendered". Wait for the ticks themselves.
+      await expect.poll(() => page.evaluate(() => {
+        const withGrid = [...document.querySelectorAll('.recharts-wrapper')].filter((w) => w.querySelector('.recharts-cartesian-grid'));
+        return withGrid.filter((w) => w.querySelector('.recharts-cartesian-axis-tick')).length;
+      }), { timeout: 60_000, message: `${name}: fewer than ${charts} charts drew their ticks` }).toBeGreaterThanOrEqual(charts);
       const report = await page.evaluate(() => {
         const grids = [...document.querySelectorAll<SVGGElement>('.recharts-cartesian-grid')];
         const bare = grids.filter((g) => !g.querySelector('.recharts-cartesian-grid-bg')).length;

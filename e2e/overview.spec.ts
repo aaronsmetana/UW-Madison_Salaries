@@ -14,6 +14,10 @@ async function open(page: Page, key: string) {
   await page.goto(`./person/${encodeURIComponent(key)}`);
   await expect(page.locator('.peer-strip')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.tenure-plot')).toBeVisible({ timeout: 60_000 });
+  // Both charts drawn, not merely mounted: the strip lays out once it has measured its width, and the
+  // scatter once its axes have. A slow runner can sit between the two for seconds.
+  await expect(page.locator('.peer-strip-marker')).toBeAttached({ timeout: 60_000 });
+  await expect(page.locator('.tenure-plot .tenure-self circle').first()).toBeAttached({ timeout: 60_000 });
   // The strip fades its marks in, and its axis re-measures once the webfont lands.
   await page.waitForTimeout(1_000);
 }
@@ -36,6 +40,7 @@ const overlaps = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.t
  */
 test('the strip spreads its people both ways from a middle row, under the subject', async ({ page }) => {
   await open(page, AARON);
+  await expect(page.locator('.peer-strip circle.chart-dot').first()).toBeAttached();
   const m = await page.locator('.peer-strip').evaluate((el) => {
     const svg = el.querySelector<SVGSVGElement>('svg:has(circle.chart-dot)')!;
     const ys = [...svg.querySelectorAll('circle.chart-dot')].map((c) => Number(c.getAttribute('cy')));
@@ -132,6 +137,7 @@ for (const scheme of ['light', 'dark'] as const) {
     const plot = page.locator('.tenure-plot');
     const label = plot.locator('.tenure-self-label');
     await expect(label).toBeVisible();
+    await expect(plot.locator('.tenure-fit line')).toBeAttached();
     expect((await label.textContent())?.trim()).toBe((await page.locator('.peer-strip-you').textContent())?.trim());
     await expect(plot.locator('.tenure-self animate')).toHaveCount(0);
     expect(await plot.locator('.tenure-self').evaluate((g) => g.getAnimations({ subtree: true }).length)).toBe(0);
@@ -171,6 +177,8 @@ test("at phone width the scatter's names stay inside the plot and clear of each 
   await open(page, AARON);
   const plot = page.locator('.tenure-plot');
   await plot.scrollIntoViewIfNeeded();
+  await expect(plot.locator('.tenure-self-label')).toBeVisible();
+  await expect(plot.locator('.tenure-fit-label')).toBeVisible();
   const g = await plot.evaluate((el) => {
     const r = (e: Element) => { const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
     return {
