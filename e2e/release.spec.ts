@@ -146,8 +146,11 @@ test.describe('the newest release, said', () => {
       expect(g.top, `${width}px: something in the header spills above it`).toBeGreaterThanOrEqual(0);
       expect(g.bottom, `${width}px: something in the header spills below it`).toBeLessThanOrEqual(g.h);
       expect(g.nameH, `${width}px: the name broke onto a second line`).toBeLessThan(30);
-      // Not merely inside the header: at 1024px "· salary ranges updated" ran into the colour switch.
-      if (g.gap != null) expect(g.gap, `${width}px: the release runs into the controls opposite`).toBeGreaterThanOrEqual(24);
+      // Not merely inside the header: at 1024px "· salary ranges updated" ran into the colour switch
+      // (−3px). The floor is the header's own gap between its controls (16px, `gap="md"`), not a margin
+      // picked for this one font rendering: CI's Linux text sits a few tenths of a pixel wider, and at
+      // 992px its gap measured 23.8px against the 24 this first asked for.
+      if (g.gap != null) expect(g.gap, `${width}px: the release runs into the controls opposite`).toBeGreaterThanOrEqual(16);
     }
   });
 
