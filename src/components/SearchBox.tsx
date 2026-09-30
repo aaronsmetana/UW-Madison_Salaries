@@ -35,6 +35,10 @@ interface HitRow {
   d: string;
   pay: number | null;
   basis: string | null;
+  /** Everyone the query matched, before the list's limit (the same on every row). */
+  total?: number;
+  /** How many of them are in the latest snapshot. */
+  here?: number;
 }
 
 interface PersonHit {
@@ -224,8 +228,8 @@ export function SearchBox({
    *  bar's, and a list's that lies over the graph (the landing box above it on a phone). */
   onListOpen?: (open: boolean) => void;
   /** The lowest the list may reach, px from the window's top, where the page wants some of what it lies
-   *  over left in sight (a phone's graph, under a list as wide as it); null for no limit but the panel's or
-   *  the screen's. Past it the list scrolls. */
+   *  over left in sight (the full page graph's lower half); null for no limit but the panel's or the
+   *  screen's. Past it the list scrolls. */
   listLimit?: () => number | null;
   /** The list is open only while the box has the focus (list only; the bar always is): for a list that lies
    *  over something the reader is looking at, as the landing box's does on a phone, where it sits above the
@@ -256,10 +260,10 @@ export function SearchBox({
   const [debounced] = useDebouncedValue(term, 200);
   const q = debounced.trim().toLowerCase();
   const enabled = q.length >= 2;
-  // Handed a query by the page's own box, the bar asks for as many people as that box did until the reader
-  // turns to it: the same question, answered at once from what that box was just told, so the people it
-  // marked on the graph carry straight over rather than blinking out while a bigger answer comes.
-  const inGroup = bar && handed ? GROUP_LIMIT.people : peopleInGroup;
+  // The page's box and the full page's bar ask for the same number of people (Home), so a query handed
+  // from one to the other is the same question, answered at once from what the first was told: the people
+  // it marked on the graph carry straight over.
+  const inGroup = peopleInGroup;
   const peopleLimit = grouped ? inGroup + 1 : 25;
 
   // Fetched on first focus — on the landing page that is the page load, since its box is autofocused. A
@@ -278,10 +282,21 @@ export function SearchBox({
   const { data: primaryRows, isFetching: primaryFetching, isError: primaryFailed } = useSql<HitRow>(
     ['search', q, peopleLimit],
     withSeries(
-      // People still here first, then by name ignoring case: every snapshot before Sep 2025 spells
-      // names in capitals, so a plain ORDER BY put everyone who left before then ahead of everyone
-      // still here — and with six rows shown, departed people filled the list.
-      `SELECT *, row_number() OVER (ORDER BY last_date < (SELECT max(snapshot_date) FROM salaries), lower(ln), lower(fn), person_key) ord FROM (
+      // By how well the name matches, then people still here, then by name ignoring case. A name that is
+      // the query (a first, last or whole name) comes first; then a name that starts with it, the first name
+      // before the last, since a name is typed first name first; then one that only contains it. In last-name
+      // order alone, "aa" listed Aagesen and Aamir before any Aaron. Within each, people still here lead:
+      // every snapshot before Sep 2025 spells names in capitals, so a plain ORDER BY put everyone who left
+      // before then ahead of everyone still here. `total` is how many matched in all, `here` how many of
+      // them are in the latest snapshot, for the list's heading.
+      `SELECT *, row_number() OVER (ORDER BY rel, last_date < (SELECT max(snapshot_date) FROM salaries), lower(ln), lower(fn), person_key) ord,
+         CAST(count(*) OVER () AS INTEGER) AS total,
+         CAST(sum(CASE WHEN last_date >= (SELECT max(snapshot_date) FROM salaries) THEN 1 ELSE 0 END) OVER () AS INTEGER) AS here FROM (
+       SELECT *, CASE
+           WHEN lower(fn) = ${sqlStr(q)} OR lower(ln) = ${sqlStr(q)} OR lower(fn || ' ' || ln) = ${sqlStr(q)} THEN 0
+           WHEN starts_with(lower(fn || ' ' || ln), ${sqlStr(q)}) THEN 1
+           WHEN starts_with(lower(ln), ${sqlStr(q)}) THEN 2
+           ELSE 3 END AS rel FROM (
          SELECT person_key,
             arg_max(first_name, snapshot_date) AS fn,
             arg_max(last_name, snapshot_date)  AS ln,
@@ -297,7 +312,7 @@ export function SearchBox({
            WHERE lower(first_name || ' ' || last_name) LIKE ${sqlLikeContains(q)} ESCAPE '\\'
          )
          GROUP BY person_key
-       ) ORDER BY ord LIMIT ${peopleLimit}`
+       )) ORDER BY ord LIMIT ${peopleLimit}`
     ),
     enabled && wantPeople
   );
@@ -356,6 +371,9 @@ export function SearchBox({
   const nav = useNavigate();
 
   const people = useMemo(() => (usingFuzzy ? fuzzyHits : (primaryHits ?? [])), [usingFuzzy, fuzzyHits, primaryHits]);
+  // How many the query matched in all: the list's heading ("People · 67") and what it leaves out.
+  const peopleTotal = !usingFuzzy && rows?.length ? Number(rows[0].total ?? 0) || null : null;
+  const peopleHere = !usingFuzzy && rows?.length ? Number(rows[0].here ?? 0) : null;
   const peopleShown = grouped ? people.slice(0, inGroup) : people;
   const morePeople = grouped && people.length > inGroup;
 
@@ -772,7 +790,7 @@ export function SearchBox({
         <div className="search-groups" style={{ padding: t.island }} role={items.length ? 'listbox' : undefined} id={listId} aria-label={items.length ? 'Search results' : undefined}>
           {showPeopleGroup && (
             <div role="group" aria-labelledby={`${listId}-people`} className="search-group" data-group="people">
-              <GroupLabel id={`${listId}-people`}>{usingFuzzy ? 'People — no exact match, did you mean' : 'People'}</GroupLabel>
+              <GroupLabel id={`${listId}-people`}>{usingFuzzy ? 'People — no exact match, did you mean' : peopleTotal ? `People · ${num(peopleTotal)}${peopleHere != null && peopleHere < peopleTotal ? ` · ${num(peopleHere)} still here` : ''}` : 'People'}</GroupLabel>
               {nPeople === 0 && peopleBusy && (
                 <Group gap={8} px={10} py={t.rowPad} className="search-status">
                   <Loader size={12} />
@@ -782,7 +800,7 @@ export function SearchBox({
               {peopleShown.map((h, i) => personRow(h, i, compact))}
               {morePeople && (
                 <Text fz={t.subFont} c="dimmed" px={10} py={4} className="search-status">
-                  More people match — keep typing to narrow them.
+                  More people match{peopleTotal ? ` — ${num(peopleTotal - nPeople)} not listed` : ''}; keep typing to narrow them.
                 </Text>
               )}
             </div>
@@ -1083,8 +1101,8 @@ export function SearchBox({
         style={{
           // Grouped, the list holds up to 13 rows in two columns; the tier's height would cut the
           // people column off above its sixth row on the landing box.
+          // The listbox inside scrolls, not this (app.css, .search-dropdown).
           maxHeight: `min(${grouped ? Math.max(t.maxDropdown, GROUPED_MAX_HEIGHT[size]) : t.maxDropdown}px, var(--search-room, 100vh))`,
-          overflowY: 'auto',
           // Flat top flush against the input; bottom radius pairs with the input; one continuous card.
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,

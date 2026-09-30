@@ -16,12 +16,13 @@ const CARD_SHADOW = 'var(--shadow-merged-card)';
  *
  *  - sm: slim header/inline controls (scope, snapshot, filters).
  *  - md: standard page pickers (title/school, compare add blocks, report subject).
- *  - lg: the big, centered landing search box.
+ *  - lg: the big, centered landing search box. Its list's rows are md's: the box stays large, while the
+ *    rows are compact, so the room under the landing graph shows three people a column where it showed two.
  */
 export const DROPDOWN_TIERS = {
   sm: { mantineSize: 'xs', radius: 8,  optionFont: 13, optionPad: '5px 9px',   island: 5, maxDropdown: 300, inputFont: 13, nameFont: 15, subFont: 13, rowPad: 7,  icon: 16 },
   md: { mantineSize: 'md', radius: 10, optionFont: 15, optionPad: '8px 11px',  island: 6, maxDropdown: 360, inputFont: 15, nameFont: 18, subFont: 13, rowPad: 9,  icon: 18 },
-  lg: { mantineSize: 'xl', radius: 16, optionFont: 18, optionPad: '12px 14px', island: 8, maxDropdown: 460, inputFont: 20, nameFont: 22, subFont: 14, rowPad: 13, icon: 26 },
+  lg: { mantineSize: 'xl', radius: 16, optionFont: 18, optionPad: '12px 14px', island: 8, maxDropdown: 460, inputFont: 20, nameFont: 18, subFont: 13, rowPad: 9, icon: 26 },
 } as const;
 
 const comboboxProps: ComboboxProps = { width: 'target', position: 'bottom-start', offset: 0 };

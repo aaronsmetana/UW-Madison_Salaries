@@ -315,6 +315,21 @@ test('visual: home full page, filtered', async ({ page }) => {
   await shots(page, 'home-full-filtered', { fullPage: false });
 });
 
+// Searching on the page: every Aaron lit on the graph and the first six named, and the list under the box
+// in two columns of compact rows, with its count, to the window's bottom.
+test('visual: home, searching', async ({ page }) => {
+  await page.goto('./');
+  const search = page.getByRole('combobox', { name: 'Search a person, title or division' });
+  await expect(search).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await search.fill('aaron');
+  await expect(page.locator('[role="option"][data-kind="person"]')).toHaveCount(50, { timeout: 60_000 });
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  await page.waitForTimeout(600);
+  await shots(page, 'home-searching', { fullPage: false });
+});
+
 // Searching full page: the list under the box, over the graph while the box is in use, and the people it
 // found marked and named on the graph beside it.
 test('visual: home full page, searching', async ({ page }) => {
@@ -324,8 +339,11 @@ test('visual: home full page, searching', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.locator('.hero-dist-full .search-bar-field input').fill('aaron');
-  await expect(page.locator('.hero-dist-full .search-bar-list [role="option"][data-kind="person"]')).toHaveCount(8, { timeout: 60_000 });
+  await expect(page.locator('.hero-dist-full .search-bar-list [role="option"][data-kind="person"]')).toHaveCount(50, { timeout: 60_000 });
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
+  // Every Aaron lit, and settled to the floor as a group is full page.
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.waitForTimeout(600);
   await shots(page, 'home-full-searching', { fullPage: false });
 });

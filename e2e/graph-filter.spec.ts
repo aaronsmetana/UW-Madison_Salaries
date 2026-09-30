@@ -57,11 +57,13 @@ async function codeOf(title: string) {
 }
 
 /** Who a filter covers, restated: everyone paid in the graph's snapshot, at their total pay, with a paid
- *  appointment that has the code, is in the school, or — both given — is both. */
-function covered(f: { code?: string; school?: string }) {
+ *  appointment that has the code, is in the school, or — both given — is both. A name typed: whose name
+ *  on such an appointment contains it, any case. */
+function covered(f: { code?: string; school?: string; name?: string }) {
   const cond = [
     f.code ? `job_code = '${f.code}'` : null,
     f.school ? `school = '${f.school.replace(/'/g, "''")}'` : null,
+    f.name ? `contains(lower(first_name || ' ' || last_name), '${f.name.toLowerCase().replace(/'/g, "''")}')` : null,
   ].filter(Boolean).join(' AND ');
   return oracle<{ person_key: string; pay: number }>(
     `WITH p AS (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY person_key)
@@ -205,6 +207,59 @@ test('a title, a school, and a title within a school light exactly their people,
     expect(s.groupFrom!, `${c.name}: its curve starts below anyone in it`).toBeGreaterThanOrEqual(xOf(Math.min(...under) - reach));
     expect(s.groupTo!, `${c.name}: its curve runs on past anyone in it`).toBeLessThanOrEqual(xOf(Math.max(...under) + reach));
   }
+});
+
+/**
+ * A name typed lights everyone it names on the graph, as a title's people are lit: "aaron" lights every
+ * Aaron with a dot, where the list can name only six. Full page, within the filters on: "wang" among the
+ * Research Associates. A title typed for names nobody, and lights nothing until its row is gone to.
+ */
+test('a name typed lights exactly the people it names, within the filters full page; a title typed lights nothing', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const at = await spots();
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.goto('./');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  const pageBox = page.getByRole('combobox', { name: 'Search a person, title or division' });
+  const flag = page.locator('.hero-dist-group-flag');
+  const label = (name: string, who: { pay: number }[]) => {
+    const med = medianOf(who.map((p) => p.pay));
+    return `${name} · ${num(who.length)} · median ${fmtK(med)} · ${vs(med, HOME_STATS.p50)}`;
+  };
+
+  await pageBox.fill('aaron');
+  const aarons = await covered({ name: 'aaron' });
+  expect(aarons.length, 'more Aarons than the graph names, so lighting them all is a real check').toBeGreaterThan(20);
+  const lit = prints(aarons, at);
+  await expect(page.locator('.hero-dots'), 'the lit dots under the curve').toHaveAttribute('data-lit', lit.main, { timeout: 60_000 });
+  await expect(page.locator('.hero-dots-over'), 'the lit dots in the pile').toHaveAttribute('data-lit', lit.pile);
+  await expect(flag).toHaveText(label('“aaron”', aarons));
+
+  // A title typed for: nobody's name, so nothing lit and no label, until its row is gone to.
+  await pageBox.fill('research assoc');
+  await expect(page.locator('[role="option"][data-kind="title"]').first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.hero-dist-main').first(), 'a title typed lit a group').not.toHaveAttribute('data-filter', /./);
+  await expect(page.locator('.hero-dots')).not.toHaveAttribute('data-lit', /./);
+
+  // Full page, within a filter: the name's people who are in it.
+  await pageBox.fill('');
+  await page.locator('.hero-dist-full-toggle').click();
+  await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  const code = await codeOf('Research Associate');
+  await put(page, 'research assoc', `t:${code}`);
+  const wangs = await covered({ code, name: 'wang' });
+  expect(wangs.length, 'too few Wangs among the Research Associates to test within a filter').toBeGreaterThan(3);
+  await bar(page).fill('wang');
+  const within = prints(wangs, at);
+  await expect(page.locator('.hero-dist-full .hero-dots'), 'full page, the lit dots').toHaveAttribute('data-lit', within.main, { timeout: 60_000 });
+  await expect(page.locator('.hero-dist-full .hero-dots-over')).toHaveAttribute('data-lit', within.pile);
+  await expect(flag).toHaveText(label(`“wang” in ${titleName('Research Associate', code)}`, wangs));
+  // Emptied, the filter's own people are lit again.
+  await bar(page).fill('');
+  const ras = prints(await covered({ code }), at);
+  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', ras.main, { timeout: 60_000 });
 });
 
 /**
@@ -472,9 +527,10 @@ test('the search’s names follow their dots when a filter comes off, under Redu
   await bar(page).fill('smith');
   await expect(page.locator('.hero-found-label').first()).toBeVisible({ timeout: 60_000 });
   const marksWere = await page.locator(FIELDS.main).getAttribute('data-marks');
-  // Off with its ×, the names still up.
+  // Off with its ×, the names still up, and every Smith lit where the school's Smiths were: the typed name
+  // is a group of its own, settled as the filter's was.
   await page.locator('.search-token-x').click();
-  await expect(page.locator(FIELDS.main)).not.toHaveAttribute('data-lit', /./);
+  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', prints(await covered({ name: 'smith' }), await spots()).main, { timeout: 60_000 });
   await expect(bar(page)).toHaveValue('smith');
   await page.waitForTimeout(400);
   const marks = (await page.locator(FIELDS.main).getAttribute('data-marks'))!;

@@ -1,4 +1,4 @@
-import { sqlStr } from './duckdb';
+import { sqlStr, sqlLikeContains } from './duckdb';
 import { ACTUAL_PAY } from './queries';
 
 /**
@@ -134,6 +134,8 @@ export function spotPeople(spots: ReadonlyMap<string, DotSpot>): { main: string[
 export interface GraphFilter {
   jobCode?: string;
   school?: string;
+  /** Part of a name, as the search box matches it: anywhere in "first last", any case. */
+  name?: string;
 }
 
 /**
@@ -148,8 +150,9 @@ export function filterPeopleSql(snapshot: string, f: GraphFilter): string {
   const conds = [
     f.jobCode != null ? `job_code = ${sqlStr(f.jobCode)}` : null,
     f.school != null ? `school = ${sqlStr(f.school)}` : null,
+    f.name != null ? `lower(first_name || ' ' || last_name) LIKE ${sqlLikeContains(f.name.toLowerCase())} ESCAPE '\\'` : null,
   ].filter((c): c is string => c != null);
-  if (!conds.length) throw new Error('filterPeopleSql: a filter with neither a title nor a school');
+  if (!conds.length) throw new Error('filterPeopleSql: a filter with no title, school or name');
   return `WITH dots AS (${homePeopleSql(snapshot)}),
     hit AS (SELECT DISTINCT person_key FROM salaries
             WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0 AND ${conds.join(' AND ')})

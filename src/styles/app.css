@@ -1842,6 +1842,23 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
 .search-dropdown {
   container-type: inline-size;
 }
+/* Either list (the page's menu, the full page's bar) scrolls in its listbox, not in the box round it. The
+   listbox is the search box's own popup, which the keyboard moves through from the box (arrow keys, the
+   active option kept in view), so its scrolling is reachable; a scrolling box around it is a region the
+   keyboard cannot reach (axe's scrollable-region-focusable). The box is capped; its one child scrolls. */
+.search-dropdown,
+.search-bar-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.search-dropdown > *,
+.search-bar-list > * {
+  min-height: 0;
+  flex-shrink: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .search-groups > * + * {
   margin-top: 4px;
 }
@@ -1869,6 +1886,16 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
     grid-column: 1 / -1;
     border-left: 0;
     padding-left: 0;
+  }
+  /* People with the list to themselves (nothing else matched): two to a line, so the room under the landing
+     graph shows twice as many. The heading and any status line run across both. */
+  .search-groups > [data-group='people']:only-child {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 8px;
+  }
+  .search-groups > [data-group='people']:only-child > :not([role='option']) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -2678,13 +2705,11 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 /* Full page, the bar's results: a list under the box, over the graph only while the box is in use
    (SearchBox `bar`); it goes when the reader turns back to the graph, the query and its marks staying.
    Placed and sized by the box (`listPlace`): under its left edge, no wider than the panel and no taller than
-   the room left in it, past which it scrolls. A container, so the grouped list takes its one column. */
+   the room left in it, past which its listbox scrolls (.search-dropdown above). A container, so the grouped list takes its one column. */
 .search-bar { position: relative; }
 .search-bar-list {
   position: absolute;
   z-index: var(--z-sticky);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   container-type: inline-size;
   background: var(--mantine-color-body);
   border: 1px solid var(--mantine-color-default-border);

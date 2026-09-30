@@ -146,9 +146,13 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
  * desktop and a phone.
  */
 const FULL_BAR = { wide: 42 + 8, phone: 42 + 6 + 32 + 6 };
-/** How many people the full page's search lists (and marks) before "More people match": more than the
- *  page's own box, since its list has the whole window to drop into. */
-const FULL_PAGE_PEOPLE = 8;
+/** How many people the search lists, on the page and full page alike, before "More people match": its list
+ *  scrolls, and its heading says how many matched. Every match in the graph's snapshot is lit on the graph
+ *  (the name group) whatever the list holds; the first `NAMED` rows are ringed and named there. */
+const SEARCH_PEOPLE = 50;
+/** How many of the listed people are ringed and named on the graph, and the one the reader is on. Sixty-seven
+ *  Aarons cannot all be named; the lit dots carry the rest. */
+const NAMED = 6;
 
 /** A dot's person, as the full page's magnifying glass names them. */
 interface DotWho { key: string; name: string; title: string | null; school: string | null; pay: number | null }
@@ -243,7 +247,7 @@ const FOUND_CARD_W = 240;
 
 function Distribution({
   bins, payCounts, p25, median, p75, cap, overflow, headcount, byCategory, controls, found = [], activeKey = null, openRef,
-  search, onFullChange, group = null, onPeel, openFullRef, whoIs = null, onWantWho, searchOpenRef,
+  search, onFullChange, group = null, onPeel, openFullRef, whoIs = null, onWantWho, searchOpenRef, searchListOpen = false,
 }: {
   bins: Bin[];
   /** One count per $100 (home-stats.json); without it the dots are spread across each $1k bin. */
@@ -286,6 +290,8 @@ function Distribution({
   /** True while the full page's search has its list open over the graph: a press on the graph then only
    *  puts the list away — the reader was turning back to the graph, not reaching for its dots. */
   searchOpenRef?: MutableRefObject<boolean>;
+  /** The same, as state: the group's label keeps off the list while it is open. */
+  searchListOpen?: boolean;
 }) {
   // A light kernel over the raw counts: enough to keep 250 points from reading as static, not enough
   // to sand off the round-number spikes at $35k / $40k / $50k, which are real people rather than
@@ -350,6 +356,7 @@ function Distribution({
     ? groupFlagShort
     : groupFlagFull;
   const flagRef = useRef<HTMLDivElement>(null);
+  const flagTextRef = useRef<HTMLSpanElement>(null);
   const [flagBox, setFlagBox] = useState({ w: 0, h: 0 });
   // How far down the plot the label sits: at its top, unless the panel's controls are there. Full page the
   // controls are a line above the plot; on the page they lie over its top right, where a group paid well —
@@ -359,9 +366,20 @@ function Distribution({
   // The names the search hangs on its dots start below the label, so none is laid over it.
   const flagRoom = groupFlagText ? flagTop + flagBox.h + 4 : 2;
   // The group's label, measured whenever it or the plot changes: its box places it and keeps the names off it.
+  // Its width is its words' rounded up to a whole pixel, and it is drawn at that width: an edge part way
+  // through a pixel drew its dashed border's dashes, which Chrome spaces along the edge's length, a little
+  // differently from one load to the next.
   useLayoutEffect(() => {
-    const el = flagRef.current;
-    const w = el?.offsetWidth ?? 0, h = el?.offsetHeight ?? 0;
+    const el = flagRef.current, text = flagTextRef.current;
+    let w = 0;
+    if (el && text) {
+      const cs = getComputedStyle(el);
+      const sides = cs.boxSizing === 'border-box'
+        ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth)
+        : 0;
+      w = Math.ceil(text.getBoundingClientRect().width + sides);
+    }
+    const h = el?.offsetHeight ?? 0;
     setFlagBox((b) => (b.w === w && b.h === h ? b : { w, h }));
   }, [groupFlagText, plotW]);
   // The pile's label under it ("574 at $250k+"), measured: it reaches left past the pile into the
@@ -438,6 +456,24 @@ function Distribution({
   const H = full && fullH > 0 ? fullH : baseH;
   // The clear band above the peak keeps its share of the plot.
   const HEAD = Math.round(H * (phone ? HEADROOM.phone / PLOT_H.phone : HEADROOM.wide / PLOT_H.wide));
+
+  // Full page, the bar's list lies over the plot's top left while the box is in use, and a typed name's
+  // label, at its median, lay under it. Where the list ends, in the plot's px, so the label can sit clear
+  // of it, as it keeps off the controls; null while it is shut. The box places the list as it opens, so it
+  // is read again a frame later.
+  const [listRight, setListRight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!searchListOpen || !full) { setListRight(null); return; }
+    const measure = () => {
+      const l = panelRef.current?.querySelector('.search-bar-list')?.getBoundingClientRect();
+      const m = mainBoxRef.current?.getBoundingClientRect();
+      const r = l && m && l.width > 0 ? Math.round(l.right - m.left) : null;
+      setListRight((was) => (was === r ? was : r));
+    };
+    measure();
+    const id = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(id);
+  }, [searchListOpen, full, plotW]);
 
   // One dot per person, under the curve (DotField). Everyone the bins describe: the counts per $100
   // when the artifact carries them, otherwise each $1k bin's people spread across its thousand — and,
@@ -537,8 +573,11 @@ function Distribution({
     // `moving` is in here so the positions are read again the moment the dots come to rest: the timers
     // alone cannot be relied on to catch it. Going full page lays the field out afresh and the dots
     // travel to their new places — the one on top of the deepest column furthest of all — so the last
-    // timed read could take a dot still in flight, with nothing afterwards to correct it.
-  }, [found, H, plotW, full, colour, shownSolo, bigMain, bigPile, moving]);
+    // timed read could take a dot still in flight, with nothing afterwards to correct it. `lit` too: a
+    // group shown full page settles its people to the floor, and under Reduce Motion they are there at
+    // once, never "moving" — a typed name's group changing as a filter came off left its names pointing
+    // where their dots had been until the next timed read.
+  }, [found, H, plotW, full, colour, shownSolo, bigMain, bigPile, moving, lit]);
 
   // A tapped readout goes at a tap anywhere else.
   useEffect(() => {
@@ -887,7 +926,7 @@ function Distribution({
         r: s.at.r,
         // The measured name plus its padding, with a little over for the weight it is drawn in —
         // `measureText` reads the page's font at its normal weight, and these are drawn heavier.
-        width: Math.min(FOUND_LABEL.maxW, measureText(s.f.name, FOUND_LABEL.font) * 1.08 + FOUND_LABEL.pad),
+        width: Math.ceil(Math.min(FOUND_LABEL.maxW, measureText(s.f.name, FOUND_LABEL.font) * 1.08 + FOUND_LABEL.pad)),
         priority: s.f.person_key === activeKey ? 1 : 0,
       })),
       namesBox,
@@ -898,18 +937,23 @@ function Distribution({
     );
     return placed.map((l) => {
       const s = spots[l.id];
+      // Each box on whole pixels, its leader's end moved with it. An edge part way through a pixel is
+      // drawn part-covering it, blended with the blurred field behind the pill (`backdrop-filter`), whose
+      // faint differences from one load to the next then showed at the pill's edge.
+      const left = Math.round(l.box.left), top = Math.round(l.box.top);
+      const w = Math.round(l.box.right - l.box.left);
       // The leader leaves the dot's rim pointing at where the label hangs, and ends exactly where the
       // placing said it would — so the line a reader follows is the line the layout reasoned about.
-      const end = l.anchor;
+      const end = { x: l.anchor.x + left - l.box.left, y: l.anchor.y + top - l.box.top };
       const d = Math.hypot(end.x - s.at.x, end.y - s.at.y) || 1;
       const rim = s.at.r + 2;
       return {
         key: s.f.person_key,
         name: s.f.name,
         active: s.f.person_key === activeKey,
-        cx: l.cx,
-        w: l.box.right - l.box.left,
-        top: l.box.top,
+        cx: left + w / 2,
+        w,
+        top,
         from: { x: s.at.x + ((end.x - s.at.x) / d) * rim, y: s.at.y + ((end.y - s.at.y) / d) * rim },
         to: end,
       };
@@ -1053,7 +1097,12 @@ function Distribution({
   // begins; the label then sits at the plot's right end, over the pile.
   const groupMedianX = lit && lit.count > 0 && lit.median != null && lit.median < hi ? X(lit.median) : null;
   const flagCenter = groupMedianX != null ? (groupMedianX / W) * plotW : lit && lit.count > 0 ? plotW : plotW / 2;
-  const flagLeft = Math.max(0, Math.min(plotW - flagBox.w, flagCenter - flagBox.w / 2));
+  const flagAtMedian = Math.round(Math.max(0, Math.min(plotW - flagBox.w, flagCenter - flagBox.w / 2)));
+  // To the list's right while it is open over it, where the plot has the room: on a phone the list is as
+  // wide as the graph, and the label stays where it was.
+  const flagLeft = listRight != null && flagAtMedian < listRight + 8 && listRight + 8 + flagBox.w <= plotW
+    ? listRight + 8
+    : flagAtMedian;
 
   // Round salary steps for the axis, coarsened until the labels actually fit the rendered width.
   // `AXIS_LABEL_W` is the pitch one label needs to stay legible with a gap either side; before the
@@ -1751,9 +1800,9 @@ function Distribution({
           ref={flagRef}
           className="hero-dist-group-flag"
           data-pending={group?.pending || undefined}
-          style={{ position: 'absolute', top: flagTop, left: flagLeft, maxWidth: plotW }}
+          style={{ position: 'absolute', top: flagTop, left: flagLeft, width: flagBox.w || undefined, maxWidth: plotW }}
         >
-          {groupFlagText}
+          <span ref={flagTextRef}>{groupFlagText}</span>
         </div>
       )}
       {/* The ±$5k band, drawn as the readout's own footprint rather than a hairline.
@@ -2338,6 +2387,18 @@ export default function Home() {
     preview && peopleSnap ? filterPeopleSql(peopleSnap, { jobCode: pvCode ?? undefined, school: pvSchool ?? undefined }) : '',
     !!peopleSnap && preview != null,
   );
+  // Everyone the typed name matches in the graph's snapshot, lit on the graph as a group, as a title's people
+  // are: "aaron" lights all 66 Aarons with a dot, where the list and its marks can hold only some. Full page,
+  // within the filters on: the Aarons who are Research Associates. The same 200ms settle as the box's own.
+  // The label and the rows from the same settled text, so "“aar”" never carries the count for "aa".
+  const [nameTyped] = useDebouncedValue(query.trim(), 200);
+  const nameQ = nameTyped.toLowerCase();
+  const nameOn = nameQ.length >= 2;
+  const { data: nameRows } = useSql<{ person_key: string; pay: number }>(
+    ['graph-name', peopleSnap, nameQ, graphFull ? title?.code ?? '' : '', graphFull ? school?.school ?? '' : ''],
+    nameOn && peopleSnap ? filterPeopleSql(peopleSnap, { name: nameQ, jobCode: graphFull ? title?.code : undefined, school: graphFull ? school?.school : undefined }) : '',
+    !!peopleSnap && nameOn,
+  );
   // A title's name alone can be two titles — "Research Associate" is PD012 and PD012N — so where the index
   // has another under the same name, the filter names its code too; picked, it must still say which it was.
   const { data: searchIndex } = useSearchIndex(graphFull || !!title || listRow != null);
@@ -2368,8 +2429,22 @@ export default function Home() {
     if (!preview) return null;
     return groupOf(pvCode ? nameOfTitle(pvCode, null) : (pvSchool ?? ''), previewRows);
   }, [preview, pvCode, pvSchool, previewRows, nameOfTitle, groupOf]);
-  // On the page, a row the reader is on in the search's list; full page, its filters.
-  const group = !graphFull && previewGroup ? previewGroup : filterGroup;
+  // The typed name's people, within the filters full page: "“aaron”", or "“aaron” in Research Associate".
+  // Only once someone matches: a title or a school typed for ("research assoc") names no one, and must not
+  // dim the graph or flag it; the list says what matched. While the next letters are asked, the last answer
+  // stays, so the flag does not flash "…" at every pause in the typing.
+  const nameSettled = useRef<GraphGroup | null>(null);
+  const nameGroup = useMemo<GraphGroup | null>(() => {
+    if (!nameOn) return (nameSettled.current = null);
+    const within = graphFull && filters.length ? (titleName && school ? `${titleName} in ${school.school}` : (titleName ?? school?.school ?? '')) : '';
+    const g = groupOf(`“${nameTyped}”${within ? ` in ${within}` : ''}`, nameRows);
+    if (!g) return (nameSettled.current = null);
+    if (g.pending) return nameSettled.current;
+    return (nameSettled.current = g.count > 0 ? g : null);
+  }, [nameOn, graphFull, filters.length, titleName, school, nameTyped, nameRows, groupOf]);
+  // On the page, a row the reader is on in the search's list, then the typed name; full page, the typed name
+  // within its filters, then the filters.
+  const group = !graphFull && previewGroup ? previewGroup : nameGroup ?? filterGroup;
   // What the full page's bar offers with nothing typed. Nothing on: the index's largest schools and titles,
   // turn about, so a narrow strip still shows both kinds. A school on: its largest titles; a title on: the
   // schools that employ most of it — each a small query of the filter's own rows, asked once the filter's
@@ -2404,14 +2479,18 @@ export default function Home() {
   const openFullRef = useRef<(() => void) | null>(null);
   // Whether the full page's search has its list open over the graph (SearchBox `onListOpen`).
   const searchOpenRef = useRef(false);
+  const [searchListOpen, setSearchListOpen] = useState(false);
   const tokens = useMemo<FilterToken[]>(() => filters.map((f) => ({
     key: filterKey(f),
     kind: f.kind,
     label: f.kind === 'title' ? (titleName ?? f.hit.title) : f.hit.school,
   })), [filters, titleName]);
+  // Ringed and named on the graph: the list's first rows and the one the reader is on. The rest of the
+  // matches are lit by the name group, not marked one by one.
+  const activePerson = activeItem?.startsWith('p:') ? activeItem.slice(2) : null;
   const found = useMemo<FoundPerson[]>(
-    () => (spots ? shown.flatMap((p) => { const spot = spots.get(p.person_key); return spot ? [{ ...p, spot }] : []; }) : []),
-    [spots, shown],
+    () => (spots ? shown.filter((p, i) => i < NAMED || p.person_key === activePerson).flatMap((p) => { const spot = spots.get(p.person_key); return spot ? [{ ...p, spot }] : []; }) : []),
+    [spots, shown, activePerson],
   );
   // "Generic" (one ink, stored as 'all') or "By employment type" (the staff category) for the dots,
   // remembered per viewer, opening on the second. A new key: under the old one a visitor who had once
@@ -2547,6 +2626,7 @@ export default function Home() {
   const pageSearch = !graphFull && (
     <SearchBox
       {...searchProps}
+      peopleInGroup={SEARCH_PEOPLE}
       size="lg"
       autoFocus={firstSearchRef.current && !arrivedWithQuery.current}
       keepBelow={phone ? undefined : () => document.querySelector<HTMLElement>('.hero-dist-main')}
@@ -2613,12 +2693,12 @@ export default function Home() {
                   {...searchProps}
                   size="md"
                   results="bar"
-                  peopleInGroup={FULL_PAGE_PEOPLE}
-                  onListOpen={(open) => { searchOpenRef.current = open; }}
-                  // On a phone the list is as wide as the graph: it stops halfway down the plot, so the rest
-                  // stays in sight — the marks landing as the reader types — and a tap there puts it away.
+                  peopleInGroup={SEARCH_PEOPLE}
+                  onListOpen={(open) => { searchOpenRef.current = open; setSearchListOpen(open); }}
+                  // The list stops halfway down the plot, so the rest stays in sight — every match lit as
+                  // the reader types, most of them low in the field — and past it the list scrolls. On a
+                  // phone, where the list is as wide as the graph, a tap on the rest puts it away.
                   listLimit={() => {
-                    if (!window.matchMedia('(max-width: 30em)').matches) return null;
                     const plot = document.querySelector('.hero-dist-full .hero-dist-main')?.getBoundingClientRect();
                     return plot ? plot.top + plot.height / 2 : null;
                   }}
@@ -2634,6 +2714,7 @@ export default function Home() {
               whoIs={whoIs}
               onWantWho={() => setWantWho(true)}
               searchOpenRef={searchOpenRef}
+              searchListOpen={searchListOpen}
               group={group}
               onPeel={() => {
                 if (!filters.length) return false;

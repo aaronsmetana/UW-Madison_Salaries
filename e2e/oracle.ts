@@ -58,3 +58,32 @@ export function rangesSql(): string {
  * a `GROUP BY person_key`.
  */
 export const GRADED = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, {p: ${PAY}, r: salary, g: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
+
+/**
+ * Who the search box finds for `q` (two letters or more): everyone whose name, in any snapshot, contains
+ * it, each named and dated by the latest snapshot their name matched in. Restated from the rule:
+ * - `rel`, how well the name matches: 0, a first, last or whole name that is the query; 1, a whole name
+ *   (first name first) that starts with it; 2, a last name that starts with it; 3, one that contains it;
+ * - `here`, whether they are in the latest snapshot.
+ */
+function searchHitsSql(q: string) {
+  const s = q.toLowerCase().replace(/'/g, "''");
+  return `SELECT person_key, fn, ln, last_date >= (SELECT max(snapshot_date) FROM $SAL) here,
+      CASE WHEN lower(fn) = '${s}' OR lower(ln) = '${s}' OR lower(fn || ' ' || ln) = '${s}' THEN 0
+           WHEN lower(fn || ' ' || ln) LIKE '${s}%' THEN 1
+           WHEN lower(ln) LIKE '${s}%' THEN 2 ELSE 3 END rel
+    FROM (SELECT person_key, arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln, max(snapshot_date) last_date
+          FROM $SAL WHERE contains(lower(first_name || ' ' || last_name), '${s}') GROUP BY person_key)`;
+}
+
+/** The people the search lists for `q`, in its order: the best matches first, within those people still
+ *  here before people who have left, then by last name and first. */
+export async function searchOrder(q: string): Promise<{ person_key: string; fn: string; ln: string; here: boolean; rel: number }[]> {
+  return oracle(`SELECT * FROM (${searchHitsSql(q)}) ORDER BY rel, NOT here, lower(ln), lower(fn), person_key`);
+}
+
+/** How many people the search finds for `q`, and how many of them are still here. */
+export async function searchCounts(q: string): Promise<{ total: number; here: number }> {
+  const [r] = await oracle<{ total: number; here: number }>(`SELECT count(*) total, count(*) FILTER (WHERE here) here FROM (${searchHitsSql(q)})`);
+  return r;
+}

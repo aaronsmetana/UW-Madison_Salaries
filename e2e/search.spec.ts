@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, usd, latestSnapshot } from './oracle';
+import { oracle, PAY, usd, latestSnapshot, searchOrder, searchCounts } from './oracle';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +10,10 @@ import { fileURLToPath } from 'node:url';
  */
 
 const AARON = 'aaronsmetana|2014-10-15';
+/** How many people a list holds, on the landing page and full page alike; past what its room shows, it
+ *  scrolls. */
+const SEARCH_PEOPLE = 50;
+const num = (n: number) => n.toLocaleString('en-US');
 
 async function homeSearch(page: Page, text: string) {
   await page.goto('./');
@@ -73,25 +77,77 @@ test('people come first, above a title that matches too', async ({ page }) => {
   await expect(page.getByRole('option').first()).toHaveAttribute('data-kind', 'person');
 });
 
-test('a grouped list shows six people and says when more match', async ({ page }) => {
+/**
+ * The list holds up to fifty people under a heading that counts everyone the name matches, and how many of
+ * them are still here: every one of those is lit on the graph. Past fifty, its last line says how many it
+ * leaves out.
+ */
+test('the list holds up to fifty people, and its heading counts every match and who is still here', async ({ page }) => {
+  const c = await searchCounts('smith');
+  expect(c.total, 'more Smiths than the list holds, so its limit is a real check').toBeGreaterThan(SEARCH_PEOPLE);
+  expect(c.here, 'some Smiths have left, so "still here" is a real count').toBeLessThan(c.total);
   await homeSearch(page, 'smith');
   const people = page.locator('[role="option"][data-kind="person"]');
   await expect(people.first()).toBeVisible({ timeout: 60_000 });
-  await expect(people).toHaveCount(6);
-  await expect(page.locator('[data-group="people"] .search-status')).toHaveText(/More people match/);
+  await expect(people).toHaveCount(SEARCH_PEOPLE);
+  await expect(page.locator('[data-group="people"] .search-group-label')).toHaveText(`People · ${num(c.total)} · ${num(c.here)} still here`);
+  await expect(page.locator('[data-group="people"] .search-status'))
+    .toHaveText(`More people match — ${num(c.total - SEARCH_PEOPLE)} not listed; keep typing to narrow them.`);
 });
 
-test('people still here are listed before people who have left', async ({ page }) => {
-  const snap = await latestSnapshot();
-  const [cur] = await oracle<{ n: number }>(
-    `SELECT count(DISTINCT person_key) n FROM $SAL WHERE snapshot_id = '${snap}' AND lower(first_name || ' ' || last_name) LIKE '%smith%'`
+/**
+ * By how well the name matches, then people still here, then by name: "aa" lists the Aarons, not Erin
+ * Aagesen and Shehrbano Aamir, whose last names only start with the letters; "smith" lists the Smiths
+ * still here before the ones who have left, and before a Goldsmith.
+ */
+test('the best matches come first, and within them people still here', async ({ page }) => {
+  for (const q of ['aa', 'smith']) {
+    const want = (await searchOrder(q)).slice(0, SEARCH_PEOPLE);
+    await homeSearch(page, q);
+    const people = page.locator('[role="option"][data-kind="person"]');
+    await expect(people).toHaveCount(Math.min(SEARCH_PEOPLE, want.length), { timeout: 60_000 });
+    expect(await people.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.key)), `"${q}": not in the search's order`)
+      .toEqual(want.map((p) => `p:${p.person_key}`));
+  }
+  // The same, in words a reader would check.
+  const aa = (await searchOrder('aa')).slice(0, SEARCH_PEOPLE);
+  expect(aa.every((p) => p.fn.toLowerCase().startsWith('aa')), '"aa" lists someone whose first name does not start with it').toBe(true);
+  const [exact] = await oracle<{ n: number }>(
+    `SELECT count(DISTINCT person_key) n FROM $SAL WHERE snapshot_id = '${await latestSnapshot()}' AND lower(last_name) = 'smith'`,
   );
-  expect(cur.n, 'more people still here match than the list shows').toBeGreaterThan(6);
+  expect(exact.n, 'more Smiths still here than the list holds').toBeGreaterThan(SEARCH_PEOPLE);
   await homeSearch(page, 'smith');
   const people = page.locator('[role="option"][data-kind="person"]');
   await expect(people.first()).toBeVisible({ timeout: 60_000 });
-  expect(await people.count()).toBeGreaterThan(1);
   await expect(people.filter({ hasText: 'Former' })).toHaveCount(0);
+});
+
+/**
+ * People with the list to themselves, in a wide box: two to a line, row by row, so the room under the
+ * graph shows twice as many; the list runs to the window's bottom and scrolls there. With a title in it
+ * too, people keep their one column beside the titles.
+ */
+test('people alone in a wide list take two columns, and the list scrolls at the window’s bottom', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await homeSearch(page, 'aaron');
+  const people = page.locator('[role="option"][data-kind="person"]');
+  await expect(people).toHaveCount(SEARCH_PEOPLE, { timeout: 60_000 });
+  await expect(page.locator('[data-group="titles"], [data-group="divisions"]')).toHaveCount(0);
+  const at = await people.evaluateAll((els) => els.slice(0, 3).map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, w: r.width })));
+  expect(Math.abs(at[0].y - at[1].y), 'the second person is not beside the first').toBeLessThan(1);
+  expect(at[1].x, 'the second person is not to the right of the first').toBeGreaterThan(at[0].x + at[0].w - 1);
+  expect(at[2].y, 'the third person does not start the next line').toBeGreaterThan(at[0].y + 10);
+  expect(Math.abs(at[2].x - at[0].x), 'the third person is not under the first').toBeLessThan(1);
+  const l = await page.locator('[role="listbox"]').evaluate((e) => ({ bottom: e.getBoundingClientRect().bottom, scrolls: e.scrollHeight > e.clientHeight + 1 }));
+  expect(l.scrolls, 'fifty people and no scroll').toBe(true);
+  expect(l.bottom, 'the list stops short of the window’s bottom').toBeGreaterThan(900 - 40);
+  expect(l.bottom, 'the list runs past the window').toBeLessThanOrEqual(900);
+  // A title in the list too: people keep one column, beside the titles.
+  await page.getByRole('combobox', { name: 'Search a person, title or division' }).fill('smith');
+  await expect(page.locator('[data-group="titles"] [role="option"]').first()).toBeVisible({ timeout: 60_000 });
+  await expect(people.first()).toContainText('Smith', { timeout: 60_000 });
+  const two = await people.evaluateAll((els) => els.slice(0, 2).map((e) => e.getBoundingClientRect().y));
+  expect(two[1], 'people went to two columns beside the titles').toBeGreaterThan(two[0] + 10);
 });
 
 test("a person's row carries their pay path and their pay now, and the pay is in its name", async ({ page }) => {

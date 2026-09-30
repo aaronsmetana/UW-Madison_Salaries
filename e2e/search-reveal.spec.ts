@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, usd } from './oracle';
+import { oracle, PAY, usd, searchCounts } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { parseColor, flatten, contrast } from './color';
 
@@ -407,8 +407,8 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   // to get wrong: the field re-lays out between two frames and every reading is the settled one.
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
-  // A name more than eight people share, so the page's box (six) and the full page's (eight) differ in who
-  // they would mark — and the handover has to keep the page's.
+  // A name more people share than the graph names (six): the page's box and the full page's list the same
+  // people and name the same six, and the handover keeps them.
   await searchBox(page).fill('aaron');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
   await page.waitForTimeout(1500);
@@ -442,7 +442,7 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   await expect(page.locator('.hero-dist-full .hero-dist-search input')).toHaveCount(1);
   // Its list stays shut until the reader turns to the box: they asked for the graph, and a list would drop
   // over it. No menu anywhere, no list, and no chips on the bar — its starters are for an empty box. (It
-  // still holds the page's six people, so the marks below are the ones the page's box made.)
+  // holds the page's people, so the marks below are the ones the page's box made.)
   await expect(page.locator('.hero-dist-full .search-bar-list')).toHaveCount(0);
   await expect(page.locator('.hero-dist-full [role="option"]')).toHaveCount(0);
   await expect(page.locator('.search-dropdown')).toHaveCount(0);
@@ -475,10 +475,13 @@ test('the search goes full page with the graph: one box, the query kept, the dot
     expect(near, 'a name is stranded away from every dot, full page').toBeLessThan(30);
   }
 
-  // Turned to, the full page's box asks for its own eight, and marks more of them.
+  // Turned to, the full page's box lists the page's people — both ask for as many — and names the same
+  // six: nothing asked again, and no mark moves.
   await page.locator('.hero-dist-full .hero-dist-search input').focus();
-  await expect(page.locator('.hero-dist-full .search-bar-list [role="option"][data-kind="person"]')).toHaveCount(8, { timeout: 60_000 });
-  await expect.poll(async () => (await marksOf(page, '.hero-dots')).length, { timeout: 30_000 }).toBeGreaterThan(before);
+  const { total } = await searchCounts('aaron');
+  await expect(page.locator('.hero-dist-full .search-bar-list [role="option"][data-kind="person"]')).toHaveCount(Math.min(50, total), { timeout: 60_000 });
+  await page.waitForTimeout(500);
+  expect((await marksOf(page, '.hero-dots')).map((m) => m.i).join(), 'turning to the box changed the marks').toBe(after.map((m) => m.i).join());
 
   // Searching from in here works, and marks a different set.
   await page.locator('.hero-dist-search input').fill('carlsmith');

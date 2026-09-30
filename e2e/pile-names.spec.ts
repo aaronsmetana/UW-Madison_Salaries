@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { oracle, PAY } from './oracle';
-import { HOME_STATS } from './homeDots';
+import { HOME_STATS, spots, places } from './homeDots';
 
 /**
  * Full page, the people at the top of the pay scale are named too: the pile past the cap, and the pile
@@ -118,17 +118,17 @@ test('full page, the pile names the dot under the pointer, and rings it', async 
   expect(p, 'no one in the pile to look for').toBeTruthy();
   const { ctx, page } = await open(browser);
   await goFull(page);
-  // Where their dot is: the search marks it in the pile, and says where.
-  const box = page.locator('.hero-dist-full .search-bar-field input');
-  await box.fill(p.nm);
-  const dots = page.locator('.hero-dist-full .hero-dots-over');
-  await expect(dots).toHaveAttribute('data-marks', /:/, { timeout: 60_000 });
-  const [, dx, dy] = (await dots.getAttribute('data-marks'))!.split(' ')[0].split(':').map(Number);
-  // Then no search, so nothing is marked and the pile itself is what says who is there.
-  await box.fill('');
-  await expect(dots).not.toHaveAttribute('data-marks', /:/);
+  // Where their dot rests: its place in the pile's layout, with no search on, so nothing is marked and the
+  // pile itself is what says who is there. (Not from the search's mark: a typed name lights its people, and
+  // full page a lit group settles to the floor, so the mark would be where the dot had settled.)
+  const at = (await spots()).get(p.person_key);
+  expect(at?.field, 'the pile person has no dot in the pile').toBe('pile');
   await named(page);
+  const xy = await places(page, '.hero-dist-full .hero-dots-over');
+  const [dx, dy] = [xy[2 * at!.index], xy[2 * at!.index + 1]];
+  expect(Number.isFinite(dx) && Number.isFinite(dy), 'the pile has no place for their dot').toBe(true);
   const b = (await pileBox(page).boundingBox())!;
+  const f = (await page.locator('.hero-dist-full .hero-dots-over').boundingBox())!;
   // The dot and its neighbours with the pointer on the pile but on no one: the pile draws itself brighter
   // under a pointer, so a picture taken before the pointer arrived would differ for that reason alone and
   // the ring would be proved by the hover.
@@ -136,7 +136,7 @@ test('full page, the pile names the dot under the pointer, and rings it', async 
   await page.mouse.move(sky.x, sky.y);
   await expect(pileWho(page)).toHaveCount(0);
   const bare = await band(page, '.hero-dist-pile .dot-field-ink', { x: dx, y: dy }, 1, 8);
-  await page.mouse.move(b.x + dx, b.y + dy);
+  await page.mouse.move(f.x + dx, f.y + dy);
   await expect(pileWho(page)).toHaveAttribute('data-who', p.person_key);
   const name = await pileWho(page).locator('.hero-lens-who-name').textContent();
   expect(name!.toLowerCase()).toBe(p.nm);
