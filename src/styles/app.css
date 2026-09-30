@@ -2339,6 +2339,15 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 @media screen and (min-width: 48em) and (max-width: 61.99em) {
   .mantine-AppShell-footer .footer-built { display: none; }
+  /* The link keeps its icon, and its words as its name. */
+  .mantine-AppShell-footer .footer-source {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
 /* Read by a screen reader, not drawn. */

@@ -23,8 +23,10 @@ const month = (label?: string) => label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '');
  * the name, the release and the theme.
  *
  * One line from `sm` up, in the fixed 40px bar: narrower than 1280px the span goes (the Data page and the
- * release tag say which snapshots), narrower than 992px who built it (the About page says so). A phone ends
- * the page with this footer in the flow instead, where it wraps freely.
+ * release tag say which snapshots), narrower than 992px who built it (the About page says so) and the source
+ * link's words, leaving its icon (the words stay its name). The line keeps room for a font a few percent
+ * wider than a Mac's: CI's Linux runner draws this text wider. A phone ends the page with this footer in the
+ * flow instead, where it wraps freely.
  */
 export function Footer() {
   const { data: summary } = useSummary();
@@ -51,7 +53,7 @@ export function Footer() {
         <Anchor href={REPO_URL} target="_blank" rel="noopener noreferrer" c="dimmed" underline="hover" size="xs">
           <Group gap={4} wrap="nowrap">
             <IconBrandGithub size={ICON.compact} />
-            Source on GitHub
+            <span className="footer-source">Source on GitHub</span>
           </Group>
         </Anchor>
       </Group>
