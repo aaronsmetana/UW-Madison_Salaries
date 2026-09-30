@@ -47,11 +47,15 @@ export const theme = createTheme({
     // fluid (they set the page's tone and need to ease down on a phone); h3/h4 are fixed, because they
     // label cards and sections whose own widths are already responsive. Letter-spacing rides along in
     // app.css, keyed off Title's data-order, since Mantine's `sizes` has no slot for it.
+    //
+    // On the type scale (fontSizes below): h1 is the 40px page title, easing down on a phone; h2 the 24px
+    // section step (the Data page's zones), fixed; h3 and h4 the 18px title step, as a card title is
+    // (CardTitle). h2 ran to 28px and h3/h4 at 20 and 17 — three sizes the rest of the app never used.
     sizes: {
       h1: { fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', lineHeight: '1.15' },
-      h2: { fontSize: 'clamp(1.375rem, 2.2vw, 1.75rem)', lineHeight: '1.2' },
-      h3: { fontSize: '1.25rem', lineHeight: '1.3' },
-      h4: { fontSize: '1.0625rem', lineHeight: '1.4' },
+      h2: { fontSize: '1.5rem', lineHeight: '1.25' },
+      h3: { fontSize: '1.125rem', lineHeight: '1.3' },
+      h4: { fontSize: '1.125rem', lineHeight: '1.35' },
       // The card-title step. Seventy-seven cards across the app labelled themselves with a
       // `<Text size="sm" fw={600}>` — a styled span, not a heading — because the ramp stopped at h4
       // and nothing on it was the right size for a card. `CardTitle` renders here instead.
@@ -63,7 +67,13 @@ export const theme = createTheme({
   // fix that without touching the heading ramp. `xs` moves off Mantine's 12px so `size="xs"` — the
   // app's most-used size by a wide margin — becomes a caption size rather than the default body size.
   // `xxs` (11px) stays the floor: eyebrows and dense labels only.
-  fontSizes: { xxs: '0.6875rem', xs: '0.8125rem' },
+  //
+  // One scale now, seven sizes app-wide (2026-09-29): 40 page title (the heading ramp), 24 key figures
+  // (`xl`, StatCard), 18 card titles and page descriptions (`lg`, CardTitle), 15 body (`sm` and `md` —
+  // the page ran 14 and 16 side by side, which read as two voices for one kind of text), 13 secondary
+  // (`xs`), 12 chart text (CHART_FONT in lib/chartStyle), 11 small labels (`xxs`). e2e/typescale.spec
+  // fails on any rendered size outside it.
+  fontSizes: { xxs: '0.6875rem', xs: '0.8125rem', sm: '0.9375rem', md: '0.9375rem', lg: '1.125rem', xl: '1.5rem' },
   // A shadow means "this is floating above the page" — nothing else. Cards are already bordered (86
   // `withBorder` call sites), so the old soft 30px-blur `sm` was piling elevation on top of a border
   // that was already doing the separating, which is most of what made the app read as soft.
@@ -95,6 +105,10 @@ export const theme = createTheme({
     // 1.4.1) — hover-only underlining fails that for any link sitting in a sentence. Card-wrapper
     // anchors (the whole card is the link) opt out explicitly with underline="never" at the call site.
     Anchor: { defaultProps: { underline: 'always' } },
+    // A field's help text under the field, not between its label and it: above, it pushed that one label
+    // higher than the labels beside it, so a row of fields (Screening's scope, the Raises filters) stood
+    // out of line. Every input reads label, field, help, error.
+    InputWrapper: { defaultProps: { inputWrapperOrder: ['label', 'input', 'description', 'error'] } },
   },
 });
 

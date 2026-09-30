@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtBasis, fmtYears, fmtChange, vsCampus } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, vsCampus } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -43,6 +43,18 @@ describe('format', () => {
     expect(fullName('AARON', 'BACH')).toBe('Aaron Bach');
     expect(fullName('Aaron', null)).toBe('Aaron');
   });
+  it("fmtToday is the reader's own date, evening or early morning", () => {
+    // Madison's zone, set here: CI runs in UTC, where local and UTC agree and nothing would be tested.
+    const tz = process.env.TZ;
+    process.env.TZ = 'America/Chicago';
+    try {
+      expect(fmtToday(new Date(2026, 8, 29, 22, 0))).toBe('Sep 29, 2026'); // 03:00 UTC on the 30th
+      expect(fmtToday(new Date(2026, 8, 29, 0, 30))).toBe('Sep 29, 2026');
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+
   it('fmtDate renders one long-form date for ISO strings, Date objects, and timestamps', () => {
     expect(fmtDate('2026-07-02')).toBe('Jul 2, 2026');
     expect(fmtDate(new Date(Date.UTC(2026, 6, 2)))).toBe('Jul 2, 2026');

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Badge } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList, Customized } from 'recharts';
-import { AXIS_TICK, GRID, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
 import { CardTitle } from './CardTitle';
 import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
@@ -471,7 +471,7 @@ export function ChangesPanel() {
                 <LabelList
                   dataKey="amount" position="top"
                   formatter={(v: number) => `${v >= 0 ? '+' : '−'}${usdCompact(Math.abs(v))}`}
-                  style={{ fontSize: 10, fontWeight: 700, fill: 'var(--mantine-color-text)' }}
+                  style={{ fontSize: CHART_FONT, fontWeight: 700, fill: 'var(--mantine-color-text)' }}
                 />
               </Bar>
             </BarChart>
@@ -482,7 +482,8 @@ export function ChangesPanel() {
       <RaiseDistribution
         counts={raiseCounts}
         marker={s?.median_raise != null ? { value: s.median_raise, label: 'median', name: 'median' } : null}
-        title="Raise distribution (% change, continuing staff)"
+        title="Raise distribution"
+        sub="Percent change in pay for continuing staff."
         period={`${fromLabel} → ${toLabel}`}
       />
 
@@ -548,7 +549,7 @@ export function ChangesPanel() {
       )}
 
       <Card withBorder padding="lg">
-        <CardTitle mb="sm">Title / job-code changes {isTTC ? '(reclassification)' : '(promotions & laterals)'}</CardTitle>
+        <CardTitle mb="sm" sub={isTTC ? 'Reclassifications in the TTC restructure, not promotions.' : 'Promotions and lateral moves.'}>Title / job-code changes</CardTitle>
         <Table>
           <Table.Thead>
             <Table.Tr>

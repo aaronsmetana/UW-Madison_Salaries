@@ -354,7 +354,8 @@ export default function Raises() {
           <RaiseDistribution
             counts={bins}
             marker={usual.campus ? { value: usual.campus.usual, label: 'usual', name: 'usual raise across campus' } : null}
-            title={`Raises${who}, ${fromLabel} → ${toLabel} (same job, same FTE)`}
+            title={`Raises${who}, ${fromLabel} → ${toLabel}`}
+            sub="People in the same job at the same FTE in both snapshots."
             period={`${fromLabel} → ${toLabel}`}
             className="raise-review-dist"
           />

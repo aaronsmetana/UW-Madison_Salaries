@@ -38,10 +38,11 @@ import { ICON } from '../lib/ui';
  * on two elements in every one of those cards.
  */
 /**
- * A card title's size: 17px, a clear step over the 13px `sub` line under it. It was `h5`, 15px, which
- * sat so close to the sub that a card's heading and its explanation read as one grey block.
+ * A card title's size: 18px, the scale's title step (theme.ts), a clear jump over the 15px body and the
+ * 13px `sub` line under it. It was `h5`, 15px — one pixel from the text around it, so a card's heading
+ * read as one more line of the card.
  */
-const TITLE_SIZE = '1.0625rem';
+const TITLE_SIZE = '1.125rem';
 
 export function CardTitle({
   children,

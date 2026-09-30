@@ -913,7 +913,7 @@ export function SearchBox({
           aria-activedescendant={expanded && items.length > 0 ? optId(active) : undefined}
           data-autofocus={autoFocus || undefined}
           autoFocus={autoFocus}
-          styles={{ input: { fontSize: t.inputFont } }}
+          styles={{ input: { fontSize: `max(var(--input-min-fz, 0px), ${t.inputFont}px)` } }}
         />
         {listOpen && (
           <div
@@ -1056,7 +1056,7 @@ export function SearchBox({
               // would be for nothing — the landing page grew 5px taller for it.
               ...(showable ? { wrapper: { marginTop: 0 } } : {}),
               input: {
-                fontSize: t.inputFont,
+                fontSize: `max(var(--input-min-fz, 0px), ${t.inputFont}px)`,
                 ...(large ? { fontWeight: 500 } : {}),
                 // While results show, flatten the bottom and merge into one card with the dropdown.
                 ...(opened

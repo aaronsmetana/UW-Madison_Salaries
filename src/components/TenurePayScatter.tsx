@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, ReferenceLine, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK } from '../lib/chartStyle';
+import { AXIS_TICK, CHART_FONT, GRID, fmtK } from '../lib/chartStyle';
 import { moneyTicks, niceStep } from '../lib/rangeScale';
 import { Box, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -43,8 +43,8 @@ const BAND_GAP = 6;
 /** The ring round the subject's dot, and the two names written on the plot: the subject's, as the strip
  *  above writes it, and the tenure line's. */
 const RING_R = 9;
-const SELF_FONT = 12.5;
-const FIT_FONT = 11;
+const SELF_FONT = CHART_FONT;
+const FIT_FONT = CHART_FONT;
 const FIT_TEXT = 'tenure-expected pay';
 
 interface AxisMapEntry { scale: ((v: number) => number) & { domain?: () => number[]; range?: () => number[] } }
@@ -221,7 +221,7 @@ function DotsLayer({
             return (
               <g key={side} className="tenure-band" data-side={side} data-n={n}>
                 <line x1={offset.left} x2={offset.left + offset.width} y1={breakY} y2={breakY} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray="1 4" />
-                <text x={offset.left + offset.width - 2} y={labelY} dy="0.35em" textAnchor="end" fontSize={10.5} fill="var(--mantine-color-dimmed)" className="tenure-band-label">
+                <text x={offset.left + offset.width - 2} y={labelY} dy="0.35em" textAnchor="end" fontSize={CHART_FONT} fill="var(--mantine-color-dimmed)" className="tenure-band-label">
                   {num(n)} {side > 0 ? 'over' : 'under'} {fmtK(side > 0 ? zoom.hi : zoom.lo)}
                 </text>
               </g>

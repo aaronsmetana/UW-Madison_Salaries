@@ -76,6 +76,13 @@ export function fmtDate(d: string | number | Date | null | undefined): string {
   return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
+/** Today, as the reader's own calendar has it ("Sep 29, 2026"): the day a report was generated. Not
+ *  `fmtDate`, which reads in UTC for data dates — through it, a report made after 7pm in Madison said
+ *  it was generated tomorrow. */
+export function fmtToday(now: Date = new Date()): string {
+  return now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 /**
  * Normalizes `comp_basis` display values. The source data relabeled this column mid-series — 'Annual'
  * (used through the Apr 2024 snapshot) and '12 Month' (used from Sep 2025 on) never co-occur in the

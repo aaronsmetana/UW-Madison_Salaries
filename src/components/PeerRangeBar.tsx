@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { ordinal } from '../lib/stats';
-import { assignLabelRows, fmtK } from '../lib/chartStyle';
+import { assignLabelRows, fmtK, CHART_FONT } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import { MARK_SELF, MARK_SELF_TEXT, MARK_TARGET, MarkerLegend } from './markers';
 import { Z } from '../lib/layers';
@@ -142,12 +142,12 @@ export function PeerRangeBar({
             bottom: 7,
             transform: `translateX(${labelTx})`,
             whiteSpace: 'nowrap',
-            fontSize: 12.5,
+            fontSize: CHART_FONT,
             color: MARK_SELF_TEXT,
             transition: 'left 600ms ease-out',
           }}
         >
-          <Text span c="dimmed" fw={500} style={{ fontSize: 10.5 }}>Current </Text>
+          <Text span c="dimmed" fw={500} style={{ fontSize: CHART_FONT }}>Current </Text>
           {usd(value)}
         </Text>
         <div
@@ -311,7 +311,7 @@ export function PeerRangeBar({
               top: (labelRows[i] ?? 0) * LABEL_ROW_H,
               transform: 'translateX(-50%)',
               whiteSpace: 'nowrap',
-              fontSize: 10.5,
+              fontSize: CHART_FONT,
             }}
           >
             {t.label} {fmtK(t.x)}

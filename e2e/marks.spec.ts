@@ -234,14 +234,23 @@ test('every table header shares one style, chart data tables included', async ({
 for (const scheme of ['light', 'dark'] as const) {
   test(`a line chart names its lines where they end (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
-    const charts: Array<[string, string, number]> = [
+    const charts: Array<[string, string, number, ((page: Page) => Promise<void>)?]> = [
       // The report's dashboard trend: pay, the title median and pay had raises been typical.
       [`./reports?person=${encodeURIComponent(AARON)}`, '.print-area', 3],
       // The headcount panel under the median, whose two lines end 10px apart at the top of the plot.
       ['./explore?tab=trends', 'body', 2],
+      // The raise case's pay history: pay and the title median. It kept a hand-drawn legend under the
+      // plot after every other chart lost theirs.
+      ['./reports?type=comparison', '.report-brief', 2, async (p) => {
+        const start = p.getByPlaceholder('Search yourself by name to begin…');
+        await expect(start).toBeVisible({ timeout: 60_000 });
+        await start.fill('Kenneth Poss');
+        await p.getByRole('option').first().click();
+      }],
     ];
-    for (const [route, scope, lines] of charts) {
+    for (const [route, scope, lines, setup] of charts) {
       await page.goto(route);
+      await setup?.(page);
       const labels = page.locator(`${scope} .end-label`);
       await expect(labels).toHaveCount(lines, { timeout: 60_000 });
       await page.waitForTimeout(1_000);
@@ -257,12 +266,20 @@ for (const scheme of ['light', 'dark'] as const) {
         const inside = texts.every((t) => t.l >= box.left && t.r <= box.right && t.t >= box.top && t.b <= box.bottom);
         const overlaps = texts.flatMap((a, i) => texts.slice(i + 1)
           .filter((b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b).map((b) => `${a.text} / ${b.text}`));
-        return { drawn, texts, inside, overlaps, legend: document.querySelectorAll('.recharts-legend-wrapper').length };
+        // A legend drawn by hand beside the chart: a line's name again, outside the plot, in its card.
+        const card = svg.closest('.mantine-Card-root, .mantine-Paper-root') ?? svg.parentElement!;
+        const names = new Set(texts.map((t) => t.text));
+        const handDrawn = [...card.querySelectorAll('*')]
+          .filter((e) => !e.closest('svg, table') && e.children.length === 0 && names.has(e.textContent?.trim() ?? '')
+            && (e as HTMLElement).checkVisibility())
+          .map((e) => e.textContent);
+        return { drawn, texts, inside, overlaps, legend: document.querySelectorAll('.recharts-legend-wrapper').length, handDrawn };
       });
       expect(report.texts.length, `${route}: a name for each of the ${report.drawn} lines drawn`).toBe(report.drawn);
       expect(report.overlaps, `${route}: names drawn over one another`).toEqual([]);
       expect(report.inside, `${route}: a name runs out of its chart`).toBe(true);
       expect(report.legend, `${route}: Recharts' default legend is back`).toBe(0);
+      expect(report.handDrawn, `${route}: a legend beside the chart names its lines again`).toEqual([]);
       for (const t of report.texts) {
         const ratio = contrast(parseColor(t.fill).slice(0, 3), parseColor(t.halo).slice(0, 3));
         expect(ratio, `${route}: "${t.text}" reads at ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);

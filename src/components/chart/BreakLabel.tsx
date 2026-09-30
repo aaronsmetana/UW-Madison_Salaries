@@ -1,10 +1,12 @@
 import { measureText, placeSideLabels } from '../../lib/labelLayout';
+import { CHART_FONT } from '../../lib/chartStyle';
 
 type Scale = ((v: number | string) => number) & { domain?: () => unknown[]; bandwidth?: () => number };
 
-const FONT = 10;
-/** A second row of labels, where two would otherwise touch. */
-const ROW = 12;
+const FONT = CHART_FONT;
+/** A second row of labels, where two would otherwise touch: a line of 12px chart text is about 16px tall,
+ *  and rows closer than that touch (at 14px the TTC and 9-month labels on a phone's Trends did). */
+const ROW = Math.round(FONT * 4 / 3);
 
 type Props = {
   xAxisMap?: Record<string, { scale: Scale }>;
@@ -50,7 +52,7 @@ export function layoutBreakLabels(
  * another, and kept inside the plot's width: after the line when there is room, before it near the
  * right edge, the short wording on a narrow chart or where two would touch, a second row after that.
  * On the `top` edge they sit just above the plot, where no series runs — the chart needs a top margin
- * of about 14px, 26px where two rows may be needed; on the `bottom` edge, just inside the plot along
+ * of about 16px, 32px where two rows may be needed; on the `bottom` edge, just inside the plot along
  * its baseline, for a chart whose top margin already carries other labels. Put it in a
  * `<Customized component={<BreakLabels … />} />` beside the markers' ReferenceLines, which draw the lines.
  */

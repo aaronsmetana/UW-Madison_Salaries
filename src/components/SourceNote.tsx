@@ -47,7 +47,7 @@ export function SourceNote({
     <Group justify="space-between" align="flex-end" gap="xs" wrap="nowrap" mt="xs">
       {/* minWidth:0 lets the source text wrap inside the flex row instead of shoving the
           actions off the right edge on a phone. */}
-      <Text size="xxs" c="dimmed" style={{ minWidth: 0 }}>
+      <Text size="xs" c="dimmed" style={{ minWidth: 0 }}>
         {parts.join(' · ')}
       </Text>
       {actions && (

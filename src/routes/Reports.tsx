@@ -12,7 +12,7 @@ import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { usd, pct, fullName, fmtDate, plural } from '../lib/format';
+import { usd, pct, fullName, plural, fmtToday } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
@@ -66,7 +66,7 @@ export default function Reports() {
   const { data: summary } = useSummary();
   const { items, add, remove, primaryId } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
-  const generated = fmtDate(new Date());
+  const generated = fmtToday();
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
   // Phone-width layout for the header controls: the mode switcher's full labels measure 633px, which
   // pushed the whole page 274px wider than a 375px viewport and scrolled the app sideways.
@@ -1018,12 +1018,10 @@ export default function Reports() {
                 w={isNarrow ? '100%' : undefined}
                 value={type}
                 onChange={setType}
+                // Sentence case, as every other control in the app; the wide labels were Title Case.
                 data={[
-                  { value: 'person', label: isNarrow ? 'One person' : 'On a Specified Person' },
-                  {
-                    value: 'comparison',
-                    label: isNarrow ? 'Raise case (tray)' : 'Salary Increase Justification (People In Tray)',
-                  },
+                  { value: 'person', label: 'One person' },
+                  { value: 'comparison', label: isNarrow ? 'Raise case: tray' : 'Raise case: people in the tray' },
                 ]}
               />
               <ExportBar joined={!isNarrow}>

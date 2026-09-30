@@ -1,5 +1,6 @@
 import { fmtChange } from '../../lib/format';
 import { placeChips, type Box } from '../../lib/labelLayout';
+import { CHART_FONT } from '../../lib/chartStyle';
 
 /** A body-colored rounded-rect pill behind text, so a label stays legible over whatever chart marks
  *  (bars, lines, reference areas) sit beneath it — the one way this app draws text over marks.
@@ -14,7 +15,7 @@ import { placeChips, type Box } from '../../lib/labelLayout';
 export const pillWidth = (text: string): number => text.length * 6 + 8;
 
 export function SvgPill({
-  x, y, text, color = 'var(--mantine-color-dimmed)', fontWeight = 700, fontSize = 10,
+  x, y, text, color = 'var(--mantine-color-dimmed)', fontWeight = 700, fontSize = CHART_FONT,
 }: {
   x: number;
   y: number;

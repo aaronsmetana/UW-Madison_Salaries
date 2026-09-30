@@ -16,7 +16,7 @@ import {
   matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName, fmtDate, spanLabel, fmtChange } from '../lib/format';
+import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { EndLabels } from './chart/EndLabels';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -86,7 +86,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 export function PersonDashboard({ personKey, metric }: { personKey: string; metric: Metric }) {
   const reduceMotion = prefersReducedMotion();
   const expr = salaryExpr(metric);
-  const generated = fmtDate(new Date());
+  const generated = fmtToday();
 
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],

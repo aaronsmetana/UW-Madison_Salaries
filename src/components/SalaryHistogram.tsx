@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT, BAND_IQR } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
@@ -239,7 +239,7 @@ export function SalaryHistogram({
               }}
             >
               {g.isMedian && (
-                <Text size="xs" c="dimmed" style={{ position: 'absolute', top: -2, left: 0, transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: 10 }}>
+                <Text size="xs" c="dimmed" style={{ position: 'absolute', top: -2, left: 0, transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: CHART_FONT, lineHeight: 1 }}>
                   median
                 </Text>
               )}
@@ -303,7 +303,7 @@ export function SalaryHistogram({
                   <Text
                     component="span"
                     c="dimmed"
-                    style={{ fontSize: 10, lineHeight: 1, marginBottom: 3, opacity: mounted ? (dimmed ? 0.4 : 0.9) : 0, transition: 'opacity 220ms ease' }}
+                    style={{ fontSize: CHART_FONT, lineHeight: 1, marginBottom: 3, opacity: mounted ? (dimmed ? 0.4 : 0.9) : 0, transition: 'opacity 220ms ease' }}
                   >
                     {b.n}
                   </Text>
@@ -318,7 +318,7 @@ export function SalaryHistogram({
               key={i}
               size="xs"
               c="dimmed"
-              style={{ position: 'absolute', left: `${at(e) * 100}%`, bottom: 0, transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: 11 }}
+              style={{ position: 'absolute', left: `${at(e) * 100}%`, bottom: 0, transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: CHART_FONT }}
             >
               {fmtK(e)}
             </Text>
@@ -350,7 +350,7 @@ export function SalaryHistogram({
                   borderTop: `7px solid ${MARK_SELF}`,
                 }}
               />
-              <Text component="span" className="accent7-text" style={{ whiteSpace: 'nowrap', fontSize: 11, lineHeight: 1, color: MARK_SELF_TEXT, display: 'block', textAlign: 'center', paddingBottom: 2 }}>
+              <Text component="span" className="accent7-text" style={{ whiteSpace: 'nowrap', fontSize: CHART_FONT, lineHeight: 1, color: MARK_SELF_TEXT, display: 'block', textAlign: 'center', paddingBottom: 2 }}>
                 {markerLabel}
               </Text>
             </div>
@@ -394,7 +394,7 @@ export function SalaryHistogram({
                 stroke={GUIDE_SOFT.stroke}
                 strokeDasharray={GUIDE_SOFT.dasharray}
                 strokeWidth={g.isMedian ? 1.5 : 1}
-                label={g.isMedian ? { value: 'median', position: 'top', fontSize: 10, fill: 'var(--mantine-color-dimmed)' } : undefined}
+                label={g.isMedian ? { value: 'median', position: 'top', fontSize: CHART_FONT, fill: 'var(--mantine-color-dimmed)' } : undefined}
               />
             ))}
             <Bar
@@ -458,7 +458,7 @@ export function SalaryHistogram({
                 left: '50%',
                 transform: 'translateX(-50%)',
                 whiteSpace: 'nowrap',
-                fontSize: 11,
+                fontSize: CHART_FONT,
                 lineHeight: 1,
                 color: MARK_SELF_TEXT,
               }}

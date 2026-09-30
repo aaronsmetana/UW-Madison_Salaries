@@ -5,10 +5,13 @@ import { Eyebrow } from './Eyebrow';
 
 export type StatSize = 'hero' | 'md' | 'sm';
 
+/** A tile's figure on the app's type scale (theme.ts): the lead figure at the page title's 40px, every
+ *  other at the 24px figure size. `sm` was 18px, the card-title size, so a tile's number and a card's
+ *  heading read as the same kind of thing. */
 const VALUE: Record<StatSize, CSSProperties> = {
-  hero: { fontSize: 'clamp(2.2rem, 4vw, 3rem)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 },
+  hero: { fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 },
   md: { fontSize: 24, fontWeight: 700, lineHeight: 1.15 },
-  sm: { fontSize: 18, fontWeight: 700, lineHeight: 1.2 },
+  sm: { fontSize: 24, fontWeight: 700, lineHeight: 1.15 },
 };
 
 /**

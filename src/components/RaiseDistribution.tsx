@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Card, Text } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList } from 'recharts';
-import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { CardTitle } from './CardTitle';
 import { ChartData } from './ChartData';
 import { num } from '../lib/format';
@@ -17,12 +17,14 @@ const DIST_TOP = 24;
  * Continuing raises in the site's 1% bins (lib/raiseBuckets), with one raise marked: the median in Divisions →
  * Changes, the usual raise on the Raises page. Every bin takes its place on the axis, empty or not.
  */
-export function RaiseDistribution({ counts, marker, title, period, className }: {
+export function RaiseDistribution({ counts, marker, title, sub, period, className }: {
   /** Raises per bin, as `raiseBucketSql` counts them; undefined while loading. */
   counts: readonly { bucket: number; n: number }[] | undefined;
   /** The raise the dashed line marks: `label` on the chart ("median"), `name` in the note ("median raise"). */
   marker: { value: number; label: string; name: string } | null;
   title: ReactNode;
+  /** The line under the title: which raises are counted. A title is a short phrase (CardTitle). */
+  sub?: ReactNode;
   /** The pair, for the table under the chart: "Mar 2026 → Sep 2026". */
   period: string;
   className?: string;
@@ -71,7 +73,7 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
       data-raise-capped={distCap?.bucket ?? ''}
       ref={distBoxRef}
     >
-      <CardTitle mb="sm">{title}</CardTitle>
+      <CardTitle mb="sm" sub={sub}>{title}</CardTitle>
       <ResponsiveContainer width="100%" height={240}>
         {/* Right margin for the last label, "> +20%", centred on the last bin at the plot's edge. */}
         <BarChart {...chartKeys('Raise distribution')} data={raiseDist ?? []} margin={{ left: 12, right: 24, top: DIST_TOP }} className="raise-dist">
@@ -83,7 +85,7 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
           <Tooltip formatter={(v: number) => [num(v), 'People']} cursor={{ fill: 'var(--mantine-color-default-hover)' }} contentStyle={TIP_STYLE} />
           {markerAt && (
             <ReferenceLine x={markerAt} stroke="var(--mantine-color-accent-6)" strokeDasharray="3 3"
-              label={{ value: marker!.label, position: 'top', fontSize: 10, fill: 'var(--mantine-color-accent-7)' }} />
+              label={{ value: marker!.label, position: 'top', fontSize: CHART_FONT, fill: 'var(--mantine-color-accent-7)' }} />
           )}
           <Bar
             {...chartAnim(reduceMotion, MOTION.reveal)}
@@ -111,14 +113,14 @@ export function RaiseDistribution({ counts, marker, title, period, className }: 
                 const bucket = raiseDist?.[index]?.bucket;
                 if (!value || (bucket !== 0 && bucket !== distCap?.bucket)) return null;
                 const zero = bucket === 0 ? ' raise-zero-label' : '';
-                if (bucket !== distCap?.bucket) return <text className={`raise-count-label${zero}`} x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
+                if (bucket !== distCap?.bucket) return <text className={`raise-count-label${zero}`} x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={CHART_FONT} fontWeight={700} fill="var(--mantine-color-text)">{num(value)}</text>;
                 // Capped: the bar is cut at the top of the plot (DIST_TOP, the chart's top margin), so
                 // it gets a break across it and its count just under the break.
                 const top = DIST_TOP;
                 return (
                   <g>
                     <path className="raise-cap-break" d={`M${x - 2} ${top + 7} L${x + width + 2} ${top + 2} M${x - 2} ${top + 12} L${x + width + 2} ${top + 7}`} stroke="var(--mantine-color-body)" strokeWidth={2.5} />
-                    <text className={`raise-count-label raise-cap-label${zero}`} x={x + width / 2} y={top + 26} textAnchor="middle" fontSize={10} fontWeight={700} fill="var(--mantine-color-text)" stroke="var(--mantine-color-body)" strokeWidth={3} paintOrder="stroke">{num(value)}</text>
+                    <text className={`raise-count-label raise-cap-label${zero}`} x={x + width / 2} y={top + 26} textAnchor="middle" fontSize={CHART_FONT} fontWeight={700} fill="var(--mantine-color-text)" stroke="var(--mantine-color-body)" strokeWidth={3} paintOrder="stroke">{num(value)}</text>
                   </g>
                 );
               }}

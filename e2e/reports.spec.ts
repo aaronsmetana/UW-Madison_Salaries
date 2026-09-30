@@ -60,3 +60,21 @@ test.describe('equity review brief', () => {
     expect(download.suggestedFilename()).toMatch(/\.doc$/);
   });
 });
+
+/**
+ * The two report types in sentence case, as every other control in the app: they read "On a Specified
+ * Person" and "Salary Increase Justification (People In Tray)" on a desktop, while the phone already had
+ * "One person" and "Raise case (tray)".
+ */
+for (const width of [1280, 375]) {
+  test(`the report types are named in sentence case at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('./reports');
+    // Found by what the options are, not what they say.
+    const types = page.locator('.mantine-SegmentedControl-root:has(input[value="comparison"])').locator('.mantine-SegmentedControl-label');
+    await expect(types).toHaveCount(2, { timeout: 60_000 });
+    const labels = await types.allTextContents();
+    expect(labels.filter((l) => !/^[A-Z][^A-Z]*$/.test(l)), 'a report type in Title Case').toEqual([]);
+    expect(labels[1]).toMatch(/^Raise case: /);
+  });
+}

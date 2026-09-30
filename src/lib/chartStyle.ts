@@ -11,7 +11,11 @@ import { usd } from './format';
 // The axis line and tick marks have the same problem and are fixed in app.css rather than here: they
 // are one CSS rule that reaches all 40 axes in the app, where a token would be a prop 40 call sites
 // have to remember — the same failure mode that left `isAnimationActive` off 22 marks.
-export const AXIS_TICK = { fontSize: 12, fill: 'var(--mantine-color-dimmed)' } as const;
+/** Every word drawn on a chart — axis numbers, a strip's labels, a line's name, a break's words — at one
+ *  size, the type scale's chart step (theme.ts). They ran 10, 10.5, 11, 12 and 12.5px across five
+ *  components. */
+export const CHART_FONT = 12;
+export const AXIS_TICK = { fontSize: CHART_FONT, fill: 'var(--mantine-color-dimmed)' } as const;
 // Horizontal gridlines only — vertical gridlines between categories add visual noise without helping
 // reads (a bar/line's own x-position already anchors it to its category).
 // `stroke` for the same reason as AXIS_TICK's `fill`: Recharts' default is a fixed `#ccc`, which

@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode
 import { Text } from '@mantine/core';
 import { usd, num } from '../lib/format';
 import { ordinal } from '../lib/stats';
-import { assignLabelRows, fmtK } from '../lib/chartStyle';
+import { assignLabelRows, CHART_FONT, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import {
   MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, DOT_RIM, GUIDE_SOFT, BAND_IQR, peerDot,
@@ -20,7 +20,10 @@ const RIBBON_H = 76;
 /** Headroom above the population for the subject's own mark, which sits on its own lane. */
 const SELF_LANE_H = DOT_R.self * 2 + 5;
 const MARKER_LANE_H = 26;
-const AXIS_LABEL_ROW_H = 15;
+/** A row of axis labels: a 16px line of 12px chart text (CHART_FONT) and a pixel of air. At 15px, with Mantine's
+ *  `xs` line height, "middle 50%" and the median's label a row apart touched. */
+const AXIS_LABEL_LINE = 16;
+const AXIS_LABEL_ROW_H = AXIS_LABEL_LINE + 1;
 /** How close the cursor must come to a dot before the readout names that person instead of the
  *  axis position. Roughly a dot's diameter plus a little slack — enough to be reachable, small
  *  enough that the space between dots still reads the axis. */
@@ -581,7 +584,7 @@ export function PeerStrip({
               bottom: 2,
               transform: `translateX(${labelTx})`,
               whiteSpace: 'nowrap',
-              fontSize: 12.5,
+              fontSize: CHART_FONT,
               color: MARK_SELF_TEXT,
               opacity: mounted ? 1 : 0,
               transition: 'opacity 240ms ease',
@@ -752,7 +755,8 @@ export function PeerStrip({
                 top: (labelRows[i] ?? 0) * AXIS_LABEL_ROW_H,
                 transform: `translateX(${ANCHOR_TX[l.anchor]})`,
                 whiteSpace: 'nowrap',
-                fontSize: 10.5,
+                fontSize: CHART_FONT,
+                lineHeight: `${AXIS_LABEL_LINE}px`,
               }}
             >
               {l.text}

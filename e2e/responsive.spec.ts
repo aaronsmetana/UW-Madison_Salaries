@@ -153,6 +153,68 @@ for (const [name, path] of TABBED) {
 }
 
 /**
+ * A phone: every tab list is one row. Wrapped, a person's "History" sat alone on a second line under the
+ * other three and read as a different control. A list too long for the screen scrolls sideways inside
+ * itself, its last tab cut at the edge so the scroll is seen, and never widens the page.
+ */
+for (const [name, path] of [['person', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`], ...TABBED] as const) {
+  test(`a tab list is one row at ${PHONE.width}px, its last tab a sideways scroll away: ${name}`, async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(path);
+    const list = page.locator('.mantine-Tabs-list').locator('visible=true').first();
+    const tabs = list.getByRole('tab');
+    await expect(tabs.first()).toBeVisible({ timeout: 60_000 });
+    expect(await tabs.count(), `${name}: too few tabs to be checking anything`).toBeGreaterThanOrEqual(4);
+    const tops = await tabs.evaluateAll((ts) => ts.map((t) => Math.round(t.getBoundingClientRect().top)));
+    expect(new Set(tops).size, `${name}: the tabs wrap onto more than one row (${tops})`).toBe(1);
+
+    // Wider than the screen, it has to scroll for a thumb: `overflow: hidden` would still let a script
+    // scroll it into view (below), so the list's own overflow is read too.
+    const scroll = await list.evaluate((l) => ({ over: l.scrollWidth > l.clientWidth, x: getComputedStyle(l).overflowX }));
+    if (scroll.over) expect(['auto', 'scroll'], `${name}: the tab list is wider than the screen and cannot be scrolled`).toContain(scroll.x);
+
+    const last = tabs.last();
+    await last.scrollIntoViewIfNeeded();
+    const box = (await list.boundingBox())!;
+    const end = (await last.boundingBox())!;
+    expect(end.x + end.width, `${name}: the last tab cannot be scrolled into view`).toBeLessThanOrEqual(box.x + box.width + 1);
+    expect(end.x).toBeGreaterThanOrEqual(box.x - 1);
+    await last.click();
+    await expect(last).toHaveAttribute('aria-selected', 'true');
+    expect(await pageOverflow(page), `${name}: the tab list widens the page`).toBe(0);
+  });
+}
+
+/**
+ * A phone: a person's stat cards one to a row. Two abreast left each about 170px, and every line in them
+ * broke ("over 4.8 / yrs", "5 snapshots · since / Sep 2024").
+ */
+test(`a person's stat cards take the full width at ${PHONE.width}px, and no line in them breaks`, async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await page.goto(`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`);
+  const grid = page.locator('.stat-cells');
+  await expect(grid).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(1_500);
+  const r = await grid.evaluate((g) => ({
+    width: g.getBoundingClientRect().width,
+    cards: [...g.children].map((c) => c.getBoundingClientRect().width),
+    // Each piece of text in the cards, and how many lines it takes.
+    broken: [...g.querySelectorAll('*')].flatMap((el) => [...el.childNodes]
+      .filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim())
+      .map((n) => {
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        return { text: n.textContent!.trim(), lines: new Set([...range.getClientRects()].map((q) => Math.round(q.top))).size };
+      })
+      .filter((t) => t.lines > 1)
+      .map((t) => t.text)),
+  }));
+  expect(r.cards.length, 'too few stat cards to be checking anything').toBeGreaterThanOrEqual(3);
+  for (const w of r.cards) expect(Math.abs(w - r.width), `a stat card is ${Math.round(w)}px of ${Math.round(r.width)}px`).toBeLessThanOrEqual(1);
+  expect(r.broken, 'a line in a stat card breaks').toEqual([]);
+});
+
+/**
  * The AppShell header has a fixed height, but the control bar inside it wraps as the viewport
  * narrows — so the two can drift apart silently. They had: a hardcoded 104px was 7px short at
  * 1440px and 19px short on a phone, and the bar spilled out of the header onto the page content

@@ -1,4 +1,5 @@
 import { measureText, placeEndLabels } from '../../lib/labelLayout';
+import { CHART_FONT } from '../../lib/chartStyle';
 import { layoutBreakLabels } from './BreakLabel';
 
 /** One line's direct label: which series (`key`, the Line's `dataKey`), what to call it, and a text
@@ -25,7 +26,7 @@ function runsOf(points: readonly Point[]): { x: number; y: number }[][] {
   return runs.filter((r) => r.length > 1);
 }
 
-const FONT = 11;
+const FONT = CHART_FONT;
 
 /** A name written over a chart's marks: a stroke of the card colour painted under the letters, so a
  *  gridline, a band or a dot behind them stops at the word instead of running through it. Shared, so

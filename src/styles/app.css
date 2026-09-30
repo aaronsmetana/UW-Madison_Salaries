@@ -520,6 +520,36 @@ body {
 .mantine-Anchor-root[data-underline='always']:focus-visible {
   text-decoration-color: currentColor;
 }
+/* A link that is a table cell's whole content — a name, a school, a title alone in its column — is told
+   apart by its column and its colour, and underlined under the pointer. 1.4.1's underline is for a link
+   beside other words, where colour alone would have to say "link"; a column of underlined names was the one
+   place a table read as dated, and the same column on a person's peers table never had them. A link with
+   anything beside it (Divisions' titles carry their staff category; a sentence in a cell) keeps its
+   underline: without it, dark mode told the link from the tag beside it at 1.99:1, under 1.4.1's 3:1. */
+.mantine-Table-td .mantine-Anchor-root[data-underline='always']:only-child:not(p *) {
+  text-decoration-line: none;
+}
+.mantine-Table-td .mantine-Anchor-root[data-underline='always']:only-child:not(p *):hover,
+.mantine-Table-td .mantine-Anchor-root[data-underline='always']:only-child:not(p *):focus-visible {
+  text-decoration-line: underline;
+}
+
+/* Badges on the type scale's small-label step (theme.ts): Mantine draws `xs` at 9px and `sm` at 10px,
+   the two sizes the scale has no place for. */
+.mantine-Badge-root {
+  --badge-fz-xs: var(--mantine-font-size-xxs);
+  --badge-fz-sm: var(--mantine-font-size-xxs);
+}
+/* A phone: no text field under 16px. Under 16px, iOS Safari zooms the page into the field on focus and
+   leaves it zoomed; everywhere else the fields follow the scale. A minimum rather than a size, so the
+   landing page's larger search stays larger; the search boxes, which size their field inline, read the
+   same `--input-min-fz` (SearchBox). */
+@media (max-width: 36em) {
+  :root { --input-min-fz: 16px; }
+  .mantine-Input-input {
+    font-size: max(var(--input-min-fz), var(--input-fz, var(--mantine-font-size-sm))) !important;
+  }
+}
 
 /* Tabular, lining numerals everywhere so columns of money/counts align. */
 body {
@@ -681,6 +711,22 @@ path.recharts-tooltip-cursor {
   color: var(--mantine-color-text);
   font-weight: 700;
   box-shadow: inset 0 -3px 0 0 var(--mantine-color-accent-7);
+}
+/* A phone: every tab list is one row. Wrapped, a person's "History" sat alone on a second line under
+   the other three, which read as a different control. Tighter padding fits most lists outright; a longer
+   one scrolls sideways, its last tab cut at the edge so the scroll is seen. */
+@media (max-width: 36em) {
+  .mantine-Tabs-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .mantine-Tabs-list::-webkit-scrollbar { display: none; }
+  .mantine-Tabs-tab {
+    flex: none;
+    padding-inline: 10px;
+  }
 }
 
 /* Obvious, consistent keyboard focus on every interactive element. */
@@ -1048,6 +1094,16 @@ textarea:focus-visible,
   }
   .stat-cells > .stat-lead {
     grid-column: span 2;
+  }
+}
+/* A phone: one card to a row. Two abreast left each about 170px, and a card's sentences ("over 2.0 yrs",
+   "5 snapshots · since Sep 2024") broke on every line. */
+@media (max-width: 480px) {
+  .stat-cells {
+    grid-template-columns: 1fr;
+  }
+  .stat-cells > .stat-lead {
+    grid-column: auto;
   }
 }
 

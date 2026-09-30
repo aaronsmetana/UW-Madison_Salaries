@@ -15,6 +15,51 @@ async function tab(page: Page, name: string, query = '') {
   await page.goto(`./explore?tab=${name}${query}`);
 }
 
+/**
+ * The growth card's snapshot pickers show their whole label. At 118px, "Nov 2021 (Post-TTC)" read
+ * "Nov 2021 (Po:"; the pickers now say "Nov 2021 · post" and are sized to it. Every option of both
+ * pickers is measured in the field's own font against the room the field gives its text.
+ */
+test("the growth card's snapshot pickers show every label whole", async ({ page }) => {
+  await tab(page, 'schools');
+  const pickers = page.locator('.growth-pickers input[aria-label]');
+  await expect(pickers).toHaveCount(2, { timeout: 60_000 });
+  for (const name of ['From snapshot', 'To snapshot']) {
+    const field = page.locator(`.growth-pickers input[aria-label="${name}"]`);
+    await field.click();
+    const options = await page.getByRole('option').locator('visible=true').allTextContents();
+    await page.keyboard.press('Escape');
+    expect(options.length, `${name}: too few options to be checking anything`).toBeGreaterThanOrEqual(5);
+    expect(options.filter((o) => /[()]/.test(o)), `${name}: the long "(Post-TTC)" form is back`).toEqual([]);
+    const fit = await field.evaluate((input, labels) => {
+      const cs = getComputedStyle(input);
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const room = (input as HTMLInputElement).clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      return {
+        room,
+        over: labels.map((l) => [l, ctx.measureText(l).width] as const).filter(([, w]) => w > room + 0.5),
+        // And the label it shows now, as the browser lays it out.
+        scroll: (input as HTMLInputElement).scrollWidth - (input as HTMLInputElement).clientWidth,
+      };
+    }, options);
+    expect(fit.over, `${name}: labels wider than the ${fit.room}px the field has for them`).toEqual([]);
+    expect(fit.scroll, `${name}: its label runs past the field`).toBeLessThanOrEqual(0);
+  }
+});
+
+/**
+ * One search on Divisions: its table's own filter. The page-wide "Search people, titles or divisions…"
+ * that sat above its figures went; finding a person, title or division is the landing page's search and
+ * ⌘K anywhere.
+ */
+test('Divisions has one search, its table filter', async ({ page }) => {
+  await tab(page, 'schools');
+  await expect(page.getByPlaceholder('Search divisions…')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('main input[placeholder^="Search"]').locator('visible=true')).toHaveCount(1);
+  await expect(page.getByPlaceholder('Search people, titles or divisions…')).toHaveCount(0);
+});
+
 test('box plots on Titles and Schools give every row the same pixels per $10k', async ({ page }) => {
   for (const name of ['titles', 'schools']) {
     await tab(page, name);

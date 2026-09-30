@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box } from '@mantine/core';
+import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight, IconDownload } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState, focusControl } from '../components/EmptyState';
@@ -253,7 +253,11 @@ export default function Screening() {
 
       <Card withBorder padding="lg" ref={scopeRef}>
         <Eyebrow mb={8}>Scope</Eyebrow>
-        <Group align="flex-end" gap="md" wrap="wrap">
+        {/* Aligned by their tops, so the labels share a line and the help under "Min. cohort size" hangs
+            below its field. Bottom-aligned, that help pushed the one field (label and box) above the others.
+            The button sits in an input's own wrapper with a label that is not shown, so it lines up with
+            the fields rather than the labels. */}
+        <Group align="flex-start" gap="md" wrap="wrap" className="screen-scope">
           <Select
             label="School / division"
             placeholder="All schools"
@@ -286,12 +290,17 @@ export default function Screening() {
             max={50}
             w={180}
           />
-          <Button
-            leftSection={<IconListSearch size={ICON.control} />}
-            onClick={run}
-          >
-            {unscoped && campusHeadcount != null ? `Screen all ${num(campusHeadcount)}` : 'Screen'}
-          </Button>
+          <Input.Wrapper label={<span aria-hidden style={{ visibility: 'hidden' }}>Run</span>}>
+            {/* A block, so it starts under the (inline) label rather than beside it. */}
+            <Box>
+              <Button
+                leftSection={<IconListSearch size={ICON.control} />}
+                onClick={run}
+              >
+                {unscoped && campusHeadcount != null ? `Screen all ${num(campusHeadcount)}` : 'Screen'}
+              </Button>
+            </Box>
+          </Input.Wrapper>
         </Group>
         {/* An unscoped run pulls every employee and their full pay history into the browser and scores
             each against their whole title cohort — tens of millions of operations on the main thread,

@@ -136,7 +136,7 @@ export function TrendsPanel() {
           though those lines render below); the headcount panel suppresses its own tooltip and relies on
           the synced crosshair, matching the same convention as Person's trend+FTE stack. */}
       <ResponsiveContainer width="100%" height={230}>
-        <ComposedChart {...chartKeys('Median salary over time')} data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 28, bottom: 0 }}>
+        <ComposedChart {...chartKeys('Median salary over time')} data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 32, bottom: 0 }}>
           <defs>{areaGradDef(gradId)}</defs>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={false} />

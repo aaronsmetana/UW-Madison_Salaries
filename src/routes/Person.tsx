@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, sameTitleText } from '../lib/payHistory';
@@ -167,6 +167,9 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
   );
 }
 
+/** The title labels' second row, a line of chart text above the first: at 14px, two 12px titles touched. */
+const ERA_ROW = Math.round(CHART_FONT * 4 / 3);
+
 /** A title era's label above the plot: one line, starting at the era's divider so it reads as "from
  *  here", on row 0 or (14px higher) row 1. `shift` pulls a label that would run off the right edge back
  *  inside it. Recharts injects `viewBox` ({ x, y }) for the vertical reference line it hangs from. */
@@ -175,7 +178,7 @@ function TitleChangeLabel({
 }: { viewBox?: { x?: number; y?: number }; title?: string | null; row?: 0 | 1; shift?: number }) {
   if (!viewBox || viewBox.x == null || viewBox.y == null || !title) return null;
   return (
-    <text className="trend-era-label" x={viewBox.x + shift} y={viewBox.y - 5 - (row === 1 ? 14 : 0)} textAnchor="start" fontSize={10} fill="var(--mantine-color-dimmed)">
+    <text className="trend-era-label" x={viewBox.x + shift} y={viewBox.y - 5 - (row === 1 ? ERA_ROW : 0)} textAnchor="start" fontSize={CHART_FONT} fill="var(--mantine-color-dimmed)">
       {title}
     </text>
   );
@@ -463,7 +466,7 @@ export default function Person() {
     const px = (x: number) => left + (hi > lo ? ((x - lo) / (hi - lo)) * (right - left) : 0);
     const placed = labels.map((l) => {
       const at = px(l.x);
-      const w = measureText(l.title, 10);
+      const w = measureText(l.title, CHART_FONT);
       const shift = Math.min(0, trendWidth - 2 - (at + w));
       return { ...l, shift, span: { left: at + shift, right: at + shift + w } };
     });
@@ -896,7 +899,7 @@ export default function Person() {
                   )}
                 </Group>
                 <Group gap={8} align="center" wrap="nowrap" mt={6}>
-                  <Text fw={700} style={{ fontSize: 38, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
+                  <Text fw={700} style={{ fontSize: 40, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
                     <Badge variant="light" color="gray" radius="sm" style={{ fontWeight: 600 }}>
                       {+lastFte.toFixed(2)} FTE
@@ -991,7 +994,7 @@ export default function Person() {
                 </Group>
                 <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>
                   {animatedTenure == null ? '—' : (
-                    <>{animatedTenure.toFixed(1)}<Text span fw={500} c="dimmed" style={{ fontSize: 14 }}> yrs</Text></>
+                    <>{animatedTenure.toFixed(1)}<Text span fw={500} c="dimmed" size="sm"> yrs</Text></>
                   )}
                 </Text>
                 {hireYear && (

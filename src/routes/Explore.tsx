@@ -4,7 +4,6 @@ import {
 } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { StatCard } from '../components/StatCard';
 import { Eyebrow } from '../components/Eyebrow';
@@ -106,8 +105,11 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const growth = from.med ? (to.med - from.med) / from.med : null;
   const slice = displaySeries.slice(fIdx, tIdx + 1).map((s) => s.med);
   const up = (growth ?? 0) >= 0;
-  const fromOpts = displaySeries.slice(0, tIdx).map((s) => ({ value: s.id, label: s.label }));
-  const toOpts = displaySeries.slice(fIdx + 1).map((s) => ({ value: s.id, label: s.label }));
+  // "Nov 2021 · post", not "Nov 2021 (Post-TTC)": the pickers are sized to their longest label, and the
+  // full form at 118px read "Nov 2021 (Po:". The pair of Nov 2021 snapshots is the only one with a suffix.
+  const pickLabel = (label: string) => label.replace(/\s*\((Pre|Post)-TTC\)/i, (_m, v: string) => ` · ${v.toLowerCase()}`);
+  const fromOpts = displaySeries.slice(0, tIdx).map((s) => ({ value: s.id, label: pickLabel(s.label) }));
+  const toOpts = displaySeries.slice(fIdx + 1).map((s) => ({ value: s.id, label: pickLabel(s.label) }));
 
   return (
     <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
@@ -128,17 +130,20 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
         <Text size="sm" c="dimmed">{usd(from.med)} → {usd(to.med)}</Text>
       </Group>
       {slice.length > 1 && <div style={{ marginTop: 6 }}><MiniSparkline values={slice} width={150} /></div>}
-      <Group gap={6} mt={8} wrap="nowrap" align="center">
-        <Select {...dropdownProps('sm')} w={118} aria-label="From snapshot" data={fromOpts} value={from.id}
+      <Group gap={6} mt={8} wrap="wrap" align="center" className="growth-pickers">
+        <Select {...dropdownProps('sm')} w={PICKER_W} aria-label="From snapshot" data={fromOpts} value={from.id}
           onChange={setFromId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
         <Text size="xs" c="dimmed">→</Text>
-        <Select {...dropdownProps('sm')} w={118} aria-label="To snapshot" data={toOpts} value={to.id}
+        <Select {...dropdownProps('sm')} w={PICKER_W} aria-label="To snapshot" data={toOpts} value={to.id}
           onChange={setToId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
       </Group>
       {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}{dollarMode === 'real' ? ' (nominal)' : ''}</Text>}
     </Card>
   );
 }
+
+/** The growth card's snapshot pickers: wide enough for their longest label, "Nov 2021 · post". */
+const PICKER_W = 146;
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
 
@@ -228,9 +233,9 @@ export default function Explore() {
         description="Every school and division side by side: how many people work there, what they are paid, and who earns the most. Add any of them to your tray to line them up on the Compare page."
       />
 
+      {/* No page-wide search here: its table has its own filter, and finding a person, title or division is
+          the landing page's box and ⌘K anywhere. A second search above the figures was one too many. */}
       <ControlBar inline />
-
-      <SearchBox />
 
       {flagged.length > 0 && (
         <Alert

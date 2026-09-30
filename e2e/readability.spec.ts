@@ -178,26 +178,124 @@ test('on a touch screen every add button carries the accent at rest', async ({ b
 
 /**
  * One size for every card title, a clear step over the line under it, on every page: the titles were
- * 15px against a 13px line, so a card's heading and its explanation read as one grey block. What each
- * title says is guarded where it is written (CardTitle.test.ts).
+ * 15px against a 13px line, so a card's heading and its explanation read as one grey block; then 17px,
+ * one step off the type scale (typescale.spec). And one convention for what they say, read as rendered:
+ * CardTitle.test.ts reads the titles as written, but a title passed in as a prop or built at runtime
+ * ("Raises in Neurology, Mar 2026 → Sep 2026 (same job, same FTE)", through RaiseDistribution's `title`)
+ * never reaches it. No em-dash tail, no middle-dot tail, no parenthetical: that is the sub line's job.
  */
-test('every card title is one size, a step over its sub line, on every page', async ({ page }) => {
+test('every card title is one size, a step over its sub line, and a short phrase, on every page', async ({ page }) => {
   for (const [route, ready] of [
     [`./person/${encodeURIComponent(AARON)}`, '.peer-strip'],
     ['./paycheck?code=IT040', '.card-title'],
     ['./explore?tab=changes', '.card-title'],
     [`./school/${encodeURIComponent('School of Medicine and Public Health')}?tab=dist`, '.card-title'],
+    [`./raises?sch=${encodeURIComponent('School of Medicine and Public Health')}&dept=Neurology`, '.raise-review-dist'],
   ] as const) {
     await page.goto(route);
     // Visible ones: a page's other tabs keep their panels (and titles) mounted but hidden.
     await expect(page.locator(ready).locator('visible=true').first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(800);
     const s = await page.evaluate(() => ({
-      titles: [...document.querySelectorAll('.card-title')].map((e) => getComputedStyle(e).fontSize),
+      titles: [...document.querySelectorAll('.card-title')].map((e) => ({
+        size: getComputedStyle(e).fontSize,
+        text: (e.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      })),
       subs: [...document.querySelectorAll('.card-title-sub')].map((e) => parseFloat(getComputedStyle(e).fontSize)),
     }));
     expect(s.titles.length, `${route}: no card titles to measure`).toBeGreaterThan(0);
-    expect(new Set(s.titles), `${route}: card titles in more than one size`).toEqual(new Set(['17px']));
-    for (const sub of s.subs) expect(sub, `${route}: a sub line as large as its title`).toBeLessThan(17);
+    expect(new Set(s.titles.map((t) => t.size)), `${route}: card titles in more than one size`).toEqual(new Set(['18px']));
+    for (const sub of s.subs) expect(sub, `${route}: a sub line as large as its title`).toBeLessThan(18);
+    const texts = s.titles.map((t) => t.text);
+    expect(texts.filter((t) => /\s[—–]\s/.test(t)), `${route}: an em-dash tail`).toEqual([]);
+    expect(texts.filter((t) => /\s·\s/.test(t)), `${route}: a middle-dot tail`).toEqual([]);
+    expect(texts.filter((t) => /[()]/.test(t)), `${route}: a parenthetical`).toEqual([]);
   }
+  // The one that slipped through, by name: the Raises chart's title, with what it counts under it.
+  const dist = page.locator('.raise-review-dist');
+  await expect(dist.locator('.card-title')).toHaveText(/^Raises in Neurology, \w{3} \d{4} → \w{3} \d{4}$/);
+  await expect(dist.locator('.card-title-sub')).toContainText('same job at the same FTE');
+});
+
+/**
+ * A link that is a table cell's whole content (a name alone in its column) is told apart by its column and
+ * colour and underlined under the pointer; a column of underlined names was the one place a table read as
+ * dated, and a person's peers table never had them. A link with other words beside it keeps its underline:
+ * that is what WCAG 1.4.1 asks, and without it dark mode told Divisions' title links from their staff
+ * category at 1.99:1 (axe's link-in-text-block). The test above holds the sentence links to it.
+ */
+test('a link alone in a table cell is underlined under the pointer, not at rest; a link beside words always', async ({ page }) => {
+  for (const [route, table] of [
+    ['./paycheck?code=IT040', '.mantine-Table-td a[data-underline="always"]:only-child'],
+    ['./explore?tab=changes', '.mantine-Table-td a[data-underline="always"]:only-child'],
+  ] as const) {
+    await page.goto(route);
+    const link = page.locator(table).locator('visible=true').first();
+    await expect(link, `${route}: no link in a table cell`).toBeVisible({ timeout: 60_000 });
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(200);
+    await expect(link, `${route}: a cell's link is underlined at rest`).toHaveCSS('text-decoration-line', 'none');
+    await link.hover();
+    await expect(link, `${route}: a cell's link is not underlined under the pointer`).toHaveCSS('text-decoration-line', 'underline');
+    // And from the keyboard.
+    await page.mouse.move(0, 0);
+    await link.focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(link).toBeFocused();
+    await expect(link, `${route}: a cell's link is not underlined under keyboard focus`).toHaveCSS('text-decoration-line', 'underline');
+  }
+  // Beside words in its cell: a title on Divisions' Titles tab, with its staff category after it.
+  await page.goto('./explore?tab=titles');
+  const tagged = page.locator('.mantine-Table-td a[data-underline="always"]:has(+ .cat-tag)').locator('visible=true').first();
+  await expect(tagged, 'no title link beside its category to check').toBeVisible({ timeout: 60_000 });
+  await page.mouse.move(0, 0);
+  await expect(tagged, 'a link beside other words lost its underline').toHaveCSS('text-decoration-line', 'underline');
+  // A sentence: the person header's links sit in running text and keep theirs at rest.
+  await page.goto(`./person/${encodeURIComponent(AARON)}`);
+  const inText = page.locator('.page-rail a[data-underline="always"]').first();
+  await expect(inText).toBeVisible({ timeout: 60_000 });
+  await page.mouse.move(0, 0);
+  await expect(inText).toHaveCSS('text-decoration-line', 'underline');
+});
+
+/**
+ * A field's help text sits under the field, not between its label and it (theme.ts, InputWrapper). Above,
+ * it pushed that one field's label higher than the labels beside it, so a row of fields stood out of line:
+ * Screening's "Min. cohort size", Raises' "Count raises above". In a row, the labels share a top and so do
+ * the fields; Screening's button lines up with the fields, not the labels.
+ */
+test("a field's help text is under the field, and a row of fields shares its tops", async ({ page }) => {
+  for (const [route, row] of [
+    ['./screening', '.screen-scope'],
+    ['./raises', 'main'],
+  ] as const) {
+    await page.goto(route);
+    const help = page.locator(`${row} .mantine-InputWrapper-description`).locator('visible=true');
+    await expect(help.first(), `${route}: no field with help text`).toBeVisible({ timeout: 60_000 });
+    const placed = await help.evaluateAll((els) => els.map((d) => {
+      const wrap = d.closest('.mantine-InputWrapper-root')!;
+      const field = wrap.querySelector('.mantine-Input-wrapper')!;
+      return { text: d.textContent, help: d.getBoundingClientRect().top, fieldBottom: field.getBoundingClientRect().bottom };
+    }));
+    for (const p of placed) expect(p.help, `${route}: "${p.text}" sits above its field`).toBeGreaterThanOrEqual(p.fieldBottom - 1);
+  }
+
+  // Screening's scope row, as one line: every label at one top, every field and the button at another.
+  await page.goto('./screening');
+  const scope = page.locator('.screen-scope');
+  await expect(scope.getByRole('button', { name: /^Screen/ })).toBeVisible({ timeout: 60_000 });
+  const r = await scope.evaluate((g) => {
+    const top = (e: Element) => Math.round(e.getBoundingClientRect().top);
+    const labels = [...g.querySelectorAll('.mantine-InputWrapper-label')].filter((l) => l.textContent?.trim() && getComputedStyle(l.firstElementChild ?? l).visibility !== 'hidden');
+    return {
+      labels: labels.map((l) => [l.textContent, top(l)] as const),
+      fields: [...g.querySelectorAll('.mantine-Input-wrapper')].map(top),
+      button: top(g.querySelector('button.mantine-Button-root')!),
+    };
+  });
+  expect(r.labels.length, 'the scope row has too few labelled fields to be checking anything').toBeGreaterThanOrEqual(3);
+  expect(new Set(r.labels.map(([, t]) => t)).size, `labels out of line: ${JSON.stringify(r.labels)}`).toBe(1);
+  expect(new Set(r.fields).size, `fields out of line: ${r.fields}`).toBe(1);
+  expect(Math.abs(r.button - r.fields[0]), 'the button does not line up with the fields').toBeLessThanOrEqual(1);
 });

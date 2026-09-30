@@ -3,7 +3,7 @@ import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Bad
 import { useReducedMotion } from '@mantine/hooks';
 import { Link } from 'react-router-dom';
 import {
-  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Customized,
 } from 'recharts';
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown, IconArrowsMinimize, IconRuler2 } from '@tabler/icons-react';
 import { usd, pct, plural } from '../../lib/format';
@@ -12,6 +12,7 @@ import { snapX, snapAxisProps } from '../../lib/snapTime';
 import { PeerRangeBar } from '../PeerRangeBar';
 import { TenurePayScatter } from '../TenurePayScatter';
 import { ChartTooltip } from '../chart/ChartTooltip';
+import { EndLabels } from '../chart/EndLabels';
 import { DeltaChip } from '../Delta';
 import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
@@ -494,7 +495,8 @@ export function ReportBrief({ model, hovered, onHover }: {
               <Text size="sm" fw={700}>Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
-                <ComposedChart {...chartKeys('Pay vs. title median over time')} data={historyRows} margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
+                {/* Top margin: room above a line that ends at the top of the plot for its name (EndLabels). */}
+                <ComposedChart {...chartKeys('Pay vs. title median over time')} data={historyRows} margin={{ left: 8, right: 16, top: 18, bottom: 0 }}>
                   <CartesianGrid {...GRID} />
                   <XAxis {...snapAxisProps(historyRows)} tick={AXIS_TICK} tickMargin={8} />
                   <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />
@@ -507,18 +509,20 @@ export function ReportBrief({ model, hovered, onHover }: {
                   }} />
                   <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
                   <Line type="monotone" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />
+                  {/* Each line named where it ends, as every line chart in the app is — this one kept a
+                      hand-drawn legend under the plot after the others lost theirs. */}
+                  <Customized
+                    component={
+                      <EndLabels
+                        endSeries={[
+                          { key: 'pay', text: subjectFirst, color: 'var(--text-accent)' },
+                          { key: 'med', text: 'Title median', color: 'var(--mantine-color-dimmed)' },
+                        ]}
+                      />
+                    }
+                  />
                 </ComposedChart>
               </ResponsiveContainer>
-              <Group gap="lg" mt="xs">
-                <Group gap={6} wrap="nowrap" align="center">
-                  <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-accent-6)" strokeWidth={2} /></svg>
-                  <Text size="xs" c="dimmed">{subjectFirst}</Text>
-                </Group>
-                <Group gap={6} wrap="nowrap" align="center">
-                  <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" /></svg>
-                  <Text size="xs" c="dimmed">Title median</Text>
-                </Group>
-              </Group>
 
               {raiseCycle && (
                 <Text size="sm" mt="md">
