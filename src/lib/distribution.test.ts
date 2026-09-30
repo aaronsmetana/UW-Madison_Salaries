@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { binStep, binsFromCounts, countBelow, countWithin, densify, groupCounts, groupLine, groupSigma, smoothBins, CURVE_STEP, GROUP_MIN_PX, KERNEL_SIGMA, type Bin } from './distribution';
+import { binStep, binsFromCounts, countBelow, countWithin, densify, groupCounts, groupLine, groupSigma, smoothBins, CURVE_STEP, KERNEL_SIGMA, type Bin } from './distribution';
 
 const bins = (step: number, counts: number[], from = 0): Bin[] =>
   counts.map((n, i) => ({ bucket: from + i * step, n }));
@@ -360,12 +360,16 @@ describe('groupLine', () => {
     expect(xs(groupLine(g, campus, box)!)).toEqual([333.3, 500, 666.7]);
   });
 
-  it('is left out when it would not rise off the floor', () => {
-    const tall = (n: number) => (n / 100) * (box.H - box.head - 2);
-    const under = bins(1000, [0, 0, 0, 100 * ((GROUP_MIN_PX - 0.5) / (box.H - box.head - 2)), 0, 0, 0]);
-    expect(tall(under[3].n)).toBeLessThan(GROUP_MIN_PX);
-    expect(groupLine(under, campus, box)).toBeNull();
-    const over = bins(1000, [0, 0, 0, 100 * ((GROUP_MIN_PX + 0.5) / (box.H - box.head - 2)), 0, 0, 0]);
-    expect(groupLine(over, campus, box)).not.toBeNull();
+  it('is drawn however low it is, and left out only with no one under the cap', () => {
+    // A group whose peak is under a pixel on campus's scale: still a line, from its first person to its
+    // last, at its true (low) height. Professor peaks near 9px on the page, Associate Professor near 5.
+    const tiny = bins(1000, [0, 0, 0, 0.3, 0, 0, 0]);
+    const d = groupLine(tiny, campus, box);
+    expect(d).not.toBeNull();
+    expect(xs(d!)).toEqual([333.3, 500, 666.7]);
+    const top = Math.min(...ys(d!));
+    // The path is written to a tenth of a pixel.
+    expect(box.H - 2 - top).toBeCloseTo((0.3 / 100) * (box.H - box.head - 2), 1);
+    expect(groupLine(bins(1000, [0, 0, 0, 0, 0, 0, 0]), campus, box)).toBeNull();
   });
 });

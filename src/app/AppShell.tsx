@@ -11,6 +11,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { GlobalLoadingBar, LoadingState, DataErrorBanner, OfflineBanner } from '../components/Loading';
 import { CommandPalette, usePalette } from '../components/CommandPalette';
 import { ReleaseTag, ReleaseEyebrow } from './ReleaseTag';
+import { BrandMark } from '../components/BrandMark';
 import { NAV, ABOUT, type NavItem } from './nav';
 import { consumeUpdate } from '../lib/appUpdate';
 import { RevealProvider } from '../components/PersonReveal';
@@ -42,27 +43,12 @@ function visitStarted(): boolean {
   }
 }
 
-/** The site's mark: ascending bars (a salary distribution) on the accent-gradient tile. */
+/** The site's mark in the header and the phone menu, in the accent the name's "Salaries" wears. */
 function LogoMark() {
   return (
-    <Box
-      w={34}
-      h={34}
-      style={{
-        borderRadius: 10,
-        background: 'var(--accent-grad)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <svg width={19} height={19} viewBox="0 0 18 18" aria-hidden role="img">
-        <rect x={1.5} y={10} width={3.4} height={6.5} rx={1.2} fill="white" fillOpacity={0.72} />
-        <rect x={7.3} y={6} width={3.4} height={10.5} rx={1.2} fill="white" fillOpacity={0.88} />
-        <rect x={13.1} y={2} width={3.4} height={14.5} rx={1.2} fill="white" />
-      </svg>
-    </Box>
+    <Text span c="accent.7" className="accent7-text" style={{ display: 'flex' }}>
+      <BrandMark size={28} />
+    </Text>
   );
 }
 
@@ -222,19 +208,12 @@ export function AppShellLayout() {
                 aria-controls={mobileOpened ? SHEET_ID : undefined}
               />
               <Anchor component={Link} to="/" underline="never" c="inherit" className="app-wordmark">
-                <Group gap={11} wrap="nowrap" align="center">
+                <Group gap={8} wrap="nowrap" align="center">
                   <LogoMark />
-                  {/* Two-tone wordmark + small uppercase eyebrow for a masthead feel. */}
+                  {/* One line: the name, two-tone. The "Open record salary data" eyebrow that sat over it went
+                      with the rebrand; where the records come from is the footer's first words. Narrower than
+                      the release tag has room for, the release's own eyebrow (ReleaseEyebrow) is over the name. */}
                   <Stack gap={0} style={{ lineHeight: 1.05 }}>
-                    {/* Deliberately not `Eyebrow`, though it looks like one: the wide 0.14em tracking is
-                        a masthead device, and Eyebrow's contract fixes its own spacing. The size is the
-                        shared `xxs` token rather than the 9px literal it used to carry — below the
-                        scale's floor, and the smallest text anywhere in the app. */}
-                    {/* From `md` up; narrower, this line is the release's (ReleaseEyebrow), which has no room
-                        beside the name there. */}
-                    <Text fz="xxs" fw={700} lts="0.14em" tt="uppercase" c="dimmed" visibleFrom="md">
-                      Open record salary data
-                    </Text>
                     <ReleaseEyebrow />
                     <Text component="span" fz="lg" fw={700} lts="-0.02em" className="app-name" style={{ lineHeight: 1.1 }}>
                       <Text span inherit c="bright">UW–Madison </Text>
@@ -248,21 +227,8 @@ export function AppShellLayout() {
             {/* No search button here: the landing page's own box is the search, People in the sidebar
                 leads to it, and ⌘K opens the palette anywhere (CommandPalette). The button sat a few
                 hundred pixels from that box on the landing page, and phones never showed it. */}
-            <Group gap="md" wrap="nowrap">
-              <ColorSchemeToggle />
-              {/* Data-source + author credit, tucked into the upper-right corner (opposite the logo). */}
-              <Stack gap={0} align="flex-end" visibleFrom="sm" style={{ lineHeight: 1.2 }}>
-                <Text c="dimmed" ta="right" fz="xxs">
-                  Public salary records obtained via open-records requests by{' '}
-                  <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" c="accent.7" underline="always" inherit className="accent7-text">
-                    UFAS Local 223
-                  </Anchor>
-                </Text>
-                {/* `ta="center" w="100%"` centred this under the longer line above, which read as a
-                    misalignment in a right-aligned stack. Inherit the stack's own alignment instead. */}
-                <Text c="dimmed" fz="xxs">Built by Aaron Smetana</Text>
-              </Stack>
-            </Group>
+            {/* The credit (UFAS Local 223, who built it) is the footer's, on every page. */}
+            <ColorSchemeToggle />
           </Group>
           {showControl && <ControlBar />}
         </AppShell.Header>
@@ -311,7 +277,7 @@ export function AppShellLayout() {
           <Drawer.Overlay />
           <Drawer.Content id={SHEET_ID} aria-label="Menu" className="app-nav-sheet">
             <Drawer.Header>
-              <Group gap={11} wrap="nowrap" align="center">
+              <Group gap={8} wrap="nowrap" align="center">
                 <LogoMark />
                 <Text component="span" fz="lg" fw={700} lts="-0.02em" style={{ lineHeight: 1.1 }}>
                   <Text span inherit c="bright">UW–Madison </Text>

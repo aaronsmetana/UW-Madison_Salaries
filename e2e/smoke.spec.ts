@@ -524,14 +524,14 @@ test.describe('the landing distribution', () => {
         const w = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().width;
         const sizes = (sel: string) => [...document.querySelectorAll(sel)].map((el) => parseFloat(getComputedStyle(el).fontSize));
         // Every piece of text on the page outside the graph's panel and the search's own box.
-        const outside: { text: string; size: number }[] = [];
+        const outside: { text: string; size: number; inTitle: boolean }[] = [];
         const walk = document.createTreeWalker(document.querySelector('#main-content')!, NodeFilter.SHOW_TEXT);
         for (let n = walk.nextNode(); n; n = walk.nextNode()) {
           const el = n.parentElement!;
           if (!(n.textContent ?? '').trim() || el.closest('.hero-dist, .mantine-TextInput-root, .visually-hidden')) continue;
           const r = el.getBoundingClientRect();
           if (!r.width || !r.height) continue;
-          outside.push({ text: (n.textContent ?? '').trim().slice(0, 30), size: parseFloat(getComputedStyle(el).fontSize) });
+          outside.push({ text: (n.textContent ?? '').trim().slice(0, 30), size: parseFloat(getComputedStyle(el).fontSize), inTitle: !!el.closest('h1') });
         }
         return {
           room, chart: w('.hero-dist'), search: w('.hero-search-input'), plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height,
@@ -549,8 +549,10 @@ test.describe('the landing distribution', () => {
       expect(Math.abs(r.search - r.room), `at ${name} the search is ${r.search}px of ${r.room}px`).toBeLessThanOrEqual(1);
       expect(r.under.length, `at ${name} the figures and links under the search are not there to measure`).toBeGreaterThanOrEqual(14);
       for (const s of r.under) expect(s, `at ${name} something under the search is set larger than the search itself`).toBeLessThanOrEqual(r.searchFont);
+      // The title's own words, whatever they say, and nothing else.
       const loudest = r.outside.filter((o) => o.size >= r.title);
-      expect(loudest.map((o) => o.text), `at ${name} text outside the graph is as large as the page's title`).toEqual(['UW–Madison', 'Salaries']);
+      expect(loudest.length, `at ${name} the title is not the largest text`).toBeGreaterThan(0);
+      expect(loudest.filter((o) => !o.inTitle).map((o) => o.text), `at ${name} text outside the graph is as large as the page's title`).toEqual([]);
     }
     expect(laptop.plotH, 'the plot at 1440px').toBe(375);
     expect(wide.plotH, 'the plot did not grow taller with a wide screen').toBe(520);

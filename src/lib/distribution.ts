@@ -223,16 +223,18 @@ export function groupSigma(pays: readonly number[], cap: number): number {
   return Math.max(KERNEL_SIGMA, 0.45 * spread * n ** -0.2);
 }
 
-/** How far a group's curve must rise off the floor to be drawn, px. */
-export const GROUP_MIN_PX = 12;
-
 /**
  * A group's curve over everyone's, as the plot draws them: `W` wide and `H` tall, the campus curve's peak
  * `head` below the top. On the campus curve's own scale, so its height is how many of the group are at a
  * pay, and on the same grid, where it is held to everyone's: a group is never more than all of campus,
  * though its wider kernel would lift it over a narrow dip in everyone's. It runs from its first point with
- * anyone to its last; the flat zero either side only doubled the axis in dashes. Null when it rises less
- * than `GROUP_MIN_PX`: a line along the axis says nothing its dots and median do not.
+ * anyone to its last; the flat zero either side only doubled the axis in dashes.
+ *
+ * Drawn however low it is. It used to be left out under 12px, and a title spread across a wide range never
+ * rises that far on campus's scale: Professor and Assistant Professor peak near 9px, Associate Professor
+ * near 5, so half of the largest titles showed only a median line while Research Associate showed its
+ * shape. Low, it is still the true count: a dashed line along the floor that lifts where the group's
+ * people are. Null only for a group with no one under the cap, which has nothing here to draw.
  */
 export function groupLine(group: readonly Bin[], campus: readonly Bin[], box: { W: number; H: number; head: number }): string | null {
   if (!group.length || !campus.length) return null;
@@ -242,7 +244,7 @@ export function groupLine(group: readonly Bin[], campus: readonly Bin[], box: { 
   const pts = group.map((b) => ({ bucket: b.bucket, n: Math.min(b.n, everyone.get(b.bucket) ?? 0) }));
   const tall = (n: number) => (n / max) * (box.H - box.head - 2);
   const peak = Math.max(0, ...pts.map((p) => p.n));
-  if (tall(peak) < GROUP_MIN_PX) return null;
+  if (!(peak > 0)) return null;
   const floor = peak * 0.002;
   let a = 0, z = pts.length - 1;
   while (a < z && pts[a].n <= floor) a++;

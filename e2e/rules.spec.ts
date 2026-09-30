@@ -50,7 +50,9 @@ test.describe('R8 — pay figures describe people', () => {
       `SELECT median(pay) med FROM (SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key) WHERE pay > 0`
     );
     await page.goto('./');
-    await expect(page.getByText(`The median salary is ${usd(o.med)}.`)).toBeVisible({ timeout: 60_000 });
+    // In the figures under the search: the heading says what the page shows now, not the median.
+    const stat = page.locator('.home-stat').filter({ has: page.locator('.home-stat-label', { hasText: /^median$/ }) });
+    await expect(stat.locator('.home-stat-value')).toHaveText(usd(o.med), { timeout: 60_000 });
   });
 
   test("a division's median counts each person once, at their pay in that division", async ({ page }) => {

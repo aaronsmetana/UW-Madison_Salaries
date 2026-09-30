@@ -89,7 +89,7 @@ test.describe('the newest release, said', () => {
 
   /**
    * On a phone there is no room beside the name — the tag ran off the screen and pushed the colour switch
-   * with it — so it is the line over the name, where a wider header says "Open record salary data".
+   * with it — so it is the line over the name, the one place anything sits over it.
    */
   test('on a phone the release is the line over the name, and the header still fits', async ({ page }) => {
     const latest = read<Summary>('summary.json').snapshots.at(-1)!;
@@ -131,17 +131,15 @@ test.describe('the newest release, said', () => {
         const opposite = document.querySelector('.mantine-AppShell-header > .mantine-Group-root > :last-child')!.getBoundingClientRect();
         const gap = tag && getComputedStyle(tag).display !== 'none' ? opposite.left - tag.getBoundingClientRect().right : null;
         const shown = (e: Element | null) => !!e && getComputedStyle(e).display !== 'none';
-        const masthead = [...document.querySelectorAll('.app-wordmark *')].find((e) => !e.children.length && e.textContent?.trim().toLowerCase() === 'open record salary data') ?? null;
         return {
           h: header.height, right: Math.max(...kids.map((b) => b.right)), top: Math.min(...kids.map((b) => b.top)), bottom: Math.max(...kids.map((b) => b.bottom)), nameH: name.height, gap,
           forms: [tag, document.querySelector('.release-eyebrow')].filter(shown).length,
-          eyebrowShown: shown(document.querySelector('.release-eyebrow')),
-          mastheadShown: shown(masthead) && masthead!.getBoundingClientRect().height > 0,
+          eyebrow: document.querySelector('.mantine-AppShell-header')!.textContent!.toLowerCase().includes('open record salary data'),
         };
       });
-      // One release, beside the name or over it; and the line over the name is one thing, never two.
+      // One release, beside the name or over it; the old "Open record salary data" line over the name is gone.
       expect(g.forms, `${width}px: the release is said ${g.forms} times`).toBe(1);
-      expect(g.mastheadShown, `${width}px: "Open record salary data" and the release both over the name`).toBe(!g.eyebrowShown);
+      expect(g.eyebrow, `${width}px: "Open record salary data" is back over the name`).toBe(false);
       expect(g.right, `${width}px: something in the header runs off the screen`).toBeLessThanOrEqual(width);
       expect(g.top, `${width}px: something in the header spills above it`).toBeGreaterThanOrEqual(0);
       expect(g.bottom, `${width}px: something in the header spills below it`).toBeLessThanOrEqual(g.h);

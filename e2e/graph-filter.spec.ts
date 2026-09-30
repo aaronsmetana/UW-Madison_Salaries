@@ -248,9 +248,10 @@ test('where most are a title, its curve stands at their share of everyone, smoot
   expect(peaks, `its curve zigzags: ${peaks} peaks`).toBeLessThanOrEqual(6);
 });
 
-/** A group too small to rise off the floor draws no curve — a dashed line along the axis says nothing — but
- *  keeps its median line and its label. */
-test('a group too small to rise off the floor has no curve, and keeps its median and label', async ({ page }) => {
+/** A group too small to rise far off the floor still draws its curve: low, along the floor, on campus's scale,
+ *  with its median line and its label. It used to be left out under 12px, and half of the largest titles
+ *  (Professor, Assistant Professor…) then showed a median line alone beside Research Associate's shape. */
+test('a group of about twenty draws its curve, low, with its median and label', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   // A title of about twenty, named once in the index, so the bar finds it by name.
@@ -264,8 +265,41 @@ test('a group too small to rise off the floor has no curve, and keeps its median
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
   await expect(page.locator('.hero-dist-group-flag')).toContainText(`${t.title} · ${t.n} · median`);
   const s = await shape(page);
-  expect(s.group, `${t.title}: a curve along the floor was drawn`).toBeNull();
-  expect(s.lineShown, `${t.title}: its median line went with the curve`).toBe(true);
+  expect(s.group, `${t.title}: no curve drawn`).not.toBeNull();
+  // Low, as twenty people are against everyone: the case the old 12px cut left out.
+  const top = Math.max(...s.group!.map(([, h]) => h));
+  expect(top, `${t.title}: its curve is not the low one this test is about`).toBeLessThan(12);
+  expect(top, `${t.title}: its curve lies flat on the floor`).toBeGreaterThan(0);
+  expect(s.lineShown, `${t.title}: its median line is missing`).toBe(true);
+});
+
+/**
+ * Pointing at a suggested title or division draws its group: the dashed outline of how many of its people
+ * are at each pay, its median line and its label. Professor and Assistant Professor are spread over a wide
+ * range and rise only a few pixels on campus's scale, so under the old 12px cut they showed a median line
+ * alone while Research Associate showed its shape.
+ */
+test('every suggested title and division draws its outline, median and label when pointed at', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./');
+  const box = page.getByRole('combobox', { name: 'Search a person, title or division' });
+  await expect(box).toBeVisible({ timeout: 60_000 });
+  await box.click();
+  const rows = page.locator('[data-suggestions] [role="option"]');
+  await expect(rows).toHaveCount(6, { timeout: 60_000 });
+  const seen: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const row = rows.nth(i);
+    const name = ((await row.locator('p, .mantine-Text-root').first().textContent()) ?? '').trim();
+    await row.hover();
+    await expect(page.locator('.hero-dist-group-flag'), `${name}: no label`).toContainText(name, { timeout: 30_000 });
+    await expect(page.locator('.hero-dist-group-flag'), `${name}: its label is still waiting`).not.toHaveAttribute('data-pending', /./, { timeout: 30_000 });
+    await expect(page.locator('.hero-dist-group-curve'), `${name}: no outline`).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator('.hero-dist-group-median'), `${name}: no median line`).toHaveCount(1);
+    seen.push(name);
+  }
+  expect(seen, 'the thin titles this is about are not among the suggestions').toEqual(expect.arrayContaining(['Professor', 'Assistant Professor']));
 });
 
 /** Where the dots of the field and the pile are laid out, full page. */

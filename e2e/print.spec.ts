@@ -16,7 +16,7 @@ import { afterReveal } from './reveal';
  */
 
 const ROUTES = [
-  ['home', './', /UW–Madison Salaries/],
+  ['home', './', /^What .* people at UW–Madison are paid$/],
   ['paycheck', './paycheck', /./],
   ['explore', './explore', /Divisions/],
   ['compare', './compare', /./],

@@ -556,7 +556,7 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* Small accent-7 (#0e6e83) header text — the wordmark and the UFAS credit link — only clears 3.22:1
+/* Small accent-7 (#0e6e83) header ink — the wordmark's "Salaries" and the mark's dots — only clears 3.22:1
    against the dark app chrome (--chrome, now #0f1113), under WCAG AA's 4.5:1. accent-4 measures
    7.88:1 there. (Re-measured against the base+lift ramp; the ratios recorded here previously were
    against the flat #14181c chrome, and before that against Mantine's stock #242424.) */
@@ -2332,6 +2332,14 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .mantine-AppShell-footer { display: none; }
 }
 .footer-inflow { padding-block: var(--mantine-spacing-sm); }
+/* The fixed footer is one line in its 40px bar (Footer.tsx); what does not fit at a width goes. The phone's
+   in-flow footer keeps everything. */
+@media screen and (min-width: 48em) and (max-width: 79.99em) {
+  .mantine-AppShell-footer .footer-span { display: none; }
+}
+@media screen and (min-width: 48em) and (max-width: 61.99em) {
+  .mantine-AppShell-footer .footer-built { display: none; }
+}
 
 /* Read by a screen reader, not drawn. */
 .visually-hidden {

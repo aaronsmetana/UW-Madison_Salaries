@@ -1047,7 +1047,7 @@ function Distribution({
   })();
   // The group's curve in the same box and on the campus curve's scale: how many of them there are at each
   // pay, never more than everyone. Scaled to its own peak, it drew Professor's 1,275 people towering over
-  // campus's 21,962. Left out for a group too small to rise off the floor (lib/distribution `groupLine`).
+  // campus's 21,962. Drawn however low: a title spread over a wide range hugs the floor (lib/distribution `groupLine`).
   const groupLine = groupShape ? groupLinePath(groupShape.curve, curve, { W, H, head: HEAD }) : null;
   // Its median, as a line down the plot — unless it is past the cap, where the plot ends and the pile
   // begins; the label then sits at the plot's right end, over the pile.
@@ -2524,10 +2524,12 @@ export default function Home() {
   }, [summary, topTitle, topDivision, p90, dims, tenure, categoryMedians]);
 
 
-  // The figures on the line under the search, each a number and what it counts. Median is not among them:
-  // it is in the lead under the title, and the graph is a picture of it. The exact payroll is on hover.
+  // The figures on the line under the search, each a number and what it counts. The exact median is here
+  // since the heading became what the page shows: the graph labels it in thousands. The exact payroll is on
+  // hover.
   const stats: StatData[] = [
     { label: 'employees', value: summary?.latest?.headcount ?? null, format: num },
+    { label: 'median', value: summary?.latest?.median ?? null, format: usd },
     { label: 'payroll', value: payroll, format: usdCompact, hint: payroll != null ? usd(payroll) : undefined },
     { label: 'divisions', value: dims?.schools ?? null, format: num },
     { label: 'titles', value: dims?.titles ?? null, format: num },
@@ -2573,18 +2575,19 @@ export default function Home() {
         <Stack gap="sm" w="100%" className="hero-rise">
           <div className="home-head">
             <div className="home-head-main">
+              {/* What the page shows, not the site's name: the name is in the header a few pixels above, and
+                  the heading used to repeat it. The count is everyone the graph draws, from the data. */}
               <Title order={1} fz="var(--fs-display)" lh={1.15} className="home-title">
-                <Text span inherit c="bright">UW–Madison </Text>
-                <Text span inherit c="accent.7" className="accent7-text">Salaries</Text>
-              </Title>
-              <Text size="sm" c="dimmed" className="home-lead">
-                Search anyone by name to see their pay, how it changed, and how they compare to everyone
-                with the same title.
-                {summary?.latest?.median != null && (
-                  <> The median salary is{' '}
-                    <Text span inherit fw={700} c="var(--mantine-color-text)">{usd(summary.latest.median)}</Text>.
-                  </>
+                <Text span inherit c="bright">What </Text>
+                {summary?.latest?.headcount != null && (
+                  <Text span inherit c="accent.7" className="accent7-text">{num(summary.latest.headcount)} people </Text>
                 )}
+                <Text span inherit c="bright">{summary?.latest?.headcount != null ? 'at' : 'people at'} <span style={{ whiteSpace: 'nowrap' }}>UW–Madison</span> are paid</Text>
+              </Title>
+              {/* The median is the graph's own label; the lead says how to read the page and what to do. */}
+              <Text size="sm" c="dimmed" className="home-lead">
+                Every dot below is one person. Search anyone by name to see their pay and how it compares with
+                their title.
               </Text>
             </div>
           </div>
