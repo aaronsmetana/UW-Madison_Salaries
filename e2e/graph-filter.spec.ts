@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
 import { HOME_STATS, spots, plotShape, barOverPlot, places, people, ranks } from './homeDots';
@@ -274,6 +274,31 @@ test('a group of about twenty draws its curve, low, with its median and label', 
 });
 
 /**
+ * Point at a row until it is chosen: once the page and the list have stopped scrolling, onto it from just
+ * inside its edge, so the move has movement over it. The list chooses a row only on a pointer that moves
+ * onto it (SearchBox `chooseOnMove`), not on a row slid under a resting one. On CI one hover once left the
+ * previous row chosen for the whole wait; that did not reproduce here, even with the CPU slowed six times.
+ * What is tested here is what a chosen row draws; how a row is chosen is search-suggestions'.
+ */
+async function pointAt(page: Page, row: Locator) {
+  await expect(async () => {
+    await moveOnto(page, row);
+    await expect(row).toHaveAttribute('aria-selected', 'true', { timeout: 1_000 });
+  }, 'pointing at the row did not choose it').toPass({ timeout: 20_000 });
+}
+async function moveOnto(page: Page, row: Locator) {
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => new Promise<boolean>((done) => {
+    const at = () => scrollY + [...document.querySelectorAll('.search-dropdown, .search-dropdown *')].reduce((t, e) => t + e.scrollTop, 0);
+    const was = at();
+    requestAnimationFrame(() => requestAnimationFrame(() => done(at() === was)));
+  }));
+  const b = (await row.boundingBox())!;
+  await page.mouse.move(b.x + 6, b.y + b.height / 2);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 3 });
+}
+
+/**
  * Pointing at a suggested title or division draws its group: the dashed outline of how many of its people
  * are at each pay, its median line and its label. Professor and Assistant Professor are spread over a wide
  * range and rise only a few pixels on campus's scale, so under the old 12px cut they showed a median line
@@ -292,7 +317,7 @@ test('every suggested title and division draws its outline, median and label whe
   for (let i = 0; i < 6; i++) {
     const row = rows.nth(i);
     const name = ((await row.locator('p, .mantine-Text-root').first().textContent()) ?? '').trim();
-    await row.hover();
+    await pointAt(page, row);
     await expect(page.locator('.hero-dist-group-flag'), `${name}: no label`).toContainText(name, { timeout: 30_000 });
     await expect(page.locator('.hero-dist-group-flag'), `${name}: its label is still waiting`).not.toHaveAttribute('data-pending', /./, { timeout: 30_000 });
     await expect(page.locator('.hero-dist-group-curve'), `${name}: no outline`).toHaveCount(1, { timeout: 30_000 });
