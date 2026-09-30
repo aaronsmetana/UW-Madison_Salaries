@@ -443,12 +443,22 @@ test.describe('Phones — the figure sits beside the name', () => {
     const box = await table.locator('tbody tr').first().locator('td').nth(idx).boundingBox();
     expect(box, 'the figure is drawn').not.toBeNull();
     expect(box!.x + box!.width, `the "${header}" cell ends at ${Math.round(box!.x + box!.width)}px`).toBeLessThanOrEqual(PHONE.width);
-    // And nothing after it runs off the screen either: a row that fits bar its last button still
-    // needs a sideways scroll to reach it.
-    const lastRight = await table.locator('tbody tr').first().evaluate((tr) =>
-      Math.max(...[...tr.querySelectorAll('td')].filter((td) => getComputedStyle(td).display !== 'none').map((td) => td.getBoundingClientRect().right))
-    );
-    expect(Math.round(lastRight), 'the row ends inside the screen').toBeLessThanOrEqual(PHONE.width);
+    // And nothing after it runs past the table's own box either: a row that fits bar its last button still
+    // needs a sideways scroll to reach it. Against the scroller the table sits in, not the screen: History's
+    // row ended at 374.5px locally, inside a 375px screen, while it ran 37px past its card, and on CI's
+    // slightly wider Linux text it ended at 376 and stopped the deploy.
+    const fit = await table.locator('tbody tr').first().evaluate((tr) => {
+      const table = tr.closest('table')!;
+      let box: Element = table.parentElement!;
+      for (let e: Element | null = table.parentElement; e; e = e.parentElement) {
+        const ox = getComputedStyle(e).overflowX;
+        if (ox === 'auto' || ox === 'scroll' || ox === 'hidden') { box = e; break; }
+      }
+      const right = Math.max(...[...tr.querySelectorAll('td')].filter((td) => getComputedStyle(td).display !== 'none').map((td) => td.getBoundingClientRect().right));
+      return { right, edge: box.getBoundingClientRect().right };
+    });
+    expect(fit.right, 'the row runs past its table\'s box, a sideways scroll').toBeLessThanOrEqual(fit.edge + 0.5);
+    expect(Math.round(fit.right), 'the row ends inside the screen').toBeLessThanOrEqual(PHONE.width);
   }
 
   test('History: snapshot, title and department in one cell, then the pay', async ({ page }) => {

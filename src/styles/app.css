@@ -1790,6 +1790,9 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
      table 34px past the screen. The name cell may break anywhere; the flex box may shrink. */
   .fold-table td:has(.fold-under) { overflow-wrap: anywhere; }
   div:has(> .mantine-ScrollArea-root .fold-table) { min-width: 0; }
+  /* A raise's comparison ("the same as 67% · typical +2.0%") holds one line on a wider screen; here it
+     wraps, or it held History's change column open and the table 37px past its card, a sideways scroll. */
+  .appt-history [data-raise-compare] { white-space: normal !important; }
   /* The tray button keeps its icon and its accessible name, and drops the word. */
   .fold-table .tray-label { display: none; }
   .fold-table .peer-add .mantine-Button-section { margin: 0; }
