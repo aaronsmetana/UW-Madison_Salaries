@@ -81,11 +81,20 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const railStyle = { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' } as const;
 
   if (loading || series.length < 2) {
+    // Loading, the card is the loaded one's shape and height, line for line: the toggle's row, the figure, the
+    // sparkline, the two pickers and the top-10% line. A label and one bar, it was half as tall, and the
+    // row of tiles grew under the reader, taking the tabs below it down 60px (layout shift 0.23).
     return (
       <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
         <div aria-hidden style={railStyle} />
-        <Eyebrow>Median pay growth</Eyebrow>
-        <Skeleton height={24} width={120} radius="sm" mt={8} />
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Eyebrow>Median pay growth</Eyebrow>
+          <Skeleton height={28} width={116} radius="sm" />
+        </Group>
+        <Skeleton height={28} width={210} radius="sm" mt={6} />
+        <Skeleton height={26} width={150} radius="sm" mt={6} />
+        <Skeleton height={28} width={2 * PICKER_W + 22} radius="sm" mt={8} />
+        <Skeleton height={18} width={130} radius="sm" mt={6} />
       </Card>
     );
   }

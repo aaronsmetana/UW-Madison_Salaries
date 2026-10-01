@@ -64,7 +64,7 @@ export function ReportFlow({ type, hasSubject }: { type: 'person' | 'comparison'
     // route's `Stack gap="lg"` spaces that whole wrapper and not the two things inside it.
     <Box className="no-print report-flow-wrap" mt="lg" data-expanded={expanded ? 'yes' : 'no'}>
       {hasSubject ? (
-        <UnstyledButton aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} mb={open ? 'sm' : 0}>
+        <UnstyledButton className="report-flow-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} mb={open ? 'sm' : 0}>
           <Group gap={6} wrap="nowrap">
             {open ? <IconChevronDown size={ICON.compact} aria-hidden /> : <IconChevronRight size={ICON.compact} aria-hidden />}
             <Text size="sm" fw={600}>How this report works</Text>

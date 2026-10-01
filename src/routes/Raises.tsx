@@ -141,13 +141,15 @@ export default function Raises() {
   const ranges = !!ref && ref.status !== 'missing' && !!ref.released_with && ref.released_with === to;
   const rangesLabel = snaps.find((s) => s.id === ref?.released_with)?.label ?? null;
 
-  const { data: rows, isFetching: loadingRows } = useSql<ReviewRow>(
+  const { data: rows } = useSql<ReviewRow>(
     ['raises-review', from, to, metric, filterKey, usualKey, ranges],
     usual ? reviewSql({ ...pair, usual, filters, ranges }) : 'SELECT 1', ready && !!usual);
   const { data: changes } = useSql<TitleChangeRow>(['raises-changes', from, to, metric, filterKey], titleChangesSql({ ...pair, filters }), ready);
   const { data: accountRows } = useSql<Account>(['raises-account', from, to, metric, filterKey], accountSql({ ...pair, filters }), ready);
   const { data: bins } = useSql<{ bucket: number; n: number }>(['raises-dist', from, to, metric, filterKey], distributionSql({ ...pair, filters }), ready);
   const account = accountRows?.[0];
+  // Every answer the results need, or the page's own empty states: what "How to read this" waits for.
+  const resultsIn = ready && !!modes && (!usual || !!(rows && accountRows && bins && changes));
 
   const counts = useMemo(() => {
     const c: Record<Why, number> = { range: 0, title: 0, unit: 0, individual: 0 };
@@ -288,8 +290,14 @@ export default function Raises() {
         </Box>
       </Card>
 
+      {/* The results arrive whole: the summary, the patterns, the distribution, both lists, the account and how to
+          read them, once their four answers are in, with one placeholder before. Section by section, each pushed
+          the ones under it down as it filled, and "How to read this", on the page from the first paint, travelled
+          a screen and a half (layout shift 0.46, the worst on the site). */}
       {!ready || !modes ? (
         <LoadingState label="Reading the raises…" />
+      ) : usual && !(rows && accountRows && bins && changes) ? (
+        <LoadingState label="Finding who got more than the usual raise…" />
       ) : !usual ? (
         <EmptyState icon={<IconTrendingUp size={ICON.feature} />} title="No one kept the same job between these snapshots"
           hint="Pick two snapshots with people in the same job in both." />
@@ -365,7 +373,7 @@ export default function Raises() {
               <CardTitle mb={0}>More than the usual raise{whyOnly ? `: ${WHY[whyOnly].label}` : ''}</CardTitle>
               <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportRows} disabled={!sorted.length}>CSV</Button>
             </Group>
-            {loadingRows && !rows ? <LoadingState label="Finding who got more…" /> : !sorted.length ? (
+            {!sorted.length ? (
               <Text size="sm" c="dimmed" px="md" pb="md">No one here got more than the usual raise.</Text>
             ) : (
               <ScrollArea.Autosize mah={720} type="auto">
@@ -425,7 +433,7 @@ export default function Raises() {
               A promotion or a reclassification: a new job code between these snapshots, with one appointment on each
               side. Not a raise in the same job, so not counted above.
             </Text>
-            {!changes ? <LoadingState label="Finding title changes…" /> : !changesSorted.length ? (
+            {!changesSorted.length ? (
               <Text size="sm" c="dimmed" px="md" pb="md">No one here changed title.</Text>
             ) : (
               <ScrollArea.Autosize mah={560} type="auto">
@@ -484,7 +492,7 @@ export default function Raises() {
         </>
       )}
 
-      <Card withBorder padding="lg" className="raise-how">
+      {resultsIn && <Card withBorder padding="lg" className="raise-how">
         <CardTitle mb="xs">How to read this</CardTitle>
         <Stack gap="xs">
           <Text size="sm">
@@ -515,7 +523,7 @@ export default function Raises() {
             matched across snapshots by name, and filters look at where each person is in the later snapshot.
           </Text>
         </Stack>
-      </Card>
+      </Card>}
     </Stack>
   );
 }

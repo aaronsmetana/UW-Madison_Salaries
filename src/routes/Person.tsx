@@ -2,8 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
-  ThemeIcon,
-} from '@mantine/core';
+  ThemeIcon, Skeleton } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
@@ -188,8 +187,21 @@ function TitleChangeLabel({
  *  with a fill to p% (green above the pool median, neutral below), a 50th-percentile reference line and a
  *  marker tick, and the percentile on the right. The fill + marker sweep in left→right on mount (staggered
  *  by `delay`). */
-function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: number; below: number; pct: number; delay?: number }) {
+function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?: number; below?: number; pct?: number; delay?: number }) {
   const mounted = useMounted();
+  // Its counts still coming: the row at its final size, the label real and the rest placeholders.
+  if (n == null || below == null || pct == null) {
+    return (
+      <Group wrap="nowrap" gap="md" align="center">
+        <div style={{ width: 210, flexShrink: 0 }}>
+          <Text size="sm" fw={500} lineClamp={2} title={label}>{label}</Text>
+          <Skeleton height={13} width={84} radius="sm" my={2.5} />
+        </div>
+        <Skeleton height={10} radius="sm" style={{ flex: 1 }} />
+        <Skeleton height={16} width={72} radius="sm" ml={32} />
+      </Group>
+    );
+  }
   const above = pct >= 50;
   const fill = above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-gray-5)';
   const tick = above ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-gray-6)';
@@ -556,22 +568,29 @@ export default function Person() {
     }),
     !!latest && lastSalary != null && lastSalary > 0
   );
+  // The pools this person is in, known from their own row before the counts are: the card is drawn at its
+  // final size from the start (their labels, and placeholders for the bars), rather than arriving above the
+  // pay band and the simulator and pushing them down (layout shift 0.21).
+  const poolLabels = useMemo(() => {
+    const sched = fmtGradeBasis(latest?.grade_basis);
+    return [
+      { key: 'all', label: 'All UW–Madison', ok: true },
+      { key: 'div', label: latest?.school ?? 'Division', ok: !!latest?.school },
+      // Named with its school: "Administration" alone is twelve different units.
+      { key: 'dept', label: [latest?.department, latest?.school].filter(Boolean).join(' · ') || 'Department', ok: !!latest?.department },
+      { key: 'grade', label: latest?.grade_number != null ? `Salary grade ${latest.grade_number}${sched ? ` (${sched})` : ''}` : 'Salary grade', ok: latest?.grade_number != null },
+      { key: 'title', label: latest?.title ?? 'Title', ok: !!latest?.job_code },
+    ].filter((x) => x.ok);
+  }, [latest]);
   const standingPools = useMemo(() => {
     const r = standingRows?.[0];
     if (!r) return [];
-    const sched = fmtGradeBasis(latest?.grade_basis);
-    const raw = [
-      { label: 'All UW–Madison', n: r.n_all, below: r.b_all, ok: true },
-      { label: latest?.school ?? 'Division', n: r.n_div, below: r.b_div, ok: !!latest?.school },
-      // Named with its school: "Administration" alone is twelve different units.
-      { label: [latest?.department, latest?.school].filter(Boolean).join(' · ') || 'Department', n: r.n_dept, below: r.b_dept, ok: !!latest?.department },
-      { label: latest?.grade_number != null ? `Salary grade ${latest.grade_number}${sched ? ` (${sched})` : ''}` : 'Salary grade', n: r.n_grade, below: r.b_grade, ok: latest?.grade_number != null },
-      { label: latest?.title ?? 'Title', n: r.n_title, below: r.b_title, ok: !!latest?.job_code },
-    ];
-    return raw
-      .filter((x) => x.ok && x.n >= 2)
-      .map((x) => ({ label: x.label, n: x.n, below: x.below, pct: poolPercentile(x.below, x.n)! }));
-  }, [standingRows, latest]);
+    const count = { all: [r.n_all, r.b_all], div: [r.n_div, r.b_div], dept: [r.n_dept, r.b_dept], grade: [r.n_grade, r.b_grade], title: [r.n_title, r.b_title] } as const;
+    return poolLabels
+      .map((x) => ({ label: x.label, n: count[x.key as keyof typeof count][0], below: count[x.key as keyof typeof count][1] }))
+      .filter((x) => x.n >= 2)
+      .map((x) => ({ ...x, pct: poolPercentile(x.below, x.n)! }));
+  }, [standingRows, poolLabels]);
 
   // Same-title peers = everyone sharing this person's job_code at the latest snapshot.
   const jobCode = latest?.job_code ?? null;
@@ -1207,15 +1226,17 @@ export default function Person() {
         <Tabs.Panel value="pay" pt="md">
           <Stack gap="lg" className="tab-rise">
       {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
-      {standingPools.length > 0 && (
+      {(standingPools.length > 0 || (!standingRows && poolLabels.length > 0)) && (
         <Card withBorder padding="lg">
           <CardTitle sub="Where this pay ranks in each pool this person belongs to, in the latest snapshot.">
             Standing
           </CardTitle>
           <Stack gap="sm">
-            {standingPools.map((p, i) => (
-              <PercentileBar key={p.label} label={p.label} n={p.n} below={p.below} pct={p.pct} delay={i * 90} />
-            ))}
+            {standingRows
+              ? standingPools.map((p, i) => (
+                <PercentileBar key={p.label} label={p.label} n={p.n} below={p.below} pct={p.pct} delay={i * 90} />
+              ))
+              : poolLabels.map((p) => <PercentileBar key={p.label} label={p.label} />)}
           </Stack>
           <Text size="xs" c="dimmed" mt="md">Percentile = share of the pool this person out-earns; the centre line marks the pool median (50th). Green = above median. Pools with only one person are omitted.</Text>
         </Card>

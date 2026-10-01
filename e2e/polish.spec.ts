@@ -214,3 +214,87 @@ for (const [name, route] of PAGES) {
     expect([...noRing], `${name}: a Tab stop with no focus ring`).toEqual([]);
   });
 }
+
+/**
+ * Every page holds still while it loads: its layout shift, from the first paint until nothing is loading,
+ * under 0.1 (the threshold Google calls good). Measured first, Raises scored 0.46 ("How to read this", on the
+ * page from the start, pushed a screen and a half down as each section filled), Divisions 0.23 (a loading
+ * tile half its loaded height) and a person's pay tab 0.21 (Standing arriving above the band). Each now waits
+ * whole, or waits at its final size.
+ */
+test('every page holds still while it loads', async ({ browser }) => {
+  test.setTimeout(600_000);
+  const over: string[] = [];
+  for (const [name, route] of PAGES) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+    if (TRAY_FIRST.has(name)) { await page.goto(`./compare?sel=${TRAY}`); await settle(page); }
+    await page.addInitScript(() => {
+      const w = window as unknown as { shift: number; moved: string[] };
+      w.shift = 0; w.moved = [];
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; sources?: { node?: Node }[] }[]) {
+          if (e.hadRecentInput) continue;
+          w.shift += e.value;
+          for (const s of e.sources ?? []) {
+            const n = s.node as HTMLElement | undefined;
+            if (n?.className) w.moved.push(`${String(n.className).split(' ').slice(-1)[0]} "${(n.textContent ?? '').trim().slice(0, 24)}"`);
+          }
+        }
+      }).observe({ type: 'layout-shift', buffered: true });
+    });
+    await page.goto(route);
+    await settle(page);
+    await page.waitForTimeout(1_000);
+    const { shift, moved } = await page.evaluate(() => {
+      const w = window as unknown as { shift: number; moved: string[] };
+      return { shift: w.shift, moved: w.moved };
+    });
+    expect(typeof shift, `${name}: no layout-shift reading`).toBe('number');
+    if (shift >= 0.1) over.push(`${name}: ${shift.toFixed(3)} (${[...new Set(moved)].slice(0, 3).join('; ')})`);
+    await ctx.close();
+  }
+  expect(over, 'a page that moves under the reader while it loads').toEqual([]);
+});
+
+/**
+ * On a phone every target a finger can reach is at least 24px each way (WCAG 2.5.8): what a finger hits,
+ * measured by hitting it, so an invisible hit area counts and a neighbour that steals part of it does not.
+ * Each target under 24px is brought to the middle of the window and touched 11.5px either side of its centre,
+ * across and down. Exempt, as WCAG has it: a link inside a sentence, a number field's stepper (the field takes
+ * the number), a checkbox or radio whose label is the target.
+ */
+test('on a phone, every target a finger can reach is 24px or more each way', async ({ browser }) => {
+  test.setTimeout(900_000);
+  const small: string[] = [];
+  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  for (const [name, route] of PAGES) {
+    if (TRAY_FIRST.has(name)) { await page.goto(`./compare?sel=${TRAY}`); await settle(page); }
+    await page.goto(route);
+    await settle(page);
+    const misses = await page.evaluate(() => {
+      const out: string[] = [];
+      const targets = document.querySelectorAll<HTMLElement>('a[href], button, input:not([type="hidden"]), select, textarea, [role="tab"], [role="button"], [role="checkbox"], [role="radio"], [role="switch"], [tabindex="0"]');
+      for (const e of targets) {
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || !e.checkVisibility({ visibilityProperty: true })) continue;
+        if (r.width >= 24 && r.height >= 24) continue;
+        if (e.matches('p a, li a, .mantine-NumberInput-control, .visually-hidden, .skip-link')) continue;
+        if (e.matches('input[type="checkbox"], input[type="radio"]') && (e.closest('label') || (e.id && document.querySelector(`label[for="${e.id}"]`)))) continue;
+        e.scrollIntoView({ block: 'center', inline: 'center' });
+        const b = e.getBoundingClientRect();
+        const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+        const hits = [[cx - 11.5, cy], [cx + 11.5, cy], [cx, cy - 11.5], [cx, cy + 11.5]].every(([x, y]) => {
+          const at = document.elementFromPoint(x, y);
+          return !!at && (at === e || e.contains(at));
+        });
+        if (!hits) out.push(`${e.tagName.toLowerCase()}.${[...e.classList].find((c) => !c.startsWith('m_')) ?? ''} ${Math.round(r.width)}x${Math.round(r.height)} "${(e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24)}"`);
+      }
+      return [...new Set(out)];
+    });
+    if (misses.length) small.push(`${name}: ${misses.slice(0, 6).join('; ')}${misses.length > 6 ? ` (+${misses.length - 6})` : ''}`);
+  }
+  await ctx.close();
+  expect(small, 'a target under 24px for a finger').toEqual([]);
+});

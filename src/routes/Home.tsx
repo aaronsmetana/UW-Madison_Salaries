@@ -2245,10 +2245,11 @@ function RotatingFact({ facts }: { facts: string[] }) {
       if (swapTimer.current) clearTimeout(swapTimer.current);
     };
   }, [facts.length]);
-  if (!facts.length) return null;
+  // Its line is held from the first paint, a fact or not: arriving, it pushed the links under it down
+  // (layout shift 0.07). One line, as every fact is short.
   return (
-    <Text size="xs" c="dimmed" ta="center" style={{ opacity: show ? 1 : 0, transition: 'opacity var(--dur-base) var(--ease)' }}>
-      {facts[i % facts.length]}
+    <Text size="xs" c="dimmed" ta="center" style={{ opacity: show && facts.length ? 1 : 0, transition: 'opacity var(--dur-base) var(--ease)' }}>
+      {facts.length ? facts[i % facts.length] : '\u00a0'}
     </Text>
   );
 }

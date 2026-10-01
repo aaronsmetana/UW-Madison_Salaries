@@ -746,6 +746,74 @@ path.recharts-tooltip-cursor {
 .mantine-SegmentedControl-label { line-height: 20px; }
 .mantine-Tabs-tab { height: 36px; padding-block: 0; }
 
+/* Compare's key: a series' colour, as a dot that hides or shows it on the charts. */
+.series-toggle {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--series-ink);
+  margin-right: 6px;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+/* Touch targets (P7). On a phone, the controls a finger can reach were often under WCAG 2.5.8's 24px: a
+   table's links (20px tall), its sort headers (17px), a glossary term (15px), Compare's colour dots (8px), a
+   field's clear button, Raises' filter badges, the footer's links. A link is one rule: every link not inside a
+   sentence, a table's included. Where the pointer is coarse each gets an
+   invisible hit area at least 24px each way (26, with a pixel to spare), centred on it; nothing is drawn differently, and a mouse sees the
+   same page as before. A link inside a sentence is exempt (the WCAG inline exception), as is a number field's
+   stepper (the field takes the number). */
+@media (pointer: coarse) {
+  .mantine-Table-th button,
+  .glossary-term,
+  .mantine-Anchor-root:not(:is(p, li) .mantine-Anchor-root),
+  .mantine-CloseButton-root,
+  .mantine-InputClearButton-root,
+  .raise-why-filter,
+  .report-flow-toggle,
+  .evidence-jump,
+  .hero-dist-legend-item,
+  .hero-dist-pile-label {
+    position: relative;
+  }
+  .mantine-Table-th button::after,
+  .glossary-term::after,
+  .mantine-Anchor-root:not(:is(p, li) .mantine-Anchor-root)::after,
+  .mantine-CloseButton-root::after,
+  .mantine-InputClearButton-root::after,
+  .raise-why-filter::after,
+  .report-flow-toggle::after,
+  .evidence-jump::after,
+  .hero-dist-legend-item::after,
+  .hero-dist-pile-label::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    /* 26, not 24: a pixel to spare each way, so where a box falls between pixels never decides it. */
+    width: max(100%, 26px);
+    height: max(100%, 26px);
+    transform: translate(-50%, -50%);
+  }
+  /* A badge clips what overflows it, the hit area with it. */
+  .raise-why-filter { overflow: visible; }
+  /* Compare's colour dots sit inside a pill's clipped label, where no hit area can reach past them: the button
+     is 24px, the same 8px dot at its centre, and its pill grows to hold it. */
+  .series-toggle {
+    width: 24px;
+    height: 24px;
+    margin: 0 0 0 -8px;
+    background: radial-gradient(circle, var(--series-ink) 3.5px, transparent 4px);
+  }
+  .mantine-Pill-root:has(.series-toggle) { --pill-height: 28px; }
+  /* The brief's evidence rows stood 18px tall and close: a row of their own, 24px. */
+  .evidence-jump { min-height: 24px; align-items: center; }
+}
+
 /* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker accent underline. */
 .mantine-Tabs-tab {
   color: var(--mantine-color-dimmed);

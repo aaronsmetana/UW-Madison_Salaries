@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Stack, Title, Text, Card, Table, Loader, Group, Pill, Button, ThemeIcon } from '@mantine/core';
 import { IconArrowsDiff } from '@tabler/icons-react';
@@ -767,19 +767,7 @@ function SelectedRow({
                 aria-label={`${muted ? 'Show' : 'Hide'} ${i.label} on the charts (shift-click to show only this one)`}
                 aria-pressed={!muted}
                 onClick={(e) => onToggleMute?.(i.id, allIds, e.shiftKey)}
-                style={{
-                  display: 'inline-block',
-                  width: 8,
-                  height: 8,
-                  padding: 0,
-                  border: 'none',
-                  borderRadius: '50%',
-                  background: CHART_SERIES[i.colorIdx % CHART_SERIES.length],
-                  opacity: muted ? 0.25 : 1,
-                  marginRight: 6,
-                  verticalAlign: 'middle',
-                  cursor: 'pointer',
-                }}
+                style={{ '--series-ink': CHART_SERIES[i.colorIdx % CHART_SERIES.length], opacity: muted ? 0.25 : 1 } as CSSProperties}
               />
             )}
             {i.label}
