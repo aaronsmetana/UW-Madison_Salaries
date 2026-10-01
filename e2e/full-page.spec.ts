@@ -12,6 +12,16 @@ async function settledHome(page: Page) {
   await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  // And the page above it laid out for good: the webfont in, and the panel where it will stay. On CI the
+  // font landed after the dots had settled, and the two-line lead above the panel moved it 1.8px between
+  // a test reading its place and the page reading it at the press.
+  await page.evaluate(() => document.fonts.ready);
+  await expect.poll(async () => {
+    const a = await panel(page).boundingBox();
+    await page.waitForTimeout(150);
+    const b = await panel(page).boundingBox();
+    return a && b && a.y === b.y && a.height === b.height;
+  }, { timeout: 10_000 }).toBe(true);
 }
 
 const panel = (page: Page) => page.locator('.hero-dist');
