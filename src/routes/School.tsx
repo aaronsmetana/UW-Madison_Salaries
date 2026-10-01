@@ -16,6 +16,7 @@ import { SegmentedToggle } from '../components/SegmentedToggle';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
+import { CompareSetButton } from '../components/CompareSetButton';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
@@ -24,7 +25,6 @@ import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
-import { useTray } from '../state/tray';
 import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
@@ -94,7 +94,6 @@ export default function School() {
     });
   }, [summary, name]);
   const expr = salaryExpr(metric);
-  const { add, has } = useTray();
   const nav = useNavigate();
   // Active tab lives in the URL (?tab=…), same convention as Explore/Person, so a shared link opens on
   // the same tab; "overview" is the implicit default and stays out of the query string.
@@ -234,19 +233,12 @@ export default function School() {
   return (
     <Stack gap="lg">
       {/* Wraps like PageHeader's own action slot — see the note on Person's header. `nowrap` squeezed the
-          button until its label clipped ("+ Add to tray" needed 83px in an 80px button). */}
+          button until its label clipped. */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1}>{name}</Title>
         </div>
-        <Button
-          variant={has(name) ? 'light' : 'filled'}
-          disabled={has(name)}
-          style={{ flexShrink: 0 }}
-          onClick={() => add({ type: 'school', id: name, label: name })}
-        >
-          {has(name) ? 'In tray' : '+ Add to tray'}
-        </Button>
+        <CompareSetButton item={{ type: 'school', id: name, label: name }} />
       </Group>
 
       <Tabs value={tab} onChange={setTab}>

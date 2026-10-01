@@ -204,6 +204,8 @@
      reason the canvas lost its tint. */
   --hairline: rgba(16, 24, 32, 0.09);
   --hairline-strong: rgba(16, 24, 32, 0.16);
+  /* A rule inside a card, between the things it holds: a step under the card's own edge. */
+  --hairline-soft: rgba(16, 24, 32, 0.07);
   /* Behind a chart's plot area — see `GRID` in lib/chartStyle.ts. */
   --plot-surface: rgba(16, 24, 32, 0.03);
   /* A pill's own ground (FactPill, `.code-pill`): translucent, because a pill sits on the page in one
@@ -325,6 +327,7 @@ body {
 
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
+  --hairline-soft: rgba(255, 255, 255, 0.07);
   --plot-surface: rgba(255, 255, 255, 0.03);
   --pill-bg: rgba(255, 255, 255, 0.075);
   --link-underline-mix: 68%;
@@ -1987,24 +1990,39 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   color: var(--mantine-color-dimmed);
   white-space: nowrap;
 }
-/* One fact about the thing on the page (FactPill): a small-caps label and its value on the pill's own
-   tint. The value is the caption size, in body ink — it was 11px, the smallest text on the person page. */
-.fact-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--pill-bg);
-  white-space: nowrap;
-  line-height: 1;
+/* The facts about the thing on the page (FactStrip): one strip on the card's ground, each fact a small-caps
+   label over its value, parted by hairlines. Each cell sits a pixel left over its own divider and the strip
+   clips what is outside it, so a wrapped row's first cell shows none: a divider only ever stands between two
+   cells. */
+.fact-strip {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 12px;
+  margin: 0;
+  padding: 12px 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--mantine-radius-sm);
 }
-.fact-pill-value {
+.fact-cell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: -1px;
+  padding-inline: 18px;
+  border-left: 1px solid var(--hairline-soft);
+}
+.fact-cell dt, .fact-cell dd { margin: 0; }
+.fact-value {
   font-size: var(--mantine-font-size-xs);
   font-weight: 500;
   color: var(--mantine-color-text);
+  white-space: nowrap;
 }
+/* A page's own "in the compare set" (CompareSetButton): the accent's tint, edged in its stronger step. */
+.in-set-button { border: 1px solid var(--tint-accent-strong); }
 
 /* Search group headings, tracked like the table headers. */
 .search-group-label {

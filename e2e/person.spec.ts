@@ -824,3 +824,26 @@ test('a person with one appointment per snapshot gets no lane markers at all', a
   // the last of its own snapshot, so an ungated rule would restyle all of them.
   expect(rows.map((r) => r.groupLast)).toEqual(rows.map(() => ''));
 });
+
+/**
+ * The header's own "compare set" control says the state and changes it: "Add to compare" puts the person in
+ * the set, "In compare set" (pressed) takes them out again. It was "+ Add to tray" and then a disabled
+ * "In tray" that could not undo itself. The same control heads a division's page.
+ */
+test('the header adds a person to the compare set and takes them out again', async ({ page }) => {
+  for (const route of [`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`, `./school/${encodeURIComponent('School of Medicine and Public Health')}`]) {
+    await page.goto(route);
+    // The header's own control is the one that is pressed or not; a table row's is a plain button.
+    const add = page.getByRole('button', { name: 'Add to compare', pressed: false });
+    await expect(add, route).toBeVisible({ timeout: 60_000 });
+    await expect(add).toHaveAttribute('aria-pressed', 'false');
+    await add.click();
+    const inSet = page.getByRole('button', { name: 'In compare set', pressed: true });
+    await expect(inSet, route).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('region', { name: 'Compare set' })).toBeVisible();
+    // While they are in it, everything that says so says "compare set" (a row's button: "In set").
+    await expect(page.getByText(/\btray\b/i), `${route}: "tray" is still said on the page`).toHaveCount(0);
+    await inSet.click();
+    await expect(page.getByRole('button', { name: 'Add to compare', pressed: false }), `${route}: a second press did not take it out`).toBeVisible();
+  }
+});

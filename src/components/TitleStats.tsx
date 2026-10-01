@@ -334,7 +334,6 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                     <Table.Td ta="right">
                       <TrayButton
                         inTray={inTray}
-                        addLabel="Add to tray"
                         stopPropagation
                         onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
                       />

@@ -1020,7 +1020,7 @@ export default function Reports() {
                 // Sentence case, as every other control in the app; the wide labels were Title Case.
                 data={[
                   { value: 'person', label: 'One person' },
-                  { value: 'comparison', label: isNarrow ? 'Raise case: tray' : 'Raise case: people in the tray' },
+                  { value: 'comparison', label: isNarrow ? 'Raise case: set' : 'Raise case: the compare set' },
                 ]}
               />
               <ExportBar joined={!isNarrow}>

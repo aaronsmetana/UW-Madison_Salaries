@@ -1,6 +1,5 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { parseColor, flatten, contrast } from './color';
-import { deltaE } from './glass';
 
 /**
  * The app-wide readability pass, as a reader meets it: the facts under a person's name as filled pills,
@@ -43,54 +42,59 @@ const onGround = (css: string, ground: RGB): RGB => {
 
 for (const scheme of ['light', 'dark'] as const) {
   /**
-   * The facts under a person's name (Job code, Grade, Category…) as pills on a tint of their own. They
-   * were hairline boxes with 11px labels and 11px values — the smallest text on the page, on boxes that
-   * all but vanished on a dark page. The fill must separate from the page it sits on, and the words on
-   * it must read: the value in body ink at the caption size, the label as the app's small caps. A job
-   * code in the search list wears the same pill.
+   * The facts about a person's appointment (Job code, Grade, Category…) in one divided strip: each a small-caps
+   * label over its value. They were seven pills, each on a grey ground of its own, where the label grey read
+   * 4.1:1. The words must read on the strip (the value in body ink at the caption size, the label at 4.5:1),
+   * a divider stands only between two cells of a row — never at a wrapped row's start — and it is a fact, not
+   * a control: pointing at it changes nothing.
    */
-  test(`the facts under a person's name are filled pills a reader can read (${scheme})`, async ({ page }) => {
+  test(`the facts about a person's appointment are one strip a reader can read (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
-    await page.goto(`./person/${encodeURIComponent(AARON)}`);
-    const pills = page.locator('.fact-pills .fact-pill');
-    await expect(pills.first()).toBeVisible({ timeout: 60_000 });
-    expect(await pills.count(), 'the header shows too few facts to be checking anything').toBeGreaterThanOrEqual(5);
-    await expect(pills.first()).toContainText('Job code');
+    for (const width of [1440, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`./person/${encodeURIComponent(AARON)}`);
+      const strip = page.locator('dl.fact-strip');
+      const cells = page.locator('.fact-strip .fact-cell');
+      await expect(cells.first()).toBeVisible({ timeout: 60_000 });
+      expect(await cells.count(), 'the strip shows too few facts to be checking anything').toBeGreaterThanOrEqual(5);
+      await expect(cells.first()).toContainText('Job code');
+      await expect(strip, `${width}px: the facts are not one strip`).toHaveCount(1);
 
-    const s = await pills.first().evaluate((p) => {
-      const cs = getComputedStyle(p);
-      const value = p.querySelector('.fact-pill-value')!;
-      const label = p.firstElementChild!;
-      return {
-        bg: cs.backgroundColor, border: cs.borderTopWidth, radius: cs.borderTopLeftRadius, cursor: cs.cursor,
-        value: getComputedStyle(value).color, valueSize: getComputedStyle(value).fontSize,
-        label: getComputedStyle(label).color,
-      };
-    });
-    const ground = await groundOf(page, '.fact-pills .fact-pill');
-    const pill = onGround(s.bg, ground);
-    const d = deltaE(pill, ground);
-    expect(d, `the pill's fill does not separate from the page: dE ${d.toFixed(2)}`).toBeGreaterThan(2.3);
-    expect(parseFloat(s.border) || 0, 'the pill is outlined again').toBe(0);
-    expect(contrast(onGround(s.value, pill), pill), 'the value on the pill').toBeGreaterThanOrEqual(7);
-    expect(contrast(onGround(s.label, pill), pill), 'the label on the pill').toBeGreaterThanOrEqual(4.5);
-    expect(s.valueSize, 'the value is back at the smallest size on the page').toBe('13px');
-    // A fact, not a control: pointing at it changes nothing.
-    await pills.first().locator('.fact-pill-value').hover();
-    await page.waitForTimeout(200);
-    expect(await pills.first().evaluate((p) => getComputedStyle(p).backgroundColor)).toBe(s.bg);
-    expect(s.cursor).toBe('auto');
-
-    // One pill in the app: a job code in the search list has the same fill and shape.
-    await page.goto('./');
-    const search = page.getByRole('combobox', { name: 'Search a person' });
-    await expect(search).toBeVisible({ timeout: 60_000 });
-    await search.fill('engineer');
-    const code = page.locator('.search-dropdown .code-pill').first();
-    await expect(code).toBeVisible({ timeout: 30_000 });
-    const c = await code.evaluate((e) => ({ bg: getComputedStyle(e).backgroundColor, radius: getComputedStyle(e).borderTopLeftRadius }));
-    expect(c.bg, 'a job code wears a different fill from the facts').toBe(s.bg);
-    expect(c.radius).toBe(s.radius);
+      const s = await page.locator('.fact-strip').evaluate((dl) => {
+        const box = dl.getBoundingClientRect();
+        const cs = getComputedStyle(dl);
+        const cells = [...dl.querySelectorAll('.fact-cell')];
+        const first = cells[0];
+        // A divider drawn at a row's start: a cell whose own left border is inside the strip, with no cell
+        // to its left on the same row.
+        const rowStarts = cells.filter((c) => {
+          const r = c.getBoundingClientRect();
+          return !cells.some((o) => o !== c && Math.abs(o.getBoundingClientRect().top - r.top) < 2 && o.getBoundingClientRect().right <= r.left + 2);
+        });
+        const strayDividers = rowStarts.filter((c) => c.getBoundingClientRect().left >= box.left + parseFloat(cs.borderLeftWidth) - 0.5).length;
+        return {
+          bg: cs.backgroundColor, cursor: getComputedStyle(first).cursor,
+          value: getComputedStyle(first.querySelector('.fact-value')!).color,
+          valueSize: getComputedStyle(first.querySelector('.fact-value')!).fontSize,
+          label: getComputedStyle(first.querySelector('dt *')!).color,
+          rows: new Set(cells.map((c) => Math.round(c.getBoundingClientRect().top))).size,
+          strayDividers, right: Math.max(...cells.map((c) => c.getBoundingClientRect().right)), stripRight: box.right,
+        };
+      });
+      const ground = await groundOf(page, '.fact-strip');
+      const strip0 = onGround(s.bg, ground);
+      expect(contrast(onGround(s.value, strip0), strip0), `${width}px: the value on the strip`).toBeGreaterThanOrEqual(7);
+      expect(contrast(onGround(s.label, strip0), strip0), `${width}px: the label on the strip`).toBeGreaterThanOrEqual(4.5);
+      expect(s.valueSize, 'the value is not at the caption size').toBe('13px');
+      expect(s.strayDividers, `${width}px: a divider at a row's start, over ${s.rows} rows`).toBe(0);
+      expect(s.right, `${width}px: a fact runs out of the strip`).toBeLessThanOrEqual(s.stripRight + 0.5);
+      if (width === 375) expect(s.rows, 'on a phone the strip did not wrap, so the row-start check proves nothing').toBeGreaterThan(1);
+      // A fact, not a control.
+      await cells.first().locator('.fact-value').hover();
+      await page.waitForTimeout(200);
+      expect(await page.locator('.fact-strip').evaluate((dl) => getComputedStyle(dl).backgroundColor)).toBe(s.bg);
+      expect(s.cursor).toBe('auto');
+    }
   });
 
   /**

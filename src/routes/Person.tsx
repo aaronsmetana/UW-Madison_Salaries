@@ -23,7 +23,7 @@ import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../li
 import { ttcRank } from '../lib/snapshotOrder';
 import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { IconAlertTriangle, IconArrowRight, IconTrendingUp, IconTrendingDown, IconMinus, IconClockHour4 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconTrendingUp, IconTrendingDown, IconMinus, IconClockHour4 } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
@@ -46,7 +46,8 @@ import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { Eyebrow } from '../components/Eyebrow';
 import { CardTitle } from '../components/CardTitle';
-import { FactPill } from '../components/FactPill';
+import { FactStrip } from '../components/FactStrip';
+import { CompareSetButton } from '../components/CompareSetButton';
 import { HistoryTable } from '../components/HistoryTable';
 import { TrayButton } from '../components/TrayButton';
 import { SortableTh, type SortState } from '../components/SortableTh';
@@ -536,7 +537,7 @@ export default function Person() {
 
   // One-line career summary under the header. Only surface a prior title when it's a genuine *pre-TTC* title
   // (the person's earliest record is the pre-TTC snapshot and the title differs from now) — we can't assume the
-  // hire-era title otherwise, so those people just get "At UW since {year} · {current title}".
+  // hire-era title otherwise. The current title is the line above's first words, so it is not said again here.
   const careerLine = useMemo(() => {
     const firstTitle = trend[0]?.title;
     const latestTitle = latest?.title;
@@ -544,11 +545,8 @@ export default function Person() {
     const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? null;
     const at = hireYear ? `At UW since ${hireYear}` : null;
     const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && !sameTitleText(firstTitle, latestTitle);
-    if (hasPreTTC) {
-      const lead = at ? `${at} · Title before TTC` : 'Title before TTC';
-      return `${lead}: ${firstTitle}; now ${latestTitle}.`;
-    }
-    return `${[at, latestTitle].filter(Boolean).join(' · ')}.`;
+    if (hasPreTTC) return `${at ? `${at} · ` : ''}Title before TTC: ${firstTitle}`;
+    return at;
   }, [trend, latest, rows]);
 
   // The band is read against the appointment that carries the grade, at its full-time rate (queries
@@ -828,7 +826,7 @@ export default function Person() {
           <Title order={1} data-reveal-target tabIndex={-1}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (
-              <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(latest.job_code)}`}>{latest?.title}</Anchor>
+              <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(latest.job_code)}`} fw={600}>{latest?.title}</Anchor>
             ) : (
               latest?.title
             )}
@@ -842,23 +840,12 @@ export default function Person() {
             )}
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
-          {careerLine && <Text size="sm" c="dimmed" mt={4}>{careerLine}</Text>}
-          {/* Source columns the page otherwise hides, as a wrapping row of pills (null ones omitted): what
-              identifies the job first — its code, grade and category — then its terms. */}
-          <Group gap={6} wrap="wrap" mt="sm" className="fact-pills">
-            <FactPill label="Job code" value={latest?.job_code} />
-            <FactPill label={<GlossaryTerm term="grade">Grade</GlossaryTerm>} value={latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null)} />
-            <FactPill label="Category" value={latest?.employee_category} />
-            <FactPill label="Type" value={[latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null} />
-            <FactPill label={<GlossaryTerm term="basis">Basis</GlossaryTerm>} value={latest?.comp_basis ? fmtBasis(latest.comp_basis) : null} />
-            <FactPill label="Pay type" value={latest?.pay_rate_type} />
-            <FactPill label={<GlossaryTerm term="flsa">FLSA</GlossaryTerm>} value={latest?.flsa_status} />
-          </Group>
+          {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
         </div>
         <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
           <Popover width={320} position="bottom-end" shadow="md" withArrow trapFocus>
             <Popover.Target>
-              <Button variant="default">Compare with…</Button>
+              <Button variant="default" leftSection={<IconArrowsDiff size={ICON.control} />}>Compare with…</Button>
             </Popover.Target>
             <Popover.Dropdown>
               <SearchBox
@@ -874,15 +861,24 @@ export default function Person() {
               />
             </Popover.Dropdown>
           </Popover>
-          <Button
-            variant={has(key) ? 'light' : 'filled'}
-            onClick={() => add({ type: 'person', id: key, label: name })}
-            disabled={has(key)}
-          >
-            {has(key) ? 'In tray' : '+ Add to tray'}
-          </Button>
+          <CompareSetButton item={{ type: 'person', id: key, label: name }} />
         </Group>
       </Group>
+      {/* Source columns the page otherwise hides, in one divided strip (null ones left out): what identifies the
+          job first — its code, grade and category — then its terms. Under the name and the actions, across the
+          page, so a cell is wide enough for its value on one line. */}
+      <FactStrip
+        label="About this appointment"
+        facts={[
+          { label: 'Job code', value: latest?.job_code },
+          { label: <GlossaryTerm term="grade">Grade</GlossaryTerm>, value: latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null) },
+          { label: 'Category', value: latest?.employee_category },
+          { label: 'Type', value: [latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null },
+          { label: <GlossaryTerm term="basis">Basis</GlossaryTerm>, value: latest?.comp_basis ? fmtBasis(latest.comp_basis) : null },
+          { label: 'Pay type', value: latest?.pay_rate_type },
+          { label: <GlossaryTerm term="flsa">FLSA</GlossaryTerm>, value: latest?.flsa_status },
+        ]}
+      />
 
       {departed && (
         <Alert color="orange" variant="light" icon={<IconAlertTriangle size={ICON.control} />}>
@@ -1205,7 +1201,6 @@ export default function Person() {
                             <Table.Td ta="right">
                               <TrayButton
                                 inTray={inTray}
-                                addLabel="Add to tray"
                                 stopPropagation
                                 onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
                               />

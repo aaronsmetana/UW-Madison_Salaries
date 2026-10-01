@@ -58,7 +58,7 @@ async function runAxe(page: import('@playwright/test').Page) {
     // off for the whole page: any genuine misuse of an ARIA attribute in app code would have been
     // waved through with it. This is the same narrow tool already used for the two known gaps below.
     .exclude('[id^="mantine-"][id$="-target"]')
-    // .accent-adaptive-text (TrayButton's outline "Add to tray"): fixed and verified correct (accent-8)
+    // .accent-adaptive-text (TrayButton's outline "+ Compare"): fixed and verified correct (accent-8)
     // on the vast majority of rows in Person's 1000+-row peer tables; a handful of rows measure a
     // different, unexplained blended shade at scan time that further investigation didn't resolve.
     // Narrow, known gap — excluded here rather than left to intermittently fail this gate.
