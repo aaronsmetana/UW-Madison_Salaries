@@ -428,7 +428,7 @@ export function buildTalkingPoints(o: {
   if (o.invCount > 0) lines.push(`• ${plural(o.invCount, 'peer has', 'peers have')} less UW tenure and higher pay (up to +${usd(o.invMaxGap)}).`);
   const gc = o.guidelineCompression;
   if (gc && gc.count > 0) {
-    lines.push(`• ${plural(gc.count, 'same-title peer is', 'same-title peers are')} within ${pct(gc.threshold)} of the subject's pay despite ≥${gc.gapYears} fewer years at UW — under the UW guideline's ${pct(gc.threshold)} compression differential.`);
+    lines.push(`• ${plural(gc.count, 'same-title peer is', 'same-title peers are')} within ${pct(gc.threshold, 0)} of the subject's pay despite ≥${gc.gapYears} fewer years at UW — under the UW guideline's ${pct(gc.threshold, 0)} compression differential.`);
   }
   if (o.streakYears >= 1) lines.push(`• Below the title median ${o.streakYears} consecutive year${o.streakYears === 1 ? '' : 's'}.`);
   for (const r of o.supervisory?.reports ?? []) {

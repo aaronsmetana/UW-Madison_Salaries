@@ -690,8 +690,8 @@ export default function Reports() {
       out.push({
         kind: 'guidelineCompression',
         value: plural(gc.count, 'peer'),
-        label: `within ${pct(gc.threshold)} of ${subjectFirst}'s pay despite ≥${gc.gapYears} fewer years at UW`,
-        detail: `UW guideline suggests at least a ${pct(gc.threshold)} differential where experience differs distinctly${gc.invertedCount > 0 ? ` (includes ${plural(gc.invertedCount, 'who out-earns', 'who out-earn')} ${subjectFirst})` : ''}`,
+        label: `within ${pct(gc.threshold, 0)} of ${subjectFirst}'s pay despite ≥${gc.gapYears} fewer years at UW`,
+        detail: `UW guideline suggests a differential of at least ${pct(gc.threshold, 0)} where experience differs distinctly${gc.invertedCount > 0 ? ` (includes ${plural(gc.invertedCount, 'who out-earns', 'who out-earn')} ${subjectFirst})` : ''}`,
       });
     }
     const belowFloorReports = supervisoryCase.reports.filter((r) => r.belowFloor);
@@ -781,7 +781,7 @@ export default function Reports() {
     }
     const supBelowFloor = supervisoryCase.reports.filter((r) => r.belowFloor);
     const compressionBits: string[] = [];
-    if (guidelineCompression && guidelineCompression.count > 0) compressionBits.push(`${plural(guidelineCompression.count, 'same-title peer')} within ${pct(guidelineCompression.threshold)} despite ≥${guidelineCompression.gapYears} fewer years`);
+    if (guidelineCompression && guidelineCompression.count > 0) compressionBits.push(`${plural(guidelineCompression.count, 'same-title peer')} within ${pct(guidelineCompression.threshold, 0)} despite ≥${guidelineCompression.gapYears} fewer years`);
     if (stats.invCount > 0) compressionBits.push(`${plural(stats.invCount, 'tenure inversion')}`);
     if (compression.count > 0) compressionBits.push(`${plural(compression.count, 'recent hire')} at or above ${subjectFirst}`);
     if (supBelowFloor.length > 0) compressionBits.push(`${plural(supBelowFloor.length, 'direct report')} under the ≥15% supervisory differential`);
