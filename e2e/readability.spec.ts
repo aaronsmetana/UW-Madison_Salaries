@@ -187,7 +187,8 @@ test('on a touch screen every add button carries the accent at rest', async ({ b
 test('every card title is one size, a step over its sub line, and a short phrase, on every page', async ({ page }) => {
   for (const [route, ready] of [
     [`./person/${encodeURIComponent(AARON)}`, '.peer-strip'],
-    ['./paycheck?code=IT040', '.card-title'],
+    // The loaded histogram: the page loads with one real card title on a placeholder.
+    ['./paycheck?code=IT040', '.hist-plot'],
     ['./explore?tab=changes', '.card-title'],
     [`./school/${encodeURIComponent('School of Medicine and Public Health')}?tab=dist`, '.card-title'],
     [`./raises?sch=${encodeURIComponent('School of Medicine and Public Health')}&dept=Neurology`, '.raise-review-dist'],

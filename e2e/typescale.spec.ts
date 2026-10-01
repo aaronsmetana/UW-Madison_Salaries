@@ -61,7 +61,9 @@ for (const [name, route, ready, svg] of [
   ['person', `./person/${encodeURIComponent(AARON)}`, '.peer-strip', true],
   ['person, pay & standing', `./person/${encodeURIComponent(AARON)}?tab=pay`, '.person-payband', false],
   ['person, salary trend', `./person/${encodeURIComponent(AARON)}?tab=trends`, '.recharts-wrapper', true],
-  ['a title', './paycheck?code=IT040', '.card-title', false],
+  // The loaded histogram, not a card title: the page loads with the distribution card's own title on a
+  // placeholder (TitleStats), and a sweep that started there on CI measured 27 texts of the loading page.
+  ['a title', './paycheck?code=IT040', '.hist-plot', false],
   ['Divisions', './explore?tab=schools', '.school-row', false],
   ['a division', `./school/${encodeURIComponent(SMPH)}?tab=dist`, '.card-title', true],
   ['Raises', `./raises?sch=${encodeURIComponent(SMPH)}&dept=Neurology`, '.raise-summary', true],
