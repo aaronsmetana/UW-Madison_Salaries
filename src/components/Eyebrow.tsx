@@ -11,9 +11,9 @@ import { Text } from '@mantine/core';
  * eyebrow in the app silently followed it up to 13px bold uppercase. The token and its one consumer
  * now agree.
  */
-export function Eyebrow({ children, c = 'dimmed', mb, span, ta, lineClamp, style }: {
+export function Eyebrow({ children, c = 'var(--text-faint)', mb, span, ta, lineClamp, style }: {
   children: ReactNode;
-  /** Override the default dimmed color (e.g. an accent eyebrow). */
+  /** Override the default faint colour (e.g. an accent eyebrow). */
   c?: string;
   mb?: number | string;
   /** Render inline (as a span) rather than a block. */
@@ -24,7 +24,7 @@ export function Eyebrow({ children, c = 'dimmed', mb, span, ta, lineClamp, style
   style?: CSSProperties;
 }) {
   return (
-    <Text span={span} size="xxs" fw={700} tt="uppercase" c={c} mb={mb} ta={ta} lineClamp={lineClamp} style={{ letterSpacing: '0.05em', ...style }}>
+    <Text span={span} size="xxs" fw="var(--label-weight)" tt="uppercase" c={c} mb={mb} ta={ta} lineClamp={lineClamp} style={{ letterSpacing: 'var(--label-tracking)', ...style }}>
       {children}
     </Text>
   );

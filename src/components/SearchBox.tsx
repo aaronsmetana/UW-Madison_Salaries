@@ -134,7 +134,7 @@ const CARD_SHADOW = 'var(--shadow-merged-card)';
 /** A group's heading inside the listbox. Presentational: the group takes its name from it. */
 function GroupLabel({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <Text id={id} role="presentation" className="search-group-label" size="xxs" fw={700} tt="uppercase" lts="0.05em" c="dimmed" px={10} pt={8} pb={2}>
+    <Text id={id} role="presentation" className="search-group-label" size="xxs" fw="var(--label-weight)" tt="uppercase" lts="var(--label-tracking)" c="var(--text-faint)" px={10} pt={8} pb={2}>
       {children}
     </Text>
   );
@@ -694,14 +694,14 @@ export function SearchBox({
               </Text>
               {inactive && (
                 <Tooltip label="Not in the latest snapshot — may no longer be employed." withArrow position="top">
-                  <Badge size="xs" radius="sm" variant="light" color="gray" style={{ flexShrink: 0, cursor: 'pointer' }}>
+                  <Badge size="xs" radius="xs" variant="light" color="gray" style={{ flexShrink: 0, cursor: 'pointer' }}>
                     Former
                   </Badge>
                 </Tooltip>
               )}
               {multiAppt && (
                 <Tooltip label="Holds multiple appointments in the latest snapshot (e.g., split or joint roles)." withArrow position="top">
-                  <Badge size="xs" radius="sm" variant="default" fw={500} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                  <Badge size="xs" radius="xs" variant="default" fw={500} style={{ flexShrink: 0, cursor: 'pointer' }}>
                     Multiple roles
                   </Badge>
                 </Tooltip>

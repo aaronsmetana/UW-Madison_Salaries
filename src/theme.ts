@@ -1,9 +1,11 @@
 import { createTheme, type MantineColorsTuple } from '@mantine/core';
 
-// ── Marine-teal accent (the single app accent; anchored so shade 7 ≈ #0E6E83, shade 1 ≈ #E5EFF2) ──
+// ── Marine-teal accent (the single app accent). Anchored on the person-page redesign's teal: shade 7 is its
+// brand, link and "this person" #145F72 (7.2:1 on white), 6 its secondary #22778E, and 0 and 1 its tint and
+// pill grounds #EDF7FB and #D7ECF4. 4 and 5 are dark mode's text and marks, measured there, and unchanged. ──
 const accent: MantineColorsTuple = [
-  '#eef6f8', '#e5eff2', '#cfe0e5', '#a9c9d2', '#7eafbc',
-  '#4f93a4', '#2b7e92', '#0e6e83', '#0a5567', '#073f4d',
+  '#edf7fb', '#d7ecf4', '#bcd9e3', '#a9c9d2', '#7eafbc',
+  '#4f93a4', '#22778e', '#145f72', '#0a5567', '#073f4d',
 ];
 
 // ── Positive / "in tray" green (used sparingly; shade 6 ≈ #15A36B, shade 0 ≈ #E7F6EE) ──
@@ -98,7 +100,11 @@ export const theme = createTheme({
   //
   // The card corner drops 16 -> 10. `md` stops being an alias of `lg`, so a control inside a card is
   // now visibly a smaller radius than the card, rather than the same one.
-  radius: { xs: '4px', sm: '6px', md: '8px', lg: '10px', xl: '999px' },
+  //
+  // Four corners since the person-page redesign: 6 for what is small (a chip, a tooltip, a dropdown's option,
+  // a check box), 10 for a control or a panel inside a card (`md` the same step, for the panels that ask for
+  // it), 14 for a card, and the pill. The redesign drew 14, 12, 10, 8, 7, 6 and 5; each folds to its nearest.
+  radius: { xs: '6px', sm: '10px', md: '10px', lg: '14px', xl: '999px' },
   components: {
     Card: { defaultProps: { radius: 'lg', withBorder: true, padding: 'lg' } },
     // One table look everywhere: zebra rows, hover highlight, comfortable row spacing.
@@ -114,8 +120,12 @@ export const theme = createTheme({
     // higher than the labels beside it, so a row of fields (Screening's scope, the Raises filters) stood
     // out of line. Every input reads label, field, help, error.
     InputWrapper: { defaultProps: { inputWrapperOrder: ['label', 'input', 'description', 'error'] } },
-    // A control's corner (sm, 6px), as buttons and chips have: Mantine's own was 8, and Reports' a pill.
+    // A control's corner (sm), as buttons and fields have: Mantine's own was 8, and Reports' a pill.
     SegmentedControl: { defaultProps: { radius: 'sm' } },
+    // Small things take the small corner: a tooltip is a label, not a control, and a 20px box at a control's
+    // 10px is a circle.
+    Tooltip: { defaultProps: { radius: 'xs' } },
+    Checkbox: { defaultProps: { radius: 'xs' } },
   },
 });
 

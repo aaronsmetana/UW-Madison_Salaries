@@ -155,7 +155,7 @@ export function AppShellLayout() {
             borderRadius: 'var(--mantine-radius-sm)',
             marginBottom: 2,
             // Teal left rail on the active item (matches the spec's inset accent bar).
-            boxShadow: active ? 'inset 3px 0 0 0 var(--mantine-color-accent-7), inset 0 0 0 1px rgba(14,110,131,.10)' : undefined,
+            boxShadow: active ? 'inset 3px 0 0 0 var(--mantine-color-accent-7), inset 0 0 0 1px rgba(20,95,114,.10)' : undefined,
           },
           label: { fontWeight: active ? 700 : 500 },
           section: named ? undefined : { marginInlineEnd: 0 },

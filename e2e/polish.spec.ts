@@ -83,8 +83,9 @@ async function textOffTokens(page: Page) {
     const probe = document.createElement('span');
     document.body.appendChild(probe);
     const ink = (v) => { probe.style.color = 'var(' + v + ')'; return getComputedStyle(probe).color; };
-    // The ink, the dimmed grey, a link's teal and accent text, up, down, caution, and white on a fill.
-    const allowed = new Set(['--mantine-color-text', '--mantine-color-dimmed', '--mantine-color-anchor', '--text-accent',
+    // The ink, the dimmed grey, the faint label grey, a link's teal and accent text, up, down, caution, and
+    // white on a fill.
+    const allowed = new Set(['--mantine-color-text', '--mantine-color-dimmed', '--text-faint', '--mantine-color-anchor', '--text-accent',
       '--text-pos', '--text-neg', '--text-warn', '--mantine-color-white'].map(ink));
     probe.remove();
     const off = {};
@@ -131,7 +132,7 @@ for (const [name, route] of PAGES) {
         const px = parseFloat(cs.fontSize);
         // Body text long enough to wrap: one line height.
         if (px === 15 && text.length > 60) bodyLh.add((parseFloat(cs.lineHeight) / px).toFixed(2) + ' ' + text.slice(0, 24));
-        // Every small-caps label: 11px, bold, 0.05em. A footnote number inside one is its own thing.
+        // Every small-caps label: 11px, semibold, 0.06em. A footnote number inside one is its own thing.
         if (cs.textTransform === 'uppercase' && !el.closest('.footnote-ref'))
           eyebrows.add(px + 'px w' + cs.fontWeight + ' ' + (parseFloat(cs.letterSpacing) / px).toFixed(2) + 'em');
         // A figure: 24px or more and not a heading.
@@ -181,14 +182,14 @@ for (const [name, route] of PAGES) {
     })()`) as { bodyLh: string[]; eyebrows: string[]; figures: string[]; wide: string[]; offCentre: string[]; shadowed: string[]; segCorners: string[]; controls: string[]; icons: string[] };
 
     expect(got.bodyLh.filter((l) => !l.startsWith('1.55')), `${name}: body text at another line height`).toEqual([]);
-    expect(got.eyebrows.filter((e) => e !== '11px w700 0.05em'), `${name}: a small-caps label off the eyebrow style`).toEqual([]);
+    expect(got.eyebrows.filter((e) => e !== '11px w600 0.06em'), `${name}: a small-caps label off the eyebrow style`).toEqual([]);
     // The landing's own figures are fluid (its approved design); everywhere else a figure is 24 or 40.
     expect(got.figures.filter((f) => !f.endsWith(' w700')), `${name}: a figure not at weight 700`).toEqual([]);
     if (name !== 'home') expect(got.figures.filter((f) => !/^(24|40)px/.test(f)), `${name}: a figure off the 24/40 steps`).toEqual([]);
     expect(got.wide, `${name}: running text wider than 80 characters`).toEqual([]);
     expect(got.offCentre, `${name}: a centred paragraph pushed off centre by the measure`).toEqual([]);
     expect(got.shadowed, `${name}: a bordered card with a shadow`).toEqual([]);
-    expect(got.segCorners.filter((r) => r !== '6px'), `${name}: a segmented control off the control corner`).toEqual([]);
+    expect(got.segCorners.filter((r) => r !== '10px'), `${name}: a segmented control off the control corner`).toEqual([]);
     const heights = name === 'home' ? /^(28|36|60)px/ : /^(28|36)px/;
     expect(got.controls.filter((c) => !heights.test(c)), `${name}: a control off the compact 28 / default 36 heights`).toEqual([]);
     expect(got.icons.filter((i) => !/^(14|16|20|22)px/.test(i)), `${name}: an icon off the 14/16/20/22 sizes`).toEqual([]);

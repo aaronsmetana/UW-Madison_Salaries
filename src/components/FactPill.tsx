@@ -19,7 +19,9 @@ export function FactPill({ label, value }: { label: ReactNode; value: ReactNode 
   if (value == null || value === '') return null;
   return (
     <span className="fact-pill">
-      <Eyebrow span>{label}</Eyebrow>
+      {/* Dimmed, not the label's faint grey: on the pill's own ground faint measured 4.1:1, under 11px text's
+          4.5. Faint is for labels on a card or the page. */}
+      <Eyebrow span c="dimmed">{label}</Eyebrow>
       <span className="fact-pill-value">{value}</span>
     </span>
   );

@@ -83,7 +83,7 @@
    three-step elevation (canvas → surface → raised) that every card, header, popover, and tooltip in
    the app inherits for free. Light mode already worked this way; this just makes it symmetrical. */
 :root {
-  --accent-grad: linear-gradient(135deg, #15839b, #0e6e83);
+  --accent-grad: linear-gradient(135deg, #22778e, #145f72);
   /* Histogram bars: the population, in the same neutral every other chart draws the population in
      (MARK_PEER — see markers.tsx). It used to be a pale teal, which was fine until "this person"
      stopped being a fourth teal and became MARK_SELF: in dark mode the old bar colour WAS the
@@ -180,7 +180,7 @@
   /* The letter on a filled station, which sits on the lane colour itself. White clears 4.5:1 on all
      four light lanes; the lowest is lane 3 (accent-6) at 4.66. */
   --lane-ink: #fff;
-  --series-accent: #0e6e83; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
+  --series-accent: #145f72; /* CHART_SERIES slot 1 (brand accent) — see src/lib/chartStyle.ts */
 
   /* Elevation ramp (light): a near-neutral paper canvas, white cards, white overlays.
      The last of the blue is gone — #eef1f5 then #f3f4f5 were both cool greys tinting every neutral on
@@ -231,7 +231,7 @@
      whiter, in light mode: white over a white plot composites to nothing (dE 0.00). It once also lit
      the face of every chart card, as a broad bloom; that went, and the plot area took a faint surface
      of its own instead (`--plot-surface`). */
-  --chart-sheen: rgba(14, 110, 131, 0.14);
+  --chart-sheen: rgba(20, 95, 114, 0.14);
 
   /* Shared by the open search input and the menu it projects, so the two read as one card. It had
      been the same literal typed into three files — app.css, SearchBox.tsx and lib/selectProps.ts —
@@ -241,7 +241,19 @@
   /* Semantic text colours. These exist because five separate per-theme shade overrides had grown in
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
      meaning, corrected once, instead of one class per component. */
-  --text-accent: var(--mantine-color-accent-8);
+  /* The redesign's teal, accent-7 (#145f72), is 7.2:1 on white and 5.9:1 on its own pill ground (accent-1), so
+     a link and a teal word are one ink now. It was accent-8 while accent-7 was the lighter #0e6e83. */
+  --text-accent: var(--mantine-color-accent-7);
+  /* A third, quieter text tier (the redesign's "faint"): small-caps labels, axis text, a table's head. Its
+     #6d767c measured 4.32:1 on the page and 4.20 on a hovered row, under the 4.5:1 that 11px text needs;
+     #687076 clears every ground it sits on (4.57 at the lowest, a hovered row). */
+  --text-faint: #687076;
+  /* The small-caps label, one definition: Eyebrow, a table's head, the release eyebrow, a search group. */
+  --label-weight: 600;
+  --label-tracking: 0.06em;
+  /* A tint of the accent (the viewed row, a light badge, a status pill) and the stronger one a pill sits on. */
+  --tint-accent: var(--mantine-color-accent-0);
+  --tint-accent-strong: var(--mantine-color-accent-1);
   /* pos-8, 6.0:1 on white and 5.4:1 on a light green fill: it reads as green. pos-9 (8.2:1) read as
      near-black beside the ink, so an "up" lost its colour. */
   --text-pos: var(--mantine-color-pos-8);
@@ -355,6 +367,11 @@ body {
   --mantine-shadow-lg: 0 10px 34px rgba(0, 0, 0, 0.68), 0 2px 6px rgba(0, 0, 0, 0.5);
 
   --text-accent: var(--mantine-color-accent-4);
+  /* 6.0:1 on the card, a step under dimmed's 10.2. */
+  --text-faint: #8d969c;
+  /* The mark's teal over the card, as the light tints are over white: accent-4 text reads 6.3:1 and 5.0:1. */
+  --tint-accent: color-mix(in srgb, var(--mantine-color-accent-5) 14%, var(--surface));
+  --tint-accent-strong: color-mix(in srgb, var(--mantine-color-accent-5) 28%, var(--surface));
   --text-pos: var(--mantine-color-pos-4);
   --text-neg: var(--mantine-color-red-4);
   --text-warn: var(--mantine-color-orange-4);
@@ -461,10 +478,10 @@ body {
     align-items: center;
     gap: 5px;
     margin-bottom: 2px;
-    color: var(--mantine-color-dimmed);
+    color: var(--text-faint);
     font-size: var(--mantine-font-size-xxs);
-    font-weight: 700;
-    letter-spacing: 0.05em;
+    font-weight: var(--label-weight);
+    letter-spacing: var(--label-tracking);
     text-transform: uppercase;
   }
   .release-eyebrow .new-badge { height: 14px; padding-inline: 5px; font-size: 9px; }
@@ -593,6 +610,9 @@ html:root[data-mantine-color-scheme='dark'] {
   --mantine-color-red-light-color: var(--text-neg);
   --mantine-color-orange-light-color: var(--text-warn);
   --mantine-color-accent-light-color: var(--text-accent);
+  /* A light accent badge, button or row: the one tint, not Mantine's 10% (dark: 15%) of shade 7. */
+  --mantine-color-accent-light: var(--tint-accent);
+  --mantine-color-accent-light-hover: var(--tint-accent-strong);
   /* A grey button's words, subtle, light or outline ("CSV", "Clear all", the tray's "Clear") and a
      neutral change: the one dimmed grey, not gray-7 or, dark, gray-1 to gray-4. */
   --mantine-color-gray-text: var(--mantine-color-dimmed);
@@ -647,7 +667,7 @@ html:root[data-mantine-color-scheme='dark'] {
   backdrop-filter: var(--tip-blur);
   -webkit-backdrop-filter: var(--tip-blur);
   border: 1px solid var(--mantine-color-default-border);
-  border-radius: 10px;
+  border-radius: var(--mantine-radius-xs);
   padding: 6px 10px;
   /* `--chart-sheen`, not `--glass-sheen`: an 82%-white tip sits on a white plot area in light mode,
      so a white specular would be a dark-mode-only cue. */
@@ -679,7 +699,7 @@ html:root[data-mantine-color-scheme='dark'] {
 .recharts-surface:focus-visible {
   outline: 2px solid var(--mantine-color-accent-6);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--mantine-radius-xs);
 }
 /* Scoped to `path` because bar charts render the cursor as a <rect> whose meaningful property is
    `fill` — and every bar chart here already passes its own `cursor={{ fill: … }}`. */
@@ -918,9 +938,9 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .mantine-Table-thead .mantine-Table-th {
   text-transform: uppercase;
   font-size: var(--mantine-font-size-xxs);
-  letter-spacing: 0.05em;
-  font-weight: 700;
-  color: var(--mantine-color-dimmed);
+  letter-spacing: var(--label-tracking);
+  font-weight: var(--label-weight);
+  color: var(--text-faint);
 }
 
 /* Highlight rows: the searched "this" row (accent) and related-match rows (same school → green). */
@@ -1139,7 +1159,7 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 }
 :root .hero-search-input:focus {
   border-color: var(--mantine-color-accent-7);
-  box-shadow: 0 0 0 3px var(--mantine-color-accent-light);
+  box-shadow: 0 0 0 3px var(--tint-accent-strong);
 }
 
 /* Select/MultiSelect "merged card": while the dropdown is open (data-expanded), flatten the input's
@@ -1156,7 +1176,7 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 :root .scope-search-pill {
   height: 34px;
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: var(--mantine-radius-sm);
 }
 :root[data-mantine-color-scheme='light'] .scope-search-pill {
   background-color: var(--mantine-color-gray-1);
@@ -1170,7 +1190,7 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 /* Shared dropdown list-item style (Scope picker + every Select/MultiSelect menu): inset rounded "island"
    options — hovered / keyboard-active / selected reads as a soft-gray floating chip, not a filled bar. */
 :root .app-dropdown-option {
-  border-radius: 6px;
+  border-radius: var(--mantine-radius-xs);
 }
 :root[data-mantine-color-scheme='light'] .app-dropdown-option:where(:hover, [data-combobox-active], [data-combobox-selected]) {
   background-color: var(--mantine-color-gray-1);
@@ -2055,7 +2075,7 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   font-size: 11px;
   line-height: 16px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 4px;
+  border-radius: var(--mantine-radius-xs);
   color: var(--mantine-color-dimmed);
   white-space: nowrap;
   vertical-align: 1px;
@@ -2117,7 +2137,7 @@ button.hero-dist-legend-item {
   background: none;
   border: 0;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: var(--mantine-radius-xs);
   cursor: pointer;
 }
 button.hero-dist-legend-item:hover { background: var(--mantine-color-default-hover); }
@@ -2326,7 +2346,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .hero-dist-esc {
   padding: 0 4px;
   border: 1px solid color-mix(in srgb, currentColor 55%, transparent);
-  border-radius: 4px;
+  border-radius: var(--mantine-radius-xs);
   font-size: var(--mantine-font-size-xxs);
   font-weight: 600;
   line-height: 1.4;
@@ -2417,7 +2437,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   z-index: var(--z-local, 2);
   padding: 2px 8px;
   border: 1px dashed var(--mantine-color-text);
-  border-radius: 6px;
+  border-radius: var(--mantine-radius-xs);
   background: var(--mantine-color-body);
   color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-xs);
@@ -2600,7 +2620,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--mantine-radius-sm);
   border: 1px solid var(--found);
   background: var(--mantine-color-body);
   color: var(--mantine-color-text);

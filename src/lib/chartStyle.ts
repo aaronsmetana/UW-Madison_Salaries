@@ -15,7 +15,7 @@ import { usd } from './format';
  *  size, the type scale's chart step (theme.ts). They ran 10, 10.5, 11, 12 and 12.5px across five
  *  components. */
 export const CHART_FONT = 12;
-export const AXIS_TICK = { fontSize: CHART_FONT, fill: 'var(--mantine-color-dimmed)' } as const;
+export const AXIS_TICK = { fontSize: CHART_FONT, fill: 'var(--text-faint)' } as const;
 // Horizontal gridlines only — vertical gridlines between categories add visual noise without helping
 // reads (a bar/line's own x-position already anchors it to its category).
 // `stroke` for the same reason as AXIS_TICK's `fill`: Recharts' default is a fixed `#ccc`, which
@@ -49,7 +49,7 @@ export const TIP_STYLE: CSSProperties = {
   backdropFilter: 'var(--tip-blur)',
   WebkitBackdropFilter: 'var(--tip-blur)',
   border: '1px solid var(--mantine-color-default-border)',
-  borderRadius: 10,
+  borderRadius: 6,
   boxShadow: 'inset 0 1px 0 var(--chart-sheen), var(--mantine-shadow-md)',
   padding: '6px 10px',
 };
