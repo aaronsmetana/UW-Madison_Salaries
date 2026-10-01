@@ -45,7 +45,7 @@ export function DataErrorBanner() {
   const summary = useSummary();
   if (!db.isError && !summary.isError) return null;
   return (
-    <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Couldn't load the salary data" mb="md">
+    <Alert color="red" icon={<IconAlertTriangle size={ICON.nav} />} title="Couldn't load the salary data" mb="md">
       <Group justify="space-between" wrap="wrap" gap="sm">
         <Text size="sm">The dataset failed to load — check your connection, then reload to try again.</Text>
         <Button size="xs" variant="white" color="red" onClick={() => window.location.reload()}>

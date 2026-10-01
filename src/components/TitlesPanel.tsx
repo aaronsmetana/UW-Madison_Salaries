@@ -137,7 +137,7 @@ export function TitlesPanel() {
       {titles && view.length === 0 ? (
         <EmptyState
           size="sm"
-          icon={<IconSearchOff size={18} />}
+          icon={<IconSearchOff size={ICON.nav} />}
           title="No titles match"
           hint={`Nothing in this scope${q || minN ? ' matches your search/filters' : ''}. Try widening the scope or clearing filters.`}
         />

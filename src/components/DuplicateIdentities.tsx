@@ -164,7 +164,7 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
                             <Text size="xs" c="orange" style={{ flexShrink: 0 }}>hires {Math.round(g.minGapDays)}d apart</Text>
                           )}
                           {g.flagged ? (
-                            <Badge color="orange" variant="light" radius="sm" leftSection={<IconAlertTriangle size={11} />}>possible duplicate</Badge>
+                            <Badge color="orange" variant="light" radius="sm" leftSection={<IconAlertTriangle size={ICON.compact} />}>possible duplicate</Badge>
                           ) : (
                             <Badge color="gray" variant="light" radius="sm">likely different</Badge>
                           )}

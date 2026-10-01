@@ -26,7 +26,7 @@ export function TrayButton({
       variant={inTray ? 'light' : 'outline'}
       color={inTray ? 'pos' : 'accent'}
       radius="xl"
-      leftSection={inTray ? <IconCheck size={ICON.inline} /> : <IconPlus size={ICON.inline} />}
+      leftSection={inTray ? <IconCheck size={ICON.compact} /> : <IconPlus size={ICON.compact} />}
       disabled={inTray}
       // The name, so a phone that shows only the icon (`.fold-table .tray-label`) still says what it does.
       aria-label={inTray ? 'In tray' : addLabel}

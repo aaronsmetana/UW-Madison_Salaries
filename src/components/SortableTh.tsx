@@ -58,8 +58,8 @@ export function SortableTh<K extends string>({
       <Group gap={4} wrap="nowrap" justify={align === 'right' ? 'flex-end' : 'flex-start'}>
         <span>{label}</span>
         {active
-          ? (sort.dir === 'asc' ? <IconChevronUp size={ICON.inline} /> : <IconChevronDown size={ICON.inline} />)
-          : <IconSelector size={ICON.inline} style={{ opacity: 0.35 }} />}
+          ? (sort.dir === 'asc' ? <IconChevronUp size={ICON.compact} /> : <IconChevronDown size={ICON.compact} />)
+          : <IconSelector size={ICON.compact} style={{ opacity: 0.35 }} />}
       </Group>
     </UnstyledButton>
   );

@@ -8,8 +8,9 @@ import { test, expect, type Page } from '@playwright/test';
  * what a source search cannot: a Mantine default, a colour resolved through three variables, a size set
  * by a stylesheet.
  *
- * Every page state the app has, at 1440x900, in both schemes where colour is the question. Motion is held
- * by src/lib/motion.test.ts, which reads the stylesheet.
+ * Every page state the app has, at 1440x900, in both schemes where colour is the question: inks, body line
+ * height, eyebrows, figures, running text, card shadows, corners, control heights, icon sizes, focus rings.
+ * Motion is held by src/lib/motion.test.ts, which reads the stylesheet.
  */
 
 const AARON = encodeURIComponent('aaronsmetana|2014-10-15');
@@ -162,8 +163,22 @@ for (const [name, route] of PAGES) {
         return parseFloat(cs.borderTopWidth) > 0 && cs.boxShadow !== 'none' && !floats(e) && e.getBoundingClientRect().width > 0;
       }).map((e) => (e.textContent ?? '').trim().slice(0, 30));
       const segCorners = [...new Set([...document.querySelectorAll('.mantine-SegmentedControl-root')].map((e) => getComputedStyle(e).borderTopLeftRadius))];
-      return { bodyLh: [...bodyLh], eyebrows: [...eyebrows], figures: [...figures], wide, offCentre, shadowed, segCorners };
-    })()`) as { bodyLh: string[]; eyebrows: string[]; figures: string[]; wide: string[]; offCentre: string[]; shadowed: string[]; segCorners: string[] };
+      // Controls at one of three heights: compact 28, default 36, and the landing's own search. A chip's
+      // own buttons are the chip's (the tray's, a filter badge's), and what floats (back to top) is apart.
+      const shown = (e) => e.getBoundingClientRect().width > 0 && e.checkVisibility({ visibilityProperty: true });
+      const controls = new Set();
+      for (const e of document.querySelectorAll('.mantine-Button-root, .mantine-ActionIcon-root, input.mantine-Input-input, .mantine-SegmentedControl-root, .mantine-Tabs-tab')) {
+        if (!shown(e) || e.closest('.tray-chip, .mantine-Pill-root, .mantine-Badge-root') || floats(e)) continue;
+        const h = Math.round(e.getBoundingClientRect().height * 2) / 2;
+        controls.add(h + 'px ' + ([...e.classList].find((c) => c.startsWith('mantine-')) ?? '') + ' "' + (e.getAttribute('aria-label') || e.placeholder || e.textContent || '').trim().slice(0, 24) + '"');
+      }
+      // Icons at one of four sizes.
+      const icons = new Set([...document.querySelectorAll('svg.tabler-icon')].filter(shown).map((e) => {
+        const b = e.closest('button, a, label, p, div');
+        return Math.round(e.getBoundingClientRect().width * 2) / 2 + 'px "' + (b?.getAttribute('aria-label') || b?.textContent || '').trim().slice(0, 24) + '"';
+      }));
+      return { bodyLh: [...bodyLh], eyebrows: [...eyebrows], figures: [...figures], wide, offCentre, shadowed, segCorners, controls: [...controls], icons: [...icons] };
+    })()`) as { bodyLh: string[]; eyebrows: string[]; figures: string[]; wide: string[]; offCentre: string[]; shadowed: string[]; segCorners: string[]; controls: string[]; icons: string[] };
 
     expect(got.bodyLh.filter((l) => !l.startsWith('1.55')), `${name}: body text at another line height`).toEqual([]);
     expect(got.eyebrows.filter((e) => e !== '11px w700 0.05em'), `${name}: a small-caps label off the eyebrow style`).toEqual([]);
@@ -174,6 +189,9 @@ for (const [name, route] of PAGES) {
     expect(got.offCentre, `${name}: a centred paragraph pushed off centre by the measure`).toEqual([]);
     expect(got.shadowed, `${name}: a bordered card with a shadow`).toEqual([]);
     expect(got.segCorners.filter((r) => r !== '6px'), `${name}: a segmented control off the control corner`).toEqual([]);
+    const heights = name === 'home' ? /^(28|36|60)px/ : /^(28|36)px/;
+    expect(got.controls.filter((c) => !heights.test(c)), `${name}: a control off the compact 28 / default 36 heights`).toEqual([]);
+    expect(got.icons.filter((i) => !/^(14|16|20|22)px/.test(i)), `${name}: an icon off the 14/16/20/22 sizes`).toEqual([]);
 
     // Every Tab stop shows the ring, fields and dropdowns included.
     await page.locator('body').click({ position: { x: 1, y: 1 } });

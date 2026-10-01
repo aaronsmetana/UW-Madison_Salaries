@@ -147,7 +147,7 @@ export default function PayCheck() {
             limit={50}
             w={440}
             nothingFoundMessage="No matching title"
-            rightSection={<IconChevronDown size={18} stroke={2} />}
+            rightSection={<IconChevronDown size={ICON.control} stroke={2} />}
           />
           <Select
             {...dropdownProps('md')}

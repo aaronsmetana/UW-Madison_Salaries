@@ -111,7 +111,7 @@ export function ChartData({
             size="compact-xs"
             variant="subtle"
             color="gray"
-            leftSection={<IconDownload size={ICON.inline} />}
+            leftSection={<IconDownload size={ICON.compact} />}
             onClick={exportCsv}
           >
             CSV

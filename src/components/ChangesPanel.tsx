@@ -395,7 +395,7 @@ export function ChangesPanel() {
         </Alert>
       ))}
 
-      <Alert color="gray" variant="light" icon={<IconInfoCircle size={18} />} title="People are matched by name only">
+      <Alert color="gray" variant="light" icon={<IconInfoCircle size={ICON.nav} />} title="People are matched by name only">
         No employee ID exists in the public records, so joined/left counts (the ≈ figures above) are
         approximate — a name change or a shared name can be miscounted.{' '}
         <Anchor component={Link} to="/data#identity" inherit>How matching works →</Anchor>

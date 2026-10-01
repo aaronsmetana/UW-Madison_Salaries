@@ -347,7 +347,7 @@ export default function Screening() {
               {belowOnly && (
                 <Button size="xs" variant="subtle" onClick={clearBelowMin}>Screen everyone in scope</Button>
               )}
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.inline} />} onClick={exportCsv}>
+              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv}>
                 CSV
               </Button>
             </Group>

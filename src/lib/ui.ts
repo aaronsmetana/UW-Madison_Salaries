@@ -1,26 +1,19 @@
 /**
  * Shared UI scale constants — so icon sizes (and other repeated magic numbers) are chosen from a small
- * deliberate set rather than drifting across ten different values. Import `ICON` instead of hardcoding.
+ * deliberate set rather than drifting. Import `ICON` instead of hardcoding.
  *
- * `compact` was added rather than rounded away: 14px was the single most common icon size in the app
- * (27 call sites), used consistently inside `size="xs"` controls, which `control: 16` is too large for.
- * A scale that 27 call sites have to ignore isn't a scale — the missing step was real.
- *
- * A handful of sizes stay off-scale on purpose rather than being rounded into it: the 64px feature
- * glyph on Compare's empty state (larger than any routine size), an 11px clear-affordance inside a
- * 14px ActionIcon (a token would overflow its own target), and the 18px alert/empty-state glyphs,
- * which sit between `control` and `nav` and would need a sixth step to absorb. Everything that maps
- * cleanly should use a token.
+ * Four sizes, by role (P2). Measured across every page there were nine (11 to 26px): an `inline` step at 13px
+ * a pixel off `compact`, 18px alert, empty-state and navigation glyphs between steps, and strays at 11, 12 and
+ * 26. Each folded to its role: 13 and under to `compact`, an alert's or a nav control's 18 to `nav`, a field's
+ * 18 to `control`, the landing search's 26 to `feature`. e2e/polish.spec.ts fails on any other size.
  */
 export const ICON = {
-  /** Inline with body/label text (badges, list bullets, chips). */
-  inline: 13,
-  /** Inside a compact control — an `xs` Button, a small ActionIcon, a chip. */
+  /** Inside a compact control (a 28px button or icon button), a chip, a badge, inline with text. */
   compact: 14,
-  /** Inside buttons, inputs, action icons — the default control size. */
+  /** Inside a default control or a field: buttons, inputs, action icons. */
   control: 16,
-  /** Primary navigation / sidebar. */
+  /** Navigation, the theme toggle, and an alert's or an empty state's glyph. */
   nav: 20,
-  /** Feature or stat-card glyphs (the largest routine size). */
+  /** Feature or stat-card glyphs, and the landing search's (the largest routine size). */
   feature: 22,
 } as const;

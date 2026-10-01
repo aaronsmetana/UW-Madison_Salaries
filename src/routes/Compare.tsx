@@ -34,6 +34,7 @@ import { focusControl } from '../components/EmptyState';
 import { Sparkline } from '../components/chart/Sparkline';
 import { cadenceOf, type CadencePoint } from '../lib/cadence';
 import { DOT_RIM } from '../components/markers';
+import { ICON } from '../lib/ui';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
@@ -379,7 +380,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <Stack align="center" gap="sm" py={16}>
             <ThemeIcon size={48} radius="xl" variant="light" color="accent">
-              <IconArrowsDiff size={26} />
+              <IconArrowsDiff size={ICON.feature} />
             </ThemeIcon>
             {/* h2: the page's main content under PageHeader's h1 (see EmptyState's note). */}
             <Title order={2} fz="h3" ta="center">Build a side-by-side comparison</Title>

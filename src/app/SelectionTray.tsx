@@ -36,6 +36,7 @@ function Chip({ item, isPrimary, onPrimary, onRemove }: {
   const isPerson = item.type === 'person';
   return (
     <Group
+      className="tray-chip"
       gap={6}
       wrap="nowrap"
       pl={isPerson ? 4 : 8}

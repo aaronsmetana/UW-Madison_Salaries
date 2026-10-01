@@ -264,7 +264,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
             mb="sm"
             rightSection={
               <ActionIcon size={14} radius="xl" variant="transparent" color="accent" aria-label="Clear salary range filter" onClick={() => setBinFilter(null)}>
-                <IconX size={11} />
+                <IconX size={ICON.compact} />
               </ActionIcon>
             }
           >

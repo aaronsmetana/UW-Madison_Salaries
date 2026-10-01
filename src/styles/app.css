@@ -713,6 +713,39 @@ path.recharts-tooltip-cursor {
   border-color: var(--hairline-strong);
 }
 
+/* Three control heights (P1). Measured across every page, controls came in fourteen: buttons at 22, 26, 30
+   and 36, fields at 30, 36 and 42, icon buttons at 22 and 34, segmented controls at 34, tabs at 37. Now:
+   compact 28 (a chart's footer, a table's row actions, dense filters, a segmented choice), default 36 (page
+   controls and fields), and the landing's own search, the hero. Mantine declares its size variables on each
+   component's class, so they are redefined there; a field and a button side by side share a height. */
+.mantine-Button-root {
+  --button-height-xs: 28px;
+  --button-height-compact-xs: 28px;
+  --button-height-compact-sm: 28px;
+  --button-height-compact-md: 28px;
+  --button-height-md: 36px;
+}
+.mantine-Input-wrapper {
+  --input-height-xs: 28px;
+  --input-height-md: 36px;
+}
+.mantine-ActionIcon-root {
+  --ai-size-xs: 28px;
+  --ai-size-sm: 28px;
+  --ai-size-md: 28px;
+  --ai-size-lg: 36px;
+  --ai-size-input-xs: 28px;
+  --ai-size-input-md: 36px;
+}
+/* A segmented control is a compact choice: 4px of track round a 20px line. */
+.mantine-SegmentedControl-root {
+  --sc-padding-xs: 0 8px;
+  --sc-padding-sm: 0 10px;
+  --sc-padding-md: 0 14px;
+}
+.mantine-SegmentedControl-label { line-height: 20px; }
+.mantine-Tabs-tab { height: 36px; padding-block: 0; }
+
 /* Stronger tab hierarchy: muted inactive tabs, bright + bold active tab with a thicker accent underline. */
 .mantine-Tabs-tab {
   color: var(--mantine-color-dimmed);
@@ -2080,7 +2113,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
    does lie on the graph — so only while the box is in use. The heights here are mirrored by `FULL_BAR` in
    routes/Home, which subtracts them from the window before the panel grows. */
 .hero-dist-full .hero-dist-controls {
-  --full-bar-h: 42px;
+  --full-bar-h: 36px;
   --full-bar-gap: 8px;
   position: static;
   height: var(--full-bar-h);
@@ -2090,7 +2123,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .hero-dist-full .hero-dist-controls > :not(.hero-dist-search) { flex: none; }
 .hero-dist-search {
-  --full-search-h: 42px;
+  --full-search-h: 36px;
   --full-strip-h: 32px;
   flex: 1 1 auto;
   min-width: 0;

@@ -158,7 +158,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Suggested equity benchmarks (top earners in this title):</Text>
             <Group gap={6}>
               {suggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.inline} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -171,7 +171,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
             <Group gap={6}>
               {inversionSuggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={ICON.inline} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -324,7 +324,7 @@ export function ReportSetup({
                                     {r.inverted ? '+' : '−'}{pct(r.differential)} — {r.inverted ? 'inversion' : r.belowFloor ? 'under the 15% guideline' : 'meets guideline'}
                                   </Badge>
                                   <ActionIcon variant="subtle" color="gray" size="xs" aria-label={`Remove ${r.name}`} onClick={() => onRemoveSupervisee(r.key)}>
-                                    <IconX size={ICON.inline} />
+                                    <IconX size={ICON.compact} />
                                   </ActionIcon>
                                 </Group>
                               </Group>
@@ -517,7 +517,7 @@ export function ReportSetup({
                     <Group justify="space-between" gap={4} mb={2}>
                       <Text size="xs" c="dimmed">{p.label}</Text>
                       <Group gap={3} wrap="nowrap">
-                        {maxed && <IconCheck size={ICON.inline} color="var(--mantine-color-pos-6)" />}
+                        {maxed && <IconCheck size={ICON.compact} color="var(--mantine-color-pos-6)" />}
                         <Text size="xs" c="dimmed" fw={600}>{p.value}<Text span c="dimmed" fw={400}> / {p.max}</Text></Text>
                       </Group>
                     </Group>
@@ -556,12 +556,12 @@ export function ReportSetup({
                     onKeyDown={jump ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } } : undefined}
                   >
                     {e.ok
-                      ? <IconCheck size={ICON.inline} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
-                      : <IconX size={ICON.inline} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
+                      ? <IconCheck size={ICON.compact} color="var(--mantine-color-pos-6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                      : <IconX size={ICON.compact} color="var(--mantine-color-gray-5)" style={{ flexShrink: 0, marginTop: 2 }} />}
                     <Text size="xs" c={e.ok ? undefined : 'dimmed'} style={{ flex: 1, minWidth: 0 }}>
                       {e.label}{e.note ? <Text span c="dimmed"> — {e.note}</Text> : null}
                     </Text>
-                    {jump && <IconChevronRight className="evidence-jump-chevron" size={12} style={{ flexShrink: 0, marginTop: 2, opacity: 0, transition: 'opacity var(--dur-fast) var(--ease)' }} />}
+                    {jump && <IconChevronRight className="evidence-jump-chevron" size={ICON.compact} style={{ flexShrink: 0, marginTop: 2, opacity: 0, transition: 'opacity var(--dur-fast) var(--ease)' }} />}
                   </Group>
                 );
               })}

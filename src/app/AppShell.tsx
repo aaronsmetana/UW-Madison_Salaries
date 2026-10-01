@@ -16,6 +16,7 @@ import { NAV, ABOUT, type NavItem } from './nav';
 import { consumeUpdate } from '../lib/appUpdate';
 import { RevealProvider } from '../components/PersonReveal';
 import { prefersReducedMotion } from '../lib/motion';
+import { ICON } from '../lib/ui';
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
@@ -144,7 +145,7 @@ export function AppShellLayout() {
         label={named ? n.label : undefined}
         // An icon alone names nothing: the rail's links carry their names for a screen reader.
         aria-label={named ? undefined : n.label}
-        leftSection={<Icon size={20} stroke={1.7} />}
+        leftSection={<Icon size={ICON.nav} stroke={1.7} />}
         active={active}
         variant="light"
         color={active ? 'accent' : undefined}
@@ -254,10 +255,10 @@ export function AppShellLayout() {
                   px={labelled ? undefined : 0}
                   // During its first look, collapsing is tucking it in now.
                   onClick={() => (peek === 'open' ? setPeek(prefersReducedMotion() ? null : 'closing') : toggleDesktop())}
-                  leftSection={labelled ? <IconChevronLeft size={18} /> : undefined}
+                  leftSection={labelled ? <IconChevronLeft size={ICON.nav} /> : undefined}
                   aria-label={labelled ? 'Collapse navigation' : 'Expand navigation'}
                 >
-                  {labelled ? <span className="app-navbar-toggle-label">Collapse</span> : <IconChevronRight size={18} />}
+                  {labelled ? <span className="app-navbar-toggle-label">Collapse</span> : <IconChevronRight size={ICON.nav} />}
                 </Button>
               </Tooltip>
             </>

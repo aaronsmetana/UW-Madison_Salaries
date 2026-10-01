@@ -154,7 +154,7 @@ export function EarnersPanel() {
       {earnersRaw && view.length === 0 ? (
         <EmptyState
           size="sm"
-          icon={<IconSearchOff size={18} />}
+          icon={<IconSearchOff size={ICON.nav} />}
           title="No one matches"
           hint={`Nothing in this scope${q ? ' matches your search' : ''}. Try widening the scope or clearing filters.`}
         />

@@ -34,6 +34,7 @@ import { SegmentedToggle } from '../components/SegmentedToggle';
 import { areaGradDef } from '../components/chartDefs';
 import type { HomeStats, SearchIndex } from '../lib/manifest';
 import { ordinal } from '../lib/stats';
+import { ICON } from '../lib/ui';
 
 interface StatData { label: string; value: number | null; format: (n: number) => string; hint?: string }
 
@@ -145,7 +146,7 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
  * line it starts half a line off its own place. `full page grows out of its place` holds them to it on a
  * desktop and a phone.
  */
-const FULL_BAR = { wide: 42 + 8, phone: 42 + 6 + 32 + 6 };
+const FULL_BAR = { wide: 36 + 8, phone: 36 + 6 + 32 + 6 };
 /** How many people the search lists, on the page and full page alike, before "More people match": its list
  *  scrolls, and its heading says how many matched. Every match in the graph's snapshot is lit on the graph
  *  (the name group) whatever the list holds; the first `NAMED` rows are ringed and named there. */
@@ -1621,13 +1622,13 @@ function Distribution({
       className={`hero-dist-full-toggle${full ? '' : ' accent-adaptive-text'}`}
       aria-label={full ? 'Exit full page' : 'Full page graph'} onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
     >
-      {full ? <IconX size={16} /> : <IconArrowsMaximize size={16} />}
+      {full ? <IconX size={ICON.control} /> : <IconArrowsMaximize size={ICON.control} />}
     </ActionIcon>
   ) : (
     <Button
       ref={toggleRef} variant={full ? 'filled' : 'light'} color="accent" size="compact-sm"
       className={`hero-dist-full-toggle${full ? '' : ' accent-adaptive-text'}`}
-      leftSection={full ? <IconX size={14} /> : <IconArrowsMaximize size={14} />}
+      leftSection={full ? <IconX size={ICON.compact} /> : <IconArrowsMaximize size={ICON.compact} />}
       rightSection={full ? <span className="hero-dist-esc" aria-hidden>Esc</span> : undefined}
       onClick={full ? closeFull : openFull} data-autofocus={full || undefined}
     >
@@ -1659,10 +1660,10 @@ function Distribution({
           {/* The fall into place again; nothing to play under reduced motion. */}
           {motion && (phone ? (
             <ActionIcon variant="subtle" size="md" aria-label="Drop the dots again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
-              <IconArrowBarToDown size={16} />
+              <IconArrowBarToDown size={ICON.control} />
             </ActionIcon>
           ) : (
-            <Button variant="subtle" size="compact-xs" leftSection={<IconArrowBarToDown size={14} />} className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
+            <Button variant="subtle" size="compact-xs" leftSection={<IconArrowBarToDown size={ICON.compact} />} className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
               Drop again
             </Button>
           ))}
@@ -2753,25 +2754,25 @@ export default function Home() {
           <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="lg" verticalSpacing="md">
             <ShowcaseLink
               to="/paycheck"
-              icon={<IconBriefcase size={18} stroke={1.8} />}
+              icon={<IconBriefcase size={ICON.nav} stroke={1.8} />}
               title="Look up a title"
               blurb="See a title's full pay distribution, who holds it, and how it varies by school."
             />
             <ShowcaseLink
               to="/explore"
-              icon={<IconBuildingBank size={18} stroke={1.8} />}
+              icon={<IconBuildingBank size={ICON.nav} stroke={1.8} />}
               title="Compare divisions"
               blurb="Headcount, median pay and top earners side by side across every school."
             />
             <ShowcaseLink
               to="/reports"
-              icon={<IconReportAnalytics size={18} stroke={1.8} />}
+              icon={<IconReportAnalytics size={ICON.nav} stroke={1.8} />}
               title="Build an equity case"
               blurb="Run the UW salary guidelines for one person and print the brief for HR."
             />
             <ShowcaseLink
               to="/screening"
-              icon={<IconListSearch size={18} stroke={1.8} />}
+              icon={<IconListSearch size={ICON.nav} stroke={1.8} />}
               title="Screen a whole unit"
               blurb="Rank everyone in a school or department by how strong their case looks."
             />

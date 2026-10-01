@@ -748,7 +748,7 @@ export function SearchBox({
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => { e.stopPropagation(); e.preventDefault(); showOnGraph(items[i]); }}
     >
-      Show on full page graph <IconArrowsMaximize size={12} />
+      Show on full page graph <IconArrowsMaximize size={ICON.compact} />
     </span>
   );
   const titleRow = (h: TitleHit, i: number) => (
@@ -890,7 +890,7 @@ export function SearchBox({
         const former = campusLatestDate != null && h.last_date != null && String(h.last_date) < String(campusLatestDate);
         return (
           <UnstyledButton key={it.key} {...props} data-former={former || undefined}>
-            <IconUser size={14} aria-hidden className="search-chip-icon" />
+            <IconUser size={ICON.compact} aria-hidden className="search-chip-icon" />
             <span className="search-chip-name">{fullName(h.fn, h.ln)}</span>
             {h.pay != null && <span className="search-chip-pay">{former ? `last ${fmtK(h.pay)}` : fmtK(h.pay)}</span>}
           </UnstyledButton>
@@ -900,7 +900,7 @@ export function SearchBox({
         const h = it.hit;
         return (
           <UnstyledButton key={it.key} {...props}>
-            <IconBriefcase size={14} aria-hidden className="search-chip-icon" />
+            <IconBriefcase size={ICON.compact} aria-hidden className="search-chip-icon" />
             <span className="search-chip-name">{h.title}</span>
             {(titleNames.get(h.title.toLowerCase()) ?? 0) > 1 && <span className="code-pill">{h.code}</span>}
           </UnstyledButton>
@@ -908,7 +908,7 @@ export function SearchBox({
       }
       return (
         <UnstyledButton key={it.key} {...props}>
-          <IconBuilding size={14} aria-hidden className="search-chip-icon" />
+          <IconBuilding size={ICON.compact} aria-hidden className="search-chip-icon" />
           <span className="search-chip-name">{it.hit.school}</span>
         </UnstyledButton>
       );
@@ -957,8 +957,8 @@ export function SearchBox({
             {tokens.map((tk) => (
               <span key={tk.key} className="search-token" data-kind={tk.kind}>
                 {tk.kind === 'title'
-                  ? <IconBriefcase size={14} aria-hidden className="search-chip-icon" />
-                  : <IconBuilding size={14} aria-hidden className="search-chip-icon" />}
+                  ? <IconBriefcase size={ICON.compact} aria-hidden className="search-chip-icon" />
+                  : <IconBuilding size={ICON.compact} aria-hidden className="search-chip-icon" />}
                 <span className="search-token-label" title={tk.label}>{tk.label}</span>
                 <button type="button" className="search-token-x" aria-label={`Remove filter: ${tk.label}`} onClick={() => onRemoveToken?.(tk.key)}>
                   ×

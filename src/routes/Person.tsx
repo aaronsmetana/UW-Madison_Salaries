@@ -935,7 +935,7 @@ export default function Person() {
                     color={growthTrend === 'none' || growthTrend === 'flat' ? 'gray' : growthTrend === 'down' ? 'red' : 'pos'}
                     data-trend={growthTrend}
                   >
-                    {growthTrend === 'down' ? <IconTrendingDown size={ICON.inline} /> : growthTrend === 'up' ? <IconTrendingUp size={ICON.inline} /> : <IconMinus size={ICON.inline} />}
+                    {growthTrend === 'down' ? <IconTrendingDown size={ICON.compact} /> : growthTrend === 'up' ? <IconTrendingUp size={ICON.compact} /> : <IconMinus size={ICON.compact} />}
                   </ThemeIcon>
                   <Eyebrow>Salary growth</Eyebrow>
                 </Group>
@@ -987,7 +987,7 @@ export default function Person() {
               >
                 <Group gap={6} wrap="nowrap">
                   <ThemeIcon size={20} radius="md" variant="light" color="accent">
-                    <IconClockHour4 size={ICON.inline} />
+                    <IconClockHour4 size={ICON.compact} />
                   </ThemeIcon>
                   <Eyebrow>Tenure</Eyebrow>
                 </Group>

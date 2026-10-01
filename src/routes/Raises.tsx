@@ -313,7 +313,7 @@ export default function Raises() {
                 {WHYS.filter((w) => counts[w] > 0).map((w) => (
                   <Badge key={w} component="button" type="button" variant="light" color={WHY[w].color} data-why={w}
                     className="raise-why-filter" style={{ cursor: 'pointer' }}
-                    aria-pressed={whyOnly === w} leftSection={whyOnly === w ? <IconCheck size={12} /> : undefined}
+                    aria-pressed={whyOnly === w} leftSection={whyOnly === w ? <IconCheck size={ICON.compact} /> : undefined}
                     onClick={() => { update({ why: whyOnly === w ? null : w }); setShowAll(false); }}>
                     {WHY[w].label} · {num(counts[w])}
                   </Badge>
@@ -363,7 +363,7 @@ export default function Raises() {
           <Card withBorder padding={0} className="raise-above">
             <Group justify="space-between" p="md" pb="xs" wrap="wrap" gap="sm">
               <CardTitle mb={0}>More than the usual raise{whyOnly ? `: ${WHY[whyOnly].label}` : ''}</CardTitle>
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.inline} />} onClick={exportRows} disabled={!sorted.length}>CSV</Button>
+              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportRows} disabled={!sorted.length}>CSV</Button>
             </Group>
             {loadingRows && !rows ? <LoadingState label="Finding who got more…" /> : !sorted.length ? (
               <Text size="sm" c="dimmed" px="md" pb="md">No one here got more than the usual raise.</Text>
@@ -419,7 +419,7 @@ export default function Raises() {
           <Card withBorder padding={0} className="raise-title-changes" data-count={changes?.length ?? ''}>
             <Group justify="space-between" p="md" pb={4} wrap="wrap" gap="sm">
               <CardTitle mb={0}>Changed title</CardTitle>
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.inline} />} onClick={exportChanges} disabled={!changesSorted.length}>CSV</Button>
+              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportChanges} disabled={!changesSorted.length}>CSV</Button>
             </Group>
             <Text size="sm" c="dimmed" px="md" pb="xs">
               A promotion or a reclassification: a new job code between these snapshots, with one appointment on each
