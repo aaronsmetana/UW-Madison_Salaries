@@ -34,6 +34,7 @@ import { focusControl } from '../components/EmptyState';
 import { Sparkline } from '../components/chart/Sparkline';
 import { cadenceOf, type CadencePoint } from '../lib/cadence';
 import { DOT_RIM } from '../components/markers';
+import { ChartSkeleton } from '../components/Loading';
 import { ICON } from '../lib/ui';
 
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
@@ -79,6 +80,9 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
   if (x == null || y == null || index !== count - 1) return null;
   return <SvgPill x={x + 8 + name.length * 3 + 4} y={y} text={name} color={color} fontWeight={600} />;
 }
+
+/** The trajectories chart (300px), its note and its footer, while their people load. */
+const TRAJECTORY_LOADING_H = 369;
 
 export default function Compare() {
   /** The add box's card, so the empty state below can put the cursor in it. */
@@ -412,8 +416,10 @@ export default function Compare() {
           >
             Salary trajectories
           </CardTitle>
+          {/* Loading, a block the height of the chart, its note and its footer: a spinner, the card was a third
+              of its height and the cards under it dropped 333px when the lines came (layout shift 0.06). */}
           {pLoading ? (
-            <Loader />
+            <ChartSkeleton height={TRAJECTORY_LOADING_H} />
           ) : (
             <>
               <ResponsiveContainer width="100%" height={300}>

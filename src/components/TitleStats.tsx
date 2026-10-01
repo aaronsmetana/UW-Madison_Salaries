@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, ActionIcon,
+  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, ActionIcon, Skeleton,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
@@ -18,12 +18,16 @@ import { CardTitle } from './CardTitle';
 import { TrayButton } from './TrayButton';
 import { SortableTh, type SortState } from './SortableTh';
 import { GLOSSARY } from '../lib/glossary';
-import { StatSkeleton, ChartSkeleton, TableSkeleton } from './Loading';
+import { ChartSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard } from './StatCard';
 import { ICON } from '../lib/ui';
 import { PercentileNote } from './PercentileNote';
 
+
+/** The loading distribution card's chart block: the histogram (284px) and its footer of controls, so the
+ *  card is the loaded one's height. */
+const DIST_LOADING_H = 322;
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
@@ -154,18 +158,27 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const scopeLabel = school ? ` in ${school}` : '';
 
+  // Loading, the page is the loaded one's shape: the same tiles with placeholders for their figures, and
+  // the distribution's own card, its title and note real, the chart a block at the chart's height. Keyed as
+  // the loaded cards are, so each placeholder becomes its card. Shaped otherwise (shorter tiles, a chart
+  // card and a table card), the table's placeholder was taken for the distribution and rose 263px into place
+  // as it loaded (layout shift 0.06 here, 0.10 on CI).
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-          <StatSkeleton size="hero" />
+        <SimpleGrid key="stats" cols={{ base: 1, sm: 2 }} spacing="lg">
+          <StatCard size="hero" lead label={`Median salary · this title${scopeLabel}`}
+            value={<Skeleton height={42} width={180} radius="sm" />} sub={<Skeleton height={23} width={170} radius="sm" />} />
           <SimpleGrid cols={2} spacing="lg">
-            <StatSkeleton size="sm" />
-            <StatSkeleton size="sm" />
+            <StatCard size="sm" label="Range (p25–p75)" value={<Skeleton height={28} width={150} radius="sm" />} />
+            <StatCard size="sm" label="Spread (min–max)" value={<Skeleton height={28} width={150} radius="sm" />} />
           </SimpleGrid>
         </SimpleGrid>
-        <Card withBorder padding="lg"><ChartSkeleton /></Card>
-        <Card withBorder padding="lg"><TableSkeleton /></Card>
+        <Card key="dist" withBorder padding="lg">
+          <CardTitle>Salary distribution{scopeLabel}</CardTitle>
+          <ChartSkeleton height={DIST_LOADING_H} />
+          <Text size="xs" c="dimmed" mt={4}>Click a bar to filter the people list below to that range.</Text>
+        </Card>
       </Stack>
     );
   }
@@ -173,7 +186,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   return (
     <Stack gap="lg">
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
+      <SimpleGrid key="stats" cols={{ base: 1, sm: 2 }} spacing="lg">
         <StatCard
           size="hero"
           lead
@@ -212,7 +225,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
         </Card>
       )}
 
-      <Card withBorder padding="lg">
+      <Card key="dist" withBorder padding="lg">
         <CardTitle>Salary distribution{scopeLabel}</CardTitle>
         <SalaryHistogram
           values={pays}
