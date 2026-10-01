@@ -24,7 +24,7 @@ async function open(browser: Browser, o: { width?: number; height?: number; moti
     ...(o.phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3 } : {}),
   });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.locator('.hero-dist-full-toggle').click();

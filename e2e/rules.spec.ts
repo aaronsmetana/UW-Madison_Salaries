@@ -523,16 +523,13 @@ test.describe('Phones — the figure sits beside the name', () => {
   test('the footer ends the page instead of covering its bottom', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.goto('./explore');
-    await expect(page.locator('.footer-inflow')).toBeAttached({ timeout: 60_000 });
-    await expect(page.locator('.mantine-AppShell-footer')).toBeHidden();
-    const link = page.locator('.footer-inflow').getByText('Source on GitHub');
-    await expect(link, 'the footer is on the page').toBeVisible();
+    const link = page.locator('.app-footer').getByText('Source on GitHub');
+    await expect(link, 'the footer is on the page').toBeVisible({ timeout: 60_000 });
     await link.scrollIntoViewIfNeeded();
     await expect(link).toBeInViewport();
-    // And on a wide screen, the fixed footer as before.
+    // And on a wide screen the same: nothing fixed over the bottom of the window (topnav.spec).
     await page.setViewportSize({ width: 1440, height: 900 });
-    await expect(page.locator('.mantine-AppShell-footer')).toBeVisible();
-    await expect(page.locator('.footer-inflow')).toBeHidden();
+    await expect(page.locator('.app-footer')).toHaveCSS('position', 'static');
   });
 
   test('printing keeps every column, even at a phone-like printable width', async ({ page }) => {

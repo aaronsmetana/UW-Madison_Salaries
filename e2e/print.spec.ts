@@ -47,7 +47,7 @@ for (const [name, path, heading] of ROUTES) {
     await page.waitForTimeout(2_000);
     await page.emulateMedia({ media: 'print' });
 
-    for (const sel of ['.mantine-AppShell-navbar', '.mantine-AppShell-header', '.mantine-AppShell-footer']) {
+    for (const sel of ['.mantine-AppShell-header', '.app-footer', '.page-top']) {
       const el = page.locator(sel);
       if (await el.count()) {
         await expect(el.first(), `${name} prints ${sel} — app chrome belongs on screen, not on paper`)

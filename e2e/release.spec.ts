@@ -41,19 +41,19 @@ test.describe('the newest release, said', () => {
   test.setTimeout(180_000);
 
   /**
-   * Which release the app holds, beside its name on every page, and "New" for 30 days from the day it went
+   * Which release the app holds, at the top of every page, and "New" for 30 days from the day it went
    * up (data/releases.json) and then not: the landing page's pill said the month on one page only, and
    * "New" until the next release, six months on. The day is pinned on the page's clock, so this reads the
    * same on the day the release lands and a year later.
    */
-  test("beside the app's name on every page: the release, new for 30 days, then plainly", async ({ page }) => {
+  test('at the top of every page: the release, new for 30 days, then plainly', async ({ page }) => {
     const s = read<Summary>('summary.json');
     const ref = read<Ref>('reference-status.json');
     const latest = s.snapshots.at(-1)!;
     expect(latest.published, `no publication date for ${latest.id} in data/releases.json`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const withRanges = ref.released_with === latest.id;
     const routes = ['./', `./person/${encodeURIComponent(AARON)}`, `./school/${encodeURIComponent('School of Medicine and Public Health')}`];
-    const tag = page.locator('.release-tag');
+    const tag = page.locator('.page-top .release-tag');
 
     await page.clock.setFixedTime(dayAfter(latest.published!, 5));
     for (const route of routes) {
@@ -88,68 +88,22 @@ test.describe('the newest release, said', () => {
   });
 
   /**
-   * On a phone there is no room beside the name — the tag ran off the screen and pushed the colour switch
-   * with it — so it is the line over the name, the one place anything sits over it.
+   * On a phone too the release is the page's top row, whole: beside the app's name there was no room for it,
+   * and it was a second, smaller line over the name. In the page's own row it wraps under the trail.
    */
-  test('on a phone the release is the line over the name, and the header still fits', async ({ page }) => {
+  test('on a phone the release is said in full in the top row, on the screen', async ({ page }) => {
     const latest = read<Summary>('summary.json').snapshots.at(-1)!;
     await page.setViewportSize({ width: 375, height: 812 });
     await page.clock.setFixedTime(dayAfter(latest.published!, 5));
-    await page.goto('./');
-    const eyebrow = page.locator('.release-eyebrow');
-    await expect(eyebrow).toBeVisible({ timeout: 60_000 });
-    await expect(eyebrow).toContainText(`Data as of ${latest.label}`);
-    await expect(eyebrow.locator('.new-badge')).toBeVisible();
-    await expect(page.locator('.release-tag')).toBeHidden();
-    const g = await page.evaluate(() => {
-      const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
-      return { eyebrow: r('.release-eyebrow'), name: r('.app-wordmark') };
-    });
-    expect(g.eyebrow.bottom, 'the release is not over the name').toBeLessThanOrEqual(g.name.bottom - 10);
-  });
-
-  /**
-   * At every width the header holds the name on one line, the release beside or over it, and the credit,
-   * inside its 64px and the screen, with room between the release and the controls opposite. Squeezed by
-   * the release, the name broke into four lines at 1024px and spilled out of the header; on a phone the
-   * release ran off the screen.
-   */
-  test('the header fits at every width, the name on one line', async ({ page }) => {
-    const latest = read<Summary>('summary.json').snapshots.at(-1)!;
-    await page.clock.setFixedTime(dayAfter(latest.published!, 5));
-    for (const width of [375, 768, 991, 992, 1024, 1280, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto(`./person/${encodeURIComponent(AARON)}`);
-      await expect(page.locator('.release-tag, .release-eyebrow').locator('visible=true').first()).toBeVisible({ timeout: 60_000 });
-      const g = await page.evaluate(() => {
-        const header = document.querySelector('.mantine-AppShell-header')!.getBoundingClientRect();
-        const kids = [...document.querySelectorAll('.mantine-AppShell-header > .mantine-Group-root *')].map((e) => e.getBoundingClientRect())
-          .filter((b) => b.width > 0 && b.height > 0);
-        const name = document.querySelector('.app-name')!.getBoundingClientRect();
-        // The room between the release, where it is beside the name, and the controls and credit opposite.
-        const tag = document.querySelector('.release-tag');
-        const opposite = document.querySelector('.mantine-AppShell-header > .mantine-Group-root > :last-child')!.getBoundingClientRect();
-        const gap = tag && getComputedStyle(tag).display !== 'none' ? opposite.left - tag.getBoundingClientRect().right : null;
-        const shown = (e: Element | null) => !!e && getComputedStyle(e).display !== 'none';
-        return {
-          h: header.height, right: Math.max(...kids.map((b) => b.right)), top: Math.min(...kids.map((b) => b.top)), bottom: Math.max(...kids.map((b) => b.bottom)), nameH: name.height, gap,
-          forms: [tag, document.querySelector('.release-eyebrow')].filter(shown).length,
-          eyebrow: document.querySelector('.mantine-AppShell-header')!.textContent!.toLowerCase().includes('open record salary data'),
-        };
-      });
-      // One release, beside the name or over it; the old "Open record salary data" line over the name is gone.
-      expect(g.forms, `${width}px: the release is said ${g.forms} times`).toBe(1);
-      expect(g.eyebrow, `${width}px: "Open record salary data" is back over the name`).toBe(false);
-      expect(g.right, `${width}px: something in the header runs off the screen`).toBeLessThanOrEqual(width);
-      expect(g.top, `${width}px: something in the header spills above it`).toBeGreaterThanOrEqual(0);
-      expect(g.bottom, `${width}px: something in the header spills below it`).toBeLessThanOrEqual(g.h);
-      expect(g.nameH, `${width}px: the name broke onto a second line`).toBeLessThan(30);
-      // Not merely inside the header: at 1024px "· salary ranges updated" ran into the colour switch
-      // (−3px). The floor is the header's own gap between its controls (16px, `gap="md"`), not a margin
-      // picked for this one font rendering: CI's Linux text sits a few tenths of a pixel wider, and at
-      // 992px its gap measured 23.8px against the 24 this first asked for.
-      if (g.gap != null) expect(g.gap, `${width}px: the release runs into the controls opposite`).toBeGreaterThanOrEqual(16);
-    }
+    await page.goto(`./person/${encodeURIComponent(AARON)}`);
+    const tag = page.locator('.page-top .release-tag');
+    await expect(tag).toBeVisible({ timeout: 60_000 });
+    await expect(tag.locator('.release-tag-long')).toContainText(`Salary data as of ${month(latest.date)}`);
+    await expect(tag.locator('.new-badge')).toBeVisible();
+    await expect(page.locator('.release-eyebrow')).toHaveCount(0);
+    const right = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.page-top .release-tag *')]
+      .map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0).map((r) => r.right)));
+    expect(right, 'the release runs off the screen').toBeLessThanOrEqual(375);
   });
 
   /**
@@ -163,7 +117,7 @@ test.describe('the newest release, said', () => {
     const span = `${s.snapshots.length} snapshots, ${bare(s.snapshots[0].label)} – ${bare(s.snapshots.at(-1)!.label)}`;
     for (const route of ['./', `./person/${encodeURIComponent(AARON)}`, './explore', './data']) {
       await page.goto(route);
-      const foot = page.locator('.mantine-AppShell-footer');
+      const foot = page.locator('.app-footer');
       await expect(foot, route).toContainText(span, { timeout: 60_000 });
       await expect(foot, route).not.toContainText('generated');
     }

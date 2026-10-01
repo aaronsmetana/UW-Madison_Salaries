@@ -23,11 +23,9 @@ async function settled(page: Page) {
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await unpeeked(page);
 }
-/** The sidebar's once-a-visit peek gone from over the plot's left end — its shadow alone took the panel
- *  from 252 to 226 there — and the pointer resting on neither. */
+/** The pointer off the plot, so nothing it lights is measured. */
 async function unpeeked(page: Page) {
   await page.mouse.move(1400, 200);
-  await expect(page.locator('nav[data-peek]')).toHaveCount(0, { timeout: 10_000 });
 }
 
 /** Every band of light the page puts up, as it goes up: what animates it, and whether it is clipped to

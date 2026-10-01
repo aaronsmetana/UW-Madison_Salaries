@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Box, Group, Title, Text } from '@mantine/core';
 
 /**
- * The shared top-level page header: a teal accent rail + big title, with an optional dimmed description
+ * The shared top-level page header: the page title, with an optional dimmed description
  * and an optional `right` slot for header actions/controls. One look across every page.
  */
 export function PageHeader({
@@ -15,7 +15,7 @@ export function PageHeader({
   right?: ReactNode;
 }) {
   const head = (
-    <Box className="page-rail">
+    <Box>
       {/* Size + letter-spacing come from the shared heading ramp (theme.ts + app.css). */}
       <Title order={1}>{title}</Title>
       {description != null && (

@@ -15,6 +15,7 @@ import { CardTitle } from '../components/CardTitle';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
+import { useCrumbs } from '../app/PageTop';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
@@ -71,6 +72,7 @@ export default function School() {
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
   useDocTitle(name);
+  useCrumbs([{ label: 'Divisions', to: '/explore' }, { label: name }]);
   const snap = useActiveSnapshotId();
   // The id keys the SQL; the label is what a chart footer shows a reader.
   const snapLabel = useActiveSnapshotLabel();
@@ -234,7 +236,7 @@ export default function School() {
       {/* Wraps like PageHeader's own action slot — see the note on Person's header. `nowrap` squeezed the
           button until its label clipped ("+ Add to tray" needed 83px in an 80px button). */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-        <div className="page-rail" style={{ flex: '1 1 320px', minWidth: 0 }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1}>{name}</Title>
         </div>
         <Button

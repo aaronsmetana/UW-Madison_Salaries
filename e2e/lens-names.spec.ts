@@ -45,7 +45,7 @@ async function inSchool() {
 async function open(browser: Browser, o: { scheme?: 'light' | 'dark'; motion?: boolean } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: o.scheme ?? 'light', reducedMotion: o.motion ? 'no-preference' : 'reduce' });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   return { ctx, page };
@@ -178,7 +178,7 @@ test('with a filter on, the glass names only the people it lights', async ({ bro
 test('on a phone, a finger held on the graph full page names the dot under its tip', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await goFull(page);

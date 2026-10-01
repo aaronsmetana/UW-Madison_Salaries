@@ -14,10 +14,8 @@ export function ColorSchemeToggle() {
   return (
     <Tooltip label={`Theme: ${LABEL[colorScheme]} (click for ${LABEL[next]})`} withArrow>
       <ActionIcon
-        variant="subtle"
-        color="gray"
+        variant="default"
         size="lg"
-        radius="xl"
         aria-label={`Switch theme — currently ${LABEL[colorScheme]}`}
         onClick={() => setColorScheme(next)}
       >

@@ -119,6 +119,26 @@ export function SelectionTray() {
   };
 
   const mounted = items.length > 0 || undoable != null;
+  // While the set floats over the bottom of the window, the page's footer runs on under it by the set's own
+  // height (app.css `html[data-tray] .app-footer`), so the last line of every page can be scrolled clear.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = wrapRef.current;
+    if (!mounted || !el) {
+      root.removeAttribute('data-tray');
+      return;
+    }
+    root.setAttribute('data-tray', '');
+    const measure = () => root.style.setProperty('--tray-room', `${Math.ceil(el.offsetHeight) + (phone ? 12 : 20) + 8}px`);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.removeAttribute('data-tray');
+    };
+  }, [mounted, phone]);
   const hasPerson = items.some((i) => i.type === 'person');
   const canCompare = items.length >= 2;
   const collapsed = phone ? !expanded : items.length > 5 && !expanded;
@@ -218,6 +238,7 @@ export function SelectionTray() {
       <VisuallyHidden aria-live="polite">{announce}</VisuallyHidden>
       {/* Fixed, centered wrapper so the Transition's own transform (slide-up) doesn't fight the centering. */}
       <div
+        ref={wrapRef}
         className="no-print"
         style={{ position: 'fixed', bottom: phone ? 12 : 20, left: '50%', transform: 'translateX(-50%)', zIndex: Z.floating, width: phone ? 'calc(100vw - 24px)' : 'max-content', maxWidth: phone ? 'calc(100vw - 24px)' : 'min(960px, calc(100vw - 32px))' }}
       >

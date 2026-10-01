@@ -7,6 +7,8 @@ export interface NavItem {
   label: string;
   to: string;
   icon: Icon;
+  /** The pages that belong to this place without being it: a person to People, a division to Divisions. */
+  also?: string[];
 }
 
 // Destinations, not instructions. These read as query verbs — "Search Person's Salary", "General
@@ -20,9 +22,9 @@ export interface NavItem {
 // palette — and a destination that exists in one but not the other is a place you can only reach by
 // mouse, or only by keyboard.
 export const NAV: NavItem[] = [
-  { label: 'People', to: '/', icon: IconUserSearch },
+  { label: 'People', to: '/', icon: IconUserSearch, also: ['/person/'] },
   { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
-  { label: 'Divisions', to: '/explore', icon: IconBuildingBank },
+  { label: 'Divisions', to: '/explore', icon: IconBuildingBank, also: ['/school/'] },
   { label: 'Compare', to: '/compare', icon: IconArrowsDiff },
   { label: 'Raises', to: '/raises', icon: IconTrendingUp },
   { label: 'Reports', to: '/reports', icon: IconReportAnalytics },

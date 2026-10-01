@@ -460,8 +460,6 @@ test.describe('the landing distribution', () => {
       await page.goto('./', { waitUntil: 'networkidle' });
       const panel = page.locator('.hero-dist');
       await expect(panel).toBeVisible({ timeout: 60_000 });
-      // The sidebar's first look lies over the plot's left edge for its first second.
-      await expect(page.locator('.app-navbar-peek')).toHaveCount(0, { timeout: 10_000 });
       const box = (await panel.boundingBox())!;
       // Swept across the PLOT, not the panel: the panel carries padding, so the first and last few
       // percent of its width sit beside the chart rather than over it and register no hover at all.
@@ -510,7 +508,6 @@ test.describe('the landing distribution', () => {
   // loudest things on the page after its name. They are the graph's supporting detail: set no larger than
   // the search's own text, the same size on any screen, and the page's title is the largest text on it.
   test('runs the page\'s width on a wide screen, and what is under the search stays the size of its detail', async ({ page }) => {
-    await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
     const read = async (width: number) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto('./', { waitUntil: 'networkidle' });
@@ -518,7 +515,8 @@ test.describe('the landing distribution', () => {
       await expect(page.locator('.home-stat-value').first()).not.toHaveText('—', { timeout: 60_000 });
       await page.waitForTimeout(500);
       return page.evaluate(() => {
-        const main = document.querySelector('#main-content')!;
+        // The page's own box, inside its gutters (AppShell's `.app-page`).
+        const main = document.querySelector('.app-page')!;
         const cs = getComputedStyle(main);
         const room = main.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         const w = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().width;
@@ -560,24 +558,22 @@ test.describe('the landing distribution', () => {
   });
 
   // The graph and the search are the page, and they are in the first screen together. At 1440x900 the
-  // search began at y=897, behind the 40px footer fixed at the window's foot: a visitor arrived to a graph
+  // search began at y=897, behind the 40px footer then fixed at the window's foot: a visitor arrived to a graph
   // and had to scroll to find the one thing the page is for. The title block above spent ~200px on the
   // site's name, already in the masthead. On a phone the search began at y=974 of 812, and is now above the
   // graph (search-reveal.spec). At 1280x800 the graph and the search do not both fit without squeezing the
   // plot, so it is not held to this here.
   for (const [width, height] of [[1440, 900], [1920, 1080], [2000, 1300]] as const) {
     test(`the graph and the search are both in the first screen (${width}x${height})`, async ({ page }) => {
-      await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
       await page.setViewportSize({ width, height });
       await page.goto('./', { waitUntil: 'networkidle' });
       await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
       await page.waitForTimeout(500);
       const seen = await page.evaluate(() => {
-        const footer = document.querySelector('.mantine-AppShell-footer')!;
         const bottom = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().bottom;
         return {
           scrollY,
-          end: innerHeight - (getComputedStyle(footer).display === 'none' ? 0 : footer.getBoundingClientRect().height),
+          end: innerHeight,
           panel: bottom('.hero-dist'),
           search: bottom('.hero-search-input'),
         };

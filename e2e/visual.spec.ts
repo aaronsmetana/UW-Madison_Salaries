@@ -187,8 +187,6 @@ const PINNED_BUILD = '2026-09-04T12:00:00.000Z'; // renders as "Sep 4, 2026" —
 const TODAY = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
 test.beforeEach(async ({ page }) => {
-  // The sidebar's first look (sidebar.spec) is over by two and a half seconds; a scene is the page itself.
-  await page.addInitScript(() => { try { sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
   // Both artifacts carry the stamp, and /data prints the manifest's twice as raw ISO slices
   // (`DataHealth.tsx`) rather than through `fmtDate` — so pinning only `summary.json` leaves that
   // page moving. Measured: 5,000 differing pixels on /data, all in its snapshots table.
@@ -378,11 +376,7 @@ test('visual: person', async ({ page }) => {
   // the hero, the stat cards, the tab bar, the card treatment and the headings — is all above it and
   // is stable. Shooting the viewport keeps that under exact comparison instead of letting one scroll
   // box make the whole page unreadable as a diff.
-  // The fixed footer is masked here, and only here. In this scene's dark shot, in-suite, its left third
-  // came back as a stale tile from an earlier page in the same browser (the landing page's "22,009",
-  // then a phone-width legend) — never when the scene runs alone, and after a reload as well. The footer
-  // is identical on every route and every other scene still shoots it.
-  await shots(page, 'person', { fullPage: false, mask: [...CHARTS(page), page.locator('.mantine-AppShell-footer')] });
+  await shots(page, 'person', { fullPage: false, mask: CHARTS(page) });
 });
 
 test('visual: school', async ({ page }) => {

@@ -112,14 +112,14 @@ test.describe('data · about', () => {
     ).toBe(0);
 
     // Narrow: it must still clip and scroll inside the card rather than taking the page with it.
-    // Narrow enough, beside the sidebar's rail, that the table has to scroll.
-    await page.setViewportSize({ width: 780, height: 900 });
+    // Narrow enough that the table has to scroll: 684px of page, as 780px gave when a 64px rail stood beside it.
+    await page.setViewportSize({ width: 716, height: 900 });
     const narrow = await measure();
     const narrowSeen = JSON.stringify(narrow);
-    expect(narrow.pageOverflow, `the table widened the whole page at 780 — ${narrowSeen}`).toBe(0);
-    expect(narrow.wrapperScrollsBy, `the wrapper is scrolling at 780 — ${narrowSeen}`).toBe(0);
-    expect(narrow.scrollerWithinCard, `the table scroller escaped its card at 780 — ${narrowSeen}`).toBe(true);
-    expect(narrow.viewportScrollsBy, `the table stopped scrolling at 780 — ${narrowSeen}`).toBeGreaterThan(0);
+    expect(narrow.pageOverflow, `the table widened the whole page at 716 — ${narrowSeen}`).toBe(0);
+    expect(narrow.wrapperScrollsBy, `the wrapper is scrolling at 716 — ${narrowSeen}`).toBe(0);
+    expect(narrow.scrollerWithinCard, `the table scroller escaped its card at 716 — ${narrowSeen}`).toBe(true);
+    expect(narrow.viewportScrollsBy, `the table stopped scrolling at 716 — ${narrowSeen}`).toBeGreaterThan(0);
   });
 
   /**
@@ -153,11 +153,11 @@ test.describe('data · about', () => {
       expect(m.masked, `the mask is painted over a table that fits — ${seen}`).toBe(false);
     }).toPass({ timeout: 5_000 });
 
-    await page.setViewportSize({ width: 780, height: 900 });
+    await page.setViewportSize({ width: 716, height: 900 });
     await expect(async () => {
       const m = await read();
       const seen = JSON.stringify(m);
-      expect(m.scrollsBy, `expected the table to overflow at 780 — ${seen}`).toBeGreaterThan(0);
+      expect(m.scrollsBy, `expected the table to overflow at 716 — ${seen}`).toBeGreaterThan(0);
       expect(m.faded, `the table scrolls with nothing to say so — ${seen}`).toBe(true);
       expect(m.masked, `data-overflowing is set but no mask is painted — ${seen}`).toBe(true);
     }).toPass({ timeout: 5_000 });
@@ -177,7 +177,7 @@ test.describe('data · about', () => {
    * those rows look unremarkable in the one column that never scrolls away.
    */
   test('the Snapshot column stays put while the rest of the table scrolls', async ({ page }) => {
-    await page.setViewportSize({ width: 780, height: 900 });
+    await page.setViewportSize({ width: 716, height: 900 });
 
     const m = await page.evaluate(() => {
       const vp = document.querySelector<HTMLElement>('.data-snap-scroll .mantine-ScrollArea-viewport')!;
@@ -252,9 +252,9 @@ test.describe('data · about', () => {
 
   /**
    * A narrow table starts compact, and the switch still wins. The threshold is measured off the
-   * scroller rather than a media query on purpose: the sidebar collapses from 330px to 64px, which
-   * moves the viewport width the same card width corresponds to by 266px, so a `(min-width: …)` query
-   * would hide columns from a table that had room for them.
+   * scroller rather than a media query on purpose: the page's own width is not the window's (its gutters
+   * change at `md`, and a sidebar once took 64px or 330px of it), so a `(min-width: …)` query would hide
+   * columns from a table that had room for them.
    */
   test('a table with no room starts compact, and the reader can still override it', async ({ page }) => {
     const columns = () => page.locator('.data-snap-table thead th').count();
@@ -290,7 +290,7 @@ test.describe('data · about', () => {
    * announced, took a focus stop, and scrolled the page instead of the table.
    */
   test('the ingestion table can be scrolled from the keyboard', async ({ page }) => {
-    await page.setViewportSize({ width: 780, height: 900 });
+    await page.setViewportSize({ width: 716, height: 900 });
     const viewport = page.locator('.data-snap-scroll .mantine-ScrollArea-viewport');
     await expect(viewport, 'the scrollable region is not the element that scrolls').toHaveAttribute('role', 'region');
 

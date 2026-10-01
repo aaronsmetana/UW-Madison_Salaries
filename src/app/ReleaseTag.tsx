@@ -4,19 +4,18 @@ import { useRelease } from '../lib/hooks';
 import { NewBadge } from '../components/NewBadge';
 
 /**
- * Which release the app holds, beside its name on every page: "Salary data as of September 2026".
+ * Which release the app holds, at the top right of every page (PageTop): "Salary data as of September 2026".
  *
  * It replaced a "New · September 2026 data" pill in the landing page's top-right corner, which said
  * the month only on that one page and said "New" until the next release, six months on. Here it is on
- * every page, beside the name it qualifies, and it states the LATEST release, which stays true on a
- * page showing an older snapshot through its picker (the picker says which one that is). For 30 days
- * from the day the release went up (`useRelease().isNew`) it leads with the same "New" badge as the
- * picker's and links to what came with it; after that it reads plainly and links to the Data page.
+ * every page, and it states the LATEST release, which stays true on a page showing an older snapshot
+ * through its picker (the picker says which one that is). For 30 days from the day the release went up
+ * (`useRelease().isNew`) it leads with the same "New" badge as the picker's and links to what came with
+ * it; after that it reads plainly and links to the Data page.
  *
- * Its own link, beside the wordmark's rather than inside it: the wordmark goes home, and links do not
- * nest. Below 1200px "· salary ranges updated" gives way first; below `md` there is no room beside
- * the name and the credit at all — at 768px the tag ran into the colour switch — and the release is
- * the line over the name instead (ReleaseEyebrow).
+ * It sat beside the app's name until the person-page redesign gave the header to the destinations; there,
+ * below 992px, it had to become a second, smaller line over the name. In the page's own top row it has the
+ * width of the page, and on a phone it simply wraps under the trail.
  */
 export function ReleaseTag() {
   const release = useRelease();
@@ -42,19 +41,3 @@ export function ReleaseTag() {
   );
 }
 
-/**
- * The same, below `md`: the line over the app's name, where a wider header says "Open record salary
- * data". Beside the name there is no room there — on a phone the tag ran off the screen, and at 768px
- * it ran into the colour switch. Not a link of its own: it sits inside the name's link home, and links
- * do not nest.
- */
-export function ReleaseEyebrow() {
-  const release = useRelease();
-  if (!release?.month) return null;
-  return (
-    <span className="release-eyebrow" data-new={release.isNew || undefined}>
-      <NewBadge />
-      <span>Data as of {release.latest.label}</span>
-    </span>
-  );
-}

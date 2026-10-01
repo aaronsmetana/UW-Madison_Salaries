@@ -53,6 +53,7 @@ import { SortableTh, type SortState } from '../components/SortableTh';
 import { GlossaryTerm } from '../components/GlossaryTerm';
 import { GLOSSARY } from '../lib/glossary';
 import { useDocTitle } from '../lib/useDocTitle';
+import { useCrumbs } from '../app/PageTop';
 import { ICON } from '../lib/ui';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
@@ -293,6 +294,13 @@ export default function Person() {
   const latest = rows[rows.length - 1];
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
   useDocTitle(latest ? name : 'People');
+  // "People / System Engineer IV / Aaron Smetana": the landing (where a person is found), their title's page,
+  // and them. The trail is one line either way, so it can wait for the record without moving anything.
+  useCrumbs(latest ? [
+    { label: 'People', to: '/' },
+    ...(latest.title ? [{ label: latest.title, to: latest.job_code ? `/paycheck?code=${encodeURIComponent(latest.job_code)}` : undefined }] : []),
+    { label: name },
+  ] : [{ label: 'People', to: '/' }]);
 
   // Flag people who aren't in the most recent snapshot (likely no longer employed).
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
@@ -816,7 +824,7 @@ export default function Person() {
           across six — and pushing the page 53px wider than the viewport. The flex-basis keeps the
           desktop row unchanged and only drops the actions below once they can no longer both fit. */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-        <div className="page-rail" style={{ flex: '1 1 320px', minWidth: 0 }}>
+        <div className="person-head" style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1} data-reveal-target tabIndex={-1}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (

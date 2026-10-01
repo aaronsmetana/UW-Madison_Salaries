@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 
 /**
  * The rebrand, as a visitor meets it: a mark that is the landing graph in miniature (fifteen dots in the pay
- * curve's shape, one lit) on every page, a header that holds only the mark, the name, the release and the
- * theme, the credit at the foot of every page, and a landing heading that says what the page shows rather
+ * curve's shape, one lit) on every page, a header that holds only the mark, the name, the destinations and
+ * the theme, the credit at the foot of every page, and a landing heading that says what the page shows rather
  * than repeating the name a few pixels above it. The mark's copies outside the app (favicon, app icon,
  * home-screen icon, share card) come from one file (scripts/brand-images.mjs), and each must resolve.
  */
@@ -40,7 +40,7 @@ test('every page carries the dot mark beside a one-line name, and the header hol
     // One line: the "Open record salary data" line that sat over the name is gone.
     await expect(page.locator('.mantine-AppShell-header'), route).not.toContainText('Open record salary data');
     const header = page.locator('.mantine-AppShell-header');
-    // The credit went to the footer: the header is the mark, the name, the release and the theme.
+    // The credit went to the footer: the header is the mark, the name, the destinations and the theme.
     await expect(header, `${route}: the credit is back in the header`).not.toContainText('UFAS');
     await expect(header, route).not.toContainText('Built by');
     await expect(header.getByRole('button').locator('visible=true'), `${route}: the header holds another control`).toHaveCount(1);
@@ -56,60 +56,15 @@ test('the phone menu carries the same mark', async ({ page }) => {
   expect(await dotsOf(sheet), 'the menu\'s mark is not the dot hill').toEqual({ n: mark.dots.length + 1, lit: 1 });
 });
 
-/**
- * Who obtained the records and who built the site, at the foot of every page, in one line of the fixed
- * 40px bar from `sm` up: what does not fit at a width goes (the snapshot span under 1280px, who built it and
- * the source link's words under 992px), and nothing spills out of the bar. With room to spare: CI's Linux
- * runner draws this text wider than a Mac, and a line that fit here by 10px wrapped there (768px).
- */
-const WIDER_FONT = 1.04;
-test('the footer credits UFAS Local 223 and the builder, on one line of its bar at every width', async ({ page }) => {
-  for (const width of [768, 900, 992, 1280, 1440]) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto('./data');
-    const foot = page.locator('.mantine-AppShell-footer');
-    await expect(foot, `${width}px`).toContainText('UFAS Local 223', { timeout: 60_000 });
-    await expect(foot.getByRole('link', { name: 'UFAS Local 223' })).toHaveAttribute('href', 'https://ufas223.org/');
-    if (width >= 992) await expect(foot, `${width}px`).toContainText('Built by Aaron Smetana');
-    // The source link keeps its name where its words are not drawn.
-    await expect(foot.getByRole('link', { name: 'Source on GitHub' }), `${width}px`).toBeVisible();
-    const g = await foot.evaluate((f, wider) => {
-      const bar = f.getBoundingClientRect();
-      // The line's pieces at their drawn widths (one line each, checked below), grown for a wider font.
-      const row = f.firstElementChild as HTMLElement;
-      const cs = getComputedStyle(row);
-      const parts = [...row.children].map((k) => k.getBoundingClientRect().width).filter((w) => w > 0);
-      const need = parts.reduce((a, b) => a + b, 0) * wider + parseFloat(cs.columnGap) * (parts.length - 1)
-        + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-      // Drawn text only: a range reports the words a visually hidden label keeps, where they would sit.
-      const drawn = (e: Element) => e.getBoundingClientRect().height > 1;
-      const texts = [...f.querySelectorAll('p, span, a')].filter(drawn);
-      return {
-        spill: texts.filter((e) => e.getBoundingClientRect().bottom > bar.bottom + 0.5 || e.getBoundingClientRect().top < bar.top - 0.5).map((e) => e.textContent),
-        lines: Math.max(...texts.map((e) => {
-          const tops = new Set<number>();
-          const walker = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
-          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-            if (!drawn(n.parentElement!)) continue;
-            const r = document.createRange();
-            r.selectNodeContents(n);
-            for (const q of r.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top));
-          }
-          return tops.size;
-        })),
-        spare: row.clientWidth - need,
-      };
-    }, WIDER_FONT);
-    expect(g.spill, `${width}px: text spills out of the footer's bar`).toEqual([]);
-    expect(g.spare, `${width}px: the line fits only at this machine's font widths`).toBeGreaterThanOrEqual(0);
-    expect(g.lines, `${width}px: the footer wraps`).toBe(1);
-  }
-  // A phone ends the page with the footer in the flow, and keeps all of it.
-  await page.setViewportSize({ width: 375, height: 812 });
+/** Who obtained the records and who built the site, at the foot of every page (every word at every width:
+ *  topnav.spec). */
+test('the footer credits UFAS Local 223 and the builder, and links the source', async ({ page }) => {
   await page.goto('./data');
-  const inflow = page.locator('.footer-inflow');
-  await expect(inflow).toContainText('UFAS Local 223', { timeout: 60_000 });
-  await expect(inflow).toContainText('Built by Aaron Smetana');
+  const foot = page.locator('.app-footer');
+  await expect(foot).toContainText('Records obtained via open-records requests by UFAS Local 223', { timeout: 60_000 });
+  await expect(foot.getByRole('link', { name: 'UFAS Local 223' })).toHaveAttribute('href', 'https://ufas223.org/');
+  await expect(foot).toContainText('Built by Aaron Smetana');
+  await expect(foot.getByRole('link', { name: 'Source on GitHub' })).toHaveAttribute('href', /github\.com/);
 });
 
 /** The heading says what the page shows, counted from the data; the name stays in the header above it. */

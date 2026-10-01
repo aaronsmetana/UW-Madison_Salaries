@@ -2,7 +2,7 @@ import { Badge } from '@mantine/core';
 import { useRelease } from '../lib/hooks';
 
 /**
- * "New", on the newest release wherever it is shown: beside the app's name (ReleaseTag), on the newest
+ * "New", on the newest release wherever it is shown: at the top of every page (ReleaseTag), on the newest
  * snapshot in the picker, a person's history and the Data page's ingestion table, and on what came with
  * it in What's new.
  *
@@ -15,7 +15,7 @@ export function NewBadge({ ml }: { ml?: number | string }) {
   const release = useRelease();
   if (!release?.isNew) return null;
   return (
-    <Badge size="xs" variant="light" color="accent" radius="sm" ml={ml} className="new-badge accent-adaptive-text">
+    <Badge size="xs" variant="light" color="accent" radius="xl" ml={ml} className="new-badge accent-adaptive-text">
       New
     </Badge>
   );

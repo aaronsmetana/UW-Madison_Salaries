@@ -43,7 +43,7 @@ const row = (page: Page, key: string) => page.locator(`[data-suggestions] [role=
 /** The page, the dots at rest, the box engaged and its suggestions open. */
 async function suggestions(page: Page, size = { width: 1440, height: 900 }) {
   await page.setViewportSize(size);
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); sessionStorage.setItem('nav-peek', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots').first()).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await box(page).click();

@@ -103,8 +103,8 @@ for (const scheme of ['light', 'dark'] as const) {
   test(`links keep an underline a reader can see, quieter until pointed at (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await page.goto(`./person/${encodeURIComponent(AARON)}`);
-    await expect(page.locator('.page-rail a').first()).toBeVisible({ timeout: 60_000 });
-    for (const sel of ['.page-rail a[data-underline="always"]', '.mantine-AppShell-footer a[data-underline="always"]']) {
+    await expect(page.locator('.person-head a').first()).toBeVisible({ timeout: 60_000 });
+    for (const sel of ['.person-head a[data-underline="always"]', '.app-footer a[data-underline="always"]']) {
       const link = page.locator(sel).first();
       await expect(link, sel).toBeVisible();
       await page.mouse.move(0, 0);
@@ -254,7 +254,7 @@ test('a link alone in a table cell is underlined under the pointer, not at rest;
   await expect(tagged, 'a link beside other words lost its underline').toHaveCSS('text-decoration-line', 'underline');
   // A sentence: the person header's links sit in running text and keep theirs at rest.
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
-  const inText = page.locator('.page-rail a[data-underline="always"]').first();
+  const inText = page.locator('.person-head a[data-underline="always"]').first();
   await expect(inText).toBeVisible({ timeout: 60_000 });
   await page.mouse.move(0, 0);
   await expect(inText).toHaveCSS('text-decoration-line', 'underline');

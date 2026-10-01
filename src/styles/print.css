@@ -12,20 +12,20 @@
   }
 
   /* ---------------------------------------------------------------------------------------------
-     App chrome never prints, on any route. Left nav, top header, footer, the floating tray and
+     App chrome never prints, on any route. The top bar, the page's top row, the footer, the floating tray and
      back-to-top button, and anything a page has explicitly opted out with `.no-print`.
      --------------------------------------------------------------------------------------------- */
-  .mantine-AppShell-navbar,
   .mantine-AppShell-header,
-  .mantine-AppShell-footer,
+  .app-footer,
   .back-to-top,
   .no-print {
     display: none !important;
   }
 
-  /* Mantine reserves the navbar's width as inline padding on <main> and the footer's height as
-     bottom padding. With that chrome gone those are just a wide empty gutter down the page. */
-  .mantine-AppShell-main {
+  /* Mantine reserves the bar's height as padding on <main>, and the page keeps a gutter of its own. With
+     that chrome gone those are just empty margins round the page. */
+  .mantine-AppShell-main,
+  .app-page {
     padding: 0 !important;
   }
 

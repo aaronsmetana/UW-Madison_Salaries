@@ -254,6 +254,9 @@
   /* A tint of the accent (the viewed row, a light badge, a status pill) and the stronger one a pill sits on. */
   --tint-accent: var(--mantine-color-accent-0);
   --tint-accent-strong: var(--mantine-color-accent-1);
+  /* Under a pointer, and the page you are on in the bar: two greys a step apart. */
+  --hover-bg: #f2f4f5;
+  --active-bg: #eef0f2;
   /* pos-8, 6.0:1 on white and 5.4:1 on a light green fill: it reads as green. pos-9 (8.2:1) read as
      near-black beside the ink, so an "up" lost its colour. */
   --text-pos: var(--mantine-color-pos-8);
@@ -372,6 +375,8 @@ body {
   /* The mark's teal over the card, as the light tints are over white: accent-4 text reads 6.3:1 and 5.0:1. */
   --tint-accent: color-mix(in srgb, var(--mantine-color-accent-5) 14%, var(--surface));
   --tint-accent-strong: color-mix(in srgb, var(--mantine-color-accent-5) 28%, var(--surface));
+  --hover-bg: var(--surface-raised);
+  --active-bg: color-mix(in srgb, var(--lift) 13%, var(--base));
   --text-pos: var(--mantine-color-pos-4);
   --text-neg: var(--mantine-color-red-4);
   --text-warn: var(--mantine-color-orange-4);
@@ -438,23 +443,76 @@ body {
    The hairline is the other half of that fix, and the more important half: a shell edge is what
    actually separates chrome from canvas. Tone alone had to carry it before, which is why the steps
    had to be far enough apart to see — and why the whole page read as washed. */
-.mantine-AppShell-header,
-.mantine-AppShell-navbar,
-.mantine-AppShell-footer {
+.mantine-AppShell-header {
   background-color: var(--chrome);
+  border-bottom: 1px solid var(--hairline);
 }
-.mantine-AppShell-header { border-bottom: 1px solid var(--hairline); }
-/* Which release the app holds, beside its name on every page (ReleaseTag): a hairline off the wordmark,
-   then "Salary data as of September 2026" at the size of the credit opposite, led by the "New" badge for
-   the release's first 30 days. Dimmed: it qualifies the name, it is not a second headline. */
+
+/* ── The top bar (AppShell): the name, the seven destinations named, the theme. The page's own gutter on
+   either side, so the name sits over the page's first column. ── */
+.app-bar { padding-inline: var(--page-gutter); }
+.app-nav { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.app-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px 0 10px;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.app-nav-link:hover { background: var(--hover-bg); color: var(--mantine-color-text); }
+.app-nav-link[data-active] { background: var(--active-bg); color: var(--mantine-color-text); font-weight: 600; }
+.app-nav-link[data-active] .app-nav-icon { color: var(--text-accent); }
+/* Narrower than 1200px the names alone fit beside the app's: the icons go first. */
+@media (max-width: 74.99em) {
+  .app-nav-icon { display: none; }
+  .app-nav-link { padding-inline: 10px; }
+}
+
+/* The page between the bar and the footer: one gutter for every page, wider from `md` up, where the rail
+   used to take the first 64px. The footer follows the page and sits at the window's bottom on a short one. */
+:root { --page-gutter: var(--mantine-spacing-md); }
+@media (min-width: 62em) { :root { --page-gutter: var(--mantine-spacing-xl); } }
+.app-main { display: flex; flex-direction: column; }
+.app-page { flex: 1 0 auto; padding: var(--mantine-spacing-md) var(--page-gutter) var(--mantine-spacing-xl); }
+.app-footer {
+  padding: var(--mantine-spacing-md) var(--page-gutter);
+  background-color: var(--chrome);
+  border-top: 1px solid var(--hairline);
+}
+/* While the compare set floats over the page's bottom (SelectionTray), the footer runs on under it, so the
+   last line of the page is never behind it. */
+/* Laid out, not drawn, until the page's first loads have settled (AppShell `useSettled`). */
+.app-footer[data-waiting] { visibility: hidden; }
+html[data-tray] .app-footer { padding-bottom: calc(var(--mantine-spacing-md) + var(--tray-room, 88px)); }
+
+/* The row over every page (PageTop): the trail at left, the release at right; on a phone the release wraps
+   under the trail. */
+.page-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-height: 28px;
+  margin-bottom: var(--mantine-spacing-sm);
+}
+.crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; }
+.crumbs li { display: inline-flex; align-items: center; color: var(--mantine-color-dimmed); font-size: var(--mantine-font-size-xs); }
+.crumbs li + li::before { content: '/'; margin-inline: 8px; color: var(--hairline-strong); }
+.crumbs li:last-child { color: var(--mantine-color-text); font-weight: 500; }
+.crumbs a { color: var(--text-accent); }
+/* Which release the app holds, at the top right of every page (ReleaseTag): "Salary data as of September
+   2026", led by the "New" badge for the release's first 30 days. Dimmed: it qualifies the page. */
 .release-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex: none;
-  margin-left: 4px;
-  padding-left: 12px;
-  border-left: 1px solid var(--hairline-strong);
+  gap: 8px;
   height: 28px;
   color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-xs);
@@ -463,32 +521,12 @@ body {
 }
 .release-tag:hover { color: var(--mantine-color-text); }
 .release-tag-sep { color: var(--mantine-color-dimmed); }
-/* Narrower, it gives way to the name and the credit: first the ranges note (below 1200px it ran into the
-   colour switch at 1024), then, below `md`, the place beside the name altogether (`.release-eyebrow`). */
-@media (max-width: 75em) {
+.release-tag .new-badge { flex: none; }
+/* On a phone the month is the news; what came with it is one tap away, on the Data page. */
+@media (max-width: 47.99em) {
   .release-tag-ranges { display: none; }
 }
-/* Below `md`: over the name, where a wider header has "Open record salary data" (ReleaseEyebrow). Just
-   under 62em, to meet Mantine's `visibleFrom="md"` (min-width: 62em) without both showing at 992px. */
-.release-eyebrow { display: none; }
-@media (max-width: 61.99em) {
-  .release-tag { display: none; }
-  .release-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-bottom: 2px;
-    color: var(--text-faint);
-    font-size: var(--mantine-font-size-xxs);
-    font-weight: var(--label-weight);
-    letter-spacing: var(--label-tracking);
-    text-transform: uppercase;
-  }
-  .release-eyebrow .new-badge { height: 14px; padding-inline: 5px; font-size: 9px; }
-}
 
-.mantine-AppShell-navbar { border-right: 1px solid var(--hairline); }
-.mantine-AppShell-footer { border-top: 1px solid var(--hairline); }
 
 /* The card treatment: a hairline, and nothing else. Paper/Card take their border from
    `--paper-border-color` (Mantine's gray-3), not from `--mantine-color-default-border`, so the ramp
@@ -508,29 +546,6 @@ body {
 .mantine-Title-root[data-order='2'] { letter-spacing: -0.02em; }
 .mantine-Title-root[data-order='3'] { letter-spacing: -0.01em; }
 
-/* The page title's accent rail, in the shell's gutter rather than indenting the title.
-
-   It used to be `pl="md"` plus a 3px border, which inset the h1 by 19px — so on every page the page
-   title was the one heading that lined up with nothing: the h2s below it and the card borders both
-   sat flush at the content edge, 19px to its left. Pulling back by exactly the AppShell's own
-   `padding="md"` and then padding by that minus the rail lands the title text on the content edge
-   with the rail filling the gutter.
-
-   The pull is `xs` (10px), not the full `md` gutter (16px), and the padding is that minus the rail —
-   so whatever the pull, the text still lands on the content edge. Pulling the full 16px does align
-   the title, but it parks the 3px rail flush against the navbar's own 1px right border (measured:
-   gap 0), and the two read as a single 4px composite edge rather than as a title marker. At 10px
-   the rail sits inside the gutter with 6px clear on both sides — clear of the navbar divider on
-   desktop, and clear of the screen edge on a phone, where the gutter is the same 16px but the
-   sidebar is gone (AppShell.tsx:110).
-
-   Person and School compose this onto a flex item; a negative margin sits outside `flex-basis`, so
-   their `1 1 320px` sizing is unaffected. */
-.page-rail {
-  border-left: 3px solid var(--mantine-color-accent-5);
-  margin-left: calc(-1 * var(--mantine-spacing-xs));
-  padding-left: calc(var(--mantine-spacing-xs) - 3px);
-}
 
 /* Every link keeps its underline (theme.ts: WCAG 1.4.1 — in a sentence, colour alone does not say
    "link"), but a quieter one: a pixel, clear of the descenders, in part of the link's own colour, and
@@ -613,6 +628,8 @@ html:root[data-mantine-color-scheme='dark'] {
   /* A light accent badge, button or row: the one tint, not Mantine's 10% (dark: 15%) of shade 7. */
   --mantine-color-accent-light: var(--tint-accent);
   --mantine-color-accent-light-hover: var(--tint-accent-strong);
+  /* What a pointer lights, everywhere: a default button, a menu's row, a legend's entry. */
+  --mantine-color-default-hover: var(--hover-bg);
   /* A grey button's words, subtle, light or outline ("CSV", "Clear all", the tray's "Clear") and a
      neutral change: the one dimmed grey, not gray-7 or, dark, gray-1 to gray-4. */
   --mantine-color-gray-text: var(--mantine-color-dimmed);
@@ -926,9 +943,8 @@ p.mantine-Text-root,
 blockquote {
   max-width: var(--measure);
 }
-/* Not the footer: its credit is one line of UI in a fixed bar, not a paragraph (Footer.tsx). */
-.mantine-AppShell-footer p.mantine-Text-root,
-.footer-inflow p.mantine-Text-root { max-width: none; }
+/* Not the footer: its lines are the page's furniture, not a paragraph (Footer.tsx). */
+.app-footer p.mantine-Text-root { max-width: none; }
 p.mantine-Text-root[style*='text-align: center'] { margin-inline: auto; }
 p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 
@@ -1549,10 +1565,10 @@ button:active,
 /* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the
    global tokens above, so the page still reads as the same app — just calmer for a long, prose-heavy page. ── */
 
-/* One number for the fixed chrome this page stacks: the 64px app header plus the sticky jump nav.
+/* One number for the fixed chrome this page stacks: the 60px app bar plus the sticky jump nav.
    It used to be written three times — the nav's `top`, the table's `stickyHeaderOffset`, and the
    scrollspy's `rootMargin` — as 64 / 108 / 112, none of which knew the others existed. */
-:root { --data-chrome-top: 108px; }
+:root { --data-chrome-top: 104px; }
 
 /* A reading column with data breakouts, which is what this page actually is: eight sections of prose
    and one 10-column ingestion table. 880px is right for the prose and wrong for the table — capped, it
@@ -1759,7 +1775,7 @@ button:active,
    up. A semi-transparent body surface + blur keeps the content beneath legible. */
 .data-jumpnav {
   position: sticky;
-  top: 64px;
+  top: 60px;
   z-index: var(--z-sticky);
   padding: 8px 0;
   background-color: var(--surface);
@@ -2513,29 +2529,6 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .hero-dist-main[data-lens='on'] { cursor: none; }
 .hero-dist-curve-glow { stroke-opacity: var(--curve-glow); }
 
-/* The app footer is fixed from sm up only (AppShell.tsx); on a phone it ends the page instead. */
-@media screen and (max-width: 47.99em) {
-  .mantine-AppShell-footer { display: none; }
-}
-.footer-inflow { padding-block: var(--mantine-spacing-sm); }
-/* The fixed footer is one line in its 40px bar (Footer.tsx); what does not fit at a width goes. The phone's
-   in-flow footer keeps everything. */
-@media screen and (min-width: 48em) and (max-width: 79.99em) {
-  .mantine-AppShell-footer .footer-span { display: none; }
-}
-@media screen and (min-width: 48em) and (max-width: 61.99em) {
-  .mantine-AppShell-footer .footer-built { display: none; }
-  /* The link keeps its icon, and its words as its name. */
-  .mantine-AppShell-footer .footer-source {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-}
-
 /* Read by a screen reader, not drawn. */
 .visually-hidden {
   position: absolute !important;
@@ -2751,43 +2744,13 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   white-space: nowrap;
 }
 
-/* The sidebar's first look, once a visit (app/AppShell): open over the page's left edge — the page beneath
-   is laid out for the rail, so nothing on it moves — then narrowed into the rail, labels fading first. */
-@media (min-width: 48em) {
-  .app-navbar-peek {
-    overflow: hidden;
-    transition: width var(--dur-slow) var(--ease), box-shadow var(--dur-slow) var(--ease);
-  }
-  .app-navbar-peek[data-peek='open'] {
-    width: 330px;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
-  }
-  .app-navbar-peek[data-peek='closing'] {
-    width: var(--app-shell-navbar-width);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0);
-  }
-  .app-navbar-peek .mantine-NavLink-label,
-  .app-navbar-peek .app-navbar-toggle-label {
-    white-space: nowrap;
-    transition: opacity var(--dur-base) var(--ease);
-  }
-  .app-navbar-peek[data-peek='closing'] .mantine-NavLink-label,
-  .app-navbar-peek[data-peek='closing'] .app-navbar-toggle-label,
-  .app-navbar-peek[data-peek='closing'] .mantine-Button-section {
-    opacity: 0;
-    transition: opacity var(--dur-fast) var(--ease);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .app-navbar-peek { transition: none; }
-}
-
 /* The landing page (routes/Home) in two weights. The graph and the search are the page: the only things on
    it with a surface and a border. Everything else is text on the page — the header, the figures, the ways
    on, the notes — set no larger than the search's own and the same size on any screen. The figures and
    tiles under the search used to grow with the band, to 51px figures and 23px titles on a wide screen,
    which made them the loudest things on it after the title. */
-.home { padding-block: clamp(12px, 2.5vh, 28px) clamp(24px, 6vh, 64px); }
+/* No space of its own above: the page's top row (PageTop) is that space, as on every page. */
+.home { padding-block: 0 clamp(24px, 6vh, 64px); }
 /* The page's header, on the same left edge as the panel under it: the title and its lead. Which release
    the page holds is beside the app's name, on every page (`.release-tag`). */
 .home-head { margin-bottom: 4px; }
