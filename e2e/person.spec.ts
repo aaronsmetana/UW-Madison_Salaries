@@ -268,6 +268,9 @@ test('the peer strip names the person under the cursor, and reads the axis betwe
   const dots = page.locator('.peer-strip circle.chart-dot');
   await expect(dots.first()).toBeVisible({ timeout: 60_000 });
 
+  // Into the middle of the window first: at 1280x720 the strip's dots sit just above the fixed footer
+  // here, and under it on CI's wider text, where a pointer sent to the dot pointed at the footer.
+  await dots.nth(5).evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const box = await dots.nth(5).boundingBox();
   if (!box) throw new Error('peer dot has no box');
   const pill = page.locator('.peer-strip .chart-value-pill');

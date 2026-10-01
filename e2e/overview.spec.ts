@@ -116,6 +116,9 @@ test('pointing at a strip dot leaves the other dots as they were', async ({ page
   await open(page, AARON);
   const dots = page.locator('.peer-strip circle.chart-dot');
   const before = await dots.evaluateAll((cs) => cs.map((c) => getComputedStyle(c).fillOpacity));
+  // Into the middle of the window first: at 1280x720 the strip's dots sit just above the fixed footer
+  // here, and under it on CI's wider text, where a pointer sent to the dot pointed at the footer.
+  await dots.nth(5).evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const box = (await dots.nth(5).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await expect(page.locator('.peer-strip .chart-value-pill')).toHaveText(/^[^~]+ · \$[\d,]+$/, { timeout: 5_000 });
