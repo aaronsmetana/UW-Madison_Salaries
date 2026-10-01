@@ -7,11 +7,18 @@ import { test, expect, type Page } from '@playwright/test';
  * titles did not stand out from the text around them. Checked as rendered: a size set inline, in a chart
  * constant or by a Mantine default all show up here, where a source search would miss the last.
  *
- * The landing page is its own approved design (a fluid title, a large search) and is not swept.
+ * The landing page is its own approved design (a fluid title, a large search) and is not swept. Every other
+ * page is: the person page's tabs, a title, Divisions, a division, Raises, both reports, Compare, Screening
+ * and Data.
  */
 
 const AARON = 'aaronsmetana|2014-10-15';
 const SMPH = 'School of Medicine and Public Health';
+/** Two people in Compare's tray: Aaron Smetana and Adam Koch. */
+const TRAY = encodeURIComponent([
+  ['p', encodeURIComponent(AARON), encodeURIComponent('Aaron Smetana')].join(','),
+  ['p', encodeURIComponent('adamkoch|2009-05-26'), encodeURIComponent('Adam Koch')].join(','),
+].join('|'));
 
 const SCALE = [11, 12, 13, 15, 18, 24, 40];
 /** Chart text: axis numbers, labels on a chart, names at a line's end (CHART_FONT in lib/chartStyle). */
@@ -58,8 +65,18 @@ for (const [name, route, ready, svg] of [
   ['Divisions', './explore?tab=schools', '.school-row', false],
   ['a division', `./school/${encodeURIComponent(SMPH)}?tab=dist`, '.card-title', true],
   ['Raises', `./raises?sch=${encodeURIComponent(SMPH)}&dept=Neurology`, '.raise-summary', true],
+  ['Reports, one person', `./reports?type=person&person=${encodeURIComponent(AARON)}`, '.card-title', true],
+  ['Reports, raise case', `./reports?type=comparison&subject=${encodeURIComponent(AARON)}`, '.report-brief', false],
+  ['Compare', `./compare?sel=${TRAY}`, '.card-title', true],
+  ['Screening', './screening?run=1&flag=below-min', '.mantine-Table-table', false],
+  ['Data', './data', '.card-title', false],
 ] as const) {
   test(`every size on ${name} is on the type scale, and chart text is one size`, async ({ page }) => {
+    // A raise case is built from the tray: Compare's link puts Aaron and Adam in it.
+    if (name === 'Reports, raise case') {
+      await page.goto(`./compare?sel=${TRAY}`);
+      await expect(page.locator('.card-title').first()).toBeVisible({ timeout: 60_000 });
+    }
     await page.goto(route);
     // Visible ones: a page's other tabs keep their panels mounted but hidden.
     await expect(page.locator(ready).locator('visible=true').first()).toBeVisible({ timeout: 60_000 });

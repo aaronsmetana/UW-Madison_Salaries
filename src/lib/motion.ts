@@ -1,28 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * One ramp for every duration in the app.
+ * One ramp for every duration in the app: three steps and one easing (P10).
  *
- * Before this there were ten distinct CSS durations across twenty-three sites plus four loose JS
- * numbers, and the differences carried no meaning — 220 ms and 240 ms sat on adjacent elements, and
- * two `useCountUp` calls disagreed by 100 ms for no reason anyone recorded. The four names below are
- * chosen by what is moving, not by how long it takes, so a new call site picks one by asking a
- * question it can actually answer.
+ * It had grown to five names (120, 160, 240, 600, 800) in here and twelve durations in app.css, and the
+ * differences carried no meaning. Chosen by what is moving: `fast`, a property changing on something
+ * already on screen (hover, press, focus, a route); `base`, one element arriving or leaving; `slow`,
+ * something travelling a distance or drawing itself (a chart's marks, a figure counting up, a bar growing
+ * to its value).
  *
- * Mirrored as `--dur-*` / `--ease-out` in app.css because CSS cannot read this file;
- * `motion.test.ts` parses that stylesheet and fails if the two ever drift.
+ * Mirrored as `--dur-*` / `--ease` in app.css because CSS cannot read this file; `motion.test.ts` parses
+ * that stylesheet and fails if the two drift. Under Reduce Motion the CSS steps are 0 and the JS ones
+ * are skipped (`chartAnim`, `useCountUp`, `useMounted`).
  */
 export const MOTION = {
-  /** A property changing on something already on screen: hover, press, focus, fill-opacity. */
-  instant: 120,
-  /** One element arriving, leaving, or gliding to a new position. */
-  quick: 240,
-  /** A chart's marks arriving together. */
-  reveal: 600,
-  /** A figure counting up to its value, or a line drawing itself. */
-  figure: 800,
-  /** A route change is a navigation, not an element arriving — deliberately shorter than `quick`. */
-  route: 160,
+  fast: 150,
+  base: 250,
+  slow: 450,
   /** Travel for an arriving element, in px — the app's one reveal distance. */
   risePx: 4,
   /** Per-item delay step for a staggered reveal, and the total lead-in it may never exceed. */
@@ -49,10 +43,9 @@ export const MOTION = {
  * neighbours were explicitly gated — which is why an eslint rule now refuses a mark that carries
  * neither this helper nor an explicit `isAnimationActive`.
  *
- * The defaults also cap Recharts' own: it uses 1500ms for lines and areas, nearly twice the app's
- * register, and 400ms for bars.
+ * The default also caps Recharts' own: it uses 1500ms for lines and areas, and 400ms for bars.
  */
-export function chartAnim(reduce: boolean, duration: number = MOTION.reveal) {
+export function chartAnim(reduce: boolean, duration: number = MOTION.slow) {
   return {
     isAnimationActive: !reduce,
     animationBegin: 0,
@@ -90,7 +83,7 @@ export function useMounted(): boolean {
  * current value for rendering. Honors reduced-motion (returns `target` immediately) and re-runs if
  * `target` changes. Returns `null` when `target` is `null`.
  */
-export function useCountUp(target: number | null, duration = 600): number | null {
+export function useCountUp(target: number | null, duration: number = MOTION.slow): number | null {
   const [value, setValue] = useState<number | null>(() =>
     target == null ? null : prefersReducedMotion() ? target : 0,
   );

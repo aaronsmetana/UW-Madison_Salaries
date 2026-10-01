@@ -44,7 +44,7 @@ function ChangeFigure({ delta }: { delta: number }) {
     ? <Text size="sm" c="dimmed">0%</Text>
     // The light-mode shades Mantine resolves for `pos` and `orange` measured 4.15–4.37:1 and 2.88:1 on
     // these rows; the shared light-text classes (app.css) carry the darker ones.
-    : <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'} className={delta > 0 ? 'pos-light-text' : 'orange-light-text'}>{fmtChange(delta)}</Text>;
+    : <Text size="sm" fw={600} c={delta > 0 ? 'pos' : 'orange'}>{fmtChange(delta)}</Text>;
 }
 
 /**
@@ -74,7 +74,7 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
         <Text
           size="xs"
           fw={600}
-          c={raise.move === 'promotion' ? 'accent.7' : 'dimmed'}
+          c={raise.move === 'promotion' ? 'var(--text-accent)' : 'dimmed'}
           className={raise.move === 'promotion' ? 'accent7-text' : undefined}
           data-change-tag={raise.move}
           style={{ whiteSpace: 'nowrap' }}

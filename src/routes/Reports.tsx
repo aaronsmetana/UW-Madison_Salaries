@@ -948,7 +948,7 @@ export default function Reports() {
       const need = Math.max(1, 3 - activeFactors.length);
       strengthHints.added = { text: `up to +${head} pts · document ${need} more justification factor${need === 1 ? '' : 's'}`, tone: 'action' };
     } else if (p.key === 'sustained') {
-      strengthHints.sustained = { text: `fixed · ${longevity.streakYears} yr${longevity.streakYears === 1 ? '' : 's'} below median on record`, tone: 'fixed' };
+      strengthHints.sustained = { text: `fixed · ${longevity.streakYears} year${longevity.streakYears === 1 ? '' : 's'} below median on record`, tone: 'fixed' };
     }
   }
 
@@ -1013,7 +1013,6 @@ export default function Reports() {
           right={
             <Group gap="md" w={isNarrow ? '100%' : undefined}>
               <SegmentedControl
-                radius="xl"
                 fullWidth={isNarrow}
                 w={isNarrow ? '100%' : undefined}
                 value={type}
@@ -1114,7 +1113,7 @@ export default function Reports() {
             <Paper className="no-print glass" withBorder p="xs" style={{ position: 'sticky', top: 8, zIndex: Z.sticky }}>
               <Group justify="space-between" wrap="nowrap">
                 <Text size="sm" c="dimmed">Current {subjectPay != null ? usd(subjectPay) : '—'}</Text>
-                <Text size="sm" fw={800} c={belowTarget ? 'green.7' : undefined}>
+                <Text size="sm" fw={700} c={belowTarget ? 'pos' : undefined}>
                   → {recommended != null ? usd(recommended) : '—'}{belowTarget ? ` (+${pct(targetPct)})` : ''}
                 </Text>
               </Group>

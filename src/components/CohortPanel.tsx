@@ -10,7 +10,7 @@ import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { whereAll, filterKey } from '../lib/queries';
-import { num, pct, spanLabel } from '../lib/format';
+import { num, pct, spanLabel, fmtYears } from '../lib/format';
 import { ChartData } from './ChartData';
 import { StatCard } from './StatCard';
 import { StatSkeleton, ChartSkeleton } from './Loading';
@@ -167,7 +167,7 @@ export function CohortPanel() {
   return (
     <Stack gap="lg">
       <SimpleGrid cols={{ base: 1, sm: 3 }}>
-        <StatCard size="sm" label="Median tenure · current staff" value={t?.med != null ? `${t.med.toFixed(1)} yrs` : '—'} />
+        <StatCard size="sm" label="Median tenure · current staff" value={fmtYears(t?.med)} />
         <StatCard size="sm" label="Hired in the last 5 years" value={t && t.n ? pct(t.recent5 / t.n) : '—'} sub={t ? `${num(t.recent5)} of ${num(t.n)}` : undefined} />
         <StatCard size="sm" label="Snapshots span" value={latest ? `2021 – ${latestYear}` : '—'} sub="data begins Nov 2021" />
       </SimpleGrid>
@@ -198,7 +198,7 @@ export function CohortPanel() {
                 label={<AreaPillLabel text="pre-2021 hires: survivors only" />} />
             )}
             <Bar
-              {...chartAnim(reduceMotion, MOTION.reveal)}
+              {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="retention"
               name="Retained"
               fill="var(--mantine-color-pos-6)"
@@ -217,7 +217,7 @@ export function CohortPanel() {
               ))}
             </Bar>
             <Bar
-              {...chartAnim(reduceMotion, MOTION.reveal)}
+              {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="lost"
               name="Left"
               stackId="r"
@@ -288,7 +288,7 @@ export function CohortPanel() {
                 {coverageLabel && <Customized component={<BreakLabels marks={[{ at: coverageLabel, texts: [scope23.label, scope23.short] }]} />} />}
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
                 <Bar
-                  {...chartAnim(reduceMotion, MOTION.reveal)}
+                  {...chartAnim(reduceMotion, MOTION.slow)}
                   dataKey="joined"
                   name="Joined"
                   fill="var(--mantine-color-pos-6)"
@@ -299,7 +299,7 @@ export function CohortPanel() {
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
                 <Bar
-                  {...chartAnim(reduceMotion, MOTION.reveal)}
+                  {...chartAnim(reduceMotion, MOTION.slow)}
                   dataKey="departed"
                   name="Left"
                   fill="var(--mantine-color-red-6)"
@@ -309,7 +309,7 @@ export function CohortPanel() {
                 >
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
-                <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
               </ComposedChart>
             </ResponsiveContainer>
             </div>

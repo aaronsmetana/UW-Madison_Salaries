@@ -11,23 +11,32 @@ import { MOTION, stagger } from './motion';
  */
 describe('the motion ramp is defined once', () => {
   const css = readFileSync(new URL('../styles/app.css', import.meta.url), 'utf8');
-  const declared = Object.fromEntries(
-    [...css.matchAll(/--dur-([a-z]+):\s*(\d+)ms/g)].map((m) => [m[1], Number(m[2])]),
-  );
+  // Each step's first declaration, in `:root`; the Reduce Motion block after it sets them all to 0.
+  const declared: Record<string, number> = {};
+  for (const m of css.matchAll(/--dur-([a-z]+):\s*(\d+)ms/g)) declared[m[1]] ??= Number(m[2]);
 
   it('mirrors every duration token into CSS', () => {
-    expect(declared).toEqual({
-      instant: MOTION.instant,
-      quick: MOTION.quick,
-      reveal: MOTION.reveal,
-      figure: MOTION.figure,
-      route: MOTION.route,
-    });
+    expect(declared).toEqual({ fast: MOTION.fast, base: MOTION.base, slow: MOTION.slow });
+  });
+
+  it('turns every step off under Reduce Motion', () => {
+    const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{\s*:root \{([^}]*)\}/)?.[1] ?? '';
+    for (const k of ['fast', 'base', 'slow']) expect(reduced, k).toMatch(new RegExp(`--dur-${k}:\\s*0ms`));
   });
 
   it('mirrors the easing curve', () => {
-    const m = css.match(/--ease-out:\s*([^;]+);/);
+    const m = css.match(/--ease:\s*([^;]+);/);
     expect(m?.[1].replace(/\s+/g, '')).toBe(MOTION.ease.replace(/\s+/g, ''));
+  });
+
+  // Every transition and animation in the stylesheet on the three steps and the one easing, but for the
+  // named exceptions: the loading bar's endless slide, and the landing's sheen and drain, timed from its
+  // own motion. Delays are staggers, not durations.
+  it('keeps every transition and animation on the scale', () => {
+    const off = css.split('\n')
+      .filter((l) => /\b(transition|animation)\s*:/.test(l) && !/global-loading-slide|hero-sheen|tail-drain|:\s*none|^\s*\/?\*/.test(l))
+      .filter((l) => /\d+m?s\b(?!\))/.test(l.replace(/var\(--dur-(fast|base|slow)\)/g, '')) || /\b(ease-in-out|ease-out|ease-in|linear|cubic-bezier)\b/.test(l) || /\bease\b(?!\))/.test(l.replace(/var\(--ease\)/g, '')));
+    expect(off).toEqual([]);
   });
 });
 

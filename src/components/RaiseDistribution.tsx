@@ -88,7 +88,7 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
               label={{ value: marker!.label, position: 'top', fontSize: CHART_FONT, fill: 'var(--mantine-color-accent-7)' }} />
           )}
           <Bar
-            {...chartAnim(reduceMotion, MOTION.reveal)}
+            {...chartAnim(reduceMotion, MOTION.slow)}
             dataKey="n"
             name="People"
             radius={BAR_RADIUS}

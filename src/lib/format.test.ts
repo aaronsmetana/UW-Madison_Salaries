@@ -13,10 +13,10 @@ describe('format', () => {
     expect(num(1234567)).toBe('1,234,567');
     expect(num(null)).toBe('—');
   });
-  it('fmtYears formats tenure with one decimal and a yr suffix', () => {
-    expect(fmtYears(11.4)).toBe('11.4 yr');
-    expect(fmtYears(0)).toBe('0.0 yr');
-    expect(fmtYears(16.83, 1)).toBe('16.8 yr');
+  it('fmtYears formats tenure with one decimal and a yrs suffix', () => {
+    expect(fmtYears(11.4)).toBe('11.4 yrs');
+    expect(fmtYears(0)).toBe('0.0 yrs');
+    expect(fmtYears(16.83, 1)).toBe('16.8 yrs');
     expect(fmtYears(null)).toBe('—');
     expect(fmtYears(Number.NaN)).toBe('—');
   });

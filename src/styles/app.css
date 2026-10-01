@@ -103,12 +103,15 @@
   --z-reveal: 1000;
   --z-loading-bar: 1100;
 
-  --dur-instant: 120ms;
-  --dur-quick: 240ms;
-  --dur-reveal: 600ms;
-  --dur-figure: 800ms;
-  --dur-route: 160ms;
-  --ease-out: cubic-bezier(.22, .8, .3, 1);
+  /* Motion, three steps and one easing (P10). The file had twelve durations, 100ms to 1.1s, and five
+     easings. Fast: a hover, a colour, a press. Base: something appearing or fading. Slow: something
+     travelling a distance (a bar growing to its value, the sidebar's peek). Every one is off under Reduce
+     Motion. Not on the scale, on purpose: the loading bar's endless slide, and the landing graph's sheen
+     and drain, which are timed from its own motion (Home, DotField). */
+  --dur-fast: 150ms;
+  --dur-base: 250ms;
+  --dur-slow: 450ms;
+  --ease: cubic-bezier(.22, .8, .3, 1);
   --bar: var(--mantine-color-gray-4);
 
   /* Chart marks (markers.tsx), one per meaning and per scheme, each measured against the card.
@@ -239,7 +242,9 @@
      this file to work around Mantine resolving shade 7 at ~2.4-4.4:1 on our surfaces. One token per
      meaning, corrected once, instead of one class per component. */
   --text-accent: var(--mantine-color-accent-8);
-  --text-pos: var(--mantine-color-pos-9);
+  /* pos-8, 6.0:1 on white and 5.4:1 on a light green fill: it reads as green. pos-9 (8.2:1) read as
+     near-black beside the ink, so an "up" lost its colour. */
+  --text-pos: var(--mantine-color-pos-8);
   --text-neg: var(--mantine-color-red-9);
   /* Not from the stock orange ramp: orange-9 is its darkest shade and still only reaches 3.96:1 on an
      orange "light" fill, which is why this pairing sat documented-but-unfixed. #b3400d measures
@@ -260,8 +265,14 @@
      makes text comfortable to read — so it belongs in `ch` and should track the type size of whatever
      it is applied to. Conflating the two is what produced the seven numbers. */
   --content-prose: 880px; /* a reading column that also holds layout (the /data cards, Home's hero) */
-  --measure: 62ch; /* one paragraph */
+  --measure: 72ch; /* one paragraph: the running-text cap below (P9) */
   --measure-narrow: 44ch; /* a centred hint or caption */
+}
+
+/* Under Reduce Motion every step on the scale is instant, inline styles included (a chart's bar growing
+   to its value, a strip fading in), so nothing on the scale can be missed by a per-rule reset. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur-base: 0ms; --dur-slow: 0ms; }
 }
 
 /* Bridge the tokens above onto the Mantine variables that actually paint things. Two details matter:
@@ -333,10 +344,8 @@ body {
      0,1,0) regardless of injection order — the same mechanism the `--mantine-color-dark-*` remap
      above already relies on.
 
-     `sm` stays a near-nothing hairline on purpose. theme.ts records it as deliberately almost
-     invisible so the eleven explicit `shadow="sm"` call sites inherit that discipline without being
-     touched; making it visible here would hand seven ReportBrief cards an elevation the light theme
-     deliberately denies them. */
+     `sm` stays a near-nothing hairline on purpose (theme.ts): a bordered card is not floating, and no
+     card asks for it any more. */
   /* The merged input+menu shadow, dark half. Its light value is unchanged (see :root) because the
      geometry — a wide, lifted, negative-spread cast — is what makes an open input and its dropdown
      read as one card rather than two stacked surfaces; only the ink needed replacing. */
@@ -455,7 +464,7 @@ body {
     color: var(--mantine-color-dimmed);
     font-size: var(--mantine-font-size-xxs);
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
   }
   .release-eyebrow .new-badge { height: 14px; padding-inline: 5px; font-size: 9px; }
@@ -514,7 +523,7 @@ body {
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   text-decoration-color: color-mix(in srgb, currentColor var(--link-underline-mix), transparent);
-  transition: text-decoration-color var(--dur-instant) ease;
+  transition: text-decoration-color var(--dur-fast) var(--ease);
 }
 .mantine-Anchor-root[data-underline='always']:hover,
 .mantine-Anchor-root[data-underline='always']:focus-visible {
@@ -564,28 +573,40 @@ body {
   color: var(--text-accent) !important;
 }
 
-/* ── "Positive/accent" small text & badges: the shade Mantine's own Badge/Button/Text variant
-   resolution picks by default (shade 7) reads at ~2.4–4.4:1 against typical card/badge surfaces —
-   short of WCAG AA's 4.5:1 — across several unrelated components. Rather than one rule per call
-   site, each pattern gets one shared class, applied at every occurrence of that pattern. ── */
-
-/* Badge "OK" status + an "up" Delta/DeltaChip/RankDeltaChip — Mantine's own dark-mode resolution
-   for these already clears AA; only light mode needs a darker shade. */
-:root[data-mantine-color-scheme='light'] .pos-light-text,
-:root[data-mantine-color-scheme='light'] .pos-light-text .mantine-Badge-label {
-  color: var(--mantine-color-pos-8) !important;
+/* ── One ink per meaning (P3). Mantine resolves `c="pos"`, `c="red"` and `c="orange"` to its own shade 7,
+   a light badge's text to the same, a default button's text to gray-9 (#212529) and "bright" text to pure
+   black. Measured across every page that was three greens for "up" (#0c8a59, #057247, #005a37), two reds
+   (#f03e3e, #c92a2a), three near-blacks and an orange at 3.3:1, held together by five override classes
+   applied at call sites. Its variables now point at the app's tokens, once per scheme, so every `c=` and
+   every light badge takes the one ink, and a call site cannot forget the class. Higher than Mantine's own
+   `:root[data-mantine-color-scheme]` (html:root), which its provider emits after this file. ── */
+html:root[data-mantine-color-scheme='light'],
+html:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-default-color: var(--mantine-color-text);
+  --mantine-color-bright: var(--mantine-color-text);
+  --mantine-color-pos-text: var(--text-pos);
+  --mantine-color-red-text: var(--text-neg);
+  --mantine-color-orange-text: var(--text-warn);
+  /* A light badge or button's words: the scheme's ink for its meaning. In the dark scheme Mantine took
+     shade 1-2, near-white tints (#d3efe0, #ffe8cc, #e5eff2) that no longer read as green, orange, teal. */
+  --mantine-color-pos-light-color: var(--text-pos);
+  --mantine-color-red-light-color: var(--text-neg);
+  --mantine-color-orange-light-color: var(--text-warn);
+  --mantine-color-accent-light-color: var(--text-accent);
+  /* A grey button's words, subtle, light or outline ("CSV", "Clear all", the tray's "Clear") and a
+     neutral change: the one dimmed grey, not gray-7 or, dark, gray-1 to gray-4. */
+  --mantine-color-gray-text: var(--mantine-color-dimmed);
+  --mantine-color-gray-light-color: var(--mantine-color-dimmed);
+  --mantine-color-gray-outline: var(--mantine-color-dimmed);
+}
+/* Mantine's own dark-scheme text (dark-0, #c9c9c9), which its components use for their words (a tray
+   chip's name, an accordion's heading): the app's ink. */
+html:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-dark-0: var(--mantine-color-text);
 }
 
-/* Raw c="pos.7" emphasis text (recommendation deltas, receipt totals) — measured short in BOTH
-   themes (their surfaces vary: white cards, tinted rows, dark cards), so both need a shade swap —
-   which --text-pos now carries, so this is one rule instead of a per-theme pair. */
-.pos-adaptive-text { color: var(--text-pos) !important; }
-
-/* Raw c="red.7" emphasis text (Person's negative salary-growth stat) — same shade-7 shortfall. */
-.red-adaptive-text { color: var(--text-neg) !important; }
-
-/* TrayButton's outline "accent" text (compact-xs, used in every peer/school/title table) — short in
-   both themes the same way as pos-adaptive-text above. Eight selectors collapse to four now that the
+/* TrayButton's outline "accent" text (compact-xs, used in every peer/school/title table) — Mantine's
+   shade 7 measured short in both themes. Eight selectors collapse to four now that the
    per-theme value lives on --text-accent. */
 .accent-adaptive-text,
 .accent-adaptive-text:hover,
@@ -594,23 +615,13 @@ body {
   color: var(--text-accent) !important;
 }
 
-/* Orange Badge/Button "light" variant text (the "weak case" badge, "strong comparator" chips), light
-   mode only. This pairing was documented as unfixable: orange-9 is the stock ramp's darkest shade and
-   still only reached ~3.9:1 on the badge's own pale-orange fill. The fix was to stop taking the colour
-   from that ramp — `--text-warn` (#b3400d) measures 5.29:1 on the light fill and 4.83:1 on orange-1,
-   so the pairing now clears AA without changing the badge's background. */
-:root[data-mantine-color-scheme='light'] .orange-light-text,
-:root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Badge-label,
-:root[data-mantine-color-scheme='light'] .orange-light-text .mantine-Button-label {
-  color: var(--text-warn) !important;
-}
-
-/* A "down" delta's red (Delta.tsx/RankDeltaChip) resolves to red-7 in light mode — only 3.84:1
-   against a white card surface. Mantine's own dark-mode resolution for the same prop already
-   clears WCAG AA, so only light mode needs the darker shade. */
-:root[data-mantine-color-scheme='light'] .delta-down {
-  color: var(--text-neg) !important;
-}
+/* A brief's footnote marker (report/sources `Sup`) was a bare link in the browser's own blue (#0000ee):
+   the accent ink, underlined only while pointed at or focused, as a note number reads in print. */
+/* The number at the type scale's small step: a <sup> is 83% of whatever it sits in (9.2px in an eyebrow,
+   12.5px in a sentence). */
+.footnote-ref { font-size: var(--mantine-font-size-xxs); }
+.footnote-ref a { color: var(--text-accent); text-decoration: none; font-weight: 600; }
+.footnote-ref a:hover, .footnote-ref a:focus-visible { text-decoration: underline; }
 
 /* ── Shared chart chrome: one glass tooltip look, soft bar-hover transitions, and a small reusable
    "value pill" for chart hover-readouts (crosshair axis pills, range-bar hover readout). ── */
@@ -643,7 +654,7 @@ body {
   box-shadow: inset 0 1px 0 var(--chart-sheen), var(--mantine-shadow-md);
 }
 .recharts-bar-rectangle path {
-  transition: fill-opacity var(--dur-instant) ease;
+  transition: fill-opacity var(--dur-fast) var(--ease);
 }
 /* Recharts draws the axis rule, the tick marks and the tooltip crosshair with hard-coded #666/#ccc
    presentation attributes, which ignore the color scheme. Left alone, the axis rule reads 5.74:1 on
@@ -695,7 +706,7 @@ path.recharts-tooltip-cursor {
    two elevation signals for something that never leaves the page. Changing the edge says "this
    responds" without pretending the card is floating. */
 .card-hover {
-  transition: border-color var(--dur-instant) ease;
+  transition: border-color var(--dur-fast) var(--ease);
 }
 .card-hover:hover {
   --paper-border-color: var(--hairline-strong);
@@ -746,7 +757,7 @@ path.recharts-tooltip-cursor {
   color: #fff;
   font-weight: 600;
   text-decoration: none;
-  transition: top var(--dur-instant) var(--ease-out);
+  transition: top var(--dur-fast) var(--ease);
 }
 /* `:focus`, not `:focus-visible`. The link is off-screen and cannot be clicked, so it is only ever
    reached by keyboard — and `:focus-visible` is a heuristic that a scripted or restored focus can
@@ -776,6 +787,29 @@ textarea:focus-visible,
   outline: 2px solid var(--mantine-color-accent-7);
   outline-offset: -2px;
 }
+/* Fields and dropdowns too (P8). Mantine's `.m_8fb7ebe7:focus { outline: none }` outranks `input:focus-visible`
+   above, so every text field, select and number input showed only a 1px border tint when focused: the one
+   kind of control on the page with no ring. The same ring, at a class's rank. */
+.mantine-Input-input:focus-visible {
+  outline: 2px solid var(--mantine-color-accent-7);
+  outline-offset: 2px;
+}
+
+/* Running text stops at a readable line (P9): about 72 characters, where it had run to 185 across a wide
+   card (Raises' explanations, Changes' summary, the person page's notes, Screening, Data, the brief). A
+   maximum, so short text is untouched and tables and charts keep the full width. A centred or
+   right-aligned paragraph keeps its place in a wider box. */
+p.mantine-Text-root,
+.mantine-List-item,
+.mantine-Alert-message,
+blockquote {
+  max-width: var(--measure);
+}
+/* Not the footer: its credit is one line of UI in a fixed bar, not a paragraph (Footer.tsx). */
+.mantine-AppShell-footer p.mantine-Text-root,
+.footer-inflow p.mantine-Text-root { max-width: none; }
+p.mantine-Text-root[style*='text-align: center'] { margin-inline: auto; }
+p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 
 /* Shared table style: muted uppercase header + tabular numerals (one look for every table). The size
    is the `xxs` token, not a literal 11 — this rule and `Eyebrow` are the two places that define the
@@ -783,7 +817,7 @@ textarea:focus-visible,
 .mantine-Table-thead .mantine-Table-th {
   text-transform: uppercase;
   font-size: var(--mantine-font-size-xxs);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   font-weight: 700;
   color: var(--mantine-color-dimmed);
 }
@@ -997,7 +1031,7 @@ textarea:focus-visible,
    used to carry made the page's primary control look like it was hovering over the page even when
    nothing was happening; the border already marks it as the biggest input on the page. */
 .hero-search-input {
-  transition: border-color var(--dur-instant) ease, box-shadow var(--dur-instant) ease;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 :root[data-mantine-color-scheme='light'] .hero-search-input {
   border-color: var(--mantine-color-gray-4);
@@ -1074,6 +1108,10 @@ textarea:focus-visible,
   .global-loading-bar::after { animation: none; width: 100%; opacity: 0.6; }
 }
 
+/* A segmented option's words: dimmed until chosen, then the ink (theme `black`). Mantine's gray-7 (#495057)
+   and pure black were a second grey and a third near-black beside the app's own. */
+.mantine-SegmentedControl-label:not([data-active]):not([data-disabled]) { color: var(--mantine-color-dimmed); }
+
 /* SegmentedToggle: the active option's label reads in accent teal (matches the mock's selected pill).
    Scoped to .seg-toggle so the app's other SegmentedControls keep their default dark active label. */
 .seg-toggle .mantine-SegmentedControl-label[data-active] {
@@ -1120,7 +1158,7 @@ textarea:focus-visible,
 }
 .peer-row .peer-add.accent-adaptive-text {
   --button-bd: 1px solid transparent !important; /* Mantine sets it inline */
-  transition: color var(--dur-instant) ease, background-color var(--dur-instant) ease;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
 }
 .peer-row:hover .peer-add.accent-adaptive-text,
 .peer-row:hover .peer-add.accent-adaptive-text .mantine-Button-label,
@@ -1150,7 +1188,7 @@ textarea:focus-visible,
    draw `<circle class="chart-dot">`, so one rule covers both. (In the scatter a wide transparent hit
    circle behind each dot is the real proximity target — see its PeerDot.) The subject's own mark is
    excluded: it is already the largest thing in either chart. */
-.chart-dot { transition: r var(--dur-instant) ease; }
+.chart-dot { transition: r var(--dur-fast) var(--ease); }
 .chart-dot:hover { r: 6.5px; }
 
 /* The tenure callout is a reading of the chart, not a warning, so it wears the same neutral surface
@@ -1171,7 +1209,7 @@ textarea:focus-visible,
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.tab-rise > * { animation: section-rise var(--dur-quick) ease-out backwards; }
+.tab-rise > * { animation: section-rise var(--dur-base) var(--ease) backwards; }
 .tab-rise > *:nth-child(2) { animation-delay: 40ms; }
 .tab-rise > *:nth-child(3) { animation-delay: 80ms; }
 .tab-rise > *:nth-child(n + 4) { animation-delay: 110ms; }
@@ -1194,14 +1232,14 @@ textarea:focus-visible,
    `backwards` keeps the only fill this needs (the `from` state during any delay); once the
    animation is over the element falls back to its base style, which declares no transform at all.
    The settled appearance is unchanged: the last keyframe was already the base style. */
-.route-rise { animation: section-rise var(--dur-route) ease-out backwards; }
+.route-rise { animation: section-rise var(--dur-fast) var(--ease) backwards; }
 
 /* A touch of "press" feedback on buttons/action icons app-wide — cheap, universal, and the kind of
    micro-interaction that reads as considered rather than flashy. */
 button,
 .mantine-Button-root,
 .mantine-ActionIcon-root {
-  transition: transform 100ms ease;
+  transition: transform var(--dur-fast) var(--ease);
 }
 button:active,
 .mantine-Button-root:active,
@@ -1225,7 +1263,7 @@ button:active,
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */
 
 /* Staggered fade-rise reveal for the hero groups (reuses the section-rise keyframes). */
-.hero-rise > * { animation: section-rise var(--dur-quick) ease-out backwards; }
+.hero-rise > * { animation: section-rise var(--dur-base) var(--ease) backwards; }
 .hero-rise > *:nth-child(2) { animation-delay: 50ms; }
 .hero-rise > *:nth-child(3) { animation-delay: 95ms; }
 .hero-rise > *:nth-child(4) { animation-delay: 135ms; }
@@ -1368,12 +1406,12 @@ button:active,
    slides on hover, one gesture for both. */
 .showcase-arrow {
   display: inline-block;
-  transition: transform 160ms ease;
+  transition: transform var(--dur-fast) var(--ease);
   color: var(--text-accent);
 }
 .showcase-link:hover .showcase-arrow { transform: translateX(3px); }
 
-.browse-arrow { display: inline-block; transition: transform 160ms ease; }
+.browse-arrow { display: inline-block; transition: transform var(--dur-fast) var(--ease); }
 .home-stats-browse:hover .browse-arrow { transform: translateX(3px); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1424,7 +1462,7 @@ button:active,
   border-radius: 999px;
   font-weight: 600;
   border: 1px solid var(--mantine-color-default-border);
-  transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 :root[data-mantine-color-scheme='light'] .data-jump-chip { background-color: var(--mantine-color-gray-1); }
 :root[data-mantine-color-scheme='dark'] .data-jump-chip { background-color: var(--mantine-color-dark-6); }
@@ -1525,7 +1563,7 @@ button:active,
 }
 
 /* Copy-anchor on each section header: the chain icon stays invisible until the header is hovered/focused. */
-.section-head .copy-anchor { opacity: 0; transition: opacity var(--dur-instant) ease; }
+.section-head .copy-anchor { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
 .section-head:hover .copy-anchor,
 .section-head:focus-within .copy-anchor { opacity: 1; }
 
@@ -1588,7 +1626,7 @@ button:active,
   transform: translateY(8px);
   pointer-events: none;
   box-shadow: var(--mantine-shadow-md);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .back-to-top[data-show] {
   opacity: 1;
@@ -2065,7 +2103,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .search-bar-field input {
   height: var(--full-search-h);
   min-height: var(--full-search-h);
-  transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 /* At rest the box is a hairline on the panel's own glass, not a card: an empty field has nothing to
    read, so it need not hold a surface of its own over the panel. Hover or focus hands it back. */
@@ -2124,7 +2162,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-sm);
   white-space: nowrap;
-  transition: background-color var(--dur-instant) ease, border-color var(--dur-instant) ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 .search-chip-icon { flex: none; color: var(--mantine-color-dimmed); }
 .search-chip-name { font-weight: 600; }
@@ -2172,7 +2210,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--dur-instant) ease, color var(--dur-instant) ease;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 [aria-selected='true'] > .search-show-on-graph,
 .search-show-on-graph:hover {
@@ -2207,7 +2245,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   display: block;
   filter: blur(5px) saturate(1.4);
   opacity: 0.55;
-  transition: opacity 320ms ease;
+  transition: opacity var(--dur-base) var(--ease);
 }
 :root[data-mantine-color-scheme='dark'] .dot-field[data-settled='false'] .dot-field-bloom,
 :root[data-mantine-color-scheme='dark'] .dot-field[data-flight='moving'] .dot-field-bloom { opacity: 0; }
@@ -2269,7 +2307,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .search-token-x:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
 /* While a group is lit, the wash under the campus curve eases back to half: the one fill behind the dots
    still at full strength, it competed with the group's own dots for the eye. The campus line stays. */
-.hero-dist-wash { transition: opacity 200ms ease-out; }
+.hero-dist-wash { transition: opacity var(--dur-base) var(--ease); }
 .hero-dist-main[data-group-count] .hero-dist-wash { opacity: 0.5; }
 @media (prefers-reduced-motion: reduce) { .hero-dist-wash { transition: none; } }
 /* The group's label, at the top of the plot where the curve never reaches: its name, how many, their
@@ -2298,7 +2336,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   stroke-width: var(--group-casing-w, 6px);
   stroke-opacity: var(--group-casing-a, 0.85);
 }
-.hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: hero-group-in 200ms ease-out; }
+.hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: hero-group-in var(--dur-base) var(--ease); }
 @keyframes hero-group-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: none; }
@@ -2508,10 +2546,10 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 /* Unrolled, there is no "and then, separately, the pile": the axis runs all the way to the top salary,
    so the break that stands for that jump is describing a graph that is not on the screen. It goes with
    the pile's dots and comes back as they fold home. */
-.hero-dist-break { transition: opacity 250ms ease; }
+.hero-dist-break { transition: opacity var(--dur-base) var(--ease); }
 .hero-dist[data-tail='opening'] .hero-dist-break,
 .hero-dist[data-tail='open'] .hero-dist-break { opacity: 0; }
-.hero-dist-tick, .hero-dist-marker-labels { transition: opacity 300ms ease; }
+.hero-dist-tick, .hero-dist-marker-labels { transition: opacity var(--dur-base) var(--ease); }
 .hero-dist:not([data-tail="off"]) .hero-dist-tick,
 .hero-dist:not([data-tail="off"]) .hero-dist-marker-labels { opacity: 0; }
 .hero-dist-tail-note {
@@ -2597,7 +2635,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 @media (min-width: 48em) {
   .app-navbar-peek {
     overflow: hidden;
-    transition: width 450ms cubic-bezier(0.3, 0, 0.2, 1), box-shadow 450ms ease;
+    transition: width var(--dur-slow) var(--ease), box-shadow var(--dur-slow) var(--ease);
   }
   .app-navbar-peek[data-peek='open'] {
     width: 330px;
@@ -2610,13 +2648,13 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .app-navbar-peek .mantine-NavLink-label,
   .app-navbar-peek .app-navbar-toggle-label {
     white-space: nowrap;
-    transition: opacity 220ms ease;
+    transition: opacity var(--dur-base) var(--ease);
   }
   .app-navbar-peek[data-peek='closing'] .mantine-NavLink-label,
   .app-navbar-peek[data-peek='closing'] .app-navbar-toggle-label,
   .app-navbar-peek[data-peek='closing'] .mantine-Button-section {
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition: opacity var(--dur-fast) var(--ease);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2672,7 +2710,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .showcase-icon { flex: none; display: inline-flex; margin-top: 1px; color: var(--text-accent); }
 .showcase-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.showcase-title { font-size: var(--mantine-font-size-sm); font-weight: 650; color: var(--mantine-color-text); transition: color 160ms ease; }
+.showcase-title { font-size: var(--mantine-font-size-sm); font-weight: 650; color: var(--mantine-color-text); transition: color var(--dur-fast) var(--ease); }
 .showcase-link:hover .showcase-title { color: var(--text-accent); }
 .showcase-blurb {
   font-size: var(--mantine-font-size-xs);
@@ -2698,7 +2736,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
   z-index: var(--z-local); pointer-events: none; white-space: nowrap;
   padding: 4px 10px; font-size: var(--mantine-font-size-xs);
-  animation: hold-hint-in 240ms ease-out both;
+  animation: hold-hint-in var(--dur-base) var(--ease) both;
 }
 @keyframes hold-hint-in { from { opacity: 0; transform: translate(-50%, -4px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .hero-hold-hint { animation: none; } }

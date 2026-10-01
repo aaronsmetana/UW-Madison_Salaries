@@ -587,7 +587,7 @@ export function PeerStrip({
               fontSize: CHART_FONT,
               color: MARK_SELF_TEXT,
               opacity: mounted ? 1 : 0,
-              transition: 'opacity 240ms ease',
+              transition: 'opacity var(--dur-base) var(--ease)',
             }}
           >
             {label} · {usd(value)}
@@ -601,7 +601,7 @@ export function PeerStrip({
           style={{ position: 'relative', height: plotH, cursor: sorted.length ? 'crosshair' : undefined }}
         >
           {plotW > 0 && useRibbon && ribbon && (
-            <div style={{ position: 'absolute', inset: 0, height: plotH, opacity: mounted ? 1 : 0, transition: 'opacity 240ms ease' }}>
+            <div style={{ position: 'absolute', inset: 0, height: plotH, opacity: mounted ? 1 : 0, transition: 'opacity var(--dur-base) var(--ease)' }}>
               <DotField className="strip-dots" values={dotValues} kinds={dotKinds} toX={dotX} heightAt={dotHeight} height={plotH} />
             </div>
           )}
@@ -654,7 +654,7 @@ export function PeerStrip({
                 // viewBox, and this svg is 1:1 pixel space, so the stroke is already 1px.
                 // The people are the dots under it (DotField, drawn beneath this svg); the line is their
                 // outline.
-                <g opacity={mounted ? 1 : 0} style={{ transition: 'opacity 240ms ease' }}>
+                <g opacity={mounted ? 1 : 0} style={{ transition: 'opacity var(--dur-base) var(--ease)' }}>
                   <path
                     d={ribbon.line}
                     fill="none"
@@ -681,7 +681,7 @@ export function PeerStrip({
                       fillOpacity={dot.fillOpacity}
                       {...DOT_RIM}
                       opacity={mounted ? 1 : 0}
-                      style={{ transition: `opacity 240ms ease ${Math.min(i, 30) * 4}ms` }}
+                      style={{ transition: `opacity var(--dur-base) var(--ease) ${Math.min(i, 30) * 4}ms` }}
                     />
                   );
                 })
@@ -696,7 +696,7 @@ export function PeerStrip({
                 stroke={MARK_SELF}
                 strokeWidth={1}
                 opacity={mounted ? 0.55 : 0}
-                style={{ transition: 'opacity 240ms ease' }}
+                style={{ transition: 'opacity var(--dur-base) var(--ease)' }}
               />
               <circle
                 className="peer-strip-marker"
@@ -707,7 +707,7 @@ export function PeerStrip({
                 stroke="var(--mantine-color-body)"
                 strokeWidth={1.5}
                 opacity={mounted ? 1 : 0}
-                style={{ transition: 'opacity 240ms ease' }}
+                style={{ transition: 'opacity var(--dur-base) var(--ease)' }}
               />
             </svg>
           )}

@@ -196,7 +196,7 @@ export function EarnersPanel() {
                       : (e.title ?? '—')}
                   </Table.Td>
                   <Table.Td data-fold><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>
-                  <Table.Td ta="right" data-fold c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'} className={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange-light-text' : undefined}>
+                  <Table.Td ta="right" data-fold c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
                     {e.fte == null ? '—' : Math.abs(e.fte - 1) > 0.005 ? (
                       <Tooltip label={e.fte < 1 ? 'Part-time appointment' : 'Combined FTE across multiple appointments'} withArrow>
                         <span>{e.fte.toFixed(2)}</span>

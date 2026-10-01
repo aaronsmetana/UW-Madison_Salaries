@@ -144,7 +144,7 @@ export function PeerRangeBar({
             whiteSpace: 'nowrap',
             fontSize: CHART_FONT,
             color: MARK_SELF_TEXT,
-            transition: 'left 600ms ease-out',
+            transition: 'left var(--dur-slow) var(--ease)',
           }}
         >
           <Text span c="dimmed" fw={500} style={{ fontSize: CHART_FONT }}>Current </Text>
@@ -162,7 +162,7 @@ export function PeerRangeBar({
             borderLeft: '5px solid transparent',
             borderRight: '5px solid transparent',
             borderTop: `7px solid ${MARK_SELF}`,
-            transition: 'left 600ms ease-out',
+            transition: 'left var(--dur-slow) var(--ease)',
           }}
         />
       </div>
@@ -194,7 +194,7 @@ export function PeerRangeBar({
               top: 0,
               bottom: 0,
               background: 'rgba(73, 80, 87, 0.16)',
-              transition: 'width 600ms ease-out',
+              transition: 'width var(--dur-slow) var(--ease)',
             }}
           />
           {/* p25 / median / p75 ticks */}
@@ -241,7 +241,7 @@ export function PeerRangeBar({
               border: '2px solid var(--mantine-color-body)',
               boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
               transform: 'translate(-50%, -50%)',
-              transition: 'left 600ms ease-out',
+              transition: 'left var(--dur-slow) var(--ease)',
             }}
           />
         </div>

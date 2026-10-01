@@ -158,17 +158,17 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
                           onClick={() => toggle(g.name)} role="button" tabIndex={0}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(g.name); } }}
                         >
-                          <IconChevronRight size={ICON.compact} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease', flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
+                          <IconChevronRight size={ICON.compact} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease)', flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
                           <Text size="sm" fw={500} style={{ flex: 1, minWidth: 0 }} lineClamp={1}>{g.name}</Text>
                           {g.closeHire && g.minGapDays != null && (
-                            <Text size="xs" c="orange" className="orange-light-text" style={{ flexShrink: 0 }}>hires {Math.round(g.minGapDays)}d apart</Text>
+                            <Text size="xs" c="orange" style={{ flexShrink: 0 }}>hires {Math.round(g.minGapDays)}d apart</Text>
                           )}
                           {g.flagged ? (
-                            <Badge color="orange" variant="light" radius="sm" className="orange-light-text" leftSection={<IconAlertTriangle size={11} />}>possible duplicate</Badge>
+                            <Badge color="orange" variant="light" radius="sm" leftSection={<IconAlertTriangle size={11} />}>possible duplicate</Badge>
                           ) : (
                             <Badge color="gray" variant="light" radius="sm">likely different</Badge>
                           )}
-                          <Badge color="orange" variant="light" radius="sm" className="orange-light-text">{g.ids.length}</Badge>
+                          <Badge color="orange" variant="light" radius="sm">{g.ids.length}</Badge>
                         </Group>
                         {open && g.ids.map((id) => (
                           <Group

@@ -58,11 +58,12 @@ export function fmtChange(d: number | null | undefined): string {
   return `${d > 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%`;
 }
 
-/** Tenure/duration in years, one decimal ("11.4 yr") — one rendering everywhere tenure is shown as
- *  text, replacing the scattered `${x.toFixed(1)} yr` one-offs. */
+/** Tenure/duration in years as a figure, one decimal ("11.4 yrs") — one rendering wherever tenure is a
+ *  figure (a stat, a table cell, a tooltip). It had drifted to "yrs" in twelve places and "yr" in five. In a
+ *  sentence, write "years". */
 export function fmtYears(n: number | null | undefined, digits = 1): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return `${Number(n).toFixed(digits)} yr`;
+  return `${Number(n).toFixed(digits)} yrs`;
 }
 
 /** One date format everywhere ("Jul 2, 2026") instead of each call site picking its own — an ISO

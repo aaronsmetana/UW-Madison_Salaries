@@ -7,7 +7,7 @@ import { AXIS_TICK, CHART_FONT, GRID, fmtK } from '../lib/chartStyle';
 import { moneyTicks, niceStep } from '../lib/rangeScale';
 import { Box, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { num, usd } from '../lib/format';
+import { num, usd, fmtYears } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { tenureFit, onCurveBand, TENURE_MIN_PEERS } from '../lib/stats';
 import { measureText, placeEndLabels } from '../lib/labelLayout';
@@ -382,7 +382,7 @@ export function TenurePayScatter({
         <Box mb="md" className="tenure-callout" data-verdict={fit.verdict}>
           <Text size="sm">
             <b>{fit.verdict === 'on' ? 'On the tenure curve.' : fit.verdict === 'above' ? 'Above the tenure curve.' : 'Below the tenure curve.'}</b>{' '}
-            At {self.tenure.toFixed(1)} yrs, {titleLabel} typically pays <b>{usd(fit.expected)}</b>.{' '}
+            At {self.tenure.toFixed(1)} years, {titleLabel} typically pays <b>{usd(fit.expected)}</b>.{' '}
             {fit.verdict === 'on'
               ? <>This person is within 2% of that (<b>{usd(Math.abs(fit.gap))} {fit.gap >= 0 ? 'more' : 'less'}</b>).</>
               : <>This person earns <b>{usd(Math.abs(fit.gap))} {fit.gap >= 0 ? 'more' : 'less'}</b> than tenure alone predicts.</>}
@@ -479,7 +479,7 @@ export function TenurePayScatter({
         <div className="tenure-tip" style={{ position: 'absolute', left: tip.x + 12, top: tip.y - 12, pointerEvents: 'none', transform: tip.x > placedRef.meta.right - 180 ? 'translate(calc(-100% - 24px), -100%)' : 'translateY(-100%)' }}>
           <TipSurface>
             <Text size="xs" fw={600}>{hover.name}{hover.isSelf ? ' (this person)' : ''}</Text>
-            <Text size="xs" c="dimmed">{hover.tenure.toFixed(1)} yrs · {usd(hover.pay)}</Text>
+            <Text size="xs" c="dimmed">{fmtYears(hover.tenure)} · {usd(hover.pay)}</Text>
           </TipSurface>
         </div>
       )}

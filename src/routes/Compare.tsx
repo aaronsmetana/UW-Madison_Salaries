@@ -18,7 +18,7 @@ import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, peopleSql, continuingRaisesSql } from '../lib/queries';
-import { usd, num, pct, spanLabel } from '../lib/format';
+import { usd, num, pct, spanLabel, fmtYears } from '../lib/format';
 import { ordinal } from '../lib/stats';
 import { ChartData } from '../components/ChartData';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
@@ -427,7 +427,7 @@ export default function Compare() {
                       const muted = mutedIds.has(p.id);
                       return (
                         <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={lineWidth(p.id)} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
-                          {...chartAnim(reduceMotion, MOTION.figure)}
+                          {...chartAnim(reduceMotion, MOTION.slow)}
                           label={persons.length <= 4 && !muted ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
                           onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
                           style={{ cursor: 'pointer' }}
@@ -440,10 +440,10 @@ export default function Compare() {
                     <CartesianGrid {...GRID} />
                     <XAxis type="number" dataKey="tenure" name="Tenure" unit="y" tick={AXIS_TICK} />
                     <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-                    <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : `${Number(v).toFixed(1)} yrs`)} contentStyle={TIP_STYLE} />
+                    <Tooltip formatter={(v: number, k) => (k === 'pay' ? usd(v) : fmtYears(Number(v)))} contentStyle={TIP_STYLE} />
                     {persons.map((p) => (
                       <Scatter
-                        {...chartAnim(reduceMotion, MOTION.figure)}
+                        {...chartAnim(reduceMotion, MOTION.slow)}
                         key={p.id}
                         name={p.label}
                         data={(perPersonDisplay.get(p.id) ?? []).filter((x) => x.tenure != null && x.pay > 0).map((x) => ({ tenure: x.tenure, pay: x.pay }))}
@@ -507,7 +507,7 @@ export default function Compare() {
                 />
               )}
               {persons.map((p) => (
-                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </ComposedChart>
           </ResponsiveContainer>
@@ -535,7 +535,7 @@ export default function Compare() {
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
               <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -666,7 +666,7 @@ export default function Compare() {
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
               {titles.map((t) => (
-                <Line key={t.id} className={`cmp-line cmp-t${t.colorIdx}`} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(t.id)} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.figure)} />
+                <Line key={t.id} className={`cmp-line cmp-t${t.colorIdx}`} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(t.id)} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </LineChart>
           </ResponsiveContainer>

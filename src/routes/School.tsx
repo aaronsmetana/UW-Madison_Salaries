@@ -318,7 +318,7 @@ export default function School() {
                 not the quiet context MARK_PEER is for. `--bar` is for bars, which are counts, and it
                 is a lighter tone because a bar is a large filled area where a dot is a few pixels. */}
             <Scatter
-              {...chartAnim(reduceMotion, MOTION.figure)}
+              {...chartAnim(reduceMotion, MOTION.slow)}
               data={tenurePay ?? []}
               fill={MARK_POPULATION}
               fillOpacity={0.5}
@@ -356,7 +356,7 @@ export default function School() {
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             {/* The row's own label: on a date axis Recharts' label is the x value, a timestamp. */}
             <Tooltip formatter={(v: number) => usd(v)} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
-            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
+            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
           </LineChart>
         </ResponsiveContainer>
         {/* A reorganization moved whole departments in or out: the trend's step there is that, and says so. */}
@@ -398,7 +398,7 @@ export default function School() {
             />
             <Tooltip formatter={(v: number) => [num(v), 'People']} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
             <Bar
-              {...chartAnim(reduceMotion, MOTION.reveal)}
+              {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="n"
               name="People"
               fill="var(--bar)"

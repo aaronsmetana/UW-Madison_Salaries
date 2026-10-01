@@ -656,7 +656,6 @@ export default function DataHealth() {
                   color={STATUS_COLOR[s.status] ?? 'gray'}
                   variant={s.status === 'ok' || s.status === 'info' ? 'light' : 'filled'}
                   radius="sm"
-                  className={s.status === 'ok' ? 'pos-light-text' : undefined}
                 >
                   <VisuallyHidden>System status: </VisuallyHidden>{s.status.toUpperCase()}
                 </Badge>

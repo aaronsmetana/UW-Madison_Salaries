@@ -7,7 +7,7 @@ import { IconSearch, IconX } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, peopleSql } from '../lib/queries';
-import { usd, num, fullName } from '../lib/format';
+import { usd, num, fullName, fmtYears } from '../lib/format';
 import type { Metric } from '../state/controls';
 import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -316,7 +316,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                     </Table.Td>
                     <Table.Td data-fold><Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text></Table.Td>
                     <Table.Td data-fold><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
-                    <Table.Td data-fold ta="right">{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
+                    <Table.Td data-fold ta="right">{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
                     <Table.Td ta="right">{usd(p.pay)}</Table.Td>
                     <Table.Td ta="right">
                       <TrayButton

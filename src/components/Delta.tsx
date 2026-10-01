@@ -29,9 +29,8 @@ export function DeltaChip({
   if (frac == null) return <Text span size={size} c="dimmed">—{suffix}</Text>;
   if (Math.abs(frac) < 0.0005) return <Text span size={size} c="dimmed">{flatLabel}{suffix}</Text>;
   const up = frac >= 0;
-  const cls = tone === 'neutral' ? undefined : up ? 'pos-light-text' : 'delta-down';
   return (
-    <Text span size={size} c={deltaColor(frac, tone)} className={cls}>
+    <Text span size={size} c={deltaColor(frac, tone)}>
       {up ? '▲' : '▼'} {pct(Math.abs(frac))}{suffix}
     </Text>
   );
@@ -46,5 +45,5 @@ export function RankDeltaChip({ prev, cur }: { prev?: number; cur: number }) {
   const d = prev - cur;
   if (d === 0) return <Text span size="xxs" c="dimmed">—</Text>;
   const up = d > 0;
-  return <Text span size="xxs" c={up ? SEMANTIC.up : SEMANTIC.down} className={up ? 'pos-light-text' : 'delta-down'}>{up ? '▲' : '▼'}{Math.abs(d)}</Text>;
+  return <Text span size="xxs" c={up ? SEMANTIC.up : SEMANTIC.down}>{up ? '▲' : '▼'}{Math.abs(d)}</Text>;
 }

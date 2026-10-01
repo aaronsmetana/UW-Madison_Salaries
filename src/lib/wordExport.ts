@@ -6,7 +6,7 @@
 // exported look under our control.
 import { raiseBucketLabel } from './raiseBuckets';
 import { fmtYearsToParity, SECTION_ORDER, type BriefModel } from '../components/report/model';
-import { usd, pct } from './format';
+import { usd, pct, fmtYears } from './format';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
 
 const esc = (s: string | number | null | undefined): string =>
@@ -200,7 +200,7 @@ export function briefToWordHtml(model: BriefModel): string {
     const tRows = rows.map((r) => {
       const name = r.isSubject ? `<b>${esc(r.name)}</b> (Review Subject)` : anonymize ? anonName(r.key) : esc(r.name);
       const flag = !r.isSubject ? (r.isAnomaly ? ' [Pay inversion]' : r.lessTenure ? ' [less tenure]' : '') : '';
-      const tenureCell = r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—';
+      const tenureCell = fmtYears(r.tenure);
       const gapCell = r.isSubject ? 'baseline' : `${r.gap > 0 ? '+' : r.gap < 0 ? '&minus;' : ''}${usd(Math.abs(r.gap))}`;
       return [name + flag, esc(r.title ?? '—'), ...(showTenure ? [tenureCell] : []), usd(r.pay), gapCell];
     });

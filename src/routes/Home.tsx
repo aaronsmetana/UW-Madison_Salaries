@@ -2074,7 +2074,7 @@ function Distribution({
             ref={(el: HTMLDivElement | null) => { labelRefs.current[i] = el; }}
             size="xs"
             lh={1.2}
-            c={m.strong ? 'accent.7' : undefined}
+            c={m.strong ? 'var(--text-accent)' : undefined}
             fw={m.strong ? 700 : 600}
             className={m.strong ? 'accent7-text' : undefined}
             style={{
@@ -2246,7 +2246,7 @@ function RotatingFact({ facts }: { facts: string[] }) {
   }, [facts.length]);
   if (!facts.length) return null;
   return (
-    <Text size="xs" c="dimmed" ta="center" style={{ opacity: show ? 1 : 0, transition: 'opacity 350ms ease' }}>
+    <Text size="xs" c="dimmed" ta="center" style={{ opacity: show ? 1 : 0, transition: 'opacity var(--dur-base) var(--ease)' }}>
       {facts[i % facts.length]}
     </Text>
   );

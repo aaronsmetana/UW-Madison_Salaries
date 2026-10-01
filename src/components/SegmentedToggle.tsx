@@ -31,7 +31,6 @@ export function SegmentedToggle({
       className="seg-toggle"
       color="accent"
       size={size}
-      radius="md"
       value={value}
       onChange={onChange}
       fullWidth={fullWidth}

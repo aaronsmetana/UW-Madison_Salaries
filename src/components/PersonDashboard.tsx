@@ -16,7 +16,7 @@ import {
   matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
 } from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday } from '../lib/format';
+import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday, fmtYears } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { EndLabels } from './chart/EndLabels';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -370,7 +370,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       {/* Headline stats */}
       <SimpleGrid cols={{ base: 2, sm: 4 }}>
         <Stat label="Current salary" value={usd(lastSalary)} />
-        <Stat label="Tenure" value={tenureYears != null ? `${tenureYears.toFixed(1)} yrs` : '—'} />
+        <Stat label="Tenure" value={fmtYears(tenureYears)} />
         <Stat
           label="Total growth (first→latest)"
           value={totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}
@@ -381,7 +381,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Stat
           label="Salary snapshots on record"
           value={num(trend.length)}
-          sub={oldestLabel ? `oldest ${oldestLabel}${oldestAgeYears != null ? ` · ${oldestAgeYears.toFixed(1)} yrs ago` : ''}` : undefined}
+          sub={oldestLabel ? `oldest ${oldestLabel}${oldestAgeYears != null ? ` · ${fmtYears(oldestAgeYears)} ago` : ''}` : undefined}
         />
         <Stat label="Among title peers" value={peerPct != null ? `more than ${peerPct}%` : '—'} />
         <Stat label="All-UW standing" value={standing?.uw != null ? `more than ${standing.uw}%` : '—'} />
@@ -398,11 +398,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <XAxis {...trendAxis} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
-            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.figure)} />
+            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.slow)} />
             {raiseCtx.typical.size > 1 && (
               <Line type="monotone" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
             )}
-            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.figure)} />
+            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
             {breakMarks.map((b) => (
               <ReferenceLine key={`brk-${b.key}`} x={b.x} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="reporting-marker" />
             ))}
@@ -547,7 +547,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                       someone carries into a meeting — was asserting a cut in the strongest colour
                       the palette has. */}
                   {!reporting && (raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
-                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'} className={raise.delta > 0 ? 'pos-light-text' : 'orange-light-text'}>
+                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'}>
                       {fmtChange(raise.delta)}
                       {raise.kind === 'combined' && (
                         <Text span size="xs" c="dimmed"> {acrossLabel(raise.curCount, raise.priorCount)}</Text>
@@ -555,9 +555,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                     </Text>
                   )}
                   {raise.kind === 'titleChange' && (
-                    <Text size="xs" c={raise.delta == null || raise.delta === 0 ? 'dimmed' : raise.delta > 0 ? 'pos' : 'orange'} className={raise.delta == null || raise.delta === 0 ? undefined : raise.delta > 0 ? 'pos-light-text' : 'orange-light-text'}>
+                    <Text size="xs" c={raise.delta == null || raise.delta === 0 ? 'dimmed' : raise.delta > 0 ? 'pos' : 'orange'}>
                       {raise.delta != null && raise.delta !== 0 ? `${fmtChange(raise.delta)} · ` : ''}
-                      <Text span size="xs" fw={600} c={raise.move === 'promotion' ? 'accent.7' : 'dimmed'} data-change-tag={raise.move}>{raise.move}</Text>
+                      <Text span size="xs" fw={600} c={raise.move === 'promotion' ? 'var(--text-accent)' : 'dimmed'} data-change-tag={raise.move}>{raise.move}</Text>
                       {raise.note && <Text span size="xs" c="dimmed"> · {raise.note}</Text>}
                     </Text>
                   )}

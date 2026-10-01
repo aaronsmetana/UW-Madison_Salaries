@@ -40,7 +40,7 @@ export const FACTOR_DEFS = [
   { key: 'scope', label: 'Expanded scope / out-of-class', placeholder: 'e.g. acting lead; duties above grade' },
   { key: 'market', label: 'Market & retention', placeholder: 'e.g. competing offer; actively recruited' },
   { key: 'performance', label: 'Performance & impact', placeholder: 'e.g. "Exceeds"; secured $1.2M grant' },
-  { key: 'skills', label: 'Specialized skills & experience', placeholder: 'e.g. 6 yrs relevant prior experience' },
+  { key: 'skills', label: 'Specialized skills & experience', placeholder: 'e.g. 6 years of relevant prior experience' },
   // Research-university leverage (School of Medicine & Public Health and similar units)
   { key: 'grants', label: 'Sponsored research / grant infrastructure', placeholder: 'e.g. maintains data-compliance systems for a $4.2M NIH R01' },
   { key: 'spof', label: 'Sole system owner (single point of failure)', placeholder: 'e.g. only admin of the Epic interface — no internal backup' },

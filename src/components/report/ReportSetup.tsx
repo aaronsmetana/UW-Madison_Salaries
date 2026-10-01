@@ -171,7 +171,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
             <Group gap={6}>
               {inversionSuggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="orange" className="orange-light-text" leftSection={<IconPlus size={ICON.inline} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={ICON.inline} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -195,7 +195,6 @@ export function ReportSetup({
                       <Badge
                         size="sm"
                         {...badgeStyle(badge.tone)}
-                        className={badge.tone === 'surplus' ? 'orange-light-text' : undefined}
                         style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                       >
                         {badge.text}
@@ -277,7 +276,7 @@ export function ReportSetup({
                       onChange={(e) => setFactor(f.key, { note: e.currentTarget.value })}
                     />
                     {!st.note.trim() && (
-                      <Text size="xs" c="orange.7">Add a specific example — factors without evidence read as filler.</Text>
+                      <Text size="xs" c="orange">Add a specific example — factors without evidence read as filler.</Text>
                     )}
                     <Group gap={6} wrap="wrap" align="center">
                       <NumberInput
@@ -562,7 +561,7 @@ export function ReportSetup({
                     <Text size="xs" c={e.ok ? undefined : 'dimmed'} style={{ flex: 1, minWidth: 0 }}>
                       {e.label}{e.note ? <Text span c="dimmed"> — {e.note}</Text> : null}
                     </Text>
-                    {jump && <IconChevronRight className="evidence-jump-chevron" size={12} style={{ flexShrink: 0, marginTop: 2, opacity: 0, transition: 'opacity 120ms' }} />}
+                    {jump && <IconChevronRight className="evidence-jump-chevron" size={12} style={{ flexShrink: 0, marginTop: 2, opacity: 0, transition: 'opacity var(--dur-fast) var(--ease)' }} />}
                   </Group>
                 );
               })}
@@ -583,7 +582,7 @@ export function ReportSetup({
             ) : (
               <>
                 <IconAlertTriangle size={ICON.compact} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
-                <Text size="xs" c="orange.7">
+                <Text size="xs" c="orange">
                   The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''} — consider trimming value-adds for credibility.
                 </Text>
               </>
@@ -641,8 +640,8 @@ export function ReportSetup({
           }}
         >
           <Group justify="space-between" wrap="nowrap">
-            <Text size="xs" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.05em' }}>Recommended</Text>
-            <Text size="sm" fw={800} c="pos.7" className="pos-adaptive-text">
+            <Eyebrow>Recommended</Eyebrow>
+            <Text size="sm" fw={700} c="pos">
               {usd(recommended)}
               {recommended > basePay && <Text span c="dimmed" fw={600}> (+{pct((recommended - basePay) / basePay)})</Text>}
             </Text>

@@ -420,20 +420,12 @@ test.describe('floating glass', () => {
    * declared only when a `shadow=` prop is present, so the assertion is: if a surface declared a
    * tier, its computed shadow still contains it.
    *
-   * Both directions are covered — the tray, which declares `lg`, and a ReportBrief chart card, which
-   * declares `sm` and gets the specular stacked on top of it.
+   * The tray is the surface that declares one (`lg`). The brief's chart cards declared `sm` too, until
+   * the polish pass: a bordered card in the page's flow is not floating, so none declares a shadow now
+   * (polish.spec holds that).
    */
   for (const [name, prepare, find] of [
     ['the selection tray', fillTray, '[aria-label="Compare set"]'],
-    ['a report chart card', async (p: import('@playwright/test').Page) => {
-      await p.goto('./reports?type=comparison', { waitUntil: 'networkidle' });
-      const search = p.getByPlaceholder('Search yourself by name to begin…');
-      await expect(search).toBeVisible({ timeout: 60_000 });
-      await search.fill('Kenneth Poss');
-      await p.getByRole('option').first().click();
-      await expect(p.locator('.report-brief')).toBeVisible({ timeout: 60_000 });
-      await p.waitForTimeout(1_500);
-    }, '.report-brief .recharts-responsive-container'],
   ] as const) {
     test(`keeps the elevation it declared: ${name}`, async ({ page }) => {
       await prepare(page);

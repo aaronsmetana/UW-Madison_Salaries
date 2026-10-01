@@ -3,6 +3,7 @@ import { Modal, Stack, Group, Text, UnstyledButton, Divider } from '@mantine/cor
 import { useDisclosure, useHotkeys } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { SearchBox } from './SearchBox';
+import { Eyebrow } from './Eyebrow';
 import { NAV, ABOUT } from '../app/nav';
 import { ICON } from '../lib/ui';
 
@@ -72,7 +73,7 @@ export function CommandPalette({ opened, close }: { opened: boolean; close: () =
           while results are showing — so the list below is what you see when the box is empty. */}
       <SearchBox autoFocus onSelect={close} peopleInGroup={4} />
       <Divider my="sm" />
-      <Text size="xxs" fw={700} tt="uppercase" c="dimmed" lts="0.08em" mb={6}>Go to</Text>
+      <Eyebrow mb={6}>Go to</Eyebrow>
       <Stack gap={2}>
         {[...NAV, ABOUT].map((n) => {
           const Icon = n.icon;

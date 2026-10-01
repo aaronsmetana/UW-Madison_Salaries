@@ -134,7 +134,7 @@ const CARD_SHADOW = 'var(--shadow-merged-card)';
 /** A group's heading inside the listbox. Presentational: the group takes its name from it. */
 function GroupLabel({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <Text id={id} role="presentation" className="search-group-label" fz={11} fw={600} tt="uppercase" c="dimmed" px={10} pt={8} pb={2}>
+    <Text id={id} role="presentation" className="search-group-label" size="xxs" fw={700} tt="uppercase" lts="0.05em" c="dimmed" px={10} pt={8} pb={2}>
       {children}
     </Text>
   );
@@ -502,12 +502,18 @@ export function SearchBox({
       const width = Math.min(Math.max(ib.width, BAR_LIST_MIN_W), pb.right - ib.left - 8);
       setListPlace({ top: ib.bottom - rb.top + 4, left: ib.left - rb.left, width, room: Math.max(120, Math.floor(bottom - ib.bottom - 16)) });
     };
+    // Again a frame after a resize: what the list keeps clear of (`listLimit`, the full page plot's middle)
+    // is laid out again by the page after the window's resize, so a read at the resize itself is of the
+    // plot as it was (a phone turned, a window narrowed) and the list stopped short or ran over.
+    let frame = 0;
+    const onResize = () => { measure(); cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     measure();
-    window.addEventListener('resize', measure);
-    window.visualViewport?.addEventListener('resize', measure);
+    window.addEventListener('resize', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
     return () => {
-      window.removeEventListener('resize', measure);
-      window.visualViewport?.removeEventListener('resize', measure);
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
     };
   }, [listOpen]);
 

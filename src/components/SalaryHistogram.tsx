@@ -292,7 +292,7 @@ export function SalaryHistogram({
                         opacity: mounted ? (dimmed && !isMarkerBrick ? 0.4 : 1) : 0,
                         transform: mounted ? 'scaleY(1)' : 'scaleY(0.3)',
                         transformOrigin: 'bottom',
-                        transition: `opacity 220ms ease ${Math.min(brick, 20) * 6}ms, transform 220ms ease ${Math.min(brick, 20) * 6}ms`,
+                        transition: `opacity var(--dur-base) var(--ease) ${Math.min(brick, 20) * 6}ms, transform var(--dur-base) var(--ease) ${Math.min(brick, 20) * 6}ms`,
                       }}
                     />
                   );
@@ -303,7 +303,7 @@ export function SalaryHistogram({
                   <Text
                     component="span"
                     c="dimmed"
-                    style={{ fontSize: CHART_FONT, lineHeight: 1, marginBottom: 3, opacity: mounted ? (dimmed ? 0.4 : 0.9) : 0, transition: 'opacity 220ms ease' }}
+                    style={{ fontSize: CHART_FONT, lineHeight: 1, marginBottom: 3, opacity: mounted ? (dimmed ? 0.4 : 0.9) : 0, transition: 'opacity var(--dur-base) var(--ease)' }}
                   >
                     {b.n}
                   </Text>
@@ -398,7 +398,7 @@ export function SalaryHistogram({
               />
             ))}
             <Bar
-              {...chartAnim(reduceMotion, MOTION.reveal)}
+              {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="n"
               radius={BAR_RADIUS}
               onClick={onBinClick ? (d: { lo: number; hi: number }) => onBinClick({ lo: d.lo, hi: d.hi }) : undefined}

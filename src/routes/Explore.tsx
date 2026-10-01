@@ -37,7 +37,7 @@ function Kpi({ label, value, format, sub, to, loading }: {
   to?: string;
   loading?: boolean;
 }) {
-  const animated = useCountUp(value, 900);
+  const animated = useCountUp(value);
   const display = loading
     ? <Skeleton height={24} width={96} radius="sm" mt={4} />
     : animated == null ? '—' : format(Math.round(animated));

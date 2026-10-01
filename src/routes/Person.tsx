@@ -31,7 +31,7 @@ import { personRowsSql } from '../lib/personQuery';
 import { personPay, actualPay, gradedAppt, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
-import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange } from '../lib/format';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, ordinal } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
@@ -193,7 +193,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
   const above = pct >= 50;
   const fill = above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-gray-5)';
   const tick = above ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-gray-6)';
-  const sweep = `600ms ease-out ${delay}ms`;
+  const sweep = `var(--dur-slow) var(--ease) ${delay}ms`;
   return (
     // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: a plotted figure built
     // from divs rather than SVG.
@@ -208,7 +208,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n: 
         <div style={{ position: 'absolute', left: '50%', top: -2, bottom: -2, width: 1, background: 'var(--mantine-color-default-border)', transform: 'translateX(-50%)' }} />
         <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
       </div>
-      <Text size="sm" fw={700} c={above ? 'pos.7' : 'dimmed'} className={above ? 'pos-adaptive-text' : undefined} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
+      <Text size="sm" fw={700} c={above ? 'pos' : 'dimmed'} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
         {ordinal(pct)} <Text span size="xs" fw={500} c="dimmed">pctile</Text>
       </Text>
     </Group>
@@ -491,8 +491,8 @@ export default function Person() {
   const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
   const animatedPay = useCountUp(lastSalary); // hero value counts up once on mount (reduced-motion → final)
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
-  const animatedGrowth = useCountUp(totalChange, 800);
-  const animatedTenure = useCountUp(tenureYears, 800);
+  const animatedGrowth = useCountUp(totalChange);
+  const animatedTenure = useCountUp(tenureYears);
   // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
   const firstDate = trend[0]?.date ?? null;
   const lastDate = trend[trend.length - 1]?.date ?? null;
@@ -942,14 +942,13 @@ export default function Person() {
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text
                     fw={700}
-                    c={totalChange == null ? undefined : totalChange < 0 ? 'red.7' : 'pos.7'}
-                    className={totalChange == null ? undefined : totalChange < 0 ? 'red-adaptive-text' : 'pos-adaptive-text'}
+                    c={totalChange == null ? undefined : totalChange < 0 ? 'red' : 'pos'}
                     style={{ fontSize: 24, lineHeight: 1.1 }}
                   >
                     {sgnPct(animatedGrowth)}
                   </Text>
                   {spanYears != null && spanYears >= 0.1 && (
-                    <Text size="sm" c="dimmed">over {spanYears.toFixed(1)} yrs</Text>
+                    <Text size="sm" c="dimmed">over {fmtYears(spanYears)}</Text>
                   )}
                 </Group>
                 {oldestLabel && (
@@ -1174,7 +1173,7 @@ export default function Person() {
                               <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
                             </Table.Td>
                             <Table.Td data-fold><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
-                            <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? `${Math.max(0, p.tenure).toFixed(1)} yrs` : '—'}</Table.Td>
+                            <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
                             <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
                             <Table.Td ta="right">
                               <TrayButton
@@ -1244,7 +1243,7 @@ export default function Person() {
             </Text>
           ) : (
             <Text size="sm" mt="md">
-              <Text span fw={700} c="pos.7" className="pos-adaptive-text">{usd(range.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
+              <Text span fw={700} c="pos">{usd(range.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
               <Text span c="dimmed"> (grade max {usd(range.max)}).</Text>
             </Text>
           )}
@@ -1258,7 +1257,7 @@ export default function Person() {
           </CardTitle>
           <Text size="sm" className="payfloor-line">
             {belowMinimum(bandRate, band, graded?.basis) ? (
-              <>The full-time rate, {usd(bandRate)}, is <Text span fw={700} className="red-adaptive-text">{usd(band.min - bandRate)} below</Text> grade {graded?.grade}&apos;s minimum of {usd(band.min)}.</>
+              <>The full-time rate, {usd(bandRate)}, is <Text span fw={700} c="red">{usd(band.min - bandRate)} below</Text> grade {graded?.grade}&apos;s minimum of {usd(band.min)}.</>
             ) : (
               <>The full-time rate, {usd(bandRate)}, is at or above grade {graded?.grade}&apos;s minimum of {usd(band.min)}.</>
             )}
@@ -1305,7 +1304,7 @@ export default function Person() {
               <Text fw={700} size="xl">{projectedRate != null ? usd(projectedRate) : '—'}</Text>
               {projectedRate != null && lastRate != null && (
                 <Text size="xs" c="dimmed">
-                  <Text span c="pos.7" className="pos-adaptive-text" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
+                  <Text span c="pos" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 ? ` · actual ${usd(projectedRate * lastFte)}` : ''}
                 </Text>
               )}
@@ -1326,7 +1325,7 @@ export default function Person() {
           )}
           {range && bandRate != null && bandRate < range.max && pctRaise > 0 && (
             <Text size="xs" c="dimmed" mt="md">
-              At {pctRaise}%/yr, ~{Math.ceil(Math.log(range.max / bandRate) / Math.log(1 + pctRaise / 100))} yrs to reach the band max ({usd(range.max)}).
+              At {pctRaise}%/yr, about {Math.ceil(Math.log(range.max / bandRate) / Math.log(1 + pctRaise / 100))} years to reach the band max ({usd(range.max)}).
             </Text>
           )}
           {range && pctRaise === 0 && (

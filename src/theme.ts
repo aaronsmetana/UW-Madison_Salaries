@@ -17,6 +17,8 @@ const pos: MantineColorsTuple = [
 export const theme = createTheme({
   colors: { accent, pos },
   primaryColor: 'accent',
+  // The app's ink (app.css `--mantine-color-text`), for anything that asks Mantine for "black".
+  black: '#16191d',
   primaryShade: { light: 7, dark: 6 },
   defaultRadius: 'sm', // controls (buttons, inputs, chips) — cards opt up to `lg` below
   // Pick readable (dark) text automatically on light-luminance filled badges (e.g. an orange "CAUTION").
@@ -74,12 +76,15 @@ export const theme = createTheme({
   // (`xs`), 12 chart text (CHART_FONT in lib/chartStyle), 11 small labels (`xxs`). e2e/typescale.spec
   // fails on any rendered size outside it.
   fontSizes: { xxs: '0.6875rem', xs: '0.8125rem', sm: '0.9375rem', md: '0.9375rem', lg: '1.125rem', xl: '1.5rem' },
+  // One line height for body text. `sm` and `md` are both the 15px body, but Mantine gave `sm` 1.45 and
+  // `md` 1.55, so paragraphs side by side on one page read at two spacings.
+  lineHeights: { sm: '1.55' },
   // A shadow means "this is floating above the page" — nothing else. Cards are already bordered (86
   // `withBorder` call sites), so the old soft 30px-blur `sm` was piling elevation on top of a border
   // that was already doing the separating, which is most of what made the app read as soft.
   //
-  // `sm` is kept as a near-nothing hairline rather than removed so the eleven explicit `shadow="sm"`
-  // call sites (ReportBrief, Compare) inherit the new discipline without being touched.
+  // `sm` is a near-nothing hairline. The brief's bordered cards were its last callers: a card that is not
+  // floating carries no shadow (P5).
   shadows: {
     sm: '0 1px 2px rgba(16, 24, 32, .04)',
     md: '0 4px 12px rgba(16, 24, 32, .10)', // dropdowns, tooltips, popovers
@@ -109,6 +114,8 @@ export const theme = createTheme({
     // higher than the labels beside it, so a row of fields (Screening's scope, the Raises filters) stood
     // out of line. Every input reads label, field, help, error.
     InputWrapper: { defaultProps: { inputWrapperOrder: ['label', 'input', 'description', 'error'] } },
+    // A control's corner (sm, 6px), as buttons and chips have: Mantine's own was 8, and Reports' a pill.
+    SegmentedControl: { defaultProps: { radius: 'sm' } },
   },
 });
 

@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Customized,
 } from 'recharts';
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown, IconArrowsMinimize, IconRuler2 } from '@tabler/icons-react';
-import { usd, pct, plural } from '../../lib/format';
+import { usd, pct, plural, fmtYears } from '../../lib/format';
 import { AXIS_TICK, GRID, fmtUsd, chartKeys } from '../../lib/chartStyle';
 import { snapX, snapAxisProps } from '../../lib/snapTime';
 import { PeerRangeBar } from '../PeerRangeBar';
@@ -194,12 +194,12 @@ export function ReportBrief({ model, hovered, onHover }: {
           {belowTarget && recommended != null ? (
             <Paper p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
               <Title order={3} fz="h5" c="dimmed">1. Recommendation</Title>
-              <Text fw={800} c="pos.8" lh={1} style={{ fontSize: 'clamp(2.5rem, 6vw, 3.5rem)', letterSpacing: '-0.02em' }}>
+              <Text fw={700} c="pos" lh={1} style={{ fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', letterSpacing: '-0.02em' }}>
                 {usd(Math.round(animated))}
               </Text>
               <Text mt={8}>
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                (<Text span fw={700} c="pos.7" className="pos-adaptive-text">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
+                (<Text span fw={700} c="pos">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
               </Text>
               {yearsToParity != null && yearsToParity >= 0.5 && (
                 <Text size="xs" c="dimmed" mt={4}>
@@ -229,7 +229,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                           justify="space-between"
                           wrap="nowrap"
                           px={6}
-                          style={{ borderRadius: 6, background: lit ? 'var(--mantine-color-default-hover)' : undefined, transition: 'background 150ms' }}
+                          style={{ borderRadius: 6, background: lit ? 'var(--mantine-color-default-hover)' : undefined, transition: 'background var(--dur-fast) var(--ease)' }}
                         >
                           <Text size="sm" c={line.kind === 'base' ? undefined : 'dimmed'} fw={line.kind === 'base' ? 600 : 400}>
                             {line.kind === 'addon' ? '+ ' : ''}{line.label}
@@ -243,8 +243,8 @@ export function ReportBrief({ model, hovered, onHover }: {
                     })}
                     <Divider my={4} />
                     <Group justify="space-between" wrap="nowrap" px={6}>
-                      <Text size="sm" fw={800}>Total parity recommendation</Text>
-                      <Text size="sm" fw={800} c="pos.7" className="pos-adaptive-text">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
+                      <Text size="sm" fw={700}>Total parity recommendation</Text>
+                      <Text size="sm" fw={700} c="pos">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
                     </Group>
                   </Stack>
                 </Box>
@@ -276,7 +276,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                     <Group gap="sm" wrap="nowrap" align="flex-start">
                       <ThemeIcon variant="light" color="accent" size={34} radius="md" style={{ flexShrink: 0 }}>{PROOF_ICON[p.kind]}</ThemeIcon>
                       <div style={{ minWidth: 0 }}>
-                        <Text fw={800} fz={26} lh={1.1}>{p.value}</Text>
+                        <Text fw={700} fz="xl" lh={1.1}>{p.value}</Text>
                         <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
                       </div>
                     </Group>
@@ -304,7 +304,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.guidelineBasis && (
             <>
               <SectionHeading id="guidelineBasis" num={sectionNum.guidelineBasis} sup={fn('equityTerm')}>Basis under the UW Salary Administration Guidelines</SectionHeading>
-              <Card withBorder shadow="sm" padding="lg" mb="lg">
+              <Card mb="lg">
                 <Stack gap="md">
                   {guidelineProvisions.map((p) => (
                     <Box key={p.key}>
@@ -330,7 +330,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.standing && standing && (
             <>
               <SectionHeading id="standing" num={sectionNum.standing}>Market standing</SectionHeading>
-              <Card withBorder shadow="sm" padding="lg" mb="lg">
+              <Card mb="lg">
                 <Text size="xs" c="dimmed" mb="md">
                   {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
                 </Text>
@@ -392,7 +392,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.factors && (
             <>
               <SectionHeading id="factors" num={sectionNum.factors} annotation="self-reported" sup={fn('selfReported')}>Documented qualifications &amp; responsibilities</SectionHeading>
-              <Card withBorder shadow="sm" padding="lg" mb="lg">
+              <Card mb="lg">
                 <Stack gap={10}>
                   {activeFactors.map((f) => (
                     <Group key={f.key} justify="space-between" wrap="nowrap" align="flex-start">
@@ -401,7 +401,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                         {f.note && <Text size="xs" c="dimmed">{f.note}</Text>}
                       </Box>
                       {f.amount != null && (
-                        <Text size="sm" fw={700} c="pos.7" className="pos-adaptive-text" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
+                        <Text size="sm" fw={700} c="pos" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
                       )}
                     </Group>
                   ))}
@@ -414,7 +414,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.peers && (
             <>
               <SectionHeading id="peers" num={sectionNum.peers} annotation={`your named comparators (n = ${rows.length - 1})`}>Peer comparison</SectionHeading>
-              <Card withBorder shadow="sm" p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
+              <Card p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table>
                   <Table.Thead>
                     <Table.Tr>
@@ -438,7 +438,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                           key={r.key}
                           onMouseEnter={() => onHover(`peer:${r.key}`)}
                           onMouseLeave={() => onHover(null)}
-                          style={{ background: bg, boxShadow: r.isAnomaly && !r.isSubject ? 'inset 4px 0 0 var(--mantine-color-accent-6)' : undefined, transition: 'background 150ms' }}
+                          style={{ background: bg, boxShadow: r.isAnomaly && !r.isSubject ? 'inset 4px 0 0 var(--mantine-color-accent-6)' : undefined, transition: 'background var(--dur-fast) var(--ease)' }}
                         >
                           <Table.Td>
                             {r.isSubject ? (
@@ -459,11 +459,11 @@ export function ReportBrief({ model, hovered, onHover }: {
                             )}
                           </Table.Td>
                           <Table.Td>{r.title ?? '—'}</Table.Td>
-                          {showTenure && <Table.Td ta="right">{r.tenure != null ? `${r.tenure.toFixed(1)} yr` : '—'}</Table.Td>}
+                          {showTenure && <Table.Td ta="right">{fmtYears(r.tenure)}</Table.Td>}
                           <Table.Td style={{ minWidth: 200 }}>
                             <Text size="sm" fw={r.isSubject ? 700 : 500}>{usd(r.pay)}</Text>
                             <div style={{ position: 'relative', marginTop: 3, height: 6, borderRadius: 3, background: 'var(--mantine-color-default-border)' }}>
-                              <div style={{ width: `${(r.pay / maxPay) * 100}%`, height: '100%', borderRadius: 3, background: r.isSubject ? CAND : PEER, transition: 'width 300ms ease' }} />
+                              <div style={{ width: `${(r.pay / maxPay) * 100}%`, height: '100%', borderRadius: 3, background: r.isSubject ? CAND : PEER, transition: 'width var(--dur-base) var(--ease)' }} />
                               {!r.isSubject && subjectPay != null && (
                                 <div style={{ position: 'absolute', top: -2, bottom: -2, left: `${(subjectPay / maxPay) * 100}%`, width: 2, background: CAND }} />
                               )}
@@ -491,7 +491,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.history && (
             <>
               <SectionHeading id="history" num={sectionNum.history}>Pay history</SectionHeading>
-            <Card withBorder shadow="sm" padding="lg" mb="lg">
+            <Card mb="lg">
               <Text size="sm" fw={700}>Pay vs. title median over time</Text>
               <Text size="xs" c="dimmed" mb="md">{subjectFirst}'s pay against the median for this title at each snapshot.</Text>
               <ResponsiveContainer width="100%" height={180}>
@@ -570,7 +570,7 @@ export function ReportBrief({ model, hovered, onHover }: {
                   <DivBar label="Peers (avg gained)" value={divergence.avgAbs} max={aMax} color="gray.5" />
                   <DivBar label={`${subjectFirst} (gained)`} value={divergence.subjAbs} max={aMax} color="accent.6" emphasize />
                   <Text size="sm" mt="xs">
-                    {subjectFirst} has gained <Text span fw={800}>{usd(divergence.avgAbs - divergence.subjAbs)}</Text> less in raises than the typical peer over the same period.
+                    {subjectFirst} has gained <Text span fw={700}>{usd(divergence.avgAbs - divergence.subjAbs)}</Text> less in raises than the typical peer over the same period.
                   </Text>
                 </Box>
               )}
@@ -583,7 +583,7 @@ export function ReportBrief({ model, hovered, onHover }: {
           {sectionShow.risk && (
             <>
               <SectionHeading id="risk" num={sectionNum.risk} sup={fn('retention')}>Retention &amp; replacement cost</SectionHeading>
-            <Paper withBorder shadow="sm" p="md" mb="lg">
+            <Paper withBorder p="md" mb="lg">
               <Text size="sm" mb={6}>
                 Independent research estimates the cost of replacing an employee at roughly one-third of
                 annual salary at the median (Work Institute, 2020 Retention Report), rising to one-half to

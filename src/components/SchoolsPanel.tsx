@@ -196,7 +196,7 @@ export function SchoolsPanel() {
                           aria-expanded={isOpen}
                           onClick={(e) => { e.stopPropagation(); toggle(s.school); }}
                         >
-                          <IconChevronRight size={ICON.compact} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 120ms ease' }} />
+                          <IconChevronRight size={ICON.compact} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease)' }} />
                         </ActionIcon>
                         <div style={{ minWidth: 0 }}>
                           <Anchor component={Link} to={`/school/${encodeURIComponent(s.school)}`} c="var(--mantine-color-text)" underline="hover" fw={500} lineClamp={2} onClick={(e) => e.stopPropagation()}>

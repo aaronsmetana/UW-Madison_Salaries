@@ -27,10 +27,10 @@ import {
 
 const PAGE_SIZE = 100;
 
-const WHY: Record<Why, { label: string; color: string; className?: string }> = {
-  range: { label: 'Pay range minimum', color: 'orange', className: 'orange-light-text' },
+const WHY: Record<Why, { label: string; color: string }> = {
+  range: { label: 'Pay range minimum', color: 'orange' },
   title: { label: 'Title-wide', color: 'accent' },
-  unit: { label: 'Department-wide', color: 'pos', className: 'pos-light-text' },
+  unit: { label: 'Department-wide', color: 'pos' },
   individual: { label: 'Individual', color: 'gray' },
 };
 
@@ -312,7 +312,7 @@ export default function Raises() {
               <Group gap="xs" mt="sm" className="raise-why-counts">
                 {WHYS.filter((w) => counts[w] > 0).map((w) => (
                   <Badge key={w} component="button" type="button" variant="light" color={WHY[w].color} data-why={w}
-                    className={`raise-why-filter${WHY[w].className ? ` ${WHY[w].className}` : ''}`} style={{ cursor: 'pointer' }}
+                    className="raise-why-filter" style={{ cursor: 'pointer' }}
                     aria-pressed={whyOnly === w} leftSection={whyOnly === w ? <IconCheck size={12} /> : undefined}
                     onClick={() => { update({ why: whyOnly === w ? null : w }); setShowAll(false); }}>
                     {WHY[w].label} · {num(counts[w])}
@@ -332,7 +332,7 @@ export default function Raises() {
               <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
                 {([['title', 'Title-wide adjustments', patterns.title], ['unit', 'Department-wide', patterns.unit]] as const).filter(([, , list]) => list.length > 0).map(([kind, head, list]) => (
                   <Box key={kind} className={`raise-patterns-${kind}`}>
-                    <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb={4}>{head}</Text>
+                    <Eyebrow mb={4}>{head}</Eyebrow>
                     <Stack gap={6}>
                       {(allPatterns ? list : list.slice(0, PATTERN_ROWS)).map((p) => (
                         <UnstyledButton key={p.key} className="raise-pattern" data-key={p.key} data-n={p.n}
@@ -402,7 +402,7 @@ export default function Raises() {
                           <Text size="xs" c="dimmed">usual {fmtChange(r.usual)}</Text>
                         </Table.Td>
                         <Table.Td data-fold>
-                          <Badge size="sm" variant="light" color={WHY[r.why].color} className={WHY[r.why].className}>{WHY[r.why].label}</Badge>
+                          <Badge size="sm" variant="light" color={WHY[r.why].color}>{WHY[r.why].label}</Badge>
                           {r.why !== 'individual' && <Text size="xs" c="dimmed" mt={2} lineClamp={2} className="raise-why-detail">{whyDetail(r)}</Text>}
                         </Table.Td>
                       </Table.Tr>
