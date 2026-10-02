@@ -60,7 +60,7 @@ export function CrosshairLayer({
       <g style={{ transform: `translate(${cx}px, ${top + height}px)`, transition }}>
         <foreignObject x={-44} y={7} width={88} height={22} style={{ overflow: 'visible' }}>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <span className="chart-value-pill">{xPillLabel}</span>
+            <span className="chart-tip-pill">{xPillLabel}</span>
           </div>
         </foreignObject>
       </g>
@@ -68,7 +68,7 @@ export function CrosshairLayer({
       <g style={{ transform: `translate(${left}px, ${cy}px)`, transition }}>
         <foreignObject x={-74} y={-11} width={68} height={22} style={{ overflow: 'visible' }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <span className="chart-value-pill">{yPillLabel}</span>
+            <span className="chart-tip-pill">{yPillLabel}</span>
           </div>
         </foreignObject>
       </g>

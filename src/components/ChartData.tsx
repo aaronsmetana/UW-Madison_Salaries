@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { VisuallyHidden, ActionIcon, Tooltip, Table, Button, Text, Popover } from '@mantine/core';
+import { VisuallyHidden, Table, Button, Text, Popover } from '@mantine/core';
 import { IconTable, IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { downloadCSV } from '../lib/csv';
 import { ICON } from '../lib/ui';
@@ -98,9 +98,10 @@ export function ChartData({
             // `returnFocus` hands focus back to the button when it closes.
             <Popover width={320} position="top-end" withArrow shadow="md" trapFocus returnFocus>
               <Popover.Target>
-                <ActionIcon size="sm" variant="subtle" color="gray" aria-label="How to read this chart" className="chart-about">
-                  <IconInfoCircle size={ICON.compact} />
-                </ActionIcon>
+                <Button size="compact-xs" variant="subtle" color="gray" aria-label="About this chart" className="chart-about chart-tool"
+                  leftSection={<IconInfoCircle size={ICON.compact} />}>
+                  <span className="chart-tool-label">About</span>
+                </Button>
               </Popover.Target>
               <Popover.Dropdown className="chart-about-note">
                 <Text size="xs">{about}</Text>
@@ -111,23 +112,25 @@ export function ChartData({
             size="compact-xs"
             variant="subtle"
             color="gray"
+            className="chart-tool"
+            aria-label="CSV of this chart's data"
             leftSection={<IconDownload size={ICON.compact} />}
             onClick={exportCsv}
           >
-            CSV
+            <span className="chart-tool-label">CSV</span>
           </Button>
-          <Tooltip label={visible ? 'Hide table' : 'View as table'} withArrow>
-            <ActionIcon
-              size="sm"
-              variant={visible ? 'light' : 'subtle'}
-              color={visible ? 'accent' : 'gray'}
-              aria-label={visible ? 'Hide chart data table' : 'View chart data as a table'}
-              aria-pressed={visible}
-              onClick={() => setVisible((v) => !v)}
-            >
-              <IconTable size={ICON.compact} />
-            </ActionIcon>
-          </Tooltip>
+          <Button
+            size="compact-xs"
+            variant={visible ? 'light' : 'subtle'}
+            color={visible ? 'accent' : 'gray'}
+            className="chart-tool"
+            aria-label="Table of this chart's data"
+            aria-pressed={visible}
+            leftSection={<IconTable size={ICON.compact} />}
+            onClick={() => setVisible((v) => !v)}
+          >
+            <span className="chart-tool-label">Table</span>
+          </Button>
         </>
       }
     />

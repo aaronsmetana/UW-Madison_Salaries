@@ -164,8 +164,8 @@ test("a peer dot is rimmed in the card's colour, and a crowd's are not", async (
     });
     expect(rim.stroke, `${sel}: the dot has no rim`).not.toBe('none');
     expect(parseColor(rim.stroke).slice(0, 3), `${sel}: rim ${rim.stroke}`).toEqual(card);
-    expect(rim.width, sel).toBe('2px');
-    // Under the fill: only the outer pixel shows, and the dot keeps the radius the packer reserved.
+    expect(rim.width, sel).toBe('3px');
+    // Under the fill: only the outer 1.5px shows, and the dot keeps the radius the packer reserved.
     expect(rim.order, sel).toMatch(/^stroke/);
   }
   await page.goto(`./person/${encodeURIComponent('kennethposs|2024-07-01')}`);
@@ -204,7 +204,7 @@ test('a pay cut draws a down arrow, and a rise an up one', async ({ page }) => {
 
 test('every table header shares one style, chart data tables included', async ({ page }) => {
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
-  const open = page.getByRole('button', { name: 'View chart data as a table' }).first();
+  const open = page.getByRole('button', { name: "Table of this chart's data" }).first();
   await expect(open).toBeVisible({ timeout: 60_000 });
   await open.click();
   await expect(page.getByRole('button', { name: 'Sort by Salary' })).toBeVisible({ timeout: 60_000 });
@@ -324,7 +324,7 @@ test("a chart's how-to-read note opens from its footer", async ({ page }) => {
   const card = page.locator('.raise-dist-card');
   await expect(card.locator('.recharts-bar-rectangle').first()).toBeAttached({ timeout: 60_000 });
   await expect(card.getByText(/1% bins of raises/)).toHaveCount(0);
-  const button = card.getByRole('button', { name: 'How to read this chart' });
+  const button = card.getByRole('button', { name: 'About this chart' });
   await button.click();
   const note = page.locator('.chart-about-note');
   await expect(note).toBeVisible();

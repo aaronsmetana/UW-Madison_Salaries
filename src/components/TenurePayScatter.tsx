@@ -18,8 +18,8 @@ import { CrosshairLayer } from './chart/CrosshairLayer';
 import { HALO } from './chart/EndLabels';
 import { ChartData } from './ChartData';
 import {
-  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, DOT_RIM, FIT_BAND, GUIDE_STRONG, LARGE_GROUP, peerDot,
-  MarkerLegend, type PeerPoint,
+  MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, FIT_BAND, GUIDE_STRONG, LARGE_GROUP, peerDot,
+  MarkerLegend, ChartDot, type PeerPoint,
 } from './markers';
 
 /** A peer plus the tenure this chart needs. Everything about *marking* them lives in PeerPoint, so the
@@ -146,7 +146,7 @@ function DotsLayer({
     const order = [...points].sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || Number(b.sameSchool) - Number(a.sameSchool));
     const placed: Placed[] = order.map((p) => {
       const side = sideOf(zoom, p.pay);
-      const r = p.isSelf ? DOT_R.self : crowd ? (p.sameSchool ? CROWD_R.sameSchool : CROWD_R.peer) : peerDot(p.sameSchool, points.length).r;
+      const r = p.isSelf ? DOT_R.peer : crowd ? (p.sameSchool ? CROWD_R.sameSchool : CROWD_R.peer) : peerDot(p.sameSchool, points.length).r;
       return { p, x: xScale(p.tenure), y: side ? bandY(side) : yScale(p.pay), r, side };
     });
     const r = crowd ? CROWD_R.peer : DOT_R.peer;
@@ -231,7 +231,8 @@ function DotsLayer({
       )}
       {placed.filter((d) => !d.p.isSelf).reverse().map((d) => {
         const dot = peerDot(d.p.sameSchool, points.length);
-        return (
+        // A crowd's 2px dots would be mostly rim and edge: they stay plain discs.
+        return crowd ? (
           <circle
             key={d.p.personKey || `${d.x},${d.y}`}
             className="chart-dot"
@@ -242,18 +243,24 @@ function DotsLayer({
             r={d === hovered ? d.r + 2 : d.r}
             fill={d.p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
             fillOpacity={dot.fillOpacity}
-            // A crowd's 2px dots would be mostly rim.
-            {...(crowd ? {} : DOT_RIM)}
+          />
+        ) : (
+          <ChartDot
+            key={d.p.personKey || `${d.x},${d.y}`}
+            cx={d.x}
+            cy={d.y}
+            kind={d.p.sameSchool ? 'same' : 'peer'}
+            r={d.r}
+            fillOpacity={dot.fillOpacity}
+            hovered={d === hovered}
           />
         );
       })}
       {placed.filter((d) => d.p.isSelf).map((d) => (
-        // The subject: a still ring round the accent dot, and their name beside it. The ring used to
-        // pulse without end, motion no one asked for that pulled the eye back to the corner of a chart
-        // the reader had already found the person in.
+        // The subject: their dot, the size of everyone's, with the pip that says it is them, and their name
+        // beside it.
         <g key="self" className="tenure-self">
-          <circle cx={d.x} cy={d.y} r={RING_R} fill="none" stroke={MARK_SELF} strokeWidth={2} opacity={0.45} />
-          <circle cx={d.x} cy={d.y} r={DOT_R.self} fill={MARK_SELF} stroke="var(--mantine-color-body)" strokeWidth={1.5} />
+          <ChartDot cx={d.x} cy={d.y} kind="self" className="tenure-self-dot" hovered={d === hovered} />
         </g>
       ))}
       {labels.map((l) => (
@@ -490,8 +497,8 @@ export function TenurePayScatter({
       {legend && (
         <MarkerLegend
           items={[
-            ...(schoolPts.length ? [{ color: MARK_PEER_SAME_SCHOOL, round: true, label: 'Same school' }] : []),
-            ...(others.length ? [{ color: MARK_PEER, round: true, label: 'Others' }] : []),
+            ...(schoolPts.length ? [{ color: MARK_PEER_SAME_SCHOOL, dot: 'same' as const, label: 'Same school' }] : []),
+            ...(others.length ? [{ color: MARK_PEER, dot: 'peer' as const, label: 'Others' }] : []),
           ]}
         />
       )}

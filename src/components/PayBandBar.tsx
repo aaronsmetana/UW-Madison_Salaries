@@ -105,12 +105,13 @@ export function PayBandBar({
               position: 'absolute',
               left: `${at(value)}%`,
               top: '50%',
-              width: 18,
-              height: 18,
+              // The person on a range, as on their headline figure's (SpreadMark): 14px of their teal, ringed in
+              // the card's colour. It was 18px with a drop shadow, the one floating thing on the card.
+              width: 14,
+              height: 14,
               borderRadius: '50%',
               background: MARK_SELF,
-              border: '2px solid var(--mantine-color-body)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+              boxShadow: '0 0 0 2px var(--mantine-color-body)',
               transform: 'translate(-50%, -50%)',
             }}
           />
@@ -127,7 +128,7 @@ export function PayBandBar({
               zIndex: Z.local,
             }}
           >
-            <span className="chart-value-pill">~{usd(hoverValue)} · {Math.round(hoverPct)}% through the band</span>
+            <span className="chart-tip-pill">~{usd(hoverValue)} · {Math.round(hoverPct)}% through the band</span>
           </div>
         )}
       </div>

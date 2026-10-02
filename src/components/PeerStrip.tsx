@@ -5,8 +5,8 @@ import { ordinal } from '../lib/stats';
 import { assignLabelRows, CHART_FONT, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import {
-  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, DOT_RIM, GUIDE_SOFT, BAND_IQR, peerDot,
-  MarkerLegend, type PeerPoint,
+  MARK_SELF, MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, GUIDE_SOFT, BAND_IQR, peerDot,
+  MarkerLegend, ChartDot, type PeerPoint,
 } from './markers';
 import { binSalaries } from '../lib/histogram';
 import { smoothBins } from '../lib/distribution';
@@ -18,7 +18,7 @@ import { sideOf, type PayWindow } from '../lib/payWindow';
 
 const RIBBON_H = 76;
 /** Headroom above the population for the subject's own mark, which sits on its own lane. */
-const SELF_LANE_H = DOT_R.self * 2 + 5;
+const SELF_LANE_H = DOT_R.peer * 2 + 5;
 const MARKER_LANE_H = 26;
 /** A row of axis labels: a 16px line of 12px chart text (CHART_FONT) and a pixel of air. At 15px, with Mantine's
  *  `xs` line height, "middle 50%" and the median's label a row apart touched. */
@@ -536,16 +536,13 @@ export function PeerStrip({
             {dots.others.map((p, i) => {
               const dot = peerDot(p.sameSchool, plotted.length + lows.length + highs.length);
               return (
-                <circle
+                <ChartDot
                   key={p.personKey || i}
-                  className="chart-dot"
-                  data-mark={p.sameSchool ? 'same-school' : 'peer'}
+                  kind={p.sameSchool ? 'same' : 'peer'}
                   cx={dots.values[i] * w}
                   cy={rowY(dots.rows[i] ?? 0)}
                   r={dot.r}
-                  fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
                   fillOpacity={dot.fillOpacity}
-                  {...DOT_RIM}
                 />
               );
             })}
@@ -558,7 +555,7 @@ export function PeerStrip({
         </svg>
         {hoverPile === side && (
           <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', [side < 0 ? 'left' : 'right']: 0, pointerEvents: 'none', zIndex: Z.local }}>
-            <span className="chart-value-pill" style={{ whiteSpace: 'nowrap' }}>
+            <span className="chart-tip-pill">
               {words} · {side < 0 ? 'lowest' : 'highest'} {usd(side < 0 ? list[0].pay : list[list.length - 1].pay)}
             </span>
           </div>
@@ -667,21 +664,18 @@ export function PeerStrip({
                 plotted.map((p, i) => {
                   const dot = peerDot(p.sameSchool, plotted.length);
                   return (
-                    <circle
+                    // The dot pointed at takes a ring of the ink; the rest stay as they are. Dimming every
+                    // other dot made the whole strip flicker as a pointer crossed it, for a readout the
+                    // pill already gives.
+                    <ChartDot
                       key={p.personKey || i}
-                      className="chart-dot"
-                      data-mark={p.sameSchool ? 'same-school' : 'peer'}
+                      kind={p.sameSchool ? 'same' : 'peer'}
                       cx={at(p.pay) * plotW}
                       cy={rowY(rows[i] ?? 0)}
-                      // The dot pointed at grows; the rest stay as they are. Dimming every other dot
-                      // made the whole strip flicker as a pointer crossed it, for a readout the pill
-                      // already gives.
-                      r={hoveredPeer?.p === p ? dot.r + 2 : dot.r}
-                      fill={p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
+                      r={dot.r}
                       fillOpacity={dot.fillOpacity}
-                      {...DOT_RIM}
-                      opacity={mounted ? 1 : 0}
-                      style={{ transition: `opacity var(--dur-base) var(--ease) ${Math.min(i, 30) * 4}ms` }}
+                      hovered={hoveredPeer?.p === p}
+                      style={{ opacity: mounted ? 1 : 0, transition: `opacity var(--dur-base) var(--ease) ${Math.min(i, 30) * 4}ms` }}
                     />
                   );
                 })
@@ -698,16 +692,12 @@ export function PeerStrip({
                 opacity={mounted ? 0.55 : 0}
                 style={{ transition: 'opacity var(--dur-base) var(--ease)' }}
               />
-              <circle
+              <ChartDot
                 className="peer-strip-marker"
+                kind="self"
                 cx={selfX}
                 cy={SELF_LANE_H / 2}
-                r={DOT_R.self}
-                fill={MARK_SELF}
-                stroke="var(--mantine-color-body)"
-                strokeWidth={1.5}
-                opacity={mounted ? 1 : 0}
-                style={{ transition: 'opacity var(--dur-base) var(--ease)' }}
+                style={{ opacity: mounted ? 1 : 0 }}
               />
             </svg>
           )}
@@ -726,7 +716,7 @@ export function PeerStrip({
                 zIndex: Z.local,
               }}
             >
-              <span className="chart-value-pill">
+              <span className="chart-tip-pill">
                 {hoveredPeer
                   ? `${hoveredPeer.p.name} · ${usd(hoveredPeer.p.pay)}`
                   : `~${usd(hoverValue)}${hoverBelow != null ? ` · ${ordinal(Math.round(hoverBelow * 100))} percentile` : ''}`}
@@ -771,8 +761,8 @@ export function PeerStrip({
           legend that leaves out a colour the chart draws leaves the reader to guess it. */}
       <MarkerLegend
         items={[
-          ...(hasSameSchool ? [{ color: MARK_PEER_SAME_SCHOOL, round: true, label: 'Same school' }] : []),
-          ...(hasOthers ? [{ color: MARK_PEER, round: true, label: 'Others' }] : []),
+          ...(hasSameSchool ? [{ color: MARK_PEER_SAME_SCHOOL, dot: 'same' as const, label: 'Same school' }] : []),
+          ...(hasOthers ? [{ color: MARK_PEER, dot: 'peer' as const, label: 'Others' }] : []),
         ]}
       />
 

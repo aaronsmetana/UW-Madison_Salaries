@@ -281,7 +281,7 @@ export function PeerRangeBar({
               zIndex: Z.local,
             }}
           >
-            <span className="chart-value-pill">
+            <span className="chart-tip-pill">
               ~{usd(hoverValue)}{hoverBelowShare != null ? ` · ${ordinal(Math.round(hoverBelowShare * 100))} percentile` : ''}
             </span>
           </div>

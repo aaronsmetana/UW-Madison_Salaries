@@ -7,9 +7,10 @@ export interface ToggleOption {
 }
 
 /**
- * Small pill segmented control matching the mock's "Compare against" control, mapped onto the app's
- * theme (active label in accent teal — see the `.seg-toggle` rule in app.css). An optional small-caps
- * eyebrow sits above it. Reused by the overview cohort toggle, the tenure scatter, and the trend toggle.
+ * The app's small segmented control: options on a grey track, the chosen one a raised white segment in the
+ * ink (app.css), as every segmented control in the app is. It was a teal-filled option, which made a setting
+ * the loudest thing on a chart whose teal is the person it is about. An optional small-caps eyebrow sits
+ * above it. Reused by the overview cohort toggle, the tenure scatter, and the trend toggle.
  */
 export function SegmentedToggle({
   options,
@@ -29,13 +30,11 @@ export function SegmentedToggle({
   const control = (
     <SegmentedControl
       className="seg-toggle"
-      color="accent"
       size={size}
       value={value}
       onChange={onChange}
       fullWidth={fullWidth}
       data={options.map((o) => ({ value: o.id, label: o.label }))}
-      styles={{ label: { fontWeight: 600 } }}
     />
   );
   if (!label) return control;

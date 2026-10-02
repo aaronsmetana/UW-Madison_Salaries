@@ -1,3 +1,4 @@
+import type React from 'react';
 import { Group, Text } from '@mantine/core';
 
 /**
@@ -35,13 +36,21 @@ export const MARK_POPULATION = 'var(--mantine-color-gray-5)';
 /** A peer who shares this person's school — the comparison most readers actually want (>=3:1). */
 export const MARK_PEER_SAME_SCHOOL = 'var(--mark-peer-same-school)';
 
+/** A dot's own edge: 1px inside it, a step darker than its fill (a step lighter on the dark card). The
+ *  population's grey is quiet on purpose (2.2:1), so its edge is what makes each person a mark a reader
+ *  can see (3.8:1); a same-school peer's sharpens a green that already reads. */
+export const MARK_PEER_EDGE = 'var(--mark-peer-edge)';
+export const MARK_PEER_SAME_SCHOOL_EDGE = 'var(--mark-peer-same-school-edge)';
+
 /** A target / goal salary. Shares its green with same-school peers, which is safe only because the two
  *  never take the same shape: a target is always a rule across the track, a peer is always a dot. Keep
  *  it that way — if a target ever becomes a dot, it needs its own hue. */
 export const MARK_TARGET = 'var(--mantine-color-pos-6)';
 
-/** Circle radii, in px. The strip and the scatter draw the same person the same size. */
-export const DOT_R = { peer: 4.5, self: 7.5 } as const;
+/** Circle radius, in px: one size for everyone, the person included. They were drawn half again as large as
+ *  their peers (a `self` radius of its own); now a pip in their dot, their label and their guides say who
+ *  they are, not their size. */
+export const DOT_R = { peer: 5 } as const;
 
 /**
  * A dot's rim: 1px of the card colour just outside its fill, so dots that touch or overlap read as
@@ -86,10 +95,55 @@ export const BAND_IQR = { fill: 'var(--band-fill)', edge: 'var(--band-edge)', ed
 export const LARGE_GROUP = 200;
 export function peerDot(sameSchool: boolean, groupSize: number): { r: number; fillOpacity: number } {
   const crowd = groupSize > LARGE_GROUP;
-  return {
-    r: DOT_R.peer + (crowd && sameSchool ? 1 : 0),
-    fillOpacity: crowd && !sameSchool ? 0.55 : 0.9,
-  };
+  return { r: DOT_R.peer, fillOpacity: crowd && !sameSchool ? 0.55 : 1 };
+}
+
+export type DotKind = 'peer' | 'same' | 'self';
+const DOT_FILL: Record<DotKind, string> = { peer: MARK_PEER, same: MARK_PEER_SAME_SCHOOL, self: MARK_SELF };
+const DOT_EDGE: Record<DotKind, string | null> = { peer: MARK_PEER_EDGE, same: MARK_PEER_SAME_SCHOOL_EDGE, self: null };
+
+/**
+ * One person as a dot, the same on every chart that sets someone among their peers: 10px, a 1px edge inside
+ * it, and a 1.5px ring of the card's colour outside it so dots that touch stay two people. The person whose
+ * page it is wears their teal with a pip of the card's colour at its centre — a shape, not only a colour.
+ * Pointed at (`hovered`), a ring of the ink beyond the card's.
+ *
+ * The fill circle carries the class, the data-mark and the size, so a reader of the chart (a test, the hit
+ * test) finds one element per person; the edge and the pip are drawn over it and take no pointer.
+ */
+export function ChartDot({ cx, cy, kind, r = DOT_R.peer, fillOpacity = 1, hovered = false, dimmed = false, className = 'chart-dot', style }: {
+  cx: number; cy: number; kind: DotKind; r?: number; fillOpacity?: number; hovered?: boolean; dimmed?: boolean;
+  className?: string; style?: React.CSSProperties;
+}) {
+  const edge = DOT_EDGE[kind];
+  return (
+    <g opacity={dimmed ? 0.18 : 1} style={{ transition: 'opacity var(--dur-base) var(--ease)', ...style }}>
+      <circle
+        className={className}
+        data-mark={kind === 'self' ? 'self' : kind === 'same' ? 'same-school' : 'peer'}
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill={DOT_FILL[kind]}
+        fillOpacity={fillOpacity}
+        stroke="var(--mantine-color-body)"
+        strokeWidth={3}
+        paintOrder="stroke"
+      />
+      {edge && <circle cx={cx} cy={cy} r={r - 0.5} fill="none" stroke={edge} strokeOpacity={fillOpacity} strokeWidth={1} pointerEvents="none" />}
+      {kind === 'self' && <circle className="chart-dot-pip" cx={cx} cy={cy} r={2} fill="var(--mantine-color-body)" pointerEvents="none" />}
+      {hovered && <circle className="chart-dot-hover" cx={cx} cy={cy} r={r + 2.75} fill="none" stroke="var(--mantine-color-text)" strokeWidth={1.5} pointerEvents="none" />}
+    </g>
+  );
+}
+
+/** A legend's chip for a dot: the same dot, at the same size. */
+export function DotChip({ kind }: { kind: DotKind }) {
+  return (
+    <svg className="dot-chip" width={13} height={13} viewBox="0 0 13 13" aria-hidden style={{ flexShrink: 0, display: 'block' }}>
+      <ChartDot cx={6.5} cy={6.5} kind={kind} />
+    </svg>
+  );
 }
 
 /**
@@ -109,6 +163,8 @@ export interface PeerPoint {
 export interface LegendItem {
   color: string;
   label: string;
+  /** A person's dot, drawn as the chart draws it (ChartDot). */
+  dot?: DotKind;
   /** A dot (a person, a value) rather than a rule (a target, a trend, a threshold). */
   round?: boolean;
   /** A filled square, for a bar series: a 4px rule reads as a line. */
@@ -130,7 +186,9 @@ export function MarkerLegend({ items }: { items: LegendItem[] }) {
     <Group justify="center" gap="lg" mt="xs" wrap="wrap">
       {items.map((it, i) => (
         <Group key={i} gap={6} wrap="nowrap">
-          {it.dashed ? (
+          {it.dot ? (
+            <DotChip kind={it.dot} />
+          ) : it.dashed ? (
             <svg width={22} height={12} aria-hidden style={{ flexShrink: 0 }}>
               <line
                 x1={1}

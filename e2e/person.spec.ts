@@ -190,9 +190,8 @@ test('the strip and the scatter mark a person the same way', async ({ page }) =>
       stripSelf: fill(strip?.querySelector('.peer-strip-marker') ?? null),
       stripPeer: fill(strip?.querySelector('.chart-dot') ?? null),
       scatterPeer: fill(scatter?.querySelector('.chart-dot') ?? null),
-      // The scatter's subject is the only circle it draws with a body-coloured stroke.
-      scatterSelf: fill([...(scatter?.querySelectorAll('circle') ?? [])]
-        .find((c) => getComputedStyle(c).strokeWidth === '1.5px') ?? null),
+      // The scatter's subject: its own dot, drawn as the strip's (ChartDot, kind self).
+      scatterSelf: fill(scatter?.querySelector('.tenure-self-dot') ?? null),
       legends: [...document.querySelectorAll('.mantine-Text-root')]
         .map((e) => (e.textContent ?? '').trim())
         .filter((t) => t === 'This person' || t === 'Same school' || t === 'Others'),
@@ -273,7 +272,7 @@ test('the peer strip names the person under the cursor, and reads the axis betwe
   await dots.nth(5).evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const box = await dots.nth(5).boundingBox();
   if (!box) throw new Error('peer dot has no box');
-  const pill = page.locator('.peer-strip .chart-value-pill');
+  const pill = page.locator('.peer-strip .chart-tip-pill');
 
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   // A name and a pay figure — not the "~$X · Nth percentile" estimate.

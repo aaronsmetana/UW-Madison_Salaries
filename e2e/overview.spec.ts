@@ -121,7 +121,7 @@ test('pointing at a strip dot leaves the other dots as they were', async ({ page
   await dots.nth(5).evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const box = (await dots.nth(5).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await expect(page.locator('.peer-strip .chart-value-pill')).toHaveText(/^[^~]+ · \$[\d,]+$/, { timeout: 5_000 });
+  await expect(page.locator('.peer-strip .chart-tip-pill')).toHaveText(/^[^~]+ · \$[\d,]+$/, { timeout: 5_000 });
   const after = await dots.evaluateAll((cs) => cs.map((c) => getComputedStyle(c).fillOpacity));
   expect(after).toEqual(before);
 });
