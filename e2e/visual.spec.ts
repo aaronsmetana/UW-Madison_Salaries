@@ -430,3 +430,30 @@ test('visual: reports with a subject', async ({ page }) => {
   await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
   await shots(page, 'reports-subject');
 });
+
+// The compare bar floats over every page once something is in the set, so no page shot above has it.
+// Shot on its own, over the Data page (no charts under it), in both schemes and on a phone.
+test('visual: compare bar', async ({ page }) => {
+  const set = encodeURIComponent([
+    ['p', encodeURIComponent('aaronsmetana|2014-10-15'), encodeURIComponent('Aaron Smetana')].join(','),
+    ['p', encodeURIComponent('adamkoch|2009-05-26'), encodeURIComponent('Adam Koch')].join(','),
+  ].join('|'));
+  // Compare's link fills the set once the page has read it (Compare itself hides the bar).
+  await page.goto(`./compare?sel=${set}`);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('uwsal.tray.v1') || '[]').length), { timeout: 60_000 }).toBe(2);
+  await page.goto('./data');
+  const bar = page.getByRole('region', { name: 'Compare set' });
+  await expect(bar).toBeVisible({ timeout: 60_000 });
+  const shot = { animations: SHOT.animations, timeout: SHOT.timeout, maxDiffPixels: SHOT.maxDiffPixels };
+  await page.setViewportSize(DESKTOP);
+  await setTheme(page, 'light');
+  await settle(page);
+  await expect.soft(bar).toHaveScreenshot('compare-bar-light-desktop.png', shot);
+  await setTheme(page, 'dark');
+  await settle(page);
+  await expect.soft(bar).toHaveScreenshot('compare-bar-dark-desktop.png', shot);
+  await setTheme(page, 'light');
+  await page.setViewportSize(MOBILE);
+  await settle(page);
+  await expect.soft(bar).toHaveScreenshot('compare-bar-light-mobile.png', shot);
+});
