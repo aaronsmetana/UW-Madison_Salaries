@@ -18,14 +18,10 @@ interface TrayState {
   remove: (id: string) => void;
   clear: () => void;
   has: (id: string) => boolean;
-  /** The "Subject" person for the Equity Report (always a person currently in the tray, or null). */
-  primaryId: string | null;
-  setPrimary: (id: string) => void;
 }
 
 const Ctx = createContext<TrayState | null>(null);
 const KEY = 'uwsal.tray.v1';
-const KEY_PRIMARY = 'uwsal.tray.primary.v1';
 
 /**
  * Every localStorage touch in this file goes through these.
@@ -76,22 +72,9 @@ export function TrayProvider({ children }: { children: ReactNode }) {
       return [];
     }
   });
-  const [primaryId, setPrimaryId] = useState<string | null>(() => readStore(KEY_PRIMARY) || null);
-
   useEffect(() => {
     writeStore(KEY, JSON.stringify(items));
   }, [items]);
-
-  // Keep the subject valid: if it isn't a person still in the tray, fall back to the first person (or null).
-  // This also auto-selects the first added person and reassigns when the current subject is removed.
-  useEffect(() => {
-    const persons = items.filter((i) => i.type === 'person');
-    setPrimaryId((prev) => (prev && persons.some((p) => p.id === prev) ? prev : (persons[0]?.id ?? null)));
-  }, [items]);
-
-  useEffect(() => {
-    writeStore(KEY_PRIMARY, primaryId);
-  }, [primaryId]);
 
   const value = useMemo<TrayState>(
     () => ({
@@ -100,10 +83,8 @@ export function TrayProvider({ children }: { children: ReactNode }) {
       remove: (id) => setItems((p) => p.filter((x) => x.id !== id)),
       clear: () => setItems([]),
       has: (id) => items.some((x) => x.id === id),
-      primaryId,
-      setPrimary: (id) => setPrimaryId(id),
     }),
-    [items, primaryId]
+    [items]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

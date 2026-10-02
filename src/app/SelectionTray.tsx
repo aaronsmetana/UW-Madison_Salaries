@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Group, Button, Text, Paper, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden } from '@mantine/core';
+import { Group, Button, Text, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden } from '@mantine/core';
 import { useMediaQuery, useReducedMotion } from '@mantine/hooks';
 import {
   IconArrowsLeftRight, IconUser, IconBriefcase, IconBuildingBank, IconX, IconReportAnalytics,
-  IconChevronDown, IconChevronUp, IconStar, IconStarFilled,
+  IconChevronDown, IconChevronUp,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useTray, type TrayItem } from '../state/tray';
@@ -28,49 +28,18 @@ function summarize(items: TrayItem[]): string {
   return parts.length ? parts.join(' · ') : `${items.length} selected`;
 }
 
-/** One removable, clickable chip. People carry a star to set/show the Equity-Report subject. */
-function Chip({ item, isPrimary, onPrimary, onRemove }: {
-  item: TrayItem; isPrimary?: boolean; onPrimary?: () => void; onRemove: () => void;
-}) {
+/** One removable chip: the name, a link to its page, and its ×. A title or a division wears its kind's icon; a
+ *  person, nothing else. (People carried a star that chose the raise case's subject; the Reports page chooses
+ *  it now, in its own setup.) */
+function Chip({ item, onRemove }: { item: TrayItem; onRemove: () => void }) {
   const { icon: Icon, href } = TYPE_META[item.type];
-  const isPerson = item.type === 'person';
   return (
-    <Group
-      className="tray-chip"
-      gap={6}
-      wrap="nowrap"
-      pl={isPerson ? 4 : 8}
-      pr={4}
-      py={3}
-      style={{
-        flexShrink: 0,
-        borderRadius: 'var(--mantine-radius-xl)',
-        background: isPrimary ? 'var(--mantine-color-accent-light)' : 'var(--mantine-color-default-hover)',
-        maxWidth: 240,
-      }}
-    >
-      {isPerson ? (
-        <Tooltip label={isPrimary ? 'Report subject' : 'Set as report subject'} withArrow>
-          <ActionIcon
-            size={20}
-            radius="xl"
-            variant="subtle"
-            color={isPrimary ? 'accent' : 'gray'}
-            aria-label={isPrimary ? `${item.label} is the report subject` : `Set ${item.label} as report subject`}
-            aria-pressed={isPrimary}
-            onClick={onPrimary}
-            style={{ flexShrink: 0 }}
-          >
-            {isPrimary ? <IconStarFilled size={ICON.compact} /> : <IconStar size={ICON.compact} />}
-          </ActionIcon>
-        </Tooltip>
-      ) : (
-        <Icon size={ICON.compact} style={{ flexShrink: 0, color: 'var(--mantine-color-dimmed)' }} />
-      )}
-      <Anchor component={Link} to={href(item.id)} c={isPrimary ? 'accent.7' : 'inherit'} className={isPrimary ? 'accent7-text' : undefined} fw={isPrimary ? 600 : undefined} underline="hover" fz="sm" lineClamp={1} title={item.label}>
+    <Group className="tray-chip compare-chip" gap={6} wrap="nowrap" pl={item.type === 'person' ? 10 : 8} pr={4} py={3} style={{ flexShrink: 0, maxWidth: 240 }}>
+      {item.type !== 'person' && <Icon size={ICON.compact} style={{ flexShrink: 0 }} className="compare-chip-icon" />}
+      <Anchor component={Link} to={href(item.id)} c="inherit" underline="hover" fz="sm" lineClamp={1} title={item.label}>
         {item.label}
       </Anchor>
-      <ActionIcon size={19} radius="xl" variant="subtle" color="gray" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
+      <ActionIcon size={20} radius="xs" variant="subtle" color="gray" className="compare-chip-x" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
         <IconX size={ICON.compact} />
       </ActionIcon>
     </Group>
@@ -82,9 +51,9 @@ function Chip({ item, isPrimary, onPrimary, onRemove }: {
  * Appears only when something is selected; hidden in print.
  */
 export function SelectionTray() {
-  const { items, remove, clear, add, primaryId, setPrimary } = useTray();
+  const { items, remove, clear, add } = useTray();
   const reduce = useReducedMotion();
-  // On a phone the one-line tray ran off the screen: "Compare" was cut in half and "Equity Report" out
+  // On a phone the one-line bar ran off the screen: "Compare" was cut in half and the report's button out
   // of reach. There it takes two rows — the count and Clear, then the two actions — with the chips
   // behind "Show all".
   const phone = useMediaQuery('(max-width: 48em)', false, { getInitialValueInEffect: false }) ?? false;
@@ -147,45 +116,36 @@ export function SelectionTray() {
     // Cleared → brief Undo affordance.
     if (items.length === 0) {
       return (
-        <Paper className="no-print glass" shadow="lg" withBorder radius="xl" px="md" py={8} style={styles} role="region" aria-label="Compare set">
+        <div className="no-print compare-bar" style={styles} role="region" aria-label="Compare set">
           <Group gap="sm" wrap="nowrap">
-            <Text size="sm" c="dimmed">Compare set cleared</Text>
-            <Button size="xs" variant="subtle" onClick={onUndo}>Undo</Button>
+            <Text size="sm" className="compare-count">Compare set cleared</Text>
+            <Button size="compact-sm" variant="subtle" className="compare-text-button" onClick={onUndo}>Undo</Button>
           </Group>
-        </Paper>
+        </div>
       );
     }
     return (
-      <Paper className="no-print glass" shadow="lg" withBorder radius={phone ? 'lg' : 'xl'} px="md" py={8} style={styles} role="region" aria-label="Compare set">
+      <div className="no-print compare-bar" data-phone={phone || undefined} style={styles} role="region" aria-label="Compare set">
         <Group gap="sm" wrap={phone ? 'wrap' : 'nowrap'} className="tray-row">
-          <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap', flex: phone ? '1 1 0' : undefined, minWidth: 0 }} truncate={phone ? 'end' : undefined}>
+          <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap', flex: phone ? '1 1 0' : '0 0 auto', minWidth: 0 }} truncate={phone ? 'end' : undefined}>
             {/* On a phone the count alone: the region is already named "Compare set". */}
-            {phone ? summarize(items) : <>Compare set <Text span c="dimmed" fw={500}>· {summarize(items)}</Text></>}
+            {phone ? summarize(items) : <>Compare set <Text span fw={500} className="compare-count">{summarize(items)}</Text></>}
           </Text>
+          {!phone && <span className="compare-divider" aria-hidden />}
 
           {!collapsed && (
             <Group gap={6} wrap={phone ? 'wrap' : 'nowrap'} style={phone ? { order: 3, flexBasis: '100%' } : { overflowX: 'auto', maxWidth: 'min(46vw, 520px)' }}>
-              {TYPE_ORDER.flatMap((t) => {
-                const group = items.filter((i) => i.type === t);
-                // Pin the subject to the front of the people so the "primary" slot is visibly first.
-                if (t === 'person') group.sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0));
-                return group;
-              }).map((i) => (
-                <Chip
-                  key={`${i.type}:${i.id}`}
-                  item={i}
-                  isPrimary={i.type === 'person' && i.id === primaryId}
-                  onPrimary={() => setPrimary(i.id)}
-                  onRemove={() => remove(i.id)}
-                />
+              {TYPE_ORDER.flatMap((t) => items.filter((i) => i.type === t)).map((i) => (
+                <Chip key={`${i.type}:${i.id}`} item={i} onRemove={() => remove(i.id)} />
               ))}
             </Group>
           )}
           {(items.length > 5 || phone) && (
             <Button
-              size="compact-xs"
+              size="compact-sm"
               variant="subtle"
               color="gray"
+              className="compare-text-button"
               onClick={() => setExpanded((v) => !v)}
               rightSection={expanded ? <IconChevronDown size={ICON.compact} /> : <IconChevronUp size={ICON.compact} />}
               style={{ flexShrink: 0 }}
@@ -194,7 +154,7 @@ export function SelectionTray() {
             </Button>
           )}
 
-          <Button size="xs" variant="outline" color="gray" onClick={onClear} style={{ flexShrink: 0 }}>Clear</Button>
+          <Button size="compact-sm" variant="subtle" color="gray" className="compare-text-button" onClick={onClear} style={{ flexShrink: 0 }}>Clear</Button>
 
           <Group gap="xs" wrap="nowrap" className="tray-actions" style={phone ? { order: 4, flexBasis: '100%' } : undefined}>
           <Tooltip label="Add one more to compare" disabled={canCompare} withArrow>
@@ -202,7 +162,9 @@ export function SelectionTray() {
               size="xs"
               component={Link}
               to="/compare"
+              className="compare-bar-compare"
               data-disabled={!canCompare || undefined}
+              aria-disabled={!canCompare || undefined}
               onClick={(e) => { if (!canCompare) e.preventDefault(); }}
               leftSection={<IconArrowsLeftRight size={ICON.control} />}
               style={{ flexShrink: 0, flex: phone ? 1 : undefined }}
@@ -211,25 +173,27 @@ export function SelectionTray() {
             </Button>
           </Tooltip>
 
-          <Tooltip label={hasPerson ? 'Build the equity report' : 'Add at least one person to build a report'} withArrow>
+          <Tooltip label={hasPerson ? 'Build the raise case for these people' : 'Add at least one person to build a raise case'} withArrow>
             <Button
               size="xs"
               component={Link}
               to="/reports?mode=compare"
+              className="compare-bar-case"
               data-disabled={!hasPerson || undefined}
+              aria-disabled={!hasPerson || undefined}
               onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
               leftSection={<IconReportAnalytics size={ICON.control} />}
               style={{ flexShrink: 0, flex: phone ? 1 : undefined }}
             >
-              Equity Report
+              Raise case
             </Button>
           </Tooltip>
           </Group>
         </Group>
         {items.length >= 8 && (
-          <Text size="xs" c="dimmed" mt={4} ta="center">That's a lot selected — ready to compare?</Text>
+          <Text size="xs" mt={4} ta="center" className="compare-count">That's a lot selected — ready to compare?</Text>
         )}
-      </Paper>
+      </div>
     );
   };
 
@@ -240,7 +204,7 @@ export function SelectionTray() {
       <div
         ref={wrapRef}
         className="no-print"
-        style={{ position: 'fixed', bottom: phone ? 12 : 20, left: '50%', transform: 'translateX(-50%)', zIndex: Z.floating, width: phone ? 'calc(100vw - 24px)' : 'max-content', maxWidth: phone ? 'calc(100vw - 24px)' : 'min(960px, calc(100vw - 32px))' }}
+        style={{ position: 'fixed', bottom: phone ? 12 : 20, left: '50%', transform: 'translateX(-50%)', zIndex: Z.floating, width: phone ? 'calc(100vw - 24px)' : 'max-content', maxWidth: phone ? 'calc(100vw - 24px)' : 'min(1100px, calc(100vw - 32px))' }}
       >
         <Transition mounted={mounted} transition="slide-up" duration={reduce ? 0 : 200} timingFunction="ease">
           {(styles) => body(styles)}

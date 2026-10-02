@@ -379,138 +379,133 @@ test.describe('dark-mode elevation', () => {
 });
 
 /**
- * Glass on the two surfaces that float over page content.
- *
- * The rule the app's own failures produced: glass needs a backdrop with structure worth softening
- * that nobody needs to read. The selection tray is fixed at `Z.floating` with the page scrolling
- * beneath it; the Reports mobile ledger is sticky with the setup pane scrolling under it. The
- * back-to-top button, the Reports desktop rail and the /data jump nav are all deliberately excluded
- * — see the notes in app.css.
- *
- * Contrast is asserted explicitly because axe cannot do it: it has no way to resolve a
- * `backdrop-filter`ed backdrop, so `color-contrast` on text inside a translucent surface returns
- * INCOMPLETE, and `runAxe` in a11y.spec.ts reads violations only. The gate would pass on a tray
- * nobody could read.
+ * The compare set, floating over the foot of every page: the page's inverse, as a chart's readout is.
+ * It was glass (a 55% tint over a blur) until the person-page redesign; an ink pill is opaque, so what
+ * it must still prove is that it reads as floating (its shadow; in dark, the raised surface and its
+ * edge, since an ink pill on a near-black page would not be seen) and that every word on it is
+ * readable on the ground it sits on, a chip's faint white and the two filled buttons included.
  */
-test.describe('floating glass', () => {
-  const contrast = (a: [number, number, number], b: [number, number, number]) => {
-    const lum = ([r, g, bl]: [number, number, number]) => {
-      const f = (c: number) => (c /= 255, c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(bl);
-    };
-    const [x, y] = [lum(a), lum(b)];
-    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+test.describe('the compare bar', () => {
+  const AARON = 'aaronsmetana|2014-10-15';
+  const SET = encodeURIComponent([
+    ['p', encodeURIComponent(AARON), encodeURIComponent('Aaron Smetana')].join(','),
+    ['p', encodeURIComponent('adamkoch|2009-05-26'), encodeURIComponent('Adam Koch')].join(','),
+  ].join('|'));
+
+  /** Aaron and Adam in the set (Compare's link puts them there), then Aaron's page under the bar. */
+  async function fill(page: import('@playwright/test').Page) {
+    await page.goto(`./compare?sel=${SET}`, { waitUntil: 'networkidle' });
+    await page.goto(`./person/${encodeURIComponent(AARON)}`, { waitUntil: 'networkidle' });
+    const bar = page.getByRole('region', { name: 'Compare set' });
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+    return bar;
+  }
+
+  const lum = ([r, g, b]: number[]) => {
+    const f = (c: number) => (c /= 255, c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
 
-  /** Put two people in the tray, which is the only way it appears at all. */
-  async function fillTray(page: import('@playwright/test').Page) {
-    await page.goto('./explore', { waitUntil: 'networkidle' });
-    const buttons = page.getByRole('button', { name: /Add to compare set|Compare/ });
-    await expect(buttons.first()).toBeVisible({ timeout: 60_000 });
-    await buttons.nth(0).click();
-    await buttons.nth(1).click().catch(() => {});
-    await expect(page.locator('[aria-label="Compare set"]')).toBeVisible({ timeout: 15_000 });
-  }
-
-  /**
-   * Any rule that sets `box-shadow` on a Mantine surface overrides whatever its `shadow=` prop
-   * resolved to. `.glass` hardcoded `--mantine-shadow-sm` and so silently demoted the selection tray
-   * from `shadow="lg"` to the near-invisible hairline tier — on the one surface whose entire job is
-   * to read as floating, in the same change that set out to fix its elevation. `--paper-shadow` is
-   * declared only when a `shadow=` prop is present, so the assertion is: if a surface declared a
-   * tier, its computed shadow still contains it.
-   *
-   * The tray is the surface that declares one (`lg`). The brief's chart cards declared `sm` too, until
-   * the polish pass: a bordered card in the page's flow is not floating, so none declares a shadow now
-   * (polish.spec holds that).
-   */
-  for (const [name, prepare, find] of [
-    ['the selection tray', fillTray, '[aria-label="Compare set"]'],
-  ] as const) {
-    test(`keeps the elevation it declared: ${name}`, async ({ page }) => {
-      await prepare(page);
-      const declared = await page.evaluate((sel) => {
-        const hit = document.querySelector(sel);
-        const el = hit?.closest('.mantine-Paper-root') ?? hit;
-        if (!el) return null;
-        const cs = getComputedStyle(el);
-        return { paper: cs.getPropertyValue('--paper-shadow').trim(), computed: cs.boxShadow };
-      }, find);
-
-      expect(declared, `could not find ${name}`).not.toBeNull();
-      expect(declared!.paper, `${name} declares no shadow tier, so this proves nothing`).not.toBe('');
-
-      // The declared tier is written as `0 8px 32px rgba(…)`; the computed form reorders it to
-      // `rgba(…) 0px 8px 32px 0px`. Compare on the numbers, which survive both spellings.
-      const nums = (v: string) => (v.match(/-?[\d.]+px/g) ?? []).join(' ');
-      expect(
-        nums(declared!.computed),
-        `${name} declared ${declared!.paper} but computes to ${declared!.computed} — a rule setting box-shadow has overridden its elevation`,
-      ).toContain(nums(declared!.paper));
-    });
-  }
-
-  test('the selection tray is glass, and goes solid on request', async ({ page }) => {
-    const transparency = await transparencyEmulator(page);
-    await transparency('no-preference');
-    await fillTray(page);
-
-    const tray = page.locator('[aria-label="Compare set"]').first();
-    const glass = await readSurface(tray);
-    expect(glass.filter, 'the tray is not filtering the page behind it').toMatch(/blur\(/);
-    expect(glass.alpha, `the tray went opaque (${glass.bg})`).toBeLessThan(0.9);
-    expect(glass.shadow, 'the tray lost the specular that separates glass from a weak fill')
-      .toContain('inset');
-
-    await transparency('reduce');
-    const solid = await readSurface(tray);
-    expect(solid.filter, 'the tray still filters for a visitor who asked for less transparency').toBe('none');
-    expect(solid.alpha, `the tray's fallback is still translucent (${solid.bg})`).toBe(1);
-    await transparency('no-preference');
-  });
-
   for (const scheme of ['light', 'dark'] as const) {
-    test(`the tray's own text stays readable through it (${scheme})`, async ({ page }) => {
-      await fillTray(page);
+    test(`is the page's inverse, solid and floating (${scheme})`, async ({ page }) => {
+      const bar = await fill(page);
       await setScheme(page, scheme);
+      await page.waitForTimeout(500);
+      const s = await readSurface(bar);
+      expect(s.alpha, `the bar is see-through (${s.bg})`).toBe(1);
+      expect(s.filter === '' || s.filter === 'none', `the bar still blurs the page (${s.filter})`).toBe(true);
+      const nums = (v: string) => (v.match(/-?[\d.]+px/g) ?? []).join(' ');
+      expect(nums(s.shadow), `the bar lost its float shadow (${s.shadow})`).toContain('0px 12px 32px 0px');
 
-      await page.waitForTimeout(600);
-      const tray = page.locator('[aria-label="Compare set"]').first();
-      await expect(tray).toBeVisible({ timeout: 15_000 });
-      const box = (await tray.boundingBox())!;
-
-      // Sample the composited surface as rendered — through the blur, over whatever is behind it.
-      const [surface] = await samplePixels(page, [
-        { x: Math.round(box.x + 8), y: Math.round(box.y + box.height / 2) },
-      ]);
-      const textColor = await page.evaluate(() => {
-        const el = document.querySelector('[aria-label="Compare set"]');
-        const probe = [...(el?.querySelectorAll('*') ?? [])].find((n) => n.textContent?.trim());
-        return getComputedStyle(probe ?? el!).color;
+      const grounds = await bar.evaluate((el) => {
+        // `color-mix()` computes to `color(srgb r g b)`, its channels 0–1.
+        const rgb = (c: string) => {
+          const n = (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+          return c.startsWith('color(') ? n.map((v) => v * 255) : n;
+        };
+        const body = getComputedStyle(document.body).backgroundColor;
+        // The bar's 1px edge: the first shadow, a spread with no offset or blur.
+        const edge = /^(rgba?\([^)]*\)|transparent) 0px 0px 0px 1px/.exec(getComputedStyle(el).boxShadow)?.[1] ?? '';
+        return { bar: rgb(getComputedStyle(el).backgroundColor), page: rgb(body), edge };
       });
-      const m = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(textColor)!;
-      const text: [number, number, number] = [Number(m[1]), Number(m[2]), Number(m[3])];
+      if (scheme === 'light') {
+        // Ink on a light page: the darkest thing on it.
+        expect(lum(grounds.bar), `the bar is not ink (rgb(${grounds.bar}))`).toBeLessThan(0.02);
+      } else {
+        // Dark: the raised surface, lighter than the page, with an edge that shows.
+        expect(lum(grounds.bar), 'the dark bar is not lighter than the page it floats on').toBeGreaterThan(lum(grounds.page));
+        expect(deltaE(grounds.bar as [number, number, number], grounds.page as [number, number, number]), 'the dark bar is lost on the page').toBeGreaterThan(3);
+        const alpha = /^rgba\(.*,\s*([\d.]+)\)$/.exec(grounds.edge)?.[1];
+        expect(grounds.edge.startsWith('rgb(') || Number(alpha) >= 0.1, `the dark bar has no edge (${grounds.edge})`).toBe(true);
+      }
+    });
 
-      /**
-       * What this does and does not constrain, measured rather than assumed.
-       *
-       * It guards the TEXT-against-surface pairing — it would catch the tray's label being dimmed,
-       * or a tint drifting toward the text colour. It does NOT constrain the tint: the composited
-       * surface measures 17.05:1 at 55% and 16.47:1 at 3% in light, 15.78:1 and 16.42:1 in dark, so
-       * a threshold low enough to be meaningful cannot be crossed by thinning the glass. (Verified
-       * by thinning it to 3% and watching this pass.) The tint is justified by measurement in the
-       * commit, not by this assertion.
-       *
-       * It is still worth having, because axe will never do it: axe cannot resolve a
-       * backdrop-filtered backdrop, so `color-contrast` inside a translucent surface returns
-       * INCOMPLETE, and a11y.spec.ts reads violations only. Without this the gate would pass on a
-       * tray nobody could read.
-       */
-      const ratio = contrast(text, surface);
-      expect(
-        ratio,
-        `the tray's text measures ${ratio.toFixed(2)}:1 against its own composited surface rgb(${surface}) in ${scheme}`,
-      ).toBeGreaterThan(4.5);
+    test(`every word on it is readable on its own ground (${scheme})`, async ({ page }) => {
+      const bar = await fill(page);
+      await setScheme(page, scheme);
+      await page.waitForTimeout(500);
+      // Each word's ground: its own and every ancestor's background, laid over one another from the bar
+      // down (a chip is a faint white over the ink).
+      const pairs = await bar.evaluate((root) => {
+        // `rgb()`, `rgba()`, or what `color-mix()` computes to, `color(srgb r g b / a)` with channels 0–1.
+        const parse = (c: string) => {
+          const n = (c.match(/[\d.]+/g) ?? []).map(Number);
+          const k = c.startsWith('color(') ? 255 : 1;
+          return { rgb: n.slice(0, 3).map((v) => v * k), a: c.startsWith('rgba') || c.includes('/') ? (n[3] ?? 1) : c === 'transparent' ? 0 : 1 };
+        };
+        const out: { text: string; ink: number[]; ground: number[] }[] = [];
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const el = n.parentElement!;
+          const text = (n.textContent ?? '').trim();
+          if (!text || !el.checkVisibility({ visibilityProperty: true }) || el.closest('[data-disabled]')) continue;
+          const layers: { rgb: number[]; a: number }[] = [];
+          for (let a: Element | null = el; a; a = a.parentElement) {
+            const l = parse(getComputedStyle(a).backgroundColor);
+            if (l.a > 0) layers.push(l);
+            if (l.a >= 1 || a === root) break;
+          }
+          let g = [255, 255, 255];
+          for (const l of layers.reverse()) g = g.map((c, i) => l.rgb[i] * l.a + c * (1 - l.a));
+          out.push({ text, ink: parse(getComputedStyle(el).color).rgb, ground: g });
+        }
+        return out;
+      });
+      expect(pairs.map((p) => p.text), 'the bar shows its count, both names, Clear, Compare and Raise case')
+        .toEqual(expect.arrayContaining(['Compare set', 'Aaron Smetana', 'Adam Koch', 'Clear', 'Compare', 'Raise case']));
+      const low = pairs.map((p) => {
+        const [x, y] = [lum(p.ink), lum(p.ground)];
+        return { text: p.text, ratio: (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) };
+      }).filter((p) => p.ratio < 4.5).map((p) => `"${p.text}" ${p.ratio.toFixed(2)}:1`);
+      expect(low, `words under 4.5:1 on the ${scheme} bar`).toEqual([]);
     });
   }
+
+  test('lists the set, says what it can build, and clears with an undo', async ({ page }) => {
+    const bar = await fill(page);
+    // No star: the raise case's subject is chosen in its own setup, not here.
+    await expect(bar.getByRole('button', { name: /subject|primary|star/i })).toHaveCount(0);
+    await expect(bar.getByRole('button', { name: 'Remove Aaron Smetana' })).toBeVisible();
+    const kase = bar.getByRole('link', { name: 'Raise case' });
+    await expect(kase).toHaveAttribute('href', /\/reports\?mode=compare$/);
+    await expect(bar.getByRole('link', { name: 'Compare' })).not.toHaveAttribute('aria-disabled', 'true');
+
+    await bar.getByRole('button', { name: 'Clear' }).click();
+    await expect(bar).toContainText('Compare set cleared');
+    await bar.getByRole('button', { name: 'Undo' }).click();
+    await expect(bar.getByRole('button', { name: 'Remove Aaron Smetana' })).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'Remove Adam Koch' })).toBeVisible();
+
+    // With both in the set, its first person (Aaron, not Adam) is the raise case's subject: the report
+    // writes it into its link. (Reports, like Compare, hides the bar.)
+    await kase.click();
+    await expect(page).toHaveURL(/\/reports\?.*subject=aaronsmetana%7C2014-10-15/, { timeout: 30_000 });
+    await expect(bar).toBeHidden();
+    await page.goBack();
+
+    // One person: nothing to compare yet, though a raise case can still be built for them.
+    await bar.getByRole('button', { name: 'Remove Adam Koch' }).click();
+    await expect(bar.getByRole('link', { name: 'Compare' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(kase).not.toHaveAttribute('aria-disabled', 'true');
+  });
 });

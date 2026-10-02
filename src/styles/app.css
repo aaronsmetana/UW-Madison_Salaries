@@ -133,6 +133,11 @@
   --inverse-bg: #16191d;
   --inverse-ink: #ffffff;
   --inverse-edge: transparent;
+  /* The compare bar's quieter words on the inverse (a count, "Clear"), its chips, and its one light button. */
+  --inverse-muted: #9da6ab;
+  --inverse-chip: rgba(255, 255, 255, 0.09);
+  --inverse-button-bg: #ffffff;
+  --inverse-button-ink: var(--mantine-color-text);
   /* The landing dots by staff category, one ink each, every one a lone dot at 3:1 or better against the
      card at the dots' 0.85 alpha (e2e/dots.spec). Hues far apart, and neighbouring bands (Academic /
      University Staff, University Staff / Employees in Training, Academic Staff / Faculty, Faculty /
@@ -439,6 +444,10 @@ body {
   --inverse-bg: var(--surface-raised);
   --inverse-ink: var(--mantine-color-text);
   --inverse-edge: var(--hairline-strong);
+  --inverse-muted: var(--mantine-color-dimmed);
+  --inverse-chip: rgba(255, 255, 255, 0.07);
+  --inverse-button-bg: var(--mantine-color-text);
+  --inverse-button-ink: var(--base);
   /* On the #141619 card: 4.1 / 7.17 / 5.8 / 4.23 / 6.61. */
   --cat-academic: var(--mantine-color-accent-5);
   --cat-university: var(--mantine-color-orange-4);
@@ -1648,12 +1657,12 @@ button:active,
    Extracted from `.hero-dist`, which was the only surface with it and is now simply the first
    wearer — the computed values are unchanged. The rule it obeys is the one the failures recorded
    above produced: glass needs a backdrop with structure worth softening that nobody needs to read.
-   That is why it goes on the selection tray and the Reports mobile ledger (page content passes
-   beneath both) and not on the back-to-top button, the Reports desktop rail, or the jump nav — see
-   the notes at each of those.
+   That is why it goes on the Reports mobile ledger (page content passes beneath it) and not on the
+   back-to-top button, the Reports desktop rail, or the jump nav — see the notes at each of those. (The
+   compare bar wore it until it became the page's inverse: `.compare-bar`.)
 
    The tint is a knob rather than a constant so a surface can raise it if its backdrop demands, but
-   55% is right for all three wearers: measured, the fill is never what separates a floating surface
+   55% is right for its wearers: measured, the fill is never what separates a floating surface
    from the page here — even a fully OPAQUE white card is only dE ~2.8 from the light canvas. The
    border and the shadow do the separating (which is why the dark shadow fix had to land first), and
    the blur is what makes it read as glass rather than as a weak fill. */
@@ -1679,6 +1688,35 @@ button:active,
     -webkit-backdrop-filter: none;
   }
 }
+
+/* The compare set, floating over the foot of every page: the page's inverse, as a readout is (ink with
+   white words; dark, the raised surface with an edge, since an ink pill on a near-black page would not
+   be seen). Its words are the inverse's: the count and "Clear" quieter, the chips a faint white, one
+   light button (Compare) and the accent one (Raise case). */
+.compare-bar {
+  background: var(--inverse-bg);
+  color: var(--inverse-ink);
+  border-radius: var(--mantine-radius-lg);
+  padding: 8px 8px 8px 18px;
+  box-shadow: 0 0 0 1px var(--inverse-edge), 0 12px 32px rgba(18, 23, 26, 0.28), 0 2px 6px rgba(18, 23, 26, 0.18);
+}
+.compare-bar[data-phone] { padding: 8px 8px 8px 14px; }
+.compare-count { color: var(--inverse-muted); }
+.compare-divider { width: 1px; align-self: stretch; margin: 4px 2px; background: rgba(255, 255, 255, 0.16); flex-shrink: 0; }
+[data-mantine-color-scheme='dark'] .compare-divider { background: var(--hairline-strong); }
+.compare-chip { background: var(--inverse-chip); border-radius: var(--mantine-radius-xs); }
+.compare-chip-icon { color: var(--inverse-muted); }
+.compare-bar .compare-chip-x,
+.compare-bar .compare-text-button { color: var(--inverse-muted); }
+.compare-bar .compare-chip-x:hover,
+.compare-bar .compare-text-button:hover { color: var(--inverse-ink); background: var(--inverse-chip); }
+.compare-bar .compare-bar-compare { background: var(--inverse-button-bg); color: var(--inverse-button-ink); }
+.compare-bar .compare-bar-compare:hover { background: color-mix(in srgb, var(--inverse-button-bg) 88%, var(--inverse-bg)); }
+.compare-bar .compare-bar-case { background: var(--mantine-color-accent-6); color: #fff; }
+.compare-bar .compare-bar-case:hover { background: var(--mantine-color-accent-7); }
+/* Not yet (one item, or no person): still in its place, faded, and saying why on hover. */
+.compare-bar .compare-bar-compare[data-disabled],
+.compare-bar .compare-bar-case[data-disabled] { opacity: 0.45; cursor: not-allowed; }
 
 .hero-dist {
   position: relative;

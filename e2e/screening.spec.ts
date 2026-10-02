@@ -14,8 +14,8 @@ test('screening a school renders ranked rows and drafts a report', async ({ page
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
   expect(await rows.count()).toBeGreaterThan(0);
 
-  // Capture the drafted person's name so we can assert the report opens ON them (not whatever the
-  // tray's existing primary happened to be).
+  // Capture the drafted person's name so we can assert the report opens ON them (not whoever was first
+  // in the compare set).
   const draftedName = (await rows.first().locator('td').first().innerText()).trim();
   expect(draftedName.length).toBeGreaterThan(0);
 

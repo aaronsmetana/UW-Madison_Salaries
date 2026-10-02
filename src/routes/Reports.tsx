@@ -64,7 +64,7 @@ export default function Reports() {
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
-  const { items, add, remove, primaryId } = useTray();
+  const { items, add, remove } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = fmtToday();
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
@@ -97,15 +97,12 @@ export default function Reports() {
 
   const [subjectKey, setSubjectKey] = useState<string | null>(() => params.get('subject'));
   useEffect(() => {
-    // Seed the subject from the tray's chosen "Subject" (primaryId) when none/invalid; the in-report
-    // Select still overrides afterward. A subject seeded from ?subject= (above) is left alone as long
-    // as it's still a valid tray member.
-    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) {
-      const seed = primaryId && persons.some((p) => p.id === primaryId) ? primaryId : persons[0].id;
-      setSubjectKey(seed);
-    }
+    // The first person in the compare set is the subject when none (or one no longer in the set) is
+    // chosen; the setup's Subject select chooses another. A subject from ?subject= (above) is left
+    // alone as long as it's still in the set.
+    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) setSubjectKey(persons[0].id);
     if (!persons.length && subjectKey) setSubjectKey(null);
-  }, [persons, subjectKey, primaryId]);
+  }, [persons, subjectKey]);
   const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
   const subjectFirst = subjectName.split(' ')[0] || 'They';
 
