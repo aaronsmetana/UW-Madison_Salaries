@@ -10,7 +10,7 @@ import {
   ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
 } from 'recharts';
-import { StatCard } from '../components/StatCard';
+import { StatCard, StatRow } from '../components/StatCard';
 import { CardTitle } from '../components/CardTitle';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { SortableTh, type SortState } from '../components/SortableTh';
@@ -250,7 +250,8 @@ export default function School() {
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
+      <Stack gap="lg">
+      <StatRow cols={{ base: 2, sm: 4 }}>
         <Stat label="Headcount" value={num(s?.headcount)} />
         <Stat label="Median" value={usd(s?.med)} />
         <Stat label="Mean" value={usd(s?.mean)} />
@@ -259,20 +260,20 @@ export default function School() {
         <Stat label="75th pctile" value={usd(s?.p75)} />
         <Stat label="90th pctile" value={usd(s?.p90)} />
         <Stat label="Range" value={`${usd(s?.lo)} – ${usd(s?.hi)}`} />
-      </SimpleGrid>
+      </StatRow>
 
       <Card withBorder padding="lg">
         <CardTitle>Pay-band utilization</CardTitle>
         {band && band.banded + band.floored > 0 ? (
           <>
-            <SimpleGrid cols={{ base: 2, sm: 4 }} className="school-band-stats">
+            <StatRow cols={{ base: 2, sm: 4 }} flush className="school-band-stats">
               <Stat label="Avg band position" value={band.avg_pos == null ? '—' : `${Math.round(band.avg_pos * 100)}%`} />
               {/* The denominator is the point: with only a couple of grades seeded, a bare "90" reads as a
                   school-wide finding when it covers a sliver of the graded population. */}
               <Stat label="People with a grade range" value={`${num(band.banded)} of ${num(band.graded)}`} />
               <Stat label="Over max" value={num(band.over_max)} />
               <Stat label="Below grade minimum" value={num(band.below_min)} />
-            </SimpleGrid>
+            </StatRow>
             {band.floored > 0 && (
               <Text size="xs" c="dimmed" mt="sm" className="school-band-floors">
                 {num(band.floored)} more {band.floored === 1 ? 'has a grade' : 'have grades'} HR publishes with a minimum only: counted
@@ -296,6 +297,7 @@ export default function School() {
           </Text>
         )}
       </Card>
+      </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="dist" pt="md">

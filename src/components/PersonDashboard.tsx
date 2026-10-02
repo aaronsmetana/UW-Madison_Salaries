@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Card, Table, Badge, SimpleGrid, Alert } from '@mantine/core';
+import { Stack, Title, Text, Card, Table, Badge, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine, Customized } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
@@ -28,7 +28,7 @@ import { PercentileNote } from './PercentileNote';
 import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
-import { StatCard } from './StatCard';
+import { StatCard, StatRow } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
@@ -368,7 +368,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       )}
 
       {/* Headline stats */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
+      <StatRow cols={{ base: 2, sm: 4 }}>
         <Stat label="Current salary" value={usd(lastSalary)} />
         <Stat label="Tenure" value={fmtYears(tenureYears)} />
         <Stat
@@ -386,7 +386,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Stat label="Among title peers" value={peerPct != null ? `more than ${peerPct}%` : '—'} />
         <Stat label="All-UW standing" value={standing?.uw != null ? `more than ${standing.uw}%` : '—'} />
         {standing?.sch != null && <Stat label={`Within ${latest?.school ?? 'school'}`} value={`more than ${standing.sch}%`} />}
-      </SimpleGrid>
+      </StatRow>
 
       {/* Salary over time */}
       <Card withBorder padding="lg">

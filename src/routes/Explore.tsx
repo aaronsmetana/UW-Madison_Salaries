@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Stack, Text, SimpleGrid, Group, Alert, Loader, Tabs, Anchor, Skeleton, Card, Select,
+  Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, Select,
 } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
-import { StatCard } from '../components/StatCard';
-import { Eyebrow } from '../components/Eyebrow';
+import { StatCard, StatRow, StatCell } from '../components/StatCard';
 import { SchoolsPanel } from '../components/SchoolsPanel';
 import { EarnersPanel } from '../components/EarnersPanel';
 import { TitlesPanel } from '../components/TitlesPanel';
@@ -78,24 +77,18 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
-  const railStyle = { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' } as const;
 
   if (loading || series.length < 2) {
     // Loading, the card is the loaded one's shape and height, line for line: the toggle's row, the figure, the
     // sparkline, the two pickers and the top-10% line. A label and one bar, it was half as tall, and the
     // row of tiles grew under the reader, taking the tabs below it down 60px (layout shift 0.23).
     return (
-      <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
-        <div aria-hidden style={railStyle} />
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Eyebrow>Median pay growth</Eyebrow>
-          <Skeleton height={28} width={116} radius="sm" />
-        </Group>
+      <StatCell label="Median pay growth" aside={<Skeleton height={28} width={116} radius="sm" />}>
         <Skeleton height={28} width={210} radius="sm" mt={6} />
         <Skeleton height={26} width={150} radius="sm" mt={6} />
         <Skeleton height={28} width={2 * PICKER_W + 22} radius="sm" mt={8} />
         <Skeleton height={18} width={130} radius="sm" mt={6} />
-      </Card>
+      </StatCell>
     );
   }
 
@@ -121,17 +114,17 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const toOpts = displaySeries.slice(fIdx + 1).map((s) => ({ value: s.id, label: pickLabel(s.label) }));
 
   return (
-    <Card padding="lg" style={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
-      <div aria-hidden style={railStyle} />
-      <Group justify="space-between" align="center" wrap="nowrap">
-        <Eyebrow>Median pay growth</Eyebrow>
+    <StatCell
+      label="Median pay growth"
+      aside={
         <SegmentedToggle
           size="xs"
           value={dollarMode}
           onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
           options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
         />
-      </Group>
+      }
+    >
       <Group align="baseline" gap={8} mt={6} wrap="nowrap">
         <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'pos' : 'red'}>
           {growth == null ? '—' : `${up ? '+' : ''}${(growth * 100).toFixed(1)}%`}
@@ -147,7 +140,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
           onChange={setToId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
       </Group>
       {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}{dollarMode === 'real' ? ' (nominal)' : ''}</Text>}
-    </Card>
+    </StatCell>
   );
 }
 
@@ -239,7 +232,7 @@ export default function Explore() {
     <Stack gap="lg">
       <PageHeader
         title="Divisions"
-        description="Every school and division side by side: how many people work there, what they are paid, and who earns the most. Add any of them to your tray to line them up on the Compare page."
+        description="Every school and division side by side: how many people work there, what they are paid, and who earns the most. Add any of them to your compare set to line them up on the Compare page."
       />
 
       {/* No page-wide search here: its table has its own filter, and finding a person, title or division is
@@ -269,7 +262,7 @@ export default function Explore() {
         <Loader />
       ) : (
         <div>
-          <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <StatRow cols={{ base: 1, sm: 3 }}>
             <Kpi
               label="Headcount"
               value={k?.headcount ?? null}
@@ -290,7 +283,7 @@ export default function Explore() {
                 </Stack>
               }
             />
-          </SimpleGrid>
+          </StatRow>
           {k && k.all_people > k.headcount && (
             <Text size="xs" c="dimmed" mt="xs">
               Headcount counts paid employees; {num(k.all_people - k.headcount)} unpaid $0 affiliate appointments

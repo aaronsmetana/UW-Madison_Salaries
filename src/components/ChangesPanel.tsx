@@ -14,7 +14,7 @@ import { usd, usdCompact, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
-import { StatCard } from './StatCard';
+import { StatCard, StatRow } from './StatCard';
 import { TipSurface } from './chart/ChartTooltip';
 import { ICON } from '../lib/ui';
 import { raiseBucketSql } from '../lib/raiseBuckets';
@@ -408,22 +408,22 @@ export function ChangesPanel() {
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 2, sm: 5 }}>
+      <StatRow cols={{ base: 2, sm: 5 }}>
         <Stat label="Continuing" value={num(s?.stayers)} />
         <Stat label="New hires" value={num(s?.joiners)} />
         <Stat label="Departures" value={num(s?.leavers)} />
         <Stat label="Title changes" value={num(s?.title_changes)} />
         <Stat label="Median raise" value={s?.median_raise == null ? '—' : pct(s.median_raise)} />
-      </SimpleGrid>
+      </StatRow>
 
       <Card withBorder padding="lg">
         <CardTitle mb="sm">Payroll change decomposition</CardTitle>
-        <SimpleGrid cols={{ base: 2, sm: 4 }}>
+        <StatRow cols={{ base: 2, sm: 4 }} flush>
           <Stat label="Total change" value={usd(d?.total_change)} />
           <Stat label="From raises (continuing)" value={usd(d?.raises)} />
           <Stat label="From new hires" value={usd(d?.hires)} />
           <Stat label="From departures" value={usd(d?.departures)} />
-        </SimpleGrid>
+        </StatRow>
         <Text size="xs" c="dimmed" mt="xs">Raises + new hires + departures reconcile to the total change.</Text>
         {equity && equity.top10_share != null && (
           <Text size="sm" mt="sm">

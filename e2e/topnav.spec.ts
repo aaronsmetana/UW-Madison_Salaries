@@ -113,7 +113,7 @@ test('on a phone the trail and the release share the top row without running off
 test('the footer is the page\'s last thing: it covers nothing, and sits at the bottom of a short page', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
-  await expect(page.getByText('Others with this title')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('heading', { name: 'Others with this title' })).toBeVisible({ timeout: 60_000 });
   const foot = page.locator('.app-footer');
   // At the top of a long page the window's bottom row is the page, not the footer.
   const atBottom = await page.evaluate(() => {

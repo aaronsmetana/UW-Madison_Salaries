@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader, Group, Text, Transition, Alert, Button, Card, Skeleton, Stack } from '@mantine/core';
+import { Loader, Group, Text, Transition, Alert, Button, Skeleton, Stack } from '@mantine/core';
 import { IconAlertTriangle, IconWifiOff } from '@tabler/icons-react';
 import { useIsFetching } from '@tanstack/react-query';
 import { useDbReady, useSummary } from '../lib/hooks';
@@ -106,17 +106,6 @@ export function LoadingState({ label = 'Loading…' }: { label?: string }) {
       <Loader size="sm" />
       <Text size="sm" c="dimmed">{label}</Text>
     </Group>
-  );
-}
-
-/** A single stat-card-shaped placeholder — an eyebrow-label bar over a value bar, same footprint as
- *  StatCard, so first-load doesn't jump the layout once real content arrives. */
-export function StatSkeleton({ size = 'md' }: { size?: 'hero' | 'md' | 'sm' }) {
-  return (
-    <Card padding={size === 'hero' ? 'xl' : 'lg'} style={{ height: '100%' }}>
-      <Skeleton height={11} width="50%" radius="sm" mb={10} />
-      <Skeleton height={size === 'hero' ? 32 : 22} width="70%" radius="sm" />
-    </Card>
   );
 }
 

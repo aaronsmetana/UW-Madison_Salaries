@@ -83,7 +83,6 @@
    three-step elevation (canvas → surface → raised) that every card, header, popover, and tooltip in
    the app inherits for free. Light mode already worked this way; this just makes it symmetrical. */
 :root {
-  --accent-grad: linear-gradient(135deg, #22778e, #145f72);
   /* Histogram bars: the population, in the same neutral every other chart draws the population in
      (MARK_PEER — see markers.tsx). It used to be a pale teal, which was fine until "this person"
      stopped being a fourth teal and became MARK_SELF: in dark mode the old bar colour WAS the
@@ -742,17 +741,6 @@ path.recharts-tooltip-cursor {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--mantine-shadow-md);
 }
 
-/* Hover on an interactive card: the border comes forward. It used to lift 2px and grow a shadow —
-   two elevation signals for something that never leaves the page. Changing the edge says "this
-   responds" without pretending the card is floating. */
-.card-hover {
-  transition: border-color var(--dur-fast) var(--ease);
-}
-.card-hover:hover {
-  --paper-border-color: var(--hairline-strong);
-  border-color: var(--hairline-strong);
-}
-
 /* Three control heights (P1). Measured across every page, controls came in fourteen: buttons at 22, 26, 30
    and 36, fields at 30, 36 and 42, icon buttons at 22 and 34, segmented controls at 34, tabs at 37. Now:
    compact 28 (a chart's footer, a table's row actions, dense filters, a segmented choice), default 36 (page
@@ -1259,31 +1247,58 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
   font-weight: 700;
 }
 
-/* Person stat row: a dominant "Actual pay" lead cell + three quieter supporting cells.
-   Reflows to a 2×2 grid on narrow viewports, the lead cell spanning both columns. */
-.stat-cells {
+/* A page's figures in one card (StatRow): cells on a grid, parted by a pixel of each cell's own shadow above
+   and to its left, which the card (or, inside a card, the row) clips at its edge — so a divider only ever
+   stands between two cells, on whatever rows a narrower screen wraps into. */
+.stat-row-card, .stat-row-flush { overflow: hidden; }
+.stat-row { display: grid; grid-template-columns: var(--stat-cols-base); }
+@media (min-width: 48em) { .stat-row { grid-template-columns: var(--stat-cols-sm); } }
+@media (min-width: 62em) { .stat-row { grid-template-columns: var(--stat-cols-md); } }
+.stat-cell {
+  display: block;
+  min-width: 0;
+  padding: 20px 24px;
+  box-shadow: -1px 0 0 var(--hairline-soft), 0 -1px 0 var(--hairline-soft);
+}
+/* Inside a card the row has the card's padding round it already: its cells' words line up with the card's
+   (the row reaches into that padding by a cell's own, and clips the first column's divider there). */
+.stat-row-flush { margin-inline: -16px; }
+.stat-row-flush .stat-cell { padding: 12px 16px; }
+@media (max-width: 47.99em) { .stat-cell { padding: 16px; } }
+.stat-cell-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
+/* A cell that opens what it summarises (a tab, a page): the pointer's grey, as a row's. */
+.stat-cell-open { cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }
+.stat-cell-open:hover { background: var(--hover-bg); }
+
+/* One pay in its group's spread (SpreadMark): a hairline from lowest to highest, the middle 50% as every chart
+   draws it, the median a short tick, the person their own mark — their teal, ringed in the card's colour. */
+.spread-mark { margin-top: 12px; }
+.spread-mark-plot { position: relative; height: 16px; margin-inline: 7px; }
+.spread-mark-plot > span { position: absolute; }
+.spread-mark-track { left: 0; right: 0; top: 7px; height: 2px; border-radius: 1px; background: var(--hairline-strong); }
+.spread-mark-band { top: 4px; height: 8px; border-radius: 2px; background: var(--band-fill); box-shadow: inset 0 0 0 1px var(--band-edge); }
+.spread-mark-median { top: 2px; width: 2px; height: 12px; margin-left: -1px; background: var(--text-faint); }
+.spread-mark-self {
+  top: 1px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
+  background: var(--mark-self); box-shadow: 0 0 0 2px var(--mantine-color-body);
+}
+.spread-mark-ends { display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: var(--text-faint); }
+
+/* Two growths as bars (GrowthBars): the person's in their teal, typical raises' in the population's grey. */
+.growth-bars { display: grid; gap: 6px; margin-top: 12px; }
+.growth-bar-row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: 7.5em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
 }
-@media (max-width: 640px) {
-  .stat-cells {
-    grid-template-columns: 1fr 1fr;
-  }
-  .stat-cells > .stat-lead {
-    grid-column: span 2;
-  }
-}
-/* A phone: one card to a row. Two abreast left each about 170px, and a card's sentences ("over 2.0 yrs",
-   "5 snapshots · since Sep 2024") broke on every line. */
-@media (max-width: 480px) {
-  .stat-cells {
-    grid-template-columns: 1fr;
-  }
-  .stat-cells > .stat-lead {
-    grid-column: auto;
-  }
-}
+.growth-bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.growth-bar-track { height: 6px; border-radius: 3px; background: var(--hairline-soft); overflow: hidden; }
+.growth-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--bar); }
+.growth-bar-row[data-self] .growth-bar-fill { background: var(--mark-self); }
+.growth-bar-row[data-self] .growth-bar-value { color: var(--mantine-color-text); font-weight: 600; }
 
 /* Row add buttons (Schools, Titles, Top earners, a title's people, a person's peers): quiet until
    their row is hovered or focused, so a long list isn't a wall of repeated accent buttons, and full
@@ -1397,7 +1412,6 @@ button:active,
   .mantine-Button-root:active,
   .mantine-ActionIcon-root:active { transform: none; }
   .recharts-bar-rectangle path { transition: none; }
-  .card-hover { transition: none; }
 }
 
 /* ── Landing hero: tasteful polish + a subtle motion layer (all reduced-motion guarded at the bottom). ── */

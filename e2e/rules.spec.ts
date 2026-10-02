@@ -419,9 +419,11 @@ test.describe('The person page reports the reporting change and trims what repea
     );
     const without = ((o.p1 / o.p0) / (11 / 9) - 1) * 100;
     await page.goto(`./person/${encodeURIComponent(pk)}`);
+    // The person's growth bar is drawn without the change, and the note under the bars names it.
     const note = page.locator('[data-reporting-note]');
     await expect(note).toBeVisible({ timeout: 60_000 });
-    await expect(note).toContainText(`${without > 0 ? '+' : ''}${without.toFixed(1)}% without the Sep 2025 change`);
+    await expect(note).toContainText('leave out the Sep 2025 change');
+    await expect(page.locator('.growth-bar-row[data-self] .growth-bar-value')).toHaveText(`${without > 0 ? '+' : ''}${without.toFixed(1)}%`);
   });
 
   test('one Pay column when the rate is the pay on every row, and the school once', async ({ page }) => {

@@ -186,13 +186,13 @@ for (const [name, path] of [['person', `./person/${encodeURIComponent('aaronsmet
 }
 
 /**
- * A phone: a person's stat cards one to a row. Two abreast left each about 170px, and every line in them
- * broke ("over 4.8 / yrs", "5 snapshots · since / Sep 2024").
+ * A phone: a person's headline figures one to a row. Two abreast left each about 170px, and every line in
+ * them broke ("over 4.8 / yrs", "5 snapshots · since / Sep 2024").
  */
-test(`a person's stat cards take the full width at ${PHONE.width}px, and no line in them breaks`, async ({ page }) => {
+test(`a person's headline figures take the full width at ${PHONE.width}px, and no line in them breaks`, async ({ page }) => {
   await page.setViewportSize(PHONE);
   await page.goto(`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`);
-  const grid = page.locator('.stat-cells');
+  const grid = page.locator('.person-figures .stat-row');
   await expect(grid).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1_500);
   const r = await grid.evaluate((g) => ({
@@ -209,9 +209,9 @@ test(`a person's stat cards take the full width at ${PHONE.width}px, and no line
       .filter((t) => t.lines > 1)
       .map((t) => t.text)),
   }));
-  expect(r.cards.length, 'too few stat cards to be checking anything').toBeGreaterThanOrEqual(3);
-  for (const w of r.cards) expect(Math.abs(w - r.width), `a stat card is ${Math.round(w)}px of ${Math.round(r.width)}px`).toBeLessThanOrEqual(1);
-  expect(r.broken, 'a line in a stat card breaks').toEqual([]);
+  expect(r.cards.length, 'too few figures to be checking anything').toBeGreaterThanOrEqual(4);
+  for (const w of r.cards) expect(Math.abs(w - r.width), `a figure is ${Math.round(w)}px of ${Math.round(r.width)}px`).toBeLessThanOrEqual(1);
+  expect(r.broken, 'a line in a figure breaks').toEqual([]);
 });
 
 /**

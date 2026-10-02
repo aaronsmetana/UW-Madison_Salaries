@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover,
-  ThemeIcon, Skeleton } from '@mantine/core';
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover, Skeleton,
+} from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
@@ -23,7 +23,7 @@ import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../li
 import { ttcRank } from '../lib/snapshotOrder';
 import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconTrendingUp, IconTrendingDown, IconMinus, IconClockHour4 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconArrowsDiff } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
@@ -44,9 +44,10 @@ import { ChartData } from '../components/ChartData';
 import { PercentileNote } from '../components/PercentileNote';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
-import { Eyebrow } from '../components/Eyebrow';
 import { CardTitle } from '../components/CardTitle';
 import { FactStrip } from '../components/FactStrip';
+import { StatRow, StatCell } from '../components/StatCard';
+import { SpreadMark, GrowthBars } from '../components/FigureBars';
 import { CompareSetButton } from '../components/CompareSetButton';
 import { HistoryTable } from '../components/HistoryTable';
 import { TrayButton } from '../components/TrayButton';
@@ -896,136 +897,120 @@ export default function Person() {
 
         <Tabs.Panel value="overview" pt="md">
           <Stack gap="lg" className="tab-rise">
-            {/* Lead + supporting stat row: Actual pay dominates; Salary growth · Tenure are quieter. */}
-            <div className="stat-cells">
-              {/* Lead — Actual pay: signature accent rail + a date chip top-right; the value counts up on mount.
-                  Clicking jumps to the Salary trend tab, where this number is charted over time. */}
-              <Card
-                withBorder
-                radius="sm"
-                p="lg"
-                className="stat-lead card-hover"
-                bg="var(--mantine-color-default-hover)"
-                style={{ position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
-                role="button"
-                tabIndex={0}
-                onClick={() => setTab('trends')}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('trends'); } }}
+            {/* The headline figures, one card of four cells: what this person is paid, where that sits among
+                everyone with the title, how it grew against what typical raises alone would have given, and how
+                long they have been here. Pay, growth and tenure open the tab that shows them in full. */}
+            <StatRow cols={{ base: 1, sm: 2, md: '1.2fr 1fr 1fr .8fr' }} label="Headline figures" className="person-figures">
+              <StatCell
+                label="Actual pay"
+                onOpen={() => setTab('trends')}
+                aside={latest?.snapshot_label && (
+                  <Badge variant="light" color="accent" radius="xs" style={{ fontWeight: 600, flexShrink: 0 }}>
+                    {latest.snapshot_label}
+                  </Badge>
+                )}
               >
-                <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'var(--accent-grad)' }} />
-                <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
-                  <Eyebrow>Actual pay</Eyebrow>
-                  {latest?.snapshot_label && (
-                    <Badge variant="light" color="accent" radius="sm" style={{ fontWeight: 600, flexShrink: 0 }}>
-                      {latest.snapshot_label}
-                    </Badge>
-                  )}
-                </Group>
                 <Group gap={8} align="center" wrap="nowrap" mt={6}>
-                  <Text fw={700} style={{ fontSize: 40, letterSpacing: '-0.02em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
+                  <Text fw={700} style={{ fontSize: 40, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
-                    <Badge variant="light" color="gray" radius="sm" style={{ fontWeight: 600 }}>
+                    <Badge variant="light" color="gray" radius="xs" style={{ fontWeight: 600 }}>
                       {+lastFte.toFixed(2)} FTE
                     </Badge>
                   )}
                 </Group>
-                {latest?.title && <Text size="sm" c="dimmed" mt={4}>{latest.title}</Text>}
-                {partTime && (
-                  <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>
+                {latest?.title && (
+                  <Text size="sm" c="dimmed" mt={4}>
+                    {latest.title}{latest.comp_basis ? ` · ${fmtBasis(latest.comp_basis)} basis` : ''}
+                  </Text>
                 )}
-              </Card>
+                {partTime && <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>}
+              </StatCell>
 
-              {/* Salary growth — the change %, with the timeframe inline so the window reads as part of the
-                  number; the snapshot count / window-start (and any rate divergence) sit below as context.
-                  Clicking jumps to the Salary trend tab, same as the lead card. */}
-              <Card
-                withBorder
-                radius="sm"
-                p="lg"
-                className="card-hover"
-                style={{ cursor: 'pointer' }}
-                role="button"
-                tabIndex={0}
-                onClick={() => setTab('trends')}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('trends'); } }}
-              >
-                <Group gap={6} wrap="nowrap">
-                  {/* The arrow follows the sign, as DeltaChip's does: a pay cut drew an up arrow in red. */}
-                  <ThemeIcon
-                    size={20}
-                    radius="md"
-                    variant="light"
-                    color={growthTrend === 'none' || growthTrend === 'flat' ? 'gray' : growthTrend === 'down' ? 'red' : 'pos'}
-                    data-trend={growthTrend}
-                  >
-                    {growthTrend === 'down' ? <IconTrendingDown size={ICON.compact} /> : growthTrend === 'up' ? <IconTrendingUp size={ICON.compact} /> : <IconMinus size={ICON.compact} />}
-                  </ThemeIcon>
-                  <Eyebrow>Salary growth</Eyebrow>
-                </Group>
+              {/* Where the pay sits among everyone with the title (or, with "Same school", among those in the
+                  person's school): the share paid less, the spread it sits in, and the rank. The sentence sat in
+                  the chart's card; the chart now shows it, and this says it. */}
+              <StatCell label="Paid more than">
+                {cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo && cohortPct != null ? (
+                  <>
+                    <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
+                      <Text fw={700} style={{ fontSize: 24, lineHeight: 1.15 }}>{Math.round(cohortPct)}%</Text>
+                      <Text size="xs" c="dimmed">
+                        of the {num(cohortStats.n - 1)} {cohort === 'school' ? 'others with this title in the school' : 'others with this title'}
+                      </Text>
+                    </Group>
+                    <SpreadMark
+                      lo={cohortStats.lo} p25={cohortStats.p25} med={cohortStats.med} p75={cohortStats.p75} hi={cohortStats.hi}
+                      value={cohortSelfPay ?? lastSalary ?? cohortStats.med}
+                      label={`${usd(cohortSelfPay ?? lastSalary)} in a spread from ${usd(cohortStats.lo)} to ${usd(cohortStats.hi)}, median ${usd(cohortStats.med)}`}
+                    />
+                    {cohortRank != null && (
+                      <Text size="xs" c="dimmed" mt={6}>Rank {cohortRank} of {num(cohortList.length)} · median {fmtK(cohortStats.med)}</Text>
+                    )}
+                  </>
+                ) : (
+                  // A title of one, or one where everyone is paid the same: there is no share to state.
+                  <Text size="sm" c="dimmed" mt={6}>
+                    {peer && peer.n === 1
+                      ? `The only ${latest?.title ?? 'person with this title'} at UW.`
+                      : cohortStats && cohortStats.n >= 2 && cohortStats.hi === cohortStats.lo
+                        ? `Everyone with this title is paid ${usd(cohortStats.lo)}.`
+                        : '—'}
+                  </Text>
+                )}
+              </StatCell>
+
+              <StatCell label="Salary growth" onOpen={() => setTab('trends')}>
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text
                     fw={700}
                     c={totalChange == null ? undefined : totalChange < 0 ? 'red' : 'pos'}
-                    style={{ fontSize: 24, lineHeight: 1.1 }}
+                    style={{ fontSize: 24, lineHeight: 1.15 }}
+                    data-trend={growthTrend}
                   >
                     {sgnPct(animatedGrowth)}
                   </Text>
-                  {spanYears != null && spanYears >= 0.1 && (
-                    <Text size="sm" c="dimmed">over {fmtYears(spanYears)}</Text>
-                  )}
+                  {spanYears != null && spanYears >= 0.1 && <Text size="xs" c="dimmed">over {fmtYears(spanYears)}</Text>}
                 </Group>
+                {/* Against what typical raises alone would have given over the same steps. Across a reporting
+                    change (a 9-month member's pay grew ×11/9 in Sep 2025 without a dollar more) both bars leave
+                    its factor out, so they stand on the same footing; the note under them says so. */}
+                {totalChange != null && typicalGrowth != null && (() => {
+                  const f = reporting.changes.length > 0 ? reporting.factor : 1;
+                  const mine = (1 + totalChange) / f - 1;
+                  const typical = (1 + typicalGrowth) / f - 1;
+                  return (
+                    <GrowthBars rows={[
+                      { name: selfLabel, value: mine, self: true, text: sgnPct(mine) },
+                      { name: 'Typical raises', value: typical, text: sgnPct(typical) },
+                    ]} />
+                  );
+                })()}
                 {oldestLabel && (
-                  <Text size="xs" c="dimmed" mt={4}>
-                    {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} · since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
+                  <Text size="xs" c="dimmed" mt={8}>
+                    {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
                   </Text>
                 )}
-                {typicalGrowth != null && reporting.changes.length === 0 && (
-                  <Text size="xs" c="dimmed" mt={2} data-typical-growth>
-                    typical raises alone: {sgnPct(typicalGrowth)}
-                  </Text>
-                )}
-                {/* Across a reporting change both figures carry its factor; given without it, they are
-                    given on the same footing — "+19.4% without it" beside "typical: +40.7%" (with it) read
-                    as if typical raises had outrun this person's. */}
                 {reporting.changes.length > 0 && totalChange != null && (
                   <Text size="xs" c="dimmed" mt={2} data-reporting-note>
-                    {sgnPct((1 + totalChange) / reporting.factor - 1)} without the {reporting.changes[0].sinceLabel} change
-                    in {reporting.changes[0].what} (×{reporting.changes[0].ratio})
-                    {typicalGrowth != null && <>; typical raises alone: <span data-typical-growth>{sgnPct((1 + typicalGrowth) / reporting.factor - 1)}</span></>}.
+                    {typicalGrowth != null ? 'The bars leave out' : `${sgnPct((1 + totalChange) / reporting.factor - 1)} without`} the {reporting.changes[0].sinceLabel} change
+                    in {reporting.changes[0].what} (×{reporting.changes[0].ratio}), which is not pay.
                   </Text>
                 )}
-              </Card>
+              </StatCell>
 
-              {/* Tenure — clicking jumps to the History tab, where the title/date timeline lives. */}
-              <Card
-                withBorder
-                radius="sm"
-                p="lg"
-                className="card-hover"
-                style={{ cursor: 'pointer' }}
-                role="button"
-                tabIndex={0}
-                onClick={() => setTab('history')}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('history'); } }}
-              >
-                <Group gap={6} wrap="nowrap">
-                  <ThemeIcon size={20} radius="md" variant="light" color="accent">
-                    <IconClockHour4 size={ICON.compact} />
-                  </ThemeIcon>
-                  <Eyebrow>Tenure</Eyebrow>
-                </Group>
-                <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.1 }}>
+              <StatCell label="Tenure" onOpen={() => setTab('history')}>
+                <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.15 }}>
                   {animatedTenure == null ? '—' : (
                     <>{animatedTenure.toFixed(1)}<Text span fw={500} c="dimmed" size="sm"> yrs</Text></>
                   )}
                 </Text>
                 {hireYear && (
-                  <Text size="xs" c="dimmed" mt={2}>
-                    since {hireYear}{latest?.snapshot_label ? ` · as of ${latest.snapshot_label}` : ''}
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Since {hireYear}{latest?.snapshot_label ? ` · as of ${latest.snapshot_label}` : ''}
                   </Text>
                 )}
-              </Card>
-            </div>
+              </StatCell>
+            </StatRow>
 
             {peer && peer.n === 1 && jobCode && (
               <Card withBorder padding="lg">

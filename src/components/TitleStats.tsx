@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Stack, Card, Text, Group, Table, Badge, Anchor, SimpleGrid, ScrollArea, TextInput, Alert, ActionIcon, Skeleton,
+  Stack, Card, Text, Group, Table, Badge, Anchor, ScrollArea, TextInput, Alert, ActionIcon, Skeleton,
 } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
@@ -20,7 +20,7 @@ import { SortableTh, type SortState } from './SortableTh';
 import { GLOSSARY } from '../lib/glossary';
 import { ChartSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
-import { StatCard } from './StatCard';
+import { StatCard, StatRow } from './StatCard';
 import { ICON } from '../lib/ui';
 import { PercentileNote } from './PercentileNote';
 
@@ -28,6 +28,9 @@ import { PercentileNote } from './PercentileNote';
 /** The loading distribution card's chart block: the histogram (284px) and its footer of controls, so the
  *  card is the loaded one's height. */
 const DIST_LOADING_H = 322;
+
+/** The title's figures: its median leads, the two spreads beside it from `md` up. */
+const TITLE_COLS = { base: 1, md: '1.4fr 1fr 1fr' };
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
@@ -166,14 +169,12 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <SimpleGrid key="stats" cols={{ base: 1, sm: 2 }} spacing="lg">
-          <StatCard size="hero" lead label={`Median salary · this title${scopeLabel}`}
+        <StatRow key="stats" cols={TITLE_COLS}>
+          <StatCard size="hero" label={`Median salary · this title${scopeLabel}`}
             value={<Skeleton height={42} width={180} radius="sm" />} sub={<Skeleton height={23} width={170} radius="sm" />} />
-          <SimpleGrid cols={2} spacing="lg">
-            <StatCard size="sm" label="Range (p25–p75)" value={<Skeleton height={28} width={150} radius="sm" />} />
-            <StatCard size="sm" label="Spread (min–max)" value={<Skeleton height={28} width={150} radius="sm" />} />
-          </SimpleGrid>
-        </SimpleGrid>
+          <StatCard size="sm" label="Range (p25–p75)" value={<Skeleton height={28} width={150} radius="sm" />} />
+          <StatCard size="sm" label="Spread (min–max)" value={<Skeleton height={28} width={150} radius="sm" />} />
+        </StatRow>
         <Card key="dist" withBorder padding="lg">
           <CardTitle>Salary distribution{scopeLabel}</CardTitle>
           <ChartSkeleton height={DIST_LOADING_H} />
@@ -186,19 +187,16 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   return (
     <Stack gap="lg">
-      <SimpleGrid key="stats" cols={{ base: 1, sm: 2 }} spacing="lg">
+      <StatRow key="stats" cols={TITLE_COLS}>
         <StatCard
           size="hero"
-          lead
           label={`Median salary · this title${scopeLabel}`}
           value={usd(s.med)}
           sub={`${num(s.n)} ${s.n === 1 ? 'person' : 'people'} · job code ${jobCode}`}
         />
-        <SimpleGrid cols={2} spacing="lg">
-          <Stat label="Range (p25–p75)" value={`${usd(s.p25)} – ${usd(s.p75)}`} />
-          <Stat label="Spread (min–max)" value={`${usd(s.lo)} – ${usd(s.hi)}`} />
-        </SimpleGrid>
-      </SimpleGrid>
+        <Stat label="Range (p25–p75)" value={`${usd(s.p25)} – ${usd(s.p75)}`} />
+        <Stat label="Spread (min–max)" value={`${usd(s.lo)} – ${usd(s.hi)}`} />
+      </StatRow>
 
       {pinned && s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && (
         <Card withBorder padding="lg">

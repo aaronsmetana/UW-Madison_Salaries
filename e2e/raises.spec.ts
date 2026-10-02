@@ -179,7 +179,7 @@ test("the trend tooltip says the same about a raise, and adds the title's own ty
   await expect(tip).toContainText(`for this title ${pct(t.med)} (${t.n.toLocaleString('en-US')} people)`);
 });
 
-test("a 9-month member's growth card gives typical raises without the reporting change too", async ({ page }) => {
+test("a 9-month member's growth gives typical raises without the reporting change too", async ({ page }) => {
   const meds = await oracle<{ med: number }>(`${RAISES} SELECT median(r) med FROM cr GROUP BY fr, dfr ORDER BY dfr`);
   // In every canonical snapshot, one appointment each, 9-month pay reported the new way from Sep 2025.
   const [p] = await oracle<{ pk: string }>(
@@ -191,10 +191,12 @@ test("a 9-month member's growth card gives typical raises without the reporting 
   );
   const typical = meds.reduce((t, m) => t * (1 + m.med), 1) - 1;
   await page.goto(`./person/${encodeURIComponent(p.pk)}`);
+  // The bars stand on one footing, the reporting change left out, and the note under them says so.
   const note = page.locator('[data-reporting-note]');
   await expect(note).toBeVisible({ timeout: 60_000 });
-  await expect(note.locator('[data-typical-growth]')).toHaveText(`${typical > 0 ? '+' : ''}${(typical * 100).toFixed(1)}%`);
-  // One statement of typical growth, on the footing the note gives: not a second one carrying ×11/9.
+  await expect(note).toContainText('The bars leave out');
+  await expect(page.locator('.growth-bars [data-typical-growth]')).toHaveText(`${typical > 0 ? '+' : ''}${(typical * 100).toFixed(1)}%`);
+  // One statement of typical growth, on that footing: not a second one carrying ×11/9.
   await expect(page.locator('[data-typical-growth]')).toHaveCount(1);
 });
 

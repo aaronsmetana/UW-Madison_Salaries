@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Stack, Card, Text, SimpleGrid } from '@mantine/core';
+import { Stack, Card, Text, Skeleton } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Customized,
   ReferenceArea, ReferenceLine,
@@ -12,8 +12,8 @@ import { sqlStr } from '../lib/duckdb';
 import { whereAll, filterKey } from '../lib/queries';
 import { num, pct, spanLabel, fmtYears } from '../lib/format';
 import { ChartData } from './ChartData';
-import { StatCard } from './StatCard';
-import { StatSkeleton, ChartSkeleton } from './Loading';
+import { StatCard, StatRow } from './StatCard';
+import { ChartSkeleton } from './Loading';
 import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
 import { SvgPill } from './chart/pills';
@@ -62,6 +62,9 @@ function AreaPillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; 
   const cy = viewBox.y + 12;
   return <SvgPill x={cx} y={cy} text={text} fontWeight={500} />;
 }
+
+/** The panel's three figures, named once for the loaded row and its placeholder. */
+const FIGURES = ['Median tenure · current staff', 'Hired in the last 5 years', 'Snapshots span'] as const;
 
 export function CohortPanel() {
   const reduceMotion = prefersReducedMotion();
@@ -153,11 +156,9 @@ export function CohortPanel() {
   if (isFetching && !data) {
     return (
       <Stack gap="lg">
-        <SimpleGrid cols={{ base: 1, sm: 3 }}>
-          <StatSkeleton size="sm" />
-          <StatSkeleton size="sm" />
-          <StatSkeleton size="sm" />
-        </SimpleGrid>
+        <StatRow cols={{ base: 1, sm: 3 }}>
+          {FIGURES.map((label) => <StatCard key={label} size="sm" label={label} value={<Skeleton height={28} width={120} radius="sm" />} />)}
+        </StatRow>
         <Card withBorder padding="lg"><ChartSkeleton height={300} /></Card>
         <Card withBorder padding="lg"><ChartSkeleton height={280} /></Card>
       </Stack>
@@ -166,11 +167,11 @@ export function CohortPanel() {
 
   return (
     <Stack gap="lg">
-      <SimpleGrid cols={{ base: 1, sm: 3 }}>
-        <StatCard size="sm" label="Median tenure · current staff" value={fmtYears(t?.med)} />
-        <StatCard size="sm" label="Hired in the last 5 years" value={t && t.n ? pct(t.recent5 / t.n) : '—'} sub={t ? `${num(t.recent5)} of ${num(t.n)}` : undefined} />
-        <StatCard size="sm" label="Snapshots span" value={latest ? `2021 – ${latestYear}` : '—'} sub="data begins Nov 2021" />
-      </SimpleGrid>
+      <StatRow cols={{ base: 1, sm: 3 }}>
+        <StatCard size="sm" label={FIGURES[0]} value={fmtYears(t?.med)} />
+        <StatCard size="sm" label={FIGURES[1]} value={t && t.n ? pct(t.recent5 / t.n) : '—'} sub={t ? `${num(t.recent5)} of ${num(t.n)}` : undefined} />
+        <StatCard size="sm" label={FIGURES[2]} value={latest ? `2021 – ${latestYear}` : '—'} sub="data begins Nov 2021" />
+      </StatRow>
 
       <Card withBorder padding="lg">
         <CardTitle
