@@ -30,46 +30,54 @@ const boxOf = (r: DOMRect | { x: number; y: number; width: number; height: numbe
 const overlaps = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 /**
- * Piled up from the axis, a small title read as pebbles on a floor: nearly every dot on the axis
- * line and a few short towers. Centred on a middle row, a cluster bulges both ways into a shape. The
- * middle row is the one the packer fills first, so it holds the most dots; a strip stacked from the
- * floor has that row at the bottom and nothing under it.
- *
- * And the middle-50% box spans the population, not the lane above it where the subject's mark stands:
- * run up through that lane, it boxed the subject in with the people they are measured against.
+ * A beeswarm round a centreline (the person-page redesign): the people spread both ways from the line, as
+ * near it as their neighbours allow, so a cluster bulges into a shape — piled up from the axis, a small title
+ * read as pebbles on a floor. The subject is placed first, on the line, among the people they are measured
+ * against, the same size as everyone (their pip and their name say who they are). The middle-50% band is
+ * drawn behind the swarm and spans it.
  */
-test('the strip spreads its people both ways from a middle row, under the subject', async ({ page }) => {
+test('the strip spreads its people both ways from a centreline, the subject on it', async ({ page }) => {
   await open(page, AARON);
   await expect(page.locator('.peer-strip circle.chart-dot').first()).toBeAttached();
   const m = await page.locator('.peer-strip').evaluate((el) => {
     const svg = el.querySelector<SVGSVGElement>('svg:has(circle.chart-dot)')!;
-    const ys = [...svg.querySelectorAll('circle.chart-dot')].map((c) => Number(c.getAttribute('cy')));
+    const dots = [...svg.querySelectorAll('circle.chart-dot')].map((c) => ({ x: Number(c.getAttribute('cx')), y: Number(c.getAttribute('cy')), r: Number(c.getAttribute('r')) }));
+    const ys = dots.map((d) => d.y);
     const count = new Map<number, number>();
     for (const y of ys) count.set(y, (count.get(y) ?? 0) + 1);
     const mid = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
     const band = el.querySelector('rect.band-iqr')!;
     const mark = el.querySelector('.peer-strip-marker')!;
+    const markX = Number(mark.getAttribute('cx')), markY = Number(mark.getAttribute('cy'));
+    // Any two people closer than their two radii: overlapping dots.
+    let overlaps = 0;
+    const all = [...dots, { x: markX, y: markY, r: Number(mark.getAttribute('r')) }];
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (Math.hypot(all[i].x - all[j].x, all[i].y - all[j].y) < all[i].r + all[j].r - 0.01) overlaps++;
     return {
-      n: ys.length,
+      n: ys.length, mid, overlaps,
       above: ys.filter((y) => y < mid - 0.5).length,
       below: ys.filter((y) => y > mid + 0.5).length,
-      bandTop: Number(band.getAttribute('y')),
-      markBottom: Number(mark.getAttribute('cy')) + Number(mark.getAttribute('r')),
+      bandTop: Number(band.getAttribute('y')), bandBottom: Number(band.getAttribute('y')) + Number(band.getAttribute('height')),
+      top: Math.min(...ys) - 5, bottom: Math.max(...ys) + 5, markY, markR: Number(mark.getAttribute('r')),
     };
   });
   expect(m.n, 'the strip drew no dots').toBeGreaterThan(20);
-  expect(m.above, 'no dot sits above the middle row').toBeGreaterThan(0);
-  expect(m.below, 'no dot sits below the middle row: the strip is stacked on its floor').toBeGreaterThan(0);
-  expect(m.bandTop, "the middle-50% box runs up into the subject's lane").toBeGreaterThanOrEqual(m.markBottom);
+  expect(m.above, 'no dot sits above the line').toBeGreaterThan(0);
+  expect(m.below, 'no dot sits below the line: the strip is stacked on its floor').toBeGreaterThan(0);
+  expect(m.markY, 'the subject is not on the centreline').toBe(m.mid);
+  expect(m.markR, 'the subject is drawn larger than everyone else').toBe(5);
+  expect(m.overlaps, 'two people overlap').toBe(0);
+  expect(m.bandTop, 'the middle-50% band does not span the swarm').toBeLessThanOrEqual(m.top);
+  expect(m.bandBottom).toBeGreaterThanOrEqual(m.bottom);
 });
 
 /**
- * The key under the strip names every colour the chart paints, and not the subject, who is named
- * where they stand. The density ribbon's key used to say "Everyone with this title" in grey while
- * its dot field painted the same-school people green, leaving a colour on the chart with no name.
+ * The key over the strip names the subject with their own dot, then every colour the chart paints. The
+ * density ribbon's key used to say "Everyone with this title" in grey while its dot field painted the
+ * same-school people green, leaving a colour on the chart with no name.
  */
-for (const [who, key, ribbon] of [['a small title', AARON, false], ['a large title, drawn as a ribbon', KENNETH, true]] as const) {
-  test(`the strip's key names each colour it paints, and not the subject: ${who}`, async ({ page }) => {
+for (const [who, key, name, ribbon] of [['a small title', AARON, 'Aaron Smetana', false], ['a large title, drawn as a ribbon', KENNETH, 'Kenneth Poss', true]] as const) {
+  test(`the strip's key names the subject and each colour it paints: ${who}`, async ({ page }) => {
     await open(page, key);
     const card = stripCard(page);
     if (ribbon) {
@@ -78,10 +86,11 @@ for (const [who, key, ribbon] of [['a small title', AARON, false], ['a large tit
       await expect.poll(() => field.getAttribute('data-inks'), { timeout: 15_000 }).toMatch(/\|/);
       expect((await field.getAttribute('data-inks'))!.split('|').length, 'the field paints one ink, so there is no green to name').toBeGreaterThanOrEqual(2);
     }
-    const keyWords = await card.locator('.mantine-Text-root').evaluateAll((els) => els
-      .map((e) => (e.textContent ?? '').trim())
-      .filter((t) => ['This person', 'Same school', 'Others', 'Everyone with this title'].includes(t)));
-    expect(keyWords).toEqual(['Same school', 'Others']);
+    const legend = card.locator('.marker-legend');
+    await expect(legend.locator('.mantine-Text-root')).toHaveText([name, 'Same school', 'Others']);
+    await expect(legend.locator('.dot-chip circle[data-mark]')).toHaveCount(3);
+    // Over the plot it explains, read before it.
+    expect(await legend.evaluate((l) => !!(l.compareDocumentPosition(document.querySelector('.peer-strip')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   });
 }
 
@@ -94,7 +103,8 @@ for (const [who, key, ribbon] of [['a small title', AARON, false], ['a large tit
 test('the strip card leads with its finding and keeps how-to-read behind its footer', async ({ page }) => {
   await open(page, AARON);
   const card = stripCard(page);
-  const finding = card.getByText(/^Paid more than \d+%/);
+  const finding = card.locator('.peer-finding');
+  await expect(finding).toHaveText(/^Aaron is paid more than \d+% of the \d+ others titled System Engineer IV \(IT040\), and \$[\d,]+ (below|above) the median\.$/);
   await expect(finding).toBeVisible();
   expect(await finding.evaluate((f) => {
     const strip = document.querySelector('.peer-strip')!;
@@ -121,7 +131,7 @@ test('pointing at a strip dot leaves the other dots as they were', async ({ page
   await dots.nth(5).evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const box = (await dots.nth(5).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await expect(page.locator('.peer-strip .chart-tip-pill')).toHaveText(/^[^~]+ · \$[\d,]+$/, { timeout: 5_000 });
+  await expect(page.locator('.peer-strip .chart-tip-pill')).toHaveText(/^[^~]+ · \$[\d,]+( · [\d.]+ yrs)?$/, { timeout: 5_000 });
   const after = await dots.evaluateAll((cs) => cs.map((c) => getComputedStyle(c).fillOpacity));
   expect(after).toEqual(before);
 });
@@ -201,3 +211,77 @@ test("at phone width the scatter's names stay inside the plot and clear of each 
     expect(b.bottom, `the ${name}'s name leaves the plot at the bottom`).toBeLessThanOrEqual(area.bottom + 1);
   }
 });
+
+/**
+ * "Same school" thins the strip instead of redrawing it: everyone stays where they were, those outside the
+ * school at 18%, the school's people and the subject as they were.
+ */
+test('choosing the same school dims the others where they stand', async ({ page }) => {
+  await open(page, AARON);
+  const read = () => page.locator('.peer-strip').evaluate((el) => {
+    const svg = el.querySelector<SVGSVGElement>('svg:has(circle.chart-dot)')!;
+    return [...svg.querySelectorAll('circle.chart-dot')].map((c) => ({
+      at: `${c.getAttribute('cx')},${c.getAttribute('cy')}`,
+      mark: c.getAttribute('data-mark'),
+      opacity: Number(getComputedStyle(c.parentElement!).opacity),
+    }));
+  });
+  const before = await read();
+  await page.getByText(/^Same school \d+$/).click();
+  await page.waitForTimeout(600);
+  const after = await read();
+  expect(after.map((d) => d.at).sort(), 'someone moved').toEqual(before.map((d) => d.at).sort());
+  const op = (list: typeof after, mark: string) => [...new Set(list.filter((d) => d.mark === mark).map((d) => Math.round(d.opacity * 100) / 100))];
+  expect(op(after, 'peer'), 'the others are not dimmed').toEqual([0.18]);
+  expect(op(after, 'same-school'), 'the school is dimmed').toEqual([1]);
+  expect(op(before, 'peer'), 'the others were dimmed before').toEqual([1]);
+  await expect(page.locator('.peer-strip-marker')).toBeVisible();
+});
+
+/**
+ * The subject's name sits beside their dot, inside the plot, off every person and off the median's and the
+ * band's names; a leader runs to it only when it has had to sit away. The median and the middle 50% are
+ * named where they are: the median's name at the top of its line, the band's inside its foot.
+ */
+for (const width of [1440, 375]) {
+  test(`the subject's name and the plot's own names are placed clear of each other and of the people (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, AARON);
+    await page.mouse.move(1, 1);
+    const g = await page.locator('.peer-strip').evaluate((el) => {
+      const r = (e: Element | null) => (e ? e.getBoundingClientRect() : null);
+      const box = (b: DOMRect) => ({ x0: b.left, y0: b.top, x1: b.right, y1: b.bottom });
+      const you = box(r(el.querySelector('.peer-strip-you'))!);
+      const mark = r(el.querySelector('.peer-strip-marker'))!;
+      const med = r(el.querySelector('.strip-median-label'));
+      const band = r(el.querySelector('.strip-band-label'));
+      const plot = r(el.querySelector('svg'))!;
+      const medLine = r(el.querySelector('.strip-median'))!;
+      const bandRect = r(el.querySelector('rect.band-iqr'))!;
+      const dots = [...el.querySelectorAll('svg circle.chart-dot')].map((c) => r(c)!);
+      const hit = (a: { x0: number; y0: number; x1: number; y1: number }, b: DOMRect) => a.x0 < b.right && b.left < a.x1 && a.y0 < b.bottom && b.top < a.y1;
+      const cx = mark.left + mark.width / 2, cy = mark.top + mark.height / 2;
+      const nx = Math.max(you.x0, Math.min(you.x1, cx)), ny = Math.max(you.y0, Math.min(you.y1, cy));
+      return {
+        inside: you.x0 >= plot.left - 1 && you.x1 <= plot.right + 1 && you.y0 >= plot.top - 1 && you.y1 <= plot.bottom + 1,
+        dist: Math.hypot(nx - cx, ny - cy),
+        leader: !!el.querySelector('.peer-strip-leader'),
+        coversDots: dots.filter((d) => hit(you, d)).length,
+        onMed: med ? hit(you, med) : false,
+        onBand: band ? hit(you, band) : false,
+        medNearTop: med ? Math.abs(med.top - medLine.top) <= 6 && Math.abs((med.left + med.right) / 2 - medLine.left) < med.width : true,
+        bandInside: band ? band.left >= bandRect.left - 0.5 && band.right <= bandRect.right + 0.5 && band.bottom <= bandRect.bottom + 0.5 : true,
+        medText: el.querySelector('.strip-median-label')?.textContent,
+      };
+    });
+    expect(g.inside, "the subject's name leaves the plot").toBe(true);
+    expect(g.dist, "the subject's name sits on their dot").toBeGreaterThanOrEqual(8 - 0.5);
+    expect(g.coversDots, "the subject's name covers someone").toBe(0);
+    expect(g.onMed, "the subject's name lies on the median's").toBe(false);
+    expect(g.onBand, "the subject's name lies on the band's").toBe(false);
+    expect(g.leader, `a leader where the name is ${Math.round(g.dist)}px off`).toBe(g.dist >= 11);
+    expect(g.medText).toMatch(/^Median \$\d+k$/);
+    expect(g.medNearTop, "the median's name is not at the top of its line").toBe(true);
+    expect(g.bandInside, "the band's name is not inside its foot").toBe(true);
+  });
+}

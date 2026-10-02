@@ -146,9 +146,15 @@ test('a title whose middle 90% already fills its axis is drawn whole', async ({ 
   const strip = page.locator('.peer-strip');
   await expect(strip).not.toHaveAttribute('data-window', /.*/);
   await expect(strip.locator('[data-pile]')).toHaveCount(0);
-  // The axis runs from the lowest pay to the highest, labelled in $k like the median between them.
-  await expect(strip).toContainText(k(pays[0]));
-  await expect(strip).toContainText(k(pays[pays.length - 1]));
+  // The axis runs from the lowest pay to the highest: its round ticks inside that span, the first and last
+  // within a step of its ends, and the chart's own table names both.
+  const ticks = (await strip.locator('.strip-tick-label').allTextContents()).map((t) => Number(t.replace(/[^\d.]/g, '')) * 1000);
+  expect(ticks.length).toBeGreaterThanOrEqual(2);
+  const step = ticks[1] - ticks[0];
+  expect(ticks[0]).toBeGreaterThanOrEqual(pays[0] - 1);
+  expect(ticks[0] - pays[0]).toBeLessThanOrEqual(step);
+  expect(ticks[ticks.length - 1]).toBeLessThanOrEqual(pays[pays.length - 1] + 1);
+  expect(pays[pays.length - 1] - ticks[ticks.length - 1]).toBeLessThanOrEqual(step);
   await expect(page.locator('.tenure-plot')).not.toHaveAttribute('data-window', /.*/);
   await expect(page.locator('.tenure-band')).toHaveCount(0);
 });

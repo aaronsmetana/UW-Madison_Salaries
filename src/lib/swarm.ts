@@ -40,3 +40,53 @@ export function dotRows(
     DOT_GAP,
   );
 }
+
+/** The air between two dots of a beeswarm, beyond their own radii. */
+export const SWARM_PAD = 1.5;
+
+/**
+ * A beeswarm: each dot's offset from a centreline, so that no two dots overlap, every dot as close to the
+ * line as the dots placed before it allow, and the same input always gives the same picture.
+ *
+ * The person the chart is about goes first, on the line. Everyone else follows in order of `xs` (lowest
+ * pay first) and takes the offset nearest the line that clears every dot already placed (radius `r`, and
+ * SWARM_PAD between). Where two offsets are as near, the one above the line wins, then the one below on the
+ * next tie, so a run of equal pays fans out both ways rather than climbing one side.
+ *
+ * Returns null when a dot would sit further than `maxOffset` from the line: the cohort is too dense for
+ * dots at this width, and the caller draws its density instead.
+ */
+export function beeswarm(xs: number[], r: number, maxOffset: number, first = -1): number[] | null {
+  const n = xs.length;
+  const ys = new Array<number>(n).fill(0);
+  const reach = 2 * r + SWARM_PAD;
+  const order = xs.map((_, i) => i).filter((i) => i !== first).sort((a, b) => xs[a] - xs[b] || a - b);
+  if (first >= 0 && first < n) order.unshift(first);
+  // The dots placed so far; a new one looks only at those within `reach` of it.
+  const placed: number[] = [];
+  let flip = false;
+  for (const i of order) {
+    const x = xs[i];
+    // Every offset a placed neighbour forbids, as an open interval.
+    const blocked: [number, number][] = [];
+    for (const j of placed) {
+      const dx = Math.abs(xs[j] - x);
+      if (dx >= reach) continue;
+      const h = Math.sqrt(reach * reach - dx * dx);
+      blocked.push([ys[j] - h, ys[j] + h]);
+    }
+    const free = (y: number) => blocked.every(([a, b]) => y <= a + 1e-9 || y >= b - 1e-9);
+    // The line itself, or an edge of a forbidden interval: the nearest free one of those.
+    const candidates = [0, ...blocked.flatMap(([a, b]) => [a, b])].filter(free);
+    let best = Infinity;
+    for (const y of candidates) {
+      const d = Math.abs(y), bd = Math.abs(best);
+      if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && (flip ? y > best : y < best))) best = y;
+    }
+    if (Math.abs(best) > 1e-9) flip = !flip;
+    if (!(Math.abs(best) <= maxOffset)) return null;
+    ys[i] = Math.abs(best) < 1e-9 ? 0 : best;
+    placed.push(i);
+  }
+  return ys;
+}

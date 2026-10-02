@@ -44,7 +44,7 @@ for (const scheme of ['light', 'dark'] as const) {
       sameSchool: await markContrast(page, '.peer-strip circle[data-mark="same-school"]', 'fill', card),
       peer: await markContrast(page, '.peer-strip circle[data-mark="peer"]', 'fill', card),
       trendLine: await markContrast(page, '.tenure-fit line', 'stroke', card),
-      bandEdge: await markContrast(page, '.peer-strip .band-iqr-edge', 'stroke', card),
+      bandEdge: await markContrast(page, '.peer-strip rect.band-iqr', 'stroke', card),
     };
     const r = (x: number) => Math.round(x * 100) / 100;
     const summary = Object.fromEntries(Object.entries(got).map(([k, v]) => [k, r(v)]));

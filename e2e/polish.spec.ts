@@ -83,9 +83,9 @@ async function textOffTokens(page: Page) {
     const probe = document.createElement('span');
     document.body.appendChild(probe);
     const ink = (v) => { probe.style.color = 'var(' + v + ')'; return getComputedStyle(probe).color; };
-    // The ink, the dimmed grey, the faint label grey, a link's teal and accent text, up, down, caution, and
-    // white on a fill.
-    const allowed = new Set(['--mantine-color-text', '--mantine-color-dimmed', '--text-faint', '--mantine-color-anchor', '--text-accent',
+    // The ink, the dimmed grey, the faint label grey, a link's teal and accent text, up, down, caution, white
+    // on a fill, and the words on the person's own colour (their name's pill: near-black on dark's teal).
+    const allowed = new Set(['--mantine-color-text', '--mantine-color-dimmed', '--text-faint', '--mantine-color-anchor', '--text-accent', '--mark-self-on',
       '--text-pos', '--text-neg', '--text-warn', '--mantine-color-white'].map(ink));
     probe.remove();
     const off = {};

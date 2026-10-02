@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dotRows, DOT_GAP, MAX_ROWS } from './swarm';
+import { dotRows, DOT_GAP, MAX_ROWS, beeswarm, SWARM_PAD } from './swarm';
 import { DOT_R } from '../components/markers';
 
 /**
@@ -72,5 +72,58 @@ describe('dotRows', () => {
   it('returns nothing before the container has been measured', () => {
     expect(dotRows([1, 2, 3], scale(1, 3), 0, R)).toEqual([]);
     expect(dotRows([], scale(0, 1), 500, R)).toEqual([]);
+  });
+});
+
+describe('beeswarm', () => {
+  const R = 5;
+  /** Every pair of dots at least two radii and the pad apart. */
+  const overlaps = (xs: number[], ys: number[]) => {
+    const out: [number, number][] = [];
+    for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) {
+      if (Math.hypot(xs[i] - xs[j], ys[i] - ys[j]) < 2 * R + SWARM_PAD - 1e-6) out.push([i, j]);
+    }
+    return out;
+  };
+  // A title's pays across 600px, with runs of equal pays (people hired onto round numbers).
+  const xs = [...Array(60)].map((_, i) => (i % 7 === 0 ? 300 : (i * 97) % 600));
+
+  it('never puts two dots on top of each other', () => {
+    const ys = beeswarm(xs, R, 200)!;
+    expect(ys).not.toBeNull();
+    expect(overlaps(xs, ys)).toEqual([]);
+  });
+
+  it('puts the person first, on the line, whatever is around them', () => {
+    const self = xs.indexOf(300);
+    const ys = beeswarm(xs, R, 200, self)!;
+    expect(ys[self]).toBe(0);
+  });
+
+  it('is the same picture every time, and in any input order', () => {
+    const a = beeswarm(xs, R, 200, 3)!;
+    expect(beeswarm(xs, R, 200, 3)).toEqual(a);
+    // Shuffled input, the same dots: each keeps its offset (the order is by pay, then by index).
+    const perm = xs.map((_, i) => (i * 37) % xs.length);
+    const b = beeswarm(perm.map((i) => xs[i]), R, 200, perm.indexOf(3))!;
+    const byPay = (ys: number[], order: number[]) => order.map((i) => ys[i]).sort((p, q) => p - q);
+    expect(byPay(b, b.map((_, i) => i))).toEqual(byPay(a, a.map((_, i) => i)));
+  });
+
+  it('keeps dots as near the line as their neighbours allow: a lone dot sits on it', () => {
+    const ys = beeswarm([10, 100, 200], R, 50)!;
+    expect(ys).toEqual([0, 0, 0]);
+  });
+
+  it('fans a run of equal pays out both ways, not up one side', () => {
+    const run = Array(9).fill(250);
+    const ys = beeswarm(run, R, 200)!;
+    expect(ys.filter((y) => y < 0).length).toBe(4);
+    expect(ys.filter((y) => y > 0).length).toBe(4);
+    expect(overlaps(run, ys)).toEqual([]);
+  });
+
+  it('gives up (null) when a dot would leave the band, so the chart draws the density instead', () => {
+    expect(beeswarm(Array(40).fill(100), R, 60)).toBeNull();
   });
 });

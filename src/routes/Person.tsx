@@ -41,7 +41,6 @@ import { PayBandBar } from '../components/PayBandBar';
 import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { PeerStrip } from '../components/PeerStrip';
 import { ChartData } from '../components/ChartData';
-import { PercentileNote } from '../components/PercentileNote';
 import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { CardTitle } from '../components/CardTitle';
@@ -687,6 +686,24 @@ export default function Person() {
     })),
     [cohortList, key, latest],
   );
+  // Everyone with the title, for the strip: those outside the chosen cohort stay where they are, dimmed, so
+  // "Same school" thins the picture instead of redrawing it.
+  const allPoints = useMemo(
+    () => (peers ?? []).map((p) => {
+      const sameSchool = p.person_key !== key && !!p.school && p.school === latest?.school;
+      const isSelf = p.person_key === key;
+      return {
+        pay: p.pay,
+        tenure: p.tenure,
+        sameSchool,
+        isSelf,
+        name: fullName(p.fn, p.ln) || '—',
+        personKey: p.person_key,
+        dimmed: cohort === 'school' && !sameSchool && !isSelf,
+      };
+    }),
+    [peers, key, latest, cohort],
+  );
   const scatterPoints = useMemo<ScatterPoint[]>(
     () => cohortPoints
       .filter((p) => p.tenure != null && Number.isFinite(p.tenure))
@@ -1033,9 +1050,25 @@ export default function Person() {
                     row on the card. */}
                 <CardTitle
                   mb={cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo ? 'xs' : 'md'}
-                  sub={cohort === 'school'
-                    ? <>Among {num(cohortStats?.n ?? 0)} {(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor>, in the same school ({latest?.school}).</>
-                    : <>Among {num(allCount)} people with the title <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor> (job code {jobCode}) in the latest snapshot.</>}
+                  sub={(() => {
+                    const titleLink = <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor>;
+                    const where = cohort === 'school' ? <> in {latest?.school}</> : null;
+                    // The finding, in one sentence, before the chart that shows it: the share of the others paid
+                    // less (the subject is not counted among them) and how far from the median. With no spread
+                    // there is no share to state, and it says who the chart is of instead.
+                    if (cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo && cohortPct != null && cohortSelfPay != null) {
+                      const d = cohortSelfPay - cohortStats.med;
+                      return (
+                        <span className="peer-finding">
+                          {selfLabel} is paid more than <b>{Math.round(cohortPct)}%</b> of the {num(cohortStats.n - 1)} others titled {titleLink} ({jobCode}){where},
+                          {Math.abs(d) < 0.5 ? <> and <b>at</b> the median.</> : <> and <b>{usd(Math.abs(d))} {d < 0 ? 'below' : 'above'}</b> the median.</>}
+                        </span>
+                      );
+                    }
+                    return cohort === 'school'
+                      ? <>Among {num(cohortStats?.n ?? 0)} {(cohortStats?.n ?? 0) === 1 ? 'person' : 'people'} with the title {titleLink}, in the same school ({latest?.school}).</>
+                      : <>Among {num(allCount)} people with the title {titleLink} (job code {jobCode}) in the latest snapshot.</>;
+                  })()}
                   right={allCount > schoolCount && (
                     <SegmentedToggle
                       value={cohort}
@@ -1051,17 +1084,6 @@ export default function Person() {
                 </CardTitle>
                 {cohortStats && cohortStats.n >= 2 ? (
                   <>
-                    {/* The finding, before the chart that shows it — it sat under the source line, after
-                        the footnotes. Nothing to be a percentile of when every holder of the title is on
-                        the same figure: "paid more than 0%" is true and useless, and the strip says
-                        there is no spread. */}
-                    {cohortStats.hi > cohortStats.lo && (
-                      <PercentileNote
-                        pct={cohortPct}
-                        pool={cohort === 'school' ? 'same-school peers with this title' : 'people with this title'}
-                        mb="md"
-                      />
-                    )}
                     <PeerStrip
                       min={cohortStats.lo}
                       p25={cohortStats.p25}
@@ -1069,7 +1091,8 @@ export default function Person() {
                       p75={cohortStats.p75}
                       max={cohortStats.hi}
                       value={cohortSelfPay ?? lastSalary}
-                      points={cohortPoints}
+                      points={allPoints}
+                      fullName={name}
                       domain={allPaysDomain}
                       zoom={payWin}
                       onPile={showPile}

@@ -117,7 +117,9 @@ export function ChartDot({ cx, cy, kind, r = DOT_R.peer, fillOpacity = 1, hovere
 }) {
   const edge = DOT_EDGE[kind];
   return (
-    <g opacity={dimmed ? 0.18 : 1} style={{ transition: 'opacity var(--dur-base) var(--ease)', ...style }}>
+    // Dimmed (outside the chosen cohort) multiplies whatever opacity the chart gives it (its fade in), so the
+    // two never overwrite each other.
+    <g style={{ transition: 'opacity var(--dur-base) var(--ease)', ...style, opacity: Number(style?.opacity ?? 1) * (dimmed ? 0.18 : 1) }}>
       <circle
         className={className}
         data-mark={kind === 'self' ? 'self' : kind === 'same' ? 'same-school' : 'peer'}
@@ -158,6 +160,10 @@ export interface PeerPoint {
   isSelf: boolean;
   name: string;
   personKey: string;
+  /** Years at UW, for the readout ("Name · $pay · 11.9 yrs"). */
+  tenure?: number | null;
+  /** Outside the cohort the page has chosen ("Same school"): drawn where they are, at 18%. */
+  dimmed?: boolean;
 }
 
 export interface LegendItem {
@@ -181,9 +187,10 @@ export interface LegendItem {
  * Recharts' default `<Legend />` was the other holdout, on four charts; a line chart names its lines
  * at their ends instead (`EndLabels`), and a bar chart uses this.
  */
-export function MarkerLegend({ items }: { items: LegendItem[] }) {
+export function MarkerLegend({ items, align = 'center' }: { items: LegendItem[]; align?: 'center' | 'start' }) {
+  // `start`: a key over the plot it explains, read before it, as the person's strip has.
   return (
-    <Group justify="center" gap="lg" mt="xs" wrap="wrap">
+    <Group justify={align === 'start' ? 'flex-start' : 'center'} gap="lg" mt={align === 'start' ? 0 : 'xs'} mb={align === 'start' ? 'sm' : 0} wrap="wrap" className="marker-legend">
       {items.map((it, i) => (
         <Group key={i} gap={6} wrap="nowrap">
           {it.dot ? (

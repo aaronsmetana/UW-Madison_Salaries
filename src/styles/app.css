@@ -127,6 +127,8 @@
      while their fill stays quiet (2.2:1); same school's a step deeper than its green. */
   --mark-peer-edge: #7a848b;
   --mark-peer-same-school-edge: var(--mantine-color-pos-8);
+  /* Words on the person's own colour (their name's pill): white on accent-7, 7.2:1. */
+  --mark-self-on: #ffffff;
   /* The inverse of the page, for what a pointer calls up over a chart (a readout): ink with white words. */
   --inverse-bg: #16191d;
   --inverse-ink: #ffffff;
@@ -432,6 +434,8 @@ body {
   /* 3.8:1 and 6.5:1 on the card: an edge goes lighter on a dark ground, as a light one goes darker. */
   --mark-peer-edge: #6c747b;
   --mark-peer-same-school-edge: #44ad80;
+  /* On dark's lighter accent-5, the page's near-black: 5.7:1. */
+  --mark-self-on: var(--base);
   /* An ink pill on a near-black page would vanish: the readout floats on the raised surface, edged. */
   --inverse-bg: var(--surface-raised);
   --inverse-ink: var(--mantine-color-text);
@@ -1283,6 +1287,40 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .mantine-SegmentedControl-indicator { background-color: var(--seg-thumb); box-shadow: var(--seg-thumb-shadow); }
 .mantine-SegmentedControl-label { font-weight: 600; }
 .mantine-SegmentedControl-label[data-active] { color: var(--mantine-color-text); }
+
+/* The person's strip (PeerStrip): the median's and the band's names where they are, the subject's name as a
+   pill in their own colour, the axis's ticks. */
+.strip-label {
+  position: absolute;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--mantine-color-dimmed);
+  pointer-events: none;
+  /* A backing of the card's colour, so the words read where they sit over people (a crowd's ribbon). */
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mantine-color-body) 85%, transparent);
+}
+.peer-strip-you {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: var(--mantine-radius-xs);
+  background: var(--mark-self);
+  color: var(--mark-self-on);
+  box-shadow: 0 0 0 2px var(--mantine-color-body);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 17px;
+  pointer-events: none;
+  transition: left var(--dur-base) var(--ease), top var(--dur-base) var(--ease);
+}
+.strip-tick { position: absolute; top: 0; }
+.strip-tick-mark { position: absolute; left: -0.5px; top: 0; width: 1px; height: 4px; background: var(--hairline-strong); }
+.strip-tick-label, .peer-strip-pile-label { position: absolute; top: 6px; white-space: nowrap; color: var(--text-faint); }
 
 /* A chart card's tools (ChartData): About, CSV and Table, each its icon and its name. On a phone the names
    go and the icons stay; each keeps its name for a screen reader. */
