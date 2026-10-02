@@ -247,7 +247,8 @@ test('the tenure scatter zooms to the same window, pins the rest to its edges, a
   expect(end % 10, 'the longest tenure now ends on a ten: the check below cannot tell five from ten').not.toBe(0);
   const at30 = await plot.evaluate((el) => {
     const grid = el.querySelector('.recharts-cartesian-grid')!.getBoundingClientRect();
-    const tick = [...el.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick')].find((t) => t.textContent === '30y')!;
+    // The unit is on the last tick only ("0 5 … 35 yrs").
+    const tick = [...el.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick')].find((t) => /^30( yrs)?$/.test(t.textContent ?? ''))!;
     // The label's centre: axes draw no tick marks (app.css), and the label is centred on its tick.
     const label = tick.querySelector('text')!.getBoundingClientRect();
     return (label.x + label.width / 2 - grid.x) / grid.width;
@@ -305,7 +306,7 @@ test('pointing at the tenure scatter names the nearest person, and a click opens
   await page.mouse.move(lone.x + 6, lone.y);
   const tip = plot.locator('.tenure-tip');
   await expect(tip).toBeVisible();
-  const name = (await tip.locator('p').first().innerText()).trim();
+  const name = (await tip.locator('.tenure-tip-name').innerText()).trim();
   expect(name).not.toContain('this person');
   await page.mouse.click(lone.x + 6, lone.y);
   await expect(page).toHaveURL(/\/person\//);

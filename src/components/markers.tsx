@@ -64,9 +64,13 @@ export const DOT_R = { peer: 5 } as const;
  */
 export const DOT_RIM = { stroke: 'var(--mantine-color-body)', strokeWidth: 2, paintOrder: 'stroke' } as const;
 
-/** A strong reference rule — a regression line, a target, anything the eye should follow. >=3:1, and a
- *  tighter dash than the soft guide's so the two are told apart by pattern, not only by weight. */
+/** A strong reference rule — a target, a threshold, anything the eye should follow. >=3:1, and a tighter dash
+ *  than the soft guide's so the two are told apart by pattern, not only by weight. */
 export const GUIDE_STRONG = { stroke: 'var(--guide-strong)', dasharray: '4 3', width: 2 } as const;
+
+/** A fitted trend (the pay tenure alone predicts): solid, 2px, round-capped, in the strong grey — never the
+ *  person's teal, whose dot usually sits on it. */
+export const TREND_LINE = { stroke: 'var(--guide-strong)', width: 2 } as const;
 
 /**
  * Where tenure alone would put someone's pay, give or take the 2% the tenure callout calls "on the
@@ -175,8 +179,10 @@ export interface LegendItem {
   round?: boolean;
   /** A filled square, for a bar series: a 4px rule reads as a line. */
   bar?: boolean;
-  /** Draw the rule dashed, matching GUIDE_STRONG — for a trend or target line. */
+  /** Draw the rule dashed, matching GUIDE_STRONG — for a target line. */
   dashed?: boolean;
+  /** A solid 18×2 rule, matching TREND_LINE. */
+  line?: boolean;
 }
 
 /**
@@ -187,14 +193,19 @@ export interface LegendItem {
  * Recharts' default `<Legend />` was the other holdout, on four charts; a line chart names its lines
  * at their ends instead (`EndLabels`), and a bar chart uses this.
  */
-export function MarkerLegend({ items, align = 'center' }: { items: LegendItem[]; align?: 'center' | 'start' }) {
-  // `start`: a key over the plot it explains, read before it, as the person's strip has.
+export function MarkerLegend({ items, align = 'center' }: { items: LegendItem[]; align?: 'center' | 'start' | 'end' }) {
+  // `start` / `end`: a key over the plot it explains, read before it (the person's strip, the tenure scatter).
+  const over = align !== 'center';
   return (
-    <Group justify={align === 'start' ? 'flex-start' : 'center'} gap="lg" mt={align === 'start' ? 0 : 'xs'} mb={align === 'start' ? 'sm' : 0} wrap="wrap" className="marker-legend">
+    <Group justify={align === 'start' ? 'flex-start' : align === 'end' ? 'flex-end' : 'center'} gap="lg" mt={over ? 0 : 'xs'} mb={over ? 'sm' : 0} wrap="wrap" className="marker-legend">
       {items.map((it, i) => (
         <Group key={i} gap={6} wrap="nowrap">
           {it.dot ? (
             <DotChip kind={it.dot} />
+          ) : it.line ? (
+            <svg width={18} height={12} aria-hidden style={{ flexShrink: 0 }}>
+              <line x1={1} y1={6} x2={17} y2={6} stroke={it.color} strokeWidth={TREND_LINE.width} strokeLinecap="round" />
+            </svg>
           ) : it.dashed ? (
             <svg width={22} height={12} aria-hidden style={{ flexShrink: 0 }}>
               <line

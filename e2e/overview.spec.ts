@@ -161,19 +161,26 @@ for (const scheme of ['light', 'dark'] as const) {
       const fit = el.querySelector<SVGLineElement>('.tenure-fit line')!;
       const b = text.getBBox();
       const cs = getComputedStyle(text);
+      // The name is a pill: its words on the pill's own fill.
+      const pill = text.parentElement!.querySelector('rect')!;
       const n = (e: Element, a: string) => Number(e.getAttribute(a));
+      const leader = el.querySelector('.tenure-self-leader');
       return {
+        leader: leader ? { x1: n(leader, 'x1'), y1: n(leader, 'y1'), x2: n(leader, 'x2'), y2: n(leader, 'y2') } : null,
         dot: { x: n(dot, 'cx'), y: n(dot, 'cy') },
         box: { left: b.x, right: b.x + b.width, top: b.y, bottom: b.y + b.height },
         line: { x1: n(fit, 'x1'), y1: n(fit, 'y1'), x2: n(fit, 'x2'), y2: n(fit, 'y2') },
         fill: cs.fill,
-        halo: cs.stroke,
+        halo: getComputedStyle(pill).fill,
       };
     });
     const { dot, box, line } = g;
-    // Near: the box's nearest point within 30px of the dot's centre (the ring is 9px, the gap ~5).
-    const dx = Math.max(box.left - dot.x, 0, dot.x - box.right), dy = Math.max(box.top - dot.y, 0, dot.y - box.bottom);
-    expect(Math.hypot(dx, dy), 'the name is not beside the dot').toBeLessThanOrEqual(30);
+    // Near: within 30px of the dot's centre, or, where it had to sit away, tied to the dot by a leader that
+    // starts 7px from its centre (lib/labelPlace). The pill is 25px tall round the words it holds.
+    const pill = { left: box.left - 9, right: box.right + 9, top: box.top - 5, bottom: box.bottom + 5 };
+    const dx = Math.max(pill.left - dot.x, 0, dot.x - pill.right), dy = Math.max(pill.top - dot.y, 0, dot.y - pill.bottom);
+    if (g.leader) expect(Math.hypot(g.leader.x1 - dot.x, g.leader.y1 - dot.y), 'the leader does not start at the dot').toBeCloseTo(7, 0);
+    else expect(Math.hypot(dx, dy), 'the name is not beside the dot').toBeLessThanOrEqual(30);
     // Same side of the tenure line as the dot.
     const side = (x: number, y: number) => Math.sign((line.x2 - line.x1) * (y - line.y1) - (line.y2 - line.y1) * (x - line.x1));
     expect(side((box.left + box.right) / 2, (box.top + box.bottom) / 2), 'the tenure line runs between the name and the dot').toBe(side(dot.x, dot.y));
@@ -285,3 +292,85 @@ for (const width of [1440, 375]) {
     expect(g.bandInside, "the band's name is not inside its foot").toBe(true);
   });
 }
+
+/**
+ * Pay vs. tenure states its finding in one strip — whether the subject is on the curve, what tenure alone
+ * predicts at their years, what they are paid, the difference, and where that leaves them allowing for tenure —
+ * and draws the curve as a solid line. The figures agree with each other: the difference is the actual less the
+ * expected, signed, and its share of the expected.
+ */
+test('the tenure strip states the verdict and four figures that agree, and the curve is solid', async ({ page }) => {
+  await open(page, AARON);
+  const strip = page.locator('.tenure-strip');
+  await expect(strip).toHaveAttribute('data-verdict', /^(on|above|below)$/);
+  const cells = await strip.locator('.tenure-cell').allInnerTexts();
+  expect(cells.length).toBe(5);
+  expect(cells[0]).toMatch(/^(On|Above|Below) the tenure curve$/);
+  const money = (t: string) => Number(t.match(/\$([\d,]+)/)![1].replace(/,/g, ''));
+  const [expected, actual] = [money(cells[1]), money(cells[2])];
+  expect(cells[1]).toMatch(/^Expected at [\d.]+ yrs\s+\$[\d,]+$/);
+  expect(cells[2]).toMatch(/^Actual\s+\$[\d,]+$/);
+  // The sign of the dollars, not of the share in brackets after them.
+  const diff = money(cells[3]) * (/^Difference\s+−/.test(cells[3]) ? -1 : 1);
+  expect(Math.abs(diff - (actual - expected)), cells[3]).toBeLessThanOrEqual(1);
+  const share = Number(cells[3].match(/\(([−+]?)([\d.]+)%\)/)![2]);
+  expect(Math.abs(share - Math.abs(actual - expected) / expected * 100)).toBeLessThanOrEqual(0.06);
+  expect(cells[4]).toMatch(/^Allowing for tenure\s+Paid more than \d+%$/);
+  expect(await page.locator('.tenure-fit line').getAttribute('stroke-dasharray')).toBeNull();
+});
+
+/**
+ * The subject's guides run from their dot to both axes, and a chip on the tenure axis names their years where
+ * the guide meets it — with no tick label under it.
+ */
+for (const width of [1440, 375]) test(`the subject's guides reach both axes and a chip names their years on the tenure axis (${width}px)`, async ({ page }) => {
+  // On a phone the tenure axis's ticks sit close enough to the chip to fall under it.
+  await page.setViewportSize({ width, height: 900 });
+  await open(page, AARON);
+  const g = await page.locator('.tenure-plot').evaluate((el) => {
+    const dot = el.querySelector('.tenure-self-dot')!;
+    const d = { x: Number(dot.getAttribute('cx')), y: Number(dot.getAttribute('cy')) };
+    const lines = [...el.querySelectorAll('.tenure-guides line')].map((l) => ({ x2: Number(l.getAttribute('x2')), y2: Number(l.getAttribute('y2')), x1: Number(l.getAttribute('x1')), y1: Number(l.getAttribute('y1')) }));
+    const grid = el.querySelector('.recharts-cartesian-grid-bg')!;
+    const plot = { left: Number(grid.getAttribute('x')), bottom: Number(grid.getAttribute('y')) + Number(grid.getAttribute('height')) };
+    const chip = el.querySelector('.tenure-chip')!;
+    const cb = chip.getBoundingClientRect();
+    const ticks = [...el.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value')].map((t) => t.getBoundingClientRect())
+      .filter((t) => t.width > 0);
+    const rect = chip.querySelector('rect')!;
+    return {
+      d, lines, plot,
+      chipText: chip.textContent,
+      chipX: Number(rect.getAttribute('x')) + Number(rect.getAttribute('width')) / 2,
+      covered: ticks.filter((t) => t.left < cb.right && cb.left < t.right && t.top < cb.bottom && cb.top < t.bottom).length,
+    };
+  });
+  expect(g.lines.length).toBe(2);
+  const across = g.lines.find((l) => l.y1 === l.y2)!, down = g.lines.find((l) => l.x1 === l.x2)!;
+  expect(across.x2, 'the guide stops short of the pay axis').toBeCloseTo(g.plot.left, 0);
+  expect(down.y2, 'the guide stops short of the tenure axis').toBeCloseTo(g.plot.bottom, 0);
+  expect(Math.abs(g.chipX - g.d.x), 'the chip is not where the guide meets the axis').toBeLessThanOrEqual(0.5);
+  expect(g.chipText).toMatch(/^\d+\.\d yrs$/);
+  expect(g.covered, 'the chip sits on a tick label').toBe(0);
+  // Its years are the subject's, as the strip's "Expected at" says them.
+  await expect(page.locator('.tenure-strip')).toContainText(`Expected at ${g.chipText}`);
+});
+
+/** "Same school" dims the scatter's others in place too, and fits its line to the school. */
+test('choosing the same school dims the scatter\'s others where they stand and refits the line', async ({ page }) => {
+  await open(page, AARON);
+  const read = () => page.locator('.tenure-plot').evaluate((el) => ({
+    dots: [...el.querySelectorAll('circle.chart-dot')].map((c) => ({ at: `${c.getAttribute('cx')},${c.getAttribute('cy')}`, mark: c.getAttribute('data-mark'), o: Number(getComputedStyle(c.parentElement!).opacity) })),
+    line: el.querySelector('.tenure-fit line')?.getAttribute('y2'),
+  }));
+  const before = await read();
+  const expected = await page.locator('.tenure-strip .tenure-cell').nth(1).innerText();
+  await page.getByText(/^Same school \d+$/).click();
+  await expect(page.locator('.tenure-strip .tenure-cell').nth(1)).not.toHaveText(expected);
+  await page.waitForTimeout(600);
+  const after = await read();
+  expect(after.dots.map((d) => d.at).sort(), 'someone moved').toEqual(before.dots.map((d) => d.at).sort());
+  expect([...new Set(after.dots.filter((d) => d.mark === 'peer').map((d) => Math.round(d.o * 100) / 100))]).toEqual([0.18]);
+  expect([...new Set(after.dots.filter((d) => d.mark === 'same-school').map((d) => d.o))]).toEqual([1]);
+  expect(after.line, 'the line was not refitted to the school').not.toBe(before.line);
+});

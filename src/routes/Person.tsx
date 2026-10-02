@@ -672,22 +672,10 @@ export default function Person() {
   /** What both overview charts write beside this person's mark: "Aaron · $116,491". */
   const selfLabel = latest?.first_name?.trim() || 'This person';
 
-  // One cohort, marked once. Both charts on this tab are handed the same array so they cannot disagree
-  // about who is the subject and who shares their school; the scatter simply drops the members whose
-  // tenure the source never recorded.
-  const cohortPoints = useMemo(
-    () => cohortList.map((p) => ({
-      pay: p.pay,
-      tenure: p.tenure,
-      sameSchool: p.person_key !== key && !!p.school && p.school === latest?.school,
-      isSelf: p.person_key === key,
-      name: fullName(p.fn, p.ln) || '—',
-      personKey: p.person_key,
-    })),
-    [cohortList, key, latest],
-  );
-  // Everyone with the title, for the strip: those outside the chosen cohort stay where they are, dimmed, so
-  // "Same school" thins the picture instead of redrawing it.
+  // Everyone with the title, marked once: both charts on this tab are handed the same array, so they cannot
+  // disagree about who is the subject and who shares their school (the scatter drops those whose tenure the
+  // source never recorded). Those outside the chosen cohort stay where they are, dimmed, so "Same school"
+  // thins the picture instead of redrawing it.
   const allPoints = useMemo(
     () => (peers ?? []).map((p) => {
       const sameSchool = p.person_key !== key && !!p.school && p.school === latest?.school;
@@ -704,11 +692,12 @@ export default function Person() {
     }),
     [peers, key, latest, cohort],
   );
+  // The scatter is handed everyone too, those outside the chosen cohort dimmed; it fits its line to the cohort.
   const scatterPoints = useMemo<ScatterPoint[]>(
-    () => cohortPoints
+    () => allPoints
       .filter((p) => p.tenure != null && Number.isFinite(p.tenure))
       .map(({ tenure, ...rest }) => ({ ...rest, tenure: Math.max(0, tenure as number) })),
-    [cohortPoints],
+    [allPoints],
   );
   const selfScatter = useMemo(() => {
     const s = cohortList.find((p) => p.person_key === key);
@@ -1122,13 +1111,13 @@ export default function Person() {
                     it is drawing instead. */}
                 <CardTitle
                   sub={<>
-                    Where this person sits against what tenure alone predicts for {latest?.title}
+                    Where {selfLabel} sits against what tenure alone predicts for {latest?.title}
                     {cohort === 'school' ? ` within ${latest?.school}` : ' across UW'}.
                   </>}
                 >
                   Pay vs. tenure
                 </CardTitle>
-                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} legend={false} />
+                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} />
               </Card>
             )}
 

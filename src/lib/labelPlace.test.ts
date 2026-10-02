@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placeLabel, sampleVertical } from './labelPlace';
+import { placeLabel, sampleVertical, sampleSegment } from './labelPlace';
 
 const bounds = { x0: 0, y0: 0, x1: 600, y1: 176 };
 const size = { w: 110, h: 25 };
@@ -66,5 +66,15 @@ describe('placeLabel', () => {
   it('is the same placement every time', () => {
     const args = { anchor: { x: 120, y: 60 }, size, bounds, dots: [{ x: 150, y: 50, r: 5 }] };
     expect(placeLabel(args)).toEqual(placeLabel(args));
+  });
+
+  it('keeps a line from between the name and its dot, where its own side has room', () => {
+    // A trend line just over the dot and the people crowding the right of its side: the name goes left or down
+    // on its own side, not over the line where the plot is empty.
+    const anchor = { x: 300, y: 100 };
+    const line = { points: sampleSegment({ x: 0, y: 90 }, { x: 600, y: 90 }), weight: 0.3, divides: true };
+    const crowd = [...Array(32)].map((_, i) => ({ x: 310 + (i % 8) * 14, y: 104 + Math.floor(i / 8) * 12, r: 5 }));
+    const p = placeLabel({ anchor, size, bounds, dots: crowd, lines: [line] });
+    expect(boxAt(p).y0, 'the name crossed the line').toBeGreaterThan(90);
   });
 });

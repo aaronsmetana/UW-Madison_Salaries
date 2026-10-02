@@ -133,7 +133,7 @@ test('the scatter shades exactly what the callout calls "on the tenure curve"', 
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
   const callout = page.locator('.tenure-callout');
   await expect(callout).toHaveAttribute('data-verdict', 'on', { timeout: 60_000 });
-  const expected = Number((await callout.innerText()).match(/typically pays \$([\d,]+)/)![1].replace(/,/g, ''));
+  const expected = Number((await callout.innerText()).match(/Expected at [\d.]+ yrs\s*\$([\d,]+)/)![1].replace(/,/g, ''));
   const on = await bandAtSelf(page);
   // Half a pixel of the axis either way: the band is drawn to a tenth of one.
   const tol = (on.hi - on.lo) * 0.1;

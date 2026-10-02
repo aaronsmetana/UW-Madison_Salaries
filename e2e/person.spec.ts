@@ -204,7 +204,8 @@ test('the strip and the scatter mark a person the same way', async ({ page }) =>
   expect(marks.stripPeer, 'peer fill').toBe(marks.scatterPeer);
   expect(marks.stripName, 'the strip names no one').toMatch(/^Aaron · \$[\d,]+$/);
   expect(marks.scatterName, 'the scatter names the subject differently').toBe(marks.stripName);
-  expect(marks.legends).toEqual(['Same school', 'Others']);
+  // Each chart's key: the strip's over it (with the subject by name), the scatter's over it; neither says "This person".
+  expect(marks.legends).toEqual(['Same school', 'Others', 'Same school', 'Others']);
 });
 
 // PeerRangeBar's own p25/median/p75 labels are centered on their ticks, so a long-tailed cohort

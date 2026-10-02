@@ -1,24 +1,25 @@
-import { useId, useMemo, useState, type MouseEvent } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, ReferenceLine, Customized,
 } from 'recharts';
 import { AXIS_TICK, CHART_FONT, GRID, fmtK } from '../lib/chartStyle';
 import { moneyTicks, niceStep } from '../lib/rangeScale';
-import { Box, Text } from '@mantine/core';
+import { Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { num, usd, fmtYears } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { tenureFit, onCurveBand, TENURE_MIN_PEERS } from '../lib/stats';
 import { measureText, placeEndLabels } from '../lib/labelLayout';
+import { placeLabel, sampleSegment, type Placement } from '../lib/labelPlace';
 import { nudgeApart, NUDGE_MAX } from '../lib/nudge';
 import { sideOf, type PayWindow } from '../lib/payWindow';
-import { TipSurface } from './chart/ChartTooltip';
+
 import { CrosshairLayer } from './chart/CrosshairLayer';
 import { HALO } from './chart/EndLabels';
 import { ChartData } from './ChartData';
 import {
-  MARK_SELF_TEXT, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, FIT_BAND, GUIDE_STRONG, LARGE_GROUP, peerDot,
+  MARK_SELF, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, FIT_BAND, TREND_LINE, LARGE_GROUP, peerDot,
   MarkerLegend, ChartDot, type PeerPoint,
 } from './markers';
 
@@ -30,7 +31,7 @@ export interface ScatterPoint extends PeerPoint {
 
 /** The chart's height, px: 300 for a group; for a crowd (over LARGE_GROUP) taller, and taller again on a
  *  phone, whose plot is a quarter as wide — the room a dot is nudged into is the plot's area. */
-const CHART_H = { group: 300, crowd: 420, crowdPhone: 480 } as const;
+const CHART_H = { group: 376, crowd: 420, crowdPhone: 480 } as const;
 /** In a crowd, smaller dots — a peer and a same-school peer — so a hundred people near one pay can each
  *  be seen; nudged apart by up to NUDGE_MAX px (lib/nudge). */
 const CROWD_R = { peer: 2, sameSchool: 2.5 } as const;
@@ -40,12 +41,17 @@ const HOVER_SNAP_PX = 14;
  *  their tenure, px tall, and the gap between it and the plot's own range. */
 const BAND_H = 16;
 const BAND_GAP = 6;
-/** The ring round the subject's dot, and the two names written on the plot: the subject's, as the strip
- *  above writes it, and the tenure line's. */
-const RING_R = 9;
+/** The two names written on the plot: the subject's, a pill as the strip above writes it, and the tenure
+ *  line's. */
 const SELF_FONT = CHART_FONT;
 const FIT_FONT = CHART_FONT;
-const FIT_TEXT = 'tenure-expected pay';
+const FIT_TEXT = 'Tenure-expected pay';
+/** The subject's pill: 12px words at 600, 9px either side, 25px tall; the chip on the tenure axis 20px. */
+const PILL_PAD = 9;
+const PILL_H = 25;
+const CHIP_H = 20;
+/** A 600-weight word runs about this much wider than measureText's 400. */
+const BOLD = 1.07;
 
 interface AxisMapEntry { scale: ((v: number) => number) & { domain?: () => number[]; range?: () => number[] } }
 interface PlotOffset { top: number; left: number; width: number; height: number }
@@ -130,6 +136,8 @@ function DotsLayer({
   /** What to write beside the subject's dot: "Aaron · $116,491". */
   selfText: string | null;
 }) {
+  // The subject's name is placed once, and moves only as what is round it does (lib/labelPlace `current`).
+  const placedSelf = useRef<Pt | null>(null);
   const xScale = xAxisMap ? Object.values(xAxisMap)[0]?.scale : undefined;
   const yScale = yAxisMap ? Object.values(yAxisMap)[0]?.scale : undefined;
   // Recharts hands over new scale and box objects on every render (a hover is one), so the placing is
@@ -168,37 +176,48 @@ function DotsLayer({
   }, [geometry, points, zoom, crowd]);
 
   /**
-   * The two names written on the plot, placed as a line chart's end labels are (`placeEndLabels`): the
-   * tenure line's at its right end, then the subject's beside their dot — neither across the line, and
-   * the subject's never with the line between it and the dot. They replace two legend entries, and the
-   * subject's replaces an endlessly pulsing ring as the way to find them.
+   * The two names written on the plot. The tenure line's at its right end, as a line chart's end labels are
+   * (`placeEndLabels`). The subject's, a pill in their colour, by lib/labelPlace: as near their dot as the
+   * people, the line's name, the line itself and their own guides allow, never with the line between it
+   * and them, a leader to it where it must sit away.
    */
   const labels = useMemo(() => {
-    if (!layout || !xScale || !yScale || !offset) return [];
+    if (!layout || !xScale || !yScale || !offset) return null;
     const full = { left: offset.left, right: offset.left + offset.width, top: offset.top, bottom: offset.top + offset.height };
     // Zoomed, the window's own rows: the strips along the top and bottom hold other people.
     const win = zoom ? { ...full, top: yScale(zoom.hi), bottom: yScale(zoom.lo) } : full;
     const seg = fit
       ? clipToRows({ x: xScale(0), y: yScale(fit.intercept) }, { x: xScale(xMax), y: yScale(fit.intercept + fit.slope * xMax) }, win.top, win.bottom)
       : null;
-    const lines = seg ? [seg] : [];
-    const out: { id: 'fit' | 'self'; x: number; y: number; anchor: 'start' | 'end'; box: { left: number; right: number; top: number; bottom: number } }[] = [];
-    if (seg) {
-      // Weight 500 draws a little wider than the canvas measures at 400.
-      out.push(...placeEndLabels([{ id: 'fit', x: seg[1].x, y: seg[1].y, width: measureText(FIT_TEXT, FIT_FONT) * 1.03, line: seg }], lines, win, win.top)
-        .map((l) => ({ ...l, id: 'fit' as const })));
-    }
+    const fitLabel = seg
+      ? placeEndLabels([{ id: 'fit', x: seg[1].x, y: seg[1].y, width: measureText(FIT_TEXT, FIT_FONT) * BOLD, line: seg }], [seg], win, win.top)[0] ?? null
+      : null;
     const self = layout.placed.find((d) => d.p.isSelf);
+    let you: (Placement & { w: number; h: number }) | null = null;
     if (self && selfText) {
-      // Clear of the ring above and below; a subject in a strip past the window may use the whole plot.
+      const w = measureText(selfText, SELF_FONT) * BOLD + PILL_PAD * 2, h = PILL_H;
+      // A subject in a strip past the window may use the whole plot.
       const bounds = self.side ? full : win;
-      out.push(...placeEndLabels(
-        [{ id: 'self', x: self.x, y: self.y, width: measureText(selfText, SELF_FONT) * 1.08 }],
-        lines, bounds, bounds.top,
-        { avoid: out.map((l) => l.box), ascent: 11, descent: 3, above: RING_R + 5, below: RING_R + 16 },
-      ).map((l) => ({ ...l, id: 'self' as const })));
+      const lines = [
+        ...(seg ? [{ points: sampleSegment(seg[0], seg[1]), weight: 0.3, divides: true }] : []),
+        ...(self.side ? [] : [
+          { points: sampleSegment({ x: self.x, y: self.y }, { x: offset.left, y: self.y }), weight: 0.6 },
+          { points: sampleSegment({ x: self.x, y: self.y }, { x: self.x, y: full.bottom }), weight: 0.6 },
+        ]),
+      ];
+      const p = placeLabel({
+        anchor: { x: self.x, y: self.y },
+        size: { w, h },
+        bounds: { x0: bounds.left, y0: bounds.top, x1: bounds.right, y1: bounds.bottom },
+        dots: layout.placed.filter((d) => d !== self).map((d) => ({ x: d.x, y: d.y, r: d.r, weight: d.p.dimmed ? 0.12 : 1 })),
+        boxes: fitLabel ? [{ x0: fitLabel.box.left, y0: fitLabel.box.top, x1: fitLabel.box.right, y1: fitLabel.box.bottom }] : [],
+        lines,
+        current: placedSelf.current,
+      });
+      placedSelf.current = { x: p.x, y: p.y };
+      you = { ...p, w, h };
     }
-    return out;
+    return { fitLabel, you, self };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `geometry` stands for the scales and the box
   }, [layout, geometry, fit, xMax, zoom, selfText]);
 
@@ -229,7 +248,15 @@ function DotsLayer({
           })}
         </g>
       )}
-      {placed.filter((d) => !d.p.isSelf).reverse().map((d) => {
+      {/* The subject's guides: from their dot across to the pay axis and down to the tenure axis, so their pay
+          and their years can be read off where the axes are. Under the dots. */}
+      {labels?.self && !labels.self.side && (
+        <g className="tenure-guides" aria-hidden>
+          <line x1={labels.self.x} y1={labels.self.y} x2={offset.left} y2={labels.self.y} stroke={MARK_SELF} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="4 3" />
+          <line x1={labels.self.x} y1={labels.self.y} x2={labels.self.x} y2={offset.top + offset.height} stroke={MARK_SELF} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="4 3" />
+        </g>
+      )}
+      {placed.filter((d) => !d.p.isSelf).sort((a, b) => Number(!!b.p.dimmed) - Number(!!a.p.dimmed) || Number(a.p.sameSchool) - Number(b.p.sameSchool)).map((d) => {
         const dot = peerDot(d.p.sameSchool, points.length);
         // A crowd's 2px dots would be mostly rim and edge: they stay plain discs.
         return crowd ? (
@@ -242,7 +269,7 @@ function DotsLayer({
             cy={d.y}
             r={d === hovered ? d.r + 2 : d.r}
             fill={d.p.sameSchool ? MARK_PEER_SAME_SCHOOL : MARK_PEER}
-            fillOpacity={dot.fillOpacity}
+            fillOpacity={dot.fillOpacity * (d.p.dimmed ? 0.18 : 1)}
           />
         ) : (
           <ChartDot
@@ -253,35 +280,57 @@ function DotsLayer({
             r={d.r}
             fillOpacity={dot.fillOpacity}
             hovered={d === hovered}
+            dimmed={d.p.dimmed}
           />
         );
       })}
       {placed.filter((d) => d.p.isSelf).map((d) => (
-        // The subject: their dot, the size of everyone's, with the pip that says it is them, and their name
-        // beside it.
+        // The subject: their dot, the size of everyone's, with the pip that says it is them.
         <g key="self" className="tenure-self">
           <ChartDot cx={d.x} cy={d.y} kind="self" className="tenure-self-dot" hovered={d === hovered} />
         </g>
       ))}
-      {labels.map((l) => (
+      {labels?.fitLabel && (
         <text
-          key={l.id}
-          // `accent7-text` swaps the subject's name to --text-accent on a dark card, as the strip's does;
-          // the fill follows it through currentColor.
-          className={l.id === 'self' ? 'tenure-self-label accent7-text' : 'tenure-fit-label'}
-          x={l.x}
-          y={l.y}
-          textAnchor={l.anchor}
-          fontSize={l.id === 'self' ? SELF_FONT : FIT_FONT}
-          fontWeight={l.id === 'self' ? 700 : 500}
-          fill={l.id === 'self' ? 'currentColor' : 'var(--mantine-color-dimmed)'}
-          style={l.id === 'self' ? { color: MARK_SELF_TEXT } : undefined}
+          className="tenure-fit-label"
+          x={labels.fitLabel.x}
+          y={labels.fitLabel.y}
+          textAnchor={labels.fitLabel.anchor}
+          fontSize={FIT_FONT}
+          fontWeight={600}
+          fill="var(--mantine-color-dimmed)"
           pointerEvents="none"
           {...HALO}
         >
-          {l.id === 'self' ? selfText : FIT_TEXT}
+          {FIT_TEXT}
         </text>
-      ))}
+      )}
+      {/* The subject's years, as a chip on the tenure axis where their guide meets it. */}
+      {labels?.self && !labels.self.side && (() => {
+        const t = `${labels.self.p.tenure.toFixed(1)} yrs`;
+        const w = measureText(t, CHART_FONT) * BOLD + 12;
+        const y = offset.top + offset.height + 3;
+        return (
+          <g className="tenure-chip" pointerEvents="none">
+            <rect x={labels.self.x - w / 2} y={y} width={w} height={CHIP_H} rx={5} fill={MARK_SELF} stroke="var(--mantine-color-body)" strokeWidth={2} paintOrder="stroke" />
+            <text x={labels.self.x} y={y + CHIP_H / 2} dy="0.35em" textAnchor="middle" fontSize={CHART_FONT} fontWeight={600} fill="var(--mark-self-on)">{t}</text>
+          </g>
+        );
+      })()}
+      {labels?.you && selfText && (
+        <g className="tenure-self-pill" pointerEvents="none">
+          {labels.you.leader && (
+            <line className="tenure-self-leader" x1={labels.you.leader.x1} y1={labels.you.leader.y1} x2={labels.you.leader.x2} y2={labels.you.leader.y2}
+              stroke={MARK_SELF} strokeWidth={1.5} strokeLinecap="round" />
+          )}
+          <rect x={labels.you.x - labels.you.w / 2} y={labels.you.y - labels.you.h / 2} width={labels.you.w} height={labels.you.h} rx={6}
+            fill={MARK_SELF} stroke="var(--mantine-color-body)" strokeWidth={2} paintOrder="stroke" />
+          <text className="tenure-self-label" x={labels.you.x} y={labels.you.y} dy="0.35em" textAnchor="middle"
+            fontSize={SELF_FONT} fontWeight={600} fill="var(--mark-self-on)">
+            {selfText}
+          </text>
+        </g>
+      )}
       {hovered && hovered.side !== 0 && (
         <circle cx={hovered.x} cy={hovered.y} r={hovered.r + 5} fill="none" stroke="var(--mantine-color-accent-6)" strokeWidth={2} pointerEvents="none" />
       )}
@@ -326,15 +375,34 @@ export function TenurePayScatter({
   const placedRef = useMemo(() => ({ current: [] as Placed[], meta: { crowded: 0, maxShift: 0, top: 0, bottom: 0, right: 0 } as PlacedMeta }), []);
   // One fit for the line, the callout and the comparison brief (tenureFit): peers only — never the
   // person it is judging — and no fit at all below TENURE_MIN_PEERS.
-  const peerPts = points.filter((p) => !p.isSelf).map((p) => ({ x: p.tenure, y: p.pay }));
+  // The cohort only: the dimmed (outside a chosen "Same school") are drawn, not fitted.
+  const peerPts = points.filter((p) => !p.isSelf && !p.dimmed).map((p) => ({ x: p.tenure, y: p.pay }));
   const fit = self ? tenureFit(peerPts, { x: self.tenure, y: self.pay }) : null;
   const reg = fit ? { intercept: fit.intercept, slope: fit.slope } : null;
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   // To the next five years, not ten: a longest tenure of 31.5 years drew an axis to 40.
   const xMax = Math.ceil(tMax / 5) * 5;
-  const xStep = xMax <= 20 ? 5 : 10;
+  // The plot's width, measured, for the tenure axis's steps: every five years where they fit, every ten where
+  // they would crowd (a phone), and none under the chip that marks the subject's own years.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [plotW, setPlotW] = useState(0);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => setPlotW(Math.max(0, el.getBoundingClientRect().width - 12 - 16 - 56));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const xStep = xMax <= 20 || plotW / (xMax / 5) >= 44 ? 5 : 10;
+  const perYear = plotW > 0 ? plotW / xMax : 0;
+  const chipHalf = self ? (measureText(`${self.tenure.toFixed(1)} yrs`, CHART_FONT) * BOLD + 12) / 2 + 14 : 0;
   const xTicks: number[] = [];
-  for (let t = 0; t <= xMax; t += xStep) xTicks.push(t);
+  for (let t = 0; t <= xMax; t += xStep) {
+    if (self && !sideOf(zoom, self.pay) && perYear > 0 && Math.abs(t - self.tenure) * perYear < chipHalf) continue;
+    xTicks.push(t);
+  }
   const above = zoom ? points.filter((p) => p.pay > zoom.hi).length : 0;
   const below = zoom ? points.filter((p) => p.pay < zoom.lo).length : 0;
   // The pay axis: the window's ends, on round steps inside it; or round steps across the points and the
@@ -347,9 +415,10 @@ export function TenurePayScatter({
     for (let v = Math.ceil(zoom.lo / step) * step; v <= zoom.hi + 1e-6; v += step) yTicks.push(v);
     yDomain = [zoom.lo, zoom.hi];
   } else {
-    // The band round the line's ends, not just the line's: its wash must fit inside the axis.
-    const band = reg ? [...onCurveBand(reg.intercept), ...onCurveBand(reg.intercept + reg.slope * xMax)] : [];
-    const pays = [...points.map((p) => p.pay), ...(self ? [self.pay] : []), ...band].filter((v) => Number.isFinite(v));
+    // Round steps across everyone drawn, the dimmed included, and not the fitted line's band: choosing "Same
+    // school" refits the line, and an axis that followed it moved every dot. The line and its band are cut at
+    // the plot's edge instead.
+    const pays = [...points.map((p) => p.pay), ...(self ? [self.pay] : [])].filter((v) => Number.isFinite(v));
     yTicks = pays.length ? moneyTicks(Math.max(0, Math.min(...pays)), Math.max(...pays)) : [];
     yDomain = yTicks.length ? [yTicks[0], yTicks[yTicks.length - 1]] : ['auto', 'auto'];
   }
@@ -385,20 +454,53 @@ export function TenurePayScatter({
 
   return (
     <div>
+      {/* The key: the dots' colours and the tenure line, over the chart. The subject is named on the plot. */}
+      {legend && (
+        <MarkerLegend
+          align="end"
+          items={[
+            ...(schoolPts.length ? [{ color: MARK_PEER_SAME_SCHOOL, dot: 'same' as const, label: 'Same school' }] : []),
+            ...(others.length ? [{ color: MARK_PEER, dot: 'peer' as const, label: 'Others' }] : []),
+            ...(reg ? [{ color: TREND_LINE.stroke, line: true, label: FIT_TEXT }] : []),
+          ]}
+        />
+      )}
+      {/* The finding, in one divided strip: whether the subject is on the curve, what tenure alone predicts for
+          their years, what they are paid, the difference, and where that leaves them once tenure is allowed
+          for. Never a warning, below the curve or above it: a status, in the neutral, and the accent's tint
+          only for "on". */}
       {fit && self && (
-        <Box mb="md" className="tenure-callout" data-verdict={fit.verdict}>
-          <Text size="sm">
-            <b>{fit.verdict === 'on' ? 'On the tenure curve.' : fit.verdict === 'above' ? 'Above the tenure curve.' : 'Below the tenure curve.'}</b>{' '}
-            At {self.tenure.toFixed(1)} years, {titleLabel} typically pays <b>{usd(fit.expected)}</b>.{' '}
-            {fit.verdict === 'on'
-              ? <>This person is within 2% of that (<b>{usd(Math.abs(fit.gap))} {fit.gap >= 0 ? 'more' : 'less'}</b>).</>
-              : <>This person earns <b>{usd(Math.abs(fit.gap))} {fit.gap >= 0 ? 'more' : 'less'}</b> than tenure alone predicts.</>}
+        <>
+          <div className="tenure-callout tenure-strip" data-verdict={fit.verdict}>
+            <div className="tenure-cell tenure-status">
+              <span className="tenure-pill" data-verdict={fit.verdict}>
+                {fit.verdict === 'on' ? 'On the tenure curve' : fit.verdict === 'above' ? 'Above the tenure curve' : 'Below the tenure curve'}
+              </span>
+            </div>
+            <div className="tenure-cell">
+              <span className="tenure-cell-label">Expected at {fmtYears(self.tenure)}</span>
+              <span className="tenure-cell-value">{usd(fit.expected)}</span>
+            </div>
+            <div className="tenure-cell">
+              <span className="tenure-cell-label">Actual</span>
+              <span className="tenure-cell-value">{usd(self.pay)}</span>
+            </div>
+            <div className="tenure-cell">
+              <span className="tenure-cell-label">Difference</span>
+              <span className="tenure-cell-value">
+                {fit.gap < 0 ? '−' : fit.gap > 0 ? '+' : ''}{usd(Math.abs(fit.gap))}{' '}
+                <span className="tenure-cell-note">({fit.gap < 0 ? '−' : fit.gap > 0 ? '+' : ''}{(Math.abs(fit.gap) / fit.expected * 100).toFixed(1)}%)</span>
+              </span>
+            </div>
+            <div className="tenure-cell">
+              <span className="tenure-cell-label">Allowing for tenure</span>
+              <span className="tenure-cell-value">Paid more than {fit.adjustedPercentile}%</span>
+            </div>
+          </div>
+          <Text size="xs" c="dimmed" mt={6} mb="md">
+            Tenure explains about {Math.round(fit.r2 * 100)}% of pay differences for this title (fitted to the {num(fit.n)} others).
           </Text>
-          <Text size="xs" c="dimmed" mt={4}>
-            Tenure explains about {Math.round(fit.r2 * 100)}% of pay differences for this title. Allowing for tenure,
-            this person is paid more than {fit.adjustedPercentile}% of the {fit.n} others.
-          </Text>
-        </Box>
+        </>
       )}
       {!fit && self && peerPts.length < TENURE_MIN_PEERS && (
         <Text size="xs" c="dimmed" mb="md">
@@ -411,6 +513,7 @@ export function TenurePayScatter({
           the nearest dot. */}
       <div role="img" aria-label={`Scatter plot of pay versus tenure for ${titleLabel}, tenure in years on the x-axis and pay in dollars on the y-axis.`}>
       <div
+        ref={wrapRef}
         aria-hidden="true"
         className="tenure-plot"
         data-window={zoom ? `${zoom.lo}-${zoom.hi}` : undefined}
@@ -429,7 +532,8 @@ export function TenurePayScatter({
             domain={[0, xMax]}
             ticks={xTicks}
             tick={AXIS_TICK}
-            tickFormatter={(v) => `${v}y`}
+            // The unit once, on the last: "0 5 10 … 45 yrs".
+            tickFormatter={(v) => (v === xTicks[xTicks.length - 1] ? `${v} yrs` : `${v}`)}
           />
           <YAxis
             type="number"
@@ -448,11 +552,12 @@ export function TenurePayScatter({
           {reg && (
             <ReferenceLine
               className="tenure-fit"
-              stroke={GUIDE_STRONG.stroke}
-              strokeDasharray={GUIDE_STRONG.dasharray}
-              strokeWidth={GUIDE_STRONG.width}
-              // Zoomed, the line is cut at the window's edges rather than stretching the axis back out.
-              ifOverflow={zoom ? 'hidden' : 'extendDomain'}
+              stroke={TREND_LINE.stroke}
+              strokeWidth={TREND_LINE.width}
+              strokeLinecap="round"
+              // Cut at the plot's (or the window's) edges rather than stretching the axis: the axis holds still
+              // whichever cohort the line is fitted to.
+              ifOverflow="hidden"
               segment={[{ x: 0, y: reg.intercept }, { x: xMax, y: reg.intercept + reg.slope * xMax }]}
             />
           )}
@@ -483,25 +588,16 @@ export function TenurePayScatter({
         </ScatterChart>
       </ResponsiveContainer>
       {hover && tip && (
-        <div className="tenure-tip" style={{ position: 'absolute', left: tip.x + 12, top: tip.y - 12, pointerEvents: 'none', transform: tip.x > placedRef.meta.right - 180 ? 'translate(calc(-100% - 24px), -100%)' : 'translateY(-100%)' }}>
-          <TipSurface>
-            <Text size="xs" fw={600}>{hover.name}{hover.isSelf ? ' (this person)' : ''}</Text>
-            <Text size="xs" c="dimmed">{fmtYears(hover.tenure)} · {usd(hover.pay)}</Text>
-          </TipSurface>
+        <div className="tenure-tip" style={{ position: 'absolute', left: tip.x, top: tip.y - 14, pointerEvents: 'none', transform: tip.x > placedRef.meta.right - 120 ? 'translate(-100%, -100%)' : tip.x < 140 ? 'translate(0, -100%)' : 'translate(-50%, -100%)' }}>
+          <span className="chart-tip-pill">
+            <span className="tenure-tip-name">{hover.name}{hover.isSelf ? ' (this person)' : ''}</span> · {usd(hover.pay)} · {fmtYears(hover.tenure)}
+          </span>
         </div>
       )}
       </div>
       </div>
 
-      {/* No "This person" and no dashed swatch: the subject and the line are named on the plot. */}
-      {legend && (
-        <MarkerLegend
-          items={[
-            ...(schoolPts.length ? [{ color: MARK_PEER_SAME_SCHOOL, dot: 'same' as const, label: 'Same school' }] : []),
-            ...(others.length ? [{ color: MARK_PEER, dot: 'peer' as const, label: 'Others' }] : []),
-          ]}
-        />
-      )}
+
       {zoom && (above || below) ? (
         <Text size="xs" c="dimmed" mt={4} ta="center" className="tenure-note">
           {`Pay axis ${fmtK(zoom.lo)}–${fmtK(zoom.hi)}, where 90% of people with this title are paid; ${[

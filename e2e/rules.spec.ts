@@ -140,7 +140,7 @@ test.describe('R4 — one tenure fit, peers only, with a tolerance', () => {
     const callout = page.locator('.tenure-callout');
     await expect(callout).toBeVisible({ timeout: 60_000 });
     await expect(callout).toHaveAttribute('data-verdict', 'on');
-    await expect(callout).toContainText('On the tenure curve.');
+    await expect(callout).toContainText('On the tenure curve');
   });
 
   test('with fewer than 8 peers there is no line and no verdict', async ({ page }) => {

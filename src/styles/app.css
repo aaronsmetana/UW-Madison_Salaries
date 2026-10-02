@@ -215,6 +215,8 @@
   --hairline-strong: rgba(16, 24, 32, 0.16);
   /* A rule inside a card, between the things it holds: a step under the card's own edge. */
   --hairline-soft: rgba(16, 24, 32, 0.07);
+  /* A ground a hair off the card's, for a strip of figures set into it (the tenure strip, a table's head). */
+  --surface-subtle: #fafbfb;
   /* Behind a chart's plot area — see `GRID` in lib/chartStyle.ts. */
   --plot-surface: rgba(16, 24, 32, 0.03);
   /* A pill's own ground (FactPill, `.code-pill`): translucent, because a pill sits on the page in one
@@ -341,6 +343,7 @@ body {
   --hairline: rgba(255, 255, 255, 0.09);
   --hairline-strong: rgba(255, 255, 255, 0.17);
   --hairline-soft: rgba(255, 255, 255, 0.07);
+  --surface-subtle: var(--surface-sunken);
   --plot-surface: rgba(255, 255, 255, 0.03);
   --pill-bg: rgba(255, 255, 255, 0.075);
   --link-underline-mix: 68%;
@@ -1322,6 +1325,49 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .strip-tick-mark { position: absolute; left: -0.5px; top: 0; width: 1px; height: 4px; background: var(--hairline-strong); }
 .strip-tick-label, .peer-strip-pile-label { position: absolute; top: 6px; white-space: nowrap; color: var(--text-faint); }
 
+/* Pay vs. tenure's finding (TenurePayScatter): one divided strip of a status and four figures, on a ground a
+   hair off the card's, the dividers between two cells of a row only (as the facts strip's). The status is a
+   pill: the accent's tint for "on the curve", the neutral for above and below — never a warning. */
+.tenure-strip {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 10px;
+  padding: 12px 0;
+  overflow: hidden;
+  background: var(--surface-subtle);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--mantine-radius-sm);
+}
+.tenure-cell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  margin-left: -1px;
+  padding-inline: 16px;
+  border-left: 1px solid var(--hairline-soft);
+}
+.tenure-cell-label { font-size: 12px; line-height: 16px; color: var(--text-faint); }
+.tenure-cell-value { font-size: var(--mantine-font-size-lg); font-weight: 600; line-height: 1.3; color: var(--mantine-color-text); white-space: nowrap; }
+.tenure-cell-note { font-size: var(--mantine-font-size-xs); font-weight: 400; color: var(--mantine-color-dimmed); }
+.tenure-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tenure-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.tenure-pill[data-verdict='on'] { background: var(--tint-accent); border-color: var(--tint-accent-strong); color: var(--text-accent); }
+
 /* A chart card's tools (ChartData): About, CSV and Table, each its icon and its name. On a phone the names
    go and the icons stay; each keeps its name for a screen reader. */
 @media (max-width: 47.99em) {
@@ -1421,23 +1467,6 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 
 /* ── Tasteful motion layer (all reduced-motion guarded at the bottom of this file). ── */
 
-/* Every peer dot in the app grows a touch on direct hover — the tenure scatter and the peer strip both
-   draw `<circle class="chart-dot">`, so one rule covers both. (In the scatter a wide transparent hit
-   circle behind each dot is the real proximity target — see its PeerDot.) The subject's own mark is
-   excluded: it is already the largest thing in either chart. */
-.chart-dot { transition: r var(--dur-fast) var(--ease); }
-.chart-dot:hover { r: 6.5px; }
-
-/* The tenure callout is a reading of the chart, not a warning, so it wears the same neutral surface
-   whatever it says. It was green for "above" and orange for "below" — the app's warning hue, which
-   made a $1,367 gap on a $115,000 salary look like an alert. Orange stays for real warnings. */
-.tenure-callout {
-  background: var(--surface-sunken);
-  border-left: 3px solid var(--hairline-strong);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-
 /* Tab sections fade + rise once on mount (Overview + Pay & standing) — a single gentle stagger, not a
    cascade. Durations and travel are roughly halved from where they started: at 420-520ms with delays
    running to 300ms the page was still assembling itself well after it was readable, which reads as
@@ -1489,7 +1518,6 @@ button:active,
    pulse is gated in TenurePayScatter.) */
 @media (prefers-reduced-motion: reduce) {
   .tab-rise > *, .route-rise { animation: none; }
-  .chart-dot { transition: none; }
   button:active,
   .mantine-Button-root:active,
   .mantine-ActionIcon-root:active { transform: none; }

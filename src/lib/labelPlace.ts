@@ -15,6 +15,9 @@
  * - every sampled point of a line it lies on, the line's weight (the median 0.25, a trend line 0.3, the
  *   person's own guides 0.6);
  * - every dot its leader would pass through, 0.6 × that dot's weight;
+ * - a dividing line (`divides`) between the name and its dot (the way from the dot to the name's centre
+ *   crosses it), 40 × the line's weight: a name across a trend line from its dot reads as the other side's (the scatter's rule
+ *   before this placement, kept);
  * - how far it would move from where it is now (×0.006), so it does not jump for nothing.
  *
  * The leader runs from 7px outside the dot's centre to the nearest point of the label, and is left out
@@ -24,7 +27,8 @@
 export interface Pt { x: number; y: number }
 export interface Box { x0: number; y0: number; x1: number; y1: number; weight?: number }
 export interface Dot { x: number; y: number; r: number; weight?: number }
-export interface Line { points: Pt[]; weight: number }
+/** A line on the plot, sampled. `divides`: a name must stay on its dot's side of it (a trend line). */
+export interface Line { points: Pt[]; weight: number; divides?: boolean }
 export interface Placement { x: number; y: number; leader: { x1: number; y1: number; x2: number; y2: number } | null }
 
 const ANGLES = 36;
@@ -35,6 +39,13 @@ const overlap = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 &&
 const boxOf = (c: Pt, w: number, h: number): Box => ({ x0: c.x - w / 2, y0: c.y - h / 2, x1: c.x + w / 2, y1: c.y + h / 2 });
 /** The point of a box nearest to `p` (p itself when inside). */
 const nearest = (b: Box, p: Pt): Pt => ({ x: Math.max(b.x0, Math.min(b.x1, p.x)), y: Math.max(b.y0, Math.min(b.y1, p.y)) });
+/** Whether segments a–b and c–d cross or touch. A way that passes exactly through a sampled point of a line
+ *  has crossed it. */
+function crosses(a: Pt, b: Pt, c: Pt, d: Pt) {
+  const o = (p: Pt, q: Pt, r: Pt) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+  return o(a, b, c) * o(a, b, d) <= 0 && o(c, d, a) * o(c, d, b) <= 0;
+}
+const near1 = (p: Pt, q: Pt) => Math.abs(p.x - q.x) < 1 && Math.abs(p.y - q.y) < 1;
 /** Distance from `p` to the segment a–b. */
 function segDist(p: Pt, a: Pt, b: Pt) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -90,7 +101,15 @@ export function placeLabel({ anchor, size, bounds, dots = [], boxes = [], lines 
         if (leader && segDist(d, { x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }) < d.r) score += 0.6 * w;
       }
       for (const b of boxes) if (overlap(box, b)) score += 6 * (b.weight ?? 1);
-      for (const l of lines) for (const p of l.points) if (p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1) score += l.weight;
+      for (const l of lines) {
+        for (const p of l.points) if (p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1) score += l.weight;
+        // Not a line that starts at the dot (its own guides): every way out of the dot touches those.
+        if (l.divides) for (let i = 1; i < l.points.length; i++) {
+          const p0 = l.points[i - 1], p1 = l.points[i];
+          if (near1(p0, anchor) || near1(p1, anchor)) continue;
+          if (crosses(anchor, c, p0, p1)) { score += 40 * l.weight; break; }
+        }
+      }
       if (current) score += Math.hypot(c.x - current.x, c.y - current.y) * 0.006;
       if (!best || score < best.score - 1e-9) best = { c, score };
     }
