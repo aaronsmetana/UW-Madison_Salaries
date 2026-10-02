@@ -107,8 +107,10 @@ export const theme = createTheme({
   radius: { xs: '6px', sm: '10px', md: '10px', lg: '14px', xl: '999px' },
   components: {
     Card: { defaultProps: { radius: 'lg', withBorder: true, padding: 'lg' } },
-    // One table look everywhere: zebra rows, hover highlight, comfortable row spacing.
-    Table: { defaultProps: { striped: true, highlightOnHover: true, verticalSpacing: 'sm' } },
+    // One table look everywhere: a hairline between rows (no zebra: a stripe read as a mark, and a row's own
+    // shading — the subject's, a noted one — had to compete with it), the pointer's grey under a row, and
+    // comfortable row spacing. The rules and the head's ground are app.css's.
+    Table: { defaultProps: { striped: false, highlightOnHover: true, verticalSpacing: 'sm' } },
     // Badges read as sentence case by default (the app's convention); a true status label that should
     // shout re-adds tt="uppercase" explicitly at the call site.
     Badge: { defaultProps: { tt: 'none' } },

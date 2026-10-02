@@ -847,3 +847,78 @@ test('the header adds a person to the compare set and takes them out again', asy
     await expect(page.getByRole('button', { name: 'Add to compare', pressed: false }), `${route}: a second press did not take it out`).toBeVisible();
   }
 });
+
+const AARON = 'aaronsmetana|2014-10-15';
+
+/**
+ * The person's table opens on the nine people round them (four either side), not on the top 25 or on everyone
+ * in a scroll box; a filter finds anyone by name, school or department, and "Show all" lists every row in the
+ * page. Each row's "vs." is their pay less the subject's, signed; a same-school row has the green dot and no
+ * tint; the subject's row is tinted and marked "Viewing".
+ */
+test("the person's table: nine round them, a filter, Show all, and each row against them", async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(AARON)}`);
+  const card = page.locator('.peer-table-card');
+  const rows = card.locator('tbody tr');
+  await expect(rows).toHaveCount(9, { timeout: 60_000 });
+  await expect(rows.nth(4)).toHaveClass(/row-this/);
+  await expect(rows.nth(4)).toContainText('Viewing');
+  await expect(card.locator('.peer-foot')).toContainText(/Showing 9 of \d+ around Aaron/);
+  await expect(card.locator('.mantine-ScrollArea-root')).toHaveCount(0);
+  const money = (t: string) => Number(t.replace(/[^\d]/g, '')) * (t.includes('−') ? -1 : 1);
+  const self = money(await rows.nth(4).locator('td').nth(4).innerText());
+  for (const i of [0, 8]) {
+    const pay = money(await rows.nth(i).locator('td').nth(4).innerText());
+    const vs = money(await rows.nth(i).locator('td.peer-vs').innerText());
+    // To the dollar: each figure on the row is rounded for display.
+    expect(Math.abs(vs - (pay - self)), `row ${i}: vs. is not their pay less Aaron's`).toBeLessThanOrEqual(1);
+  }
+  // Same school: the dot, never a tint.
+  const school = await rows.evaluateAll((trs) => trs.filter((tr) => tr.querySelector('.same-school-dot')).map((tr) => ({
+    text: tr.querySelector('.peer-school')!.textContent, bg: getComputedStyle(tr.querySelector('td')!).backgroundColor,
+  })));
+  expect(school.length).toBeGreaterThan(0);
+  for (const r of school) expect(r.text).toContain('School of Medicine and Public Health');
+  await page.mouse.move(1, 1);
+  const plain = await rows.nth(0).locator('td').first().evaluate((td) => getComputedStyle(td).backgroundColor);
+  for (const r of school) expect(r.bg, 'a same-school row is tinted').toBe(plain);
+  // The filter: by school.
+  await card.getByRole('textbox', { name: /Filter the people/ }).fill('information technology');
+  const filtered = await rows.allInnerTexts();
+  expect(filtered.length).toBeGreaterThan(1);
+  for (const t of filtered) expect(t.toLowerCase()).toContain('information technology');
+  await card.getByRole('textbox', { name: /Filter the people/ }).fill('');
+  // Show all: every row, in the page.
+  await card.getByRole('button', { name: 'Show all' }).click();
+  const all = Number((await card.locator('.peer-foot').innerText()).match(/Showing all (\d+)/)![1]);
+  await expect(rows).toHaveCount(all);
+});
+
+/** Every table: no zebra stripes — a soft rule between rows — and a head on the subtle ground, the sorted column in ink. */
+test('every table has rules, not stripes, and its head says which column it is sorted by', async ({ page }) => {
+  for (const route of [`./person/${encodeURIComponent(AARON)}`, './explore', './paycheck?code=IT040']) {
+    await page.goto(route);
+    const table = page.locator('table.mantine-Table-table:has(tbody tr)').locator('visible=true').first();
+    await expect(table).toBeVisible({ timeout: 60_000 });
+    await page.mouse.move(1, 1);
+    await page.waitForTimeout(300);
+    const g = await table.evaluate((t) => {
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'var(--surface-subtle)';
+      document.body.append(probe);
+      const subtle = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const plainRows = [...t.querySelectorAll('tbody tr')].filter((r) => !r.className.includes('row-this') && !r.hasAttribute('data-pointed')).slice(0, 6);
+      return {
+        // The row and its cell: a stripe is painted on the row, a tint on its cells.
+        bgs: [...new Set(plainRows.map((r) => `${getComputedStyle(r).backgroundColor}|${getComputedStyle(r.querySelector('td')!).backgroundColor}`))],
+        head: getComputedStyle(t.querySelector('thead th')!).backgroundColor, subtle,
+        sorted: t.querySelector('thead th[aria-sort]') ? getComputedStyle(t.querySelector('thead th[aria-sort]')!).color : null,
+        other: getComputedStyle(t.querySelector('thead th:not([aria-sort])')!).color,
+      };
+    });
+    expect(g.bgs.length, `${route}: the rows alternate`).toBe(1);
+    expect(g.head, `${route}: the head is not on the subtle ground`).toBe(g.subtle);
+    if (g.sorted) expect(g.sorted, `${route}: the sorted column's head is not set apart`).not.toBe(g.other);
+  }
+});

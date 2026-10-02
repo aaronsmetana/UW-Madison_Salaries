@@ -38,7 +38,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
 interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
-type PeopleSortKey = 'name' | 'school' | 'department' | 'tenure' | 'salary';
+type PeopleSortKey = 'name' | 'school' | 'tenure' | 'salary';
 interface SchoolRow { school: string; n: number; med: number | null }
 interface PctRow { scope: string; pct: number; n: number }
 
@@ -150,7 +150,6 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       switch (peopleSort.key) {
         case 'name': cmp = fullName(a.fn, a.ln).localeCompare(fullName(b.fn, b.ln)); break;
         case 'school': cmp = (a.school ?? '').localeCompare(b.school ?? ''); break;
-        case 'department': cmp = (a.department ?? '').localeCompare(b.department ?? ''); break;
         case 'tenure': cmp = (a.tenure ?? 0) - (b.tenure ?? 0); break;
         default: cmp = a.pay - b.pay;
       }
@@ -296,8 +295,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
               <Table.Tr>
                 <Table.Th w={48} ta="right" data-fold>#</Table.Th>
                 <SortableTh sortKey="name" label="Name" sort={peopleSort} onSort={setPeopleSort} />
-                <SortableTh sortKey="school" label="School" fold sort={peopleSort} onSort={setPeopleSort} />
-                <SortableTh sortKey="department" label="Department" fold sort={peopleSort} onSort={setPeopleSort} />
+                <SortableTh sortKey="school" label="School · department" srLabel="school" fold sort={peopleSort} onSort={setPeopleSort} />
                 <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <Table.Th w={132} className="tray-col" />
@@ -325,10 +323,13 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                         #{realRank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
                       </Text>
                     </Table.Td>
-                    <Table.Td data-fold><Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text></Table.Td>
-                    <Table.Td data-fold><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
+                    {/* School over department, as a person's table has them: one column for where someone works. */}
+                    <Table.Td data-fold>
+                      <Text size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
+                      {p.department && <Text size="xs" c="var(--text-faint)" lineClamp={1}>{p.department}</Text>}
+                    </Table.Td>
                     <Table.Td data-fold ta="right">{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
-                    <Table.Td ta="right">{usd(p.pay)}</Table.Td>
+                    <Table.Td ta="right" fw={600}>{usd(p.pay)}</Table.Td>
                     <Table.Td ta="right">
                       <TrayButton
                         inTray={inTray}

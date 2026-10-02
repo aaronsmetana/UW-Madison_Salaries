@@ -161,7 +161,6 @@
      --guide-strong already is one per scheme. */
   --fit-band: color-mix(in srgb, var(--guide-strong) 16%, transparent);
 
-  --pos-row-bg: #edf6f1; /* related-match row tint (same school) */
 
   /* Appointment lanes on the person history table. Deliberately NOT from the semantic ramp: orange
      is `warn` and red is `down` (see SEMANTIC in theme.ts), so a lane painted in either would read as
@@ -411,9 +410,6 @@ body {
   --mantine-color-text: #e8eaed;
   --mantine-color-dimmed: #c1c2c5;
 
-  /* Same-school row tint for dark mode: an explicit, readable dark-green band (the light #edf6f1 washed out
-     the text). Comparable strength to the subject row's teal accent-light, but a distinct green hue. */
-  --pos-row-bg: rgba(21, 163, 107, 0.16);
   /* Lane rails, re-picked for a #141619 card: the light set's deep teal and near-black both vanish
      against it, so each moves up its ramp until it reads as a mark rather than a smudge. */
   --lane-1: var(--mantine-color-accent-5);
@@ -995,21 +991,34 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
   color: var(--text-faint);
 }
 
-/* Highlight rows: the searched "this" row (accent) and related-match rows (same school → green). */
-.mantine-Table-tr.row-this td {
-  background-color: var(--mantine-color-accent-light);
+/* Every table: a soft rule between rows, the pointer's grey under one, a head on the subtle ground with the
+   column it is sorted by in the ink. */
+.mantine-Table-table {
+  --table-border-color: var(--hairline-soft);
+  --table-hover-color: var(--hover-bg);
 }
-.mantine-Table-tr.row-this td:first-child {
-  box-shadow: inset 3px 0 0 0 var(--mantine-color-accent-7);
+.mantine-Table-thead .mantine-Table-th { background-color: var(--surface-subtle); }
+.mantine-Table-thead .mantine-Table-th[aria-sort] { color: var(--mantine-color-text); }
+
+/* The row of the person the page is about: the accent's tint, their name in 700 and a "Viewing" pill. */
+.mantine-Table-tr.row-this td { background-color: var(--tint-accent); }
+.viewing-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tint-accent-strong);
+  color: var(--text-accent);
+  font-size: var(--mantine-font-size-xxs);
+  font-weight: var(--label-weight);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  vertical-align: 1px;
 }
-.mantine-Table-tr.row-related td,
-.peer-same-school td {
-  background-color: var(--pos-row-bg);
-}
-.mantine-Table-tr.row-related td:first-child,
-.peer-same-school td:first-child {
-  box-shadow: inset 3px 0 0 0 var(--mantine-color-pos-6);
-}
+/* A same-school person: an 8px dot of the same-school green before their school (and in the table's key),
+   where their row was a green tint with a green rail. */
+.same-school-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--mark-peer-same-school); }
+.peer-school { display: flex; align-items: center; gap: 6px; min-width: 0; }
 
 /* ── Person history: one lane per concurrent appointment ──────────────────────────────────────────
    The table used to mark concurrent lines with an orange "1 of 2" badge, which is a sentence you have

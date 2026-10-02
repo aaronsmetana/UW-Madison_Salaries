@@ -167,9 +167,10 @@ test('a pile lists its people in the table below, and shows everyone again', asy
   await openPerson(page, KENDALL);
   const high = page.locator('.peer-strip [data-pile="1"]');
   await expect(high).toHaveAccessibleName(`List the ${above.length} people over ${k(w.hi)}`);
-  // Everyone, before: the subject ranks past the first page, so the table opens with all of them.
+  // Before: the nine round the subject, of everyone with the title.
   const everyone = await page.locator('.peer-table-card tbody tr').count();
-  expect(everyone).toBe(people.length);
+  expect(everyone).toBe(9);
+  await expect(page.locator('.peer-table-card .peer-foot')).toContainText(`Showing 9 of ${people.length.toLocaleString('en-US')}`);
   await high.click();
   await expect(high).toHaveAttribute('aria-pressed', 'true');
   const card = page.locator('.peer-table-card');

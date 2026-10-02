@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, Tabs, ScrollArea, Popover, Skeleton,
+  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton,
 } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -23,7 +23,7 @@ import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../li
 import { ttcRank } from '../lib/snapshotOrder';
 import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { IconAlertTriangle, IconArrowRight, IconArrowsDiff } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconFilter } from '@tabler/icons-react';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
@@ -261,7 +261,7 @@ interface PeerStats {
   med_rate: number | null; p75_rate: number | null;
 }
 interface PeerRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
-type PeerSortKey = 'name' | 'school' | 'department' | 'tenure' | 'salary';
+type PeerSortKey = 'name' | 'school' | 'tenure' | 'salary';
 
 export default function Person() {
   // Scopes this page's chart <defs>. An SVG id is document-global, so a literal here would collide
@@ -732,9 +732,11 @@ export default function Person() {
     return moneyTicks(0, top);
   }, [trendPlot, trendMode, trendBand]);
 
-  // Long titles (e.g. "Professor") can have 1000+ peers — page the table instead of rendering
-  // every row. Auto-expand if the subject would otherwise be scrolled off the first page.
+  // The table opens on the people round the subject (AROUND either side of them), with the rest one "Show all"
+  // away, and a filter over name, school and department; no scroll box inside the page (G11). It used to open
+  // on the top 25, or on everyone in a 460px scroll box centred on the subject.
   const [showAllPeers, setShowAllPeers] = useState(false);
+  const [peerFilter, setPeerFilter] = useState('');
   const [peerSort, setPeerSort] = useState<SortState<PeerSortKey>>({ key: 'salary', dir: 'desc' });
   // The table's own display order (independent of cohortRank, which stays a fixed pay-rank stat for
   // the "#N of M" caption above regardless of how the table below is currently sorted).
@@ -745,7 +747,6 @@ export default function Person() {
       switch (peerSort.key) {
         case 'name': cmp = fullName(a.fn, a.ln).localeCompare(fullName(b.fn, b.ln)); break;
         case 'school': cmp = (a.school ?? '').localeCompare(b.school ?? ''); break;
-        case 'department': cmp = (a.department ?? '').localeCompare(b.department ?? ''); break;
         case 'tenure': cmp = (a.tenure ?? 0) - (b.tenure ?? 0); break;
         default: cmp = a.pay - b.pay;
       }
@@ -754,10 +755,21 @@ export default function Person() {
     return arr;
   }, [cohortList, peerSort, pileShown, payWin]);
   const subjectIndexInSort = useMemo(() => sortedCohort.findIndex((p) => p.person_key === key), [sortedCohort, key]);
-  useEffect(() => {
-    if (subjectIndexInSort >= 25) setShowAllPeers(true);
-  }, [subjectIndexInSort]);
-  const visiblePeers = showAllPeers || pileShown ? sortedCohort : sortedCohort.slice(0, 25);
+  const peerQuery = peerFilter.trim().toLowerCase();
+  const filteredPeers = useMemo(
+    () => (peerQuery
+      ? sortedCohort.filter((p) => `${fullName(p.fn, p.ln)} ${p.school ?? ''} ${p.department ?? ''}`.toLowerCase().includes(peerQuery))
+      : sortedCohort),
+    [sortedCohort, peerQuery],
+  );
+  const AROUND = 4;
+  const windowed = !peerQuery && !pileShown && !showAllPeers && sortedCohort.length > 2 * AROUND + 1;
+  const visiblePeers = useMemo(() => {
+    if (!windowed) return filteredPeers;
+    const start = subjectIndexInSort < 0 ? 0 : Math.max(0, Math.min(sortedCohort.length - (2 * AROUND + 1), subjectIndexInSort - AROUND));
+    return sortedCohort.slice(start, start + 2 * AROUND + 1);
+  }, [windowed, filteredPeers, sortedCohort, subjectIndexInSort]);
+  const selfPeerPay = useMemo(() => cohortList.find((p) => p.person_key === key)?.pay ?? null, [cohortList, key]);
   // A pile pressed on the strip lists its people here, and brings the table into view; pressed again,
   // everyone is back.
   const showPile = (side: -1 | 1) => {
@@ -765,18 +777,6 @@ export default function Person() {
     setPileShown(next);
     if (next) requestAnimationFrame(() => peerCardRef.current?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' }));
   };
-
-  // Scroll the peer list so this person's row is centered/visible (viewport only — no page jump).
-  const peerViewportRef = useRef<HTMLDivElement>(null);
-  const subjectRowRef = useRef<HTMLTableRowElement>(null);
-  useEffect(() => {
-    const vp = peerViewportRef.current;
-    const row = subjectRowRef.current;
-    if (!vp || !row) return;
-    const vpRect = vp.getBoundingClientRect();
-    const rowRect = row.getBoundingClientRect();
-    vp.scrollTop += rowRect.top - vpRect.top - vp.clientHeight / 2 + rowRect.height / 2;
-  }, [peers, showAllPeers]);
 
   const [pctRaise, setPctRaise] = useState<number>(2);
   const [years, setYears] = useState<number>(5);
@@ -1134,12 +1134,21 @@ export default function Person() {
             {peers && peers.length > 1 && (
               <Card withBorder padding="lg" ref={peerCardRef} className="peer-table-card">
                 <CardTitle
-                  sub={cohort === 'school' ? `In ${latest?.school}.` : undefined}
-                  right={cohortRank != null && (
-                    <Text size="sm" c="dimmed">
-                      {name} ranks <b>#{cohortRank}</b> of {num(cohortList.length)} by salary
-                    </Text>
-                  )}
+                  sub={<>
+                    Ranked by salary{cohort === 'school' ? `, in ${latest?.school}` : ''}.
+                    {cohortRank != null && <> {selfLabel} ranks <b>#{cohortRank} of {num(cohortList.length)}</b>.</>}
+                  </>}
+                  right={
+                    <TextInput
+                      className="peer-filter"
+                      w={{ base: '100%', sm: 300 }}
+                      aria-label="Filter the people with this title by name, school or department"
+                      placeholder="Filter by name, school, department"
+                      leftSection={<IconFilter size={ICON.control} />}
+                      value={peerFilter}
+                      onChange={(e) => setPeerFilter(e.currentTarget.value)}
+                    />
+                  }
                 >
                   Others with this title
                 </CardTitle>
@@ -1151,87 +1160,114 @@ export default function Person() {
                     <Button variant="subtle" size="compact-xs" onClick={() => setPileShown(0)}>Show everyone</Button>
                   </Group>
                 )}
-                <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present" viewportRef={peerViewportRef}>
-                  <Table stickyHeader miw={760} className="fold-table">
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th w={48} ta="right" data-fold>#</Table.Th>
-                        <SortableTh sortKey="name" label="Name" sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="school" label="School" fold sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="department" label="Department" fold sort={peerSort} onSort={setPeerSort} />
-                        <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
-                        <SortableTh sortKey="salary" label="Salary" sort={peerSort} onSort={setPeerSort} align="right" />
-                        <Table.Th w={132} className="tray-col" />
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {visiblePeers.map((p, i) => {
-                        const isYou = p.person_key === key;
-                        const inTray = has(p.person_key);
-                        const sameSchool = !isYou && !!p.school && p.school === latest?.school;
-                        return (
-                          <Table.Tr
-                            key={p.person_key}
-                            className={`peer-row${sameSchool ? ' peer-same-school' : ''}`}
-                            // Pointing at a row points at the person in both charts above; the charts point back.
-                            data-pointed={pointed === p.person_key || undefined}
-                            onMouseEnter={() => setPointed(p.person_key)}
-                            onMouseLeave={() => setPointed((k) => (k === p.person_key ? null : k))}
-                            ref={isYou ? subjectRowRef : undefined}
-                            // Mouse convenience only — the name below is a real link, so keyboard/screen-reader
-                            // users have a proper, unambiguous way in (a `role="button"` row would otherwise
-                            // nest one interactive element inside another around the tray button in the last cell).
-                            onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
-                            style={{ cursor: isYou ? 'default' : 'pointer', background: isYou ? 'var(--mantine-color-accent-light)' : undefined }}
-                          >
-                            <Table.Td ta="right" c="dimmed" data-fold>{i + 1}</Table.Td>
-                            <Table.Td>
-                              {/* Its own block, so the name is a line by itself and not a link inside the
-                                  folded text below it (which axe then required to differ by more than colour). */}
-                              <div>
-                                {isYou ? (
-                                  <Text span size="sm" fw={700}>{fullName(p.fn, p.ln) || '—'}</Text>
-                                ) : (
-                                  <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} size="sm" c="accent" underline="hover" onClick={(e) => e.stopPropagation()}>
-                                    {fullName(p.fn, p.ln) || '—'}
-                                  </Anchor>
-                                )}
-                                {isYou && <Badge ml="xs" size="xs" variant="filled">this person</Badge>}
-                              </div>
-                              {/* On a phone: rank, name and school in one cell, then the salary. */}
-                              <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
-                                #{i + 1} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
-                              </Text>
-                            </Table.Td>
-                            <Table.Td data-fold title={sameSchool ? `Same school as ${name}` : undefined}>
+                <Table miw={760} className="fold-table peer-table">
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th w={48} ta="right" data-fold>#</Table.Th>
+                      <SortableTh sortKey="name" label="Name" sort={peerSort} onSort={setPeerSort} />
+                      <SortableTh sortKey="school" label="School · department" srLabel="school" fold sort={peerSort} onSort={setPeerSort} />
+                      <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
+                      <SortableTh sortKey="salary" label="Salary" sort={peerSort} onSort={setPeerSort} align="right" />
+                      <Table.Th ta="right" data-fold className="peer-vs">vs. {selfLabel}</Table.Th>
+                      <Table.Th w={132} className="tray-col" />
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {visiblePeers.map((p) => {
+                      const isYou = p.person_key === key;
+                      const inTray = has(p.person_key);
+                      const sameSchool = !isYou && !!p.school && p.school === latest?.school;
+                      const rank = sortedCohort.indexOf(p) + 1;
+                      const vs = !isYou && selfPeerPay != null ? p.pay - selfPeerPay : null;
+                      return (
+                        <Table.Tr
+                          key={p.person_key}
+                          className={`peer-row${isYou ? ' row-this' : ''}`}
+                          // Pointing at a row points at the person in both charts above; the charts point back.
+                          data-pointed={pointed === p.person_key || undefined}
+                          onMouseEnter={() => setPointed(p.person_key)}
+                          onMouseLeave={() => setPointed((k) => (k === p.person_key ? null : k))}
+                          // Mouse convenience only — the name below is a real link, so keyboard/screen-reader
+                          // users have a proper, unambiguous way in (a `role="button"` row would otherwise
+                          // nest one interactive element inside another around the add button in the last cell).
+                          onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
+                          style={{ cursor: isYou ? 'default' : 'pointer' }}
+                        >
+                          <Table.Td ta="right" c="dimmed" data-fold>{rank}</Table.Td>
+                          <Table.Td>
+                            {/* Its own block, so the name is a line by itself and not a link inside the
+                                folded text below it (which axe then required to differ by more than colour). */}
+                            <div>
+                              {isYou ? (
+                                <Text span size="sm" fw={700}>{fullName(p.fn, p.ln) || '—'}</Text>
+                              ) : (
+                                <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} size="sm" c="accent" underline="hover" onClick={(e) => e.stopPropagation()}>
+                                  {fullName(p.fn, p.ln) || '—'}
+                                </Anchor>
+                              )}
+                              {isYou && <span className="viewing-pill">Viewing</span>}
+                            </div>
+                            {/* On a phone: rank, school and department under the name, then the salary. */}
+                            <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
+                              #{rank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td data-fold title={sameSchool ? `Same school as ${name}` : undefined}>
+                            <div className="peer-school">
+                              {sameSchool && <span className="same-school-dot" aria-label="Same school" role="img" />}
                               <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
-                            </Table.Td>
-                            <Table.Td data-fold><Text span size="sm" c="dimmed" lineClamp={1}>{p.department ?? '—'}</Text></Table.Td>
-                            <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
-                            <Table.Td ta="right" fw={isYou ? 700 : undefined}>{usd(p.pay)}</Table.Td>
-                            <Table.Td ta="right">
+                            </div>
+                            {p.department && <Text size="xs" c="var(--text-faint)" lineClamp={1} className="peer-dept">{p.department}</Text>}
+                          </Table.Td>
+                          <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
+                          <Table.Td ta="right" fw={isYou ? 700 : 600}>{usd(p.pay)}</Table.Td>
+                          <Table.Td ta="right" data-fold c="dimmed" className="peer-vs">
+                            {vs == null ? '—' : `${vs > 0 ? '+' : vs < 0 ? '−' : ''}${usd(Math.abs(vs))}`}
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            {isYou ? (
+                              <Text span size="xs" c="dimmed" className="peer-in-set">{inTray ? '✓ In set' : ''}</Text>
+                            ) : (
                               <TrayButton
                                 inTray={inTray}
                                 stopPropagation
                                 onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
                               />
-                            </Table.Td>
-                          </Table.Tr>
-                        );
-                      })}
-                    </Table.Tbody>
-                  </Table>
-                </ScrollArea.Autosize>
-                {cohortList.length > 25 && !pileShown && (
-                  <Group justify="center" mt="sm">
-                    <Button variant="subtle" size="xs" onClick={() => setShowAllPeers((v) => !v)}>
-                      {showAllPeers ? 'Show top 25 only' : `Show all ${num(cohortList.length)}`}
-                    </Button>
-                  </Group>
+                            )}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+                {peerQuery && filteredPeers.length === 0 && (
+                  <Text size="sm" c="dimmed" mt="sm">No one with this title matches “{peerFilter.trim()}”.</Text>
                 )}
-                {cohort === 'all' && latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) && (
-                  <Text size="xs" c="dimmed" mt="xs">Rows shaded green share {name}'s school ({latest.school}).</Text>
-                )}
+                {/* The table's foot: what the green dot means, and how much of the list is showing. */}
+                <Group justify="space-between" mt="sm" gap="xs" className="peer-foot">
+                  {cohort === 'all' && latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) ? (
+                    <Group gap={6} wrap="nowrap">
+                      <span className="same-school-dot" aria-hidden />
+                      <Text size="xs" c="dimmed">Same school as {selfLabel} ({latest.school})</Text>
+                    </Group>
+                  ) : <span />}
+                  {!pileShown && sortedCohort.length > 2 * AROUND + 1 && (
+                    <Group gap={6} wrap="nowrap">
+                      <Text size="xs" c="dimmed">
+                        {peerQuery
+                          ? `Showing ${num(filteredPeers.length)} of ${num(sortedCohort.length)} matching`
+                          : windowed
+                            ? `Showing ${num(visiblePeers.length)} of ${num(sortedCohort.length)} around ${selfLabel}`
+                            : `Showing all ${num(sortedCohort.length)}`}
+                      </Text>
+                      {!peerQuery && (
+                        <Button variant="subtle" size="compact-xs" className="peer-show-all" onClick={() => setShowAllPeers((v) => !v)}>
+                          {windowed ? 'Show all' : `Show the ${2 * AROUND + 1} around ${selfLabel}`}
+                        </Button>
+                      )}
+                    </Group>
+                  )}
+                </Group>
               </Card>
             )}
           </Stack>

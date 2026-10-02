@@ -396,7 +396,8 @@ test('pointing at a person in the table, the strip or the scatter points at them
   await expect(page.locator('.peer-strip-tip')).toContainText(name);
   await expect(page.locator('.tenure-tip')).toContainText(name);
   await expect(page.locator('.peer-strip .chart-dot-hover')).toHaveCount(1);
-  // A dot in the strip.
+  // A dot in the strip (every row listed, so whoever it is has a row to light).
+  await page.locator('.peer-table-card').getByRole('button', { name: 'Show all' }).click();
   const dot = page.locator('.peer-strip circle.chart-dot').nth(7);
   await dot.evaluate((e) => e.scrollIntoView({ block: 'center' }));
   const b = (await dot.boundingBox())!;
@@ -418,6 +419,10 @@ test('pointing at a person in the table, the strip or the scatter points at them
  */
 test('the strip can be walked from the keyboard, person by person, and Enter opens one', async ({ page }) => {
   await open(page, AARON);
+  // Every row in the table, so its salary column can say which pay is highest.
+  await page.locator('.peer-table-card').getByRole('button', { name: 'Show all' }).click();
+  // Off the table, so no row the pointer rests on is pointed at when the strip takes the keyboard.
+  await page.mouse.move(1, 1);
   const plot = page.locator('.peer-strip-plot');
   await plot.focus();
   await expect(page.locator('.peer-strip-tip')).toContainText('Aaron Smetana');
@@ -429,7 +434,7 @@ test('the strip can be walked from the keyboard, person by person, and Enter ope
   await expect(page.locator('tr.peer-row[data-pointed]')).toHaveCount(1);
   await page.keyboard.press('End');
   const top = await pay();
-  const highest = Math.max(...(await page.locator('tr.peer-row td:nth-last-child(2)').allInnerTexts()).map((t) => Number(t.replace(/[^\d]/g, ''))));
+  const highest = Math.max(...(await page.locator('tr.peer-row td:nth-child(5)').allInnerTexts()).map((t) => Number(t.replace(/[^\d]/g, ''))));
   expect(top, 'End is not the highest pay').toBe(highest);
   const name = (await page.locator('.peer-strip-tip').innerText()).split(' · ')[0];
   await page.keyboard.press('Enter');
