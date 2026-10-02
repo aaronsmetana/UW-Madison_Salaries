@@ -1,5 +1,5 @@
 import {
-  IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics,
+  IconHome, IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff, IconReportAnalytics,
   IconInfoCircle, IconListSearch, IconTrendingUp, type Icon,
 } from '@tabler/icons-react';
 
@@ -22,7 +22,9 @@ export interface NavItem {
 // palette — and a destination that exists in one but not the other is a place you can only reach by
 // mouse, or only by keyboard.
 export const NAV: NavItem[] = [
-  { label: 'People', to: '/', icon: IconUserSearch, also: ['/person/'] },
+  // Home is the landing: the whole of UW on one graph, and the search. People is where a person's page belongs.
+  { label: 'Home', to: '/', icon: IconHome },
+  { label: 'People', to: '/people', icon: IconUserSearch, also: ['/person/'] },
   { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
   { label: 'Divisions', to: '/explore', icon: IconBuildingBank, also: ['/school/'] },
   { label: 'Compare', to: '/compare', icon: IconArrowsDiff },

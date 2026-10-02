@@ -1,9 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Stack, Button, Group, Card } from '@mantine/core';
-import {
-  IconUserSearch, IconBriefcase, IconBuildingBank, IconArrowsDiff,
-  IconReportAnalytics, IconListSearch,
-} from '@tabler/icons-react';
+import { NAV, ABOUT } from '../app/nav';
 import { CardTitle } from '../components/CardTitle';
 import { PageHeader } from '../components/PageHeader';
 import { useDocTitle } from '../lib/useDocTitle';
@@ -23,14 +20,8 @@ import { ICON } from '../lib/ui';
  * something else has already gone wrong, and it should not depend on fetching another chunk.
  */
 
-const DESTINATIONS = [
-  { label: 'People', to: '/', icon: IconUserSearch },
-  { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
-  { label: 'Divisions', to: '/explore', icon: IconBuildingBank },
-  { label: 'Compare', to: '/compare', icon: IconArrowsDiff },
-  { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
-  { label: 'Screening', to: '/screening', icon: IconListSearch },
-];
+/** Every destination in the bar, and the Data page, as the bar names them. */
+const DESTINATIONS = [...NAV, ABOUT];
 
 export default function NotFound() {
   useDocTitle('Page not found');

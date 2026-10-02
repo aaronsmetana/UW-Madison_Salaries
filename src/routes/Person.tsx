@@ -55,6 +55,7 @@ import { GlossaryTerm } from '../components/GlossaryTerm';
 import { GLOSSARY } from '../lib/glossary';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
+import { noteRecent } from '../lib/recent';
 import { ICON } from '../lib/ui';
 
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
@@ -298,10 +299,14 @@ export default function Person() {
   // "People / System Engineer IV / Aaron Smetana": the landing (where a person is found), their title's page,
   // and them. The trail is one line either way, so it can wait for the record without moving anything.
   useCrumbs(latest ? [
-    { label: 'People', to: '/' },
+    { label: 'People', to: '/people' },
     ...(latest.title ? [{ label: latest.title, to: latest.job_code ? `/paycheck?code=${encodeURIComponent(latest.job_code)}` : undefined }] : []),
     { label: name },
-  ] : [{ label: 'People', to: '/' }]);
+  ] : [{ label: 'People', to: '/people' }]);
+  // The People page's "Recently viewed": this person, at the front, once their record is in.
+  useEffect(() => {
+    if (latest) noteRecent({ key, name, title: latest.title ?? null });
+  }, [key, latest, name]);
 
   // Flag people who aren't in the most recent snapshot (likely no longer employed).
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;

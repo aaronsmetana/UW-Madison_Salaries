@@ -4,7 +4,7 @@ import { test, expect, type Page } from '@playwright/test';
  * The top of every page (app/AppShell, app/PageTop) and its foot (app/Footer), as the person-page redesign
  * drew them.
  *
- * The bar holds the name, the seven destinations, each named, and the theme. It replaced a rail of bare icons
+ * The bar holds the name, the eight destinations, each named, and the theme. It replaced a rail of bare icons
  * down every page's left edge, whose names were a hover or an "Expand" away. From 1200px a destination is its
  * icon and its name, from 992px its name alone, and below that the destinations are a sheet behind a burger.
  *
@@ -15,7 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const AARON = 'aaronsmetana|2014-10-15';
 const SMPH = 'School of Medicine and Public Health';
-const NAMES = ['People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening'];
+const NAMES = ['Home', 'People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening'];
 /** CI's Linux runner draws text a few percent wider than a Mac (brand.spec's 4%): the bar must fit with that. */
 const widerText = (page: Page) => page.addInitScript(() => {
   document.addEventListener('DOMContentLoaded', () => {
@@ -42,23 +42,23 @@ async function measureBar(page: Page) {
   });
 }
 
-test('the bar names all seven destinations on one row, icons from 1200px, and fits with CI-wide text', async ({ page }) => {
+test('the bar names all eight destinations on one row, icons from 1200px, and fits with CI-wide text', async ({ page }) => {
   await widerText(page);
   for (const [width, icons] of [[1440, true], [1280, true], [1200, true], [1199, false], [1024, false], [992, false]] as const) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(`./person/${encodeURIComponent(AARON)}`);
-    await expect(page.locator('.app-nav-link'), `${width}px`).toHaveCount(7, { timeout: 60_000 });
+    await expect(page.locator('.app-nav-link'), `${width}px`).toHaveCount(8, { timeout: 60_000 });
     await expect(page.getByRole('button', { name: 'Toggle navigation' }), `${width}px: a burger beside the named links`).toBeHidden();
     const g = await measureBar(page);
     expect(g.links.map((l) => l.name), `${width}px`).toEqual(NAMES);
-    expect(g.links.filter((l) => l.icon).length, `${width}px: icons`).toBe(icons ? 7 : 0);
+    expect(g.links.filter((l) => l.icon).length, `${width}px: icons`).toBe(icons ? 8 : 0);
     expect(new Set(g.links.map((l) => Math.round(l.top))).size, `${width}px: the destinations wrap`).toBe(1);
     for (const l of g.links) {
       expect(l.top, `${width}px: ${l.name} spills above the bar`).toBeGreaterThanOrEqual(g.top);
       expect(l.bottom, `${width}px: ${l.name} spills below the bar`).toBeLessThanOrEqual(g.bottom);
     }
     expect(g.links[0].left, `${width}px: the destinations run into the name`).toBeGreaterThan(g.name.right);
-    expect(g.toggle.left - g.links[6].right, `${width}px: the destinations run into the theme switch`).toBeGreaterThanOrEqual(16);
+    expect(g.toggle.left - g.links[7].right, `${width}px: the destinations run into the theme switch`).toBeGreaterThanOrEqual(16);
     expect(g.toggle.right, `${width}px: the theme switch is off the screen`).toBeLessThanOrEqual(width);
     expect(g.name.h, `${width}px: the name broke onto a second line`).toBeLessThan(30);
   }
@@ -66,7 +66,8 @@ test('the bar names all seven destinations on one row, icons from 1200px, and fi
 
 test('the bar marks the place the page belongs to: a person is People, a division Divisions, a title Titles', async ({ page }) => {
   for (const [route, current] of [
-    ['./', 'People'],
+    ['./', 'Home'],
+    ['./people', 'People'],
     [`./person/${encodeURIComponent(AARON)}`, 'People'],
     ['./paycheck?code=IT040', 'Titles'],
     ['./explore', 'Divisions'],
@@ -75,7 +76,7 @@ test('the bar marks the place the page belongs to: a person is People, a divisio
     ['./data', null],
   ] as const) {
     await page.goto(route);
-    await expect(page.locator('.app-nav-link'), route).toHaveCount(7, { timeout: 60_000 });
+    await expect(page.locator('.app-nav-link'), route).toHaveCount(8, { timeout: 60_000 });
     const marked = await page.locator('.app-nav-link[aria-current="page"]').allTextContents();
     expect(marked.map((t) => t.trim()), route).toEqual(current ? [current] : []);
   }
@@ -87,7 +88,7 @@ test('the trail says where an entity page sits, and its steps lead there', async
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Aaron Smetana', { timeout: 60_000 });
   await expect(trail.locator('li')).toHaveText(['People', 'System Engineer IV', 'Aaron Smetana']);
   await expect(trail.locator('[aria-current="page"]')).toHaveText('Aaron Smetana');
-  await expect(trail.getByRole('link', { name: 'People' })).toHaveAttribute('href', /\/UW-Madison_Salaries\/$/);
+  await expect(trail.getByRole('link', { name: 'People' })).toHaveAttribute('href', /\/UW-Madison_Salaries\/people$/);
   await trail.getByRole('link', { name: 'System Engineer IV' }).click();
   await expect(page).toHaveURL(/\/paycheck\?code=IT040$/);
   await expect(trail.locator('li')).toHaveText(['Titles', 'System Engineer IV'], { timeout: 60_000 });

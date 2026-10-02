@@ -20,6 +20,7 @@ const Reports = lazyWithRetry(() => import('./routes/Reports'));
 const Screening = lazyWithRetry(() => import('./routes/Screening'));
 const DataHealth = lazyWithRetry(() => import('./routes/DataHealth'));
 const Person = lazyWithRetry(() => import('./routes/Person'));
+const People = lazyWithRetry(() => import('./routes/People'));
 const School = lazyWithRetry(() => import('./routes/School'));
 
 // The old /title/:code page is retired — titles now live at /paycheck?code=. Redirect so any
@@ -53,6 +54,7 @@ const router = createBrowserRouter(
         { path: 'reports', element: <Reports /> },
         { path: 'screening', element: <Screening /> },
         { path: 'data', element: <DataHealth /> },
+        { path: 'people', element: <People /> },
         { path: 'person/:id', element: <Person /> },
         { path: 'school/:id', element: <School /> },
         { path: 'title/:code', element: <TitleRedirect /> },

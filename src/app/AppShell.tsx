@@ -57,7 +57,7 @@ const SHEET_W = 280;
 export function AppShellLayout() {
   const loc = useLocation();
   const [sheetOpened, { toggle: toggleSheet, close: closeSheet }] = useDisclosure(false);
-  // From `md` (992px) the seven destinations fit in the bar beside the name; below it they are a sheet. Read
+  // From `md` (992px) the eight destinations fit in the bar beside the name; below it they are a sheet. Read
   // at once rather than in an effect, so a phone never paints a bar of links first.
   const wide = useMediaQuery('(min-width: 62em)', true, { getInitialValueInEffect: false }) ?? true;
   // A sheet left open as the window widens would sit over a page whose bar has its links back.

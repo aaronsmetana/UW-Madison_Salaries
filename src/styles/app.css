@@ -480,7 +480,7 @@ body {
   border-bottom: 1px solid var(--hairline);
 }
 
-/* ── The top bar (AppShell): the name, the seven destinations named, the theme. The page's own gutter on
+/* ── The top bar (AppShell): the name, the eight destinations named, the theme. The page's own gutter on
    either side, so the name sits over the page's first column. ── */
 .app-bar { padding-inline: var(--page-gutter); }
 .app-nav { display: flex; align-items: center; gap: 2px; min-width: 0; }
@@ -1294,6 +1294,17 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 /* A person pointed at in a chart lights their row in the table under it, as the row lights their dots. */
 .peer-row[data-pointed] td { background-color: var(--hover-bg); }
 .peer-strip-plot:focus-visible, .tenure-chart:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 2px; border-radius: var(--mantine-radius-xs); }
+
+/* The People page's people: a name and its line, as a quiet tile that lights under a pointer. */
+.people-card {
+  display: block;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--mantine-radius-sm);
+  color: inherit;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.people-card:hover { background: var(--hover-bg); }
 
 /* The person's strip (PeerStrip): the median's and the band's names where they are, the subject's name as a
    pill in their own colour, the axis's ticks. */

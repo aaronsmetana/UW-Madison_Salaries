@@ -53,7 +53,7 @@ test('every sidebar destination is reachable from the palette', async ({ page })
   const dialog = page.locator(DIALOG);
   await expect(dialog).toBeVisible();
 
-  for (const label of ['People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening', 'About the data']) {
+  for (const label of ['Home', 'People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening', 'About the data']) {
     await expect(dialog.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
 });
