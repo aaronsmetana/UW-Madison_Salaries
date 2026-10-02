@@ -1,11 +1,11 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, ReferenceLine, Customized,
 } from 'recharts';
 import { AXIS_TICK, CHART_FONT, GRID, fmtK } from '../lib/chartStyle';
 import { moneyTicks, niceStep } from '../lib/rangeScale';
-import { Text } from '@mantine/core';
+import { Text, VisuallyHidden } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { num, usd, fmtYears } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
@@ -357,6 +357,8 @@ export function TenurePayScatter({
   zoom = null,
   label = 'This person',
   legend = true,
+  pointed,
+  onPoint,
 }: {
   points: ScatterPoint[];
   self: { tenure: number; pay: number } | null;
@@ -364,9 +366,12 @@ export function TenurePayScatter({
   zoom?: PayWindow | null;
   /** Names the subject's mark, as the strip does: "Aaron · $116,491". */
   label?: string;
-  /** The key to the dots' colours. The person page leaves it to the strip directly above, whose key is
-   *  the same; the printed brief, where this chart stands alone, keeps it. */
+  /** The key to the dots' colours and the line, over the chart. */
   legend?: boolean;
+  /** The person pointed at anywhere on the page (the strip, this chart, the table): their dot takes the ring
+   *  and the readout here too. Leave both out and the chart answers its own pointer alone. */
+  pointed?: string | null;
+  onPoint?: (key: string | null) => void;
 }) {
   const nav = useNavigate();
   const reduceMotion = prefersReducedMotion();
@@ -439,18 +444,50 @@ export function TenurePayScatter({
     }
     return best;
   };
-  const onMove = (e: MouseEvent<HTMLDivElement>) => {
-    const box = e.currentTarget.getBoundingClientRect();
-    const d = pick(e.clientX - box.left, e.clientY - box.top);
+  // Pointing here points for the page; only what this chart set is cleared when the pointer leaves it.
+  const ownPoint = useRef<string | null>(null);
+  const point = (d: Placed | null) => {
     setHover(d ? d.p : null);
     setTip(d ? { x: d.x, y: d.y } : null);
+    if (!onPoint) return;
+    const k = d?.p.personKey ?? null;
+    if (k) { ownPoint.current = k; onPoint(k); }
+    else if (ownPoint.current) { ownPoint.current = null; onPoint(null); }
+  };
+  const onMove = (e: MouseEvent<HTMLDivElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    point(pick(e.clientX - box.left, e.clientY - box.top));
+  };
+  // Shown: where the page links its charts, the person pointed at anywhere; else this chart's own.
+  const linkedHover = onPoint != null
+    ? (pointed ? placedRef.current.find((d) => d.p.personKey === pointed) ?? null : null)
+    : null;
+  const shown = onPoint != null ? linkedHover?.p ?? null : hover;
+  const shownTip = onPoint != null ? (linkedHover ? { x: linkedHover.x, y: linkedHover.y } : null) : tip;
+
+  /** The keyboard: one stop for the chart, the arrow keys from person to person in order of tenure (Home and
+   *  End to the ends), Enter to open one, Escape to let go; focus starts on the subject. */
+  const keyed = useRef(false);
+  const byTenure = () => [...placedRef.current].sort((a, b) => a.p.tenure - b.p.tenure || a.p.pay - b.p.pay);
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (!onPoint) return;
+    const list = byTenure();
+    if (!list.length) return;
+    const cur = Math.max(0, list.findIndex((d) => d.p.personKey === (pointed ?? list.find((q) => q.p.isSelf)?.p.personKey)));
+    const go = (i: number) => { e.preventDefault(); keyed.current = true; ownPoint.current = list[i].p.personKey; onPoint(list[i].p.personKey); };
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') go(Math.min(list.length - 1, pointed ? cur + 1 : cur));
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') go(Math.max(0, pointed ? cur - 1 : cur));
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(list.length - 1);
+    else if (e.key === 'Enter' && pointed && !list[cur].p.isSelf) { e.preventDefault(); nav(`/person/${encodeURIComponent(pointed)}`); }
+    else if (e.key === 'Escape' && pointed) { e.preventDefault(); ownPoint.current = null; onPoint(null); }
   };
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
     const d = pick(e.clientX - box.left, e.clientY - box.top);
     if (d && !d.p.isSelf && d.p.personKey) nav(`/person/${encodeURIComponent(d.p.personKey)}`);
   };
-  const hoverSide = hover ? sideOf(zoom, hover.pay) : 0;
+  const hoverSide = shown ? sideOf(zoom, shown.pay) : 0;
 
   return (
     <div>
@@ -511,7 +548,17 @@ export function TenurePayScatter({
       {/* role="img" on the wrapper + aria-hidden on the chart itself: one accessible summary for the whole
           plot rather than hundreds of unlabeled marks. The pointer is read on the wrapper, which names
           the nearest dot. */}
-      <div role="img" aria-label={`Scatter plot of pay versus tenure for ${titleLabel}, tenure in years on the x-axis and pay in dollars on the y-axis.`}>
+      <div
+        role={onPoint ? 'group' : 'img'}
+        className="tenure-chart"
+        aria-label={`Scatter plot of pay versus tenure for ${titleLabel}, tenure in years on the x-axis and pay in dollars on the y-axis.${onPoint ? ' Use the arrow keys to go from person to person in order of tenure, Enter to open one.' : ''}`}
+        {...(onPoint ? {
+          tabIndex: 0,
+          onKeyDown: onKey,
+          onFocus: () => { if (!pointed && onPoint) { const me = placedRef.current.find((d) => d.p.isSelf); if (me) { keyed.current = true; ownPoint.current = me.p.personKey; onPoint(me.p.personKey); } } },
+          onBlur: () => { if (keyed.current && ownPoint.current && onPoint) { keyed.current = false; ownPoint.current = null; onPoint(null); } },
+        } : {})}
+      >
       <div
         ref={wrapRef}
         aria-hidden="true"
@@ -519,7 +566,7 @@ export function TenurePayScatter({
         data-window={zoom ? `${zoom.lo}-${zoom.hi}` : undefined}
         style={{ position: 'relative', cursor: hover && !hover.isSelf ? 'pointer' : undefined }}
         onMouseMove={onMove}
-        onMouseLeave={() => { setHover(null); setTip(null); }}
+        onMouseLeave={() => point(null)}
         onClick={onClick}
       >
       <ResponsiveContainer width="100%" height={chartH}>
@@ -568,32 +615,33 @@ export function TenurePayScatter({
             points={points}
             zoom={zoom}
             crowd={crowd}
-            hover={hover}
+            hover={shown}
             onPlaced={(placed: Placed[], meta: PlacedMeta) => { placedRef.current = placed; placedRef.meta = meta; }}
             fit={reg}
             xMax={xMax}
             selfText={self ? `${label} · ${usd(self.pay)}` : null}
           />
-          {hover && hoverSide === 0 && (
+          {shown && hoverSide === 0 && (
             <Customized
               component={CrosshairLayer}
-              pointX={hover.tenure}
-              pointY={hover.pay}
-              xPillLabel={`${hover.tenure.toFixed(1)}y`}
-              yPillLabel={usd(hover.pay)}
-              emphasize={!hover.isSelf}
+              pointX={shown.tenure}
+              pointY={shown.pay}
+              xPillLabel={`${shown.tenure.toFixed(1)}y`}
+              yPillLabel={usd(shown.pay)}
+              emphasize={!shown.isSelf}
               instant={reduceMotion}
             />
           )}
         </ScatterChart>
       </ResponsiveContainer>
-      {hover && tip && (
-        <div className="tenure-tip" style={{ position: 'absolute', left: tip.x, top: tip.y - 14, pointerEvents: 'none', transform: tip.x > placedRef.meta.right - 120 ? 'translate(-100%, -100%)' : tip.x < 140 ? 'translate(0, -100%)' : 'translate(-50%, -100%)' }}>
+      {shown && shownTip && (
+        <div className="tenure-tip" style={{ position: 'absolute', left: shownTip.x, top: shownTip.y - 14, pointerEvents: 'none', transform: shownTip.x > placedRef.meta.right - 120 ? 'translate(-100%, -100%)' : shownTip.x < 140 ? 'translate(0, -100%)' : 'translate(-50%, -100%)' }}>
           <span className="chart-tip-pill">
-            <span className="tenure-tip-name">{hover.name}{hover.isSelf ? ' (this person)' : ''}</span> · {usd(hover.pay)} · {fmtYears(hover.tenure)}
+            <span className="tenure-tip-name">{shown.name}{shown.isSelf ? ' (this person)' : ''}</span> · {usd(shown.pay)} · {fmtYears(shown.tenure)}
           </span>
         </div>
       )}
+      <VisuallyHidden aria-live="polite">{keyed.current && shown ? `${shown.name} · ${usd(shown.pay)} · ${fmtYears(shown.tenure)}` : ''}</VisuallyHidden>
       </div>
       </div>
 

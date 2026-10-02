@@ -1291,6 +1291,10 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .mantine-SegmentedControl-label { font-weight: 600; }
 .mantine-SegmentedControl-label[data-active] { color: var(--mantine-color-text); }
 
+/* A person pointed at in a chart lights their row in the table under it, as the row lights their dots. */
+.peer-row[data-pointed] td { background-color: var(--hover-bg); }
+.peer-strip-plot:focus-visible, .tenure-chart:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 2px; border-radius: var(--mantine-radius-xs); }
+
 /* The person's strip (PeerStrip): the median's and the band's names where they are, the subject's name as a
    pill in their own colour, the axis's ticks. */
 .strip-label {

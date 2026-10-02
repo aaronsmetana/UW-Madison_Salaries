@@ -628,6 +628,8 @@ export default function Person() {
   const peerCardRef = useRef<HTMLDivElement>(null);
   // ── Cohort (All vs Same-school): every overview stat derives from the SAME filtered peer set. ──
   const [cohort, setCohort] = useState<'all' | 'school'>('all');
+  // The person pointed at on the overview — in the strip, the scatter or the table — shown in all three.
+  const [pointed, setPointed] = useState<string | null>(null);
   useEffect(() => setPileShown(0), [cohort, key]);
   const sameSchoolPeers = useMemo(
     () => (peers ?? []).filter((p) => p.school != null && p.school === latest?.school),
@@ -1087,6 +1089,9 @@ export default function Person() {
                       onPile={showPile}
                       pileShown={pileShown}
                       label={selfLabel}
+                      pointed={pointed}
+                      onPoint={setPointed}
+                      onOpen={(k) => nav(`/person/${encodeURIComponent(k)}`)}
                     />
                     {splitAppointment && (
                       <Text size="xs" c="dimmed" mt={4}>
@@ -1117,7 +1122,7 @@ export default function Person() {
                 >
                   Pay vs. tenure
                 </CardTitle>
-                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} />
+                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} pointed={pointed} onPoint={setPointed} />
               </Card>
             )}
 
@@ -1163,6 +1168,10 @@ export default function Person() {
                           <Table.Tr
                             key={p.person_key}
                             className={`peer-row${sameSchool ? ' peer-same-school' : ''}`}
+                            // Pointing at a row points at the person in both charts above; the charts point back.
+                            data-pointed={pointed === p.person_key || undefined}
+                            onMouseEnter={() => setPointed(p.person_key)}
+                            onMouseLeave={() => setPointed((k) => (k === p.person_key ? null : k))}
                             ref={isYou ? subjectRowRef : undefined}
                             // Mouse convenience only — the name below is a real link, so keyboard/screen-reader
                             // users have a proper, unambiguous way in (a `role="button"` row would otherwise

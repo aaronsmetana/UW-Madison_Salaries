@@ -1,5 +1,5 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Text } from '@mantine/core';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Text, VisuallyHidden } from '@mantine/core';
 import { usd, num, fmtYears } from '../lib/format';
 import { ordinal } from '../lib/stats';
 import { CHART_FONT, fmtK } from '../lib/chartStyle';
@@ -148,6 +148,9 @@ export function PeerStrip({
   zoom = null,
   onPile,
   pileShown = 0,
+  pointed,
+  onPoint,
+  onOpen,
 }: {
   min: number;
   p25: number;
@@ -175,6 +178,12 @@ export function PeerStrip({
   onPile?: (side: -1 | 1) => void;
   /** The side whose people the page is listing, or 0. */
   pileShown?: -1 | 0 | 1;
+  /** The person pointed at anywhere on the page (this chart, the scatter, the table): their dot takes the ring
+   *  and the readout here too. Leave both out and the strip answers its own pointer alone. */
+  pointed?: string | null;
+  onPoint?: (key: string | null) => void;
+  /** Enter on a person, from the keyboard: open them. */
+  onOpen?: (key: string) => void;
 }) {
   const mounted = useMounted();
 
@@ -420,7 +429,7 @@ export function PeerStrip({
   /** The person under the cursor, if one is close enough: snapping to the nearest dot rather than relying on
    *  `:hover`, because 10px dots a pixel or two apart are a hard target for a mouse and an impossible one for
    *  a finger. The positional readout stays for the space between dots. */
-  const hoveredPeer = useMemo(() => {
+  const nearPeer = useMemo(() => {
     if (useRibbon || !swarm || hoverPct == null || hoverY == null || plotW <= 0) return null;
     const hx = (hoverPct / 100) * plotW;
     let best: { p: PeerPoint; cx: number; cy: number } | null = null;
@@ -435,6 +444,44 @@ export function PeerStrip({
     }
     return best;
   }, [useRibbon, swarm, hoverPct, hoverY, plotW, inPlot, at, midY]);
+
+  // The person shown: the one pointed at anywhere on the page where the page links its charts, else the one
+  // under this chart's own pointer.
+  const linked = onPoint != null;
+  const hoveredPeer = useMemo(() => {
+    if (!linked) return nearPeer;
+    if (!pointed || useRibbon || !swarm) return null;
+    const i = inPlot.findIndex((p) => p.personKey === pointed);
+    return i < 0 ? null : { p: inPlot[i], cx: at(inPlot[i].pay) * plotW, cy: midY + swarm[i] };
+  }, [linked, nearPeer, pointed, useRibbon, swarm, inPlot, at, plotW, midY]);
+  // Pointing here points for the page. Only what this chart set is cleared when the pointer leaves it, so a
+  // row pointed at in the table is not unpointed by a pointer passing over the strip.
+  const ownPoint = useRef<string | null>(null);
+  const nearKey = nearPeer?.p.personKey ?? null;
+  useLayoutEffect(() => {
+    if (!onPoint) return;
+    if (nearKey) { ownPoint.current = nearKey; onPoint(nearKey); }
+    else if (ownPoint.current) { ownPoint.current = null; onPoint(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `onPoint` is the page's setter
+  }, [nearKey]);
+
+  /**
+   * The keyboard: one stop for the whole strip, and the arrow keys from person to person in order of pay
+   * (Home and End to the ends); Enter opens the person, Escape lets go. Focus starts on the subject. Each step
+   * is read out (the live region below), and shown as the pointer shows it.
+   */
+  const keyed = useRef(false);
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (useRibbon || !swarm || !onPoint || !inPlot.length) return;
+    const at0 = Math.max(0, inPlot.findIndex((p) => p.personKey === (pointed ?? inPlot.find((q) => q.isSelf)?.personKey)));
+    const next = (i: number) => { e.preventDefault(); keyed.current = true; ownPoint.current = inPlot[i].personKey; onPoint(inPlot[i].personKey); };
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next(Math.min(inPlot.length - 1, pointed ? at0 + 1 : at0));
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next(Math.max(0, pointed ? at0 - 1 : at0));
+    else if (e.key === 'Home') next(0);
+    else if (e.key === 'End') next(inPlot.length - 1);
+    else if (e.key === 'Enter' && pointed && onOpen && !inPlot[at0].isSelf) { e.preventDefault(); onOpen(pointed); }
+    else if (e.key === 'Escape' && pointed) { e.preventDefault(); ownPoint.current = null; onPoint(null); }
+  };
 
   const updateHover = (clientX: number, clientY: number, target: EventTarget | null) => {
     const el = plotRef.current;
@@ -551,8 +598,17 @@ export function PeerStrip({
        <div style={{ marginLeft: lowAside, marginRight: highAside }}>
         <div
           ref={plotRef}
+          className="peer-strip-plot"
           onMouseMove={(e) => updateHover(e.clientX, e.clientY, e.target)}
           onMouseLeave={() => { setHoverPct(null); setHoverY(null); setHoverPile(0); }}
+          {...(linked && !useRibbon && swarm ? {
+            tabIndex: 0,
+            role: 'group',
+            'aria-label': `${caption}: ${num(inPlot.length)} people, one dot each. Use the arrow keys to go from person to person in order of pay, Enter to open one.`,
+            onKeyDown: onKey,
+            onFocus: () => { if (!pointed && onPoint) { const me = inPlot.find((p) => p.isSelf); if (me) { keyed.current = true; ownPoint.current = me.personKey; onPoint(me.personKey); } } },
+            onBlur: () => { if (keyed.current && ownPoint.current && onPoint) { keyed.current = false; ownPoint.current = null; onPoint(null); } },
+          } : {})}
           style={{ position: 'relative', height: plotH, cursor: sorted.length ? 'crosshair' : undefined }}
         >
           {plotW > 0 && useRibbon && ribbon && (
@@ -656,8 +712,9 @@ export function PeerStrip({
           {pileBox(-1)}
           {pileBox(1)}
 
-          {hoverPct != null && hoverValue != null && (
+          {(hoveredPeer || (hoverPct != null && hoverValue != null)) && (
             <div
+              className="peer-strip-tip"
               style={{
                 position: 'absolute',
                 left: hoveredPeer ? hoveredPeer.cx : `${hoverPct}%`,
@@ -672,10 +729,12 @@ export function PeerStrip({
               <span className="chart-tip-pill">
                 {hoveredPeer
                   ? readout(hoveredPeer.p)
-                  : `~${usd(hoverValue)}${hoverBelow != null ? ` · ${ordinal(Math.round(hoverBelow * 100))} percentile` : ''}`}
+                  : `~${usd(hoverValue ?? 0)}${hoverBelow != null ? ` · ${ordinal(Math.round(hoverBelow * 100))} percentile` : ''}`}
               </span>
             </div>
           )}
+          {/* What a keyboard step lands on, read out. */}
+          <VisuallyHidden aria-live="polite">{keyed.current && hoveredPeer ? readout(hoveredPeer.p) : ''}</VisuallyHidden>
         </div>
 
         {/* The axis: its baseline, a tick at each round step, and each pile's count under its pile. */}

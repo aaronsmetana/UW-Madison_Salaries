@@ -374,3 +374,64 @@ test('choosing the same school dims the scatter\'s others where they stand and r
   expect([...new Set(after.dots.filter((d) => d.mark === 'same-school').map((d) => d.o))]).toEqual([1]);
   expect(after.line, 'the line was not refitted to the school').not.toBe(before.line);
 });
+
+/**
+ * One person pointed at, everywhere on the overview: a row in the table rings their dot in both charts and
+ * names them there; a dot in the strip lights their row and names them in the scatter. The subject's own
+ * name holds still throughout (it moves for the cohort and the width, never for a pointer).
+ */
+test('pointing at a person in the table, the strip or the scatter points at them in all three', async ({ page }) => {
+  await open(page, AARON);
+  // Where the name sits in its strip (the page scrolls below, which moves everything on the screen).
+  const youAt = () => page.locator('.peer-strip').evaluate((el) => {
+    const s = el.getBoundingClientRect(), y = el.querySelector('.peer-strip-you')!.getBoundingClientRect();
+    return { x: Math.round(y.left - s.left), y: Math.round(y.top - s.top) };
+  });
+  const at0 = await youAt();
+  // A row (someone else's).
+  const row = page.locator('tr.peer-row').filter({ hasNot: page.getByText('this person', { exact: true }) }).nth(2);
+  await row.scrollIntoViewIfNeeded();
+  const name = (await row.locator('a').first().innerText()).trim();
+  await row.hover();
+  await expect(page.locator('.peer-strip-tip')).toContainText(name);
+  await expect(page.locator('.tenure-tip')).toContainText(name);
+  await expect(page.locator('.peer-strip .chart-dot-hover')).toHaveCount(1);
+  // A dot in the strip.
+  const dot = page.locator('.peer-strip circle.chart-dot').nth(7);
+  await dot.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+  const b = (await dot.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  const who = (await page.locator('.peer-strip-tip').innerText()).split(' · ')[0];
+  await expect(page.locator('.tenure-tip')).toContainText(who);
+  await expect(page.locator('tr.peer-row[data-pointed]')).toHaveCount(1);
+  await expect(page.locator('tr.peer-row[data-pointed]')).toContainText(who);
+  // The name never moved for any of it.
+  const at1 = await youAt();
+  expect(at1, 'the subject\'s name moved for a pointer').toEqual(at0);
+  await page.mouse.move(2, 2);
+  await expect(page.locator('tr.peer-row[data-pointed]')).toHaveCount(0);
+});
+
+/**
+ * The strip from the keyboard: one stop, starting on the subject; the arrow keys from person to person in
+ * order of pay, End to the highest, each read out and shown as the pointer shows it; Enter opens the person.
+ */
+test('the strip can be walked from the keyboard, person by person, and Enter opens one', async ({ page }) => {
+  await open(page, AARON);
+  const plot = page.locator('.peer-strip-plot');
+  await plot.focus();
+  await expect(page.locator('.peer-strip-tip')).toContainText('Aaron Smetana');
+  const pay = async () => Number((await page.locator('.peer-strip-tip').innerText()).match(/\$([\d,]+)/)![1].replace(/,/g, ''));
+  const p0 = await pay();
+  await page.keyboard.press('ArrowRight');
+  const p1 = await pay();
+  expect(p1, 'ArrowRight did not go to the next pay up').toBeGreaterThanOrEqual(p0);
+  await expect(page.locator('tr.peer-row[data-pointed]')).toHaveCount(1);
+  await page.keyboard.press('End');
+  const top = await pay();
+  const highest = Math.max(...(await page.locator('tr.peer-row td:nth-last-child(2)').allInnerTexts()).map((t) => Number(t.replace(/[^\d]/g, ''))));
+  expect(top, 'End is not the highest pay').toBe(highest);
+  const name = (await page.locator('.peer-strip-tip').innerText()).split(' · ')[0];
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name, { timeout: 60_000 });
+});
