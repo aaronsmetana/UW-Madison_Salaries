@@ -300,6 +300,14 @@ export const DROP_MS = 350;
 export const DROP_WAVE_MS = 210;
 export const DROP_ROW_MS = 0.55;
 
+/** A timeline step (3a §8): this long, set off left to right over STEP_WAVE_MS; the big movers, which arc,
+ *  over STEP_ARC_WAVE_MS, so they launch together. */
+export const STEP_MS = 450;
+export const STEP_WAVE_MS = 130;
+export const STEP_ARC_WAVE_MS = 60;
+/** A big mover's arc: rising this far over its path, at most `ARC_MAX` px. */
+export const arcHeight = (dx: number) => Math.min(110, 24 + Math.abs(dx) * 0.5);
+
 export const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 /** A fall that speeds up as it drops, then a hop of 4.5% of the fall as it lands. */
 export function landEase(p: number): number {

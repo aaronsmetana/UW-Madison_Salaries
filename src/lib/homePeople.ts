@@ -179,6 +179,8 @@ export interface Emphasis {
   median: number | null;
   /** Their pays, ascending — the group's curve is drawn from these. */
   pays: number[];
+  /** Who they are: the group in any snapshot the timeline shows is these people, wherever they stand then. */
+  keys: string[];
 }
 
 /**
@@ -203,7 +205,7 @@ export function emphasis(
     pays.push(p.pay);
   }
   pays.sort((a, b) => a - b);
-  return { main, pile, count: pays.length, median: medianOf(pays), pays };
+  return { main, pile, count: pays.length, median: medianOf(pays), pays, keys: people.map((p) => p.person_key) };
 }
 
 /**

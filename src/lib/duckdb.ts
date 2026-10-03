@@ -112,6 +112,34 @@ export async function query<T = Record<string, unknown>>(sql: string): Promise<T
   }
 }
 
+/**
+ * Run SQL and return its columns whole, as the typed arrays Arrow holds them in — for a result too long to
+ * be worth a row object each (the landing timeline's 235,000 rows: one object each cost seconds and tens of
+ * megabytes). Cast to INTEGER or DOUBLE in the SQL: a BIGINT column comes back as BigInt64Array.
+ */
+export async function queryColumns(sql: string, names: readonly string[]): Promise<Record<string, ArrayLike<number> | string[]>> {
+  const db = await getDB();
+  const conn = await db.connect();
+  const t0 = performance.now();
+  try {
+    const result = await conn.query(sql);
+    const out: Record<string, ArrayLike<number> | string[]> = {};
+    for (const n of names) {
+      const col = result.getChild(n);
+      if (!col) throw new Error(`queryColumns: no column ${n}`);
+      out[n] = col.toArray() as ArrayLike<number> | string[];
+    }
+    return out;
+  } finally {
+    await conn.close();
+    try {
+      performance.measure('sql', { start: t0, detail: sql.replace(/\s+/g, ' ').trim().slice(0, 160) });
+    } catch {
+      /* diagnostic only */
+    }
+  }
+}
+
 /** Escape a string literal for inline SQL. */
 export const sqlStr = (s: string): string => `'${String(s).replace(/'/g, "''")}'`;
 

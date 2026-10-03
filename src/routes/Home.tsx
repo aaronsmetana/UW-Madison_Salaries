@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Stack, Title, Text, SimpleGrid, Tooltip, Anchor } from '@mantine/core';
 import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch } from '@tabler/icons-react';
-import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex } from '../lib/hooks';
+import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useTimeline } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
 import { usd, usdCompact, num, fullName } from '../lib/format';
@@ -14,7 +14,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { prefersReducedMotion } from '../lib/motion';
 import { useDocTitle } from '../lib/useDocTitle';
 import { Z } from '../lib/layers';
-import { StrataGraph, type FoundPerson, type GraphGroup, type WhoIs } from '../components/strata/StrataGraph';
+import { StrataGraph, type FoundPerson, type GraphGroup, type GraphTimeline, type WhoIs } from '../components/strata/StrataGraph';
 import type { SearchIndex } from '../lib/manifest';
 import { ICON } from '../lib/ui';
 
@@ -236,6 +236,27 @@ export default function Home() {
       };
     };
   }, [wantWho, homePeople, homeNames, prevPeople, prevSnapshot, spots]);
+  // The graph's timeline (lib/timeline): every snapshot's people, asked for the first time a reader plays it
+  // or picks a snapshot; and a snapshot's names, the first time the lens is up in it.
+  const tlSnaps = useMemo(() => (artifactUsable ? (summary?.snapshots ?? []).map((x) => ({ id: x.id, label: x.label })) : []), [artifactUsable, summary]);
+  const tlNames = useMemo(() => (artifactUsable ? (homeStats.pay_counts?.categories ?? []).map((c) => c.name) : []), [artifactUsable, homeStats]);
+  const [wantTimeline, setWantTimeline] = useState(false);
+  const { data: tlData, isError: tlFailed } = useTimeline(tlSnaps, tlNames, wantTimeline);
+  const [namesAt, setNamesAt] = useState<number | null>(null);
+  const namesSnapId = namesAt != null ? tlSnaps[namesAt]?.id ?? '' : '';
+  const { data: snapNames } = useSql<HomeName>(['home-names', namesSnapId], homeNamesSql(namesSnapId), !!namesSnapId);
+  const timeline = useMemo<GraphTimeline | null>(() => {
+    if (tlSnaps.length < 2 || !tlNames.length) return null;
+    return {
+      snaps: tlSnaps,
+      data: !wantTimeline ? null : tlData ?? (tlFailed ? 'error' : 'loading'),
+      onWant: () => setWantTimeline(true),
+      names: namesAt != null && snapNames
+        ? { snap: namesAt, who: new Map(snapNames.map((n) => [n.person_key, { name: fullName(n.fn, n.ln), title: n.title, school: n.school }])) }
+        : null,
+      onWantNames: setNamesAt,
+    };
+  }, [tlSnaps, tlNames, wantTimeline, tlData, tlFailed, namesAt, snapNames]);
   // The filter's people, at their dots' pay, and what that lights: one query per filter (cached by its key),
   // mapped onto the dots through the same `spots` the search's marks use.
   const title = filters.find((f): f is { kind: 'title'; hit: TitleHit } => f.kind === 'title')?.hit;
@@ -580,6 +601,7 @@ export default function Home() {
                 takeFilter(filterKey(filters[filters.length - 1]));
                 return true;
               }}
+              timeline={timeline}
             />
           </div>
           {/* Away while the graph is full page, which carries the same search itself. Its place is not

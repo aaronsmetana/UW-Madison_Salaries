@@ -2,9 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconArrowBarToDown, IconArrowsMaximize, IconX } from '@tabler/icons-react';
-import { COLS, READ_RADIUS, placePins, shareAt, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type LensHit, type Spot, type StrataFieldHandle } from './StrataField';
+import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
+import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
+import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
+import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
+import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
 import { prefersReducedMotion } from '../../lib/motion';
 import { fmtK } from '../../lib/chartStyle';
@@ -62,6 +64,21 @@ const TAIL_READ = 25_000;
 /** A pay on the unrolled tail's axis: millions as millions. */
 const fmtTail = (v: number) => (v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M` : fmtK(v));
 
+/** The timeline under the plot (lib/timeline): the snapshots, oldest first; everyone in each once asked for;
+ *  and who each one is in a snapshot, by key, once its names are asked for. */
+export interface GraphTimeline {
+  snaps: readonly { id: string; label: string }[];
+  data: Timeline | 'loading' | 'error' | null;
+  onWant: () => void;
+  names: { snap: number; who: ReadonlyMap<string, { name: string; title: string | null; school: string | null }> } | null;
+  onWantNames: (snap: number) => void;
+}
+/** A snapshot's label without its note: "Nov 2021 (Pre-TTC)" is "Nov 2021" at the track's end. */
+const bareLabel = (l: string) => l.replace(/\s*\(.*\)\s*$/, '');
+/** Play waits this long between steps, and longer after starting over from the first. */
+const PLAY_MS = 600;
+const PLAY_RESTART_MS = 800;
+
 /** Whose a square is, as the lens's card names them. */
 export interface DotWho {
   key: string;
@@ -99,6 +116,9 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
   ];
 }
 
+const NO_FOUND: FoundPerson[] = [];
+const NO_SNAPS: GraphTimeline['snaps'] = [];
+
 /** Everyone from the $1k bins alone (an older snapshot, drawn through live SQL): one kind, no pile types. */
 function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow: number): Strata | null {
   if (!bins.length) return null;
@@ -114,8 +134,9 @@ function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow
 }
 
 export function StrataGraph({
-  bins, payCounts, p25, median, p75, cap, overflow, headcount, snapshotLabel, found = [], activeKey = null, openRef,
-  search, onFullChange, group = null, previewing = false, onClearGroup, onPeel, openFullRef, whoIs = null, onWantWho, searchOpenRef,
+  bins, payCounts, p25: p25Base, median: medianBase, p75: p75Base, cap, overflow, headcount: headcountBase, snapshotLabel: labelBase,
+  found: foundBase = NO_FOUND, activeKey = null, openRef, search, onFullChange, group = null, previewing = false, onClearGroup, onPeel,
+  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null,
 }: {
   bins: readonly { bucket: number; n: number }[];
   payCounts?: StrataCounts | null;
@@ -149,6 +170,7 @@ export function StrataGraph({
   onWantWho?: () => void;
   /** True while the full page's search has its list open over the graph: a press then only puts it away. */
   searchOpenRef?: MutableRefObject<boolean>;
+  timeline?: GraphTimeline | null;
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
@@ -159,13 +181,72 @@ export function StrataGraph({
   const reveal = useReveal();
   const [dpr] = useState(() => Math.min(2, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1));
 
-  const strata = useMemo(
+  const baseStrata = useMemo(
     () => (payCounts?.counts.length ? strataFromCounts(payCounts) : null) ?? strataFromBins(bins, overflow ?? 0),
     [payCounts, bins, overflow],
   );
-  const cats = useMemo(() => (payCounts?.categories?.length ? payCounts.categories : null), [payCounts]);
+
+  // ── The timeline (lib/timeline) ──
+  // The snapshot shown, by its place in `snaps`: null for the latest as the page opens, drawn from the counts.
+  // Once the timeline is asked for, every snapshot — the latest too — is drawn from its people, so a step can
+  // carry each person from one to the next.
+  const snaps = timeline?.snaps ?? NO_SNAPS;
+  const lastSnap = snaps.length - 1;
+  const tl = timeline && typeof timeline.data === 'object' ? timeline.data : null;
+  const [at, setAt] = useState<number | null>(null);
+  // Where the last step set off from, for its big movers (neighbours only).
+  const [stepFrom, setStepFrom] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  // Paused part way through playing: Play then reads "Resume".
+  const [paused, setPaused] = useState(false);
+  // A snapshot asked for before the timeline was in, or before the field had been drawn from people.
+  const [goal, setGoal] = useState<{ to: number; play: boolean } | null>(null);
+  const restartRef = useRef(false);
+  const cacheRef = useRef<{ tl: Timeline | null; by: Map<number, TimelineStrata> }>({ tl: null, by: new Map() });
+  const tStrata = useMemo(() => {
+    if (!tl || at == null) return null;
+    if (cacheRef.current.tl !== tl) cacheRef.current = { tl, by: new Map() };
+    let st = cacheRef.current.by.get(at);
+    if (!st) cacheRef.current.by.set(at, (st = strataFromPeople(tl.at[at], tl.names, cap ?? 250_000)));
+    return st;
+  }, [tl, at, cap]);
+  const strata: Strata | null = tStrata ?? baseStrata;
+  const stats = useMemo(() => (tl && at != null ? snapStats(tl.at[at], tl.names.length, cap ?? 250_000) : null), [tl, at, cap]);
+  const p25 = stats ? stats.p25 : p25Base;
+  const median = stats ? stats.median : medianBase;
+  const p75 = stats ? stats.p75 : p75Base;
+  const headcount = stats ? stats.headcount : headcountBase;
+  const snapshotLabel = at != null ? snaps[at]?.label ?? labelBase : labelBase;
+  // The legend's types, each with its people and median: the counts' for the latest, the snapshot's own after.
+  // `kind` is the type's place in the field's names, which the legend isolates by.
+  const cats = useMemo(() => {
+    if (stats && tl) return tl.names.map((name, kind) => ({ name, kind, n: stats.byKind[kind].n, median: stats.byKind[kind].median })).filter((c) => c.n > 0);
+    return payCounts?.categories?.length
+      ? payCounts.categories.map((c, kind) => ({ name: c.name, kind, n: (c as { n?: number }).n ?? 0, median: (c as { median?: number }).median ?? null }))
+      : null;
+  }, [stats, tl, payCounts]);
   const kindInks = useMemo(() => (strata?.names ?? []).map((n) => (n === 'Everyone' ? 'var(--mantine-color-accent-6)' : categoryInk(n))), [strata]);
   const total = headcount ?? (strata ? strata.col.length + strata.pileKind.length : 0);
+  // Each person's square in the snapshot shown: by their number, 1 + index under the cap, −1 − index in the pile.
+  const keyId = useMemo(() => (tl ? new Map(tl.keys.map((k, i) => [k, i])) : null), [tl]);
+  const whereOf = useMemo(() => {
+    if (!tStrata || !tl) return null;
+    const w = new Int32Array(tl.keys.length);
+    tStrata.mainId.forEach((id, i) => { w[id] = i + 1; });
+    tStrata.pileId.forEach((id, j) => { w[id] = -(j + 1); });
+    return w;
+  }, [tStrata, tl]);
+  const spotOfKey = useCallback((key: string): Spot | null => {
+    const id = keyId?.get(key);
+    if (id == null || !whereOf) return null;
+    const v = whereOf[id];
+    return v > 0 ? { field: 'main', index: v - 1 } : v < 0 ? { field: 'pile', index: -v - 1 } : null;
+  }, [keyId, whereOf]);
+  // The search's people, where they are in the snapshot shown (and not marked in one they were not in).
+  const found = useMemo(
+    () => (tStrata ? foundBase.flatMap((f) => { const sp = spotOfKey(f.person_key); return sp ? [{ ...f, spot: sp }] : []; }) : foundBase),
+    [tStrata, foundBase, spotOfKey],
+  );
 
   // The plot's width, measured; its height grows with it.
   const plotRef = useRef<HTMLDivElement>(null);
@@ -187,7 +268,20 @@ export function StrataGraph({
 
   // A type picked out by its chip in the legend: its people lit, the rest faded.
   const [solo, setSolo] = useState<number | null>(null);
-  const lit = group && !group.pending ? group : null;
+  const litBase = group && !group.pending ? group : null;
+  // A group is its people: in another snapshot, they are lit wherever they stand then (and not at all in one
+  // they were not in), and counted and their median taken there.
+  const lit = useMemo(() => {
+    if (!litBase || !tStrata || !tl || !keyId) return litBase;
+    const ids = new Uint8Array(tl.keys.length);
+    for (const k of litBase.keys) { const id = keyId.get(k); if (id != null) ids[id] = 1; }
+    const main = new Uint8Array(tStrata.col.length), pile = new Uint8Array(tStrata.pileKind.length);
+    const pays: number[] = [];
+    tStrata.mainId.forEach((id, i) => { main[i] = ids[id] ? 0 : 1; if (ids[id]) pays.push(tStrata.mainPay[i]); });
+    tStrata.pileId.forEach((id, j) => { pile[j] = ids[id] ? 0 : 1; if (ids[id]) pays.push(tStrata.pilePay![j]); });
+    pays.sort((a, b) => a - b);
+    return { ...litBase, main, pile, count: pays.length, median: medianOf(pays), pays };
+  }, [litBase, tStrata, tl, keyId]);
   const dim = useMemo<Dim | null>(() => {
     if (!strata || (!lit && solo == null)) return null;
     const main = new Uint8Array(strata.col.length), pile = new Uint8Array(strata.pileKind.length);
@@ -204,6 +298,90 @@ export function StrataGraph({
     [strata, plotW, H, dpr, phone, unrolled, canUnroll],
   );
   const tail = layout?.tail ?? null;
+
+  // A step's big movers (lib/timeline `bigMoves`), between neighbouring snapshots only: by person, +1 or −1.
+  const moves = useMemo(
+    () => (tl && at != null && stepFrom != null && Math.abs(at - stepFrom) === 1 ? bigMoves(tl.at[stepFrom], tl.at[at], tl.keys.length) : null),
+    [tl, at, stepFrom],
+  );
+  const movers = useMemo(() => { if (!moves) return null; let k = 0; for (const v of moves) if (v) k++; return k; }, [moves]);
+  // Drawn on top in the up and down inks, and left so once the step is done, until the next.
+  const hues = useMemo(() => (moves && tStrata
+    ? { main: Int8Array.from(tStrata.mainId, (id) => moves[id]), pile: Int8Array.from(tStrata.pileId, (id) => moves[id]) }
+    : null), [moves, tStrata]);
+  // The step onto this layout: each person from their place in the one shown before (a joiner from above the
+  // plot), the big movers arcing, who left lifting out. Only between two snapshots drawn from people; anything
+  // else — the first time from the counts, a resize — is a layout of the same people, or simply there.
+  const shownRef = useRef<{ layout: StrataLayout; strata: Strata } | null>(null);
+  const step = useMemo<Step | null>(() => {
+    const was = shownRef.current;
+    if (!layout || !was || !tl || !tStrata || was.strata === tStrata || !('mainId' in was.strata)) return null;
+    const A = was.strata as TimelineStrata, L0 = was.layout, B = tStrata, L1 = layout;
+    const N = tl.keys.length;
+    const ox = new Float64Array(N).fill(NaN), oy = new Float64Array(N);
+    A.mainId.forEach((id, i) => { ox[id] = L0.mx[i]; oy[id] = L0.my[i]; });
+    A.pileId.forEach((id, j) => { ox[id] = L0.px[j]; oy[id] = L0.py[j]; });
+    const stays = new Uint8Array(N);
+    let seed = 0x5bd1e995 ^ (at ?? 0);
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const place = (ids: Int32Array, X: Float64Array) => {
+      const fx = new Float64Array(ids.length), fy = new Float64Array(ids.length), arc = new Float32Array(ids.length);
+      ids.forEach((id, i) => {
+        stays[id] = 1;
+        if (Number.isNaN(ox[id])) { fx[i] = X[i]; fy[i] = -14 - rand() * 60; return; }
+        fx[i] = ox[id];
+        fy[i] = oy[id];
+        if (moves?.[id]) arc[i] = arcHeight(X[i] - ox[id]);
+      });
+      return { fx, fy, arc };
+    };
+    const mm = place(B.mainId, L1.mx), pp = place(B.pileId, L1.px);
+    const gx: number[] = [], gy: number[] = [], gk: number[] = [];
+    A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); } });
+    A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); } });
+    return {
+      to: L1,
+      from: { mx: mm.fx, my: mm.fy, px: pp.fx, py: pp.fy },
+      arc: moves ? { main: mm.arc, pile: pp.arc } : null,
+      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
+    };
+    // `shownRef` is the layout drawn before this one: read, not a dependency.
+  }, [layout, tl, tStrata, moves, at]);
+  useEffect(() => { if (layout && strata) shownRef.current = { layout, strata }; }, [layout, strata]);
+  // Go to a snapshot. The first time, the field is first drawn from the latest's people where it stands (no
+  // one moves: the same people in the same columns), and the step taken from there.
+  const goTo = useCallback((to: number, play = false) => {
+    if (!timeline || to < 0 || to > lastSnap) return;
+    if (!tl) { timeline.onWant(); setGoal({ to, play }); return; }
+    if (at == null) { setAt(lastSnap); setGoal({ to, play }); return; }
+    setStepFrom(at);
+    setAt(to);
+    if (play) setPlaying(true);
+  }, [timeline, tl, at, lastSnap]);
+  // The timeline in, or the field drawn from the latest's people: on to the snapshot asked for.
+  useEffect(() => {
+    if (!goal || !tl) return;
+    if (at == null) { setAt(lastSnap); return; }
+    if (shownRef.current?.strata !== tStrata) return;
+    setGoal(null);
+    if (goal.to !== at) { setStepFrom(at); setAt(goal.to); }
+    if (goal.play) setPlaying(true);
+  }, [goal, tl, at, lastSnap, tStrata, layout]);
+  // Play: a step every PLAY_MS (longer after starting over from the first), to the latest, then stop.
+  useEffect(() => {
+    if (!playing || at == null || goal) return;
+    if (at >= lastSnap) { setPlaying(false); return; }
+    const wait = restartRef.current ? PLAY_RESTART_MS : PLAY_MS;
+    const t = window.setTimeout(() => { restartRef.current = false; setStepFrom(at); setAt(at + 1); }, wait);
+    return () => window.clearTimeout(t);
+  }, [playing, at, goal, lastSnap]);
+  const onPlay = () => {
+    if (playing) { setPlaying(false); setPaused(true); return; }
+    setPaused(false);
+    // At the latest (or not yet started), from the first again.
+    if (at == null || at >= lastSnap) { restartRef.current = true; goTo(0, true); return; }
+    setPlaying(true);
+  };
   const fieldRef = useRef<StrataFieldHandle>(null);
   useEffect(() => { if (layout) droppedRef.current = true; }, [layout]);
   const [moving, setMoving] = useState(false);
@@ -213,8 +391,8 @@ export function StrataGraph({
   const filterStats = useMemo(() => {
     if (!strata || !dim) return null;
     if (solo != null && !lit) {
-      const c = cats?.[solo];
-      return { name: strata.names[solo], count: c ? (c as { n?: number }).n ?? 0 : 0, median: c ? (c as { median?: number }).median ?? null : null, ink: kindInks[solo] };
+      const c = cats?.find((x) => x.kind === solo);
+      return { name: strata.names[solo], count: c?.n ?? 0, median: c?.median ?? null, ink: kindInks[solo] };
     }
     if (lit && solo == null) return { name: group!.name, count: lit.count, median: lit.median, ink: 'var(--strata-match)' };
     // Both: those lit by each, at their column's pay.
@@ -228,6 +406,36 @@ export function StrataGraph({
     const med = mid < 0 ? null : mid < pays.length ? pays[mid] : cap;
     return { name: `${group!.name} · ${strata.names[solo!]}`, count: all, median: med, ink: 'var(--strata-match)' };
   }, [strata, dim, solo, lit, group, cats, kindInks, cap]);
+
+  // Whose a square is: the page's names for the latest drawn from the counts; in a snapshot drawn from people,
+  // that snapshot's names, its pay, the pay in the snapshot before, and the rank among its people.
+  const wantNames = timeline?.onWantNames;
+  const prevPay = useMemo(() => {
+    if (!tl || at == null || at === 0) return null;
+    const p = tl.at[at - 1], out = new Float64Array(tl.keys.length);
+    for (let r = 0; r < p.id.length; r++) out[p.id[r]] = p.pay[r];
+    return out;
+  }, [tl, at]);
+  const desc = useMemo(() => (tl && at != null ? Float64Array.from(tl.at[at].pay).sort().reverse() : null), [tl, at]);
+  const namesHere = timeline?.names && at != null && timeline.names.snap === at ? timeline.names.who : null;
+  const whoIs: WhoIs | 'loading' | null = useMemo(() => {
+    if (!tStrata || !tl || at == null || whoIsBase == null) return whoIsBase;
+    if (!namesHere || !desc) return 'loading';
+    const above = (v: number) => { let lo = 0, hi = desc.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (desc[mid] > v) lo = mid + 1; else hi = mid; } return lo; };
+    return (field, index) => {
+      const id = field === 'main' ? tStrata.mainId[index] : tStrata.pileId[index];
+      const key = id != null ? tl.keys[id] : undefined;
+      const n = key ? namesHere.get(key) : undefined;
+      if (!key || !n) return null;
+      const pay = field === 'main' ? tStrata.mainPay[index] : tStrata.pilePay![index];
+      return {
+        key, name: n.name, title: n.title, school: n.school, pay,
+        prev: prevPay ? (prevPay[id] > 0 ? prevPay[id] : null) : undefined, prevLabel: at > 0 ? snaps[at - 1].label : undefined,
+        rank: above(pay) + 1, total: desc.length,
+      };
+    };
+  }, [tStrata, tl, at, whoIsBase, namesHere, desc, prevPay, snaps]);
+  useEffect(() => { if (at != null && whoIsBase != null) wantNames?.(at); }, [at, whoIsBase, wantNames]);
 
   // The lens: where it is wanted, the pointer (which picks the square), whether a finger left it pinned.
   const [lensAt, setLensAt] = useState<{ x: number; y: number } | null>(null);
@@ -833,7 +1041,7 @@ export function StrataGraph({
             <StrataField
               ref={fieldRef} className="hero-dots strata-field" strata={strata} layout={layout} kindInks={kindInks}
               dim={dim} matchSearch={!!lit} marks={marks} big={big} entrance={entrance && !droppedRef.current} replay={replay}
-              lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={setMoving}
+              lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={setMoving} hues={hues} step={step}
             />
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (
@@ -969,24 +1177,70 @@ export function StrataGraph({
         </>
       )}
 
+      {timeline && snaps.length > 1 && (
+        <div className="strata-timeline" data-timeline={tl ? 'ready' : timeline.data === 'loading' ? 'loading' : timeline.data === 'error' ? 'error' : 'off'}
+          data-snap={at != null ? snaps[at].id : snaps[lastSnap].id} data-playing={playing || undefined}
+          data-step={step ? `${step.from.my.reduce((n, y, i) => n + (y < 0 && step.to.my[i] >= 0 ? 1 : 0), 0) + step.from.py.reduce((n, y) => n + (y < 0 ? 1 : 0), 0)}:${step.ghosts?.x.length ?? 0}` : undefined}
+          data-movers={movers ?? undefined}>
+          <Button size="compact-sm" radius="xl" color="accent" className="strata-play"
+            leftSection={playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
+            loading={!!goal && !tl && timeline.data === 'loading'} onClick={onPlay}>
+            {playing ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}`}
+          </Button>
+          <div className="strata-track">
+            <span className="strata-track-end">{bareLabel(snaps[0].label)}</span>
+            <div className="strata-track-dots" role="radiogroup" aria-label="Snapshot"
+              onKeyDown={(e) => {
+                const now = at ?? lastSnap;
+                const to = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? now + 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? now - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? lastSnap : null;
+                if (to == null || to < 0 || to > lastSnap) return;
+                e.preventDefault();
+                setPlaying(false);
+                setPaused(false);
+                goTo(to);
+                (e.currentTarget.children[to] as HTMLElement | undefined)?.focus();
+              }}>
+              {snaps.map((sn, i) => {
+                const here = (at ?? lastSnap) === i;
+                return (
+                  <button key={sn.id} type="button" role="radio" aria-checked={here} aria-label={sn.label} tabIndex={here ? 0 : -1}
+                    className="strata-track-dot" data-state={here ? 'now' : i < (at ?? lastSnap) ? 'past' : 'next'}
+                    onClick={() => { setPlaying(false); setPaused(false); goTo(i); }} />
+                );
+              })}
+            </div>
+            <span className="strata-track-end">{bareLabel(snaps[lastSnap].label)}</span>
+          </div>
+          {/* The snapshot, its people and median are the toolbar's count and the median's pin; said here only to a
+              screen reader, as the step lands (not at every step of Play). */}
+          <div className="visually-hidden strata-timeline-said" aria-live={playing ? 'off' : 'polite'}>
+            {snapshotLabel} · {num(total)} people{median != null ? ` · median ${usd(median)}` : ''}
+          </div>
+          <div className="strata-timeline-readout">
+            {movers != null && (
+              <div className="strata-movers">
+                {num(movers)} {movers === 1 ? 'person' : 'people'} changed pay by 8%+ this step · <span data-up>green up</span>, <span data-down>red down</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {cats && (
         <div className="hero-dist-legend strata-legend" data-solo={solo ?? undefined}>
           <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">
             Stacked by highest-paid appointment · {canHover ? 'click' : 'tap'} to isolate
           </Text>
-          {cats.map((c, i) => {
-            const meta = c as { name: string; n?: number; median?: number };
-            return (
-              <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={meta.n}
-                aria-pressed={solo === i} onClick={() => setSolo((s) => (s === i ? null : i))}>
-                <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[i] }} />
-                <Text span size="xs" fw={600}>{c.name}</Text>
-                <Text span size="xs" className="strata-legend-meta">
-                  {num(meta.n ?? 0)}{meta.median != null && <span className="hero-dist-legend-median"> · median {fmtK(meta.median)}</span>}
-                </Text>
-              </button>
-            );
-          })}
+          {cats.map((c) => (
+            <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
+              aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
+              <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
+              <Text span size="xs" fw={600}>{c.name}</Text>
+              <Text span size="xs" className="strata-legend-meta">
+                {num(c.n)}{c.median != null && <span className="hero-dist-legend-median"> · median {fmtK(c.median)}</span>}
+              </Text>
+            </button>
+          ))}
         </div>
       )}
 

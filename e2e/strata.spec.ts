@@ -316,6 +316,9 @@ test('isolating a type lights its people where they stand, moves no one, and the
   await expect(page.locator('.strata-chip')).toContainText(`Faculty · ${num(cat.n)} people · median ${fmtK(cat.median)} · ${Math.round(gap)}% above campus`);
   // Under a filter the lens names only its people: wherever it is pointed, a Faculty member or no one — never
   // someone the filter fades. Low over the crowded floor, where the bands under Faculty stand, it still finds one.
+  // (The legend is below the plot: pressing it scrolled the page. The plot is brought back to the middle.)
+  await plot(page).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(100);
   const pb = (await plot(page).boundingBox())!;
   let named = 0;
   for (const [fx, fy] of [[0.75, 0.97], [0.24, 0.82], [0.3, 0.97], [0.5, 0.9], [0.62, 0.95]]) {

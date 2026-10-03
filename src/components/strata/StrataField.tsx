@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, PILE_PER_ROW,
+  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, PILE_PER_ROW, STEP_ARC_WAVE_MS, STEP_MS, STEP_WAVE_MS,
   colHeight, colLeft, easeInOut, fisheye, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
@@ -180,14 +180,14 @@ function packed(css: string): number {
 }
 
 /** The inks the field draws in, read from the page's tokens in the scheme it is showing. */
-interface Inks { kinds: string[]; dim: string; match: string; ink: string; card: string; lensBg: string; lensRim: string; lensShadow: string }
+interface Inks { kinds: string[]; dim: string; match: string; up: string; down: string; ink: string; card: string; lensBg: string; lensRim: string; lensShadow: string }
 function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
   const probe = document.createElement('span');
   probe.style.display = 'none';
   el.appendChild(probe);
   const read = (v: string) => { probe.style.color = v; return canvasColor(getComputedStyle(probe).color); };
   const out = {
-    kinds: kinds.map(read), dim: read('var(--strata-dim)'), match: read('var(--strata-match)'), ink: read('var(--mantine-color-text)'),
+    kinds: kinds.map(read), dim: read('var(--strata-dim)'), match: read('var(--strata-match)'), up: read('var(--text-pos)'), down: read('var(--text-neg)'), ink: read('var(--mantine-color-text)'),
     card: read('var(--surface)'), lensBg: read('var(--lens-bg)'), lensRim: read('var(--lens-rim)'), lensShadow: read('var(--lens-shadow)'),
   };
   probe.remove();
@@ -200,6 +200,18 @@ export interface StrataFieldHandle {
 }
 
 export interface LensHit extends Spot { x: number; y: number; s: number }
+
+/**
+ * A timeline step onto `to`: where each of its squares sets off — its person's place in the snapshot before, or
+ * above the plot for someone who joined — how high a big mover arcs on the way (0 for the rest), and who left:
+ * from their old place up out of the top, gone when the step ends.
+ */
+export interface Step {
+  to: StrataLayout;
+  from: { mx: Float64Array; my: Float64Array; px: Float64Array; py: Float64Array };
+  arc: { main: Float32Array; pile: Float32Array } | null;
+  ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array } | null;
+}
 
 export const StrataField = forwardRef<StrataFieldHandle, {
   strata: Strata;
@@ -225,8 +237,12 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   onPick?: (hit: LensHit | null) => void;
   /** Whether the squares are moving, when it changes. */
   onMoving?: (moving: boolean) => void;
+  /** A timeline step's movers, by square: +1 up, −1 down — drawn on top in the up and down inks. */
+  hues?: { main: Int8Array; pile: Int8Array } | null;
+  /** How to arrive at `layout`, when it is a timeline step's. */
+  step?: Step | null;
   className?: string;
-}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, className }, ref) {
+}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, className }, ref) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const lensRef = useRef<HTMLCanvasElement>(null);
@@ -235,7 +251,12 @@ export const StrataField = forwardRef<StrataFieldHandle, {
 
   // Positions now, and the move in flight: where each square set off from, how long it waits, and the ease.
   const cur = useRef({ mx: new Float64Array(0), my: new Float64Array(0), px: new Float64Array(0), py: new Float64Array(0) });
-  const move = useRef<{ start: number; fromMx: Float64Array; fromMy: Float64Array; fromPx: Float64Array; fromPy: Float64Array; wait: Float64Array; pwait: Float64Array; ms: number; land: boolean } | null>(null);
+  const move = useRef<{
+    start: number; fromMx: Float64Array; fromMy: Float64Array; fromPx: Float64Array; fromPy: Float64Array; wait: Float64Array; pwait: Float64Array; ms: number; land: boolean;
+    arcM?: Float32Array; arcP?: Float32Array;
+    /** Who left, lifting out: from y0 to y1, and where they are now. */
+    ghost?: { x: Float64Array; y0: Float64Array; y1: Float64Array; y: Float64Array; wait: Float64Array; kind: Uint8Array };
+  } | null>(null);
   const raf = useRef(0);
   const inks = useRef<Inks | null>(null);
   const [scheme, setScheme] = useState(0);
@@ -248,25 +269,29 @@ export const StrataField = forwardRef<StrataFieldHandle, {
 
   // Each square's ink: its kind's, the search's, or the faded one. Painted in that order, so a filter's
   // people lie over the faded ones they have left.
+  // Ink C is the faded, C + 1 the search's, C + 2 and C + 3 a timeline step's movers, up and down.
   const tint = useMemo(() => {
     const C = kindInks.length;
-    const of = (kinds: Uint8Array, mask: Uint8Array | null) => {
+    const of = (kinds: Uint8Array, mask: Uint8Array | null, hue: Int8Array | null) => {
       const out = new Uint8Array(kinds.length);
-      for (let i = 0; i < kinds.length; i++) out[i] = mask ? (mask[i] ? C : matchSearch ? C + 1 : kinds[i]) : kinds[i];
+      for (let i = 0; i < kinds.length; i++) {
+        out[i] = mask ? (mask[i] ? C : matchSearch ? C + 1 : kinds[i]) : kinds[i];
+        if (hue && hue[i] && out[i] !== C) out[i] = hue[i] > 0 ? C + 2 : C + 3;
+      }
       return out;
     };
-    const main = of(strata.kind, dim?.main ?? null), pile = of(strata.pileKind, dim?.pile ?? null);
+    const main = of(strata.kind, dim?.main ?? null, hues?.main ?? null), pile = of(strata.pileKind, dim?.pile ?? null, hues?.pile ?? null);
     // Each ink's squares, listed once, so a frame paints ink by ink without looking at everyone each time.
     const lists = (t: Uint8Array) => {
-      const n = new Int32Array(C + 2);
+      const n = new Int32Array(C + 4);
       for (let i = 0; i < t.length; i++) n[t[i]]++;
       const out = Array.from(n, (k) => new Int32Array(k));
       n.fill(0);
       for (let i = 0; i < t.length; i++) out[t[i]][n[t[i]]++] = i;
       return out;
     };
-    return { main, pile, C, mainBy: lists(main), pileBy: lists(pile) };
-  }, [strata, dim, matchSearch, kindInks.length]);
+    return { main, pile, C, mainBy: lists(main), pileBy: lists(pile), order: [C, ...Array.from({ length: C }, (_, k) => k), C + 1, C + 2, C + 3] };
+  }, [strata, dim, matchSearch, kindInks.length, hues]);
 
   // The page's tokens, again whenever the scheme changes.
   useEffect(() => {
@@ -280,7 +305,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
 
   const ink = (k: number) => {
     const t = inks.current!;
-    return k < tint.C ? t.kinds[k] : k === tint.C ? t.dim : t.match;
+    return k < tint.C ? t.kinds[k] : k === tint.C ? t.dim : k === tint.C + 1 ? t.match : k === tint.C + 2 ? t.up : t.down;
   };
 
   const drawBase = () => {
@@ -299,8 +324,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
     const { img, buf } = px32.current;
     buf.fill(0);
-    // The faded first, then each kind, then the search's own.
-    const order = [tint.C, ...Array.from({ length: tint.C }, (_, k) => k), tint.C + 1];
+    // The faded first, then each kind, then the search's own, then a step's movers on top of all.
+    const order = tint.order;
     const box: Px = { X: 0, Y: 0, w: 0, h: 0 };
     // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a
     // square of one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
@@ -308,8 +333,10 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box);
       if (w < least) { X -= (least - w) >> 1; w = least; }
       if (h < least) { Y -= (least - h) >> 1; h = least; }
-      X = Math.max(0, X);
-      Y = Math.max(0, Y);
+      // Clipped to the canvas, not clamped to it: a square above the plot (one dropping in, or lifting out) is
+      // not drawn at all, rather than along its top edge.
+      if (X < 0) { w += X; X = 0; }
+      if (Y < 0) { h += Y; Y = 0; }
       w = Math.min(w, cw - X);
       h = Math.min(h, ch - Y);
       if (w <= 0 || h <= 0) return;
@@ -317,11 +344,14 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     };
     for (const k of order) {
       const c = packed(ink(k));
-      const least = dim && k !== tint.C ? LIT_MIN : 1;
+      const least = (dim && k !== tint.C) || k >= tint.C + 2 ? LIT_MIN : 1;
       const a = tint.mainBy[k], b = tint.pileBy[k];
       for (let q = 0; q < a.length; q++) put(mx[a[q]], my[a[q]], c, least);
       for (let q = 0; q < b.length; q++) put(px[b[q]], py[b[q]], c, least);
     }
+    // Who left, on their way up and out.
+    const gh = move.current?.ghost;
+    if (gh) for (let g = 0; g < gh.x.length; g++) put(gh.x[g], gh.y[g], packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), 1);
     ctx.putImageData(img, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // The search's people: a white square ringed in ink, with their type's colour at its heart.
@@ -412,8 +442,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     // `snapReach`) — the one under the pointer where they crowd, across the lens where a filter leaves a few.
     const reach = snapReach(nameableHere, R, Math.max(grid.sq, grid.sqW) / 2 + 0.75);
     const best: LensHit | null = near && near.d <= reach ? { field: near.field, index: near.index, x: near.x, y: near.y, s: Math.max(near.z, PICK_MIN) } : null;
-    const order = [tint.C, ...Array.from({ length: tint.C }, (_, k) => k), tint.C + 1];
-    for (const k of order) {
+    for (const k of tint.order) {
       ctx.fillStyle = ink(k);
       for (const [a, alpha] of RIM_ALPHA) {
         ctx.globalAlpha = alpha;
@@ -484,14 +513,21 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       const t0 = performance.now();
       const { mx, my, px, py } = cur.current;
       let done = true;
-      const step = (from: Float64Array, to: Float64Array, out: Float64Array, wait: Float64Array, i: number, axis: 0 | 1) => {
+      const go = (from: Float64Array, to: Float64Array, out: Float64Array, wait: Float64Array, i: number, axis: 0 | 1, arc?: Float32Array) => {
         const p = Math.min(1, Math.max(0, (now - mv.start - wait[i]) / mv.ms));
         if (p < 1) done = false;
         const e = mv.land ? (axis === 1 ? landEase(p) : 1) : easeInOut(p);
-        out[i] = from[i] + (to[i] - from[i]) * e;
+        // A big mover rises over its path as it goes: highest halfway, back down as it lands.
+        out[i] = from[i] + (to[i] - from[i]) * e - (axis === 1 && arc ? arc[i] * 4 * e * (1 - e) : 0);
       };
-      for (let i = 0; i < n; i++) { step(mv.fromMx, layout.mx, mx, mv.wait, i, 0); step(mv.fromMy, layout.my, my, mv.wait, i, 1); }
-      for (let j = 0; j < m; j++) { step(mv.fromPx, layout.px, px, mv.pwait, j, 0); step(mv.fromPy, layout.py, py, mv.pwait, j, 1); }
+      for (let i = 0; i < n; i++) { go(mv.fromMx, layout.mx, mx, mv.wait, i, 0); go(mv.fromMy, layout.my, my, mv.wait, i, 1, mv.arcM); }
+      for (let j = 0; j < m; j++) { go(mv.fromPx, layout.px, px, mv.pwait, j, 0); go(mv.fromPy, layout.py, py, mv.pwait, j, 1, mv.arcP); }
+      const gh = mv.ghost;
+      if (gh) for (let g = 0; g < gh.x.length; g++) {
+        const p = Math.min(1, Math.max(0, (now - mv.start - gh.wait[g]) / mv.ms));
+        if (p < 1) done = false;
+        gh.y[g] = gh.y0[g] + (gh.y1[g] - gh.y0[g]) * p * p;
+      }
       drawBase();
       // Each moving frame's cost, for the frame-budget guards (diagnostic only).
       try { performance.measure('strata-frame', { start: t0, end: performance.now() }); } catch { /* unsupported */ }
@@ -538,16 +574,20 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   // or with nothing drawn yet, it is simply there.
   const first = useRef(true);
   const lastReplay = useRef(replay);
+  // A field of other people (another snapshot) arrives by its step, or not at all: it is simply there.
+  const lastStrata = useRef(strata);
   // Whether a frame of this field has been shown: laid out again before then (going full page, measured
   // at its height before the first paint), it is simply at the new layout — there is nothing to move from.
   const shown = useRef(false);
   useLayoutEffect(() => {
     const was = cur.current;
-    const fresh = was.mx.length !== n || was.px.length !== m;
+    const fresh = was.mx.length !== n || was.px.length !== m || lastStrata.current !== strata;
     const drop = (first.current && entrance) || replay !== lastReplay.current;
+    const stepped = !!step && step.to === layout && !drop && shown.current;
     first.current = false;
     lastReplay.current = replay;
-    if (prefersReducedMotion() || ((fresh || !shown.current) && !drop)) {
+    lastStrata.current = strata;
+    if (prefersReducedMotion() || ((fresh || !shown.current) && !drop && !stepped)) {
       cur.current = { mx: layout.mx.slice(), my: layout.my.slice(), px: layout.px.slice(), py: layout.py.slice() };
       move.current = null;
       setMoving(false);
@@ -571,6 +611,22 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       }
       cur.current = { mx: layout.mx.slice(), my: fromMy.slice(), px: layout.px.slice(), py: fromPy.slice() };
       move.current = { start: now, fromMx: layout.mx.slice(), fromMy, fromPx: layout.px.slice(), fromPy, wait, pwait, ms: DROP_MS, land: true };
+    } else if (stepped && step) {
+      // A timeline step: from each person's place before, the big movers launching together.
+      const { from, arc, ghosts } = step;
+      const wait = new Float64Array(n), pwait = new Float64Array(m);
+      for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * (arc?.main[i] ? STEP_ARC_WAVE_MS : STEP_WAVE_MS);
+      for (let j = 0; j < m; j++) pwait[j] = (layout.px[j] / W) * (arc?.pile[j] ? STEP_ARC_WAVE_MS : STEP_WAVE_MS);
+      cur.current = { mx: from.mx.slice(), my: from.my.slice(), px: from.px.slice(), py: from.py.slice() };
+      const g = ghosts && ghosts.x.length ? (() => {
+        let seed = 0x9e3779b1 ^ ghosts.x.length;
+        const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+        const k = ghosts.x.length;
+        const y1 = new Float64Array(k), w = new Float64Array(k);
+        for (let q = 0; q < k; q++) { y1[q] = -14 - rand() * 60; w[q] = (ghosts.x[q] / W) * STEP_WAVE_MS; }
+        return { x: ghosts.x, y0: ghosts.y, y1, y: ghosts.y.slice(), wait: w, kind: ghosts.kind };
+      })() : undefined;
+      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g };
     } else {
       const wait = new Float64Array(n), pwait = new Float64Array(m);
       for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * MOVE_WAVE_MS;

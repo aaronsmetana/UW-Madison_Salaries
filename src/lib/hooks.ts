@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { query, getDB } from './duckdb';
+import { query, queryColumns, getDB } from './duckdb';
+import { buildTimeline, timelineKeysSql, timelineSql } from './timeline';
 import { fetchData, type DepartmentChanges, type HomeStats, type Manifest, type RaiseSteps, type Reorganization, type SearchIndex, type Summary } from './manifest';
 import { useControls } from '../state/controls';
 import type { GradeBand } from './bands';
@@ -172,6 +173,25 @@ export function useSql<T = Record<string, unknown>>(
   useDbReady(enabled);
   // Include the SQL text in the key so changing a query without changing its key can't serve stale data.
   return useQuery({ queryKey: ['sql', ...key, sql], queryFn: () => query<T>(sql), enabled });
+}
+
+/**
+ * The landing timeline (lib/timeline): everyone in every snapshot, as two queries read as columns. Asked for
+ * once, the first time a reader plays or picks a snapshot; kept for the visit.
+ */
+export function useTimeline(snaps: readonly { id: string; label: string }[], names: readonly string[], enabled: boolean) {
+  useDbReady(enabled);
+  return useQuery({
+    queryKey: ['timeline', snaps.map((s) => s.id).join(','), names.join('|')],
+    enabled: enabled && snaps.length > 1 && names.length > 0,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const ids = snaps.map((s) => s.id);
+      const keys = await queryColumns(timelineKeysSql(ids), ['person_key']);
+      const cols = await queryColumns(timelineSql(ids, names), ['snap', 'id', 'pay', 'kind']);
+      return buildTimeline(cols as unknown as Parameters<typeof buildTimeline>[0], Array.from(keys.person_key as ArrayLike<string>), snaps, names);
+    },
+  });
 }
 
 /** The active snapshot id, resolving the `latest` default from the summary. */
