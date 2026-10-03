@@ -212,13 +212,16 @@ test.describe('the plot surface', () => {
       const hits = await page.evaluate(([px, fx, yy]) => [px, fx].map((x) =>
         document.elementFromPoint(x, yy)?.closest('.raise-dist-card') ? 'card' : 'covered'), [Math.round(plot.x + 3), Math.round(cardBox.x + 6), y]);
       expect(hits, 'the samples are not on the card').toEqual(['card', 'card']);
-      const [inside, face] = await samplePixels(page, [
-        { x: Math.round(plot.x + 3), y },
-        { x: Math.round(cardBox.x + 6), y },
-      ]);
-      const d = deltaE(inside, face);
-      expect(d, `the plot surface is invisible in ${scheme}: rgb(${inside}) against the card's rgb(${face}) is dE ${d.toFixed(2)}`)
-        .toBeGreaterThan(2.3);
+      // Read again until the chart has settled in the scheme: on a slow runner the first reading caught the
+      // plot before its surface was painted (dE 0 against the card), which is not what a reader sees.
+      let inside: [number, number, number] = [0, 0, 0], face: [number, number, number] = [0, 0, 0], d = 0;
+      await expect.poll(async () => {
+        [inside, face] = await samplePixels(page, [
+          { x: Math.round(plot.x + 3), y },
+          { x: Math.round(cardBox.x + 6), y },
+        ]);
+        return (d = deltaE(inside, face));
+      }, { message: `the plot surface is invisible in ${scheme}`, timeout: 10_000, intervals: [250] }).toBeGreaterThan(2.3);
       expect(d, `the plot surface is too strong in ${scheme} (dE ${d.toFixed(2)}): past ~6 it reads as a band, not a surface`)
         .toBeLessThan(6);
     });
