@@ -298,8 +298,8 @@ test('visual: home full page, filtered', async ({ page }) => {
   await page.getByRole('button', { name: 'Full page' }).click();
   await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
-  // A title within a school: both tokens, the field dimmed but for them, their own curve and median, and
-  // the label saying how many they are and how their median sits against campus.
+  // A title within a school: both tokens, their squares sunk to the floor and the rest faded, their median's
+  // pin, and the chip saying how many they are and how their median sits against campus.
   const bar = page.locator('.hero-dist-full .search-bar-field input');
   // By key: "Research Associate" is two titles, PD012 and PD012N, and a name alone picks either.
   for (const [q, key] of [['research assoc', 't:PD012'], ['medicine', 'd:School of Medicine and Public Health']] as const) {
@@ -313,8 +313,8 @@ test('visual: home full page, filtered', async ({ page }) => {
   await shots(page, 'home-full-filtered', { fullPage: false });
 });
 
-// Searching on the page: every Aaron lit on the graph and the first six named, and the list under the box
-// in two columns of compact rows, with its count, to the window's bottom.
+// Searching on the page: every Aaron lit and sunk to the floor, the first six marked and named, and the list
+// under the box in two columns of compact rows, with its count, to the window's bottom.
 test('visual: home, searching', async ({ page }) => {
   await page.goto('./');
   const search = page.getByRole('combobox', { name: 'Search a person, title or division' });
