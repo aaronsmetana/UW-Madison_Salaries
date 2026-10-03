@@ -461,7 +461,8 @@ test('on a phone a finger held still brings up the lens above it and moves it, l
   await expect(plot(page)).toHaveAttribute('data-pinned', 'true');
   await expect(plot(page)).toHaveAttribute('data-lens', 'on');
   await expect(plot(page)).toHaveAttribute('data-who', 'ready', { timeout: 60_000 });
-  await expect(page.locator('.strata-card').getByRole('button', { name: /^Open / })).toBeVisible();
+  await expect(page.locator('.strata-card').getByRole('button', { name: 'Open', exact: true })).toBeVisible();
+  await expect(page.locator('.strata-card').getByRole('button', { name: 'Follow', exact: true })).toBeVisible();
   // A tap off the plot puts it away.
   await page.locator('.home-lead').tap();
   await expect(plot(page)).toHaveAttribute('data-lens', 'off');

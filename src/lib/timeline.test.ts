@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BIG_STEP, CODED, bigMoves, buildTimeline, quantileCont, snapStats, strataFromPeople, timelineSql, type SnapPeople } from './timeline';
+import { BIG_STEP, CODED, bigMoves, buildTimeline, followText, quantileCont, snapStats, strataFromPeople, timelineSql, type SnapPeople } from './timeline';
 import { stableKey } from './strata';
 
 const NAMES = ['Academic Staff', 'University Staff', 'Faculty'];
@@ -68,5 +68,17 @@ describe('bigMoves', () => {
     const a = snap([[1, 100_000, 0], [2, 100_000, 0], [3, 100_000, 0], [4, 100_000, 0]]);
     const b = snap([[1, 100_000 * BIG_STEP, 0], [2, 107_000, 0], [3, 100_000 / BIG_STEP, 0], [5, 90_000, 0]]);
     expect([...bigMoves(a, b, 6)]).toEqual([0, 1, 0, -1, 0, 0]);
+  });
+});
+
+describe('followText', () => {
+  it('counts the pay from the snapshot before as the square travels, and once there gives the change', () => {
+    const f = { name: 'Ada Lovelace', pay: 104_000, from: 100_000 };
+    expect(followText(f, 0)).toBe('Ada Lovelace · $100,000');
+    expect(followText(f, 0.5)).toBe('Ada Lovelace · $102,000');
+    expect(followText(f, 1)).toBe('Ada Lovelace · $104,000 (+4.0%)');
+    expect(followText({ ...f, pay: 96_000 }, 1)).toBe('Ada Lovelace · $96,000 (−4.0%)');
+    expect(followText({ ...f, pay: 100_000 }, 1)).toBe('Ada Lovelace · $100,000 (no change)');
+    expect(followText({ ...f, from: null }, 1)).toBe('Ada Lovelace · $104,000');
   });
 });

@@ -2365,6 +2365,24 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-chip[data-pending] { color: var(--mantine-color-dimmed); }
 /* A page scrolls under a finger on the plot; full page there is nothing to scroll. */
 .strata-plot { touch-action: pan-y; }
+/* The person followed (3a §9): a dark pill in the toolbar's line — who, a way to open them, and to stop. */
+.strata-follow-chip {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; min-height: 28px; box-sizing: border-box; margin-left: 8px;
+  padding: 0 2px 0 10px; border-radius: var(--mantine-radius-xl); background: var(--inverse-bg); color: var(--inverse-ink);
+  box-shadow: 0 0 0 1px var(--inverse-edge); font-size: var(--mantine-font-size-xs);
+}
+.strata-toolbar-left > :first-child:not(.strata-follow-chip) { flex: 0 1 auto; min-width: 0; }
+.strata-follow-chip > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.strata-follow-chip[data-absent] > span { color: var(--inverse-muted); }
+.strata-follow-open {
+  flex: none; padding: 2px 8px; border: 0; border-radius: var(--mantine-radius-xl); cursor: pointer; font: inherit; font-weight: 600;
+  background: var(--inverse-chip); color: var(--inverse-ink);
+}
+.strata-follow-open:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
+.strata-follow-chip .mantine-CloseButton-root { color: var(--inverse-ink); }
+.strata-card-actions { display: flex; gap: 6px; margin-top: 6px; }
+.strata-card-actions > * { flex: 1 1 0; }
+
 /* The pins: a label each in one of three rows over the skyline, its line down to its column. */
 .strata-pin {
   position: absolute; font-size: var(--mantine-font-size-xs); line-height: 15px; font-weight: 600; color: var(--mantine-color-dimmed);

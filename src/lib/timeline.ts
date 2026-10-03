@@ -168,3 +168,14 @@ export function bigMoves(a: SnapPeople, b: SnapPeople, people: number): Int8Arra
   }
   return out;
 }
+
+/** The followed person's label: their pay, counting from `from` as `e` goes 0 → 1; arrived, with the change. */
+export function followText(f: { name: string; pay: number | null; from: number | null }, e: number): string {
+  if (f.pay == null) return f.name;
+  const usd = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
+  if (f.from == null || !(f.from > 0)) return `${f.name} · ${usd(f.pay)}`;
+  if (e < 1) return `${f.name} · ${usd(f.from + (f.pay - f.from) * e)}`;
+  const pct = ((f.pay - f.from) / f.from) * 100;
+  if (Math.abs(pct) < 0.05) return `${f.name} · ${usd(f.pay)} (no change)`;
+  return `${f.name} · ${usd(f.pay)} (${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%)`;
+}

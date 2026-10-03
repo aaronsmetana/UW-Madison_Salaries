@@ -4,7 +4,7 @@ import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
+import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
@@ -248,6 +248,15 @@ export function StrataGraph({
     [tStrata, foundBase, spotOfKey],
   );
 
+  // ── Following a person (3a §9) ──
+  // A click on someone's square follows them: by their key, so they are found in any snapshot — and in the
+  // latest drawn from the counts, which carry no names, by the square clicked.
+  const [follow, setFollow] = useState<{ key: string; name: string; title: string | null; spot: Spot; pay: number | null } | null>(null);
+  const followId = follow && keyId ? keyId.get(follow.key) ?? null : null;
+  const followSpot = useMemo<Spot | null>(() => (follow ? (tStrata ? spotOfKey(follow.key) : follow.spot) : null), [follow, tStrata, spotOfKey]);
+  const toggleFollow = (who: DotWho, spot: Spot) =>
+    setFollow((f) => (f?.key === who.key ? null : { key: who.key, name: who.name, title: who.title, spot, pay: who.pay }));
+
   // The plot's width, measured; its height grows with it.
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotW, setPlotW] = useState(0);
@@ -331,7 +340,8 @@ export function StrataGraph({
         if (Number.isNaN(ox[id])) { fx[i] = X[i]; fy[i] = -14 - rand() * 60; return; }
         fx[i] = ox[id];
         fy[i] = oy[id];
-        if (moves?.[id]) arc[i] = arcHeight(X[i] - ox[id]);
+        // A big mover arcs, and the person followed always does.
+        if (moves?.[id] || id === followId) arc[i] = arcHeight(X[i] - ox[id]);
       });
       return { fx, fy, arc };
     };
@@ -342,11 +352,11 @@ export function StrataGraph({
     return {
       to: L1,
       from: { mx: mm.fx, my: mm.fy, px: pp.fx, py: pp.fy },
-      arc: moves ? { main: mm.arc, pile: pp.arc } : null,
+      arc: moves || followId != null ? { main: mm.arc, pile: pp.arc } : null,
       ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
     };
     // `shownRef` is the layout drawn before this one: read, not a dependency.
-  }, [layout, tl, tStrata, moves, at]);
+  }, [layout, tl, tStrata, moves, at, followId]);
   useEffect(() => { if (layout && strata) shownRef.current = { layout, strata }; }, [layout, strata]);
   // Go to a snapshot. The first time, the field is first drawn from the latest's people where it stands (no
   // one moves: the same people in the same columns), and the step taken from there.
@@ -382,6 +392,18 @@ export function StrataGraph({
     if (at == null || at >= lastSnap) { restartRef.current = true; goTo(0, true); return; }
     setPlaying(true);
   };
+  // What the field draws for them: their square in the snapshot shown, their pay there, and — carried by a
+  // step from a neighbouring snapshot — their pay there, which the label counts from and gives the change since.
+  const followProp = useMemo<Follow | null>(() => {
+    if (!follow || !followSpot) return null;
+    const pay = tStrata ? (followSpot.field === 'main' ? tStrata.mainPay[followSpot.index] : tStrata.pilePay![followSpot.index]) : follow.pay;
+    let from: number | null = null;
+    if (tl && at != null && stepFrom != null && Math.abs(stepFrom - at) === 1 && followId != null) {
+      const p = tl.at[stepFrom];
+      for (let r = 0; r < p.id.length; r++) if (p.id[r] === followId) { from = p.pay[r]; break; }
+    }
+    return { ...followSpot, name: follow.name, pay, from };
+  }, [follow, followSpot, tStrata, tl, at, stepFrom, followId]);
   const fieldRef = useRef<StrataFieldHandle>(null);
   useEffect(() => { if (layout) droppedRef.current = true; }, [layout]);
   const [moving, setMoving] = useState(false);
@@ -699,7 +721,7 @@ export function StrataGraph({
       const at = local(e);
       // A click on the pile unrolls it; unrolled, a click on someone opens them, and anywhere else folds it back.
       if (onPile(at)) { unroll(); return; }
-      if (pick) { if (who) openAt(who, pick); return; }
+      if (pick) { if (who) toggleFollow(who, pick); return; }
       if (tail) fold();
       return;
     }
@@ -779,7 +801,7 @@ export function StrataGraph({
       const last = tailOrder.length - 1;
       const to: Record<string, number> = { ArrowRight: r + step, ArrowUp: r + step, ArrowLeft: r - step, ArrowDown: r - step, PageUp: r + 10, PageDown: r - 10, Home: 0, End: last };
       if (e.key in to) { e.preventDefault(); keyTail(to[e.key]); return; }
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (pick && who) openAt(who, pick); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (pick && who) toggleFollow(who, pick); }
       return;
     }
     const c = lensCol ?? Math.floor((median ?? 0) / 1000);
@@ -794,7 +816,7 @@ export function StrataGraph({
       case 'End': next = COLS - 1; break;
       case 'Enter': case ' ':
         e.preventDefault();
-        if (pick && who) openAt(who, pick);
+        if (pick && who) toggleFollow(who, pick);
         return;
       // Put away, and on to the page's own Escape (full page: a filter off, then full page closed).
       case 'Escape':
@@ -979,6 +1001,21 @@ export function StrataGraph({
     })() : null
     : null;
   const pickKind = pick ? (pick.field === 'main' ? strata.kind[pick.index] : strata.pileKind[pick.index]) : null;
+  // The followed person's chip: who, and — where the snapshot shown has no such person — that they are not on
+  // the payroll then; a way to open them, and to stop.
+  const followTitle = follow ? (namesHere?.get(follow.key)?.title ?? follow.title) : null;
+  const followChip = follow ? (
+    <div className="strata-follow-chip" data-absent={!followSpot || undefined}>
+      <span>Following {follow.name}{followTitle ? ` · ${followTitle}` : ''}{followSpot ? '' : ' · not on payroll this snapshot'}</span>
+      {followSpot && followProp && (
+        <button type="button" className="strata-follow-open"
+          onClick={() => openAt({ key: follow.key, name: follow.name, title: followTitle, school: null, pay: followProp.pay }, followSpot)}>
+          Open
+        </button>
+      )}
+      <CloseButton size="sm" aria-label={`Stop following ${follow.name}`} onClick={() => setFollow(null)} />
+    </div>
+  ) : null;
 
   const panel = (
     <div
@@ -991,7 +1028,7 @@ export function StrataGraph({
     >
       <div className="hero-dist-controls strata-toolbar">
         {full && search && <div className="hero-dist-search">{search}</div>}
-        <div className="strata-toolbar-left">{chip}</div>
+        <div className="strata-toolbar-left">{chip}{followChip}</div>
         <div className="strata-toolbar-right">
           {motion && (phone ? (
             <ActionIcon variant="default" size="md" aria-label="Drop the squares again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
@@ -1021,6 +1058,7 @@ export function StrataGraph({
         data-pick-size={pick ? pick.s.toFixed(2) : undefined}
         data-lens-at={lensAt ? `${Math.round(lensAt.x)},${Math.round(lensAt.y)}` : undefined}
         data-pinned={pinned || undefined}
+        data-follow={follow ? follow.key : undefined}
         data-squares={`${strata.col.length}:${strata.pileKind.length}`}
         onPointerMove={onMove} onPointerLeave={onLeave} onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
         tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution"
@@ -1042,6 +1080,7 @@ export function StrataGraph({
               ref={fieldRef} className="hero-dots strata-field" strata={strata} layout={layout} kindInks={kindInks}
               dim={dim} matchSearch={!!lit} marks={marks} big={big} entrance={entrance && !droppedRef.current} replay={replay}
               lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={setMoving} hues={hues} step={step}
+              follow={followProp}
             />
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (
@@ -1140,9 +1179,16 @@ export function StrataGraph({
                     {ordinal(Math.min(99, Math.max(1, Math.round((1 - (who.rank - 0.5) / who.total) * 100))))} percentile · #{num(who.rank)} of {num(who.total)}
                   </div>
                 )}
-                {pinned
-                  ? <Button size="compact-xs" mt={6} fullWidth onClick={() => pick && openAt(who, pick)}>Open {who.name}</Button>
-                  : <div className="strata-card-foot">{canHover ? 'Click to open' : 'Tap to open'}</div>}
+                {pinned ? (
+                  <div className="strata-card-actions">
+                    <Button size="compact-xs" variant={follow?.key === who.key ? 'default' : 'filled'} onClick={() => pick && toggleFollow(who, pick)}>
+                      {follow?.key === who.key ? 'Stop following' : 'Follow'}
+                    </Button>
+                    <Button size="compact-xs" variant="default" onClick={() => pick && openAt(who, pick)}>Open</Button>
+                  </div>
+                ) : (
+                  <div className="strata-card-foot">{follow?.key === who.key ? 'Click to stop following' : 'Click to follow through time'}</div>
+                )}
               </>
             ) : (
               <div className="strata-card-title">{whoIs === 'loading' || whoIs == null ? 'Finding who this is…' : 'No one found for this square'}</div>

@@ -5,6 +5,7 @@ import {
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
 import { parseRgb } from '../../lib/inkMix';
+import { followText } from '../../lib/timeline';
 import { prefersReducedMotion } from '../../lib/motion';
 import { Z } from '../../lib/layers';
 
@@ -180,7 +181,10 @@ function packed(css: string): number {
 }
 
 /** The inks the field draws in, read from the page's tokens in the scheme it is showing. */
-interface Inks { kinds: string[]; dim: string; match: string; up: string; down: string; ink: string; card: string; lensBg: string; lensRim: string; lensShadow: string }
+interface Inks {
+  kinds: string[]; dim: string; match: string; up: string; down: string; ink: string; card: string; lensBg: string; lensRim: string; lensShadow: string;
+  inverseBg: string; inverseInk: string; inverseEdge: string; font: string;
+}
 function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
   const probe = document.createElement('span');
   probe.style.display = 'none';
@@ -189,6 +193,8 @@ function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
   const out = {
     kinds: kinds.map(read), dim: read('var(--strata-dim)'), match: read('var(--strata-match)'), up: read('var(--text-pos)'), down: read('var(--text-neg)'), ink: read('var(--mantine-color-text)'),
     card: read('var(--surface)'), lensBg: read('var(--lens-bg)'), lensRim: read('var(--lens-rim)'), lensShadow: read('var(--lens-shadow)'),
+    inverseBg: read('var(--inverse-bg)'), inverseInk: read('var(--inverse-ink)'), inverseEdge: read('var(--inverse-edge)'),
+    font: getComputedStyle(el).fontFamily,
   };
   probe.remove();
   return out;
@@ -200,6 +206,13 @@ export interface StrataFieldHandle {
 }
 
 export interface LensHit extends Spot { x: number; y: number; s: number }
+
+/**
+ * The person followed (3a §9): their square marked as a search's people are, and a dark label on a leader —
+ * "{name} · $pay". Carried by a timeline step, the pay counts from `from` to `pay` as their square travels, and
+ * once there the label adds the change.
+ */
+export interface Follow extends Spot { name: string; pay: number | null; from: number | null }
 
 /**
  * A timeline step onto `to`: where each of its squares sets off — its person's place in the snapshot before, or
@@ -241,8 +254,9 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   hues?: { main: Int8Array; pile: Int8Array } | null;
   /** How to arrive at `layout`, when it is a timeline step's. */
   step?: Step | null;
+  follow?: Follow | null;
   className?: string;
-}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, className }, ref) {
+}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, follow = null, className }, ref) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const lensRef = useRef<HTMLCanvasElement>(null);
@@ -367,6 +381,42 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     };
     for (const i of marks.main) if (i < n) mark(mx[i], my[i], strata.kind[i], big?.field === 'main' && big.index === i ? 13 : 9);
     for (const j of marks.pile) if (j < m) mark(px[j], py[j], strata.pileKind[j], big?.field === 'pile' && big.index === j ? 13 : 9);
+    // The person followed: their mark, a leader and their label, on top of everything.
+    const f = follow;
+    if (f && f.index < (f.field === 'main' ? n : m)) {
+      const X = f.field === 'main' ? mx : px, Y = f.field === 'main' ? my : py;
+      const x0 = X[f.index], y0 = Y[f.index];
+      mark(x0, y0, f.field === 'main' ? strata.kind[f.index] : strata.pileKind[f.index], 11);
+      const cx = x0 + grid.sqW / 2, cy = y0 + grid.sq / 2;
+      // How far along their own move they are: the pay counts with them.
+      const mv = move.current;
+      let e = 1;
+      if (mv && !mv.land) {
+        const wait = f.field === 'main' ? mv.wait[f.index] : mv.pwait[f.index];
+        e = easeInOut(Math.min(1, Math.max(0, (performance.now() - mv.start - wait) / mv.ms)));
+      }
+      const text = followText(f, e);
+      ctx.font = `600 12px ${t.font}`;
+      const w = Math.ceil(ctx.measureText(text).width) + 16, h = 22;
+      let lx = cx + 12, ly = cy - h - 14;
+      if (lx + w > W - 2) lx = cx - 12 - w;
+      if (ly < 2) ly = cy + 14;
+      lx = Math.max(2, lx);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = t.ink;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.sign(lx + w / 2 - cx) * 7, cy + Math.sign(ly + h / 2 - cy) * 7);
+      ctx.lineTo(lx + w / 2 < cx ? lx + w - 6 : lx + 6, ly + h / 2 < cy ? ly + h : ly);
+      ctx.stroke();
+      ctx.fillStyle = t.inverseBg;
+      ctx.beginPath();
+      ctx.roundRect(lx, ly, w, h, h / 2);
+      ctx.fill();
+      if (t.inverseEdge !== 'rgba(0, 0, 0, 0)') { ctx.strokeStyle = t.inverseEdge; ctx.stroke(); }
+      ctx.fillStyle = t.inverseInk;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, lx + 8, ly + h / 2 + 0.5);
+    }
   };
 
   const drawLens = (): LensHit | null => {
@@ -418,6 +468,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     // The pointer's place in the field: what the lens shows under it, magnified about six times at its centre.
     const qx = ptr ? sx + (ptr.x - cx) / LENS_MAG : 0, qy = ptr ? sy + (ptr.y - cy) / LENS_MAG : 0;
     let near: { field: Field; index: number; x: number; y: number; z: number; d: number } | null = null;
+    let followed: { x: number; y: number; z: number } | null = null;
     let nameableHere = 0;
     // `a`: how strongly it is drawn — full where the lens magnifies, fainter in the crowded ring at its rim,
     // where whole columns are squeezed into lines and at full ink read as spokes rather than people.
@@ -431,6 +482,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
         const z = Math.max(0.7, s * f.scale * 0.92);
         const x = cx + f.x, y = cy + f.y;
         draws.push({ k: T[i], x, y, z, a: f.scale >= 0.7 ? 0 : f.scale >= 0.35 ? 1 : 2 });
+        if (follow && follow.field === field && follow.index === i) followed = { x, y, z };
         if (ptr && nameable(field, T[i])) {
           nameableHere++;
           const d = Math.hypot(ox - qx, oy - qy);
@@ -468,6 +520,13 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     ctx.lineWidth = 1;
     ctx.strokeStyle = t.lensRim;
     ctx.stroke();
+    // The person followed, outlined where the lens shows them.
+    if (followed) {
+      const h = Math.max(followed.z, 4) / 2 + 1.5;
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = t.ink;
+      ctx.strokeRect(followed.x - h, followed.y - h, 2 * h, 2 * h);
+    }
     // The square it names, ringed — drawn up to a size that reads wherever in the lens it is, and whole over
     // the glass's edge; reached for from across the lens, a faint line from the centre says which it is.
     if (best) {
@@ -644,7 +703,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     if (!move.current) drawBase();
     kick();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tint, marks, big, scheme]);
+  }, [tint, marks, big, scheme, follow]);
   // The lens follows: start the loop whenever the pointer or the wanted lens moves.
   const lensKey = lensAt ? `${lensAt.x},${lensAt.y}` : '';
   const pointerKey = pointer ? `${pointer.x},${pointer.y}` : '';
@@ -691,6 +750,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       data-marks={marks.main.length ? marks.main.map((i) => (i < n ? `${i}:${markAt(layout.mx[i] + grid.sqW / 2, dpr).toFixed(2)}:${markAt(layout.my[i] + grid.sq / 2, dpr).toFixed(2)}` : `${i}`)).join(' ') : undefined}
       data-pile-marks={marks.pile.length ? marks.pile.join(' ') : undefined}
       data-mark-big={big ? `${big.field}:${big.index}` : undefined}
+      data-follow={follow ? `${follow.field}:${follow.index}` : undefined} data-follow-label={follow ? followText(follow, 1) : undefined}
       aria-hidden
       style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, pointerEvents: 'none' }}>
       <canvas ref={baseRef} className="strata-base" style={{ position: 'absolute', inset: 0, width: W, height: H }} />

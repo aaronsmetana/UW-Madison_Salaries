@@ -6,7 +6,8 @@ import { parseColor } from './color';
 /**
  * The landing search marks the people it shows on the graph: each on their own square, a white square ringed
  * in ink with their type's colour at its heart; a pointer over one brings up the lens and says who it is, and
- * a press on it — or picking them in the list — turns the page into theirs (components/PersonReveal). The
+ * a press on it follows them, and Open on their chip — or picking them in the list — turns the page into theirs
+ * (components/PersonReveal). The
  * squares are drawn from `home-stats.json`'s counts and carry no names, so which square is whose is a rule
  * (lib/homePeople `dotSpots`), restated independently here.
  */
@@ -124,7 +125,7 @@ for (const [width, height] of [[1440, 900], [1280, 720]] as const) {
   });
 }
 
-test('pointing at a mark says who it is; pressing it turns the page into theirs, in about three and a half seconds', async ({ page }) => {
+test('pointing at a mark says who it is; pressing it follows them, and Open turns the page into theirs, in about three and a half seconds', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await home(page);
   const who = await lone(false);
@@ -143,6 +144,10 @@ test('pointing at a mark says who it is; pressing it turns the page into theirs,
 
   await page.mouse.down();
   await page.mouse.up();
+  await expect(page.locator('.hero-dist-main')).toHaveAttribute('data-follow', who.person_key);
+  const chip = page.locator('.strata-follow-chip');
+  await expect(chip).toContainText(/^Following /);
+  await chip.getByRole('button', { name: 'Open', exact: true }).click();
   const t0 = Date.now();
   const reveal = page.locator('.person-reveal');
   await expect(reveal).toHaveAttribute('data-phase', 'swell', { timeout: 500 });
@@ -176,7 +181,7 @@ test('picking the person in the list reveals them from their dot, and any key fi
   await expect(page.getByRole('heading', { level: 1 })).toBeFocused({ timeout: 10_000 });
 });
 
-test('under Reduce Motion a pressed mark simply opens the page', async ({ browser }) => {
+test('under Reduce Motion, Open on a followed mark simply opens the page', async ({ browser }) => {
   const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await home(page);
@@ -190,6 +195,7 @@ test('under Reduce Motion a pressed mark simply opens the page', async ({ browse
   await expect(page.locator('.hero-dist-main')).toHaveAttribute('data-pick', /^main:\d+$/);
   await page.mouse.down();
   await page.mouse.up();
+  await page.locator('.strata-follow-chip').getByRole('button', { name: 'Open', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/person/${encodeURIComponent(who.person_key)}`), { timeout: 1000 });
   expect(await page.locator('.person-reveal').count()).toBe(0);
   await expect(page.getByRole('heading', { level: 1 })).toBeFocused({ timeout: 10_000 });
@@ -216,7 +222,7 @@ test('on a phone a tap on a mark brings up the lens and its card, and the card o
   await expect(card).toBeVisible();
   // Nothing moves for a tap.
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
-  await card.getByRole('button', { name: /^Open / }).tap();
+  await card.getByRole('button', { name: 'Open', exact: true }).tap();
   await expect(page.locator('.person-reveal')).toHaveAttribute('data-phase', 'swell');
   await expect(page).toHaveURL(new RegExp(`/person/${encodeURIComponent(who.person_key)}`), { timeout: 4000 });
   await ctx.close();
