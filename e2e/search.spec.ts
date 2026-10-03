@@ -310,7 +310,7 @@ test('the search is kept in the address as it is typed, without adding to the hi
 });
 
 test('Back from a person picked in the search comes back to the search: its text, its marks, its list shut', async ({ page }) => {
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   const box = landingBox(page);
   await expect(box).toBeVisible({ timeout: 60_000 });

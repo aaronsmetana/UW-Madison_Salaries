@@ -1,17 +1,17 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
-import { HOME_STATS, spots, plotShape, barOverPlot, places, people, ranks } from './homeDots';
+import { HOME_STATS, spots, plotShape, barOverPlot, places, people, slots } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Full page, the bar filters the graph by a title, a school, or a title within a school: that group's dots
- * stay lit and the rest dim, its own curve and median are drawn beside everyone's, and a label says how many
- * they are and how their median sits against campus. Everything here is checked against the data directly —
- * who is covered, where their dots are, their median, the words for the gap — each restated from its rule
- * rather than taken from the page's code.
+ * Full page, the bar filters the graph by a title, a school, or a title within a school: that group's squares
+ * stay lit and sink to the floor of their columns, the rest fade, a pin marks the group's median, and the
+ * toolbar's chip says how many they are and how their median sits against campus. Everything here is checked
+ * against the data directly — who is covered, which squares are theirs, their median, the words for the gap —
+ * each restated from its rule rather than taken from the page's code.
  */
 
 const SNAP = HOME_STATS.snapshot_id;
@@ -30,11 +30,17 @@ function medianOf(xs: number[]) {
   const a = [...xs].sort((p, q) => p - q), n = a.length;
   return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
 }
-/** A pay's x on the plot's 1000-wide box: the curve runs $200 by $200 over `pay_counts`' range. */
-const { lo100, counts } = HOME_STATS.pay_counts;
-const LO = Math.floor(lo100 / 2) * 200;
-const HI = Math.floor((lo100 + counts.length - 1) / 2) * 200;
-const xOf = (v: number) => ((v - LO) / (HI - LO)) * 1000;
+/** A pay's x on the plot, CSS px: its $1k column's share of the axis (the field prints its column width). */
+async function xOf(page: Page, pay: number) {
+  const colW = Number(await page.locator('.hero-dist-full .hero-dots').getAttribute('data-col-w'));
+  return (pay / 1000) * colW;
+}
+/** The chip in the toolbar that names what is shown: "{name} · {n} people · median {$Nk} · {against campus}". */
+const chip = (page: Page) => page.locator('.strata-chip > span');
+const chipText = (name: string, who: { pay: number }[]) => {
+  const med = medianOf(who.map((p) => p.pay));
+  return `${name} · ${num(who.length)} ${who.length === 1 ? 'person' : 'people'} · median ${fmtK(med)} · ${vs(med, HOME_STATS.p50)}`;
+};
 
 /** The search's index of titles, as the page loads it. */
 const INDEX = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/search-index.json', import.meta.url)), 'utf8')) as {
@@ -88,7 +94,7 @@ function prints(who: { person_key: string }[], at: Map<string, { field: 'main' |
 
 /** The landing graph gone full page, its dots at rest and the panel done growing. */
 async function fullPage(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.locator('.hero-dist-full-toggle').click();
@@ -96,6 +102,8 @@ async function fullPage(page: Page) {
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
 }
+/** The field full page, which prints both its lit squares under the cap (`data-lit`) and in the pile (`data-pile-lit`). */
+const FIELD = '.hero-dist-full .hero-dots';
 
 const bar = (page: Page) => page.locator('.hero-dist-full .search-bar-field input');
 const tokens = (page: Page) => page.locator('.hero-dist-full .search-token-label');
@@ -107,57 +115,6 @@ async function put(page: Page, query: string, key: string) {
   await expect(chip, `no chip ${key} for "${query}"`).toBeVisible({ timeout: 60_000 });
   await chip.click();
   await expect(bar(page)).toHaveValue('');
-}
-
-/** The group's curve and campus's, as the plot draws them — each point's x and its height off the floor —
- *  and where the group's label ends, in the plot's own px. */
-function shape(page: Page) {
-  return page.evaluate(() => {
-    const pts = (d: string) => d.match(/-?[\d.]+,-?[\d.]+/g)!.map((p) => p.split(',').map(Number) as [number, number]);
-    const svg = document.querySelector('.hero-dist-full .hero-dist-plot')!;
-    const H = Number(svg.getAttribute('viewBox')!.split(' ')[3]);
-    const paths = [...svg.querySelectorAll('g > path')];
-    const campus = paths.find((p) => !p.classList.contains('hero-dist-curve-glow') && !p.classList.contains('hero-dist-group-curve'))!;
-    const group = document.querySelector('.hero-dist-group-curve');
-    const main = document.querySelector('.hero-dist-full .hero-dist-main')!.getBoundingClientRect();
-    const flag = document.querySelector('.hero-dist-group-flag')?.getBoundingClientRect();
-    const line = document.querySelector('.hero-dist-group-median');
-    const campusPts = pts(campus.getAttribute('d')!);
-    const groupPts = group ? pts(group.getAttribute('d')!) : [];
-    // Off the floor: the plot's baseline is 2px above its bottom.
-    const up = (p: [number, number][]) => p.map(([x, y]) => [x, H - 2 - y] as [number, number]);
-    return {
-      campus: up(campusPts),
-      group: group ? up(groupPts) : null,
-      groupFrom: groupPts.length ? Math.min(...groupPts.map((p) => p[0])) : null,
-      groupTo: groupPts.length ? Math.max(...groupPts.map((p) => p[0])) : null,
-      campusPeak: Math.min(...campusPts.map((p) => p[1])),
-      flagBottom: flag ? flag.bottom - main.top : null,
-      lineX: line ? Number(line.getAttribute('x1')) : null,
-      lineShown: !!line,
-      plotW: main.width,
-    };
-  });
-}
-
-/** How wide a group's curve is smoothed, restated: Silverman's rule of thumb over the pays under the cap,
- *  halved, and never under the campus kernel's $1,200. */
-function sigmaOf(pays: number[]) {
-  const v = pays.filter((p) => p > 0 && p < HOME_STATS.bin_cap).sort((a, b) => a - b), n = v.length;
-  if (n < 2) return 1200;
-  const mean = v.reduce((t, p) => t + p, 0) / n;
-  const sd = Math.sqrt(v.reduce((t, p) => t + (p - mean) ** 2, 0) / (n - 1));
-  const iqr = (v[Math.floor(0.75 * (n - 1))] - v[Math.floor(0.25 * (n - 1))]) / 1.34;
-  return Math.max(1200, 0.45 * (iqr > 0 ? Math.min(sd, iqr) : sd) * n ** -0.2);
-}
-
-/** Everyone the plot draws under the cap. */
-const UNDER_CAP = counts.reduce((t, n) => t + n, 0);
-
-/** Each of the group's points with campus's at the same x: the two share one grid. */
-function paired(s: { campus: [number, number][]; group: [number, number][] | null }) {
-  const at = new Map(s.campus.map(([x, h]) => [x.toFixed(1), h]));
-  return (s.group ?? []).map(([x, h]) => ({ x, h, campus: at.get(x.toFixed(1)) }));
 }
 
 test('a title, a school, and a title within a school light exactly their people, and say how many and how their median sits', async ({ page }) => {
@@ -177,38 +134,16 @@ test('a title, a school, and a title within a school light exactly their people,
     const who = await covered(c.f);
     expect(who.length, `${c.name}: nobody to light, so nothing here is tested`).toBeGreaterThan(20);
     const want = prints(who, at);
-    await expect(page.locator('.hero-dist-full .hero-dots'), `${c.name}: the lit dots under the curve`).toHaveAttribute('data-lit', want.main, { timeout: 60_000 });
-    await expect(page.locator('.hero-dist-full .hero-dots-over'), `${c.name}: the lit dots in the pile`).toHaveAttribute('data-lit', want.pile);
-
+    await expect(page.locator(FIELD), `${c.name}: the lit squares under the cap`).toHaveAttribute('data-lit', want.main, { timeout: 60_000 });
+    await expect(page.locator(FIELD), `${c.name}: the lit squares in the pile`).toHaveAttribute('data-pile-lit', want.pile);
+    await expect(chip(page), `${c.name}: its chip`).toHaveText(chipText(c.name, who));
+    // Its median's pin: labelled, and its line at the median's pay.
     const med = medianOf(who.map((p) => p.pay));
-    await expect(page.locator('.hero-dist-group-flag'), `${c.name}: its label`)
-      .toHaveText(`${c.name} · ${num(who.length)} · median ${fmtK(med)} · ${vs(med, HOME_STATS.p50)}`);
-
-    const s = await shape(page);
-    // Above the curve's highest point there are no dots, so a label that ends there covers none.
-    expect(s.flagBottom!, `${c.name}: its label reaches down over the dots`).toBeLessThan(s.campusPeak);
-    expect(Math.abs(((s.lineX! - xOf(med)) / 1000) * s.plotW), `${c.name}: its median line is off its median`).toBeLessThan(0.5);
-    // On campus's scale: how many of them there are at each pay, so never above everyone, and all of it
-    // together the share of everyone under the cap they are. Scaled to its own peak, it drew any group at
-    // campus's height, and the share test fails by a factor of ten and more.
-    const under = who.map((p) => p.pay).filter((p) => p < HOME_STATS.bin_cap);
-    const pairs = paired(s);
-    expect(pairs.length, `${c.name}: no curve drawn`).toBeGreaterThan(10);
-    for (const q of pairs) {
-      expect(q.campus, `${c.name}: its point at ${q.x} is off campus's grid`).toBeDefined();
-      expect(q.h, `${c.name}: its curve rises above everyone at ${q.x}`).toBeLessThanOrEqual(q.campus! + 0.1);
-    }
-    const area = pairs.reduce((t, q) => t + q.h, 0) / s.campus.reduce((t, [, h]) => t + h, 0);
-    expect(area / (under.length / UNDER_CAP), `${c.name}: its curve holds ${area.toFixed(4)} of everyone, not their ${(under.length / UNDER_CAP).toFixed(4)}`).toBeGreaterThan(0.97);
-    expect(area / (under.length / UNDER_CAP), `${c.name}: its curve holds ${area.toFixed(4)} of everyone, not their ${(under.length / UNDER_CAP).toFixed(4)}`).toBeLessThan(1.03);
-    // Its own people's curve, not anyone's: it runs only as far as their pays do, and its kernel's reach
-    // past them — a kernel as wide as a group its size needs.
-    const reach = 5 * sigmaOf(under);
-    expect(s.groupFrom!, `${c.name}: its curve starts below anyone in it`).toBeGreaterThanOrEqual(xOf(Math.min(...under) - reach));
-    expect(s.groupTo!, `${c.name}: its curve runs on past anyone in it`).toBeLessThanOrEqual(xOf(Math.max(...under) + reach));
+    await expect(page.locator('.hero-dist-full .strata-pin-label-filter'), `${c.name}: its pin`).toHaveText(`${c.name} median ${fmtK(med)}`);
+    const lineX = Number(await page.locator('.hero-dist-full .strata-pin-filter').getAttribute('x1'));
+    expect(Math.abs(lineX - (await xOf(page, med))), `${c.name}: its pin is off its median`).toBeLessThan(0.5);
   }
 });
-
 /**
  * A name typed lights everyone it names on the graph, as a title's people are lit: "aaron" lights every
  * Aaron with a dot, where the list can name only six. Full page, within the filters on: "wang" among the
@@ -218,23 +153,18 @@ test('a name typed lights exactly the people it names, within the filters full p
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   const at = await spots();
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   const pageBox = page.getByRole('combobox', { name: 'Search a person, title or division' });
-  const flag = page.locator('.hero-dist-group-flag');
-  const label = (name: string, who: { pay: number }[]) => {
-    const med = medianOf(who.map((p) => p.pay));
-    return `${name} · ${num(who.length)} · median ${fmtK(med)} · ${vs(med, HOME_STATS.p50)}`;
-  };
 
   await pageBox.fill('aaron');
   const aarons = await covered({ name: 'aaron' });
   expect(aarons.length, 'more Aarons than the graph names, so lighting them all is a real check').toBeGreaterThan(20);
   const lit = prints(aarons, at);
-  await expect(page.locator('.hero-dots'), 'the lit dots under the curve').toHaveAttribute('data-lit', lit.main, { timeout: 60_000 });
-  await expect(page.locator('.hero-dots-over'), 'the lit dots in the pile').toHaveAttribute('data-lit', lit.pile);
-  await expect(flag).toHaveText(label('“aaron”', aarons));
+  await expect(page.locator('.hero-dots'), 'the lit squares under the cap').toHaveAttribute('data-lit', lit.main, { timeout: 60_000 });
+  await expect(page.locator('.hero-dots'), 'the lit squares in the pile').toHaveAttribute('data-pile-lit', lit.pile);
+  await expect(chip(page)).toHaveText(chipText('“aaron”', aarons));
 
   // A title typed for: nobody's name, so nothing lit and no label, until its row is gone to.
   await pageBox.fill('research assoc');
@@ -253,79 +183,13 @@ test('a name typed lights exactly the people it names, within the filters full p
   expect(wangs.length, 'too few Wangs among the Research Associates to test within a filter').toBeGreaterThan(3);
   await bar(page).fill('wang');
   const within = prints(wangs, at);
-  await expect(page.locator('.hero-dist-full .hero-dots'), 'full page, the lit dots').toHaveAttribute('data-lit', within.main, { timeout: 60_000 });
-  await expect(page.locator('.hero-dist-full .hero-dots-over')).toHaveAttribute('data-lit', within.pile);
-  await expect(flag).toHaveText(label(`“wang” in ${titleName('Research Associate', code)}`, wangs));
+  await expect(page.locator(FIELD), 'full page, the lit squares').toHaveAttribute('data-lit', within.main, { timeout: 60_000 });
+  await expect(page.locator(FIELD)).toHaveAttribute('data-pile-lit', within.pile);
+  await expect(chip(page)).toHaveText(chipText(`“wang” in ${titleName('Research Associate', code)}`, wangs));
   // Emptied, the filter's own people are lit again.
   await bar(page).fill('');
   const ras = prints(await covered({ code }), at);
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', ras.main, { timeout: 60_000 });
-});
-
-/**
- * Where nearly everyone is a Professor, a Professor's curve all but meets everyone's: at $200k–$240k it
- * stands, on the average, at the share of everyone paid there who holds the title, and never above them. A
- * curve at its own scale stood there at twice campus's height and more; one smoothed as narrowly as campus's
- * zigzagged through it.
- */
-test('where most are a title, its curve stands at their share of everyone, smoothly', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await fullPage(page);
-  const code = await codeOf('Professor');
-  await put(page, 'professor', `t:${code}`);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  const who = await covered({ code });
-  const [all] = await oracle<{ n: number }>(
-    `SELECT count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY 1)
-     WHERE pay >= 200000 AND pay < 240000`,
-  );
-  const share = who.filter((p) => p.pay >= 200_000 && p.pay < 240_000).length / Number(all.n);
-  expect(share, 'the premise: most paid $200k–$240k are Professors').toBeGreaterThan(0.5);
-  const all2 = paired(await shape(page));
-  // Here, where the title is most of everyone, a wider kernel than campus's would lift it over a narrow dip
-  // in everyone's: held to everyone, it never is.
-  for (const q of all2) expect(q.h, `its curve rises above everyone at ${q.x}`).toBeLessThanOrEqual(q.campus! + 0.1);
-  const pairs = all2.filter((q) => q.x >= xOf(200_000) && q.x < xOf(240_000));
-  const mean = (xs: number[]) => xs.reduce((t, v) => t + v, 0) / xs.length;
-  const stands = mean(pairs.map((q) => q.h)) / mean(pairs.map((q) => q.campus!));
-  expect(Math.abs(stands - share), `its curve stands at ${stands.toFixed(2)} of campus's, their share is ${share.toFixed(2)}`).toBeLessThan(0.1);
-  // Smoothed as a group its size needs, it rises and falls a few times: through the campus kernel it had 14
-  // peaks standing a pixel or more over the ground either side, chance in a thousand people; now 3.
-  const h = all2.map((q) => q.h);
-  let peaks = 0;
-  for (let k = 1; k < h.length - 1; k++) {
-    if (!(h[k] > h[k - 1] && h[k] >= h[k + 1])) continue;
-    let l = h[k], r = h[k];
-    for (let j = k - 1; j >= 0 && h[j] <= h[k]; j--) l = Math.min(l, h[j]);
-    for (let j = k + 1; j < h.length && h[j] <= h[k]; j++) r = Math.min(r, h[j]);
-    if (h[k] - Math.max(l, r) > 1) peaks++;
-  }
-  expect(peaks, `its curve zigzags: ${peaks} peaks`).toBeLessThanOrEqual(6);
-});
-
-/** A group too small to rise far off the floor still draws its curve: low, along the floor, on campus's scale,
- *  with its median line and its label. It used to be left out under 12px, and half of the largest titles
- *  (Professor, Assistant Professor…) then showed a median line alone beside Research Associate's shape. */
-test('a group of about twenty draws its curve, low, with its median and label', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await fullPage(page);
-  // A title of about twenty, named once in the index, so the bar finds it by name.
-  const rows = await oracle<{ code: string; title: string; n: number }>(
-    `SELECT job_code code, any_value(title) title, count(DISTINCT person_key) n FROM $SAL
-     WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY 1 HAVING n BETWEEN 18 AND 24 ORDER BY n DESC, 1`,
-  );
-  const t = rows.find((r) => INDEX.titles.filter(([, name]) => name === r.title).length === 1 && /^[A-Za-z ]+$/.test(r.title))!;
-  expect(t, 'no title of about twenty to try').toBeDefined();
-  await put(page, t.title.toLowerCase(), `t:${t.code}`);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await expect(page.locator('.hero-dist-group-flag')).toContainText(`${t.title} · ${t.n} · median`);
-  const s = await shape(page);
-  expect(s.group, `${t.title}: no curve drawn`).not.toBeNull();
-  // Low, as twenty people are against everyone: the case the old 12px cut left out.
-  const top = Math.max(...s.group!.map(([, h]) => h));
-  expect(top, `${t.title}: its curve is not the low one this test is about`).toBeLessThan(12);
-  expect(top, `${t.title}: its curve lies flat on the floor`).toBeGreaterThan(0);
-  expect(s.lineShown, `${t.title}: its median line is missing`).toBe(true);
 });
 
 /**
@@ -354,12 +218,10 @@ async function moveOnto(page: Page, row: Locator) {
 }
 
 /**
- * Pointing at a suggested title or division draws its group: the dashed outline of how many of its people
- * are at each pay, its median line and its label. Professor and Assistant Professor are spread over a wide
- * range and rise only a few pixels on campus's scale, so under the old 12px cut they showed a median line
- * alone while Research Associate showed its shape.
+ * Pointing at a suggested title or division shows its group where they stand: its squares lit and the rest
+ * faded, none moved, and the chip naming it. Only choosing it (full page) sinks them to the floor.
  */
-test('every suggested title and division draws its outline, median and label when pointed at', async ({ page }) => {
+test('every suggested title and division lights its people where they stand when pointed at, and names them', async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('./');
@@ -368,64 +230,51 @@ test('every suggested title and division draws its outline, median and label whe
   await box.click();
   const rows = page.locator('[data-suggestions] [role="option"]');
   await expect(rows).toHaveCount(6, { timeout: 60_000 });
-  const seen: string[] = [];
   for (let i = 0; i < 6; i++) {
     const row = rows.nth(i);
     const name = ((await row.locator('p, .mantine-Text-root').first().textContent()) ?? '').trim();
     await pointAt(page, row);
-    await expect(page.locator('.hero-dist-group-flag'), `${name}: no label`).toContainText(name, { timeout: 30_000 });
-    await expect(page.locator('.hero-dist-group-flag'), `${name}: its label is still waiting`).not.toHaveAttribute('data-pending', /./, { timeout: 30_000 });
-    await expect(page.locator('.hero-dist-group-curve'), `${name}: no outline`).toHaveCount(1, { timeout: 30_000 });
-    await expect(page.locator('.hero-dist-group-median'), `${name}: no median line`).toHaveCount(1);
-    seen.push(name);
+    await expect(chip(page), `${name}: not named`).toContainText(name, { timeout: 30_000 });
+    await expect(page.locator('.strata-chip'), `${name}: still waiting`).not.toHaveAttribute('data-pending', /./, { timeout: 30_000 });
+    await expect(page.locator('.hero-dots'), `${name}: nothing lit`).toHaveAttribute('data-lit', /^[1-9]/);
+    await expect(page.locator('.hero-dist-main'), `${name}: a preview moved the squares`).toHaveAttribute('data-sink', 'off');
   }
-  expect(seen, 'the thin titles this is about are not among the suggestions').toEqual(expect.arrayContaining(['Professor', 'Assistant Professor']));
 });
 
-/** Where the dots of the field and the pile are laid out, full page. */
-const FIELDS = { main: '.hero-dist-full .hero-dots', pile: '.hero-dist-full .hero-dots-over' } as const;
+/** Where the squares under the cap and in the pile rest, full page. */
 async function laidOut(page: Page) {
-  return { main: await places(page, FIELDS.main), pile: await places(page, FIELDS.pile) };
+  return { main: await places(page, FIELD, 'main'), pile: await places(page, FIELD, 'pile') };
 }
-/** Columns where one of the group sits above anyone else in it — among the dots `shown` keeps — and dots
- *  moved across from `was`. A column is the dots at one x, where the field packs them. */
-function unsettled(now: { main: number[]; pile: number[] }, was: { main: number[]; pile: number[] }, lit: { main: Set<number>; pile: Set<number> },
-  shown: (field: 'main' | 'pile', i: number) => boolean = () => true) {
+/** Everyone's $1k column under the cap, by square (the pile is one column of its own). */
+async function columnsOf(at: Map<string, { field: 'main' | 'pile'; index: number }>) {
+  const col = { main: [] as number[], pile: [] as number[] };
+  for (const p of await people()) { const s = at.get(p.person_key); if (s) col[s.field][s.index] = s.field === 'main' ? Math.floor(p.pay / 1000) : 0; }
+  return col;
+}
+/** Columns where one of the group stands above anyone else in it — among the squares `shown` keeps — and
+ *  columns whose places changed: a filter only deals each column's own places again, so the skyline holds. */
+function unsettled(now: { main: number[]; pile: number[] }, was: { main: number[]; pile: number[] }, sl: { main: number[]; pile: number[] },
+  col: { main: number[]; pile: number[] }, lit: { main: Set<number>; pile: Set<number> }, shown: (field: 'main' | 'pile', i: number) => boolean = () => true) {
   const bad: string[] = [];
   for (const field of ['main', 'pile'] as const) {
-    const pts = now[field];
-    const cols = new Map<number, { low: number; high: number }>();
-    for (let i = 0; i < pts.length / 2; i++) {
-      if (pts[2 * i] !== was[field][2 * i]) bad.push(`${field} dot ${i} moved across`);
+    const places = (pts: number[]) => {
+      const m = new Map<number, string[]>();
+      for (let i = 0; i < pts.length / 2; i++) m.set(col[field][i], [...(m.get(col[field][i]) ?? []), `${pts[2 * i].toFixed(2)},${pts[2 * i + 1].toFixed(2)}`]);
+      for (const v of m.values()) v.sort();
+      return m;
+    };
+    const a = places(was[field]), b = places(now[field]);
+    for (const [c, v] of a) if (v.join(' ') !== (b.get(c) ?? []).join(' ')) bad.push(`${field} column ${c}: its places changed`);
+    const cols = new Map<number, { top: number; low: number }>();
+    for (let i = 0; i < sl[field].length; i++) {
       if (!shown(field, i)) continue;
-      const c = cols.get(pts[2 * i]) ?? { low: Infinity, high: -Infinity };
-      // y runs down: the group's highest is its least y, and everyone else's lowest their greatest.
-      if (lit[field].has(i)) c.low = Math.min(c.low, pts[2 * i + 1]);
-      else c.high = Math.max(c.high, pts[2 * i + 1]);
-      cols.set(pts[2 * i], c);
+      const c = cols.get(col[field][i]) ?? { top: -1, low: Infinity };
+      if (lit[field].has(i)) c.top = Math.max(c.top, sl[field][i]); else c.low = Math.min(c.low, sl[field][i]);
+      cols.set(col[field][i], c);
     }
-    for (const [x, c] of cols) if (c.low < c.high) bad.push(`${field} column at ${x}: one of the group above someone else`);
+    for (const [c, v] of cols) if (v.top > v.low) bad.push(`${field} column ${c}: one of the group above someone else`);
   }
-  return bad;
-}
-/** Pixel columns whose dots' ranks (the rain's order, and what shading reads as a column's floor and top) do
- *  not count up from the floor: in each, rank k must be the k-th lowest dot. */
-function misranked(pts: number[], rk: number[]) {
-  const cols = new Map<number, number[]>();
-  for (let i = 0; i < rk.length; i++) {
-    const c = Math.floor(pts[2 * i]);
-    const list = cols.get(c);
-    if (list) list.push(i); else cols.set(c, [i]);
-  }
-  const bad = new Set<string>();
-  for (const [c, ids] of cols) {
-    const up = [...ids].sort((a, b) => rk[a] - rk[b]);
-    up.forEach((i, k) => {
-      if (rk[i] !== k) bad.add(`column ${c}: its ranks are not 0 to ${ids.length - 1}`);
-      else if (k > 0 && pts[2 * i + 1] > pts[2 * up[k - 1] + 1] + 1e-6) bad.add(`column ${c}: rank ${k} sits below rank ${k - 1}`);
-    });
-  }
-  return [...bad].slice(0, 5);
+  return bad.slice(0, 8);
 }
 /** A field's lit dots as the page prints them (`data-lit`): how many, and the sum and sum of squares of places. */
 const printOf = (lit: Set<number>) => { let n = 0, sum = 0, sq = 0; for (const i of lit) { n++; sum += i; sq += i * i; } return `${n}:${sum}:${sq}`; };
@@ -437,79 +286,56 @@ function litOf(who: { person_key: string }[], at: Map<string, { field: 'main' | 
 }
 
 /**
- * Full page, a filter settles its group to the floor: in every column of the field and the pile none of
- * them sits above anyone else, and no dot moves across — the group becomes a shape of its own inside
- * everyone's, on the same scale. Taken off, every dot is back exactly where it was. In both colourings,
- * and with an employment type seen alone, where its own group settles under the rest of it. On the page, a
- * preview moves nothing (search-suggestions.spec).
+ * Full page, a filter settles its group to the floor: in every column under the cap, and in the pile, none of
+ * them stands above anyone else, and each column keeps the places it had — the group becomes a shape of its
+ * own inside everyone's. Taken off, every square is back exactly where it was. With a type isolated in the
+ * legend too, the two together: only those who are both are lit, at the floor.
  */
-test('a filter settles its group to the floor of each column, and taking it off puts every dot back', async ({ page }) => {
+test('a filter settles its group to the floor of each column, and taking it off puts every square back', async ({ page }) => {
   test.setTimeout(300_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   const at = await spots();
+  const col = await columnsOf(at);
   const ra = await codeOf('Research Associate');
   const prof = await codeOf('Professor');
-  const dots = page.locator(FIELDS.main);
+  const field = page.locator(FIELD);
   const settled = async (lit: string | null) => {
-    if (lit) await expect(dots).toHaveAttribute('data-lit', lit, { timeout: 60_000 });
-    else await expect(dots).not.toHaveAttribute('data-lit', /./);
-    await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-    await expect(page.locator(FIELDS.pile)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    if (lit) await expect(field).toHaveAttribute('data-lit', lit, { timeout: 60_000 });
+    else await expect(field).not.toHaveAttribute('data-lit', /./);
+    await expect(field).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   };
-  for (const colouring of ['By employment type', 'Generic']) {
-    if (colouring === 'Generic') {
-      await page.locator('.hero-dist-full .hero-dist-toggle').getByText('Generic', { exact: true }).click();
-      await expect(dots).toHaveAttribute('data-stack', 'off');
-      await settled(null);
-    }
-    const was = await laidOut(page);
-    for (const [label, on, f] of [
-      ['Research Associate', () => put(page, 'research assoc', `t:${ra}`), { code: ra }],
-      ['Professor', () => put(page, 'professor', `t:${prof}`), { code: prof }],
-      [SCHOOL, async () => { await page.locator('.search-token-x').click(); await put(page, 'medicine', `d:${SCHOOL}`); }, { school: SCHOOL }],
-    ] as const) {
-      await on();
-      const lit = litOf(await covered(f), at);
-      await settled(printOf(lit.main));
-      const now = await laidOut(page);
-      expect(unsettled(now, was, lit), `${colouring}, ${label}`).toEqual([]);
-      // Ranked afresh from the floor, as settled: the rain and the group's own crest read these.
-      expect(misranked(now.main, await ranks(page, FIELDS.main)), `${colouring}, ${label}: ranks`).toEqual([]);
-      let moved = 0;
-      for (let i = 0; i < now.main.length; i++) if (now.main[i] !== was.main[i]) moved++;
-      expect(moved, `${colouring}, ${label}: nothing moved, so nothing here is tested`).toBeGreaterThan(100);
-    }
-    await page.locator('.search-token-x').click();
-    await settled(null);
-    expect(await laidOut(page), `${colouring}: taking the filter off left dots out of place`).toEqual(was);
-  }
-  // One employment type alone, and a filter within it: Faculty, and Professor.
-  await page.locator('.hero-dist-full .hero-dist-toggle').getByText('By employment type', { exact: true }).click();
-  await expect(dots).toHaveAttribute('data-stack', 'on');
-  await settled(null);
-  const cats = HOME_STATS.pay_counts.categories.map((c) => c.name);
-  const faculty = cats.indexOf('Faculty');
-  await page.locator('.hero-dist-full .hero-dist-legend-item[data-category="Faculty"]').click();
-  await expect(dots).toHaveAttribute('data-solo', String(faculty));
-  await expect(dots).toHaveAttribute('data-flight', 'idle', { timeout: 10_000 });
+  const slotsNow = async () => ({ main: await slots(page, FIELD, 'main'), pile: await slots(page, FIELD, 'pile') });
   const was = await laidOut(page);
-  await put(page, 'professor', `t:${prof}`);
-  const lit = litOf(await covered({ code: prof }), at);
-  await settled(printOf(lit.main));
-  const everyone = await people();
-  const isFaculty = { main: new Set<number>(), pile: new Set<number>() };
-  for (const p of everyone) { const s = at.get(p.person_key); if (s && p.cat === 'Faculty') isFaculty[s.field].add(s.index); }
-  expect(unsettled(await laidOut(page), was, lit, (field, i) => isFaculty[field].has(i)), 'Faculty alone, Professor on').toEqual([]);
-  // And a group across the types: the School of Medicine is faculty and staff alike. The type seen alone
-  // keeps the bottom of every column, and the school's part of it settles to the floor under the rest of it.
+  for (const [label, on, f] of [
+    ['Research Associate', () => put(page, 'research assoc', `t:${ra}`), { code: ra }],
+    ['Professor', () => put(page, 'professor', `t:${prof}`), { code: prof }],
+    [SCHOOL, async () => { await page.locator('.search-token-x').click(); await put(page, 'medicine', `d:${SCHOOL}`); }, { school: SCHOOL }],
+  ] as const) {
+    await on();
+    const lit = litOf(await covered(f), at);
+    await settled(printOf(lit.main));
+    const now = await laidOut(page);
+    expect(unsettled(now, was, await slotsNow(), col, lit), label).toEqual([]);
+    let moved = 0;
+    for (let i = 0; i < now.main.length; i++) if (now.main[i] !== was.main[i]) moved++;
+    expect(moved, `${label}: nothing moved, so nothing here is tested`).toBeGreaterThan(100);
+  }
   await page.locator('.search-token-x').click();
-  await put(page, 'medicine', `d:${SCHOOL}`);
-  const med = litOf(await covered({ school: SCHOOL }), at);
-  await settled(printOf(med.main));
-  const now = await laidOut(page);
-  expect(unsettled(now, was, med, (field, i) => isFaculty[field].has(i)), 'Faculty alone, Medicine on').toEqual([]);
-  expect(unsettled(now, was, isFaculty), 'Faculty alone, Medicine on: someone else under the type seen alone').toEqual([]);
+  await settled(null);
+  expect(await laidOut(page), 'taking the filter off left squares out of place').toEqual(was);
+
+  // Faculty isolated in the legend, and Professor on: those who are both, at the floor.
+  await page.locator('.hero-dist-full .strata-legend-item[data-category="Faculty"]').click();
+  await expect(page.locator('.hero-dist-full .hero-dist-main')).toHaveAttribute('data-filter', 'Faculty');
+  await expect(field).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+  await put(page, 'professor', `t:${prof}`);
+  const everyone = await people();
+  const both = litOf(everyone.filter((p) => p.cat === 'Faculty'), at);
+  const profs = litOf(await covered({ code: prof }), at);
+  for (const fld of ['main', 'pile'] as const) for (const i of [...both[fld]]) if (!profs[fld].has(i)) both[fld].delete(i);
+  await settled(printOf(both.main));
+  expect(unsettled(await laidOut(page), was, await slotsNow(), col, both), 'Faculty alone, Professor on').toEqual([]);
 });
 
 /**
@@ -523,19 +349,20 @@ test('the search’s names follow their dots when a filter comes off, under Redu
   const page = await ctx.newPage();
   await fullPage(page);
   await put(page, 'medicine', `d:${SCHOOL}`);
-  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
   await bar(page).fill('smith');
   await expect(page.locator('.hero-found-label').first()).toBeVisible({ timeout: 60_000 });
-  const marksWere = await page.locator(FIELDS.main).getAttribute('data-marks');
+  const marksWere = await page.locator(FIELD).getAttribute('data-marks');
   // Off with its ×, the names still up, and every Smith lit where the school's Smiths were: the typed name
   // is a group of its own, settled as the filter's was.
   await page.locator('.search-token-x').click();
-  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', prints(await covered({ name: 'smith' }), await spots()).main, { timeout: 60_000 });
+  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', prints(await covered({ name: 'smith' }), await spots()).main, { timeout: 60_000 });
   await expect(bar(page)).toHaveValue('smith');
   await page.waitForTimeout(400);
-  const marks = (await page.locator(FIELDS.main).getAttribute('data-marks'))!;
-  expect(marks, 'no marked dot moved when the filter came off, so nothing here is tested').not.toBe(marksWere);
-  const r = Number(await page.locator(FIELDS.main).getAttribute('data-mark-r'));
+  const marks = (await page.locator(FIELD).getAttribute('data-marks'))!;
+  expect(marks, 'no marked square moved when the filter came off, so nothing here is tested').not.toBe(marksWere);
+  // A leader starts 7px out from its square's centre, past the 9px mark drawn on it.
+  const r = 4.5;
   const dots = marks.split(' ').map((m) => m.split(':').slice(1).map(Number));
   const starts = await page.locator('.hero-found-leaders line').evaluateAll((ls) => ls.map((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('y1'))]));
   expect(starts.length, 'no names were hung on the dots').toBeGreaterThan(2);
@@ -546,136 +373,8 @@ test('the search’s names follow their dots when a filter comes off, under Redu
   await ctx.close();
 });
 
-/**
- * A settled group is shaded as a shape of its own: in each column its top dot takes the crest's light and
- * its foot the floor's shade, as everyone's do in theirs. Shaded by the whole column's height, the group
- * would sit at the foot of every column and all of it would be the field's darkest. On a dark page, in one
- * ink, so light is all that differs between dots; read at each dot's middle, inside its neighbours' reach.
- */
-test('a settled group is shaded from its own floor to its own top', async ({ browser }) => {
-  test.setTimeout(120_000);
-  const ctx = await browser.newContext({ colorScheme: 'dark', viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
-  await fullPage(page);
-  const dots = page.locator(FIELDS.main);
-  await page.locator('.hero-dist-full .hero-dist-toggle').getByText('Generic', { exact: true }).click();
-  await expect(dots).toHaveAttribute('data-stack', 'off');
-  await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-  const at = await spots();
-  await put(page, 'medicine', `d:${SCHOOL}`);
-  const lit = litOf(await covered({ school: SCHOOL }), at).main;
-  await expect(dots).toHaveAttribute('data-lit', printOf(lit), { timeout: 60_000 });
-  await expect(dots).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-  await page.waitForTimeout(600);
-  const pts = await places(page, FIELDS.main);
-  const r = Number(await dots.getAttribute('data-r'));
-  // Each column's group, top and foot.
-  const cols = new Map<number, number[]>();
-  for (const i of lit) cols.set(pts[2 * i], [...(cols.get(pts[2 * i]) ?? []), i]);
-  const ends = [...cols.values()].filter((c) => c.length >= 6).map((c) => {
-    c.sort((a, b) => pts[2 * a + 1] - pts[2 * b + 1]);
-    return [c[0], c[c.length - 1]];
-  });
-  expect(ends.length, 'too few columns hold enough of the group to have a top and a foot').toBeGreaterThan(40);
-  const light = await page.evaluate(([sel, xy, w]) => {
-    const cv = document.querySelector(`${sel} canvas`) as HTMLCanvasElement;
-    const k = cv.width / cv.getBoundingClientRect().width;
-    const ctx = cv.getContext('2d')!;
-    return xy.map(([x, y]) => {
-      const x0 = Math.floor((x - w) * k), y0 = Math.floor((y - w) * k), s = Math.ceil(2 * w * k) + 1;
-      const d = ctx.getImageData(x0, y0, s, s).data;
-      let t = 0, n = 0;
-      for (let q = 0; q < s * s; q++) {
-        const px = x0 + (q % s) + 0.5, py = y0 + Math.floor(q / s) + 0.5;
-        if (Math.hypot(px - x * k, py - y * k) > w * k) continue;
-        t += ((0.2126 * d[4 * q] + 0.7152 * d[4 * q + 1] + 0.0722 * d[4 * q + 2]) * d[4 * q + 3]) / 255;
-        n++;
-      }
-      return t / Math.max(1, n);
-    });
-  }, [FIELDS.main, ends.flatMap(([top, foot]) => [[pts[2 * top], pts[2 * top + 1]], [pts[2 * foot], pts[2 * foot + 1]]] as [number, number][]), 0.6 * r] as const);
-  const ratios = ends.map((_, q) => light[2 * q] / Math.max(1, light[2 * q + 1])).sort((a, b) => a - b);
-  // Measured: about 1.4 shaded as its own, about 1.05 shaded by the column (the foot of every column is
-  // about as dark as the next dot up).
-  const median = ratios[ratios.length >> 1];
-  expect(median, `the group's top is not lit above its foot (top ÷ foot ${median.toFixed(2)}, at the median of ${ends.length} columns)`).toBeGreaterThan(1.25);
-  await ctx.close();
-});
-
-/**
- * While a group is shown, the wash under everyone's curve fades to half, so the group's own shape at the
- * floor is what reads as filled; everyone's curve itself stays. Taken off, the wash comes back.
- */
-test('the wash under everyone’s curve fades to half while a group is shown', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await fullPage(page);
-  const wash = page.locator('.hero-dist-full .hero-dist-wash');
-  await expect(wash).toHaveCount(1);
-  const opacity = () => wash.evaluate((el) => Number(getComputedStyle(el).opacity));
-  expect(await opacity()).toBe(1);
-  await put(page, 'medicine', `d:${SCHOOL}`);
-  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await expect.poll(opacity).toBeCloseTo(0.5, 2);
-  expect(await page.locator('.hero-dist-full .hero-dist-plot').evaluate((el) => Number(getComputedStyle(el).opacity)), 'everyone’s curve faded too').toBe(1);
-  await page.locator('.search-token-x').click();
-  await expect.poll(opacity).toBe(1);
-});
-
-/**
- * The dots a filter is not about are drawn faint, not left alone and not hidden: over a stretch of pay with
- * none of the group in it, the field's ink falls to about a fifth. `data-lit` only says which dots the mask
- * lights; this is the paint.
- */
-/**
- * While a filter settles its group the whole field is painted in squares, until it rests. Where none of the
- * group is — the dense middle, filtered to a title all paid over $100k — the faint dots do not move, and in
- * squares they must weigh what they do as beads at rest, as a moving field's still dots do (dots.spec). Sized
- * from the field's full-size bead, a faint square laid down 13% more than its faint bead (measured 1.135),
- * and the context darkened for the length of every settle; sized from its own bead, 1.003.
- */
-for (const scheme of ['light', 'dark'] as const) test(`while a filter settles, the faint dots it leaves in place weigh what they do at rest (${scheme})`, async ({ browser }) => {
-  test.setTimeout(120_000);
-  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
-  await fullPage(page);
-  const code = await codeOf('System Engineer IV');
-  const lowest = Math.min(...(await covered({ code })).map((p) => p.pay));
-  const band = [xOf(45_000), xOf(Math.min(85_000, lowest - 10_000))];
-  expect(band[1] - band[0], 'the premise: a stretch of the dense middle with none of the title in it').toBeGreaterThan(40);
-  // The ink over the band, on a scale of the plot's width in thousandths; read in the page the moment the
-  // field is moving — two frames after `data-settled` goes false, so squares are what is on the canvas.
-  await page.evaluate(([a, b]) => {
-    const w = window as unknown as { inkOver: (a: number, b: number) => number; movingInk?: number };
-    const field = document.querySelector('.hero-dist-full .hero-dots')!;
-    w.inkOver = (x0, x1) => {
-      const c = field.querySelector('canvas') as HTMLCanvasElement;
-      const k = c.width / c.clientWidth, cw = c.clientWidth;
-      const l = Math.round((x0 / 1000) * cw * k), r = Math.round((x1 / 1000) * cw * k);
-      const d = c.getContext('2d')!.getImageData(l, 0, r - l, c.height).data;
-      let t = 0;
-      for (let i = 3; i < d.length; i += 4) t += d[i];
-      return t;
-    };
-    new MutationObserver(() => {
-      if (field.getAttribute('data-settled') !== 'false' || w.movingInk != null) return;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (field.getAttribute('data-settled') === 'false' && w.movingInk == null) w.movingInk = w.inkOver(a, b);
-      }));
-    }).observe(field, { attributes: true, attributeFilter: ['data-settled'] });
-  }, band);
-  await put(page, 'system engineer iv', `t:${code}`);
-  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await expect(page.locator(FIELDS.main)).toHaveAttribute('data-settled', 'true');
-  await page.waitForTimeout(600);
-  const [moving, rest] = await page.evaluate(([a, b]) => {
-    const w = window as unknown as { inkOver: (a: number, b: number) => number; movingInk?: number };
-    return [w.movingInk ?? null, w.inkOver(a, b)];
-  }, band);
-  expect(moving, 'the field was never read while it moved, so nothing here is tested').not.toBeNull();
-  expect(Math.abs(moving! / rest - 1), `the faint dots in squares against at rest: ${Math.round(moving!)} of ${Math.round(rest)}`).toBeLessThan(0.06);
-  await ctx.close();
-});
-
+/** What a filter is not about is drawn faded, not hidden: past the group's top pay, where none of them is, every
+ *  square stays where it was, in the faded ink. `data-lit` only says which squares the mask lights; this is the paint. */
 test('what a filter is not about is drawn faint, not hidden', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
@@ -683,24 +382,26 @@ test('what a filter is not about is drawn faint, not hidden', async ({ page }) =
   const who = await covered({ code });
   const top = Math.max(...who.map((p) => p.pay).filter((p) => p < HOME_STATS.bin_cap));
   const from = top + 10_000;
-  expect(from, 'the group runs to the top of the plot, leaving nowhere without it').toBeLessThan(HI - 20_000);
-  const ink = () => page.evaluate(([a, b]) => {
-    const c = document.querySelector('.hero-dist-full .hero-dots canvas') as HTMLCanvasElement;
+  expect(from, 'the group runs to the top of the plot, leaving nowhere without it').toBeLessThan(HOME_STATS.bin_cap - 20_000);
+  const band = [await xOf(page, from), Number(await page.locator(FIELD).getAttribute('data-pile-left')) - 20];
+  const paint = () => page.evaluate(([a, b]) => {
+    const c = document.querySelector('.hero-dist-full .strata-base') as HTMLCanvasElement;
     const k = c.width / c.getBoundingClientRect().width;
-    const x0 = Math.round((a / 1000) * c.getBoundingClientRect().width * k), x1 = Math.round((b / 1000) * c.getBoundingClientRect().width * k);
-    const d = c.getContext('2d')!.getImageData(x0, 0, x1 - x0, c.height).data;
-    let t = 0;
-    for (let i = 3; i < d.length; i += 4) t += d[i];
-    return t;
-  }, [xOf(from), 1000]);
-  const before = await ink();
+    const d = c.getContext('2d')!.getImageData(Math.round(a * k), 0, Math.round((b - a) * k), c.height).data;
+    let n = 0, r = 0, g = 0, bl = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) { n++; r += d[i]; g += d[i + 1]; bl += d[i + 2]; }
+    return { n, rgb: [r / Math.max(1, n), g / Math.max(1, n), bl / Math.max(1, n)] };
+  }, band);
+  const before = await paint();
   await put(page, 'research assoc', `t:${code}`);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await page.waitForTimeout(600);
-  const after = await ink();
-  expect(before, 'no ink to compare').toBeGreaterThan(0);
-  expect(after / before, 'the field past the group was not dimmed').toBeLessThan(0.3);
-  expect(after / before, 'the field past the group was hidden, not dimmed').toBeGreaterThan(0.08);
+  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator(FIELD)).toHaveAttribute('data-settled', 'true');
+  const after = await paint();
+  expect(before.n, 'no squares to compare').toBeGreaterThan(100);
+  expect(after.n, 'the squares past the group were hidden or moved').toBe(before.n);
+  const dim = await page.locator(FIELD).evaluate((el) => { const s = document.createElement('span'); el.appendChild(s); s.style.color = 'var(--strata-dim)'; const c = getComputedStyle(s).color; s.remove(); return c; });
+  const [dr, dg, db] = dim.match(/[\d.]+/g)!.map(Number);
+  expect(Math.hypot(after.rgb[0] - dr, after.rgb[1] - dg, after.rgb[2] - db), `past the group the squares are not in the faded ink ${dim}`).toBeLessThan(3);
 });
 
 test('the readout counts the filter’s people within its window', async ({ page }) => {
@@ -708,11 +409,11 @@ test('the readout counts the filter’s people within its window', async ({ page
   await fullPage(page);
   const code = await codeOf('Research Associate');
   await put(page, 'research assoc', `t:${code}`);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
   const who = await covered({ code });
   const main = (await page.locator('.hero-dist-full .hero-dist-main').boundingBox())!;
-  await page.mouse.move(main.x + (xOf(62000) / 1000) * main.width, main.y + main.height * 0.6);
-  const pill = page.locator('.chart-value-pill');
+  await page.mouse.move(main.x + (await xOf(page, 62_500)), main.y + main.height * 0.6);
+  const pill = page.locator('.strata-readout');
   await expect(pill).toContainText('in the filter');
   const text = (await pill.textContent())!;
   // The window is the readout's: every $1k bucket within ±$5k of the one under the pointer.
@@ -781,7 +482,7 @@ test('filters come off one at a time — ×, Backspace, Escape before full page 
   );
   await put(page, 'research assoc', `t:${ra}`);
   await put(page, none.school, `d:${none.school}`);
-  await expect(page.locator('.hero-dist-group-flag')).toHaveText(`No one on the graph is ${raName} in ${none.school}`);
+  await expect(chip(page)).toHaveText(`No one on the graph is ${raName} in ${none.school}`);
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', '0:0:0');
 });
 
@@ -801,8 +502,6 @@ test('filtering never moves the plot, and nothing it draws lies on a dot', async
     const check = async (when: string) => {
       expect(await plotShape(page), `${width}px: ${when} moved the plot`).toEqual(before);
       expect(await barOverPlot(page), `${width}px: ${when}, the bar lies on the graph`).toEqual([]);
-      const s = await shape(page);
-      if (s.flagBottom != null) expect(s.flagBottom, `${width}px: ${when}, the label reaches down over the dots`).toBeLessThan(s.campusPeak);
     };
     await put(page, 'research assoc', `t:${ra}`);
     await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
@@ -830,79 +529,44 @@ test('filtering never moves the plot, and nothing it draws lies on a dot', async
   }
 });
 
-/**
- * Putting a filter on and taking it off, full page, the group settles to the floor and back: each column's
- * places are dealt again with its lit dots first, every dot eases up or down its own column in squares, and the
- * field goes back into beads a strip a frame. Each of those is timed, at CI's pace. What this guards
- * against is the field repainted whole in beads at once — about 55ms at that pace, which the end of a
- * re-stack did until it swept in strips.
- */
-test('putting a filter on and taking it off settle and repaint within a frame, at CI’s pace', async ({ page }) => {
+/** Putting a filter on and taking it off, full page, the group sinks to the floor and back in frames inside
+ *  the budget, at CI's pace: every square of the field is in each of them. */
+test('putting a filter on and taking it off settle within a frame, at CI’s pace', async ({ page }) => {
   await atCiPace(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   const code = await codeOf('Research Associate');
-  const marks = ['dim-paint', 'dot-frame', 'pile-frame', 'dot-layout'];
-  await page.evaluate((m) => m.forEach((n) => performance.clearMeasures(n)), marks);
+  await page.evaluate(() => performance.clearMeasures('strata-frame'));
   await put(page, 'research assoc', `t:${code}`);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true');
-  await page.waitForTimeout(800);
+  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator(FIELD)).toHaveAttribute('data-settled', 'true');
   await page.locator('.search-token-x').click();
-  await expect(page.locator('.hero-dist-full .hero-dots')).not.toHaveAttribute('data-lit', /./);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true');
-  await page.waitForTimeout(800);
-  const t = await page.evaluate((m) => Object.fromEntries(m.map((n) => [n, performance.getEntriesByName(n).map((e) => e.duration)])), marks);
-  expect(t['dim-paint'].length, 'the field never went back into beads in strips, so nothing was timed').toBeGreaterThanOrEqual(2 * 8);
-  expect(t['dot-frame'].length, 'the dots never moved, so no frame was timed').toBeGreaterThanOrEqual(4);
-  expect(t['dot-layout'].length, 'the field was never packed again').toBeGreaterThanOrEqual(2);
-  // The frames of the move are judged as every moving frame in this suite is, by the median (dots.spec,
-  // tail.spec), and none may hold two frames: every dot of the field is in each of them, and at this pace
-  // they run close to the budget throughout, so the slowest of twenty is the machine's as often as not.
-  for (const [what, ds] of [['moving frame', t['dot-frame']], ['moving frame of the pile', t['pile-frame']]] as const) {
-    if (!ds.length) continue;
-    const sorted = [...ds].sort((a, b) => a - b);
-    const all = `${ds.map((d) => d.toFixed(1)).join(', ')}ms`;
-    expect(sorted[Math.floor(sorted.length / 2)], `a ${what}, ms, at the median: ${all}`).toBeLessThan(FRAME_MS);
-    expect(sorted[sorted.length - 1], `a ${what} held two frames: ${all}`).toBeLessThan(2 * FRAME_MS);
-  }
-  // The repaints and the packings are each one piece of work: one of each may run over, by less than a
-  // frame; no two may. A deploy failed on a single 14.4ms repaint among thirty-odd of 0.1–10.4 on a shared
-  // runner, a hiccup of the machine and not of the code.
-  for (const [what, ds] of [['repaint', t['dim-paint']], ['packing', t['dot-layout']]] as const) {
-    const slow = [...ds].sort((a, b) => b - a);
-    const all = `${ds.map((d) => d.toFixed(1)).join(', ')}ms`;
-    expect(slow[0], `a ${what} held two frames: ${all}`).toBeLessThan(2 * FRAME_MS);
-    if (slow.length > 1) expect(slow[1], `more than one ${what} held a frame: ${all}`).toBeLessThan(FRAME_MS);
-  }
+  await expect(page.locator(FIELD)).not.toHaveAttribute('data-lit', /./);
+  await expect(page.locator(FIELD)).toHaveAttribute('data-settled', 'true');
+  const ds = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration));
+  expect(ds.length, 'the squares never moved, so no frame was timed').toBeGreaterThanOrEqual(8);
+  const sorted = [...ds].sort((a, b) => a - b);
+  const all = `${ds.map((d) => d.toFixed(1)).join(', ')}ms`;
+  expect(sorted[Math.floor(sorted.length / 2)], `a moving frame, ms, at the median: ${all}`).toBeLessThan(FRAME_MS);
+  expect(sorted[sorted.length - 1], `a moving frame held two: ${all}`).toBeLessThan(2 * FRAME_MS);
 });
 
-test('the search’s names start below the group’s label, and none touches it', async ({ page }) => {
+test('the search’s names keep below the pins’ rows, and none lies on a pin', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   await put(page, 'research assoc', `t:${await codeOf('Research Associate')}`);
   await bar(page).fill('smith');
   await expect(page.locator('.hero-found-label').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(600);
+  expect(await page.locator('.hero-found-label').count(), 'nobody was named, so nothing here is tested').toBeGreaterThan(2);
   const hits = await page.evaluate(() => {
-    const f = document.querySelector('.hero-dist-group-flag')!.getBoundingClientRect();
+    const pins = [...document.querySelectorAll('.hero-dist-full .strata-pin')].map((p) => p.getBoundingClientRect());
     return [...document.querySelectorAll('.hero-found-label')].filter((l) => {
       const r = l.getBoundingClientRect();
-      return r.left < f.right && r.right > f.left && r.top < f.bottom && r.bottom > f.top;
+      return pins.some((f) => r.left < f.right && r.right > f.left && r.top < f.bottom && r.bottom > f.top);
     }).map((l) => l.textContent);
   });
-  expect(await page.locator('.hero-found-label').count(), 'nobody was named, so nothing here is tested').toBeGreaterThan(2);
-  expect(hits, 'a name lies on the group’s label').toEqual([]);
-  // Where the names may go at all: below the label. With real searches a name all but never climbs that
-  // high — the highest of five crowded searches on a phone sat at 104px, the label ends at 25.5 — so the
-  // check above has little to find, and the bound the names are placed within is what carries the rule:
-  // it is the box the placement itself reads (Home `namesBox`), not a copy of it.
-  const bound = Number(await page.locator('.hero-found-leaders').getAttribute('data-names-top'));
-  const flag = await page.evaluate(() => {
-    const f = document.querySelector('.hero-dist-group-flag')!.getBoundingClientRect();
-    return f.bottom - document.querySelector('.hero-dist-full .hero-dist-main')!.getBoundingClientRect().top;
-  });
-  expect(bound, 'the names may be placed over the group’s label').toBeGreaterThanOrEqual(flag);
+  expect(hits, 'a name lies on a pin').toEqual([]);
 });
 
 /**
@@ -926,18 +590,18 @@ test('a title covers paid appointments only: someone holding it unpaid, and paid
   const at = await spots();
   await put(page, c.code.toLowerCase(), `t:${c.code}`);
   const who = await covered({ code: c.code });
-  await expect(page.locator('.hero-dist-full .hero-dots'), 'someone holding the title only unpaid was lit')
+  await expect(page.locator(FIELD), 'someone holding the title only unpaid was lit')
     .toHaveAttribute('data-lit', prints(who, at).main, { timeout: 60_000 });
   await expect(page.locator('.hero-dist-full .hero-dist-main')).toHaveAttribute('data-group-count', String(who.length));
 });
 
-test('with two filters on, the bar and the group’s label pass a strict accessibility scan', async ({ page }) => {
+test('with two filters on, the bar and the group’s chip pass a strict accessibility scan', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   await put(page, 'research assoc', `t:${await codeOf('Research Associate')}`);
   await put(page, 'medicine', `d:${SCHOOL}`);
-  await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await expect(page.locator('.hero-dist-group-flag')).toBeVisible();
+  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
+  await expect(page.locator('.strata-chip')).toBeVisible();
   const axe = await new AxeBuilder({ page }).include('.hero-full').analyze();
   expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
 });
@@ -1003,7 +667,7 @@ test('with nothing typed the strip offers groups to filter by, and what it offer
 test('"Show on full page graph" in the page’s search opens the graph full page with that group on', async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   const code = await codeOf('Research Associate');
@@ -1045,7 +709,7 @@ test('"Show on full page graph" in the page’s search opens the graph full page
 
 test('the page’s search list, with "Show on full page graph" on its rows, passes a strict accessibility scan', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.getByRole('combobox', { name: /Search a person/ }).fill('medicine');

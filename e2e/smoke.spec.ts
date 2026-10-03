@@ -56,9 +56,9 @@ for (const { name, width, height } of [
     // start-anchored regex would match the wrapper and compare the wrong boxes. The quartiles are
     // named in full where there is room and in the shorthand on a phone, so both are allowed here.
     const labels = [
-      page.getByText(/^(p25|25th percentile) \$[\d.,]+k$/).first(),
-      page.getByText(/^median \$[\d.,]+k$/).first(),
-      page.getByText(/^(p75|75th percentile) \$[\d.,]+k$/).first(),
+      page.getByText(/^(P25|25th percentile) \$[\d.,]+k$/).first(),
+      page.getByText(/^Median \$[\d,]+$/).first(),
+      page.getByText(/^(P75|75th percentile) \$[\d.,]+k$/).first(),
     ];
     await expect(labels[0]).toBeVisible({ timeout: 60_000 });
     // The stagger re-measures on document.fonts.ready; let that settle before reading geometry.
@@ -97,40 +97,27 @@ for (const { name, width, height } of [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'mobile', width: 375, height: 812 },
 ]) {
-  test(`home distribution actually renders its curve (${name})`, async ({ page }) => {
+  test(`home distribution actually draws its people (${name})`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await page.goto('./', { waitUntil: 'networkidle' });
-
-    const svg = page.locator('.hero-dist-plot');
-    await expect(svg).toBeVisible({ timeout: 60_000 });
-    // No reveal: measured at once, the lines stand at full height with nothing transforming them.
-    const { transforms, transitions } = await svg.evaluate((el) => {
-      const t: string[] = [];
-      const tr: string[] = [];
-      for (let e: Element | null = el; e && !e.classList.contains('hero-dist'); e = e.parentElement) {
-        const cs = getComputedStyle(e);
-        if (cs.transform !== 'none') t.push(cs.transform);
-        if (/transform|scale/.test(cs.transitionProperty) && cs.transitionDuration !== '0s') tr.push(cs.transitionProperty);
-      }
-      return { transforms: t, transitions: tr };
+    const plot = page.locator('.hero-dist-main');
+    await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
+    const box = (await plot.boundingBox())!;
+    // 30% of its width, never under 400px or over 520; 300 on a phone. To the pixel, not the float.
+    const want = width > 480 ? Math.round(Math.min(520, Math.max(400, box.width * 0.3))) : 300;
+    expect(Math.abs(box.height - want), `the distribution is not at its full height (${box.height})`).toBeLessThan(0.5);
+    expect(box.width, 'the distribution has no width').toBeGreaterThan(200);
+    // Ink, and a skyline: the squares stand far higher at the crowded middle than at the thin top end.
+    const ink = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      const top = (x0: number, x1: number) => {
+        for (let y = 0; y < c.height; y++) for (let x = Math.floor(x0 * c.width); x < Math.floor(x1 * c.width); x++) if (d[4 * (y * c.width + x) + 3] > 0) return c.height - y;
+        return 0;
+      };
+      return { mid: top(0.2, 0.35), tail: top(0.75, 0.85), k: c.height / c.getBoundingClientRect().height };
     });
-    expect(transforms, 'the curve is transformed — the bottom-to-top reveal is back').toEqual([]);
-    expect(transitions, 'the curve transitions its transform — the bottom-to-top reveal is back').toEqual([]);
-
-    const box = await svg.boundingBox();
-    expect(box, 'the distribution should have a layout box').not.toBeNull();
-    // 375px wide and up, 275 on a phone: at 180 the chart was a strip, its dots too small to tell apart,
-    // and at 300 they still had too little room each.
-    // To the pixel, not the float: a box at a fractional offset measures 374.99997 (a deploy failed on it).
-    expect(Math.abs(box!.height - (width > 480 ? 375 : 275)), `the distribution is not at its full height (${box!.height})`).toBeLessThan(0.5);
-    expect(box!.width, 'the distribution has no width').toBeGreaterThan(200);
-
-    // A curve, not a flat line: the area path has to describe real vertical variation.
-    const spread = await svg.locator('path').first().evaluate((el) => {
-      const ys = (el.getAttribute('d') ?? '').match(/,(\d+(?:\.\d+)?)/g)?.map((m) => parseFloat(m.slice(1))) ?? [];
-      return ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
-    });
-    expect(spread, 'the distribution path is flat — no shape in the data').toBeGreaterThan(40);
+    expect(ink.mid / ink.k, 'nothing drawn in the middle of the distribution').toBeGreaterThan(60);
+    expect(ink.mid, 'the middle is not busier than the tail — no shape in the data').toBeGreaterThan(ink.tail * 3);
   });
 }
 
@@ -239,55 +226,6 @@ test('the data error banner still fires when the dataset really fails', async ({
  * reverting, so each gets an assertion.
  */
 test.describe('the landing distribution', () => {
-  // Selected by class, not by viewBox: the plot's height is a design decision and changing it
-  // should not silently unhook the tests that guard its contents.
-  const CURVE = '.hero-dist-plot path[stroke]';
-
-  test('is drawn at the resolution the data now carries', async ({ page }) => {
-    await page.goto('./');
-    await expect(page.locator(CURVE).first()).toBeVisible({ timeout: 60_000 });
-    const vertices = await page.locator(CURVE).first().evaluate(
-      (el) => (el.getAttribute('d') ?? '').split('L').length - 1
-    );
-    // 250 buckets, so 249 line segments. Anything near 25 means the $10k buckets came back and the
-    // curve is a faceted polyline again — which is what this whole change was about.
-    expect(vertices, 'the curve lost its resolution').toBeGreaterThan(200);
-  });
-
-  test('is detailed without being static', async ({ page }) => {
-    await page.goto('./');
-    await expect(page.locator(CURVE).first()).toBeVisible({ timeout: 60_000 });
-    // Mean |second difference| down the drawn y-values, normalised by their mean. Note that this is
-    // measured in SCREEN coordinates, not bin counts — the two differ by roughly 6x because screen y
-    // is offset by the plot height, so these numbers are not the ones quoted in distribution.ts.
-    //
-    // The assertion is TWO-SIDED because the design decision has two sides. Measured on this snapshot
-    // at the shipped geometry: an unsmoothed $1k curve scores 0.099 and reads as static, the $5k
-    // kernel this used to ship scores 0.0012 and is a featureless blob, and the $1.2k kernel lands at
-    // 0.016 — the round-number spikes at $35k/$40k/$50k intact, the line between them still a line.
-    // The upper bound alone used to be the whole test, which would have waved through smoothing the
-    // spikes away again.
-    // Read on the $1k grid the numbers below were measured against, whatever resolution the line is
-    // drawn at (it is five times finer now — see `CURVE_STEP`). A second difference is a property of
-    // the spacing as much as of the shape: sampled five times as closely, the same curve scores eight
-    // times lower, and comparing that against these thresholds would say "over-smoothed" about a line
-    // that had not changed at all.
-    const roughness = await page.locator(CURVE).first().evaluate((el) => {
-      const pts = (el.getAttribute('d') ?? '').split(/[ML]/).slice(1).map((p) => p.split(',').map(Number));
-      // 250 points is the $1k grid over the $250k the graph draws — the spacing these numbers were
-      // measured at.
-      const every = Math.max(1, Math.round(pts.length / 250));
-      const ys = pts.filter((_, i) => i % every === 0).map((p) => p[1]);
-      const mean = ys.reduce((a, b) => a + b, 0) / ys.length;
-      let acc = 0;
-      for (let i = 1; i < ys.length - 1; i++) acc += Math.abs(ys[i - 1] - 2 * ys[i] + ys[i + 1]);
-      return acc / (ys.length - 2) / mean;
-    });
-    expect(roughness, 'the curve is drawing raw counts — it will read as static').toBeLessThan(0.06);
-    expect(roughness, 'the curve has been over-smoothed back into a featureless blob')
-      .toBeGreaterThan(0.006);
-  });
-
   test('keeps its salary axis legible at every width', async ({ page }) => {
     await page.goto('./');
     await expect(page.locator('.hero-dist-axis')).toBeVisible({ timeout: 60_000 });
@@ -320,18 +258,18 @@ test.describe('the landing distribution', () => {
   test('names the mound under the pointer', async ({ page }) => {
     await page.goto('./');
     const panel = page.locator('.hero-dist');
-    await expect(panel).toBeVisible({ timeout: 60_000 });
-    const box = (await panel.boundingBox())!;
-    const pill = page.locator('.chart-value-pill').first();
+    await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
+    const box = (await page.locator('.hero-dist-main').boundingBox())!;
+    const pill = page.locator('.strata-readout');
 
     const readAt = async (frac: number) => {
-      await page.mouse.move(box.x + box.width * frac, box.y + 60);
+      await page.mouse.move(box.x + box.width * frac, box.y + box.height * 0.8);
       await expect(pill).toBeVisible();
       const text = (await pill.textContent()) ?? '';
-      // "$75k · 2,848 people ±$5k · 50th percentile" — a bucket, a headcount, the bandwidth it was
-      // counted over, and where that bucket falls in the payroll.
+      // "$75k · 2,848 people within ±$5k · 50th percentile" — a column, a headcount, the width it was
+      // counted over, and where that pay falls in the payroll.
       expect(text, 'the readout stopped naming a salary and a headcount').toMatch(
-        /^\$[\d,]+k · [\d,]+ people ±\$\d+k · \d+(st|nd|rd|th) percentile$/
+        /^\$[\d,]+k · [\d,]+ people within ±\$\d+k · \d+(st|nd|rd|th) percentile$/
       );
       return Number(text.replace(/^.*· ([\d,]+) people.*$/, '$1').replace(/,/g, ''));
     };
@@ -349,101 +287,15 @@ test.describe('the landing distribution', () => {
     // single bucket's density is ~1%. The ratio test above does NOT catch this (verified: it passes
     // with the density substituted), which is why the population is read out of the caption and
     // compared against.
-    const caption = (await panel.getByText(/across [\d,]+ employees/).textContent()) ?? '';
-    const population = Number(caption.replace(/^.*across ([\d,]+) employees.*$/s, '$1').replace(/,/g, ''));
-    expect(population, 'could not read the population off the caption').toBeGreaterThan(1000);
+    const caption = (await panel.locator('.strata-count').textContent()) ?? '';
+    const population = Number(caption.replace(/^([\d,]+) people.*$/s, '$1').replace(/,/g, ''));
+    expect(population, 'could not read the population off the toolbar').toBeGreaterThan(1000);
     expect(atPeak, 'the readout is reporting the density, not a count of people')
       .toBeGreaterThan(population * 0.05);
 
     // Leaving the plot clears it, rather than stranding a readout over a curve nobody is pointing at.
     await page.mouse.move(box.x + box.width / 2, box.y - 90);
     await expect(pill).toBeHidden();
-  });
-
-  test('marks the width it is counting, not a hairline through the middle of it', async ({ page }) => {
-    await page.goto('./');
-    const panel = page.locator('.hero-dist');
-    await expect(panel).toBeVisible({ timeout: 60_000 });
-    const box = (await panel.boundingBox())!;
-    const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
-
-    await page.mouse.move(box.x + box.width * 0.31, box.y + 60);
-    const band = page.locator('.hero-dist-band');
-    await expect(band, 'the hover readout draws no band').toBeVisible();
-
-    // The band has to BE the ±$5k the pill claims, or the drawing and the number describe different
-    // things — which is exactly what a 1px crosshair under a "±$5k" label was doing. The axis runs
-    // $0 to the $250k cap, so $10k of span is 4% of the plot; allow a point either side for the
-    // rounding in the percentage the band is positioned with.
-    const w = (await band.boundingBox())!.width;
-    const share = (w / plot.width) * 100;
-    expect(share, `the band spans ${share.toFixed(1)}% of the plot, which is not the ±$5k it reports`)
-      .toBeGreaterThan(3);
-    expect(share, `the band spans ${share.toFixed(1)}% of the plot, which is wider than the ±$5k it reports`)
-      .toBeLessThan(5);
-
-    // It must frost what is under it rather than hide it: a solid band over the curve would cover
-    // the spikes the reader is pointing at.
-    const bg = await band.evaluate((el) => getComputedStyle(el).backgroundColor);
-    const alpha = Number(bg.match(/[\d.]+\s*\)$/)?.[0].replace(')', '') ?? '1');
-    expect(alpha, 'the band is opaque — it hides the curve it is meant to be highlighting')
-      .toBeLessThan(0.5);
-  });
-
-  /**
-   * The band marks its two edges and leaves its middle completely alone.
-   *
-   * Tested in pixels rather than in CSS, because the property that matters is not "there is a mask"
-   * but "the reader can see the curve they are pointing at, unaltered". A gradient BACKGROUND would
-   * satisfy any style-based assertion here while the backdrop blur went on softening the middle at
-   * full strength — which is the thing that actually obscured the spikes.
-   *
-   * The comparison is a byte-compare of two tiny screenshots of the same strip, hovered and not.
-   * Identical at the centre; different at the edge. Both halves are asserted, because a band that
-   * changes nothing anywhere would pass the first check on its own.
-   */
-  test('marks its edges and leaves its middle untouched', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('./', { waitUntil: 'networkidle' });
-    await expect(page.locator('.hero-dist')).toBeVisible({ timeout: 60_000 });
-    // The dots fall into place on a first visit; compare pixels once they have landed.
-    await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
-    await page.waitForTimeout(600);
-
-    const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
-    const hoverAt = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height * 0.6 };
-
-    await page.mouse.move(hoverAt.x, hoverAt.y);
-    const band = page.locator('.hero-dist-band');
-    await expect(band).toBeVisible();
-    const b = (await band.boundingBox())!;
-
-    // Low in the plot, clear of the readout dot (which rides the curve) and the pill above it.
-    const y = plot.y + plot.height - 24;
-    const strip = (x: number) => ({ clip: { x, y, width: 3, height: 8 } });
-    const centre = b.x + b.width / 2 - 1.5;
-    const edge = b.x;
-
-    // Both pictures are taken hovering, so the dots under the band are the same in each: the people
-    // the readout counts are drawn in a stronger ink while it shows (DotField's highlight), which is a
-    // change the band's own rendering must not add to. One with the band hidden, one with it shown.
-    const setBand = (v: 'hidden' | 'visible') => band.evaluate((el, vis) => { (el as HTMLElement).style.visibility = vis; }, v);
-    await setBand('hidden');
-    const centreBefore = await page.screenshot(strip(centre));
-    const edgeBefore = await page.screenshot(strip(edge));
-
-    await setBand('visible');
-    const centreAfter = await page.screenshot(strip(centre));
-    const edgeAfter = await page.screenshot(strip(edge));
-
-    expect(
-      Buffer.compare(centreBefore, centreAfter),
-      'the middle of the band alters the curve underneath it — that is the part the reader is pointing at',
-    ).toBe(0);
-    expect(
-      Buffer.compare(edgeBefore, edgeAfter),
-      'the edge of the band draws nothing, so it marks no ±$5k boundary at all',
-    ).not.toBe(0);
   });
 
   // The pill carries four variable-length fields and is ~65% of the panel's width on a phone, so
@@ -463,11 +315,11 @@ test.describe('the landing distribution', () => {
       const box = (await panel.boundingBox())!;
       // Swept across the PLOT, not the panel: the panel carries padding, so the first and last few
       // percent of its width sit beside the chart rather than over it and register no hover at all.
-      const plot = (await page.locator('.hero-dist-plot').boundingBox())!;
+      const plot = (await page.locator('.hero-dist-main').boundingBox())!;
 
       for (const frac of [0.01, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85, 0.95, 0.99]) {
         await page.mouse.move(plot.x + plot.width * frac, plot.y + plot.height * 0.5);
-        const pill = page.locator('.chart-value-pill').first();
+        const pill = page.locator('.strata-readout .chart-tip-pill');
         await expect(pill).toBeVisible();
         const r = (await pill.boundingBox())!;
         expect(r.x, `the readout hangs off the left of the panel at ${frac * 100}%`)
@@ -532,7 +384,7 @@ test.describe('the landing distribution', () => {
           outside.push({ text: (n.textContent ?? '').trim().slice(0, 30), size: parseFloat(getComputedStyle(el).fontSize), inTitle: !!el.closest('h1') });
         }
         return {
-          room, chart: w('.hero-dist'), search: w('.hero-search-input'), plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height,
+          room, chart: w('.hero-dist'), search: w('.hero-search-input'), plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height, plotW: w('.hero-dist-main'),
           searchFont: parseFloat(getComputedStyle(document.querySelector('.hero-search-input')!).fontSize),
           title: parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),
           under: [...sizes('.home-stat-value'), ...sizes('.home-stat-label'), ...sizes('.home-stats-browse'), ...sizes('.showcase-title'), ...sizes('.showcase-blurb')],
@@ -552,7 +404,8 @@ test.describe('the landing distribution', () => {
       expect(loudest.length, `at ${name} the title is not the largest text`).toBeGreaterThan(0);
       expect(loudest.filter((o) => !o.inTitle).map((o) => o.text), `at ${name} text outside the graph is as large as the page's title`).toEqual([]);
     }
-    expect(laptop.plotH, 'the plot at 1440px').toBe(375);
+    // 30% of its width, from 400px up to 520: taller on a wider screen.
+    expect(Math.round(laptop.plotH), 'the plot at 1440px').toBe(Math.round(Math.min(520, Math.max(400, laptop.plotW * 0.3))));
     expect(wide.plotH, 'the plot did not grow taller with a wide screen').toBe(520);
     expect(wide.under, 'what is under the search grew with the screen').toEqual(laptop.under);
   });
@@ -641,13 +494,8 @@ test.describe('the landing distribution', () => {
     expect(end, `the dot-grid mask is no longer the ellipse this test knows how to check: ${mask}`)
       .toBeGreaterThan(0);
 
-    // In both of the panel's modes: "By employment type" adds a legend, so the panel is taller.
-    for (const [viewport, mode] of [
-      [{ width: 1280, height: 720 }, 'Generic'], [{ width: 375, height: 760 }, 'Generic'],
-      [{ width: 1280, height: 720 }, 'By employment type'], [{ width: 375, height: 760 }, 'By employment type'],
-    ] as const) {
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 375, height: 760 }]) {
       await page.setViewportSize(viewport);
-      await page.locator('.hero-dist-toggle').getByText(mode, { exact: true }).click();
       // Polled, not read once. `setViewportSize` resolves before the browser has finished
       // re-laying-out, and this is pure geometry taken the moment it returns: measured locally, the
       // panel reads 1188px below the grid immediately after the resize and settles to 508px a frame
@@ -663,13 +511,12 @@ test.describe('the landing distribution', () => {
   });
 });
 
-// The quartile labels under the landing graph are the only place the chart explains its own guides, and
-// they were 10px dimmed text — the size a footnote is set in. A reader who cannot read them is left with
-// three unexplained dotted lines.
-test('the quartile labels under the landing graph are set to be read', async ({ page }) => {
+// The pins over the landing graph are the only place the chart explains its own guides: set to be read,
+// in full where there is room, and each clearing 4.5:1 against the panel.
+test('the percentile pins over the landing graph are set to be read', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('./', { waitUntil: 'networkidle' });
-  const labels = page.locator('.hero-dist-marker-labels > *');
+  const labels = page.locator('.strata-pin');
   await expect(labels).toHaveCount(3, { timeout: 60_000 });
   const seen = await labels.evaluateAll((els) => els.map((el) => {
     const cs = getComputedStyle(el);
@@ -679,10 +526,7 @@ test('the quartile labels under the landing graph are set to be read', async ({ 
     expect(l.size, `"${l.text}" is set at ${l.size}px`).toBeGreaterThanOrEqual(12);
     expect(l.weight, `"${l.text}" is set at ${l.weight}`).toBeGreaterThanOrEqual(600);
   }
-  // Named in full on a screen with the room for it, rather than in a statistician's shorthand.
-  expect(seen.map((l) => l.text.replace(/\s+\$.*/, ''))).toEqual(['25th percentile', 'median', '75th percentile']);
-
-  // And each clears 4.5:1 against the panel it sits on, which 10px dimmed text did not.
+  expect(seen.map((l) => l.text.replace(/\s+\$.*/, ''))).toEqual(['Median', '25th percentile', '75th percentile']);
   const ground = await page.locator('.hero-dist').evaluate((el) => {
     const out: string[] = [];
     for (let e: Element | null = el; e; e = e.parentElement) out.push(getComputedStyle(e).backgroundColor);

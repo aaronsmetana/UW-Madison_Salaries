@@ -163,47 +163,15 @@ test.describe('chart gradient ids', () => {
 });
 
 /**
- * Home's hero distribution was the one chart bypassing `chartDefs` entirely: hand-written stops
- * (0.34 -> 0.02 against the factory's 0.28 -> 0) under a hardcoded id. Its fill is now the people
- * themselves, one dot each (DotField); the one gradient it keeps is a faint wash under the curve,
- * beneath the dots, so the curve's shape reads in the thin tails — and that is the shared
- * `areaGradDef`, never a private copy: its id, two stops, and gone at the baseline (the private copy's
- * 0.02 left a hairline of tint along the axis), no stronger at the top than the factory's own 0.28.
- *
- * It now defines more than that one, each with a job of its own and none an area fill: the wash's colours
- * along the pay axis by employment type (`-hue`), the shadow the mountain stands on (`-floor`, along the
- * axis on purpose; dot-look.spec keeps it inside the mountain's outline), the curve's glow (`-glow`, a
- * stroke), and the band of light that ends a rain (`-sheen`). The tinted wash's colours carry no opacity
- * of their own: its strength down the plot is `areaGradDef` again, as a mask.
+ * Home's hero distribution was the one chart bypassing `chartDefs` entirely: hand-written stops under a
+ * hardcoded id. Its fill is the people themselves now, a square each on one canvas (StrataField), and it
+ * defines no gradient at all — no wash to drift from the shared `areaGradDef`.
  */
-test('the hero distribution draws its people as dots, with no private area fill', async ({ page }) => {
+test('the hero distribution draws its people as squares, with no area fill of its own', async ({ page }) => {
   await page.goto('./', { waitUntil: 'networkidle' });
-  await expect(page.locator('.hero-dist-plot')).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator('.hero-dots canvas.dot-field-ink')).toHaveCount(1);
-  const grads = await page.locator('.hero-dist linearGradient').evaluateAll((gs) => gs.map((g) => ({
-    id: g.id,
-    stops: [...g.querySelectorAll('stop')].map((s) => Number(getComputedStyle(s).stopOpacity)),
-  })));
-  const areas = grads.filter((g) => /-area-grad$/.test(g.id));
-  expect(areas.length, 'the hero distribution has no wash').toBeGreaterThanOrEqual(1);
-  for (const g of areas) {
-    expect(g.stops.length, `not areaGradDef: ${g.id}'s stops`).toBe(2);
-    expect(g.stops[1], `${g.id} does not finish at the baseline`).toBe(0);
-    expect(g.stops[0], `${g.id} is stronger than any area fill in the app`).toBeLessThanOrEqual(0.28);
-    expect(g.stops[0], `${g.id} is not there at all`).toBeGreaterThan(0);
-  }
-  const jobs = grads.filter((g) => !/-area-grad$/.test(g.id)).map((g) => g.id.slice(g.id.lastIndexOf('-') + 1));
-  expect(jobs.filter((j) => !['hue', 'floor', 'glow', 'sheen'].includes(j)), 'the hero distribution defines an area gradient of its own, not areaGradDef')
-    .toEqual([]);
-  // The tinted wash: its colours at full strength, and faded down the plot by the shared profile alone.
-  const hue = grads.find((g) => g.id.endsWith('-hue'));
-  if (hue) expect(hue.stops.every((o) => o === 1), "the wash's colours carry an opacity of their own").toBe(true);
-  const fades = await page.locator('.hero-dist-wash path[fill*="-hue"]').evaluateAll((ps) => ps.map((p) => {
-    const id = p.getAttribute('mask')?.match(/url\(#(.+)\)/)?.[1];
-    return (id && document.getElementById(id)?.querySelector('rect')?.getAttribute('fill')) || '';
-  }));
-  expect(fades.length, 'the wash is in its colours with no gradient of them, or the other way round').toBe(hue ? 1 : 0);
-  for (const f of fades) expect(f, 'the tinted wash is not faded by areaGradDef').toMatch(/-area-grad\)$/);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
+  await expect(page.locator('.hero-dots canvas.strata-base')).toHaveCount(1);
+  await expect(page.locator('.hero-dist linearGradient, .hero-dist radialGradient')).toHaveCount(0);
 });
 
 /**

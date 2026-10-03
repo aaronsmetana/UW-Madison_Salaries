@@ -1,13 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import { oracle, PAY, usd, searchCounts } from './oracle';
-import { HOME_STATS, people, spots } from './homeDots';
-import { parseColor, flatten, contrast } from './color';
+import { HOME_STATS, people, places, spots } from './homeDots';
+import { parseColor } from './color';
 
 /**
- * The landing search marks the people it shows on the graph: each on their own dot, glowing green; a
- * pointer over one says who it is, and a press on it — or picking them in the list — turns the page into
- * theirs (components/PersonReveal). The dots are drawn from `home-stats.json`'s counts and carry no names,
- * so which dot is whose is a rule (lib/homePeople `dotSpots`), restated independently here.
+ * The landing search marks the people it shows on the graph: each on their own square, a white square ringed
+ * in ink with their type's colour at its heart; a pointer over one brings up the lens and says who it is, and
+ * a press on it — or picking them in the list — turns the page into theirs (components/PersonReveal). The
+ * squares are drawn from `home-stats.json`'s counts and carry no names, so which square is whose is a rule
+ * (lib/homePeople `dotSpots`), restated independently here.
  */
 
 /** Someone in the graph whose full name no one else in the data shares, and which no other name contains —
@@ -25,25 +26,47 @@ async function lone(over: boolean) {
   return r && { person_key: r.person_key, name: r.full_name, pay: r.pay };
 }
 
-/** The landing page at `width x height`, the dots at rest. */
+/** The landing page, its squares at rest. */
 async function home(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
 const searchBox = (page: Page) => page.getByRole('combobox', { name: /Search a person/ });
-/** The marks a field carries: index and resting place (the field's CSS px). */
+/** The marks under the cap: index and resting centre (the field's CSS px). */
 async function marksOf(page: Page, sel: string) {
   const attr = await page.locator(sel).getAttribute('data-marks');
   return (attr ?? '').split(' ').filter(Boolean).map((m) => { const [i, x, y] = m.split(':').map(Number); return { i, x, y }; });
 }
+/** A mark's colours, read off the canvas: at its heart, and halfway out to its ring. */
+const markPaint = (page: Page, at: { x: number; y: number }) => page.locator('.strata-base').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth;
+  const px = (x: number, y: number) => [...c.getContext('2d')!.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data];
+  return { heart: px(a.x, a.y), inside: px(a.x + 2.5, a.y) };
+}, at);
+/** A token's colour as the page resolves it. */
+const tokenColor = (page: Page, v: string) => page.evaluate((v) => { const s = document.createElement('span'); document.body.appendChild(s); s.style.color = `var(${v})`; const c = getComputedStyle(s).color; s.remove(); return c; }, v);
+/** How far a mark's ring stands from its centre, CSS px: out along its row, past the type's heart and the
+ *  white round it, to the first pixel that leans toward the ring's ink (an edge part way through a pixel is
+ *  blended with the white). */
+const ringAt = (page: Page, at: { x: number; y: number }, ink: number[]) => page.locator('.strata-base').first().evaluate((c: HTMLCanvasElement, a) => {
+  const k = c.width / c.clientWidth;
+  const ctx = c.getContext('2d')!;
+  const lum = (d: ArrayLike<number>) => 0.2126 * d[0] + 0.7152 * d[1] + 0.0722 * d[2];
+  const inkLum = lum(a.ink);
+  for (let dx = Math.ceil(2.5 * k); dx < 30 * k; dx++) {
+    const d = ctx.getImageData(Math.round(a.x * k) + dx, Math.round(a.y * k), 1, 1).data;
+    if (d[3] > 200 && lum(d) < (255 + inkLum) / 2) return dx / k;
+  }
+  return null;
+}, { ...at, ink });
 /** A mark's place on the screen. */
 async function onScreen(page: Page, sel: string, m: { x: number; y: number }) {
   const box = (await page.locator(sel).boundingBox())!;
   return { x: box.x + m.x, y: box.y + m.y };
 }
 
-test('the page knows every dot: the people the search can mark are exactly the people drawn', async ({ page }) => {
+test('the page knows every square: the people the search can mark are exactly the people drawn', async ({ page }) => {
   await home(page);
   const everyone = await people();
   await searchBox(page).fill('smith');
@@ -52,45 +75,30 @@ test('the page knows every dot: the people the search can mark are exactly the p
 });
 
 for (const over of [false, true]) {
-  test(`a search marks the person it shows on their own dot, in the found green (${over ? 'over the cap, in the pile' : 'under the curve'})`, async ({ page }) => {
+  test(`a search marks the person it shows on their own square, white with their type at its heart (${over ? 'over the cap, in the pile' : 'under the cap'})`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await home(page);
     const who = await lone(over);
     expect(who, 'no lone name to search').toBeTruthy();
     const expected = (await spots()).get(who.person_key)!;
     expect(expected.field).toBe(over ? 'pile' : 'main');
-    const field = over ? '.hero-dots-over' : '.hero-dots';
-    const other = over ? '.hero-dots' : '.hero-dots-over';
+    const field = page.locator('.hero-dots');
     await searchBox(page).fill(who.name);
-    await expect(page.locator(field)).toHaveAttribute('data-marks', new RegExp(`^${expected.index}:`), { timeout: 60_000 });
-    expect(await page.locator(other).getAttribute('data-marks')).toBeNull();
-    // Drawn: the canvas at the mark is the found ink, once it has grown in.
-    await page.waitForTimeout(1000);
-    const [m] = await marksOf(page, field);
-    const ink = await page.locator(`${field} .dot-field-ink`).evaluate((c: HTMLCanvasElement, at) => {
-      const k = c.width / c.clientWidth;
-      const d = c.getContext('2d')!.getImageData(Math.round(at.x * k), Math.round(at.y * k), 1, 1).data;
-      return [d[0], d[1], d[2], d[3]];
-    }, m);
-    const found = parseColor(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--found')));
-    for (let c = 0; c < 3; c++) expect(Math.abs(ink[c] - found[c]), `channel ${c}: ${ink} against ${found}`).toBeLessThan(24);
-    expect(ink[3]).toBeGreaterThan(240);
-  });
-}
-
-for (const scheme of ['light', 'dark'] as const) {
-  test(`a found person's mark clears 3:1 against the card (${scheme})`, async ({ page }) => {
-    await page.emulateMedia({ colorScheme: scheme });
-    await home(page);
-    const layers = await page.locator('.hero-dots').evaluate((el) => {
-      const out: string[] = [];
-      for (let e: Element | null = el; e; e = e.parentElement) out.push(getComputedStyle(e).backgroundColor);
-      return out.reverse();
-    });
-    let ground = [255, 255, 255];
-    for (const c of layers) { const [r, g, b, a] = parseColor(c); if (a > 0) ground = flatten([r, g, b, a], ground); }
-    const found = parseColor(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--found')));
-    expect(contrast(found, ground)).toBeGreaterThanOrEqual(3);
+    await expect(field).toHaveAttribute(over ? 'data-pile-marks' : 'data-marks', new RegExp(`^${expected.index}(:|$)`), { timeout: 60_000 });
+    expect(await field.getAttribute(over ? 'data-marks' : 'data-pile-marks')).toBeNull();
+    // The name typed is a group of one, lit and sunk to the floor of their column: read their square once
+    // it is there.
+    await expect(field).toHaveAttribute(over ? 'data-pile-lit' : 'data-lit', /^1:/, { timeout: 60_000 });
+    await expect(field).toHaveAttribute('data-settled', 'true');
+    // Drawn: at its own square, the heart in its type's ink and white round it.
+    const pts = await places(page, '.hero-dots', expected.field);
+    const at = { x: pts[2 * expected.index], y: pts[2 * expected.index + 1] };
+    const cat = (await people()).find((p) => p.person_key === who.person_key)!.cat;
+    const typeInk = parseColor(await tokenColor(page, ({ 'Academic Staff': '--cat-academic', 'University Staff': '--cat-university', Faculty: '--cat-faculty', 'Employees in Training': '--cat-training', Limited: '--cat-limited' } as Record<string, string>)[cat]));
+    const card = parseColor(await tokenColor(page, '--surface'));
+    const paint = await markPaint(page, at);
+    for (let c = 0; c < 3; c++) expect(Math.abs(paint.heart[c] - typeInk[c]), `heart channel ${c}: ${paint.heart} against ${typeInk}`).toBeLessThan(12);
+    for (let c = 0; c < 3; c++) expect(Math.abs(paint.inside[c] - card[c]), `inside channel ${c}: ${paint.inside} against ${card}`).toBeLessThan(12);
   });
 }
 
@@ -125,14 +133,13 @@ test('pointing at a mark says who it is; pressing it turns the page into theirs,
   await page.waitForTimeout(700);
   const [m] = await marksOf(page, '.hero-dots');
   const at = await onScreen(page, '.hero-dots', m);
-  await page.mouse.move(at.x, at.y);
-  const card = page.locator(`[data-found-card="${who.person_key}"]`);
+  // The lens comes up on the mark, and its card is the person's — before the names have loaded, from the search.
+  await page.mouse.move(at.x - 10, at.y);
+  await page.mouse.move(at.x, at.y, { steps: 3 });
+  const card = page.locator(`.strata-card[data-who="${who.person_key}"]`);
   await expect(card).toBeVisible();
   await expect(card).toContainText(usd(who.pay));
-  const shown = (await card.locator('p, div').first().innerText()).trim();
-  expect(shown.toLowerCase()).toBe(who.name);
-  // No glass over a mark: the card is what it shows.
-  await expect(page.locator('.hero-dist-main')).toHaveAttribute('data-lens', 'off');
+  expect((await card.locator('.strata-card-name').innerText()).trim().toLowerCase()).toBe(who.name);
 
   await page.mouse.down();
   await page.mouse.up();
@@ -178,14 +185,18 @@ test('under Reduce Motion a pressed mark simply opens the page', async ({ browse
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
   const [m] = await marksOf(page, '.hero-dots');
   const at = await onScreen(page, '.hero-dots', m);
-  await page.mouse.click(at.x, at.y);
+  // Pressed as soon as the lens is on the mark.
+  await page.mouse.move(at.x, at.y);
+  await expect(page.locator('.hero-dist-main')).toHaveAttribute('data-pick', /^main:\d+$/);
+  await page.mouse.down();
+  await page.mouse.up();
   await expect(page).toHaveURL(new RegExp(`/person/${encodeURIComponent(who.person_key)}`), { timeout: 1000 });
   expect(await page.locator('.person-reveal').count()).toBe(0);
   await expect(page.getByRole('heading', { level: 1 })).toBeFocused({ timeout: 10_000 });
   await ctx.close();
 });
 
-test('on a phone a tap on a mark shows its card, and the card opens them', async ({ browser }) => {
+test('on a phone a tap on a mark brings up the lens and its card, and the card opens them', async ({ browser }) => {
   const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
   await home(page);
@@ -201,10 +212,10 @@ test('on a phone a tap on a mark shows its card, and the card opens them', async
   const [m] = await marksOf(page, '.hero-dots');
   const at = await onScreen(page, '.hero-dots', m);
   await page.touchscreen.tap(at.x, at.y);
-  const card = page.locator(`[data-found-card="${who.person_key}"]`);
+  const card = page.locator(`.strata-card[data-who="${who.person_key}"]`);
   await expect(card).toBeVisible();
-  // A tap on a mark is not a tap on the dots: nothing bursts.
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle');
+  // Nothing moves for a tap.
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   await card.getByRole('button', { name: /^Open / }).tap();
   await expect(page.locator('.person-reveal')).toHaveAttribute('data-phase', 'swell');
   await expect(page).toHaveURL(new RegExp(`/person/${encodeURIComponent(who.person_key)}`), { timeout: 4000 });
@@ -215,8 +226,7 @@ test('on a phone the search is above the graph, and its list leaves the lower ha
   // Under the graph, the page's search began at y=974 on an 812px phone: the one thing a visitor comes to
   // do was off the first screen. Above the graph, its list lies over the plot — so it is the full page's
   // on a phone: open only while the box is in use, stopping halfway down the plot so the marks landing
-  // as the reader types stay in sight, and put away by a tap on the graph rather than that tap
-  // scattering the dots.
+  // as the reader types stay in sight, and put away by a tap on the graph that does nothing else.
   const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 }, reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
   await home(page);
@@ -234,19 +244,14 @@ test('on a phone the search is above the graph, and its list leaves the lower ha
   const list = (await page.locator('.search-dropdown').boundingBox())!;
   expect(list.y + list.height, 'the list reaches past the middle of the plot').toBeLessThanOrEqual(plot.y + plot.height / 2 + 1);
 
-  // A tap on the graph: the list goes, the dots stay where they are, the search and its marks stay. Every
-  // state the dots pass through from the tap on is recorded: a burst can be over before a single look.
+  // A tap on the graph: the list goes, and nothing else — no lens, the squares where they are, the search and
+  // its marks kept.
   const marks = await page.locator('.hero-dots').getAttribute('data-marks');
-  await page.locator('.hero-dots').evaluate((el) => {
-    const seen: string[] = [];
-    (window as unknown as { flights: string[] }).flights = seen;
-    new MutationObserver(() => seen.push(el.getAttribute('data-flight') ?? '')).observe(el, { attributes: true, attributeFilter: ['data-flight'] });
-  });
   await page.touchscreen.tap(plot.x + plot.width / 2, plot.y + plot.height - 12);
   await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('.search-dropdown')).toHaveCount(0);
   await page.waitForTimeout(400);
-  expect(await page.evaluate(() => (window as unknown as { flights: string[] }).flights), 'the tap that put the list away scattered the dots').toEqual([]);
+  await expect(page.locator('.hero-dist-main'), 'the tap that put the list away brought up the lens').toHaveAttribute('data-lens', 'off');
   await expect(searchBox(page)).toHaveValue('smith');
   expect(await page.locator('.hero-dots').getAttribute('data-marks')).toBe(marks);
 
@@ -259,7 +264,7 @@ test('on a phone the search is above the graph, and its list leaves the lower ha
   await ctx.close();
 });
 
-test('someone no longer here is listed, but has no dot to mark', async ({ page }) => {
+test('someone no longer here is listed, but has no square to mark', async ({ page }) => {
   await home(page);
   const [gone] = await oracle<{ full_name: string }>(
     `WITH names AS (SELECT person_key, lower(arg_max(first_name, snapshot_date) || ' ' || arg_max(last_name, snapshot_date)) nm FROM $SAL GROUP BY person_key)
@@ -273,10 +278,10 @@ test('someone no longer here is listed, but has no dot to mark', async ({ page }
   await expect(page.locator('.hero-dist-wrap')).toHaveAttribute('data-people-mapped', /\d+/, { timeout: 60_000 });
   await page.waitForTimeout(500);
   expect(await page.locator('.hero-dots').getAttribute('data-marks')).toBeNull();
-  expect(await page.locator('.hero-dots-over').getAttribute('data-marks')).toBeNull();
+  expect(await page.locator('.hero-dots').getAttribute('data-pile-marks')).toBeNull();
 });
 
-test('every marked person is named beside their own dot, tied to it, and no two names touch', async ({ page }) => {
+test('every marked person is named beside their own square, tied to it, and no two names touch', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await home(page);
   await searchBox(page).fill('smith');
@@ -332,66 +337,39 @@ test('every marked person is named beside their own dot, tied to it, and no two 
   }
 });
 
-/** How far the solid core of a mark reaches from its centre, CSS px: out along a row until the ink
- *  stops being the found green. A mark's core is its radius less a rim of about a fifth. */
-const coreRadius = (page: Page, sel: string, at: { x: number; y: number }, ink: number[]) =>
-  page.locator(`${sel} canvas`).first().evaluate((c: HTMLCanvasElement, a) => {
-    const k = c.width / c.clientWidth;
-    const ctx = c.getContext('2d')!;
-    const y = Math.round(a.y * k);
-    let out = 0;
-    for (let dx = 0; dx < 120; dx++) {
-      const x = Math.round(a.x * k) + dx;
-      if (x >= c.width) break;
-      const d = ctx.getImageData(x, y, 1, 1).data;
-      const isInk = d[3] > 230 && Math.abs(d[0] - a.ink[0]) < 30 && Math.abs(d[1] - a.ink[1]) < 30 && Math.abs(d[2] - a.ink[2]) < 30;
-      if (!isInk) break;
-      out = dx / k;
-    }
-    return out;
-  }, { ...at, ink });
-
-test('the person the list has active is drawn twice the size, and wears the filled name', async ({ page }) => {
+test('the person the list has active is drawn bigger, and wears the filled name', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await home(page);
-  const ink = parseColor(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--found')));
-
-  // Someone searched alone: their row is the active one, so their dot is the big one.
+  const ink = parseColor(await tokenColor(page, '--mantine-color-text'));
+  // Someone searched alone: their row is the active one, so theirs is the big mark.
   const who = await lone(false);
   await searchBox(page).fill(who.name);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
-  await page.waitForTimeout(1500);
   const spot = (await spots()).get(who.person_key)!;
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-mark-big', String(spot.index));
-  const markR = Number(await page.locator('.hero-dots').getAttribute('data-mark-r'));
-  expect(markR).toBeGreaterThan(1);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-mark-big', `main:${spot.index}`);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-lit', /^1:/, { timeout: 60_000 });
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   const [big] = await marksOf(page, '.hero-dots');
-  const bigCore = await coreRadius(page, '.hero-dots', big, ink);
-  expect(bigCore, 'nothing was drawn where the mark is').toBeGreaterThan(markR);
-
+  const bigRing = await ringAt(page, big, ink);
   // The one name drawn filled is that person's.
   const active = page.locator('.hero-found-label[data-active="on"]');
   await expect(active).toHaveCount(1);
   expect(((await active.textContent()) ?? '').toLowerCase()).toBe(who.name.toLowerCase());
-
-  // A mark nobody has picked out is drawn at a mark's own size: the one furthest from the big one in a
-  // search that shows several, so no neighbour's ink runs into the measurement.
+  // A mark nobody has picked out is drawn smaller: one standing clear of the others in a search of several.
   await searchBox(page).fill('smith');
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-mark-big', /\d/, { timeout: 60_000 });
-  await page.waitForTimeout(1500);
+  await expect.poll(async () => (await marksOf(page, '.hero-dots')).length, { timeout: 60_000 }).toBeGreaterThan(3);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-mark-big', /^main:\d/);
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   const marks = await marksOf(page, '.hero-dots');
-  const bigNow = Number(await page.locator('.hero-dots').getAttribute('data-mark-big'));
-  const lonely = marks
-    .filter((m) => m.i !== bigNow)
+  const bigNow = Number((await page.locator('.hero-dots').getAttribute('data-mark-big'))!.split(':')[1]);
+  const lonely = marks.filter((m) => m.i !== bigNow)
     .map((m) => ({ m, near: Math.min(...marks.filter((o) => o.i !== m.i).map((o) => Math.hypot(o.x - m.x, o.y - m.y))) }))
     .reduce((far, c) => (c.near > far.near ? c : far));
-  expect(lonely.near, 'no mark stands clear enough of its neighbours to measure').toBeGreaterThan(markR * 6);
-  const plainCore = await coreRadius(page, '.hero-dots', lonely.m, ink);
-  expect(plainCore, `against a mark radius of ${markR}`).toBeLessThan(markR * 1.2);
-  expect(plainCore).toBeGreaterThan(markR * 0.5);
-  // Measured the same way, on the same field: the picked-out dot is the bigger one by well over half
-  // again — the drawing doubles it, and a core is its radius less a rim.
-  expect(bigCore / plainCore, `${bigCore} against ${plainCore}`).toBeGreaterThan(1.6);
+  expect(lonely.near, 'no mark stands clear enough of its neighbours to measure').toBeGreaterThan(20);
+  const plainRing = await ringAt(page, lonely.m, ink);
+  expect(bigRing, 'no ring round the big mark').not.toBeNull();
+  expect(plainRing, 'no ring round the plain mark').not.toBeNull();
+  expect(bigRing! - plainRing!, `the big mark's ring at ${bigRing}px against ${plainRing}px`).toBeGreaterThan(1.5);
 });
 
 /**
@@ -418,20 +396,12 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   // On the page, the list is open: that is what typing does.
   expect(await page.getByRole('option').count()).toBeGreaterThan(0);
 
-  // Sampled from the click onward, because the difficulty is in the travelling: the panel lays its dots
-  // out again for the taller plot and they move to their new places, and a name is hung on a place. The
-  // place a dot is passing through is not the place it is going.
   const leaderEnds = () => page.locator('.hero-found-leaders line').evaluateAll((els) => els.map((el) => ({
     x: Number(el.getAttribute('x1')), y: Number(el.getAttribute('y1')),
   })));
+  // Going full page draws the field afresh at the larger size, where it simply is (the drop plays once a visit).
   await page.getByRole('button', { name: 'Full page' }).click();
   await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
-  const travelling: { x: number; y: number }[][] = [];
-  for (let i = 0; i < 30; i++) {
-    travelling.push(await leaderEnds());
-    if (i > 1 && await page.locator('.hero-dots').getAttribute('data-settled') === 'true') break;
-    await page.waitForTimeout(100);
-  }
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.waitForTimeout(400);
 
@@ -454,19 +424,8 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   const atRest = await leaderEnds();
   expect(atRest.length, 'the names went away going full page').toBe(before);
 
-  // Not a pixel of wander from the moment the names appear: they are put where their dots are going, so
-  // the dots arrive under them rather than dragging them along. Every sample taken while the field was
-  // laying itself out again has to match where they ended up.
-  const watched = travelling.filter((s) => s.length === atRest.length);
-  expect(watched.length, 'the names were never seen while the dots moved').toBeGreaterThan(1);
-  for (const s of watched) {
-    for (let i = 0; i < atRest.length; i++) {
-      expect(Math.hypot(atRest[i].x - s[i].x, atRest[i].y - s[i].y),
-        'a name wandered while the dots flew').toBeLessThan(2);
-    }
-  }
-  // And each one ended up on a dot. A name read once off a dot in flight and never read again sat
-  // 389px from the person it named, at their right pay, for as long as the graph stayed open.
+  // Each one on its square at the full page's size. A name read once off a square in flight and never read
+  // again sat 389px from the person it named, at their right pay, for as long as the graph stayed open.
   const after = await marksOf(page, '.hero-dots');
   const field = (await page.locator('.hero-dots').boundingBox())!;
   for (const l of atRest) {

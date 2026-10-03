@@ -61,34 +61,33 @@ export async function spots(): Promise<Map<string, { field: 'main' | 'pile'; ind
   return out;
 }
 
-/** The plot full page, and how its dots are laid out: what the bar must never change. */
+/** The plot full page, and how its squares are laid out: what the bar must never change. */
 export async function plotShape(page: Page) {
   return page.evaluate(() => {
     const main = document.querySelector('.hero-dist-full .hero-dist-main')!.getBoundingClientRect();
-    const dots = document.querySelector('.hero-dist-full .hero-dots') as HTMLElement;
-    return { x: main.x, y: main.y, w: main.width, h: main.height, laidW: dots.dataset.width, laidH: dots.getBoundingClientRect().height };
+    const field = document.querySelector('.hero-dist-full .hero-dots') as HTMLElement;
+    const f = field.getBoundingClientRect();
+    return { x: main.x, y: main.y, w: main.width, h: main.height, laidW: f.width, laidH: f.height, per: field.dataset.per, pitch: field.dataset.pitch };
   });
 }
-/** The bar's pieces that lie on the plot or the pile, if any. */
+/** The bar's pieces that lie on the plot (the pile is part of it), if any. */
 export async function barOverPlot(page: Page) {
   return page.evaluate(() => {
     const R = (e: Element) => e.getBoundingClientRect();
     const main = R(document.querySelector('.hero-dist-full .hero-dist-main')!);
-    const pileEl = document.querySelector('.hero-dist-full .hero-dist-pile');
-    const pile = pileEl ? R(pileEl) : null;
-    const hit = (a: DOMRect, b: DOMRect | null) => !!b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    const hit = (a: DOMRect, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
     return [...document.querySelectorAll('.hero-dist-full .hero-dist-search, .hero-dist-full .hero-dist-search *')]
-      .filter((el) => { const r = R(el); return r.width > 0 && r.height > 0 && (hit(r, main) || hit(r, pile)); })
+      .filter((el) => { const r = R(el); return r.width > 0 && r.height > 0 && hit(r, main); })
       .map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 60));
   });
 }
 
-/** Each of a field's dots' place up its column, counted from the floor (DotField `dotRanks`): the rain's order. */
-export async function ranks(page: Page, field: string): Promise<number[]> {
-  return page.evaluate((sel) => (document.querySelector(sel) as HTMLElement & { dotRanks?: () => number[] | null }).dotRanks?.() ?? [], field);
+/** Each square's slot up its column, 0 at the floor (StrataField `squareSlots`), in a field's index order. */
+export async function slots(page: Page, sel: string, field: 'main' | 'pile' = 'main'): Promise<number[]> {
+  return page.evaluate(([sel, f]) => (document.querySelector(sel) as HTMLElement & { squareSlots?: (f: string) => number[] }).squareSlots?.(f) ?? [], [sel, field] as const);
 }
 
-/** Where each of a field's dots is laid out (DotField `dotPlaces`), x then y, in the field's CSS px. */
-export async function places(page: Page, field: string): Promise<number[]> {
-  return page.evaluate((sel) => (document.querySelector(sel) as HTMLElement & { dotPlaces?: () => number[] | null }).dotPlaces?.() ?? [], field);
+/** Where each square rests (StrataField `squarePlaces`), its centre's x then y, in the plot's CSS px. */
+export async function places(page: Page, sel: string, field: 'main' | 'pile' = 'main'): Promise<number[]> {
+  return page.evaluate(([sel, f]) => (document.querySelector(sel) as HTMLElement & { squarePlaces?: (f: string) => number[] }).squarePlaces?.(f) ?? [], [sel, field] as const);
 }

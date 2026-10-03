@@ -24,7 +24,7 @@ async function open(browser: Browser, o: { width?: number; height?: number; moti
     ...(o.phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 3 } : {}),
   });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.locator('.hero-dist-full-toggle').click();
@@ -36,8 +36,8 @@ async function open(browser: Browser, o: { width?: number; height?: number; moti
 const box = (page: Page) => page.locator('.hero-dist-full .search-bar-field input');
 const list = (page: Page) => page.locator('.hero-dist-full .search-bar-list');
 const people = (page: Page) => list(page).locator('[role="option"][data-kind="person"]');
-const marked = (page: Page) => page.locator('.hero-dist-full .hero-dots, .hero-dist-full .hero-dots-over').evaluateAll((els) =>
-  els.reduce((t, e) => t + ((e as HTMLElement).dataset.marks?.split(' ').length ?? 0), 0));
+const marked = (page: Page) => page.locator('.hero-dist-full .hero-dots').evaluate((e) =>
+  ((e as HTMLElement).dataset.marks?.split(' ').length ?? 0) + ((e as HTMLElement).dataset.pileMarks?.split(' ').length ?? 0));
 
 test('typing lists up to fifty people under the box, in the search’s order, each with their pay and their title and school, and marks the first six', async ({ browser }) => {
   const want = (await searchOrder('aaron')).map((p) => p.person_key);
@@ -94,27 +94,11 @@ test('the list lies over the graph only while the box is in use, and never moves
     expect(l.y + l.height, `${width}px: the list runs past the panel`).toBeLessThanOrEqual(Math.min(panel.y + panel.height, height) + 1);
     expect(l.x + l.width, `${width}px: the list runs off the panel's side`).toBeLessThanOrEqual(panel.x + panel.width + 1);
     expect(await plotShape(page), `${width}px: the list moved the plot`).toEqual(before);
-    // The typed name's label (every Aaron lit) keeps clear of the list where the plot has room beside it,
-    // as it keeps off the controls. A phone's list is as wide as the graph.
-    const flag = page.locator('.hero-dist-group-flag');
-    if (!phone) {
-      await expect(flag, `${width}px: no label for the typed name`).toContainText('“aaron”', { timeout: 60_000 });
-      await expect.poll(async () => {
-        const f = (await flag.boundingBox())!, now = (await list(page).boundingBox())!;
-        return f.x >= now.x + now.width || f.y >= now.y + now.height;
-      }, { message: `${width}px: the name's label lies under the list`, timeout: 10_000 }).toBe(true);
-    }
+    // The typed name's chip (every Aaron lit) is in the toolbar, over the plot's top, never under the list.
+    await expect(page.locator('.hero-dist-full .strata-chip'), `${width}px: no chip for the typed name`).toContainText('“aaron”', { timeout: 60_000 });
     // Turned away from — the box left — the list goes, and nothing of the bar lies on the graph.
     await box(page).blur();
     await expect(list(page)).toHaveCount(0);
-    // The label is back over its median, where the list was.
-    if (!phone) {
-      const at = async () => {
-        const f = (await flag.boundingBox())!, m = (await page.locator('.hero-dist-group-median').boundingBox())!;
-        return Math.abs(f.x + f.width / 2 - (m.x + m.width / 2));
-      };
-      await expect.poll(at, { message: `${width}px: the label did not go back to its median`, timeout: 10_000 }).toBeLessThan(2);
-    }
     await expect(box(page)).toHaveValue('aaron');
     expect(await barOverPlot(page), `${width}px: something of the bar stayed on the graph`).toEqual([]);
     expect(await plotShape(page), `${width}px: closing the list moved the plot`).toEqual(before);
@@ -128,7 +112,7 @@ test('the list lies over the graph only while the box is in use, and never moves
   }
 });
 
-test('a press on the graph while the list is open only puts it away; the next one scatters', async ({ browser }) => {
+test('a press on the graph while the list is open only puts it away', async ({ browser }) => {
   const { ctx, page } = await open(browser, { motion: true });
   const dots = page.locator('.hero-dist-full .hero-dots');
   await box(page).fill('aaron');
@@ -136,14 +120,15 @@ test('a press on the graph while the list is open only puts it away; the next on
   await expect(dots).toHaveAttribute('data-marks', /./, { timeout: 30_000 });
   const marks = await dots.getAttribute('data-marks');
   const main = (await page.locator('.hero-dist-full .hero-dist-main').boundingBox())!;
-  const at = { x: main.x + main.width * 0.7, y: main.y + main.height * 0.9 };
-  const flights = () => page.evaluate(() => performance.getEntriesByName('flight-frame').length);
-  const before = await flights();
+  const at = { x: main.x + main.width * 0.3, y: main.y + main.height * 0.97 };
+  const url = page.url();
   await page.mouse.click(at.x, at.y);
   await expect(list(page)).toHaveCount(0);
   await page.waitForTimeout(300);
-  expect(await flights(), 'the press that put the list away scattered the dots').toBe(before);
-  await expect(dots).toHaveAttribute('data-flight', 'idle');
+  // Not a press on a square: nobody opened, nothing moved.
+  expect(page.url(), 'the press that put the list away opened someone').toBe(url);
+  await expect(page.locator('.person-reveal')).toHaveCount(0);
+  await expect(dots).toHaveAttribute('data-settled', 'true');
   // The query and the people it marked stay.
   await expect(box(page)).toHaveValue('aaron');
   await expect(dots).toHaveAttribute('data-marks', marks!);
@@ -154,9 +139,6 @@ test('a press on the graph while the list is open only puts it away; the next on
   await expect(box(page)).toHaveValue('');
   await expect(list(page)).toHaveCount(0);
   await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
-  // With nothing open, a press scatters as it always has.
-  await page.mouse.click(at.x, at.y);
-  await expect(dots).toHaveAttribute('data-flight', 'moving');
   await ctx.close();
 });
 
@@ -171,18 +153,16 @@ test('on a phone, a tap on the graph while the list is open only puts it away', 
   // watch and to tap.
   expect(l.y + l.height, 'the list covers the whole graph').toBeLessThanOrEqual(main.y + main.height / 2 + 1);
   const at = { x: main.x + main.width * 0.85, y: main.y + main.height * 0.8 };
-  const flights = () => page.evaluate(() => performance.getEntriesByName('flight-frame').length);
-  const before = await flights();
   await page.touchscreen.tap(at.x, at.y);
   await expect(list(page)).toHaveCount(0);
   await page.waitForTimeout(300);
-  expect(await flights(), 'the tap that put the list away scattered the dots').toBe(before);
+  await expect(page.locator('.hero-dist-full .hero-dist-main'), 'the tap that put the list away brought up the lens').toHaveAttribute('data-lens', 'off');
   await expect(box(page)).toHaveValue('aaron');
   await expect(dots).toHaveAttribute('data-marks', /./);
   await ctx.close();
 });
 
-test('↓ in the box moves down the list, and draws that person’s dot large', async ({ browser }) => {
+test('↓ in the box moves down the list, and draws that person’s mark large', async ({ browser }) => {
   const { ctx, page } = await open(browser);
   const dots = page.locator('.hero-dist-full .hero-dots');
   await box(page).fill('aaron');

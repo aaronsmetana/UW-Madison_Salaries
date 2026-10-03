@@ -2,14 +2,14 @@ import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 /**
- * The landing graph full page (src/routes/Home.tsx `Distribution`): a button over the panel's corner
- * opens it over the whole window — over the header too — with the plot as tall as the window leaves;
- * the page under it does not scroll, the keyboard stays inside, and Escape or the button puts it back.
- * On a phone, full page, a finger's drag stirs the dots (there is nothing to scroll).
+ * The landing graph full page (components/strata/StrataGraph): a button in the panel's corner opens it over
+ * the whole window — over the header too — with the plot as tall as the window leaves; the page under it does
+ * not scroll, the keyboard stays inside, and Escape or the button puts it back. On a phone, full page, a
+ * finger held on the plot brings up the lens and slides it (there is nothing to scroll).
  */
 
 async function settledHome(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('dotfield-entrance', '1'); } catch { /* private mode */ } });
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   // And the page above it laid out for good: the webfont in, and the panel where it will stay. On CI the
@@ -25,13 +25,16 @@ async function settledHome(page: Page) {
 }
 
 const panel = (page: Page) => page.locator('.hero-dist');
-/** The plot's height to the pixel: a box's height reads 374.99997 as often as 375. */
+/** The plot's height to the pixel: a box's height reads 402.99997 as often as 403. */
 const plotHeight = (page: Page) => page.locator('.hero-dist-main').evaluate((el) => Math.round(el.getBoundingClientRect().height));
+/** The plot's height on the page, by its rule: 30% of its width, never under 400px or over 520. */
+const pageHeight = (page: Page) => page.locator('.hero-dist-main').evaluate((el) => Math.round(Math.min(520, Math.max(400, el.clientWidth * 0.3))));
 
 test('opens the graph full page over everything, as tall as the window, and puts it back', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await settledHome(page);
-  expect(await plotHeight(page)).toBe(375);
+  const onPage = await pageHeight(page);
+  expect(await plotHeight(page)).toBe(onPage);
   await page.getByRole('button', { name: 'Full page' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Pay distribution, full page' });
@@ -48,19 +51,19 @@ test('opens the graph full page over everything, as tall as the window, and puts
   expect(await page.evaluate(() => !!document.elementFromPoint(40, 20)?.closest('.hero-full')), 'the header is over the full page').toBe(true);
   // The plot takes the height, and its dots are laid out for the box they are drawn in.
   const h = await plotHeight(page);
-  // Against the panel it sits in, and against the 375px it had on the page, rather than as a count of
+  // Against the panel it sits in, and against the height it had on the page, rather than as a count of
   // pixels off the window. The plot gets what the window leaves after the panel's own furniture — the
   // controls, the axis, the legend, the caption — so a bare figure moves whenever that furniture changes
   // and says nothing either way about the plot growing.
-  expect(h, 'the plot did not grow to the window').toBeGreaterThan(1.5 * 375);
+  expect(h, 'the plot did not grow to the window').toBeGreaterThan(1.5 * onPage);
   expect(h / box.height, 'the panel is mostly furniture').toBeGreaterThan(0.7);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   const fit = await page.evaluate(() => {
     const main = document.querySelector('.hero-dist-main')!.getBoundingClientRect();
-    const dots = document.querySelector('.hero-dots') as HTMLElement;
-    return { main: main.width, laid: Number(dots.dataset.width), tall: dots.getBoundingClientRect().height };
+    const field = document.querySelector('.hero-dots')!.getBoundingClientRect();
+    return { main: main.width, laid: field.width, tall: field.height };
   });
-  expect(Math.abs(fit.laid - fit.main), `dots laid out ${fit.laid}px wide in a ${fit.main}px plot`).toBeLessThan(0.5);
+  expect(Math.abs(fit.laid - fit.main), `squares laid out ${fit.laid}px wide in a ${fit.main}px plot`).toBeLessThan(0.5);
   expect(Math.round(fit.tall)).toBe(h);
 
   // The keyboard: focus lands on the way back out, and Tab never leaves the panel.
@@ -98,7 +101,7 @@ test('opens the graph full page over everything, as tall as the window, and puts
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(panel(page)).toHaveAttribute('data-full', 'off');
-  expect(await plotHeight(page)).toBe(375);
+  expect(await plotHeight(page)).toBe(onPage);
   await expect(page.getByRole('button', { name: 'Full page' })).toBeFocused();
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow), 'the page stayed locked').toBe('visible');
   await page.mouse.wheel(0, 300);
@@ -110,7 +113,7 @@ test('opens the graph full page over everything, as tall as the window, and puts
   await expect(dialog).toBeVisible();
   await page.getByRole('button', { name: 'Exit full page' }).click();
   await expect(dialog).toHaveCount(0);
-  expect(await plotHeight(page)).toBe(375);
+  expect(await plotHeight(page)).toBe(onPage);
 });
 
 // The phone is in here because the panel's furniture differs there: the controls float in the corner on
@@ -174,65 +177,54 @@ test('Escape in the command palette over the full page closes the palette, not t
   await expect(dialog).toHaveCount(0);
 });
 
-test('full page on a phone: a finger drags through the dots and stirs them, holds for the glass, and taps to burst', async ({ browser }) => {
+test('full page on a phone: a finger held brings up the lens and slides it with nothing scrolling, and lifting leaves it there', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true, reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
   await settledHome(page);
   const cdp = await ctx.newCDPSession(page);
   const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) =>
     cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
-  const frames = () => page.evaluate(() => performance.getEntriesByName('flight-frame').length);
   const main = page.locator('.hero-dist-main');
 
-  // On the page first: a finger that moves over the plot scrolls, and throws nothing.
+  // On the page first: a finger that moves over the plot scrolls, and brings up no lens.
   await main.scrollIntoViewIfNeeded();
-  let box = (await page.locator('.hero-dist-plot').boundingBox())!;
+  let box = (await main.boundingBox())!;
   const inPlaceH = box.height;
-  const before = await frames();
+  const top = await page.evaluate(() => window.scrollY);
   await touch('touchStart', box.x + box.width * 0.2, box.y + box.height * 0.8);
-  for (let k = 1; k <= 8; k++) { await touch('touchMove', box.x + box.width * (0.2 + 0.05 * k), box.y + box.height * 0.8 - 12 * k); await page.waitForTimeout(16); }
+  for (let k = 1; k <= 8; k++) { await touch('touchMove', box.x + box.width * 0.2, box.y + box.height * 0.8 - 14 * k); await page.waitForTimeout(16); }
   await touch('touchEnd', 0, 0);
-  await page.waitForTimeout(200);
-  expect(await frames(), 'a finger dragging on the page stirred the dots').toBe(before);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.scrollY), 'a finger dragging on the page did not scroll it').toBeGreaterThan(top);
+  await expect(main).toHaveAttribute('data-lens', 'off');
 
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.getByRole('button', { name: 'Full page' }).click();
   await expect(panel(page)).toHaveAttribute('data-full', 'on');
   await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running'));
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
-  box = (await page.locator('.hero-dist-plot').boundingBox())!;
-  // Against the plot on the page rather than as a count of pixels: full page on a phone carries three
-  // lines above the plot — the search box, its strip of results and the buttons — and the plot gets what
-  // the window leaves. It was 463px with none of them and 415px with the box alone; it is 377px now, from
-  // 275px on the page. A bare figure only ever measured that furniture, not whether the plot grew.
+  box = (await main.boundingBox())!;
+  // Against the plot on the page: full page carries the search box and its strip above the plot, and the
+  // plot gets what the window leaves.
   expect(box.height / inPlaceH, `the plot did not grow on the phone: ${inPlaceH}px on the page, ${box.height}px full page`).toBeGreaterThan(1.3);
   const scrolled = () => page.evaluate(() => [window.scrollY, document.querySelector('.hero-full')!.scrollTop]);
   const at = await scrolled();
 
-  // A drag: the dots move, nothing scrolls.
-  const y = box.y + box.height * 0.85;
-  const dragFrom = await frames();
-  await touch('touchStart', box.x + box.width * 0.15, y);
-  for (let k = 1; k <= 12; k++) { await touch('touchMove', box.x + box.width * (0.15 + 0.05 * k), y); await page.waitForTimeout(16); }
-  expect(await scrolled(), 'the finger scrolled the full page').toEqual(at);
-  expect(await frames(), 'a finger dragging full page did not stir the dots').toBeGreaterThan(dragFrom);
-  expect(Number(await main.getAttribute('data-stir')), 'the drag was not measured').toBeGreaterThanOrEqual(0);
-  await touch('touchEnd', 0, 0);
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'idle', { timeout: 6000 });
-
-  // A finger held still still brings up the glass.
-  await touch('touchStart', box.x + box.width * 0.4, box.y + box.height * 0.7);
-  await page.waitForTimeout(600);
+  // Held still, the lens comes up above the finger; slid, it follows, and nothing scrolls.
+  const x = box.x + box.width * 0.3, y = box.y + box.height * 0.95;
+  await touch('touchStart', x, y);
+  await page.waitForTimeout(650);
   await expect(main).toHaveAttribute('data-lens', 'on');
-  const held = await frames();
+  const [x0] = (await main.getAttribute('data-lens-at'))!.split(',').map(Number);
+  for (let k = 1; k <= 8; k++) { await touch('touchMove', x + 6 * k, y - 4 * k); await page.waitForTimeout(16); }
+  expect(await scrolled(), 'the finger scrolled the full page').toEqual(at);
+  const [x1] = (await main.getAttribute('data-lens-at'))!.split(',').map(Number);
+  expect(x1 - x0, 'the lens did not follow the finger').toBeGreaterThan(30);
   await touch('touchEnd', 0, 0);
-  await expect(main).toHaveAttribute('data-lens', 'off');
-  await page.waitForTimeout(200);
-  expect(await frames(), 'lifting the held finger threw the dots').toBe(held);
-
-  // A tap still bursts.
-  await page.touchscreen.tap(box.x + box.width * 0.3, box.y + box.height * 0.8);
-  await expect(page.locator('.hero-dots')).toHaveAttribute('data-flight', 'moving');
+  await expect(main).toHaveAttribute('data-pinned', 'true');
+  await expect(main).toHaveAttribute('data-lens', 'on');
+  // Nothing moved: a finger on the graph moves no square.
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   await ctx.close();
 });
 

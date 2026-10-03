@@ -120,7 +120,6 @@
      (>=3:1, and 3.9 at the dots' 0.9 opacity), everyone else is context (1.5-2.5:1), and a trend
      line clears 3:1. Light: 5.87 / 4.38 / 2.07 / 3.32. */
   --mark-self: var(--mantine-color-accent-7);
-  --dot-ink: var(--mantine-color-accent-6);
   --mark-peer-same-school: var(--mantine-color-pos-7);
   --mark-peer: #aab2b8;
   /* Each dot's 1px edge (ChartDot): the population's at 3.8:1, so every person is a mark a reader can see
@@ -130,6 +129,12 @@
   /* Words on the person's own colour (their name's pill): white on accent-7, 7.2:1. */
   --mark-self-on: #ffffff;
   /* The inverse of the page, for what a pointer calls up over a chart (a readout): ink with white words. */
+  /* The landing strata (mockup 3a): a filter's faded squares, a search's own, and the lens's glass. */
+  --strata-dim: #dde3e6;
+  --strata-match: #0e4c5c;
+  --lens-bg: #ffffff;
+  --lens-rim: rgba(18, 23, 26, 0.16);
+  --lens-shadow: rgba(18, 23, 26, 0.22);
   --inverse-bg: #16191d;
   --inverse-ink: #ffffff;
   --inverse-edge: transparent;
@@ -165,7 +170,6 @@
      edgeless, so it is never mistaken for a middle-50% band. One definition for both schemes, because
      --guide-strong already is one per scheme. */
   --fit-band: color-mix(in srgb, var(--guide-strong) 16%, transparent);
-
 
   /* Appointment lanes on the person history table. Deliberately NOT from the semantic ramp: orange
      is `warn` and red is `down` (see SEMANTIC in theme.ts), so a lane painted in either would read as
@@ -432,7 +436,6 @@ body {
   --series-accent: #4f93a4;
   /* Chart marks on the #141619 card: 5.22 / 4.14 / 2.22 / 5.46 (see :root). */
   --mark-self: var(--mantine-color-accent-5);
-  --dot-ink: var(--mantine-color-accent-5);
   --mark-peer-same-school: var(--mantine-color-pos-7);
   --mark-peer: #4a5056;
   /* 3.8:1 and 6.5:1 on the card: an edge goes lighter on a dark ground, as a light one goes darker. */
@@ -441,6 +444,12 @@ body {
   /* On dark's lighter accent-5, the page's near-black: 5.7:1. */
   --mark-self-on: var(--base);
   /* An ink pill on a near-black page would vanish: the readout floats on the raised surface, edged. */
+  /* Faded squares a step off the card; a search's own lit, as a lone square still clears 3:1 on it. */
+  --strata-dim: #2a2f34;
+  --strata-match: #6cc1d5;
+  --lens-bg: var(--surface-raised);
+  --lens-rim: rgba(255, 255, 255, 0.16);
+  --lens-shadow: rgba(0, 0, 0, 0.55);
   --inverse-bg: var(--surface-raised);
   --inverse-ink: var(--mantine-color-text);
   --inverse-edge: var(--hairline-strong);
@@ -564,7 +573,6 @@ html[data-tray] .app-footer { padding-bottom: calc(var(--mantine-spacing-md) + v
   .release-tag-ranges { display: none; }
 }
 
-
 /* The card treatment: a hairline, and nothing else. Paper/Card take their border from
    `--paper-border-color` (Mantine's gray-3), not from `--mantine-color-default-border`, so the ramp
    only reaches a card through this rule.
@@ -582,7 +590,6 @@ html[data-tray] .app-footer { padding-bottom: calc(var(--mantine-spacing-md) + v
 .mantine-Title-root[data-order='1'] { letter-spacing: -0.03em; }
 .mantine-Title-root[data-order='2'] { letter-spacing: -0.02em; }
 .mantine-Title-root[data-order='3'] { letter-spacing: -0.01em; }
-
 
 /* Every link keeps its underline (theme.ts: WCAG 1.4.1 — in a sentence, colour alone does not say
    "link"), but a quieter one: a pixel, clear of the descenders, in part of the link's own colour, and
@@ -1615,43 +1622,6 @@ button:active,
    The panel also does a plain compositional job: the chart used to float on the page with no edges
    while the search box directly beneath it sat in a bordered field, so the two read as unrelated
    objects at the same width. */
-/* The hover readout's ±$5k footprint. Glass by the app's own rule — it floats over content (the
-   curve) rather than sitting beside other chrome, which is the one case where backdrop-filter has
-   something with structure to frost. The blur is deliberately light: at 3px the curve stays
-   readable THROUGH the band, which is the whole point of showing a width instead of a line. */
-.hero-dist-band {
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--mantine-color-accent-6) 16%, transparent);
-  backdrop-filter: blur(3px) saturate(1.25);
-  -webkit-backdrop-filter: blur(3px) saturate(1.25);
-  border-left: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
-  border-right: 1px solid color-mix(in srgb, var(--mantine-color-accent-7) 55%, transparent);
-  box-shadow: inset 0 1px 0 var(--glass-sheen);
-  /* Solid at the two edges, nothing at all in the middle.
-     The edges are the information — they are where ±$5k actually falls — and the middle is where
-     the reader is pointing, so frosting it was working against the band's own purpose: it softened
-     the exact spikes the pointer had picked out. A MASK rather than a gradient background, because
-     the mask fades the whole rendering — the tint, the inset sheen, and the backdrop blur together.
-     A gradient background alone would leave the blur covering the middle at full strength, which is
-     the part that actually obscured the curve. The borders sit at 0% and 100%, where the mask is
-     fully opaque, so they stay crisp. */
-  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 10%, transparent 44%, transparent 56%, #000 90%, #000 100%);
-  mask-image: linear-gradient(to right, #000 0%, #000 10%, transparent 44%, transparent 56%, #000 90%, #000 100%);
-}
-/* Same fallback pair every other glass surface carries: without a backdrop-filter the tint alone
-   has to carry the band, so it goes up enough to read on its own. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .hero-dist-band {
-    background: color-mix(in srgb, var(--mantine-color-accent-6) 26%, transparent);
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .hero-dist-band {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: color-mix(in srgb, var(--mantine-color-accent-6) 28%, transparent);
-  }
-}
 
 /* One glass, worn by anything that floats over the page.
    Extracted from `.hero-dist`, which was the only surface with it and is now simply the first
@@ -2318,15 +2288,8 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   border-left: 2px solid var(--hairline-strong);
 }
 
-/* Dots, one per person (DotField). On the landing page they take the accent, lighter in dark mode so a
-   lone dot still clears 3:1 against the card at the alpha it is drawn with; in a person's peer strip
-   they take the population's greys, the same-school peers their own. */
-.hero-dots, .hero-dots-over { color: var(--dot-ink); }
-/* The plot, a break, and the pile of people above the cap, sharing one baseline. */
-.hero-dist-row { display: flex; align-items: flex-end; }
 .hero-dist-main { flex: 1 1 0; min-width: 0; }
-.hero-dist-break { flex: 0 0 var(--pile-gap); }
-.hero-dist-pile { flex: 0 0 var(--pile-w); }
+
 /* The panel's controls ("All · By employment type"): over its top-right corner, in the clear band
    above the curve's peak; on a phone, a row of their own above the plot, where the corner has no room. */
 .hero-dist-wrap { position: relative; }
@@ -2377,6 +2340,79 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 /* The plot is a slider for the keyboard: a ring when a keyboard brings focus to it, none for a click. */
 .hero-dist-main:focus { outline: none; }
 .hero-dist-main:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 4px; border-radius: 4px; }
+
+/* ── The landing strata (mockup 3a, components/strata) ── */
+/* The toolbar over the plot, in the flow: what is shown (or the filter's chip) at left, the buttons at right. */
+.strata .strata-toolbar { position: static; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; min-height: 28px; }
+/* One line, always this tall: the count, or a filter's chip in its place, ellipsised rather than wrapped —
+   putting a filter on must never move the plot. */
+.strata-toolbar-left { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; height: 28px; }
+/* Full page the search box leads the line and keeps the room; the chip takes what is left. On a phone the box
+   and its strip have lines of their own, and the chip shares the last with the buttons. */
+.strata.hero-dist-full .hero-dist-controls > .strata-toolbar-left { flex: 0 1 auto; min-width: 0; max-width: 42%; }
+@media screen and (max-width: 30em) {
+  .strata.hero-dist-full .hero-dist-controls > .strata-toolbar-left { flex: 1 1 0; max-width: none; }
+}
+.strata-toolbar-right { flex: none; display: flex; align-items: center; gap: 6px; }
+.strata-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strata-chip {
+  display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 28px; box-sizing: border-box;
+  padding: 0 2px 0 10px; border-radius: var(--mantine-radius-xl);
+  background: var(--tint-accent); border: 1px solid var(--tint-accent-strong);
+  font-size: var(--mantine-font-size-xs); color: var(--mantine-color-text);
+}
+.strata-chip > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-right: 6px; }
+.strata-chip[data-pending] { color: var(--mantine-color-dimmed); }
+/* A page scrolls under a finger on the plot; full page there is nothing to scroll. */
+.strata-plot { touch-action: pan-y; }
+/* The pins: a label each in one of three rows over the skyline, its line down to its column. */
+.strata-pin {
+  position: absolute; font-size: var(--mantine-font-size-xs); line-height: 15px; font-weight: 600; color: var(--mantine-color-dimmed);
+  white-space: nowrap; pointer-events: none; transition: left var(--dur-base) var(--ease), top var(--dur-base) var(--ease);
+}
+.strata-pin[data-strong] { font-weight: 700; color: var(--text-accent); }
+.strata-pin[data-filter] { font-weight: 700; }
+.strata-pin-line { stroke: var(--guide-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.strata-pin-median { stroke: var(--mantine-color-accent-6); stroke-width: 1.5; stroke-dasharray: none; }
+.strata-pin-filter { stroke-width: 1.5; stroke-dasharray: none; }
+.strata-baseline { stroke: var(--hairline-strong); stroke-width: 1; }
+.strata-break { stroke: var(--guide); stroke-width: 1; fill: none; }
+/* Under the baseline: the middle half of pay as a bar, the median a tick on it; then the salary axis. */
+.strata-ruler { position: relative; height: 9px; margin-top: 3px; }
+.strata-iqr { position: absolute; top: 2px; height: 4px; border-radius: 2px; background: var(--tint-accent-strong); }
+.strata-iqr-median { position: absolute; top: 0; width: 1.5px; height: 7px; margin-left: -0.75px; background: var(--mantine-color-accent-6); }
+.strata-axis { height: 18px; margin-top: 1px; }
+.strata-axis .hero-dist-tick,
+.strata-axis .hero-dist-pile-label {
+  position: absolute; top: 0; font-size: var(--mantine-font-size-xs); line-height: 18px; font-weight: 500;
+  color: var(--text-faint); white-space: nowrap;
+}
+.strata-axis .hero-dist-tick { transform: translateX(-50%); }
+.strata-axis .hero-dist-pile-label { right: 0; }
+@media (prefers-reduced-motion: reduce) { .strata-pin { transition: none; } }
+/* The lens's readout over it, and the card for the square under the pointer beside it. */
+.strata-readout { position: absolute; z-index: var(--z-local, 2); pointer-events: none; white-space: nowrap; }
+.strata-card {
+  position: absolute; z-index: var(--z-local, 2); box-sizing: border-box; padding: 10px 12px; border-radius: 12px;
+  background: var(--surface-raised); box-shadow: 0 0 0 1px var(--hairline), 0 12px 32px rgba(18, 23, 26, 0.18);
+}
+.strata-card-name { font-size: var(--mantine-font-size-sm); font-weight: 700; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strata-card-title { font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed); line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.strata-card-pay { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; font-size: var(--mantine-font-size-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
+.strata-card-change {
+  font-size: var(--mantine-font-size-xxs); font-weight: 600; padding: 1px 6px; border-radius: var(--mantine-radius-xl);
+  color: var(--text-neg); background: color-mix(in srgb, var(--text-neg) 10%, transparent);
+}
+.strata-card-change[data-up] { color: var(--text-pos); background: color-mix(in srgb, var(--text-pos) 10%, transparent); }
+.strata-card-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed); white-space: nowrap; overflow: hidden; }
+.strata-card-rank { font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.strata-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.strata-card-foot { margin-top: 6px; font-size: var(--mantine-font-size-xxs); color: var(--text-faint); }
+/* The legend's types: a square each, the count and median in the faint grey; the one isolated, tinted. */
+.strata-legend .hero-dist-swatch { border-radius: 2px; background-image: none; }
+.strata-legend-meta { color: var(--text-faint); }
+.strata-legend .hero-dist-legend-lead { flex-basis: 100%; text-align: center; }
+button.strata-legend-item[aria-pressed='true'] { background: var(--tint-accent); box-shadow: inset 0 0 0 1px var(--mantine-color-accent-6); }
 /* On a phone the legend keeps each category's count and leaves its median to wider screens: five
    medians made it five lines long. */
 @media screen and (max-width: 30em) {
@@ -2600,13 +2636,6 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   opacity: 0;
   transition-duration: 0s;
 }
-/* The finishing sheen: when a rain has landed, one soft band of light crosses the mountain once, left to
-   right. Travel in the plot's own units (its viewBox is 1000 wide); gone under Reduce Motion, where there
-   is no rain to finish anyway. */
-.hero-dist-sheen { animation: hero-sheen 700ms cubic-bezier(0.4, 0, 0.3, 1) 1 forwards; }
-:root[data-mantine-color-scheme='light'] .hero-dist-sheen { opacity: 0.8; }
-@keyframes hero-sheen { from { transform: translateX(0); } to { transform: translateX(1400px); } }
-@media (prefers-reduced-motion: reduce) { .hero-dist-sheen { display: none; } }
 /* The filters in force, between the box and its results: filled where a result chip is outlined, so what
    is on reads apart from what could be put on. Each comes off with its own ×. */
 .search-tokens { flex: none; display: flex; align-items: center; gap: 6px; max-width: 45%; min-width: 0; }
@@ -2646,42 +2675,6 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .search-token-x:hover { background: var(--mantine-color-default); color: var(--mantine-color-text); }
 .search-token-x:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 1px; }
-/* While a group is lit, the wash under the campus curve eases back to half: the one fill behind the dots
-   still at full strength, it competed with the group's own dots for the eye. The campus line stays. */
-.hero-dist-wash { transition: opacity var(--dur-base) var(--ease); }
-.hero-dist-main[data-group-count] .hero-dist-wash { opacity: 0.5; }
-@media (prefers-reduced-motion: reduce) { .hero-dist-wash { transition: none; } }
-/* The group's label, at the top of the plot where the curve never reaches: its name, how many, their
-   median and how that sits against campus, over its own dashed median line. */
-.hero-dist-group-flag {
-  z-index: var(--z-local, 2);
-  padding: 2px 8px;
-  border: 1px dashed var(--mantine-color-text);
-  border-radius: var(--mantine-radius-xs);
-  background: var(--mantine-color-body);
-  color: var(--mantine-color-text);
-  font-size: var(--mantine-font-size-xs);
-  font-weight: 600;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-}
-.hero-dist-group-flag[data-pending] { color: var(--mantine-color-dimmed); }
-/* The group's line and median over a casing: the same path, wider, in the panel's own colour, so the dashes
-   cross one quiet channel rather than every colour of dot at once (a large group, like a school of 5,840, is
-   a quarter of the field lit). Not quite solid, so the dots under it dim rather than vanish. */
-.hero-dist-group-casing {
-  stroke: var(--mantine-color-body);
-  stroke-width: var(--group-casing-w, 6px);
-  stroke-opacity: var(--group-casing-a, 0.85);
-}
-.hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: hero-group-in var(--dur-base) var(--ease); }
-@keyframes hero-group-in { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .hero-dist-group-curve, .hero-dist-group-median, .hero-dist-group-casing, .hero-dist-group-flag { animation: none; }
-}
 /* A phone's bar: the box and its starters each take a line of their own, above the buttons. A finger
    swipes the strip, so it has no "+N". Mirrored by `FULL_BAR.phone`. */
 @media screen and (max-width: 30em) {
@@ -2701,37 +2694,9 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .strip-dots { color: var(--mark-peer); }
 .strip-dots .dot-field-accent { color: var(--mark-peer-same-school); }
-/* The magnifying glass on the landing chart (FisheyeLens): the card's own surface under a thin light
-   rim and a thin dark one, a soft shadow beneath, a faint darkening toward the edge where glass bends
-   the most, and a highlight up and to the left. Over the chart's marks, under its readout pill. */
-.fisheye-lens {
-  position: absolute;
-  z-index: var(--z-content);
-  border-radius: 50%;
-  pointer-events: none;
-  box-shadow: 0 0 0 1px var(--lens-rim-outer), 0 10px 24px -6px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.12);
-}
-.fisheye-lens .dot-field-lens {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: var(--surface, var(--mantine-color-body));
-}
-.fisheye-lens::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 44% 30% at 34% 22%, var(--lens-sheen), transparent 72%),
-    radial-gradient(circle at 50% 50%, transparent 66%, rgba(0, 0, 0, 0.1) 100%);
-  box-shadow: inset 0 0 0 1.5px var(--lens-rim-inner);
-}
+
 /* The glass is the pointer while it shows. */
 .hero-dist-main[data-lens='on'] { cursor: none; }
-.hero-dist-curve-glow { stroke-opacity: var(--curve-glow); }
 
 /* Read by a screen reader, not drawn. */
 .visually-hidden {
@@ -2856,96 +2821,8 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 
 .person-reveal-tag-name { font-size: 16px; font-weight: 700; }
 .person-reveal-tag-detail { font-size: 13px; color: var(--mantine-color-dimmed); }
-
-/* The pile unrolled (routes/Home, lib/tail): its own dots hidden while the unrolled field — which starts
-   exactly where they are — carries them out; the graph's own ticks and quartile labels give way to the
-   tail's axis; a note says where the axis ends. */
-.hero-dist-pile[data-tail] .hero-dots-over { visibility: hidden; }
-/* Unrolled, there is no "and then, separately, the pile": the axis runs all the way to the top salary,
-   so the break that stands for that jump is describing a graph that is not on the screen. It goes with
-   the pile's dots and comes back as they fold home. */
-.hero-dist-break { transition: opacity var(--dur-base) var(--ease); }
-.hero-dist[data-tail='opening'] .hero-dist-break,
-.hero-dist[data-tail='open'] .hero-dist-break { opacity: 0; }
-.hero-dist-tick, .hero-dist-marker-labels { transition: opacity var(--dur-base) var(--ease); }
-.hero-dist:not([data-tail="off"]) .hero-dist-tick,
-.hero-dist:not([data-tail="off"]) .hero-dist-marker-labels { opacity: 0; }
-.hero-dist-tail-note {
-  position: absolute;
-  top: 48px;
-  right: 8px;
-  max-width: min(440px, 70%);
-  pointer-events: none;
-}
-@media (max-width: 30em) {
-  .hero-dist-tail-note { top: 8px; max-width: calc(100% - 16px); }
-}
-/* How long the unrolled pile stays open: a hairline along the foot of its note, draining left to right
-   over the wait. Deliberately quiet — it answers "how long have I got" for anyone who looks, and does
-   not ask to be looked at, which a countdown in figures or a thick bar would. */
-.hero-dist-tail-timer {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 6px;
-  height: 2px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--mantine-color-accent-6) 55%, transparent);
-  transform-origin: left center;
-  animation: tail-drain linear forwards;
-}
-@keyframes tail-drain {
-  from { transform: scaleX(1); }
-  to { transform: scaleX(0); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .hero-dist-tail-timer { display: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-dist-tick, .hero-dist-marker-labels { transition: none; }
-}
-.hero-dist-pile-toggle {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: var(--mantine-font-size-xs);
-  line-height: var(--mantine-line-height-xs, 1.4);
-  color: var(--mantine-color-dimmed);
-  cursor: pointer;
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-}
-.hero-dist-pile-toggle:hover { color: var(--mantine-color-text); }
-.hero-dist-pile-toggle:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 2px; border-radius: 2px; }
-.hero-dist-tail-edge {
-  position: absolute;
-  width: 0;
-  border-left: 1px dashed var(--mantine-color-gray-5);
-  pointer-events: none;
-}
-.hero-dist-tail-edge span {
-  position: absolute;
-  top: -18px;
-  left: 4px;
-  font-size: var(--mantine-font-size-xxs, 10px);
-  color: var(--mantine-color-dimmed);
-  white-space: nowrap;
-}
-.hero-dist-tail-top { position: absolute; width: 0; height: 0; pointer-events: none; }
-.hero-dist-tail-ring {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform: translate(-50%, -50%);
-  border: 2px solid var(--mantine-color-accent-6);
-  border-radius: 50%;
-}
-.hero-dist-tail-top-label {
-  position: absolute;
-  right: -2px;
-  bottom: 14px;
-  white-space: nowrap;
+  .hero-dist-tick { transition: none; }
 }
 
 /* The landing page (routes/Home) in two weights. The graph and the search are the page: the only things on
@@ -3009,25 +2886,6 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* Full page, who a dot is: beside the glass over the graph, beside the pile, over the pile unrolled. A
-   fixed size so it holds still as the pointer crosses dot after dot — the name and pay on one line, then
-   the title, then the school, each cut short rather than let the caption grow. */
-.hero-lens-who { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 4px 10px; box-sizing: border-box; overflow: hidden; }
-.hero-lens-who-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.hero-lens-who-name { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hero-lens-who-pay { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.hero-lens-who-detail { font-size: 11.5px; line-height: 1.3; color: var(--mantine-color-dimmed); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Full page on a phone, the nudge that says a dot can be held to see who it is: over the top of the plot,
-   once a visit (Home `HOLD_HINT_KEY`), gone when the reader holds one or after a few seconds. It is the
-   only way to find the glass without a pointer to move. */
-.hero-hold-hint {
-  position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
-  z-index: var(--z-local); pointer-events: none; white-space: nowrap;
-  padding: 4px 10px; font-size: var(--mantine-font-size-xs);
-  animation: hold-hint-in var(--dur-base) var(--ease) both;
-}
-@keyframes hold-hint-in { from { opacity: 0; transform: translate(-50%, -4px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (prefers-reduced-motion: reduce) { .hero-hold-hint { animation: none; } }
 /* Full page, the bar's results: a list under the box, over the graph only while the box is in use
    (SearchBox `bar`); it goes when the reader turns back to the graph, the query and its marks staying.
    Placed and sized by the box (`listPlace`): under its left edge, no wider than the panel and no taller than
