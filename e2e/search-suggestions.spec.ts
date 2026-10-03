@@ -161,7 +161,6 @@ test.describe('at 2x', () => {
     await expect(row).toBeVisible({ timeout: 60_000 });
     await row.hover();
     await expect(dots(page)).toHaveAttribute('data-lit', await mainPrint(who), { timeout: 60_000 });
-    await expect(main(page)).toHaveAttribute('data-sink', 'off');
     await page.waitForTimeout(300);
     const match = await colour('--strata-match'), dim = await colour('--strata-dim');
     const mineNow = await paint(mine), restNow = await paint(rest);

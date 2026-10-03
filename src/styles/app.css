@@ -2389,6 +2389,28 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 }
 .strata-axis .hero-dist-tick { transform: translateX(-50%); }
 .strata-axis .hero-dist-pile-label { right: 0; }
+/* The pile's label is the way to unroll it and fold it back: a link-like button, in the label's own place. */
+.strata-axis .strata-pile-toggle {
+  padding: 0; border: 0; background: none; font-family: inherit; cursor: pointer; color: var(--text-accent);
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px;
+}
+.strata-axis .strata-pile-toggle:hover { text-decoration-color: currentColor; }
+.strata-axis .strata-pile-toggle:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 2px; border-radius: 3px; }
+/* The pile under the pointer, outlined as what a click unrolls. */
+.strata-pile-ring { fill: none; stroke: var(--mantine-color-text); stroke-opacity: 0.45; stroke-width: 1; }
+/* Unrolled: where the graph used to end, its label, and the top salary ringed. */
+.strata-tail-edge { stroke: var(--guide-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.strata-tail-edge-label {
+  position: absolute; font-size: var(--mantine-font-size-xs); line-height: 15px; font-weight: 600;
+  color: var(--mantine-color-dimmed); white-space: nowrap; pointer-events: none;
+}
+.strata-tail-top { fill: none; stroke: var(--mantine-color-text); stroke-width: 1.5; }
+.strata-tail-note {
+  position: absolute; right: 0; top: 0; z-index: var(--z-local, 2); max-width: min(420px, 70%); box-sizing: border-box;
+  padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); box-shadow: 0 0 0 1px var(--hairline);
+  pointer-events: none;
+}
+@media screen and (max-width: 30em) { .strata-tail-note { max-width: 62%; padding: 6px 10px; } }
 @media (prefers-reduced-motion: reduce) { .strata-pin { transition: none; } }
 /* The lens's readout over it, and the card for the square under the pointer beside it. */
 .strata-readout { position: absolute; z-index: var(--z-local, 2); pointer-events: none; white-space: nowrap; }

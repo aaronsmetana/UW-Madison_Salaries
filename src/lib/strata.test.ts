@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
-  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, squareAt, stackColumns, strataFromCounts, strataGrid, typeRanks, within,
+  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, snapReach, squareAt, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  tailColumns, typeRanks, within, type Grid,
 } from './strata';
 
 const PC = {
   lo100: 8,
   counts: [3, 0, 2, 1],
   categories: [
-    { name: 'Faculty', over: 2, counts: [1, 0, 1, 0] },
-    { name: 'Academic Staff', over: 1, counts: [2, 0, 1, 1] },
+    { name: 'Faculty', over: 2, counts: [1, 0, 1, 0], over_pays: [260_000, 410_000] },
+    { name: 'Academic Staff', over: 1, counts: [2, 0, 1, 1], over_pays: [300_000] },
   ],
 };
 
@@ -21,6 +22,12 @@ describe('strataFromCounts', () => {
     expect(s.colCount[0]).toBe(3);
     expect(s.colCount[1]).toBe(3);
     expect([...s.pileKind]).toEqual([0, 0, 1]);
+    // Each one past the cap with their own pay, in the pile's order.
+    expect([...s.pilePay!]).toEqual([260_000, 410_000, 300_000]);
+  });
+  it('leaves a pile without its pays a pile, where the counts do not carry them all', () => {
+    const cats = PC.categories.map((c, i) => (i ? { ...c, over_pays: undefined } : c));
+    expect(strataFromCounts({ ...PC, categories: cats })!.pilePay).toBeNull();
   });
   it('refuses counts whose categories do not add up', () => {
     expect(strataFromCounts({ ...PC, counts: [4, 0, 2, 1] })).toBeNull();
@@ -34,46 +41,109 @@ describe('strataFromCounts', () => {
 describe('stackColumns', () => {
   it('stacks by type rank from the floor, the same every time', () => {
     const s = strataFromCounts(PC)!;
-    const a = stackColumns(s.col, s.kind, s.key, s.rank, null, COLS);
-    const b = stackColumns(s.col, s.kind, s.key, s.rank, null, COLS);
+    const a = stackColumns(s.col, s.kind, s.key, s.rank, COLS);
+    const b = stackColumns(s.col, s.kind, s.key, s.rank, COLS);
     expect([...a.slot]).toEqual([...b.slot]);
     // Column 0: the two Academic Staff (rank 0) under the one Faculty (rank 3).
     expect(a.slot[0]).toBe(2);
     expect(new Set([a.slot[1], a.slot[2]])).toEqual(new Set([0, 1]));
   });
-  it('sinks a filter\'s people to the floor, and leaves the column as tall', () => {
-    const s = strataFromCounts(PC)!;
-    const dim = new Uint8Array([0, 1, 1, 1, 1, 1]);
-    const st = stackColumns(s.col, s.kind, s.key, s.rank, dim, COLS);
-    expect(st.slot[0]).toBe(0);
-    expect([...st.order.subarray(st.start[0], st.start[1])].length).toBe(3);
-  });
 });
 
 describe('strataGrid', () => {
-  it('is 3a\'s grid on a 1,125px plot at 2x: three a row, 1.5px apart, squares of two device pixels', () => {
-    const g = strataGrid({ colW: 4.5, rowsH: 320, peak: 572, dpr: 2 });
-    expect(g).toEqual({ per: 3, pitch: 1.5, sq: 1 });
-    expect(colHeight(572, g)).toBeLessThanOrEqual(320);
+  it('runs the lattice across a column to the hundredth of a pixel, so columns meet with no seam; rows on whole device pixels', () => {
+    // 1,654px of plot at 2x (a 1,800px window): 6.616px a column, three a row.
+    const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 2 });
+    expect(g.per).toBe(3);
+    expect(g.per * g.pitch).toBeCloseTo(6.616, 9);
+    expect(g.rowPitch * 2).toBe(Math.round(g.rowPitch * 2));
+    expect(g.gap).toBe(1);
+    expect(colHeight(576, g)).toBeLessThanOrEqual(450);
   });
   it('fits the tallest column in the room on a phone, as a solid run', () => {
     const g = strataGrid({ colW: 310 / 250, rowsH: 215, peak: 572, dpr: 3 });
     expect(colHeight(572, g)).toBeLessThanOrEqual(215);
-    expect(g.per * g.pitch).toBeLessThanOrEqual(310 / 250 + 1e-9);
+    expect(g.per * g.pitch).toBeCloseTo(310 / 250, 9);
+    expect(g.gap).toBe(0);
   });
-  it('keeps three a row on a 1x screen, where every choice is one pixel', () => {
-    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toEqual({ per: 3, pitch: 1, sq: 1 });
+  it('keeps three a row on a 1x screen, a pixel square and a pixel gap where there is room for both', () => {
+    const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 1 });
+    expect(g).toMatchObject({ per: 3, rowPitch: 2, gap: 1, sq: 1 });
+    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toMatchObject({ per: 3, rowPitch: 1, gap: 0 });
   });
   it('grows the squares full page', () => {
     const page = strataGrid({ colW: 5.2, rowsH: 320, peak: 572, dpr: 2 });
     const full = strataGrid({ colW: 5.2, rowsH: 700, peak: 572, dpr: 2 });
-    expect(full.pitch).toBeGreaterThan(page.pitch);
+    expect(full.sq).toBeGreaterThan(page.sq);
   });
-  it('places squares on the pixel grid, row by row up from the baseline', () => {
-    const g = { per: 3, pitch: 1.5, sq: 1 };
-    const left = colLeft(10, 4.5, g, 2);
-    expect(left * 2).toBe(Math.round(left * 2));
-    expect(squareAt(left, 4, 3, 1.5, 300)).toEqual({ x: left + 1.5, y: 297 });
+  it('places squares row by row up from the baseline, each column at its own share of the axis', () => {
+    const g = { pitch: 6.616 / 3, rowPitch: 2 };
+    expect(colLeft(10, 6.616)).toBeCloseTo(66.16, 9);
+    expect(squareAt(colLeft(10, 6.616), 4, 3, g, 300)).toEqual({ x: colLeft(10, 6.616) + g.pitch, y: 296 });
+  });
+});
+
+describe('squarePixels', () => {
+  /** A row of squares across many columns, as device-pixel runs: each square's width, and each gap's. */
+  const row = (g: Grid, dpr: number, y: number, cols = 60) => {
+    const runs: { w: number; gap: number }[] = [];
+    let end: number | null = null;
+    for (let c = 0; c < cols; c++) for (let k = 0; k < g.per; k++) {
+      const b = squarePixels(colLeft(c, g.pitch * g.per) + k * g.pitch, y, g, dpr);
+      if (end != null) runs[runs.length - 1].gap = b.X - end;
+      runs.push({ w: b.w, gap: 0 });
+      end = b.X + b.w;
+    }
+    runs.pop();
+    return runs;
+  };
+  it('parts every square from the next by the same gap, inside a column and between columns alike', () => {
+    for (const [colW, dpr] of [[6.616, 2], [5.204, 2], [4.1, 3]] as const) {
+      const g = strataGrid({ colW, rowsH: 450, peak: 576, dpr });
+      for (const y of [298, 300]) {
+        const runs = row(g, dpr, y);
+        expect(new Set(runs.map((r) => r.gap)), `${colW}px at ${dpr}x`).toEqual(new Set([g.gap]));
+        // A square is its pitch less the gap, or a pixel either side.
+        for (const r of runs) expect(Math.abs(r.w - g.sqW * dpr)).toBeLessThan(1);
+      }
+    }
+  });
+  it('on a 1x screen draws every square the same, and scatters the gaps a pixel wider so they never line up into a stripe', () => {
+    const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 1 });
+    const rows = Array.from({ length: 40 }, (_, r) => row(g, 1, 300 - 2 * r));
+    for (const r of rows) {
+      expect(new Set(r.map((x) => x.w))).toEqual(new Set([1]));
+      expect([...new Set(r.map((x) => x.gap))].every((n) => n === g.gap || n === g.gap + 1)).toBe(true);
+    }
+    expect(rows[0].filter((x) => x.gap > g.gap).length, 'no gap is wider, so nothing here is tested').toBeGreaterThan(5);
+    // In how many rows each place along the lattice is followed by a wider gap: lined up, some would be in every row.
+    const share = rows[0].map((_, k) => rows.filter((r) => r[k].gap > g.gap).length / rows.length);
+    expect(Math.max(...share)).toBeLessThan(0.5);
+  });
+  it('is the same rows on a 2x screen, where a pixel either side is a small part of a square', () => {
+    const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 2 });
+    expect(row(g, 2, 300).map((r) => r.w)).toEqual(row(g, 2, 296).map((r) => r.w));
+  });
+});
+
+describe('tailColumns', () => {
+  it('puts each of the pile\'s people in the lattice column their own pay falls in', () => {
+    // An axis to $3M across 1,500px: $2,000 a px; two px a column.
+    expect([...tailColumns([250_000, 251_000, 3_000_000], 1500 / 3_000_000, 2)]).toEqual([62, 62, 750]);
+  });
+});
+
+describe('snapReach', () => {
+  it('names the one under the pointer where people crowd, and reaches across the lens where a filter leaves a few', () => {
+    // A lens of 76px over the crowded middle: a few thousand people in it, about two px apart.
+    expect(snapReach(3700, 76, 1.5)).toBeLessThan(6);
+    expect(snapReach(3700, 76, 1.5)).toBeGreaterThanOrEqual(1.5);
+    // Up to twenty of a filter's people in it: anywhere in the lens.
+    expect(snapReach(2, 76, 1.5)).toBe(76);
+    expect(snapReach(20, 76, 1.5)).toBeGreaterThan(70);
+    // Thinner, further.
+    expect(snapReach(40, 76, 1.5)).toBeGreaterThan(snapReach(400, 76, 1.5));
+    expect(snapReach(0, 76, 1.5)).toBe(0);
   });
 });
 

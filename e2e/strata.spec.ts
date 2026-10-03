@@ -1,4 +1,4 @@
-import { test, expect, type Browser, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { oracle, PAY } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
@@ -6,9 +6,11 @@ import { parseColor, flatten, contrast } from './color';
 
 /**
  * The landing graph as strata (mockup 3a, components/strata): one square per person in $1k columns, stacked
- * from the baseline by employment type; a lens that magnifies where the pointer is and names the square under
- * it; a type isolated from the legend, its people sunk to the floor. Who is where is checked against the data
- * through the same indexing the search's marks use (homeDots `spots`), each rule restated here.
+ * from the baseline by employment type, on one even lattice with no seam between columns; a lens that
+ * magnifies where the pointer is and names the square under it, reaching further where the people it can name
+ * are few; a type isolated from the legend, lit where its people stand. Who is where is checked against the
+ * data through the same indexing the search's marks use (homeDots `spots`), each rule restated here. The pile
+ * past the cap, and its unrolling, are strata-tail.spec's.
  */
 
 const SNAP = HOME_STATS.snapshot_id;
@@ -75,7 +77,7 @@ test('each column stands its own people from the baseline up, a few a row, stack
   const pts = await placesOf(page, 'main');
   const slots = await slotsOf(page, 'main');
   const per = Number(await field(page).getAttribute('data-per'));
-  const pitch = Number(await field(page).getAttribute('data-pitch'));
+  const rowPitch = Number(await field(page).getAttribute('data-row-pitch'));
   // A column is $1k: every square of column c lies in its own share of the axis, before the next one's.
   const lefts = new Map<number, number>();
   for (let i = 0; i < main.length; i++) {
@@ -94,7 +96,7 @@ test('each column stands its own people from the baseline up, a few a row, stack
     expect(ranks, `column ${c} is not stacked by type`).toEqual([...ranks].sort((a, b) => a - b));
     // Up a row every `per` squares.
     const y0 = pts[2 * bySlot[0] + 1];
-    bySlot.forEach((i, k) => expect(Math.abs(pts[2 * i + 1] - (y0 - Math.floor(k / per) * pitch))).toBeLessThan(0.01));
+    bySlot.forEach((i, k) => expect(Math.abs(pts[2 * i + 1] - (y0 - Math.floor(k / per) * rowPitch))).toBeLessThan(0.01));
   }
   // Each square in its type's ink: a few of each, read off the canvas at their centres.
   const inkOf: Record<string, string> = { 'Academic Staff': '--cat-academic', 'University Staff': '--cat-university', Faculty: '--cat-faculty', 'Employees in Training': '--cat-training', Limited: '--cat-limited' };
@@ -191,14 +193,55 @@ test('the lens names the square under the pointer: who, their title, pay and its
   await expect(card.locator('.strata-card-rank')).toHaveText(`${ordinal(pct)} percentile · #${num(rank)} of ${num(rows.length)}`);
 });
 
-test('the lens names a square in the pile past the cap, and says how many are there', async ({ page }) => {
-  await home(page);
-  await pointAt(page, 0.995, 0.97);
-  const [f] = (await plot(page).getAttribute('data-pick'))!.split(':');
-  expect(f).toBe('pile');
-  const total = (await people()).length;
-  await expect(page.locator('.strata-readout')).toHaveText(`${num(OVER)} at ${fmtK(CAP)} or more · the top ${((OVER / total) * 100).toFixed(1)}%`);
-});
+/**
+ * No seam: across the crowded floor, from one column into the next, no dark line runs down between the squares
+ * — read off the canvas a device pixel at a time, where one once fell between every $1k column. On a 2x screen
+ * every gap is the same; on a 1x one a gap is now and then a pixel wider, and those never line up down the rows.
+ */
+for (const dpr of [1, 2]) {
+  test(`the squares lie on one even lattice, with no seam down between the columns (${dpr}x)`, async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 1800, height: 1260 }, deviceScaleFactor: dpr });
+    const page = await ctx.newPage();
+    await home(page);
+    const f = field(page);
+    const gap = Number(await f.getAttribute('data-gap'));
+    const base = Number(await f.getAttribute('data-base')), rowPitch = Number(await f.getAttribute('data-row-pitch'));
+    const colW = Number(await f.getAttribute('data-col-w'));
+    expect(gap, 'no gap at this size, so nothing here is tested').toBeGreaterThan(0);
+    // The bottom twenty rows, from $55k to $115k, where every column stands taller than that: each gap's width,
+    // and where the wider ones fall.
+    const rows = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement, a) => {
+      const k = c.width / c.getBoundingClientRect().width;
+      const ctx = c.getContext('2d')!;
+      const x0 = Math.round(55 * a.colW * k), x1 = Math.round(115 * a.colW * k);
+      const out: { runs: number[]; wide: number[] }[] = [];
+      for (let r = 0; r < 20; r++) {
+        // A row's squares start at the top of its cell; its gap is at the bottom.
+        const y = Math.round((a.base - (r + 1) * a.rowPitch) * k);
+        const d = ctx.getImageData(x0, y, x1 - x0, 1).data;
+        const row = { runs: [] as number[], wide: [] as number[] };
+        let dark = 0, inked = false;
+        for (let i = 0; i < x1 - x0; i++) {
+          if (d[4 * i + 3] === 0) { dark++; continue; }
+          if (inked && dark) { row.runs.push(dark); if (dark > a.gap) row.wide.push(i - 1); }
+          inked = true;
+          dark = 0;
+        }
+        out.push(row);
+      }
+      return out;
+    }, { colW, base, rowPitch, gap });
+    const runs = rows.flatMap((r) => r.runs);
+    expect(runs.length, 'no gaps found, so nothing here is tested').toBeGreaterThan(2000);
+    expect(Math.max(...runs), 'a gap two pixels wider than the rest').toBeLessThanOrEqual(gap + (dpr === 1 ? 1 : 0));
+    // Down the rows, how often each pixel across is the end of a wider gap: lined up into a seam, every row.
+    const at = new Map<number, number>();
+    for (const r of rows) for (const x of r.wide) at.set(x, (at.get(x) ?? 0) + 1);
+    const worst = Math.max(0, ...at.values()) / rows.length;
+    expect(worst, 'wider gaps line up down the rows into a dark line').toBeLessThan(0.5);
+    await ctx.close();
+  });
+}
 
 test('the lens follows a mouse with the cursor put away, magnifies what is under it, and goes when the pointer leaves', async ({ page }) => {
   await home(page);
@@ -254,65 +297,118 @@ test('the readout counts everyone within ±$5k of the lens and says where that p
   await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * 1000)} · ${num(near)} people within ±$5k · ${ordinal(pct)} percentile`);
 });
 
-test('isolating a type sinks its people to the floor of every column, leaves the skyline as it was, and lights exactly them', async ({ page }) => {
+test('isolating a type lights its people where they stand, moves no one, and the lens names only them', async ({ page }) => {
   await home(page);
   const { main, pile } = await byIndex();
-  const tallBefore = await placesOf(page, 'main');
-  const top = (pts: number[]) => { const m = new Map<number, number>(); for (let i = 0; i < main.length; i++) m.set(main[i].col, Math.min(m.get(main[i].col) ?? Infinity, pts[2 * i + 1])); return m; };
+  const before = await placesOf(page, 'main');
+  const frames = () => page.evaluate(() => performance.getEntriesByName('strata-frame').length);
+  const f0 = await frames();
   await page.getByRole('button', { name: /^Faculty/ }).click();
-  await expect(plot(page)).toHaveAttribute('data-sink', 'on');
-  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 5_000 });
   const print = (list: { cat: string }[]) => { let n = 0, s = 0, q = 0; list.forEach((p, i) => { if (p.cat === 'Faculty') { n++; s += i; q += i * i; } }); return `${n}:${s}:${q}`; };
   await expect(field(page)).toHaveAttribute('data-lit', print(main));
   await expect(field(page)).toHaveAttribute('data-pile-lit', print(pile));
-  const slots = await slotsOf(page, 'main');
-  const cols = new Map<number, number[]>();
-  for (let i = 0; i < main.length; i++) cols.set(main[i].col, [...(cols.get(main[i].col) ?? []), i]);
-  for (const [c, idx] of cols) {
-    const fac = idx.filter((i) => main[i].cat === 'Faculty').map((i) => slots[i]);
-    const rest = idx.filter((i) => main[i].cat !== 'Faculty').map((i) => slots[i]);
-    if (fac.length && rest.length) expect(Math.max(...fac), `column ${c}: a Faculty square stands over someone else`).toBeLessThan(Math.min(...rest));
-  }
-  expect(top(await placesOf(page, 'main')), 'the skyline changed').toEqual(top(tallBefore));
+  await page.waitForTimeout(300);
+  expect(await placesOf(page, 'main'), 'a square moved').toEqual(before);
+  expect(await frames(), 'the squares were set moving').toBe(f0);
   // The chip says how many and where their median sits, from the artifact's own figures for the type.
   const cat = categories.find((x) => x.name === 'Faculty') as unknown as { n: number; median: number };
   const gap = (100 * (cat.median - HOME_STATS.p50)) / HOME_STATS.p50;
   await expect(page.locator('.strata-chip')).toContainText(`Faculty · ${num(cat.n)} people · median ${fmtK(cat.median)} · ${Math.round(gap)}% above campus`);
-  // Under a filter the lens names only its people: pointed at the floor, where they now stand, a Faculty
-  // member; pointed high in the crowded middle, where everyone is someone else, no one.
-  await pointAt(page, 0.75, 0.993);
-  const [f, i] = (await plot(page).getAttribute('data-pick'))!.split(':') as [Field, string];
-  expect((f === 'main' ? main : pile)[Number(i)].cat).toBe('Faculty');
+  // Under a filter the lens names only its people: wherever it is pointed, a Faculty member or no one — never
+  // someone the filter fades. Low over the crowded floor, where the bands under Faculty stand, it still finds one.
   const pb = (await plot(page).boundingBox())!;
-  await page.mouse.move(pb.x + pb.width * 0.24, pb.y + pb.height * 0.82, { steps: 4 });
-  await expect(plot(page)).toHaveAttribute('data-lens', 'on');
-  await page.waitForTimeout(500);
-  expect(await plot(page).getAttribute('data-pick'), 'the lens named someone the filter fades').toBeNull();
-  // Pressed again, everyone is back where they were.
+  let named = 0;
+  for (const [fx, fy] of [[0.75, 0.97], [0.24, 0.82], [0.3, 0.97], [0.5, 0.9], [0.62, 0.95]]) {
+    await page.mouse.move(pb.x + pb.width * fx, pb.y + pb.height * fy, { steps: 4 });
+    await page.waitForTimeout(400);
+    const at = await plot(page).getAttribute('data-pick');
+    if (!at) continue;
+    named++;
+    const [f, i] = at.split(':') as [Field, string];
+    expect((f === 'main' ? main : pile)[Number(i)].cat, `pointed at ${fx}, ${fy}`).toBe('Faculty');
+  }
+  expect(named, 'the lens named no one anywhere, so nothing here is tested').toBeGreaterThan(1);
+  // Pressed again, everyone is as they were.
   await page.mouse.move(0, 0);
   await page.getByRole('button', { name: /^Faculty/ }).click();
   await expect(field(page)).not.toHaveAttribute('data-lit', /./);
-  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 5_000 });
-  expect(await placesOf(page, 'main')).toEqual(tallBefore);
+  expect(await placesOf(page, 'main')).toEqual(before);
 });
 
-test('a re-stack moves in frames inside the frame budget, and not at all under reduced motion', async ({ browser }) => {
-  const run = async (b: Browser, reduce: boolean) => {
-    const ctx = await b.newContext({ reducedMotion: reduce ? 'reduce' : 'no-preference' });
-    const page = await ctx.newPage();
-    if (!reduce) await atCiPace(page);
-    await home(page);
-    const f0 = await page.evaluate(() => performance.getEntriesByName('strata-frame').length);
-    await page.getByRole('button', { name: /^University Staff/ }).click();
-    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 5_000 });
-    const frames = await page.evaluate((f0) => performance.getEntriesByName('strata-frame').slice(f0).map((e) => e.duration).sort((a, b) => a - b), f0);
-    await ctx.close();
-    return frames;
-  };
-  const moving = await run(browser, false);
-  expect(moving.length).toBeGreaterThan(5);
-  expect(moving[Math.floor(moving.length / 2)]).toBeLessThan(FRAME_MS);
-  expect(await run(browser, true), 'squares moved under reduced motion').toEqual([]);
+/**
+ * Lit where they stand, a filter's people are scattered through the faded field; on a 1x screen a square is a
+ * pixel, a speck. So under a filter each of them is drawn at least three pixels each way: read off the canvas
+ * round a Faculty member who is the only one in their column.
+ */
+test('under a filter, each of its people is drawn big enough to see on a 1x screen', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 1800, height: 1260 }, deviceScaleFactor: 1 });
+  const page = await ctx.newPage();
+  await home(page);
+  const { main } = await byIndex();
+  const perCol = new Map<number, number[]>();
+  main.forEach((p, i) => { if (p.cat === 'Faculty') perCol.set(p.col, [...(perCol.get(p.col) ?? []), i]); });
+  const alone = [...perCol.entries()].filter(([c, idx]) => idx.length === 1 && c > 20 && c < 200).map(([, idx]) => idx[0]);
+  expect(alone.length, 'no Faculty member alone in a column').toBeGreaterThan(2);
+  await page.getByRole('button', { name: /^Faculty/ }).click();
+  await expect(field(page)).toHaveAttribute('data-lit', /^\d+:/);
+  await page.waitForTimeout(300);
+  const pts = await placesOf(page, 'main');
+  const ink = parseColor(await page.evaluate(() => { const s = document.createElement('span'); document.body.appendChild(s); s.style.color = 'var(--cat-faculty)'; const c = getComputedStyle(s).color; s.remove(); return c; }));
+  const counts = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement, a) => {
+    const ctx = c.getContext('2d')!;
+    return a.at.map(([x, y]) => {
+      const d = ctx.getImageData(Math.round(x) - 2, Math.round(y) - 2, 5, 5).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (Math.hypot(d[i] - a.ink[0], d[i + 1] - a.ink[1], d[i + 2] - a.ink[2]) < 6) n++;
+      return n;
+    });
+  }, { at: alone.slice(0, 6).map((i) => [pts[2 * i], pts[2 * i + 1]]), ink });
+  for (const n of counts) expect(n, 'a lit square is a speck').toBeGreaterThanOrEqual(9);
+  await ctx.close();
+});
+
+/**
+ * The lens's reach follows how many it could name there: with no filter, pointed at the sky well above the
+ * skyline, where the nearest of thousands is far below, it names no one; with a search that lights one person,
+ * pointed well off them inside the lens, it names them all the same.
+ */
+test('the lens names no one in the empty sky, and reaches across itself for the one lit person in view', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await home(page);
+  const pb = (await plot(page).boundingBox())!;
+  // The sky: 45px over the short columns of the long right tail at $200k — with a few hundred of them low in the
+  // lens, but the nearest well off the pointer.
+  const all = await placesOf(page, 'main');
+  const { main: who } = await byIndex();
+  let top = Infinity, cx = 0;
+  for (let i = 0; i < who.length; i++) if (who[i].col === 200) { top = Math.min(top, all[2 * i + 1]); cx = all[2 * i]; }
+  await page.mouse.move(pb.x + cx, pb.y + top - 45, { steps: 4 });
+  await expect(plot(page)).toHaveAttribute('data-lens', 'on');
+  await page.waitForTimeout(500);
+  expect(await plot(page).getAttribute('data-pick'), 'the lens named someone far below it in the empty sky').toBeNull();
+  // Someone whose name no one else's contains, paid in the crowded middle.
+  const rows = await people();
+  const at = await spots();
+  const names = await oracle<{ key: string; name: string }>(
+    `SELECT person_key AS "key", lower(first_name || ' ' || last_name) AS "name" FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY 1, 2 ORDER BY 1`,
+  );
+  const pay = new Map(rows.map((r) => [r.person_key, r.pay]));
+  const lone = names.find((n) => n.name.length >= 14 && (pay.get(n.key) ?? 0) > 70_000 && (pay.get(n.key) ?? 0) < 120_000
+    && at.get(n.key)?.field === 'main' && names.filter((o) => o.name.includes(n.name)).length === 1);
+  expect(lone, 'no one with a name of their own to search for').toBeTruthy();
+  const i = at.get(lone!.key)!.index;
+  const box = page.getByRole('combobox', { name: /Search a person/ });
+  await box.fill(lone!.name);
+  await expect(field(page)).toHaveAttribute('data-lit', `1:${i}:${i * i}`, { timeout: 60_000 });
+  await page.waitForTimeout(400);
+  // Pointed about 40px up and to the left of their square: inside the lens, well off them. (Typing scrolled
+  // the box into view: the plot is measured again.)
+  const pts = await placesOf(page, 'main');
+  const nb = (await plot(page).boundingBox())!;
+  const x = nb.x + pts[2 * i] - 28, y = nb.y + pts[2 * i + 1] - 28;
+  await page.mouse.move(x - 20, y);
+  await page.mouse.move(x, y, { steps: 4 });
+  await expect(plot(page)).toHaveAttribute('data-pick', `main:${i}`, { timeout: 5_000 });
 });
 
 test('the keyboard walks the lens a column at a time, and Escape puts it away', async ({ page }) => {

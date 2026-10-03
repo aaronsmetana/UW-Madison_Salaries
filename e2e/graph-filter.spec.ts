@@ -1,14 +1,13 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
-import { HOME_STATS, spots, plotShape, barOverPlot, places, people, slots } from './homeDots';
-import { atCiPace, FRAME_MS } from './pace';
+import { HOME_STATS, spots, plotShape, barOverPlot, places, people } from './homeDots';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /**
  * Full page, the bar filters the graph by a title, a school, or a title within a school: that group's squares
- * stay lit and sink to the floor of their columns, the rest fade, a pin marks the group's median, and the
+ * stay lit where they stand, the rest fade, nobody moves, a pin marks the group's median, and the
  * toolbar's chip says how many they are and how their median sits against campus. Everything here is checked
  * against the data directly — who is covered, which squares are theirs, their median, the words for the gap —
  * each restated from its rule rather than taken from the page's code.
@@ -219,7 +218,7 @@ async function moveOnto(page: Page, row: Locator) {
 
 /**
  * Pointing at a suggested title or division shows its group where they stand: its squares lit and the rest
- * faded, none moved, and the chip naming it. Only choosing it (full page) sinks them to the floor.
+ * faded, none moved, and the chip naming it.
  */
 test('every suggested title and division lights its people where they stand when pointed at, and names them', async ({ page }) => {
   test.setTimeout(180_000);
@@ -230,6 +229,7 @@ test('every suggested title and division lights its people where they stand when
   await box.click();
   const rows = page.locator('[data-suggestions] [role="option"]');
   await expect(rows).toHaveCount(6, { timeout: 60_000 });
+  const was = await places(page, '.hero-dots', 'main');
   for (let i = 0; i < 6; i++) {
     const row = rows.nth(i);
     const name = ((await row.locator('p, .mantine-Text-root').first().textContent()) ?? '').trim();
@@ -237,44 +237,13 @@ test('every suggested title and division lights its people where they stand when
     await expect(chip(page), `${name}: not named`).toContainText(name, { timeout: 30_000 });
     await expect(page.locator('.strata-chip'), `${name}: still waiting`).not.toHaveAttribute('data-pending', /./, { timeout: 30_000 });
     await expect(page.locator('.hero-dots'), `${name}: nothing lit`).toHaveAttribute('data-lit', /^[1-9]/);
-    await expect(page.locator('.hero-dist-main'), `${name}: a preview moved the squares`).toHaveAttribute('data-sink', 'off');
+    expect(await places(page, '.hero-dots', 'main'), `${name}: a preview moved the squares`).toEqual(was);
   }
 });
 
 /** Where the squares under the cap and in the pile rest, full page. */
 async function laidOut(page: Page) {
   return { main: await places(page, FIELD, 'main'), pile: await places(page, FIELD, 'pile') };
-}
-/** Everyone's $1k column under the cap, by square (the pile is one column of its own). */
-async function columnsOf(at: Map<string, { field: 'main' | 'pile'; index: number }>) {
-  const col = { main: [] as number[], pile: [] as number[] };
-  for (const p of await people()) { const s = at.get(p.person_key); if (s) col[s.field][s.index] = s.field === 'main' ? Math.floor(p.pay / 1000) : 0; }
-  return col;
-}
-/** Columns where one of the group stands above anyone else in it — among the squares `shown` keeps — and
- *  columns whose places changed: a filter only deals each column's own places again, so the skyline holds. */
-function unsettled(now: { main: number[]; pile: number[] }, was: { main: number[]; pile: number[] }, sl: { main: number[]; pile: number[] },
-  col: { main: number[]; pile: number[] }, lit: { main: Set<number>; pile: Set<number> }, shown: (field: 'main' | 'pile', i: number) => boolean = () => true) {
-  const bad: string[] = [];
-  for (const field of ['main', 'pile'] as const) {
-    const places = (pts: number[]) => {
-      const m = new Map<number, string[]>();
-      for (let i = 0; i < pts.length / 2; i++) m.set(col[field][i], [...(m.get(col[field][i]) ?? []), `${pts[2 * i].toFixed(2)},${pts[2 * i + 1].toFixed(2)}`]);
-      for (const v of m.values()) v.sort();
-      return m;
-    };
-    const a = places(was[field]), b = places(now[field]);
-    for (const [c, v] of a) if (v.join(' ') !== (b.get(c) ?? []).join(' ')) bad.push(`${field} column ${c}: its places changed`);
-    const cols = new Map<number, { top: number; low: number }>();
-    for (let i = 0; i < sl[field].length; i++) {
-      if (!shown(field, i)) continue;
-      const c = cols.get(col[field][i]) ?? { top: -1, low: Infinity };
-      if (lit[field].has(i)) c.top = Math.max(c.top, sl[field][i]); else c.low = Math.min(c.low, sl[field][i]);
-      cols.set(col[field][i], c);
-    }
-    for (const [c, v] of cols) if (v.top > v.low) bad.push(`${field} column ${c}: one of the group above someone else`);
-  }
-  return bad.slice(0, 8);
 }
 /** A field's lit dots as the page prints them (`data-lit`): how many, and the sum and sum of squares of places. */
 const printOf = (lit: Set<number>) => { let n = 0, sum = 0, sq = 0; for (const i of lit) { n++; sum += i; sq += i * i; } return `${n}:${sum}:${sq}`; };
@@ -286,27 +255,26 @@ function litOf(who: { person_key: string }[], at: Map<string, { field: 'main' | 
 }
 
 /**
- * Full page, a filter settles its group to the floor: in every column under the cap, and in the pile, none of
- * them stands above anyone else, and each column keeps the places it had — the group becomes a shape of its
- * own inside everyone's. Taken off, every square is back exactly where it was. With a type isolated in the
- * legend too, the two together: only those who are both are lit, at the floor.
+ * Full page, a filter lights its group where they stand: exactly its people lit, and not one square moved — in
+ * any column, or the pile — nor a frame of motion drawn, on or off. With a type isolated in the legend too, the
+ * two together: only those who are both are lit.
  */
-test('a filter settles its group to the floor of each column, and taking it off puts every square back', async ({ page }) => {
+test('a filter lights its group where they stand, moving no one, and taking it off leaves every square where it was', async ({ page }) => {
   test.setTimeout(300_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   const at = await spots();
-  const col = await columnsOf(at);
   const ra = await codeOf('Research Associate');
   const prof = await codeOf('Professor');
   const field = page.locator(FIELD);
-  const settled = async (lit: string | null) => {
+  const lights = async (lit: string | null) => {
     if (lit) await expect(field).toHaveAttribute('data-lit', lit, { timeout: 60_000 });
     else await expect(field).not.toHaveAttribute('data-lit', /./);
     await expect(field).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   };
-  const slotsNow = async () => ({ main: await slots(page, FIELD, 'main'), pile: await slots(page, FIELD, 'pile') });
   const was = await laidOut(page);
+  const frames = () => page.evaluate(() => performance.getEntriesByName('strata-frame').length);
+  const f0 = await frames();
   for (const [label, on, f] of [
     ['Research Associate', () => put(page, 'research assoc', `t:${ra}`), { code: ra }],
     ['Professor', () => put(page, 'professor', `t:${prof}`), { code: prof }],
@@ -314,36 +282,32 @@ test('a filter settles its group to the floor of each column, and taking it off 
   ] as const) {
     await on();
     const lit = litOf(await covered(f), at);
-    await settled(printOf(lit.main));
-    const now = await laidOut(page);
-    expect(unsettled(now, was, await slotsNow(), col, lit), label).toEqual([]);
-    let moved = 0;
-    for (let i = 0; i < now.main.length; i++) if (now.main[i] !== was.main[i]) moved++;
-    expect(moved, `${label}: nothing moved, so nothing here is tested`).toBeGreaterThan(100);
+    await lights(printOf(lit.main));
+    await expect(field, `${label}: the lit squares in the pile`).toHaveAttribute('data-pile-lit', printOf(lit.pile));
+    expect(await laidOut(page), `${label}: squares moved`).toEqual(was);
   }
   await page.locator('.search-token-x').click();
-  await settled(null);
-  expect(await laidOut(page), 'taking the filter off left squares out of place').toEqual(was);
+  await lights(null);
+  expect(await laidOut(page), 'taking the filter off moved squares').toEqual(was);
+  expect(await frames(), 'a filter set the squares moving').toBe(f0);
 
-  // Faculty isolated in the legend, and Professor on: those who are both, at the floor.
+  // Faculty isolated in the legend, and Professor on: those who are both.
   await page.locator('.hero-dist-full .strata-legend-item[data-category="Faculty"]').click();
   await expect(page.locator('.hero-dist-full .hero-dist-main')).toHaveAttribute('data-filter', 'Faculty');
-  await expect(field).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   await put(page, 'professor', `t:${prof}`);
   const everyone = await people();
   const both = litOf(everyone.filter((p) => p.cat === 'Faculty'), at);
   const profs = litOf(await covered({ code: prof }), at);
   for (const fld of ['main', 'pile'] as const) for (const i of [...both[fld]]) if (!profs[fld].has(i)) both[fld].delete(i);
-  await settled(printOf(both.main));
-  expect(unsettled(await laidOut(page), was, await slotsNow(), col, both), 'Faculty alone, Professor on').toEqual([]);
+  await lights(printOf(both.main));
+  expect(await laidOut(page), 'Faculty alone, Professor on: squares moved').toEqual(was);
 });
 
 /**
- * The names the search hangs on its dots follow them when a filter settles or lifts the field — under
- * Reduce Motion too, where the dots jump and no moving ever ends to say read them again: each leader still
- * starts at its own dot's rim. Taking the filter off with names up moves every marked dot it touches.
+ * The names the search hangs on its squares stay on them when a filter comes off — under Reduce Motion too:
+ * nothing moves, so each leader still starts at its own square's rim.
  */
-test('the search’s names follow their dots when a filter comes off, under Reduce Motion too', async ({ browser }) => {
+test('the search’s names stay on their squares when a filter comes off, under Reduce Motion too', async ({ browser }) => {
   test.setTimeout(120_000);
   const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
@@ -352,23 +316,20 @@ test('the search’s names follow their dots when a filter comes off, under Redu
   await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
   await bar(page).fill('smith');
   await expect(page.locator('.hero-found-label').first()).toBeVisible({ timeout: 60_000 });
-  const marksWere = await page.locator(FIELD).getAttribute('data-marks');
-  // Off with its ×, the names still up, and every Smith lit where the school's Smiths were: the typed name
-  // is a group of its own, settled as the filter's was.
+  // Off with its ×, the names still up, and every Smith lit: the typed name is a group of its own.
   await page.locator('.search-token-x').click();
   await expect(page.locator(FIELD)).toHaveAttribute('data-lit', prints(await covered({ name: 'smith' }), await spots()).main, { timeout: 60_000 });
   await expect(bar(page)).toHaveValue('smith');
   await page.waitForTimeout(400);
   const marks = (await page.locator(FIELD).getAttribute('data-marks'))!;
-  expect(marks, 'no marked square moved when the filter came off, so nothing here is tested').not.toBe(marksWere);
   // A leader starts 7px out from its square's centre, past the 9px mark drawn on it.
   const r = 4.5;
   const dots = marks.split(' ').map((m) => m.split(':').slice(1).map(Number));
   const starts = await page.locator('.hero-found-leaders line').evaluateAll((ls) => ls.map((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('y1'))]));
-  expect(starts.length, 'no names were hung on the dots').toBeGreaterThan(2);
+  expect(starts.length, 'no names were hung on the squares').toBeGreaterThan(2);
   for (const [x, y] of starts) {
     const d = Math.min(...dots.map(([dx, dy]) => Math.hypot(dx - x, dy - y)));
-    expect(d, `a name's leader starts ${d.toFixed(1)}px from any marked dot: it points where the dot was`).toBeLessThan(r * 2 + 3);
+    expect(d, `a name's leader starts ${d.toFixed(1)}px from any marked square: it points where the square was`).toBeLessThan(r * 2 + 3);
   }
   await ctx.close();
 });
@@ -527,28 +488,6 @@ test('filtering never moves the plot, and nothing it draws lies on a dot', async
     await check('taking them off');
     await ctx.close();
   }
-});
-
-/** Putting a filter on and taking it off, full page, the group sinks to the floor and back in frames inside
- *  the budget, at CI's pace: every square of the field is in each of them. */
-test('putting a filter on and taking it off settle within a frame, at CI’s pace', async ({ page }) => {
-  await atCiPace(page);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await fullPage(page);
-  const code = await codeOf('Research Associate');
-  await page.evaluate(() => performance.clearMeasures('strata-frame'));
-  await put(page, 'research assoc', `t:${code}`);
-  await expect(page.locator(FIELD)).toHaveAttribute('data-lit', /./, { timeout: 60_000 });
-  await expect(page.locator(FIELD)).toHaveAttribute('data-settled', 'true');
-  await page.locator('.search-token-x').click();
-  await expect(page.locator(FIELD)).not.toHaveAttribute('data-lit', /./);
-  await expect(page.locator(FIELD)).toHaveAttribute('data-settled', 'true');
-  const ds = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration));
-  expect(ds.length, 'the squares never moved, so no frame was timed').toBeGreaterThanOrEqual(8);
-  const sorted = [...ds].sort((a, b) => a - b);
-  const all = `${ds.map((d) => d.toFixed(1)).join(', ')}ms`;
-  expect(sorted[Math.floor(sorted.length / 2)], `a moving frame, ms, at the median: ${all}`).toBeLessThan(FRAME_MS);
-  expect(sorted[sorted.length - 1], `a moving frame held two: ${all}`).toBeLessThan(2 * FRAME_MS);
 });
 
 test('the search’s names keep below the pins’ rows, and none lies on a pin', async ({ page }) => {
