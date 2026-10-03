@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
@@ -180,6 +180,7 @@ export function StrataGraph({
   const droppedRef = useRef(false);
   const reveal = useReveal();
   const [dpr] = useState(() => Math.min(2, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1));
+  const summaryId = useId();
 
   const baseStrata = useMemo(
     () => (payCounts?.counts.length ? strataFromCounts(payCounts) : null) ?? strataFromBins(bins, overflow ?? 0),
@@ -818,9 +819,12 @@ export function StrataGraph({
         e.preventDefault();
         if (pick && who) toggleFollow(who, pick);
         return;
-      // Put away, and on to the page's own Escape (full page: a filter off, then full page closed).
+      // One layer at a time: the person followed, then the lens — and on to the page's own Escape (full page: a
+      // filter off, then full page closed) — then, on the page, the filter.
       case 'Escape':
-        if (lensAt) { setLensAt(null); setPointer(null); }
+        if (follow) { e.preventDefault(); setFollow(null); return; }
+        if (lensAt) { setLensAt(null); setPointer(null); return; }
+        if (!full && clearFilter) { e.preventDefault(); clearFilter(); }
         return;
       default: return;
     }
@@ -1001,6 +1005,25 @@ export function StrataGraph({
     })() : null
     : null;
   const pickKind = pick ? (pick.field === 'main' ? strata.kind[pick.index] : strata.pileKind[pick.index]) : null;
+  // What the graph shows, said in words, and its columns in $10k bands with each type's people.
+  const bandKinds = strata.names.map((_, k) => k).filter((k) => (cats ?? []).some((c) => c.kind === k && c.n > 0));
+  const bands = (() => {
+    const out = Array.from({ length: COLS / 10 + 1 }, (_, b) => ({
+      label: b < COLS / 10 ? `${fmtK(b * 10_000)}–${fmtK((b + 1) * 10_000)}` : `${fmtK(cap ?? 250_000)} or more`,
+      n: 0, byKind: new Array<number>(strata.names.length).fill(0),
+    }));
+    for (let i = 0; i < strata.col.length; i++) { const b = out[Math.floor(strata.col[i] / 10)]; b.n++; b.byKind[strata.kind[i]]++; }
+    const pile = out[out.length - 1];
+    for (let j = 0; j < strata.pileKind.length; j++) { pile.n++; pile.byKind[strata.pileKind[j]]++; }
+    return out;
+  })();
+  const topPay = strata.pilePay ? strata.pilePay.reduce((m, v) => Math.max(m, v), 0) : null;
+  const summary = [
+    `${num(total)} people paid${snapshotLabel ? ` in ${snapshotLabel}` : ''}, one square each, by pay from $0 to ${fmtK(cap ?? 250_000)}.`,
+    median != null ? `The median is ${usd(median)}${p25 != null && p75 != null ? `; the middle half are paid between ${usd(p25)} and ${usd(p75)}` : ''}.` : '',
+    strata.pileKind.length ? `${num(strata.pileKind.length)} are paid ${fmtK(cap ?? 250_000)} or more${topPay ? `; the top salary is ${usd(topPay)}` : ''}.` : '',
+    cats?.length ? `By type: ${cats.map((c) => `${c.name}, ${num(c.n)}${c.median != null ? `, median ${usd(c.median)}` : ''}`).join('; ')}.` : '',
+  ].filter(Boolean).join(' ');
   // The followed person's chip: who, and — where the snapshot shown has no such person — that they are not on
   // the payroll then; a way to open them, and to stop.
   const followTitle = follow ? (namesHere?.get(follow.key)?.title ?? follow.title) : null;
@@ -1061,7 +1084,7 @@ export function StrataGraph({
         data-follow={follow ? follow.key : undefined}
         data-squares={`${strata.col.length}:${strata.pileKind.length}`}
         onPointerMove={onMove} onPointerLeave={onLeave} onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
-        tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution"
+        tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution" aria-describedby={summaryId}
         aria-valuemin={0} aria-valuemax={tail ? tail.top : COLS * 1000}
         aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : (lensCol ?? Math.floor((median ?? 0) / 1000)) * 1000} aria-valuetext={readText}
         onKeyDown={onKey}
@@ -1290,6 +1313,22 @@ export function StrataGraph({
         </div>
       )}
 
+      {/* For a screen reader: what the graph shows, in a sentence, and its columns as a table ($10k at a time). */}
+      <p id={summaryId} className="visually-hidden strata-summary">{summary}</p>
+      {/* In a block of its own: a table takes no width or overflow, so on its own it would be as wide as it is. */}
+      <div className="visually-hidden">
+      <table className="strata-table">
+        <caption>People by pay, $10k at a time{snapshotLabel ? `, ${snapshotLabel}` : ''}</caption>
+        <thead>
+          <tr><th scope="col">Pay</th><th scope="col">People</th>{bandKinds.map((k) => <th key={k} scope="col">{strata.names[k]}</th>)}</tr>
+        </thead>
+        <tbody>
+          {bands.map((b) => (
+            <tr key={b.label}><th scope="row">{b.label}</th><td>{num(b.n)}</td>{bandKinds.map((k) => <td key={k}>{num(b.byKind[k])}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
       <div className="visually-hidden" aria-live="polite">
         {found.length ? `${num(found.length)} ${found.length === 1 ? 'person' : 'people'} from the search marked on the graph` : ''}
       </div>

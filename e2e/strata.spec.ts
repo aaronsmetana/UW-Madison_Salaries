@@ -526,6 +526,34 @@ test('the pins sit over the skyline, clear of each other and inside the plot, ea
   }
 });
 
+/**
+ * For a screen reader the plot, a slider over pay, is described in a sentence — how many, the median and the
+ * middle half, the pile and the top salary, each type — and its columns follow as a table, $10k at a time.
+ */
+test('a screen reader hears what the graph shows in a sentence, and can read its columns as a table', async ({ page }) => {
+  await home(page);
+  const rows = await people();
+  const pays = rows.map((p) => p.pay);
+  const top = Math.max(...pays);
+  const id = (await plot(page).getAttribute('aria-describedby'))!;
+  const said = (await page.locator(`[id="${id}"]`).textContent())!;
+  const usd = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
+  expect(said).toContain(`${num(rows.length)} people paid in Sep 2026`);
+  expect(said).toContain(`The median is ${usd(HOME_STATS.p50)}`);
+  expect(said).toContain(`${num(OVER)} are paid ${fmtK(CAP)} or more; the top salary is ${usd(top)}`);
+  for (const c of categories) expect(said).toContain(`${c.name}, ${num((c as unknown as { n: number }).n)}`);
+  // The table: every $10k band and the pile, each band's people, and each type's.
+  const cells = await page.locator('.strata-table tbody tr').evaluateAll((trs) => trs.map((tr) => [...tr.children].map((c) => c.textContent ?? '')));
+  expect(cells.length).toBe(26);
+  const n = (t: string) => Number(t.replace(/,/g, ''));
+  expect(cells.reduce((t, r) => t + n(r[1]), 0)).toBe(rows.length);
+  const band = cells.find((r) => r[0] === '$60k–$70k')!;
+  expect(n(band[1])).toBe(rows.filter((p) => p.pay >= 60_000 && p.pay < 70_000).length);
+  const heads = await page.locator('.strata-table thead th').allTextContents();
+  const fac = heads.indexOf('Faculty');
+  expect(n(cells[25][fac])).toBe(rows.filter((p) => p.pay >= CAP && p.cat === 'Faculty').length);
+});
+
 for (const scheme of ['light', 'dark'] as const) {
   test(`every type's square, and a search's, clears 3:1 against the panel (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });

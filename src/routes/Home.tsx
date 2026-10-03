@@ -183,7 +183,7 @@ export default function Home() {
       if (!openRef.current?.(h.person_key)) navigate(`/person/${encodeURIComponent(h.person_key)}`);
     },
   };
-  // Who each dot is (lib/homePeople): asked once the search has found someone, a filter is on, or the
+  // Who each square is (lib/homePeople): asked once the search has found someone, a filter is on, or the
   // magnifying glass is first up full page — by when DuckDB is up.
   const peopleSnap = artifactUsable ? homeStats.snapshot_id : '';
   const [wantWho, setWantWho] = useState(false);
@@ -497,7 +497,7 @@ export default function Home() {
   // phone it is above the graph instead, where it is in sight at load — under the graph it started below the
   // first screen — and there its list lies over the plot, so it is the full page's on a phone: open only
   // while the box is in use, stopping halfway down the plot so the marks landing as the reader types stay in
-  // sight, and put away by a press on the graph (`searchOpenRef`) rather than that press scattering the dots.
+  // sight, and put away by a press on the graph (`searchOpenRef`) rather than that press bringing up the lens.
   const midPlot = () => {
     const plot = document.querySelector('.hero-dist-main')?.getBoundingClientRect();
     return plot ? plot.top + plot.height / 2 : null;

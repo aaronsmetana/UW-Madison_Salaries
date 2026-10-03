@@ -138,3 +138,24 @@ test('unrolled, a click on one of the pile follows them at their own pay', async
   await expect(plot(page)).toHaveAttribute('data-tail', 'on');
   await expect(field(page)).toHaveAttribute('data-follow-label', new RegExp(`^${who.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · \\$`));
 });
+
+test('Escape takes off one layer at a time: the person followed, then the lens, then the filter', async ({ page }) => {
+  await home(page);
+  await page.getByRole('button', { name: /^Faculty/ }).click();
+  await expect(plot(page)).toHaveAttribute('data-filter', 'Faculty');
+  await page.locator('.hero-dist-full-toggle').focus();
+  await page.keyboard.press('Tab');
+  await expect(plot(page)).toBeFocused();
+  await expect(page.locator('.strata-card-name')).toBeVisible({ timeout: 60_000 });
+  await page.keyboard.press('Enter');
+  await expect(plot(page)).toHaveAttribute('data-follow', /./);
+  await page.keyboard.press('Escape');
+  await expect(plot(page)).not.toHaveAttribute('data-follow', /./);
+  await expect(plot(page)).toHaveAttribute('data-lens', 'on');
+  await expect(plot(page)).toHaveAttribute('data-filter', 'Faculty');
+  await page.keyboard.press('Escape');
+  await expect(plot(page)).toHaveAttribute('data-lens', 'off');
+  await expect(plot(page)).toHaveAttribute('data-filter', 'Faculty');
+  await page.keyboard.press('Escape');
+  await expect(plot(page)).not.toHaveAttribute('data-filter', /./);
+});
