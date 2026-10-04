@@ -30,6 +30,7 @@ import { personRowsSql } from '../lib/personQuery';
 import { personPay, actualPay, gradedAppt, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
+import { ToolLinks } from '../components/ToolLinks';
 import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, ordinal } from '../lib/stats';
@@ -855,6 +856,13 @@ export default function Person() {
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
           {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
+          <ToolLinks
+            links={[
+              { label: 'One-page report', to: `/reports?person=${encodeURIComponent(key)}&pname=${encodeURIComponent(name)}` },
+              // A raise case is built from the compare set: its person goes in, as its subject.
+              { label: 'Raise case', to: `/reports?type=comparison&subject=${encodeURIComponent(key)}`, onClick: () => add({ type: 'person', id: key, label: name }) },
+            ]}
+          />
         </div>
         <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
           <Popover width={320} position="bottom-end" shadow="md" withArrow trapFocus>

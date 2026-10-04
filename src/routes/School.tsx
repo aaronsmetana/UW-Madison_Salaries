@@ -17,6 +17,7 @@ import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
 import { CompareSetButton } from '../components/CompareSetButton';
+import { ToolLinks } from '../components/ToolLinks';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
@@ -237,6 +238,12 @@ export default function School() {
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1}>{name}</Title>
+          <ToolLinks
+            links={[
+              { label: 'Raises in this division', to: `/raises?sch=${encodeURIComponent(name)}` },
+              { label: 'Screen this division', to: `/screening?sch=${encodeURIComponent(name)}&run=1` },
+            ]}
+          />
         </div>
         <CompareSetButton item={{ type: 'school', id: name, label: name }} />
       </Group>

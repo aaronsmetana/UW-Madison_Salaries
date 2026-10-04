@@ -47,7 +47,7 @@ export function briefToWordHtml(model: BriefModel): string {
   } = model;
 
   const body: string[] = [];
-  body.push(`<h1 style="font-size:20pt;font-weight:700;margin:0 0 4pt 0;">Internal Equity &amp; Parity Review</h1>`);
+  body.push(`<h1 style="font-size:20pt;font-weight:700;margin:0 0 4pt 0;">Pay Parity Review</h1>`);
   body.push(p(`Prepared for <b>${esc(subjectName || '—')}</b>${headerMeta ? ` &middot; ${esc(headerMeta)}` : ''}`, `${P}${DIM}`));
   if (subjectPay != null) {
     body.push(p(

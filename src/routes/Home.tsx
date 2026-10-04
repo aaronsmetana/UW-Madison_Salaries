@@ -638,7 +638,7 @@ export default function Home() {
             <ShowcaseLink
               to="/reports"
               icon={<IconReportAnalytics size={ICON.nav} stroke={1.8} />}
-              title="Build an equity case"
+              title="Build a raise case"
               blurb="Run the UW salary guidelines for one person and print the brief for HR."
             />
             <ShowcaseLink

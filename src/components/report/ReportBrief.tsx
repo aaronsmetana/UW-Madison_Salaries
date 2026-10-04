@@ -174,7 +174,7 @@ export function ReportBrief({ model, hovered, onHover }: {
     <Card withBorder padding="xl" className="print-area report-brief">
       {/* h2: the brief's own title, directly under the Reports page h1. `fz` preserves the printed
           size — this heading also lands in the .doc export and the print stylesheet. */}
-      <Title order={2} fz="h3">Internal Equity &amp; Parity Review</Title>
+      <Title order={2} fz="h3">Pay Parity Review</Title>
       <Text c="dimmed" mt={2}>
         Prepared for <Text span fw={600} c="bright">{subjectName || '—'}</Text>
         {headerMeta ? ` · ${headerMeta}` : ''}

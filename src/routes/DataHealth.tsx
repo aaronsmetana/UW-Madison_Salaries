@@ -429,7 +429,7 @@ export default function DataHealth() {
           <Text size="sm">
             These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
             public record, but "public" is not a license to harass, dox, shame, or target anyone. Please use this
-            site to understand pay structures, ranges, and equity — not to make judgments about individuals.
+            site to understand pay structures, ranges and how pay compares — not to make judgments about individuals.
           </Text>
           <Text size="sm">
             Only the fields released in the public salary reports are shown — name, title, department, school,

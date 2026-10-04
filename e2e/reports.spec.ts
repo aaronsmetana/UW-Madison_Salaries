@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // Both hold the same (most populous) title in the latest snapshot (Professor, FA020) — chosen so
 // the automatic same-title evidence (proofs/standing) always has a large cohort, and adding the
 // second as a named comparator populates the (tray-driven, not automatic) "Peer comparison" table.
-test.describe('equity review brief', () => {
+test.describe('raise case brief', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('./reports?type=comparison');
     const startSearch = page.getByPlaceholder('Search yourself by name to begin…');

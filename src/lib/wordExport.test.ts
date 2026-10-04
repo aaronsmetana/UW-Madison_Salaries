@@ -69,7 +69,7 @@ function baseModel(overrides: Partial<BriefModel> = {}): BriefModel {
 describe('briefToWordHtml', () => {
   it('renders every section heading present in the model', () => {
     const html = briefToWordHtml(baseModel());
-    expect(html).toContain('Internal Equity &amp; Parity Review');
+    expect(html).toContain('Pay Parity Review');
     expect(html).toContain('Recommendation');
     expect(html).toContain('Basis under the UW Salary Administration Guidelines');
     expect(html).toContain('Grounds for a parity / compression adjustment');

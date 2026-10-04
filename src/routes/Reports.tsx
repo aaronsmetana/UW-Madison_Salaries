@@ -1093,7 +1093,7 @@ export default function Reports() {
       {type === 'comparison' && (
         persons.length === 0 ? (
           <Card withBorder padding="xl" className="no-print">
-            <Text fw={600} mb={4}>Start your equity review</Text>
+            <Text fw={600} mb={4}>Start your raise case</Text>
             <Text c="dimmed" size="sm" mb="md">Add yourself (the subject), then add the peers you want to be compared against.</Text>
             <SearchBox kinds={['people']} placeholder="Search yourself by name to begin…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Card>

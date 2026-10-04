@@ -12,6 +12,7 @@ import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
 import { EmptyState, focusControl } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
+import { ToolLinks } from '../components/ToolLinks';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
 
@@ -192,7 +193,10 @@ export default function PayCheck() {
           action={<Button variant="light" onClick={() => focusControl(pickerRef)}>Choose a title</Button>}
         />
       ) : (
-        <TitleStats jobCode={code} snap={snap} metric={metric} school={school} pinSalary={pinSalary} />
+        <>
+          <ToolLinks links={[{ label: 'Raises in this title', to: `/raises?title=${encodeURIComponent(code)}${school ? `&sch=${encodeURIComponent(school)}` : ''}` }]} />
+          <TitleStats jobCode={code} snap={snap} metric={metric} school={school} pinSalary={pinSalary} />
+        </>
       )}
     </Stack>
   );

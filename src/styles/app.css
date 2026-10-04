@@ -2341,6 +2341,9 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .hero-dist-main:focus { outline: none; }
 .hero-dist-main:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 4px; border-radius: 4px; }
 
+/* Where a page's subject goes next (components/ToolLinks): one line of links under its name. */
+.tool-links { margin-top: 6px; row-gap: 4px; }
+
 /* ── The landing strata (mockup 3a, components/strata) ── */
 /* The toolbar over the plot, in the flow: what is shown (or the filter's chip) at left, the buttons at right. */
 .strata .strata-toolbar { position: static; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; min-height: 28px; }

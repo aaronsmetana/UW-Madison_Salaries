@@ -1,4 +1,4 @@
-// Shared types + pure helpers for the comparison "equity review studio" (left setup pane + right brief).
+// Shared types + pure helpers for the raise case studio (left setup pane + right brief).
 import type { ReactNode } from 'react';
 import { usd, pct, plural } from '../../lib/format';
 import { percentile as percentileOf, ordinal } from '../../lib/stats';
@@ -15,7 +15,7 @@ export const COHORT_DEFS: { value: CohortMode; label: string; help: string }[] =
   { value: 'all', label: 'All same-title at UW', help: 'The broad market benchmark — everyone in this job code campus-wide.' },
   { value: 'school', label: 'Same title + school/division', help: 'Same job code within the subject’s school/division.' },
   { value: 'tenure', label: 'Same title + similar tenure', help: 'Same-title peers within a tenure band of the subject.' },
-  { value: 'grade', label: 'Same pay grade', help: 'Internal equity by pay grade, across titles.' },
+  { value: 'grade', label: 'Same pay grade', help: 'Parity by pay grade, across titles.' },
   { value: 'curated', label: 'Only my curated set', help: 'Just the people you picked — your true comparators (e.g. peers who also supervise).' },
 ];
 

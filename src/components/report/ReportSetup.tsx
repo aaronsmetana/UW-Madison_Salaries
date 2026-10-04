@@ -155,7 +155,7 @@ export function ReportSetup({
 
         {suggestions.length > 0 && (
           <Box mt="sm">
-            <Text size="xs" c="dimmed" mb={4}>Suggested equity benchmarks (top earners in this title):</Text>
+            <Text size="xs" c="dimmed" mb={4}>Suggested benchmarks (top earners in this title):</Text>
             <Group gap={6}>
               {suggestions.map((s) => (
                 <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
