@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Group, Select, Text, Badge, CopyButton, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
+import { Group, Select, Text, Badge, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconInfoCircle, IconSearch, IconRefresh } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Metric, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -12,6 +12,7 @@ import { NewBadge } from '../components/NewBadge';
 import { Eyebrow } from '../components/Eyebrow';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
+import { CopyLinkButton } from '../components/CopyLinkButton';
 
 /** Plain-language explanation of each pay metric, shown in the (i) hover card. */
 const METRIC_HELP: Record<Metric, string> = {
@@ -255,15 +256,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     </>
   );
 
-  const copyLink = (
-    <CopyButton value={typeof window !== 'undefined' ? window.location.href : ''}>
-      {({ copied, copy }) => (
-        <Button size="xs" variant="default" color={copied ? 'pos' : undefined} onClick={copy}>
-          {copied ? 'Copied!' : 'Copy link'}
-        </Button>
-      )}
-    </CopyButton>
-  );
+  const copyLink = <CopyLinkButton size="xs" />;
 
   // Inline: an in-content panel (used on Compare/Explore) sharing the page background. Controls left,
   // actions right — and the Filters button stays put: active-filter chips flow into their own row below.

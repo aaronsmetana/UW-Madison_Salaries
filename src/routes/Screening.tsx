@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight, IconDownload } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
+import { CopyLinkButton } from '../components/CopyLinkButton';
 import { EmptyState, focusControl } from '../components/EmptyState';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
@@ -247,6 +248,7 @@ export default function Screening() {
   return (
     <Stack gap="lg">
       <PageHeader
+        right={<CopyLinkButton size="sm" />}
         title="Screening"
         description="Check a whole school or department at once against the UW Salary Administration Guidelines. Everyone is ranked by how strong their case looks across three tests: parity, compression, and the market floor."
       />

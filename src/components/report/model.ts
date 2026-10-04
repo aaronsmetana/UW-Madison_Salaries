@@ -119,6 +119,75 @@ export function defaultConfig(): ReportConfig {
 }
 
 /**
+ * A raise case in its link: what builds it — whom it is compared with and how, which factors and for how
+ * much, the targets, the ask and the document's shape — so a copied link reopens the same case in another
+ * browser. Not what the reader wrote in their own words (a factor's note, a custom factor, a headline): that
+ * stays in the browser it was written in, as a salary pinned on Titles does, since a link can end up in a
+ * history or a message. Only what differs from a new case, as JSON in base64url.
+ */
+export function encodeCase(c: ReportConfig): string {
+  const d = defaultConfig();
+  const o: Record<string, unknown> = {};
+  if (c.cohort !== d.cohort) o.c = c.cohort;
+  if (c.tenureBand !== d.tenureBand) o.t = c.tenureBand;
+  if (c.targetKey) o.k = c.targetKey;
+  const f = (Object.entries(c.factors) as [FactorKey, FactorState][]).filter(([, v]) => v.on).map(([k, v]) => (v.amount === '' ? k : `${k}:${v.amount}`));
+  if (f.length) o.f = f;
+  if (c.supervisees.length) o.s = c.supervisees;
+  if (c.supervisorTarget) o.st = 1;
+  if (c.marketFloorTarget) o.mf = 1;
+  if (c.override !== '') o.o = c.override;
+  if (c.format !== d.format) o.fm = c.format;
+  if (c.sections.join() !== d.sections.join()) o.sc = c.sections;
+  if (c.anonymize) o.an = 1;
+  if (!Object.keys(o).length) return '';
+  const bytes = new TextEncoder().encode(JSON.stringify(o));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** A case read back from its link (`encodeCase`) onto `base` — the case as this browser last left it, or a new
+ *  one: the link's settings win, and the words written here (notes, custom factors, a headline) are kept.
+ *  `base` unchanged where the link is missing or will not read. */
+export function applyCase(base: ReportConfig, param: string | null | undefined): ReportConfig {
+  if (!param || param.length > 4000) return base;
+  let o: Record<string, unknown>;
+  try {
+    const bin = atob(param.replace(/-/g, '+').replace(/_/g, '/'));
+    o = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0))));
+    if (!o || typeof o !== 'object') return base;
+  } catch {
+    return base;
+  }
+  const d = defaultConfig();
+  const cohorts = COHORT_DEFS.map((x) => x.value) as string[];
+  const keys = FACTOR_DEFS.map((x) => x.key) as string[];
+  const sections = SECTION_DEFS.map((x) => x.value) as string[];
+  const on = new Map<string, number | ''>();
+  for (const v of Array.isArray(o.f) ? o.f : []) {
+    if (typeof v !== 'string') continue;
+    const [k, amt] = v.split(':');
+    if (keys.includes(k)) on.set(k, amt != null && Number.isFinite(Number(amt)) ? Number(amt) : '');
+  }
+  return {
+    ...base,
+    cohort: typeof o.c === 'string' && cohorts.includes(o.c) ? (o.c as CohortMode) : d.cohort,
+    tenureBand: typeof o.t === 'number' && Number.isFinite(o.t) ? o.t : d.tenureBand,
+    targetKey: typeof o.k === 'string' ? o.k : null,
+    factors: Object.fromEntries((Object.entries(base.factors) as [FactorKey, FactorState][]).map(([k, v]) =>
+      [k, { ...v, on: on.has(k), amount: on.has(k) ? on.get(k)! : '' }])) as Record<FactorKey, FactorState>,
+    supervisees: Array.isArray(o.s) ? o.s.filter((x): x is string => typeof x === 'string') : [],
+    supervisorTarget: o.st === 1,
+    marketFloorTarget: o.mf === 1,
+    override: typeof o.o === 'number' && Number.isFinite(o.o) ? o.o : '',
+    format: o.fm === 'detailed' ? 'detailed' : d.format,
+    sections: Array.isArray(o.sc) ? o.sc.filter((x): x is string => typeof x === 'string' && sections.includes(x)) : d.sections,
+    anonymize: o.an === 1,
+  };
+}
+
+/**
  * Upgrades a saved (localStorage) `ReportConfig` — of any prior shape — to the current one. Missing
  * fields backfill from `defaultConfig()`; a `configVersion` below the current one also applies
  * one-time migrations (rather than just defaulting new fields), since those configs got their old

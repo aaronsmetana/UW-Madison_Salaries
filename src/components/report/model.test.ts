@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -177,5 +177,48 @@ describe('fmtYearsToParity', () => {
   it('caps an unbounded projection at a round "10+" instead of an absurd figure', () => {
     expect(fmtYearsToParity(10.1)).toBe('10+ more years');
     expect(fmtYearsToParity(57)).toBe('10+ more years');
+  });
+});
+
+describe('a raise case in its link', () => {
+  const built = () => {
+    const c = defaultConfig();
+    const f = FACTOR_DEFS[0].key;
+    return {
+      ...c, cohort: 'school' as const, tenureBand: 5, targetKey: 'peer|2019-01-01', supervisees: ['rep|2020-02-02'],
+      supervisorTarget: true, override: 121_500 as const, format: 'detailed' as const, anonymize: true,
+      sections: SECTION_DEFS.map((s) => s.value).slice(0, 3),
+      factors: { ...c.factors, [f]: { on: true, amount: 2000, note: 'I took over the on-call rota in March' } },
+      customFactors: [{ id: 'custom-1', label: 'Named in the grant as co-investigator', amount: 1500 as const, note: 'private' }],
+      headline: 'My own headline',
+    };
+  };
+  it('reopens the same case from a new one', () => {
+    const c = built();
+    const back = applyCase(defaultConfig(), encodeCase(c));
+    const f = FACTOR_DEFS[0].key;
+    expect(back).toMatchObject({
+      cohort: 'school', tenureBand: 5, targetKey: 'peer|2019-01-01', supervisees: ['rep|2020-02-02'], supervisorTarget: true,
+      marketFloorTarget: false, override: 121_500, format: 'detailed', anonymize: true, sections: c.sections,
+    });
+    expect(back.factors[f]).toEqual({ on: true, amount: 2000, note: '' });
+  });
+  it('carries none of the words written into it', () => {
+    const json = atob(encodeCase(built()).replace(/-/g, '+').replace(/_/g, '/'));
+    for (const w of ['on-call', 'co-investigator', 'private', 'My own headline']) expect(json).not.toContain(w);
+  });
+  it('keeps the words this browser has for the case', () => {
+    const c = built();
+    const here = { ...defaultConfig(), headline: 'Kept', factors: c.factors, customFactors: c.customFactors };
+    const back = applyCase(here, encodeCase({ ...c, headline: '' }));
+    expect(back.headline).toBe('Kept');
+    expect(back.customFactors).toEqual(c.customFactors);
+    expect(back.factors[FACTOR_DEFS[0].key].note).toBe('I took over the on-call rota in March');
+  });
+  it('is nothing for a new case, and leaves the case alone for a link that will not read', () => {
+    expect(encodeCase(defaultConfig())).toBe('');
+    const base = defaultConfig();
+    expect(applyCase(base, '%%%not-a-case')).toBe(base);
+    expect(applyCase(base, null)).toBe(base);
   });
 });

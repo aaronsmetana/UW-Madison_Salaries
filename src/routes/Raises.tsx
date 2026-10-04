@@ -4,6 +4,7 @@ import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, An
 import { useDebouncedCallback } from '@mantine/hooks';
 import { IconCheck, IconDownload, IconTrendingUp } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
+import { CopyLinkButton } from '../components/CopyLinkButton';
 import { EmptyState } from '../components/EmptyState';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
@@ -243,7 +244,7 @@ export default function Raises() {
 
   return (
     <Stack gap="lg">
-      <PageHeader title="Raises" description="Who got more than the usual raise between two snapshots, and what may explain it." />
+      <PageHeader title="Raises" description="Who got more than the usual raise between two snapshots, and what may explain it." right={<CopyLinkButton size="sm" />} />
 
       <Card withBorder padding="lg" className="raise-controls">
         <Group align="flex-end" gap="md" wrap="wrap">

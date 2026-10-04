@@ -12,6 +12,8 @@ import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols } from '../lib/queries';
 import { useTray } from '../state/tray';
+import { decodeSel, encodeSel } from '../lib/share';
+import { CopyLinkButton } from '../components/CopyLinkButton';
 import { usd, pct, fullName, plural, fmtToday } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
@@ -28,7 +30,7 @@ import { ReportSetup, type SetupComparator, type SuggestPerson } from '../compon
 import { ReportBrief } from '../components/report/ReportBrief';
 import { ReportFlow } from '../components/report/ReportFlow';
 import {
-  COHORT_DEFS, FACTOR_DEFS, defaultConfig, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
+  COHORT_DEFS, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
   type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
 } from '../components/report/model';
@@ -64,7 +66,7 @@ export default function Reports() {
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
-  const { items, add, remove } = useTray();
+  const { items, add, remove, clear } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = fmtToday();
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
@@ -96,7 +98,24 @@ export default function Reports() {
   const personIds = persons.map((p) => sqlStr(p.id)).join(',');
 
   const [subjectKey, setSubjectKey] = useState<string | null>(() => params.get('subject'));
+  // A copied raise case reopens from its link: its people (`?sel=`, as Compare's) become the compare set it is
+  // built from — exactly those, as on Compare — and its settings (`?case=`, model `encodeCase`) go onto the
+  // case. Read once, as the page opens; until the set is in, the subject is left as the link says.
+  const shared = useRef({ sel: type === 'comparison' ? decodeSel(params.get('sel')) : null, caseParam: params.get('case'), subject: params.get('subject') });
+  const hydrating = useRef(!!shared.current.sel?.length);
   useEffect(() => {
+    const sel = shared.current.sel;
+    if (!sel?.length) return;
+    clear();
+    sel.forEach((i) => add(i));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    // Until every one of the link's people is in the set: the set this page opened on is not the case's.
+    if (hydrating.current) {
+      if (!shared.current.sel!.every((i) => persons.some((p) => p.id === i.id))) return;
+      hydrating.current = false;
+    }
     // The first person in the compare set is the subject when none (or one no longer in the set) is
     // chosen; the setup's Subject select chooses another. A subject from ?subject= (above) is left
     // alone as long as it's still in the set.
@@ -130,12 +149,19 @@ export default function Reports() {
         // Mirrors Compare's ?sel= pattern: a finished comparison report is shareable via its subject.
         if (type === 'comparison' && subjectKey) n.set('subject', subjectKey);
         else n.delete('subject');
+        // And the case itself: its people and its settings, so the link reopens it (above).
+        const people = type === 'comparison' ? items.filter((i) => i.type === 'person') : [];
+        if (people.length) n.set('sel', encodeSel(people));
+        else n.delete('sel');
+        const cs = type === 'comparison' ? encodeCase(config) : '';
+        if (cs) n.set('case', cs);
+        else n.delete('case');
         return n;
       },
       { replace: true }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, selPerson, subjectKey]);
+  }, [type, selPerson, subjectKey, items, config]);
   const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
     ['rpt-person-hist', selPerson?.key ?? '', metric],
     `SELECT snapshot_label AS snapshot, title, job_code, school, ${expr} AS pay, fte
@@ -144,9 +170,14 @@ export default function Reports() {
   );
 
   // Persist the whole setup (cohort, factors, override, sections…) per subject, so switching between
-  // several in-progress equity cases (or a page refresh) doesn't lose the work already done on each.
+  // several in-progress raise cases (or a page refresh) doesn't lose the work already done on each.
   useEffect(() => {
-    setConfig(subjectKey ? migrateConfig(readPref<unknown>(`report.cfg.${subjectKey}`, null)) : defaultConfig());
+    let cfg = subjectKey ? migrateConfig(readPref<unknown>(`report.cfg.${subjectKey}`, null)) : defaultConfig();
+    if (shared.current.caseParam && subjectKey && subjectKey === shared.current.subject) {
+      cfg = applyCase(cfg, shared.current.caseParam);
+      shared.current.caseParam = null;
+    }
+    setConfig(cfg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectKey]);
   useEffect(() => {
@@ -1021,6 +1052,7 @@ export default function Reports() {
                 ]}
               />
               <ExportBar joined={!isNarrow}>
+                <CopyLinkButton />
                 <Button
                   variant="default"
                   leftSection={<IconDownload size={ICON.control} />}

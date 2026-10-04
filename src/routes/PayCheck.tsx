@@ -13,6 +13,7 @@ import { TitleStats } from '../components/TitleStats';
 import { EmptyState, focusControl } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { ToolLinks } from '../components/ToolLinks';
+import { CopyLinkButton } from '../components/CopyLinkButton';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
 
@@ -131,6 +132,7 @@ export default function PayCheck() {
   return (
     <Stack gap="lg">
       <PageHeader
+        right={<CopyLinkButton size="sm" />}
         title="Titles"
         description="Pick a job title to see what it pays across UW–Madison: the full range, who holds it, and how it varies by school. You can pin your own salary to see where it lands — it stays in your browser and is never sent anywhere."
       />
