@@ -1,7 +1,8 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Tooltip } from '@mantine/core';
+import { Group, Text, Table, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Tooltip } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
-import { IconSearch, IconSearchOff, IconChevronRight, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconSearchOff, IconChevronRight } from '@tabler/icons-react';
+import { CsvButton } from './CsvButton';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -148,9 +149,7 @@ export function SchoolsPanel() {
         />
         <Group gap="sm" wrap="nowrap">
           <Text size="xs" c="dimmed">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
-          <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv} disabled={!schools?.length}>
-            CSV
-          </Button>
+          <CsvButton onClick={exportCsv} disabled={!schools?.length} />
         </Group>
       </Group>
       {schools && view.length === 0 ? (

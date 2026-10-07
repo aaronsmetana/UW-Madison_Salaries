@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconDownload, IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck } from '@tabler/icons-react';
+import { IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck } from '@tabler/icons-react';
 import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades, useReferenceStatus } from '../lib/hooks';
@@ -1028,7 +1028,10 @@ export default function Reports() {
 
   const briefPane = loading
     ? <Card withBorder padding="xl" className="report-brief"><Skeleton h={40} mb="lg" /><Skeleton h={120} mb="lg" /><Skeleton h={80} mb="lg" /><Skeleton h={160} /></Card>
-    : <ReportBrief model={model} hovered={hovered} onHover={setHovered} />;
+    : (
+      <ReportBrief model={model} hovered={hovered} onHover={setHovered}
+        onPoolCsv={peerListRows?.length ? () => downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, peerListRows as unknown as Record<string, unknown>[]) : undefined} />
+    );
 
   return (
     <Stack gap="lg">
@@ -1049,20 +1052,8 @@ export default function Reports() {
                   { value: 'comparison', label: isNarrow ? 'Raise case: set' : 'Raise case: the compare set' },
                 ]}
               />
-              <ExportBar joined={!isNarrow}>
+                  <ExportBar joined={!isNarrow}>
                 <CopyLinkButton />
-                <Button
-                  variant="default"
-                  leftSection={<IconDownload size={ICON.control} />}
-                  disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
-                  onClick={() =>
-                    type === 'person'
-                      ? downloadCSV(`${selPerson?.name ?? 'employee'}-history.csv`, (personHistory ?? []) as unknown as Record<string, unknown>[])
-                      : downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, (peerListRows ?? []) as unknown as Record<string, unknown>[])
-                  }
-                >
-                  Download CSV
-                </Button>
                 <Button
                   variant="default"
                   leftSection={<IconPrinter size={ICON.control} />}

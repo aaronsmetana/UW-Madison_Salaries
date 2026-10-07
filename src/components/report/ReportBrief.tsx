@@ -6,6 +6,8 @@ import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Customized,
 } from 'recharts';
 import { IconChartBar, IconScale, IconHistory, IconGauge, IconUserPlus, IconUsers, IconTrendingDown, IconArrowsMinimize, IconRuler2 } from '@tabler/icons-react';
+import { CsvButton } from '../CsvButton';
+import { downloadCSV } from '../../lib/csv';
 import { usd, pct, plural, fmtYears } from '../../lib/format';
 import { AXIS_TICK, GRID, fmtUsd, chartKeys } from '../../lib/chartStyle';
 import { snapX, snapAxisProps } from '../../lib/snapTime';
@@ -75,10 +77,12 @@ const PROOF_ICON: Record<ProofKind, ReactNode> = {
   marketFloor: <IconRuler2 size={ICON.feature} />,
 };
 
-export function ReportBrief({ model, hovered, onHover }: {
+export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
   model: BriefModel;
   hovered: string | null;
   onHover: (id: string | null) => void;
+  /** Everyone the market-standing pools are drawn from, as a CSV beside that table. */
+  onPoolCsv?: () => void;
 }) {
   const {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
@@ -329,7 +333,10 @@ export function ReportBrief({ model, hovered, onHover }: {
               stands across every other available comparison pool (title/grade/division/tenure-band). */}
           {sectionShow.standing && standing && (
             <>
-              <SectionHeading id="standing" num={sectionNum.standing}>Market standing</SectionHeading>
+              <SectionHeading id="standing" num={sectionNum.standing}
+                right={onPoolCsv ? <CsvButton label="CSV of everyone with this title" onClick={onPoolCsv} /> : undefined}>
+                Market standing
+              </SectionHeading>
               <Card mb="lg">
                 <Text size="xs" c="dimmed" mb="md">
                   {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
@@ -413,7 +420,16 @@ export function ReportBrief({ model, hovered, onHover }: {
           {/* Peer comparison matrix */}
           {sectionShow.peers && (
             <>
-              <SectionHeading id="peers" num={sectionNum.peers} annotation={`your named comparators (n = ${rows.length - 1})`}>Peer comparison</SectionHeading>
+              <SectionHeading
+                id="peers" num={sectionNum.peers} annotation={`your named comparators (n = ${rows.length - 1})`}
+                right={<CsvButton label="CSV of the peer comparison" onClick={() => downloadCSV(`${subjectName || 'subject'}-peer-comparison.csv`, rows.map((r) => ({
+                  name: r.isSubject || !anonymize ? r.name : anonName(r.key), role: r.isSubject ? 'subject' : 'comparator', title: r.title,
+                  ...(showTenure ? { tenure_years: r.tenure } : {}), pay: Math.round(r.pay),
+                  vs_subject: r.isSubject || subjectPay == null ? null : Math.round(r.pay - subjectPay),
+                })))} />}
+              >
+                Peer comparison
+              </SectionHeading>
               <Card p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table>
                   <Table.Thead>
@@ -642,16 +658,20 @@ export function ReportBrief({ model, hovered, onHover }: {
  *  `<Text size="sm" fw={600}>` — a styled span — so a document that is explicitly organised into
  *  numbered sections offered a screen reader no way to move between them. `fz="h5"` is the shared
  *  card-heading size (theme.ts), so nothing about the printed brief changes visually. */
-function SectionHeading({ id, num, children, annotation, sup }: {
+function SectionHeading({ id, num, children, annotation, sup, right }: {
   id?: string; num: number | undefined; children: ReactNode; annotation?: string; sup?: number;
+  /** Beside the heading, off the printed page: a section table's CSV. */
+  right?: ReactNode;
 }) {
-  return (
-    <Title order={3} fz="h5" id={id ? `report-sec-${id}` : undefined} mb="xs" style={{ scrollMarginTop: 12 }}>
+  const title = (
+    <Title order={3} fz="h5" id={id ? `report-sec-${id}` : undefined} mb={right ? 0 : 'xs'} style={{ scrollMarginTop: 12 }}>
       {num}. {children}
       {annotation && <Text span c="dimmed" size="xs" fw={400}> · {annotation}</Text>}
       {sup != null && sup > 0 && <Sup n={sup} />}
     </Title>
   );
+  if (!right) return title;
+  return <Group justify="space-between" align="center" gap="sm" mb="xs" wrap="wrap">{title}{right}</Group>;
 }
 
 function DivBar({ label, value, max, color, emphasize }: { label: string; value: number; max: number; color: string; emphasize?: boolean }) {

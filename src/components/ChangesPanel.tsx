@@ -4,7 +4,8 @@ import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, Cartes
 import { AXIS_TICK, GRID, BAR_RADIUS, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
 import { CardTitle } from './CardTitle';
-import { IconDownload, IconInfoCircle } from '@tabler/icons-react';
+import { IconInfoCircle } from '@tabler/icons-react';
+import { CsvButton } from './CsvButton';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
@@ -491,9 +492,7 @@ export function ChangesPanel() {
         <CardTitle
           mb={0}
           right={
-            <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportMovers} disabled={!(raises ?? []).length}>
-              CSV
-            </Button>
+            <CsvButton onClick={exportMovers} disabled={!(raises ?? []).length} />
           }
           sub="People in the same title at the same FTE in both snapshots."
         >
@@ -581,9 +580,7 @@ export function ChangesPanel() {
           <CardTitle
             mb="sm"
             right={
-              <Button size="compact-xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportFlows} disabled={!(flows ?? []).length}>
-                CSV
-              </Button>
+              <CsvButton onClick={exportFlows} disabled={!(flows ?? []).length} />
             }
           >
             Top title transitions

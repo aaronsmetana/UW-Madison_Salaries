@@ -27,6 +27,8 @@ import { ChartData } from './ChartData';
 import { PercentileNote } from './PercentileNote';
 import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
+import { CsvButton } from './CsvButton';
+import { downloadCSV } from '../lib/csv';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { StatCard, StatRow } from './StatCard';
 import { LoadingState } from './Loading';
@@ -448,7 +450,20 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
       {/* Title & salary history */}
       <Card withBorder padding="lg">
-        <CardTitle>Title &amp; salary history</CardTitle>
+        <CardTitle
+          right={(
+            <CsvButton
+              label="CSV of the title and salary history"
+              disabled={!historyRows.length}
+              onClick={() => downloadCSV(`${name}-history.csv`, historyRows.map((r) => ({
+                snapshot: r.snapshot_label, title: r.title, job_code: r.job_code, school: r.school, department: r.department,
+                pay: r.pay != null ? Math.round(r.pay) : null, fte: r.fte,
+              })))}
+            />
+          )}
+        >
+          Title &amp; salary history
+        </CardTitle>
         {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
         <Table.ScrollContainer minWidth={gutter.slots ? 700 + gutter.slots * 22 : 680}>
         {/* Striping is per snapshot group (app.css), so the lines of one snapshot stay together. */}

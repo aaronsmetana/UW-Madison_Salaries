@@ -1,7 +1,8 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconSearchOff } from '@tabler/icons-react';
+import { CsvButton } from './CsvButton';
 import { Eyebrow } from './Eyebrow';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
@@ -129,9 +130,7 @@ export function TitlesPanel() {
             </Button.Group>
           </Group>
           <Text size="xs" c="dimmed">{num(view.length)} of {num((titles ?? []).length)} titles</Text>
-          <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv} disabled={!titles?.length}>
-            CSV
-          </Button>
+          <CsvButton onClick={exportCsv} disabled={!titles?.length} />
         </Group>
       </Group>
       {titles && view.length === 0 ? (

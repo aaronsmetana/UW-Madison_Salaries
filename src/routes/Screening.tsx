@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input } from '@mantine/core';
-import { IconListSearch, IconInfoCircle, IconArrowRight, IconDownload } from '@tabler/icons-react';
+import { IconListSearch, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
+import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
 import { EmptyState } from '../components/EmptyState';
@@ -346,9 +347,7 @@ export default function Screening() {
               {belowOnly && (
                 <Button size="xs" variant="subtle" onClick={clearBelowMin}>Screen everyone in scope</Button>
               )}
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv}>
-                CSV
-              </Button>
+              <CsvButton onClick={exportCsv} />
             </Group>
           </Group>
           <ScrollArea.Autosize mah={720} type="auto">

@@ -1,11 +1,11 @@
 import { useParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import {
-  Stack, Title, Text, Group, Button, Card, SimpleGrid, Table, Anchor, Loader, Alert, Tabs,
+  Stack, Title, Text, Group, Card, SimpleGrid, Table, Anchor, Loader, Alert, Tabs,
   ScrollArea,
 } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { IconDownload } from '@tabler/icons-react';
+import { CsvButton } from '../components/CsvButton';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ScatterChart, Scatter,
@@ -32,7 +32,6 @@ import { ChartData } from '../components/ChartData';
 import { MARK_POPULATION } from '../components/markers';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { ICON } from '../lib/ui';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
 
 /**
@@ -466,9 +465,7 @@ export default function School() {
           <Card withBorder padding="lg">
             <CardTitle
               right={
-                <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportDeptsCsv} disabled={!depts?.length}>
-                  CSV
-                </Button>
+                <CsvButton onClick={exportDeptsCsv} disabled={!depts?.length} />
               }
             >
               Departments in {name}

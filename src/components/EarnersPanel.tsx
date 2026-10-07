@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import { IconSearch, IconSearchOff, IconDownload } from '@tabler/icons-react';
+import { IconSearch, IconSearchOff } from '@tabler/icons-react';
+import { CsvButton } from './CsvButton';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { salaryExpr, personPay, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -145,9 +146,7 @@ export function EarnersPanel() {
             size="xs" label="Show top" value={String(limit)} onChange={(v) => setLimit(Number(v))}
             options={[{ id: '25', label: '25' }, { id: '100', label: '100' }, { id: '500', label: '500' }]}
           />
-          <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportCsv} disabled={!earners.length}>
-            CSV
-          </Button>
+          <CsvButton onClick={exportCsv} disabled={!earners.length} />
         </Group>
       </Group>
 

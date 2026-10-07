@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Anchor, Box, List, ScrollArea, SimpleGrid, UnstyledButton } from '@mantine/core';
 import { useDebouncedCallback } from '@mantine/hooks';
-import { IconCheck, IconDownload, IconTrendingUp } from '@tabler/icons-react';
+import { IconCheck, IconTrendingUp } from '@tabler/icons-react';
+import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
 import { EmptyState } from '../components/EmptyState';
@@ -372,7 +373,7 @@ export default function Raises() {
           <Card withBorder padding={0} className="raise-above">
             <Group justify="space-between" p="md" pb="xs" wrap="wrap" gap="sm">
               <CardTitle mb={0}>More than the usual raise{whyOnly ? `: ${WHY[whyOnly].label}` : ''}</CardTitle>
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportRows} disabled={!sorted.length}>CSV</Button>
+              <CsvButton onClick={exportRows} disabled={!sorted.length} />
             </Group>
             {!sorted.length ? (
               <Text size="sm" c="dimmed" px="md" pb="md">No one here got more than the usual raise.</Text>
@@ -428,7 +429,7 @@ export default function Raises() {
           <Card withBorder padding={0} className="raise-title-changes" data-count={changes?.length ?? ''}>
             <Group justify="space-between" p="md" pb={4} wrap="wrap" gap="sm">
               <CardTitle mb={0}>Changed title</CardTitle>
-              <Button size="xs" variant="default" leftSection={<IconDownload size={ICON.compact} />} onClick={exportChanges} disabled={!changesSorted.length}>CSV</Button>
+              <CsvButton onClick={exportChanges} disabled={!changesSorted.length} />
             </Group>
             <Text size="sm" c="dimmed" px="md" pb="xs">
               A promotion or a reclassification: a new job code between these snapshots, with one appointment on each
