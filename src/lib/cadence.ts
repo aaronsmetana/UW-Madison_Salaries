@@ -18,7 +18,8 @@ export interface CadencePoint {
  * What happened between two of a person's snapshots:
  * - `raise` / `no raise`: a continuing raise (R2, `continuingRaisesSql`) above zero, or not;
  * - `promotion` / `title change`: a lone appointment that moved title (R3, payHistory's `titleChange`);
- * - `reporting`: the only change was how the pay is reported (the Sep 2025 ×11/9), never a raise;
+ * - `reporting`: across the Sep 2025 change in how 9-month pay is reported (×11/9) without a continuing raise to
+ *   measure like for like (one is a `raise` or `no raise`, its ×11/9 taken out);
  * - `not comparable`: several appointments, a changed FTE or basis, or a snapshot missing between.
  */
 export type StepKind = 'raise' | 'no raise' | 'promotion' | 'title change' | 'reporting' | 'not comparable';
@@ -50,8 +51,9 @@ export const monthsBetween = (a: string, b: string): number => Math.round((Date.
  * A person's raise cadence. `continuing` maps the snapshot a continuing raise ends at to its size.
  *
  * The Nov 2021 relabel is never a step: the pre-TTC twin is dropped, so the first step starts from
- * the post-TTC snapshot. A reporting change is never a raise; it continues a run without one only
- * when pay moved by the reporting factor alone, since any other movement is a change this cannot size.
+ * the post-TTC snapshot. Across a reporting change a continuing raise is measured like for like (queries
+ * `continuingRaisesSql`); without one, the step continues a run without a raise only when pay moved by the
+ * reporting factor alone, since any other movement is a change this cannot size.
  */
 export function cadenceOf(points: readonly CadencePoint[], continuing: ReadonlyMap<string, number>): Cadence {
   const canon = points.filter((p) => !p.id.endsWith('-pre') && p.pay > 0);
@@ -66,16 +68,16 @@ export function cadenceOf(points: readonly CadencePoint[], continuing: ReadonlyM
     let r: number | null = null;
     // Whether the run of months without a raise carries on through this step.
     let quiet: boolean;
-    if (rep) {
-      kind = 'reporting';
-      quiet = Math.abs(b.pay / (a.pay * rep.factor) - 1) < 0.001;
-      if (quiet) judged++;
-    } else if (continuing.has(b.id)) {
+    if (continuing.has(b.id)) {
       r = continuing.get(b.id)!;
       kind = r > 0 ? 'raise' : 'no raise';
       judged++;
       if (r > 0) { raises++; sum += r; }
       quiet = !(r > 0);
+    } else if (rep) {
+      kind = 'reporting';
+      quiet = Math.abs(b.pay / (a.pay * rep.factor) - 1) < 0.001;
+      if (quiet) judged++;
     } else if (a.appts === 1 && b.appts === 1 && a.jobCode && b.jobCode && a.jobCode !== b.jobCode) {
       const appt = (p: CadencePoint) => ({ snapshotId: p.id, date: p.date, jobCode: p.jobCode, school: null, department: null, fte: null, pay: p.pay, grade: p.grade, gradeBasis: p.gradeBasis, basis: p.basis });
       kind = titleChange(appt(a), appt(b)).move;

@@ -65,13 +65,16 @@ appt('b', 'mover', { job: 'J1', pay: 53500, school: 'S2', dept: 'D1' });
 for (let i = 0; i < 3; i++) raise(`lim${i}`, i === 0 ? 0.05 : 0.02, { job: 'JL', pay: 30000, cat: i === 0 ? 'Limited Appointee' : 'Limited', dept: 'DL' });
 // University Staff: 9 at +1%, 8 at +3%, 8 at +4% — no raise most share (9 of 25 is 36%), so the median, 3%.
 for (let i = 0; i < 25; i++) raise(`us${i}`, i < 9 ? 0.01 : i < 17 ? 0.03 : 0.04, { job: 'JC', pay: 40000, cat: 'University Staff', dept: `E${1 + (i % 5)}` });
-// Not compared: a title change, an FTE change, two appointments on one side, the 9-month reporting change.
+// Not compared: a title change, an FTE change, two appointments on one side.
 appt('a', 'promo', { job: 'J1', pay: 50000 }); appt('b', 'promo', { job: 'J7', pay: 60000 });
 appt('a', 'fte', { job: 'J1', pay: 50000, fte: 1 }); appt('b', 'fte', { job: 'J1', pay: 51000, fte: 0.5 });
 appt('a', 'split', { job: 'J1', pay: 50000 }); appt('b', 'split', { job: 'J1', pay: 30000 }); appt('b', 'split', { job: 'J8', pay: 30000, dept: 'D2' });
 // Two appointments later, neither in the earlier title: whichever one a query picked, it would read as a change of title.
 appt('a', 'split2', { job: 'J5', pay: 50000 }); appt('b', 'split2', { job: 'J6', pay: 30000 }); appt('b', 'split2', { job: 'J7', pay: 30000 });
+// Across the 9-month reporting change (×11/9): a 3% raise like for like, not 25.9%.
 appt('a', 'nine', { job: 'F1', pay: 90000, basis: 'Academic' }); appt('b', 'nine', { job: 'F1', pay: 113300, basis: '9 Month' });
+// And a change of title across it: its rate change like for like too, +3%.
+appt('a', 'ninet', { job: 'F2', pay: 90000, basis: 'Academic' }); appt('b', 'ninet', { job: 'F3', pay: 113300, basis: '9 Month' });
 // Only in `b`: a new hire, never anyone's raise.
 appt('b', 'hire', { job: 'J1', pay: 50000 });
 
@@ -152,7 +155,12 @@ describe('who got more than the usual raise, and why', () => {
     // University Staff above their median, 3%: the eight at 4%.
     expect(rows.filter((r) => r.cat === 'University Staff')).toHaveLength(8);
     // At the usual raise, or not a continuing raise at all: not listed.
-    for (const k of ['t1_5', 'du3', 'base0', 'us0', 'lim1', 'promo', 'fte', 'split', 'nine', 'hire']) expect(why[k], k).toBeUndefined();
+    for (const k of ['t1_5', 'du3', 'base0', 'us0', 'lim1', 'promo', 'fte', 'split', 'hire']) expect(why[k], k).toBeUndefined();
+    // Above its category's usual raise like for like, at 3%, its pay before restated as the later snapshot reports it.
+    const nine = rows.find((r) => r.person_key === 'nine')!;
+    expect(nine.r).toBeCloseTo(0.03, 6);
+    expect(nine).toMatchObject({ pay_to: 113300 });
+    expect(nine.pay_from).toBeCloseTo(110000, 6);
     const t1 = rows.find((r) => r.person_key === 't1_0')!;
     expect(t1).toMatchObject({ tn: 6, tb: 5, usual: 0.02 });
     expect(t1.tmed).toBeCloseTo(0.06, 6);
@@ -182,21 +190,23 @@ describe('who got more than the usual raise, and why', () => {
 describe('everyone paid on both sides, accounted for', () => {
   it('as a continuing raise, a change of title, or not compared with its reason; the parts add up', async () => {
     const [a] = await all<Account>(accountSql({ ...PAIR, filters: NONE }));
-    expect(a).toMatchObject({ changed_title: 1, several: 2, fte_changed: 1, basis_changed: 1 });
-    // 40 + 6 + 5 + solo + floor + 5 in DX + 9 in DT + 6 in T4 + mover + 3 + 25.
-    expect(a.same_job).toBe(102);
+    expect(a).toMatchObject({ changed_title: 2, several: 2, fte_changed: 1, basis_changed: 0 });
+    // 40 + 6 + 5 + solo + floor + 5 in DX + 9 in DT + 6 in T4 + mover + 3 + 25 + nine.
+    expect(a.same_job).toBe(103);
     expect(a.paid_both).toBe(a.same_job + a.changed_title + a.several + a.fte_changed + a.basis_changed);
   });
 
   it('lists a change of title only with one appointment on each side', async () => {
     const rows = await all<TitleChangeRow>(titleChangesSql({ ...PAIR, filters: NONE }));
-    expect(rows.map((r) => r.person_key)).toEqual(['promo']);
-    expect(rows[0]).toMatchObject({ code_from: 'J1', code_to: 'J7', pay_from: 50000, pay_to: 60000 });
+    expect(rows.map((r) => r.person_key).sort()).toEqual(['ninet', 'promo']);
+    expect(rows.find((r) => r.person_key === 'promo')).toMatchObject({ code_from: 'J1', code_to: 'J7', pay_from: 50000, pay_to: 60000 });
+    const ninet = rows.find((r) => r.person_key === 'ninet')!;
+    expect(ninet.rate_to / ninet.rate_from - 1, 'across the 9-month reporting change, like for like').toBeCloseTo(0.03, 6);
   });
 
   it('bins the same continuing raises the lists read', async () => {
     const bins = await all<{ bucket: number; n: number }>(distributionSql({ ...PAIR, filters: NONE }));
-    expect(bins.reduce((t, b) => t + b.n, 0)).toBe(102);
+    expect(bins.reduce((t, b) => t + b.n, 0)).toBe(103);
     expect(bins.find((b) => b.bucket === 2)?.n).toBe(40 + 1 + 2 + 2 + 3);
   });
 });

@@ -31,6 +31,13 @@ describe('cadenceOf', () => {
     expect(c.raises).toBe(0);
   });
 
+  it('counts the raise across it like for like, as the continuing raises measure it', () => {
+    // $90,000 → $113,300 is ×11/9 × 1.03: continuingRaisesSql gives it as +3%.
+    const c = cadenceOf([pt('a', '2025-04-01', 90000, { basis: 'Academic' }), pt('b', '2025-09-01', 113300, { basis: '9 Month' })], new Map([['b', 0.03]]));
+    expect(c.steps[0]).toMatchObject({ kind: 'raise', r: 0.03 });
+    expect(c.raises).toBe(1);
+  });
+
   it('measures the longest run without a raise in months, through a reporting change that moved nothing else', () => {
     const c = cadenceOf([
       pt('s1', '2024-09-01', 90000, { basis: 'Academic' }),

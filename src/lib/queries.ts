@@ -249,7 +249,8 @@ export function sameBasis(a: string | null | undefined, b: string | null | undef
  * — so the Sep 2025 workbook reports 9-month pay on a different footing than the one before it.
  * Read as a raise, it put a +25.9% jump on 2,206 people's histories and topped every raise list.
  *
- * The figures stay as published. This names the boundary so no change is ever computed across it.
+ * The figures stay as published. This names the boundary so a change across it is measured like for like, the
+ * factor taken out (`likeForLike`, and `continuingRaisesSql` restates the earlier pay on the later footing).
  * `from`/`to` are normalized-lowercase labels in the order the snapshots run.
  */
 export const REPORTING_CHANGES = [
@@ -318,15 +319,6 @@ export function sameBasisAcross(earlier: string | null | undefined, later: strin
   return sameBasis(earlier, later) || relabelled(earlier, later);
 }
 
-/**
- * Whether a pay figure under `earlier` and one under `later` measure the same thing, so a change
- * between them is a change in pay. `sameBasis` answers "same class of appointment" for cohort
- * scoping, where both sides come from one snapshot; this answers it across time, where a relabel
- * (`RELABELS`) is the same basis and the 9-month reporting change has to be excluded.
- */
-export function sameQuantity(earlier: string | null | undefined, later: string | null | undefined): boolean {
-  return sameBasisAcross(earlier, later) && !reportingChange(earlier, later);
-}
 
 /** SQL twin of `basisClass`: the normalized class label of a `comp_basis` column. */
 function basisClassSql(col: string): string {
@@ -334,28 +326,38 @@ function basisClassSql(col: string): string {
   return `(CASE lower(trim(${col})) ${cases} ELSE lower(trim(${col})) END)`;
 }
 
-/** SQL twin of `sameQuantity(a, b)` for two `comp_basis` columns, `a` the earlier. */
-export function sameQuantitySql(a: string, b: string): string {
+/**
+ * SQL twin of `sameBasisAcross(a, b)` for two `comp_basis` columns, `a` the earlier: whether a change between
+ * them can be measured as a change in pay — the same class, a relabel (`RELABELS`), or a reporting change
+ * (`REPORTING_CHANGES`, measured like for like with `reportingFactorSql`). Unknown on either side counts:
+ * every snapshot before Sep 2024 has no basis.
+ */
+export function comparableSql(a: string, b: string): string {
   const pair = (c: { from: string; to: string }) => `(lower(trim(${a})) = ${sqlStr(c.from)} AND lower(trim(${b})) = ${sqlStr(c.to)})`;
-  const changes = REPORTING_CHANGES.map(pair).join(' OR ');
   const relabels = RELABELS.map(pair).join(' OR ');
-  // `coalesce(…, FALSE)`: with a NULL basis on either side (every snapshot before Sep 2024 has none)
-  // the reporting-change test is NULL, and `NOT NULL` would drop the step from any WHERE.
-  return `((${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${basisClassSql(a)} = ${basisClassSql(b)} OR ${relabels}) AND NOT coalesce(${changes}, FALSE))`;
+  return `(${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${basisClassSql(a)} = ${basisClassSql(b)} OR ${relabels})`;
+}
+
+/** SQL: the reporting change's factor between two `comp_basis` columns, `a` the earlier; 1 where there is none. */
+export function reportingFactorSql(a: string, b: string): string {
+  const cases = REPORTING_CHANGES.map((c) => `WHEN lower(trim(${a})) = ${sqlStr(c.from)} AND lower(trim(${b})) = ${sqlStr(c.to)} THEN CAST(${c.factor} AS DOUBLE)`).join(' ');
+  return `(CASE ${cases} ELSE 1.0 END)`;
 }
 
 /**
  * Every continuing raise: the one definition of "a raise" the app states anywhere.
  *
  * A step counts only when it measures pay and nothing else moved: the same person, holding ONE paid
- * appointment on each side, in the same job code, at the same FTE, on the same pay basis (a relabel,
- * `RELABELS`, is the same basis; the 9-month reporting change is not). Title changes, FTE changes, concurrent appointments and new
- * hires are all excluded — each would otherwise pass for a raise or a cut. Snapshots follow their
+ * appointment on each side, in the same job code, at the same FTE, on the same pay basis (`comparableSql`: a
+ * relabel is the same basis). Title changes, FTE changes, concurrent appointments and new hires are all
+ * excluded — each would otherwise pass for a raise or a cut. Across the 9-month reporting change a step counts
+ * like for like: the earlier pay is restated as the later snapshot reports it (×11/9), so Francis Halzen's
+ * $252,112 → $317,381 is a 3.0% raise, not 25.9%, and 9-month staff are in that step's figures. Snapshots follow their
  * canonical order with the pre-TTC twin dropped, so the TTC reclassification is never a step; with
  * `pair`, the step is exactly `from` → `to` instead (the Changes panel lets a reader pick both ends).
  *
- * Columns: from_id, to_id, from_date, to_date ('YYYY-MM-DD'), person_key, job_code, pay_from, pay_to,
- * r (the raise as a fraction).
+ * Columns: from_id, to_id, from_date, to_date ('YYYY-MM-DD'), person_key, job_code, pay_from (the earlier pay,
+ * on the later snapshot's footing), pay_to, r (the raise as a fraction).
  */
 export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: { from: string; to: string } }): string {
   const where = o.where ?? 'TRUE';
@@ -375,12 +377,13 @@ export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: 
       GROUP BY snapshot_id, person_key HAVING count(*) = 1
     )
     SELECT a.snapshot_id from_id, b.snapshot_id to_id, sa.d from_date, sb.d to_date, b.person_key, b.job_code,
-           a.pay pay_from, b.pay pay_to, b.pay / a.pay - 1 r
+           a.pay * ${reportingFactorSql('a.basis', 'b.basis')} pay_from, b.pay pay_to,
+           b.pay / (a.pay * ${reportingFactorSql('a.basis', 'b.basis')}) - 1 r
     FROM cr_one a JOIN cr_snaps sa ON sa.snapshot_id = a.snapshot_id
     JOIN cr_one b ON b.person_key = a.person_key AND b.job_code = a.job_code AND b.fte = a.fte
     JOIN cr_snaps sb ON sb.snapshot_id = b.snapshot_id
     WHERE ${steps} AND a.job_code IS NOT NULL AND a.pay > 0 AND b.pay > 0
-      AND ${sameQuantitySql('a.basis', 'b.basis')}`;
+      AND ${comparableSql('a.basis', 'b.basis')}`;
 }
 
 /**

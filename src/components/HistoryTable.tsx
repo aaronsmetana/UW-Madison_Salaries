@@ -92,9 +92,19 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
     );
   }
 
+  // A compared raise opens the Raises page for its step and title: who else in it got more than the usual.
+  const context = raise.kind === 'paired' && compare && (
+    <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} style={{ whiteSpace: 'nowrap' }}>
+      {compare.href ? (
+        <Anchor component={Link} to={compare.href} inherit c="dimmed" underline="always" className="raise-compare-link"
+          aria-label={`${compare.text}: who in this title got more than the usual raise`}>{compare.text}</Anchor>
+      ) : compare.text}
+    </Text>
+  );
+
   if (reporting) {
     return raise.kind === 'paired'
-      ? (<><ChangeFigure delta={likeForLike(raise.delta, reporting)} /><span className="appt-reporting-note">{likeForLikeNote(reporting)}</span></>)
+      ? (<><ChangeFigure delta={likeForLike(raise.delta, reporting)} /><span className="appt-reporting-note">{likeForLikeNote(reporting)}</span>{context}</>)
       : (<><Text size="sm" c="dimmed">—</Text><span className="appt-reporting-note">{reporting.note}</span></>);
   }
 
@@ -103,15 +113,6 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
     // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
     // in it looking like a pay change. Where that has happened the note says what the RATE did —
     // the number the reader came for, and the only one they cannot get elsewhere on the page.
-    // A compared raise opens the Raises page for its step and title: who else in it got more than the usual.
-    const context = compare && (
-      <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} style={{ whiteSpace: 'nowrap' }}>
-        {compare.href ? (
-          <Anchor component={Link} to={compare.href} inherit c="dimmed" underline="always" className="raise-compare-link"
-            aria-label={`${compare.text}: who in this title got more than the usual raise`}>{compare.text}</Anchor>
-        ) : compare.text}
-      </Text>
-    );
     return note ? (<>{figure}<span className="appt-rate-note">{note}</span>{context}</>) : (<>{figure}{context}</>);
   }
 
@@ -367,7 +368,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                     ? 'several appointments'
                     : (r.fte || 1) !== (from.fte || 1)
                       ? 'FTE changed'
-                      : !sameBasisAcross(from.comp_basis, r.comp_basis) || reportingChange(from.comp_basis, r.comp_basis)
+                      : !sameBasisAcross(from.comp_basis, r.comp_basis)
                         ? 'pay basis changed'
                         : 'a snapshot is missing between';
                   return { text: `not compared: ${why}`, compared: false };

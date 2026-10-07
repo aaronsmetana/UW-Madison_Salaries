@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, sameQuantitySql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt } from './queries';
+import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt } from './queries';
 import { raiseStepsSql } from './raises';
 
 /**
@@ -33,7 +33,7 @@ const ROWS: Row[] = [
   r('s1', '2022-03-01', 'split', 'J1', 40000),
   r('s1', '2022-03-01', 'split', 'J3', 20000, { department: 'D2' }),
   r('s2', '2022-08-01', 'split', 'J1', 42000),
-  // Academic → 9 Month: the Sep 2025 reporting change (×11/9 × 1.03). Not a raise.
+  // Academic → 9 Month: the Sep 2025 reporting change (×11/9 × 1.03). A 3% raise, like for like.
   r('s2', '2022-08-01', 'nine', 'F1', 90000, { comp_basis: 'Academic' }),
   r('s3', '2023-10-01', 'nine', 'F1', 113300, { comp_basis: '9 Month' }),
   // Annual → 12 Month: a pure relabel. IS a raise.
@@ -69,15 +69,21 @@ beforeAll(async () => {
 afterAll(() => db.close());
 
 describe('continuingRaisesSql', () => {
-  it('keeps only same-title, same-FTE, single-appointment steps on the same pay quantity', async () => {
-    const rows = await all<{ person_key: string; from_id: string; to_id: string; r: number }>(
-      `SELECT person_key, from_id, to_id, r FROM (${continuingRaisesSql({ metric: 'fte' })}) ORDER BY person_key, from_id`
+  it('keeps only same-title, same-FTE, single-appointment steps on a comparable pay basis', async () => {
+    const rows = await all<{ person_key: string; from_id: string; to_id: string; pay_from: number; pay_to: number; r: number }>(
+      `SELECT person_key, from_id, to_id, pay_from, pay_to, r FROM (${continuingRaisesSql({ metric: 'fte' })}) ORDER BY person_key, from_id`
     );
     const people = rows.map((x) => `${x.person_key}:${x.from_id}>${x.to_id}`);
     // stay: post→s1 and s1→s2; nobasis: s1→s2 with no basis recorded; twelve and relabel: s2→s3 across
-    // the two pure relabels. Not backward, 12 Month → Hourly, which no release did. Nothing else.
-    expect(people).toEqual(['nobasis:s1>s2', 'relabel:s2>s3', 'stay:2021-11-post>s1', 'stay:s1>s2', 'twelve:s2>s3']);
+    // the two pure relabels; nine: s2→s3 across the reporting change. Not backward, 12 Month → Hourly, which
+    // no release did. Nothing else.
+    expect(people).toEqual(['nine:s2>s3', 'nobasis:s1>s2', 'relabel:s2>s3', 'stay:2021-11-post>s1', 'stay:s1>s2', 'twelve:s2>s3']);
     expect(rows.find((x) => x.person_key === 'stay' && x.from_id === 's1')!.r).toBeCloseTo(0.04, 6);
+    // Like for like: the earlier pay as the later snapshot reports it (× 11/9), the later as published.
+    const nine = rows.find((x) => x.person_key === 'nine')!;
+    expect(nine.r).toBeCloseTo(0.03, 9);
+    expect(nine.pay_from).toBeCloseTo(110000, 6);
+    expect(nine.pay_to).toBe(113300);
   });
 
   it("carries each step's snapshot dates as text", async () => {
@@ -108,7 +114,7 @@ describe('raiseStepsSql', () => {
     expect(rows.map((x) => [x.from_id, x.to_id, Number(x.n), Number(x.n_title)])).toEqual([
       ['2021-11-post', 's1', 1, 1],
       ['s1', 's2', 2, 2],
-      ['s2', 's3', 2, 1],
+      ['s2', 's3', 3, 1],
     ]);
     // s1 → s2: stay +4% and nobasis +3%. The promotion, the FTE change, the split and the 9-month
     // relabel are not raises, so none of them moves the median.
@@ -117,14 +123,14 @@ describe('raiseStepsSql', () => {
   });
 });
 
-describe('sameQuantitySql', () => {
-  it('treats Annual → 12 Month and Hourly → 12 Month as the same quantity and Academic → 9 Month as a reporting change', async () => {
+describe('comparableSql', () => {
+  it('treats Annual → 12 Month and Hourly → 12 Month as relabels and Academic → 9 Month as comparable, like for like', async () => {
     const [x] = await all<{ relabel: boolean; hourly: boolean; reversed: boolean; reporting: boolean; missing: boolean; different: boolean }>(
-      `SELECT ${sameQuantitySql("'Annual'", "'12 Month'")} relabel, ${sameQuantitySql("'Hourly'", "'12 Month'")} hourly,
-              ${sameQuantitySql("'12 Month'", "'Hourly'")} reversed, ${sameQuantitySql("'Academic'", "'9 Month'")} reporting,
-              ${sameQuantitySql('NULL', "'9 Month'")} missing, ${sameQuantitySql("'Annual'", "'9 Month'")} different`
+      `SELECT ${comparableSql("'Annual'", "'12 Month'")} relabel, ${comparableSql("'Hourly'", "'12 Month'")} hourly,
+              ${comparableSql("'12 Month'", "'Hourly'")} reversed, ${comparableSql("'Academic'", "'9 Month'")} reporting,
+              ${comparableSql('NULL', "'9 Month'")} missing, ${comparableSql("'Annual'", "'9 Month'")} different`
     );
-    expect(x).toEqual({ relabel: true, hourly: true, reversed: false, reporting: false, missing: true, different: false });
+    expect(x).toEqual({ relabel: true, hourly: true, reversed: false, reporting: true, missing: true, different: false });
   });
 });
 

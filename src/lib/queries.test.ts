@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, sameBasisAcross, sameQuantity, actualPay, FTE_MULT, likeForLike, reportingChange } from './queries';
+import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, sameBasisAcross, actualPay, FTE_MULT, likeForLike, reportingChange } from './queries';
 
 describe('salary expressions', () => {
   it('salaryExpr returns the per-appointment rate for each metric', () => {
@@ -113,11 +113,12 @@ describe('basisEquivWhere', () => {
 describe('across time', () => {
   it('reads Hourly → 12 Month as a relabel, one way only, and never within a snapshot', () => {
     expect(sameBasisAcross('Hourly', '12 Month')).toBe(true);
-    expect(sameQuantity('Hourly', '12 Month')).toBe(true);
     expect(sameBasisAcross('12 Month', 'Hourly')).toBe(false);
     expect(sameBasis('Hourly', '12 Month')).toBe(false);
-    expect(sameQuantity('Academic', '9 Month')).toBe(false);
-    expect(sameQuantity('Annual', '12 Month')).toBe(true);
+    expect(sameBasisAcross('Annual', '12 Month')).toBe(true);
+    // Comparable across the 9-month reporting change, measured like for like (`likeForLike`).
+    expect(sameBasisAcross('Academic', '9 Month')).toBe(true);
+    expect(reportingChange('Academic', '9 Month')).not.toBeNull();
   });
 });
 

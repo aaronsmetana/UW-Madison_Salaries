@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { oracle, latestSnapshot, PAY, usd } from './oracle';
+import { raisesCte } from './raiseOracle';
 
 /**
  * The shared rules (src/lib), checked where a reader meets them. Each test names one rule; expected
@@ -91,6 +92,8 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
       await expect(cell).toContainText('9-month pay reported differently · ×11/9 taken out');
       await expect(cell).toContainText(fmt(Math.round((p.b / p.a / (11 / 9) - 1) * 1e4) / 1e4));
       await expect(cell).not.toContainText(fmt(p.b / p.a - 1));
+      // A continuing raise like for like, so it is compared with that step's raises campus-wide, as any other is.
+      await expect(cell.locator('[data-raise-compare="yes"]')).toContainText(/typical [+−]?\d/, { timeout: 30_000 });
       // And the one-person report's history, which draws its own table.
       await page.goto(`./reports?person=${encodeURIComponent(p.pk)}`);
       const card = page.locator('.mantine-Card-root', { has: page.getByText('Title & salary history', { exact: true }) });
@@ -101,14 +104,18 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
     }
   });
 
-  test("Changes' biggest raises from Apr to Sep 2025 hold no 9-month relabel", async ({ page }) => {
-    const moved = new Set(
-      (await oracle<{ fn: string; ln: string }>(
-        `SELECT any_value(b.first_name) fn, any_value(b.last_name) ln FROM $SAL a JOIN $SAL b USING (person_key)
-         WHERE a.snapshot_id = '2025-04' AND b.snapshot_id = '2025-09' AND a.comp_basis = 'Academic' AND b.comp_basis = '9 Month'
-         GROUP BY person_key`
-      )).map((r) => `${r.fn} ${r.ln}`.toLowerCase())
+  test("Changes' biggest raises from Apr to Sep 2025 give a 9-month raise like for like", async ({ page }) => {
+    // Every 9-month continuing raise across the change, like for like: Apr 2025's pay as Sep 2025 reports it.
+    const nine = new Map(
+      (await oracle<{ fn: string; ln: string; r: number }>(
+        `${raisesCte({ from: '2025-04', to: '2025-09' })}
+         SELECT any_value(first_name) fn, any_value(last_name) ln, any_value(cr.r) r FROM cr JOIN $SAL s USING (person_key)
+         WHERE s.snapshot_id = '2025-09' AND lower(s.comp_basis) = '9 month' GROUP BY person_key`
+      )).map((p) => [`${p.fn} ${p.ln}`.toLowerCase(), p.r])
     );
+    expect(nine.size, 'no 9-month continuing raises across Sep 2025').toBeGreaterThan(1000);
+    // At ×11/9 they would all sit near +25.9%; like for like, the usual +3%.
+    expect([...nine.values()].filter((r) => r > 0.2).length / nine.size).toBeLessThan(0.02);
     await page.goto('./explore?tab=changes');
     // Exactly these: the growth card at the top of Explore has its own "From snapshot" / "To snapshot".
     await page.getByRole('textbox', { name: 'From', exact: true }).click();
@@ -117,9 +124,17 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
     await page.getByRole('option', { name: 'Sep 2025', exact: true }).click();
     const raises = page.locator('.mantine-Card-root', { has: page.getByText('Biggest raises', { exact: true }) }).locator('tbody tr');
     await expect(raises.first()).toBeVisible({ timeout: 60_000 });
-    const names = (await raises.locator('td').first().allInnerTexts()).map((t) => t.split('\n')[0].trim().toLowerCase());
-    expect(names.length).toBeGreaterThan(0);
-    expect(names.filter((n) => moved.has(n))).toEqual([]);
+    // Every continuing raise counted, the 9-month ones among them.
+    const [{ n }] = await oracle<{ n: number }>(`${raisesCte({ from: '2025-04', to: '2025-09' })} SELECT count(*) n FROM cr`);
+    await expect(page.getByText(`Raises count the ${n.toLocaleString('en-US')} people`)).toBeVisible();
+    const rows = (await raises.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const name = [...nine.keys()].find((k) => row.toLowerCase().startsWith(k));
+      if (name == null) continue;
+      const shown = Number(row.match(/([\d.]+)%\s*$/)?.[1]);
+      expect(shown, `${row}: as reported, not like for like`).toBeCloseTo(nine.get(name)! * 100, 0);
+    }
   });
 });
 

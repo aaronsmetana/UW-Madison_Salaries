@@ -1,6 +1,6 @@
 import type { Metric } from '../state/controls';
 import { sqlStr } from './duckdb';
-import { continuingRaisesSql, sameQuantitySql, salaryExpr, FTE_MULT } from './queries';
+import { continuingRaisesSql, comparableSql, reportingFactorSql, salaryExpr, FTE_MULT } from './queries';
 import { belowMinimumSql, bandScaleSql } from './bands';
 import { familySql } from './jobFamilies';
 import { raiseBucketSql } from './raiseBuckets';
@@ -267,8 +267,11 @@ function sideSql(o: { metric: Metric; snapshot: string; filters?: RaiseFilters }
  * title that never happened.
  */
 export function titleChangesSql(o: Pair & { filters: RaiseFilters }): string {
+  // The earlier pay and rate on the later snapshot's footing, as a continuing raise has them (×11/9 across the
+  // 9-month reporting change), so a change of title across it reads like for like.
+  const f = reportingFactorSql('a.basis', 'b.basis');
   return `SELECT b.person_key, b.fn, b.ln, a.title title_from, b.title title_to, a.job_code code_from, b.job_code code_to,
-      a.pay pay_from, b.pay pay_to, a.rate rate_from, b.rate rate_to, a.fte fte_from, b.fte fte_to, b.school, b.department
+      a.pay * ${f} pay_from, b.pay pay_to, a.rate * ${f} rate_from, b.rate rate_to, a.fte fte_from, b.fte fte_to, b.school, b.department
     FROM (${sideSql({ metric: o.metric, snapshot: o.from })}) a JOIN (${sideSql({ metric: o.metric, snapshot: o.to })}) b ON b.person_key = a.person_key
     WHERE a.k = 1 AND b.k = 1 AND a.job_code IS DISTINCT FROM b.job_code AND ${filterSql(o.filters, 'b')}`;
 }
@@ -282,7 +285,7 @@ export interface Account {
   /** More than one paid appointment on a side. */
   several: number;
   fte_changed: number;
-  /** The same job at the same FTE, on a pay basis that is not the same quantity (the 9-month reporting change among them). */
+  /** The same job at the same FTE, on a pay basis that cannot be compared (not the 9-month reporting change, a raise like for like). */
   basis_changed: number;
 }
 
@@ -302,7 +305,7 @@ export function accountSql(o: Pair & { filters: RaiseFilters }): string {
       count(*) FILTER (WHERE NOT raise AND ka = 1 AND kb = 1 AND ja IS DISTINCT FROM jb) changed_title,
       count(*) FILTER (WHERE NOT raise AND (ka > 1 OR kb > 1)) several,
       count(*) FILTER (WHERE NOT raise AND ka = 1 AND kb = 1 AND ja = jb AND fa <> fb) fte_changed,
-      count(*) FILTER (WHERE NOT raise AND ka = 1 AND kb = 1 AND ja = jb AND fa = fb AND NOT ${sameQuantitySql('ba', 'bb')}) basis_changed
+      count(*) FILTER (WHERE NOT raise AND ka = 1 AND kb = 1 AND ja = jb AND fa = fb AND NOT ${comparableSql('ba', 'bb')}) basis_changed
     FROM p`;
 }
 

@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, whereAll, filterKey, continuingRaisesSql } from '../lib/queries';
+import { personPay, whereAll, filterKey, continuingRaisesSql, reportingFactorSql } from '../lib/queries';
 import { usd, usdCompact, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
@@ -124,18 +124,20 @@ export function ChangesPanel() {
 
   // Restrict both sides to people with a paid appointment so unpaid $0 affiliates don't read as
   // joiners/leavers (a $0-only person has NULL personPay and is dropped by the HAVING).
-  const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school
+  const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
+                                 arg_max(comp_basis, salary) basis
                           FROM salaries WHERE snapshot_id = ${A} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0),
                     b AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
-                                 any_value(first_name) fn, any_value(last_name) ln
+                                 arg_max(comp_basis, salary) basis, any_value(first_name) fn, any_value(last_name) ln
                           FROM salaries WHERE snapshot_id = ${B} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0)`;
 
   // Every raise figure on this panel — the median, the distribution, the biggest raises and cuts, the
   // share of raise dollars — reads continuing raises (continuingRaisesSql): one appointment on each
   // side, same title, same FTE, same pay basis. Over all stayers, a promotion, an FTE change and the
   // Sep 2025 change in how 9-month pay is reported all passed for raises (the 9-month change alone put
-  // 1,474 faculty at +25.9%). Headcounts and the payroll decomposition still cover every stayer: the
-  // decomposition has to, or its parts stop summing to the total.
+  // 1,474 faculty at +25.9%); across that change a raise is like for like, the earlier pay restated ×11/9.
+  // Headcounts and the payroll decomposition still cover every stayer: the decomposition has to, or its
+  // parts stop summing to the total.
   const crs = `(${continuingRaisesSql({ metric, where: localWhere, pair: { from: fromId ?? '', to: toId ?? '' } })})`;
 
   const { data: sumData } = useSql<SummaryRow>(
@@ -180,7 +182,8 @@ export function ChangesPanel() {
   const { data: cuts } = useSql<Mover>(['chg-cut', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta ASC LIMIT 12`, enabled);
   const { data: promos } = useSql<Promo>(
     ['chg-promo', fromId, toId, scopeKey, metric],
-    `${cte} SELECT b.person_key, b.fn, b.ln, a.title a_title, b.title b_title, (b.pay - a.pay) delta
+    // Like for like across the 9-month reporting change, as a continuing raise is.
+    `${cte} SELECT b.person_key, b.fn, b.ln, a.title a_title, b.title b_title, (b.pay - a.pay * ${reportingFactorSql('a.basis', 'b.basis')}) delta
      FROM a JOIN b ON a.person_key = b.person_key WHERE a.job IS DISTINCT FROM b.job ORDER BY delta DESC LIMIT 12`,
     enabled
   );

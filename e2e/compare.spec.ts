@@ -130,18 +130,21 @@ test("the cadence table counts raises by the site's rules and measures stagnatio
   await expect(row.locator('svg.sparkline')).toHaveAttribute('data-points', String(snaps.length + 1));
 });
 
-test("a 9-month member's Sep 2025 is a reporting change, not a raise", async ({ page }) => {
-  const [p] = await oracle<{ pk: string; nm: string }>(
+test("a 9-month member's Sep 2025 is measured like for like: ×11/9 alone is no raise, and ×11/9 × 1.03 a 3% raise", async ({ page }) => {
+  const one = (moved: number) => oracle<{ pk: string; nm: string }>(
     `WITH a AS (SELECT person_key, job_code, ${PAY} pay FROM $SAL WHERE snapshot_id = '2025-04' AND comp_basis = 'Academic' AND salary > 0),
           b AS (SELECT person_key, job_code, ${PAY} pay FROM $SAL WHERE snapshot_id = '2025-09' AND comp_basis = '9 Month' AND salary > 0),
           one AS (SELECT person_key FROM $SAL GROUP BY person_key HAVING count(*) = count(DISTINCT snapshot_id))
      SELECT a.person_key pk, (SELECT arg_max(first_name || ' ' || last_name, snapshot_date) FROM $SAL s WHERE s.person_key = a.person_key) nm
      FROM a JOIN b USING (person_key, job_code) JOIN one USING (person_key)
-     WHERE abs(b.pay / (a.pay * 11.0 / 9) - 1) < 0.0005 ORDER BY 1 LIMIT 1`
+     WHERE abs(b.pay / (a.pay * 11.0 / 9) - ${moved}) < 0.0005 ORDER BY 1 LIMIT 1`
   );
-  await openWith(page, [p]);
-  const row = page.locator('.cadence-row').first();
-  const steps = (await row.getAttribute('data-steps'))!.split(',');
-  expect(steps).toContain('2025-09:reporting');
-  expect(Number(await row.getAttribute('data-raises'))).toBe(steps.filter((s) => s.endsWith(':raise')).length);
+  const [[flat], [raised]] = await Promise.all([one(1), one(1.03)]);
+  for (const [p, step] of [[flat, '2025-09:no raise'], [raised, '2025-09:raise']] as const) {
+    await openWith(page, [p]);
+    const row = page.locator('.cadence-row').first();
+    const steps = (await row.getAttribute('data-steps'))!.split(',');
+    expect(steps, p.nm).toContain(step);
+    expect(Number(await row.getAttribute('data-raises'))).toBe(steps.filter((s) => s.endsWith(':raise')).length);
+  }
 });

@@ -9,17 +9,17 @@ import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
  *
  * The definition is `continuingRaisesSql` in src/lib/queries.ts, restated here in the build's own
  * SQL: one paid appointment on each side of consecutive canonical snapshots (the pre-TTC twin
- * dropped), the same job code, the same FTE, and a pay basis that is the same quantity — unknown on
- * either side counts, Annual → 12 Month and Hourly → 12 Month are relabels, Academic → 9 Month is the
- * Sep 2025 reporting change and never a raise. scripts/raise-steps.test.mjs runs both over one fixture and requires the
- * same answer, so the two cannot drift apart unnoticed.
+ * dropped), the same job code, the same FTE, and a comparable pay basis — unknown on either side counts,
+ * Annual → 12 Month and Hourly → 12 Month are relabels, and Academic → 9 Month, the Sep 2025 reporting change,
+ * is measured like for like: the earlier pay × 11/9, as the later snapshot reports it. scripts/raise-steps.test.mjs
+ * runs both over one fixture and requires the same answer, so the two cannot drift apart unnoticed.
  */
 
 const METRIC_SQL = { fte: ACTUAL_PAY_SQL, full: 'salary', base: 'COALESCE(base_pay, salary)' };
 /** Mirrors BASIS_CLASSES in src/lib/queries.ts. */
 const BASIS_CLASSES = [['annual', '12 month'], ['academic', '9 month']];
-/** Mirrors REPORTING_CHANGES in src/lib/queries.ts (earlier → later). */
-const REPORTING = [['academic', '9 month']];
+/** Mirrors REPORTING_CHANGES in src/lib/queries.ts (earlier → later, and the factor taken out across it). */
+const REPORTING = [['academic', '9 month', 11 / 9]];
 /** Mirrors RELABELS in src/lib/queries.ts (earlier → later): the same quantity under a new word. */
 const RELABELS = [['hourly', '12 month']];
 /** The histogram's resolution: raises rounded to 0.1%, the precision the app prints them at. */
@@ -31,9 +31,10 @@ const HIST_MAX = 1000;
 const cls = (c) =>
   `(CASE lower(trim(${c})) ${BASIS_CLASSES.flatMap((k) => k.map((l) => `WHEN '${l}' THEN '${k[k.length - 1]}'`)).join(' ')} ELSE lower(trim(${c})) END)`;
 const pairSql = (a, b, pairs) => pairs.map(([f, t]) => `(lower(trim(${a})) = '${f}' AND lower(trim(${b})) = '${t}')`).join(' OR ');
-const sameQuantity = (a, b) =>
-  `((${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${cls(a)} = ${cls(b)} OR ${pairSql(a, b, RELABELS)})` +
-  ` AND NOT coalesce(${pairSql(a, b, REPORTING)}, FALSE))`;
+const comparable = (a, b) =>
+  `(${a} IS NULL OR trim(${a}) = '' OR ${b} IS NULL OR trim(${b}) = '' OR ${cls(a)} = ${cls(b)} OR ${pairSql(a, b, RELABELS)})`;
+const factor = (a, b) =>
+  `(CASE ${REPORTING.map(([f, t, k]) => `WHEN lower(trim(${a})) = '${f}' AND lower(trim(${b})) = '${t}' THEN CAST(${k} AS DOUBLE)`).join(' ')} ELSE 1.0 END)`;
 
 /** Every continuing raise over `src` (a table or read_parquet(...)), for one pay measure. */
 export function continuingRaisesQuery(src, metric) {
@@ -46,11 +47,11 @@ export function continuingRaisesQuery(src, metric) {
       SELECT snapshot_id, person_key, any_value(job_code) job, any_value(${FTE_MULT_SQL}) f,
              any_value(comp_basis) b, any_value(${pay}) pay
       FROM ${src} WHERE salary > 0 GROUP BY snapshot_id, person_key HAVING count(*) = 1)
-    SELECT a.snapshot_id from_id, b.snapshot_id to_id, sa.d from_date, sb.d to_date, b.pay / a.pay - 1 r
+    SELECT a.snapshot_id from_id, b.snapshot_id to_id, sa.d from_date, sb.d to_date, b.pay / (a.pay * ${factor('a.b', 'b.b')}) - 1 r
     FROM one a JOIN snaps sa USING (snapshot_id)
     JOIN one b ON b.person_key = a.person_key AND b.job = a.job AND b.f = a.f
     JOIN snaps sb ON sb.snapshot_id = b.snapshot_id AND sb.i = sa.i + 1
-    WHERE a.job IS NOT NULL AND a.pay > 0 AND b.pay > 0 AND ${sameQuantity('a.b', 'b.b')}`;
+    WHERE a.job IS NOT NULL AND a.pay > 0 AND b.pay > 0 AND ${comparable('a.b', 'b.b')}`;
 }
 
 /** Per step: n, median, p90. */

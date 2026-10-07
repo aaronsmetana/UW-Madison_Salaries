@@ -66,11 +66,19 @@ describe('raise-steps.json and continuingRaisesSql', () => {
       expect(shape(build)).toEqual(shape(app));
       // Guard against both being empty: the fixture has a continuing raise on every step.
       expect(build.length).toBe(3);
-      // And against both forgetting a relabel: s2 → s3 is twelve (Annual → 12 Month), relabel (Hourly →
-      // 12 Month) and hourly0; backward (12 Month → Hourly) and nine (the reporting change) are not raises.
-      expect(build.find((x) => x.from_id === 's2').n).toBe(3);
+      // And against both forgetting a relabel or the reporting change: s2 → s3 is twelve (Annual → 12 Month),
+      // relabel (Hourly → 12 Month), hourly0, and nine (Academic → 9 Month, like for like); backward (12 Month →
+      // Hourly) is not a raise.
+      expect(build.find((x) => x.from_id === 's2').n).toBe(4);
     });
   }
+
+  it('measures a raise across the 9-month reporting change like for like', async () => {
+    const hist = await all(raiseHistQuery('salaries', 'fte'));
+    // nine: $90,000 → $113,300 is ×11/9 × 1.03 — a 3.0% raise, not 25.9%.
+    expect(hist.filter((h) => h.from_id === 's2' && h.k * HIST_STEP > 0.2)).toEqual([]);
+    expect(hist.find((h) => h.from_id === 's2' && Math.abs(h.k * HIST_STEP - 0.03) < 1e-9)?.c).toBeGreaterThanOrEqual(1);
+  });
 
   it('bins each raise at the precision the app prints it', async () => {
     const hist = await all(raiseHistQuery('salaries', 'fte'));

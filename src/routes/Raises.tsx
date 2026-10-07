@@ -239,7 +239,8 @@ export default function Raises() {
 
   const opts = snaps.map((s) => ({ value: s.id, label: s.label }));
   const noPlan = usual && usual.campus.how !== 'set' && usual.campus.usual === 0;
-  // A reporting change the pair spans (9-month pay since Sep 2025): its people are among the changes of basis.
+  // A reporting change the pair spans (9-month pay since Sep 2025): its people's raises are like for like, their
+  // earlier pay shown as the later snapshot reports it (queries `continuingRaisesSql`).
   const spans = REPORTING_CHANGES.filter((c) => from && to && (snaps[fromIdx]?.date ?? '') < c.since && (snaps[toIdx]?.date ?? '') >= c.since);
   const notCompared = account ? account.paid_both - account.same_job - account.changed_title : 0;
   const other = account ? notCompared - account.several - account.fte_changed - account.basis_changed : 0;
@@ -367,7 +368,7 @@ export default function Raises() {
             counts={bins}
             marker={usual.campus ? { value: usual.campus.usual, label: 'usual', name: 'usual raise across campus' } : null}
             title={`Raises${who}, ${fromLabel} → ${toLabel}`}
-            sub="People in the same job at the same FTE in both snapshots."
+            sub={`People in the same job at the same FTE in both snapshots.${spans.map((c) => ` Across ${c.sinceLabel} (${c.note}, ×${c.ratio}) a raise is like for like: the pay before it is shown as ${c.sinceLabel} reports it.`).join('')}`}
             period={`${fromLabel} → ${toLabel}`}
             className="raise-review-dist"
           />
@@ -488,7 +489,7 @@ export default function Raises() {
               <List size="sm" mt={4} spacing={2}>
                 <List.Item><b>{num(account.fte_changed)}</b> changed FTE in the same job: their pay moved with the appointment.</List.Item>
                 <List.Item><b>{num(account.several)}</b> held more than one paid appointment on a side: the records can’t say which one a change belongs to.</List.Item>
-                <List.Item><b>{num(account.basis_changed)}</b> changed pay basis in the same job{spans.map((c) => `, among them ${c.note} from ${c.sinceLabel}`).join('')}.</List.Item>
+                <List.Item><b>{num(account.basis_changed)}</b> changed pay basis in the same job.</List.Item>
                 {other > 0 && <List.Item><b>{num(other)}</b> had no job code or no pay to compare on one side.</List.Item>}
               </List>
             </Card>
@@ -502,8 +503,10 @@ export default function Raises() {
           <Text size="sm">
             <b>A raise</b> is a change in pay for someone in the same job at the same FTE, on the same pay basis, with one
             paid appointment in each snapshot — what a raise means everywhere on this site. (The source began calling
-            hourly pay “12 Month” in Sep 2025; that is the same basis.) A change of title is listed
-            apart; the rest are counted under “Everyone paid in both snapshots”.
+            hourly pay “12 Month” in Sep 2025; that is the same basis. It also began reporting 9-month pay at its
+            12-month equivalent, ×11/9: across that change a raise is measured like for like, the pay before it shown
+            as Sep 2025 reports it.) A change of title is listed apart; the rest are counted under “Everyone paid in
+            both snapshots”.
           </Text>
           <Text size="sm">
             <b>The usual raise</b> is the raise most people in an employee category got: the pay plan’s step, read to a
