@@ -77,16 +77,30 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: site
-      # It takes about 25 seconds, but the download has stalled: on 2026-10-07 two shards sat in it for 90 minutes
-      # while the others took 1 to 8. So each try is cut off at 4 minutes and made again, three times at most.
+      # Chromium, kept between runs and fetched only when Playwright's version changes: its download usually takes
+      # about 25 seconds, but on 2026-10-07 two shards sat in it for 90 minutes while the others took 1 to 8.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # Its system libraries from apt, then the browser (a no-op on a cache hit): three tries at each, every try cut
+      # off at 4 minutes. A try cut off can leave apt half done and Playwright's lock behind, which failed both
+      # tries after it at once, so those are cleared before another.
       - name: Install Playwright browsers
-        timeout-minutes: 14
+        timeout-minutes: 15
         run: |
-          for try in 1 2 3; do
-            timeout 240 npx playwright install --with-deps chromium && exit 0
-            echo "::warning::Playwright's browser install stalled or failed (try $try of 3)"
-          done
-          exit 1
+          retry() {
+            for try in 1 2 3; do
+              timeout 240 "${@:2}" && return 0
+              echo "::warning::$1 stalled or failed (try $try of 3)"
+              sudo pkill -x apt-get || true
+              sudo dpkg --configure -a || true
+              rm -rf ~/.cache/ms-playwright/__dirlock
+            done
+            return 1
+          }
+          retry "Chromium's system libraries" npx playwright install-deps chromium
+          retry "Chromium" npx playwright install chromium
       - name: E2E (shard ${{ matrix.shard }} of 5)
         run: npm run e2e -- --shard=${{ matrix.shard }}/5
       # Playwright is told to keep a trace for every failure, but nothing was collecting them, so a
