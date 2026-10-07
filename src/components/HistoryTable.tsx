@@ -5,7 +5,7 @@ import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
-import { actualPay, sameBasisAcross, reportingChange } from '../lib/queries';
+import { actualPay, sameBasisAcross, reportingChange, likeForLike, likeForLikeNote, type ReportingChange } from '../lib/queries';
 import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 import { useSummary } from '../lib/hooks';
@@ -50,11 +50,12 @@ function ChangeFigure({ delta }: { delta: number }) {
 /**
  * The history table's "Change" cell. Its states follow the matcher (see payHistory.ts): a paired
  * change, one measured across appointments the source cannot tell apart, a lone appointment that
- * moved title, and nothing to compare. `children` is the last of those. `reporting` names a reporting
- * change between the two snapshots — no figure is drawn across one, because it is not a change in pay.
+ * moved title, and nothing to compare. `children` is the last of those. `reporting` is a reporting change
+ * between the two snapshots: the figure as reported is mostly how pay was reported, so a paired step draws the
+ * change like for like with the factor named, and anything else no figure.
  */
 function RaiseCell({ raise, note, reporting, compare, children }: {
-  raise: Raise; note?: string | null; reporting?: string | null;
+  raise: Raise; note?: string | null; reporting?: ReportingChange | null;
   /** How a continuing raise compares with that step's raises campus-wide, or why this one is not compared;
    *  `href`, the Raises page for that step and title. */
   compare?: { text: string; compared: boolean; href?: string } | null;
@@ -87,7 +88,9 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
   }
 
   if (reporting) {
-    return (<><Text size="sm" c="dimmed">—</Text><span className="appt-reporting-note">{reporting}</span></>);
+    return raise.kind === 'paired'
+      ? (<><ChangeFigure delta={likeForLike(raise.delta, reporting)} /><span className="appt-reporting-note">{likeForLikeNote(reporting)}</span></>)
+      : (<><Text size="sm" c="dimmed">—</Text><span className="appt-reporting-note">{reporting.note}</span></>);
   }
 
   const figure = <ChangeFigure delta={raise.delta} />;
@@ -321,10 +324,9 @@ export function HistoryTable({ rows, comparisons }: {
                         : 'a snapshot is missing between';
                   return { text: `not compared: ${why}`, compared: false };
                 })();
-                const reporting = ((): string | null => {
+                const reporting = ((): ReportingChange | null => {
                   const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
-                  const hit = priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean);
-                  return hit ? hit.note : null;
+                  return priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean) ?? null;
                 })();
             return (
               <Table.Tr

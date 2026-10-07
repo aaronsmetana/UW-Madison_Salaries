@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, sameBasisAcross, sameQuantity, actualPay, FTE_MULT } from './queries';
+import { salaryExpr, earningsExpr, personPay, basisEquivWhere, sameBasis, sameBasisAcross, sameQuantity, actualPay, FTE_MULT, likeForLike, reportingChange } from './queries';
 
 describe('salary expressions', () => {
   it('salaryExpr returns the per-appointment rate for each metric', () => {
@@ -134,5 +134,16 @@ describe('sameBasis', () => {
     expect(sameBasis(null, '12 Month')).toBe(true);
     expect(sameBasis('12 Month', '')).toBe(true);
     expect(sameBasis(null, null)).toBe(true);
+  });
+});
+
+describe('likeForLike', () => {
+  const nine = reportingChange('Academic', '9 Month')!;
+  it('takes the 11/9 out of a change across the 9-month reporting change: a 3% raise, not 26%', () => {
+    // Apr → Sep 2025 for a 9-month professor: $252,112, then $317,380.50 (= 252,112 × 1.03 × 11/9).
+    expect(likeForLike(317_380.5 / 252_112 - 1, nine)).toBe(0.03);
+  });
+  it('reads no change as none, not a hair either side', () => {
+    expect(likeForLike(11 / 9 - 1, nine)).toBe(0);
   });
 });

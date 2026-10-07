@@ -270,6 +270,17 @@ export function reportingChange(
 }
 
 /**
+ * A change in pay measured across a reporting change, like for like: the change as reported, less the reporting
+ * change's own factor. Apr → Sep 2025, a 9-month $252,112 reported as $317,381 is a 3.0% raise, not 25.9%. To the
+ * hundredth of a percent, so no change reads as none.
+ */
+export function likeForLike(delta: number, c: ReportingChange): number {
+  return Math.round(((1 + delta) / c.factor - 1) * 1e4) / 1e4;
+}
+/** What a like-for-like figure says under it: the reporting change, and that its factor is taken out. */
+export const likeForLikeNote = (c: ReportingChange) => `${c.note} · ×${c.ratio} taken out`;
+
+/**
  * The reporting changes a run of snapshots crosses, in order, and their combined factor — the part of
  * any first-to-last change across the run that is how pay was reported, not what it was.
  */

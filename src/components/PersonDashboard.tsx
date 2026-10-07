@@ -6,7 +6,7 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, sameBasisAcross, reportingChange, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, sameBasisAcross, reportingChange, reportingAcross, likeForLike, likeForLikeNote, standingSql, poolPercentile, gradedAppt, type ReportingChange } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
@@ -512,12 +512,13 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                 const d = r.rate_raw / from.rate_raw - 1;
                 return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
               })();
-              // Same rule as the page: no figure across a reporting change (see REPORTING_CHANGES).
-              const reporting = ((): string | null => {
+              // Same rule as the page: across a reporting change (REPORTING_CHANGES) a paired step's change like
+              // for like, with the factor named, and no figure for anything else.
+              const reporting = ((): ReportingChange | null => {
                 const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
-                const hit = priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean);
-                return hit ? hit.note : null;
+                return priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean) ?? null;
               })();
+              const alike = reporting && raise.kind === 'paired' ? likeForLike(raise.delta, reporting) : null;
               const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
               return (
               <Table.Tr
@@ -576,7 +577,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
                       {raise.note && <Text span size="xs" c="dimmed"> · {raise.note}</Text>}
                     </Text>
                   )}
-                  {reporting && raise.kind !== 'titleChange' && <span className="appt-reporting-note">{reporting}</span>}
+                  {alike != null && alike !== 0 && <Text size="xs" c={alike > 0 ? 'pos' : 'orange'}>{fmtChange(alike)}</Text>}
+                  {reporting && raise.kind !== 'titleChange' && <span className="appt-reporting-note">{alike != null ? likeForLikeNote(reporting) : reporting.note}</span>}
                   {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
                   {rateNote && <span className="appt-rate-note">{rateNote}</span>}
                   {raise.kind === 'paired' && !reporting && raiseCtx.comparisons.get(r.snapshot_id) && (

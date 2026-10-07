@@ -677,10 +677,10 @@ describe('a lone appointment that moves title', () => {
     expect(run([before, other]).get(other)).toMatchObject({ move: 'title change' });
   });
 
-  it('draws no figure across the 9-month reporting change, and says why', () => {
+  it('across the 9-month reporting change, gives the change like for like and says the 11/9 is taken out', () => {
     const a = { ...before, basis: 'Academic' };
     const b = { ...after, basis: '9 Month', pay: before.pay * (11 / 9) * 1.03 };
-    expect(run([a, b]).get(b)).toMatchObject({ kind: 'titleChange', delta: null, note: '9-month pay reported differently' });
+    expect(run([a, b]).get(b)).toMatchObject({ kind: 'titleChange', delta: 0.03, note: '9-month pay reported differently · ×11/9 taken out' });
   });
 
   it('is only for one appointment on each side', () => {

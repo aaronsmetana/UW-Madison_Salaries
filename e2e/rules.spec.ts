@@ -70,18 +70,35 @@ test.describe('R8 — pay figures describe people', () => {
 });
 
 test.describe('R2 — the 9-month reporting change is not a raise', () => {
-  test('a 9-month history draws no change across Sep 2025', async ({ page }) => {
-    const [p] = await oracle<{ pk: string }>(
-      `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(comp_basis) basis FROM $SAL
-                    WHERE salary > 0 GROUP BY ALL HAVING count(*) = 1)
-       SELECT a.person_key pk FROM one a JOIN one b USING (person_key)
-       WHERE a.snapshot_id = '2025-04' AND b.snapshot_id = '2025-09' AND a.job = b.job
-         AND a.basis = 'Academic' AND b.basis = '9 Month' ORDER BY pk LIMIT 1`
+  // From Sep 2025 the source reports 9-month pay at its 12-month equivalent (× 11/9). A history across it gives
+  // the change like for like — Francis Halzen's $252,112 → $317,380.50 is a 3.0% raise, not 25.9% — and names
+  // the factor it took out; the figure as reported is never drawn.
+  test('a 9-month history gives the change across Sep 2025 like for like, never as reported', async ({ page }) => {
+    const people = await oracle<{ pk: string; a: number; b: number }>(
+      `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(comp_basis) basis, any_value(fte) fte, sum(${PAY}) pay
+                    FROM $SAL WHERE salary > 0 GROUP BY snapshot_id, person_key HAVING count(*) = 1)
+       SELECT pk, a, b FROM (
+         SELECT a.person_key pk, a.pay a, b.pay b, row_number() OVER (ORDER BY a.person_key) k FROM one a JOIN one b USING (person_key)
+         WHERE a.snapshot_id = '2025-04' AND b.snapshot_id = '2025-09' AND a.job = b.job AND a.fte = b.fte
+           AND a.basis = 'Academic' AND b.basis = '9 Month')
+       WHERE k = 1 OR pk = 'francishalzen|1975-07-01' ORDER BY pk`
     );
-    await history(page, p.pk);
-    const cell = changeCell(page, 'Sep 2025');
-    await expect(cell).toContainText('9-month pay reported differently');
-    await expect(cell).not.toContainText('%');
+    expect(people.length).toBe(2);
+    const fmt = (d: number) => (Math.abs(d) < 0.0005 ? '0%' : `${d > 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%`);
+    for (const p of people) {
+      await history(page, p.pk);
+      const cell = changeCell(page, 'Sep 2025');
+      await expect(cell).toContainText('9-month pay reported differently · ×11/9 taken out');
+      await expect(cell).toContainText(fmt(Math.round((p.b / p.a / (11 / 9) - 1) * 1e4) / 1e4));
+      await expect(cell).not.toContainText(fmt(p.b / p.a - 1));
+      // And the one-person report's history, which draws its own table.
+      await page.goto(`./reports?person=${encodeURIComponent(p.pk)}`);
+      const card = page.locator('.mantine-Card-root', { has: page.getByText('Title & salary history', { exact: true }) });
+      const row = card.locator('table tbody tr').filter({ hasText: 'Sep 2025' });
+      await expect(row).toContainText('9-month pay reported differently · ×11/9 taken out', { timeout: 60_000 });
+      await expect(row).toContainText(fmt(Math.round((p.b / p.a / (11 / 9) - 1) * 1e4) / 1e4));
+      await expect(row).not.toContainText(fmt(p.b / p.a - 1));
+    }
   });
 
   test("Changes' biggest raises from Apr to Sep 2025 hold no 9-month relabel", async ({ page }) => {
