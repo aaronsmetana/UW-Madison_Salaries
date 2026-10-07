@@ -47,6 +47,8 @@ test('a raise case’s peer comparison and market standing each have their CSV, 
   await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(KEY)}`);
   await expect(page.getByRole('button', { name: 'CSV of the peer comparison' })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Download CSV' })).toHaveCount(0);
+  // The market standing's pools count the others the subject is placed among, and say so (G6).
+  await expect(page.getByRole('columnheader', { name: 'Others', exact: true })).toBeVisible();
   const cmp = await download(page, 'CSV of the peer comparison');
   expect(cmp.rows.length).toBe(people.length);
   expect(cmp.rows[0]).toContain('subject');

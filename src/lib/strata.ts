@@ -259,6 +259,20 @@ export function within(colCount: ArrayLike<number>, c: number, radius = READ_RAD
   return t;
 }
 
+/**
+ * Where a person's pay stands among everyone's (`desc`, highest first): their rank — one more than how many are
+ * paid more — and how many are paid less. The share of the others paid less is the app's standing (lib/stats
+ * `percentile`), so the person is never counted against themself.
+ */
+export function standingIn(desc: ArrayLike<number>, v: number): { rank: number; below: number } {
+  const past = (more: boolean) => {
+    let lo = 0, hi = desc.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (more ? desc[mid] > v : desc[mid] >= v) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  return { rank: past(true) + 1, below: desc.length - past(false) };
+}
+
 /** Where column `c` stands among everyone (`total`, the pile too): those in lower columns and half of
  *  its own, as a share. */
 export function shareAt(colCount: ArrayLike<number>, c: number, total: number): number {

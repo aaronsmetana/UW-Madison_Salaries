@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
-import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
+import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
@@ -11,7 +11,7 @@ import { measureText, placeNearLabels } from '../../lib/labelLayout';
 import { prefersReducedMotion } from '../../lib/motion';
 import { fmtK } from '../../lib/chartStyle';
 import { num, usd, vsCampus } from '../../lib/format';
-import { ordinal } from '../../lib/stats';
+import { poolPercentile } from '../../lib/queries';
 import { useReveal } from '../PersonReveal';
 import type { ShownPerson } from '../SearchBox';
 import type { Emphasis } from '../../lib/homePeople';
@@ -93,6 +93,8 @@ export interface DotWho {
   /** 1 + how many are paid more, of `total`. */
   rank?: number;
   total?: number;
+  /** How many are paid less: their standing is that share of the others (lib/stats `percentile`). */
+  below?: number;
 }
 export type WhoIs = (field: 'main' | 'pile', index: number) => DotWho | null;
 /** A person the search is showing who is on the graph: where their square is. */
@@ -444,7 +446,6 @@ export function StrataGraph({
   const whoIs: WhoIs | 'loading' | null = useMemo(() => {
     if (!tStrata || !tl || at == null || whoIsBase == null) return whoIsBase;
     if (!namesHere || !desc) return 'loading';
-    const above = (v: number) => { let lo = 0, hi = desc.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (desc[mid] > v) lo = mid + 1; else hi = mid; } return lo; };
     return (field, index) => {
       const id = field === 'main' ? tStrata.mainId[index] : tStrata.pileId[index];
       const key = id != null ? tl.keys[id] : undefined;
@@ -454,7 +455,7 @@ export function StrataGraph({
       return {
         key, name: n.name, title: n.title, school: n.school, pay,
         prev: prevPay ? (prevPay[id] > 0 ? prevPay[id] : null) : undefined, prevLabel: at > 0 ? snaps[at - 1].label : undefined,
-        rank: above(pay) + 1, total: desc.length,
+        ...standingIn(desc, pay), total: desc.length,
       };
     };
   }, [tStrata, tl, at, whoIsBase, namesHere, desc, prevPay, snaps]);
@@ -619,7 +620,7 @@ export function StrataGraph({
     let lit = 0;
     if (dim) for (let i = 0; i < strata.col.length; i++) if (!dim.main[i] && Math.abs(strata.col[i] - c) <= READ_RADIUS) lit++;
     const pct = Math.min(99, Math.max(1, Math.round(shareAt(strata.colCount, c, total) * 100)));
-    return `${fmtK(c * 1000)} · ${num(near)} people within ±${fmtK(READ_RADIUS * 1000)} · ${ordinal(pct)} percentile${dim ? ` · ${num(lit)} in the filter` : ''}`;
+    return `${fmtK(c * 1000)} · ${num(near)} people within ±${fmtK(READ_RADIUS * 1000)} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strata, layout, lensAt, lensFrom, lensCol, dim, total]);
 
@@ -1197,9 +1198,9 @@ export function StrataGraph({
                   {pickKind != null && <span className="strata-swatch" style={{ background: kindInks[pickKind] }} />}
                   <span>{pickKind != null ? strata.names[pickKind] : ''}</span>
                 </div>
-                {who.rank != null && who.total != null && (
+                {who.rank != null && who.below != null && who.total != null && who.total > 1 && (
                   <div className="strata-card-rank">
-                    {ordinal(Math.min(99, Math.max(1, Math.round((1 - (who.rank - 0.5) / who.total) * 100))))} percentile · #{num(who.rank)} of {num(who.total)}
+                    Paid more than {poolPercentile(who.below, who.total)}% · #{num(who.rank)} of {num(who.total)}
                   </div>
                 )}
                 {pinned ? (

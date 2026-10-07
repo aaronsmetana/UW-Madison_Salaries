@@ -356,7 +356,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Comparison pool</Table.Th>
-                        <Table.Th ta="right">n</Table.Th>
+                        <Table.Th ta="right">Others</Table.Th>
                         <Table.Th ta="right">Median</Table.Th>
                         <Table.Th ta="right"><GlossaryTerm term="percentile">Percentile</GlossaryTerm><Sup n={fn('percentile')} /></Table.Th>
                         <Table.Th ta="right">vs. median</Table.Th>

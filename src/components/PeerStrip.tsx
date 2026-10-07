@@ -1,7 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Text, VisuallyHidden } from '@mantine/core';
 import { usd, num, fmtYears } from '../lib/format';
-import { ordinal } from '../lib/stats';
 import { CHART_FONT, fmtK } from '../lib/chartStyle';
 import { useMounted } from '../lib/motion';
 import {
@@ -729,7 +728,7 @@ export function PeerStrip({
               <span className="chart-tip-pill">
                 {hoveredPeer
                   ? readout(hoveredPeer.p)
-                  : `~${usd(hoverValue ?? 0)}${hoverBelow != null ? ` · ${ordinal(Math.round(hoverBelow * 100))} percentile` : ''}`}
+                  : `~${usd(hoverValue ?? 0)}${hoverBelow != null ? ` · ${Math.round(hoverBelow * 100)}% paid less` : ''}`}
               </span>
             </div>
           )}

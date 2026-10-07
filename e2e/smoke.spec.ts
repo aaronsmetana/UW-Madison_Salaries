@@ -266,10 +266,10 @@ test.describe('the landing distribution', () => {
       await page.mouse.move(box.x + box.width * frac, box.y + box.height * 0.8);
       await expect(pill).toBeVisible();
       const text = (await pill.textContent()) ?? '';
-      // "$75k · 2,848 people within ±$5k · 50th percentile" — a column, a headcount, the width it was
+      // "$75k · 2,848 people within ±$5k · 50% paid less" — a column, a headcount, the width it was
       // counted over, and where that pay falls in the payroll.
       expect(text, 'the readout stopped naming a salary and a headcount').toMatch(
-        /^\$[\d,]+k · [\d,]+ people within ±\$\d+k · \d+(st|nd|rd|th) percentile$/
+        /^\$[\d,]+k · [\d,]+ people within ±\$\d+k · \d+% paid less$/
       );
       return Number(text.replace(/^.*· ([\d,]+) people.*$/, '$1').replace(/,/g, ''));
     };

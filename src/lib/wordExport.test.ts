@@ -102,6 +102,14 @@ describe('briefToWordHtml', () => {
     expect(html).toContain('Sam Lee');
   });
 
+  it('reads a pool’s standing as the brief does, an ordinal, against the others it counts', () => {
+    const m = baseModel();
+    const pools = [53, 22, 11].map((percentile, i) => ({ label: `Pool ${i}`, n: 40, med: 70_000, percentile, gapToMed: 2_000 }));
+    const html = briefToWordHtml({ ...m, standing: { ...m.standing!, pools } });
+    for (const o of ['53rd', '22nd', '11th']) expect(html).toMatch(new RegExp(`>${o}<`));
+    expect(html).toMatch(/>Others</);
+  });
+
   it('every opened table tag is closed', () => {
     const html = briefToWordHtml(baseModel());
     const opens = (html.match(/<table/g) ?? []).length;

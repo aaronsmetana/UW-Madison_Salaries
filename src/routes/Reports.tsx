@@ -19,7 +19,7 @@ import { usd, pct, fullName, plural, fmtToday } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
-import { tenureFit, TENURE_MIN_PEERS, ordinal } from '../lib/stats';
+import { tenureFit, TENURE_MIN_PEERS, printedPercentile } from '../lib/stats';
 import { readPref, writePref, clearPref } from '../lib/prefs';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { EmptyState } from '../components/EmptyState';
@@ -710,7 +710,7 @@ export default function Reports() {
   const proofs: ProofModel[] = useMemo(() => {
     if (subjectPay == null) return [];
     const out: ProofModel[] = [];
-    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: `${ordinal(stats.percentile)} percentile`, label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: `n = ${stats.n}` });
+    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: printedPercentile(stats.percentile), label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: `n = ${stats.n}` });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: plural(stats.invCount, 'peer'), label: stats.invCount === 1 ? 'tenure inversion — less UW tenure, higher pay' : 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
     if (guidelineCompression && guidelineCompression.count > 0) {
       const gc = guidelineCompression;
@@ -743,7 +743,7 @@ export default function Reports() {
       const mp = marketPosition;
       const posPct = Math.round(mp.pir * 100);
       if (posPct < 50) {
-        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% of range`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · full-time rate ${usd(mp.rate)} · compa-ratio ${mp.compa.toFixed(2)}` });
+        out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% through the band`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · full-time rate ${usd(mp.rate)} · compa-ratio ${mp.compa.toFixed(2)}` });
       }
       if (mp.belowCompetitive) {
         out.push({ kind: 'marketFloor', value: mp.compa.toFixed(2), label: `compa-ratio — below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
@@ -803,7 +803,7 @@ export default function Reports() {
         quote: POLICY.parityQuote,
         supportedBy: poolsBelow.length > 1
           ? `paid below the median in ${plural(poolsBelow.length, 'comparison pool')} (see Market standing)`
-          : `paid below the ${docCohortLabel} median (${stats.percentile != null ? `${ordinal(stats.percentile)} percentile` : 'see Market standing'})`,
+          : `paid below the ${docCohortLabel} median (${stats.percentile != null ? printedPercentile(stats.percentile) : 'see Market standing'})`,
       });
     }
     const supBelowFloor = supervisoryCase.reports.filter((r) => r.belowFloor);
@@ -904,7 +904,7 @@ export default function Reports() {
     const tenureTrendMeaningful = tenureRegression?.verdict === 'below';
     return [
       { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools`, sectionId: 'standing' },
-      { label: 'Percentile / market gap', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers', sectionId: 'highlights' },
+      { label: 'Standing and gap to median', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers', sectionId: 'highlights' },
       { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers', sectionId: 'highlights' },
       { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers', sectionId: 'highlights' },
       { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below', sectionId: 'highlights' },

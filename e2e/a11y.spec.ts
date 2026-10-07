@@ -176,7 +176,7 @@ for (const theme of THEMES) {
     );
     // Each tab waits for its last card to arrive: the Pay tab's ranks mount after the pay band, and fade
     // in, so a scan once the band showed measured them at two-thirds opacity.
-    for (const [pk, tab, sels] of [[p.pk, 'history', ['table.appt-history tbody tr']], ['aaronsmetana|2014-10-15', 'pay', ['.payband-note', 'text=pctile']]] as const) {
+    for (const [pk, tab, sels] of [[p.pk, 'history', ['table.appt-history tbody tr']], ['aaronsmetana|2014-10-15', 'pay', ['.payband-note', 'text="more than"']]] as const) {
       await page.goto(`./person/${encodeURIComponent(pk)}?tab=${tab}`);
       await setTheme(page, theme);
       for (const sel of sels) await expect(page.locator(sel).first()).toBeVisible({ timeout: 60_000 });

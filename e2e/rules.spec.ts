@@ -287,11 +287,11 @@ test.describe('R5 — standing is one query, per person, the department inside i
   async function agreeOnStanding(page: Page, key: string, school: string) {
     await page.goto(`./person/${encodeURIComponent(key)}?tab=pay`);
     const bars = page.locator('.chart-plot');
-    await expect(bars.first()).toContainText('pctile', { timeout: 60_000 });
+    await expect(bars.first()).toContainText('more than', { timeout: 60_000 });
     const texts = await bars.allInnerTexts();
     const pctOf = (first: (t: string) => boolean) => {
       const t = texts.find((x) => first(x.split('\n')[0].trim()));
-      return Number(t?.match(/(\d+)(?:st|nd|rd|th)\s+pctile/)?.[1]);
+      return Number(t?.match(/more than\s+(\d+)%/)?.[1]);
     };
     const onPage = { uw: pctOf((l) => l === 'All UW–Madison'), school: pctOf((l) => l === school) };
 

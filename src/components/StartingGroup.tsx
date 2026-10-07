@@ -11,7 +11,6 @@ import { AXIS_TICK, GRID, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { EndLabels } from './chart/EndLabels';
 import { moneyTicks } from '../lib/rangeScale';
 import { usd, num } from '../lib/format';
-import { ordinal } from '../lib/stats';
 import { BAND_IQR, MARK_SELF } from './markers';
 import { CardTitle } from './CardTitle';
 import { ChartData } from './ChartData';
@@ -49,7 +48,7 @@ function GroupTip({ active, payload }: { active?: boolean; payload?: { payload: 
       {d.median != null && <Text size="xs" c="dimmed">Group median {usd(d.median)}</Text>}
       {d.mine != null && (
         <Text size="sm">
-          This person {usd(d.mine)}{d.pct != null ? ` · ${ordinal(d.pct)} percentile` : ''}
+          This person {usd(d.mine)}{d.pct != null ? ` · paid more than ${d.pct}%` : ''}
         </Text>
       )}
     </TipSurface>
@@ -125,7 +124,7 @@ export function StartingGroup({ personKey, first }: {
       >
         {num(start.n)} people were {first.title} in {when}; {num(now.n)} {now.n === 1 ? 'is' : 'are'} still at UW. People
         who left drop out.
-        {start.pct != null && now.pct != null ? ` Started at the ${ordinal(start.pct)} percentile; now ${ordinal(now.pct)}.` : ''}
+        {start.pct != null && now.pct != null ? ` At the start this person was paid more than ${start.pct}% of the group; now more than ${now.pct}%.` : ''}
       </Text>
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart {...chartKeys('The group this person started with')} data={plot} margin={{ left: 12, right: 30, top: 16, bottom: 0 }}>
@@ -155,7 +154,7 @@ export function StartingGroup({ personKey, first }: {
       </ResponsiveContainer>
       <ChartData
         caption={`The group that started as ${first.title} in ${when}`}
-        columns={['Snapshot', 'Still here', '10th', '25th', 'Median', '75th', '90th', 'This person', 'Percentile']}
+        columns={['Snapshot', 'Still here', '10th', '25th', 'Median', '75th', '90th', 'This person', 'Paid more than (%)']}
         rows={plot.map((r) => [r.label, r.n, r.p10, r.p25, r.med, r.p75, r.p90, r.mine, r.pct])}
         unit="snapshots"
         about={<>

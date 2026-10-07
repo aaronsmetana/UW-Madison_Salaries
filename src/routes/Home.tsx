@@ -16,6 +16,7 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { Z } from '../lib/layers';
 import { StrataGraph, type FoundPerson, type GraphGroup, type GraphTimeline, type WhoIs } from '../components/strata/StrataGraph';
 import type { SearchIndex } from '../lib/manifest';
+import { standingIn } from '../lib/strata';
 import { ICON } from '../lib/ui';
 
 interface StatData { label: string; value: number | null; format: (n: number) => string; hint?: string }
@@ -221,9 +222,8 @@ export default function Home() {
     const names = new Map(homeNames.map((n) => [n.person_key, n]));
     const pays = new Map(homePeople.map((p) => [p.person_key, p.pay]));
     const prev = prevPeople ? new Map(prevPeople.map((p) => [p.person_key, p.pay])) : null;
-    // Everyone's pay, highest first: a person's rank is one more than how many are paid more.
+    // Everyone's pay, highest first, to rank a person among (lib/strata `standingIn`).
     const desc = Float64Array.from(homePeople.flatMap((p) => (p.pay != null && p.pay > 0 ? [Number(p.pay)] : []))).sort().reverse();
-    const above = (v: number) => { let lo = 0, hi = desc.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (desc[mid] > v) lo = mid + 1; else hi = mid; } return lo; };
     return (field, index) => {
       const key = at[field][index];
       const n = key ? names.get(key) : undefined;
@@ -232,7 +232,7 @@ export default function Home() {
       return {
         key, name: fullName(n.fn, n.ln), title: n.title, school: n.school, pay,
         prev: prev ? (prev.get(key) ?? null) : undefined, prevLabel: prevSnapshot?.label,
-        rank: pay != null ? above(Number(pay)) + 1 : undefined, total: desc.length,
+        ...(pay != null ? standingIn(desc, Number(pay)) : {}), total: desc.length,
       };
     };
   }, [wantWho, homePeople, homeNames, prevPeople, prevSnapshot, spots]);

@@ -1,7 +1,7 @@
 // Shared types + pure helpers for the raise case studio (left setup pane + right brief).
 import type { ReactNode } from 'react';
 import { usd, pct, plural } from '../../lib/format';
-import { percentile as percentileOf, ordinal } from '../../lib/stats';
+import { percentile as percentileOf } from '../../lib/stats';
 import { POLICY } from './sources';
 import type { ScatterPoint } from '../TenurePayScatter';
 
@@ -493,7 +493,7 @@ export function buildTalkingPoints(o: {
   }
   lines.push('');
   lines.push('Why:');
-  if (o.percentile != null) lines.push(`• Paid at the ${ordinal(o.percentile)} percentile of ${o.cohortLabel}.`);
+  if (o.percentile != null) lines.push(`• Paid more than ${o.percentile}% of ${o.cohortLabel}.`);
   if (o.invCount > 0) lines.push(`• ${plural(o.invCount, 'peer has', 'peers have')} less UW tenure and higher pay (up to +${usd(o.invMaxGap)}).`);
   const gc = o.guidelineCompression;
   if (gc && gc.count > 0) {

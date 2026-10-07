@@ -22,7 +22,6 @@ const OVER = categories.reduce((t, c) => t + c.over, 0);
 const ORDER = ['Academic Staff', 'University Staff', 'Employees in Training', 'Faculty', 'Limited'];
 const num = (n: number) => n.toLocaleString('en-US');
 const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
-const ordinal = (n: number) => { const v = n % 100; const s = ['th', 'st', 'nd', 'rd']; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 
 type Field = 'main' | 'pile';
 const field = (page: Page) => page.locator('.hero-dist:not([data-full="on"]) .strata-field, .hero-dist-full .strata-field').first();
@@ -159,7 +158,7 @@ async function pointAt(page: Page, fx: number, fy: number) {
   return { x, y };
 }
 
-test('the lens names the square under the pointer: who, their title, pay and its change, their type, percentile and rank', async ({ page }) => {
+test('the lens names the square under the pointer: who, their title, pay and its change, their type, standing and rank', async ({ page }) => {
   await home(page);
   await pointAt(page, 0.3, 0.85);
   const [f, i] = (await plot(page).getAttribute('data-pick'))!.split(':') as [Field, string];
@@ -179,7 +178,9 @@ test('the lens names the square under the pointer: who, their title, pay and its
     `SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${prevId}' AND salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}'`,
   );
   const rank = 1 + rows.filter((p) => p.pay > who.pay).length;
-  const pct = Math.min(99, Math.max(1, Math.round((1 - (rank - 0.5) / rows.length) * 100)));
+  // Their standing as the app states one (lib/stats percentile): the share of the others paid less — the person
+  // is not counted against themself, and those paid the same are not below them.
+  const pct = Math.min(100, Math.round((rows.filter((p) => p.pay < who.pay).length / (rows.length - 1)) * 100));
   const card = page.locator('.strata-card');
   await expect(card).toHaveAttribute('data-who', who.key);
   await expect(card.locator('.strata-card-name')).toHaveText(new RegExp(`^${n.fn}\\s+${n.ln}$`, 'i'));
@@ -190,7 +191,7 @@ test('the lens names the square under the pointer: who, their title, pay and its
     : `${who.pay >= prev.pay ? '+' : '−'}${Math.abs(((who.pay - prev.pay) / prev.pay) * 100).toFixed(1)}% since ${prevLabel}`;
   await expect(card.locator('.strata-card-change')).toHaveText(change);
   await expect(card.locator('.strata-card-meta')).toHaveText(who.cat);
-  await expect(card.locator('.strata-card-rank')).toHaveText(`${ordinal(pct)} percentile · #${num(rank)} of ${num(rows.length)}`);
+  await expect(card.locator('.strata-card-rank')).toHaveText(`Paid more than ${pct}% · #${num(rank)} of ${num(rows.length)}`);
 });
 
 /**
@@ -294,7 +295,7 @@ test('the readout counts everyone within ±$5k of the lens and says where that p
   const own = under.filter((p) => Math.floor(p.pay / 1000) === c).length;
   const headcount = rows.length;
   const pct = Math.min(99, Math.max(1, Math.round(((below + own / 2) / headcount) * 100)));
-  await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * 1000)} · ${num(near)} people within ±$5k · ${ordinal(pct)} percentile`);
+  await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * 1000)} · ${num(near)} people within ±$5k · ${pct}% paid less`);
 });
 
 test('isolating a type lights its people where they stand, moves no one, and the lens names only them', async ({ page }) => {

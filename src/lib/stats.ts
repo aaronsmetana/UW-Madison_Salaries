@@ -27,6 +27,15 @@ export function ordinal(n: number): string {
   return r + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+/**
+ * A standing in the printed brief's register, "the 61st percentile": the brief has a glossary and a footnote to
+ * carry the word. On screen a standing reads "paid more than 61%" (PercentileNote), and copyWords.test keeps the
+ * word after a number to the brief and this function.
+ */
+export function printedPercentile(pct: number): string {
+  return `${ordinal(pct)} percentile`;
+}
+
 /** Ordinary least-squares fit of y on x. Returns null with fewer than 2 points or zero x-variance
  *  (a vertical fit is undefined). Shared by the tenure-vs-pay scatter and the comparison report's
  *  tenure-trend regression, so both read the exact same line for the same cohort. */

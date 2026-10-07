@@ -7,6 +7,7 @@
 import { raiseBucketLabel } from './raiseBuckets';
 import { fmtYearsToParity, SECTION_ORDER, type BriefModel } from '../components/report/model';
 import { usd, pct, fmtYears } from './format';
+import { ordinal } from './stats';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
 
 const esc = (s: string | number | null | undefined): string =>
@@ -169,10 +170,10 @@ export function briefToWordHtml(model: BriefModel): string {
     }
     if (standing.pools.length > 0) {
       body.push(table(
-        ['Comparison pool', 'n', 'Median', 'Percentile', 'vs. median'],
+        ['Comparison pool', 'Others', 'Median', 'Percentile', 'vs. median'],
         standing.pools.map((pl) => [
           esc(pl.label), String(pl.n), usd(pl.med),
-          pl.percentile != null ? `${pl.percentile}th` : '—',
+          pl.percentile != null ? ordinal(pl.percentile) : '—',
           pl.med != null && pl.med > 0 ? `${subjectPay - pl.med >= 0 ? '+' : ''}${pct((subjectPay - pl.med) / pl.med)}` : '—',
         ]),
         ['l', 'r', 'r', 'r', 'r'],

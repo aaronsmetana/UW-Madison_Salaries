@@ -276,7 +276,7 @@ test('the peer strip names the person under the cursor, and reads the axis betwe
   const pill = page.locator('.peer-strip .chart-tip-pill');
 
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  // A name and a pay figure — not the "~$X · Nth percentile" estimate.
+  // A name and a pay figure — not the "~$X · N% paid less" estimate.
   await expect(pill).toHaveText(/^[^~]+ · \$[\d,]+( · [\d.]+ yrs)?$/, { timeout: 5_000 });
 
   // Straight up from that dot, in the lane over the population where only the subject's own mark

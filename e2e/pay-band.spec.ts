@@ -140,7 +140,7 @@ test.describe('a pay band reads the full-time rate of the graded appointment', (
       `Placed on the full-time rate of the appointment in grade ${two.grade}, $${Math.round(two.rate).toLocaleString('en-US')}.`
     );
     const through = Math.round(((two.rate - two.mn) / (two.mx - two.mn)) * 100);
-    await expect(card).toContainText(two.rate < two.mn ? 'below min' : two.rate > two.mx ? 'over max' : `${through}% through band`);
+    await expect(card).toContainText(two.rate < two.mn ? 'below min' : two.rate > two.mx ? 'over max' : `${through}% through the band`);
 
     // A part-time appointment's actual pay is not in the band's unit; its rate is.
     const [part] = await misread('n = 1');

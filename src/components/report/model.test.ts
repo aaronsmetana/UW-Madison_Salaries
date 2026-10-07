@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -177,6 +177,17 @@ describe('fmtYearsToParity', () => {
   it('caps an unbounded projection at a round "10+" instead of an absurd figure', () => {
     expect(fmtYearsToParity(10.1)).toBe('10+ more years');
     expect(fmtYearsToParity(57)).toBe('10+ more years');
+  });
+});
+
+describe('the talking points', () => {
+  it('state the standing as the screen does, a share paid less, not the brief’s percentile', () => {
+    const text = buildTalkingPoints({
+      subjectName: 'Jordan Rivers', current: 68_000, recommended: 75_000, delta: 7_000, pct: 0.103,
+      cohortLabel: 'all UW–Madison employees with this title', percentile: 61, invCount: 0, invMaxGap: 0, streakYears: 0, factors: [],
+    });
+    expect(text).toContain('• Paid more than 61% of all UW–Madison employees with this title.');
+    expect(text).not.toMatch(/percentile/i);
   });
 });
 

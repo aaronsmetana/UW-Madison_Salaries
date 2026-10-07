@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, snapReach, squareAt, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within, type Grid,
 } from './strata';
 
@@ -144,6 +144,15 @@ describe('snapReach', () => {
     // Thinner, further.
     expect(snapReach(40, 76, 1.5)).toBeGreaterThan(snapReach(400, 76, 1.5));
     expect(snapReach(0, 76, 1.5)).toBe(0);
+  });
+});
+
+describe('standingIn', () => {
+  it('ranks by how many are paid more and counts how many are paid less, ties neither', () => {
+    const desc = [90, 80, 80, 70, 60];
+    expect(standingIn(desc, 90)).toEqual({ rank: 1, below: 4 });
+    expect(standingIn(desc, 80)).toEqual({ rank: 2, below: 2 });
+    expect(standingIn(desc, 60)).toEqual({ rank: 5, below: 0 });
   });
 });
 

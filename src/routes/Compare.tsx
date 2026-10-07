@@ -19,7 +19,6 @@ import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, earningsExpr, personPay, peopleSql, continuingRaisesSql } from '../lib/queries';
 import { usd, num, pct, spanLabel, fmtYears } from '../lib/format';
-import { ordinal } from '../lib/stats';
 import { ChartData } from '../components/ChartData';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
 import { SvgPill } from '../components/chart/pills';
@@ -530,20 +529,20 @@ export default function Compare() {
 
       {persons.length > 0 && standingSeries.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle sub="Each person's percentile among their school's staff, snapshot by snapshot.">Standing within the school</CardTitle>
+          <CardTitle sub="The share of their school's staff each person is paid more than, snapshot by snapshot.">Standing within the school</CardTitle>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart {...chartKeys('Percentile within school over time')} data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
+            <LineChart {...chartKeys('Standing within the school over time')} data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(standingSeries)} tick={AXIS_TICK} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
-              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, (v) => `${ordinal(v)} pctile`)} /> : null} />
+              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, (v) => `more than ${Math.round(v)}%`)} /> : null} />
               {persons.map((p) => (
                 <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
           <ChartData
-            caption="Percentile within school over time"
+            caption="Standing within the school over time"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
             rows={standingSeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
             unit="snapshots"

@@ -33,7 +33,7 @@ import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
 import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
 import { usePref } from '../lib/prefs';
-import { percentile, ordinal } from '../lib/stats';
+import { percentile } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -225,7 +225,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?:
         <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
       </div>
       <Text size="sm" fw={700} c={above ? 'pos' : 'dimmed'} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
-        {ordinal(pct)} <Text span size="xs" fw={500} c="dimmed">pctile</Text>
+        <Text span size="xs" fw={500} c="dimmed">more than</Text> {pct}%
       </Text>
     </Group>
   );
@@ -1296,7 +1296,7 @@ export default function Person() {
               ))
               : poolLabels.map((p) => <PercentileBar key={p.label} label={p.label} />)}
           </Stack>
-          <Text size="xs" c="dimmed" mt="md">Percentile = share of the pool this person out-earns; the centre line marks the pool median (50th). Green = above median. Pools with only one person are omitted.</Text>
+          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The centre line is the pool's median; green is above it. Pools of one person are left out.</Text>
         </Card>
       )}
 
