@@ -1632,7 +1632,7 @@ export default function Person() {
         </Tabs.Panel>
 
         <Tabs.Panel value="history" pt="md">
-      <HistoryTable rows={rows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} />
+      <HistoryTable rows={rows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} csvName={name} />
         </Tabs.Panel>
       </Tabs>
     </Stack>

@@ -114,6 +114,76 @@
     width: 100% !important;
   }
 
+  /* ---------------------------------------------------------------------------------------------
+     A person's title & salary history (HistoryTable) on paper. Its columns ran 814–1,069px wide against
+     the 661 a Letter page leaves inside the card, and a scroll box cannot scroll on paper. So the job code,
+     the school and department, the rate and the basis fold under the title, the pay and the FTE
+     (`.print-under`); the table takes the page's width, and a raise's comparison and its notes wrap.
+     --------------------------------------------------------------------------------------------- */
+  .appt-history [data-print-fold] {
+    display: none !important;
+  }
+  .appt-history .print-under {
+    display: block !important;
+  }
+  .appt-history {
+    min-width: 0 !important;
+  }
+  .appt-history [data-raise-compare],
+  .appt-history [data-raise-compare] *,
+  .appt-history .appt-reporting-note,
+  .appt-history .appt-rate-note {
+    white-space: normal !important;
+  }
+  /* Tighter cells, and the snapshot's label may wrap ("Nov 2021 / (Pre-TTC)"): the room goes to the title. */
+  .appt-history th,
+  .appt-history td {
+    padding-inline: 6px !important;
+  }
+  .appt-history .appt-snapshot {
+    white-space: normal !important;
+  }
+  .appt-history .appt-snapshot .mantine-Badge-root {
+    height: auto;
+  }
+  .appt-history .appt-snapshot .mantine-Badge-label {
+    white-space: normal;
+    min-width: 0;
+  }
+  /* No scroll box on paper: its wrappers drop out of the layout and the table sits in the card. Broken over
+     pages inside them, the table's height came out short — the last row cut in half, or the note under the
+     table printed over its last rows. */
+  .fold-scroll:has(.appt-history),
+  .fold-scroll:has(.appt-history) .mantine-ScrollArea-viewport,
+  .fold-scroll:has(.appt-history) .mantine-ScrollArea-viewport > div,
+  .fold-scroll:has(.appt-history) .mantine-TableScrollContainer-scrollContainerInner {
+    display: contents !important;
+  }
+  .fold-scroll:has(.appt-history) .mantine-ScrollArea-scrollbar,
+  .fold-scroll:has(.appt-history) .mantine-ScrollArea-corner {
+    display: none !important;
+  }
+  /* It runs on over pages a row at a time, its head over each. Kept whole, a history taller than what was
+     left of a page (eleven rows is) was pushed past a blank page and then broken anyway. And it is no card on
+     paper, only its title and the table, so a page that ends just after the title — which moves on with the
+     first row — leaves no empty box behind. */
+  .mantine-AppShell-main .appt-history-card,
+  .mantine-AppShell-main table.appt-history {
+    break-inside: auto;
+  }
+  .mantine-AppShell-main .appt-history-card {
+    border: none !important;
+    padding: 0 !important;
+    background: none !important;
+  }
+  .appt-history tr {
+    break-inside: avoid;
+  }
+  /* "New" is for a screen a reader comes back to; a sheet of paper has no last visit. */
+  .new-badge {
+    display: none !important;
+  }
+
   /* Reveal the print-only provenance footer. */
   .print-only {
     display: block !important;

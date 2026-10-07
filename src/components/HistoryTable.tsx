@@ -10,9 +10,14 @@ import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 import { useSummary } from '../lib/hooks';
 import { NewBadge } from './NewBadge';
+import { CsvButton } from './CsvButton';
+import { downloadCSV } from '../lib/csv';
 
 /**
- * The person page's title & salary history table.
+ * A person's title & salary history: the person page's History tab and the one-person report draw this one
+ * table, so the printed report cannot tell a reader something the page does not. On paper the job code, the
+ * school and department, the rate and the basis fold under the cells beside them (print.css), so it fits a
+ * Letter page.
  *
  * Any interactive state for this table belongs here, not in the page: the page keeps every tab panel
  * mounted (Mantine's `keepMounted` default), and while the History tab is showing the hidden panels
@@ -122,11 +127,13 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
   );
 }
 
-export function HistoryTable({ rows, comparisons }: {
+export function HistoryTable({ rows, comparisons, csvName }: {
   rows: readonly HistoryRow[];
   /** Each continuing raise's comparison with that step's raises campus-wide (lib/raiseContext),
    *  keyed by the snapshot it ends at. Absent until loaded. */
   comparisons?: ReadonlyMap<string, { text: string }>;
+  /** The person's name, for the CSV's file name. */
+  csvName: string;
 }) {
   // The newest release's rows carry "New" (NewBadge) for its first 30 days.
   const newestId = useSummary().data?.latest?.id ?? null;
@@ -207,6 +214,29 @@ export function HistoryTable({ rows, comparisons }: {
     [historyRows, matching]
   );
 
+  // Each row's change as its Change cell states it, and the reporting change it was measured across: like for
+  // like across one (queries `likeForLike`), none where nothing pairs. The CSV writes the same figures.
+  const stated = useMemo(() => {
+    const m = new Map<HistoryRow, { reporting: ReportingChange | null; change: number | null; note: string | null }>();
+    historyRows.forEach((r) => {
+      const pos = snapHistory.index.get(r.snapshot_id) ?? 0;
+      const priorId = pos > 0 ? snapHistory.order[pos - 1] : null;
+      const from = matching.priorOf.get(r);
+      // The appointment's own prior row where the matcher found one, else any prior row under the same title
+      // (a combined figure spans those).
+      const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
+      const reporting = priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean) ?? null;
+      const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
+      const [change, note] = raise.kind === 'titleChange' ? [raise.delta, [raise.move, raise.note].filter(Boolean).join(' · ')]
+        : reporting ? (raise.kind === 'paired' ? [likeForLike(raise.delta, reporting), likeForLikeNote(reporting)] : [null, reporting.note])
+        : raise.kind === 'paired' ? [raise.delta, null]
+        : raise.kind === 'combined' ? [raise.delta, acrossLabel(raise.curCount, raise.priorCount)]
+        : raise.kind === 'newAppointment' ? [null, 'new appointment'] : [null, null];
+      m.set(r, { reporting, change, note: note || null });
+    });
+    return m;
+  }, [historyRows, snapHistory, matching]);
+
   // One pay column when the rate IS the pay on every row (full-time, or no FTE on file): two columns
   // repeating the same figure made the reader compare them for a difference that is never there.
   const onePay = useMemo(
@@ -215,8 +245,26 @@ export function HistoryTable({ rows, comparisons }: {
   );
 
   return (
-    <Card withBorder padding="lg">
-      <CardTitle>Title & salary history</CardTitle>
+    <Card withBorder padding="lg" className="appt-history-card">
+      <CardTitle
+        right={(
+          <CsvButton
+            label="CSV of the title and salary history"
+            disabled={!historyRows.length}
+            onClick={() => downloadCSV(`${csvName}-history.csv`, historyRows.map((r) => {
+              const st = stated.get(r);
+              return {
+                snapshot: r.snapshot_label, title: r.title, job_code: r.job_code, school: r.school, department: r.department,
+                rate: r.salary != null ? Math.round(r.salary) : null, actual_pay: Math.round(actualPay(r)),
+                change: st?.change != null ? fmtChange(st.change) : null, change_note: st?.note ?? null,
+                fte: r.fte || null, basis: fmtBasis(r.comp_basis),
+              };
+            }))}
+          />
+        )}
+      >
+        Title &amp; salary history
+      </CardTitle>
       {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
       <Table.ScrollContainer className="fold-scroll" minWidth={(gutter.slots ? 900 + gutter.slots * 22 : 880) - (onePay ? 90 : 0)}>
       {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
@@ -235,19 +283,19 @@ export function HistoryTable({ rows, comparisons }: {
             )}
             <Table.Th className="appt-snapshot" data-fold>Snapshot</Table.Th>
             <Table.Th>Title</Table.Th>
-            <Table.Th data-fold>Job code</Table.Th>
-            <Table.Th data-fold>School / Dept</Table.Th>
+            <Table.Th data-fold data-print-fold>Job code</Table.Th>
+            <Table.Th data-fold data-print-fold>School / Dept</Table.Th>
             {onePay ? (
               <Table.Th ta="right"><GlossaryTerm term="actualPay">Pay</GlossaryTerm></Table.Th>
             ) : (
               <>
-                <Table.Th ta="right" data-fold><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
+                <Table.Th ta="right" data-fold data-print-fold><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
                 <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
               </>
             )}
             <Table.Th ta="right"><GlossaryTerm term="payChange">Change</GlossaryTerm></Table.Th>
             <Table.Th ta="right" data-fold>FTE</Table.Th>
-            <Table.Th data-fold>Basis</Table.Th>
+            <Table.Th data-fold data-print-fold>Basis</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -324,10 +372,7 @@ export function HistoryTable({ rows, comparisons }: {
                         : 'a snapshot is missing between';
                   return { text: `not compared: ${why}`, compared: false };
                 })();
-                const reporting = ((): ReportingChange | null => {
-                  const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
-                  return priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean) ?? null;
-                })();
+                const reporting = stated.get(r)?.reporting ?? null;
             return (
               <Table.Tr
                 key={`${r.snapshot_id}-${i}`}
@@ -367,9 +412,13 @@ export function HistoryTable({ rows, comparisons }: {
                   <Text className="fold-under" size="xs" c="dimmed">
                     {[r.department, showSchool ? r.school : null].filter(Boolean).join(' · ') || '—'}
                   </Text>
+                  {/* On paper the job code and the department are under the title too. */}
+                  <Text className="print-under" size="xs" c="dimmed">
+                    {[r.job_code, r.department, showSchool ? r.school : null].filter(Boolean).join(' · ') || '—'}
+                  </Text>
                 </Table.Td>
-                <Table.Td data-fold>{r.job_code ?? '—'}</Table.Td>
-                <Table.Td data-fold>
+                <Table.Td data-fold data-print-fold>{r.job_code ?? '—'}</Table.Td>
+                <Table.Td data-fold data-print-fold>
                   {showSchool && <Text size="sm" className="appt-school">{r.school ?? '—'}</Text>}
                   <Group gap={6} wrap="nowrap">
                     {orgMoved && (
@@ -388,8 +437,11 @@ export function HistoryTable({ rows, comparisons }: {
                     <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
                   </Group>
                 </Table.Td>
-                {!onePay && <Table.Td ta="right" data-fold>{usd(r.salary)}</Table.Td>}
-                <Table.Td ta="right">{usd(actual)}</Table.Td>
+                {!onePay && <Table.Td ta="right" data-fold data-print-fold>{usd(r.salary)}</Table.Td>}
+                <Table.Td ta="right">
+                  {usd(actual)}
+                  {!onePay && Math.round(r.salary ?? 0) !== Math.round(actual) && <Text className="print-under" size="xs" c="dimmed">rate {usd(r.salary)}</Text>}
+                </Table.Td>
                 <Table.Td ta="right">
                   <RaiseCell raise={raise} note={rateNote} reporting={reporting} compare={compare}>
                     {/* A new title the matcher could not pair — the person held more than one
@@ -402,8 +454,11 @@ export function HistoryTable({ rows, comparisons }: {
                   </RaiseCell>
                 </Table.Td>
                 {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says. */}
-                <Table.Td ta="right" data-fold>{r.fte || '—'}</Table.Td>
-                <Table.Td data-fold><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
+                <Table.Td ta="right" data-fold>
+                  {r.fte || '—'}
+                  {r.comp_basis && <Text className="print-under" size="xs" c="dimmed">{fmtBasis(r.comp_basis)}</Text>}
+                </Table.Td>
+                <Table.Td data-fold data-print-fold><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
               </Table.Tr>
             );
           })}

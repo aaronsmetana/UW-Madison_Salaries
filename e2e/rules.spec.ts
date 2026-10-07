@@ -551,15 +551,19 @@ test.describe('Phones — the figure sits beside the name', () => {
     await expect(page.locator('.app-footer')).toHaveCSS('position', 'static');
   });
 
-  test('printing keeps every column, even at a phone-like printable width', async ({ page }) => {
+  test("printing never takes the phone's fold, even at a phone-like printable width", async ({ page }) => {
     // A4 portrait with margins prints ~700px wide — narrower than the phone breakpoint (48em).
     await page.setViewportSize({ width: 700, height: 1000 });
     await page.emulateMedia({ media: 'print' });
     await page.goto(`./person/${encodeURIComponent(AARON)}?tab=history`);
     const table = page.locator('table.appt-history');
     await expect(table.locator('tbody tr').first()).toBeAttached({ timeout: 60_000 });
-    const hidden = await table.locator('[data-fold]').evaluateAll((els) => els.filter((e) => getComputedStyle(e).display === 'none').length);
-    expect(hidden, 'no column folds on paper').toBe(0);
+    // The history folds a few columns of its own on paper (`data-print-fold`, history.spec); every other column
+    // prints, and nothing the phone folds under the title does.
+    const shown = (sel: string) => table.locator(sel).evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== 'none').length);
+    expect(await table.locator('[data-fold]:not([data-print-fold])').evaluateAll((els) => els.filter((e) => getComputedStyle(e).display === 'none').length),
+      'a column folds on paper the way it does on a phone').toBe(0);
+    expect(await shown('.fold-under'), "the phone's fold shows on paper").toBe(0);
   });
 });
 

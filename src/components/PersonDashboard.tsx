@@ -1,20 +1,17 @@
 import { useMemo } from 'react';
-import { Stack, Title, Text, Card, Table, Badge, Alert } from '@mantine/core';
+import { Stack, Title, Text, Card, Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot, ReferenceLine, Customized } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, sameBasisAcross, reportingChange, reportingAcross, likeForLike, likeForLikeNote, standingSql, poolPercentile, gradedAppt, type ReportingChange } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from './GapBreakdown';
-import {
-  matchAppointments, acrossLabel, byAppointment, laneGutter, type Raise,
-} from '../lib/payHistory';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday, fmtYears } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
@@ -27,9 +24,7 @@ import { ChartData } from './ChartData';
 import { PercentileNote } from './PercentileNote';
 import { percentile } from '../lib/stats';
 import { CardTitle } from './CardTitle';
-import { CsvButton } from './CsvButton';
-import { downloadCSV } from '../lib/csv';
-import { LaneGutter, LaneStationSample } from './LaneGutter';
+import { HistoryTable } from './HistoryTable';
 import { StatCard, StatRow } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
@@ -178,77 +173,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   }), [trendPlot]);
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
 
-  const apptCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
-    return m;
-  }, [rows]);
-
-  // Same ordering as the /person history tab, including the stable within-snapshot order that lets a
-  // reader follow one appointment down the page. This one prints, so the two must not disagree.
-  const historyRows = useMemo(() => {
-    const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
-    const withinSnapshot = byAppointment<Row>((r) => ({
-      snapshotId: r.snapshot_id, jobCode: r.job_code, school: r.school,
-      department: r.department, fte: r.fte, pay: r.pay ?? 0,
-    }));
-    return [...rows].sort(
-      (a, b) =>
-        String(a.snapshot_date).localeCompare(String(b.snapshot_date)) ||
-        ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id) ||
-        withinSnapshot(a, b)
-    );
-  }, [rows]);
-
-  // Which job codes each snapshot holds, so history badges compare the SAME title across snapshots
-  // rather than the adjacent (interleaved) row. Carries no pay: summing per job code here and then
-  // dividing one appointment's pay by that sum is the bug payHistory.ts documents.
-  const snapHistory = useMemo(() => {
-    const order: string[] = [];
-    const index = new Map<string, number>();
-    const bySnap = new Map<string, { date: string; jobs: Set<string> }>();
-    for (const r of historyRows) {
-      let s = bySnap.get(r.snapshot_id);
-      if (!s) { s = { date: String(r.snapshot_date), jobs: new Set() }; bySnap.set(r.snapshot_id, s); index.set(r.snapshot_id, order.length); order.push(r.snapshot_id); }
-      if (r.job_code != null) s.jobs.add(r.job_code);
-    }
-    return { order, index, bySnap };
-  }, [historyRows]);
-
-  // Where each snapshot's first row sits — the one row of the group that carries the snapshot's
-  // label, now that the label is printed once per snapshot rather than once per line.
-  const apptFirstRow = useMemo(() => {
-    const m = new Map<string, number>();
-    historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
-    return m;
-  }, [historyRows]);
-
-  // Per-appointment change and lane, the same rule the /person history tab uses — this report is
-  // printed and handed over, so the two must never disagree about whether someone took a pay cut, or
-  // about which line is which appointment.
-  const matching = useMemo(
-    () =>
-      matchAppointments(historyRows, (r) => ({
-        snapshotId: r.snapshot_id,
-        jobCode: r.job_code,
-        school: r.school,
-        department: r.department,
-        fte: r.fte,
-        pay: r.pay ?? 0,
-        date: r.snapshot_date,
-        grade: r.grade_number,
-        gradeBasis: r.grade_basis,
-        basis: r.comp_basis,
-      })),
-    [historyRows]
-  );
-  const anyCombined = useMemo(() => [...matching.raises.values()].some((r) => r.kind === 'combined'), [matching]);
-  const anySplit = useMemo(() => [...apptCounts.values()].some((n) => n > 1), [apptCounts]);
-  // Same tracks as the interactive table. Shared so the printed report cannot disagree with it.
-  const gutter = useMemo(
-    () => laneGutter(historyRows, (r) => r.snapshot_id, matching),
-    [historyRows, matching]
-  );
+  // The history table's rows: the rate is the source's `salary`, whatever measure the report's figures use.
+  const historyRows = useMemo(() => rows.map((r) => ({ ...r, salary: r.rate_raw })), [rows]);
 
   // As-of the record's own latest snapshot date (not the viewer's "now") — matches the comparison
   // report's tenure calc (Reports.tsx), so the two report types never disagree on the same person's tenure.
@@ -448,165 +374,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Card>
       )}
 
-      {/* Title & salary history */}
-      <Card withBorder padding="lg">
-        <CardTitle
-          right={(
-            <CsvButton
-              label="CSV of the title and salary history"
-              disabled={!historyRows.length}
-              onClick={() => downloadCSV(`${name}-history.csv`, historyRows.map((r) => ({
-                snapshot: r.snapshot_label, title: r.title, job_code: r.job_code, school: r.school, department: r.department,
-                pay: r.pay != null ? Math.round(r.pay) : null, fte: r.fte,
-              })))}
-            />
-          )}
-        >
-          Title &amp; salary history
-        </CardTitle>
-        {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
-        <Table.ScrollContainer minWidth={gutter.slots ? 700 + gutter.slots * 22 : 680}>
-        {/* Striping is per snapshot group (app.css), so the lines of one snapshot stay together. */}
-        <Table
-          className="appt-history"
-          striped={false}
-          style={gutter.slots ? ({ ['--lane-slots' as string]: gutter.slots }) : undefined}
-        >
-          <Table.Thead>
-            <Table.Tr>
-              {gutter.slots > 0 && (
-                /* Visible here too: on paper a VisuallyHidden label is no label at all, and this
-                   report is read as a document. */
-                <Table.Th className="appt-gutter-th" aria-label="Appointment">Appt</Table.Th>
-              )}
-              <Table.Th className="appt-snapshot">Snapshot</Table.Th>
-              <Table.Th>Title</Table.Th>
-              <Table.Th>Job code</Table.Th>
-              <Table.Th>School / Dept</Table.Th>
-              <Table.Th ta="right">Actual pay</Table.Th>
-              <Table.Th ta="right">FTE</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {historyRows.map((r, i) => {
-              // Compare to the SAME job code in the prior snapshot (not the adjacent interleaved row).
-              const pos = snapHistory.index.get(r.snapshot_id) ?? 0;
-              const priorId = pos > 0 ? snapHistory.order[pos - 1] : null;
-              const priorSnap = priorId ? snapHistory.bySnap.get(priorId) : null;
-              const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
-              const isNew = !!priorSnap && !!r.job_code && !inPrior;
-              const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
-              const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
-              const apptTotal = apptCounts.get(r.snapshot_id) ?? 0;
-              const cell = gutter.byRow.get(r);
-              // Same rule as the interactive table (HistoryTable.tsx), for the same reason: this column shows the
-              // change in ACTUAL pay, so an FTE or comp-basis move reads as a pay change. Same wording, so
-              // the printed report and the page cannot tell the reader different things.
-              const from = matching.priorOf.get(r);
-              const rateNote = ((): string | null => {
-                const paired = matching.raises.get(r);
-                if (!from || paired?.kind !== 'paired') return null;
-                if (!sameBasisAcross(from.comp_basis, r.comp_basis)) return 'basis changed';
-                if ((r.fte || 1) === (from.fte || 1)) return null;
-                if (!r.rate_raw || !from.rate_raw || from.rate_raw <= 0) return null;
-                const d = r.rate_raw / from.rate_raw - 1;
-                return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
-              })();
-              // Same rule as the page: across a reporting change (REPORTING_CHANGES) a paired step's change like
-              // for like, with the factor named, and no figure for anything else.
-              const reporting = ((): ReportingChange | null => {
-                const priors = from ? [from] : historyRows.filter((x) => x.snapshot_id === priorId && x.job_code === r.job_code);
-                return priors.map((x) => reportingChange(x.comp_basis, r.comp_basis)).find(Boolean) ?? null;
-              })();
-              const alike = reporting && raise.kind === 'paired' ? likeForLike(raise.delta, reporting) : null;
-              const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
-              return (
-              <Table.Tr
-                key={`${r.snapshot_id}-${i}`}
-                data-band={pos % 2 === 0 ? '1' : '0'}
-                // Gated the same way as the page: only a person who actually holds concurrent
-                // appointments gets the strengthened snapshot boundary.
-                data-group-last={gutter.slots > 0 ? (lastOfGroup ? 'yes' : 'no') : undefined}
-              >
-                {gutter.slots > 0 && (
-                  <Table.Td className="appt-gutter-td">
-                    {/* No tooltip: this prints, and the note under the table carries the legend. */}
-                    {cell && <LaneGutter cell={cell} count={apptTotal} withTooltip={false} />}
-                  </Table.Td>
-                )}
-                <Table.Td className="appt-snapshot">
-                  {apptFirstRow.get(r.snapshot_id) === i && (
-                    <Badge variant="light" size="sm">{r.snapshot_label}</Badge>
-                  )}
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm">{r.title ?? '—'}</Text>
-                  {isNew && (
-                    <Badge variant="light" color={ttcReclass ? 'gray' : 'accent'} size="xs" mt={2}>
-                      {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
-                    </Badge>
-                  )}
-                </Table.Td>
-                <Table.Td>{r.job_code ?? '—'}</Table.Td>
-                <Table.Td>
-                  <Text size="sm">{r.school ?? '—'}</Text>
-                  <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
-                </Table.Td>
-                <Table.Td ta="right">
-                  {usd(r.pay)}
-                  {/* This prints, so "combined" has to be legible on paper — no tooltip to fall back
-                      on. The note under the table carries the rest.
-
-                      `orange` (warn), not `red` (down): this figure is the change in ACTUAL pay, so
-                      an appointment-percentage move lands in it looking like a pay cut. The
-                      interactive table has always painted it warn; the printed report — the copy
-                      someone carries into a meeting — was asserting a cut in the strongest colour
-                      the palette has. */}
-                  {!reporting && (raise.kind === 'paired' || raise.kind === 'combined') && raise.delta !== 0 && (
-                    <Text size="xs" c={raise.delta > 0 ? 'pos' : 'orange'}>
-                      {fmtChange(raise.delta)}
-                      {raise.kind === 'combined' && (
-                        <Text span size="xs" c="dimmed"> {acrossLabel(raise.curCount, raise.priorCount)}</Text>
-                      )}
-                    </Text>
-                  )}
-                  {raise.kind === 'titleChange' && (
-                    <Text size="xs" c={raise.delta == null || raise.delta === 0 ? 'dimmed' : raise.delta > 0 ? 'pos' : 'orange'}>
-                      {raise.delta != null && raise.delta !== 0 ? `${fmtChange(raise.delta)} · ` : ''}
-                      <Text span size="xs" fw={600} c={raise.move === 'promotion' ? 'var(--text-accent)' : 'dimmed'} data-change-tag={raise.move}>{raise.move}</Text>
-                      {raise.note && <Text span size="xs" c="dimmed"> · {raise.note}</Text>}
-                    </Text>
-                  )}
-                  {alike != null && alike !== 0 && <Text size="xs" c={alike > 0 ? 'pos' : 'orange'}>{fmtChange(alike)}</Text>}
-                  {reporting && raise.kind !== 'titleChange' && <span className="appt-reporting-note">{alike != null ? likeForLikeNote(reporting) : reporting.note}</span>}
-                  {raise.kind === 'newAppointment' && <Text size="xs" c="dimmed">new appointment</Text>}
-                  {rateNote && <span className="appt-rate-note">{rateNote}</span>}
-                  {raise.kind === 'paired' && !reporting && raiseCtx.comparisons.get(r.snapshot_id) && (
-                    <Text size="xs" c="dimmed" data-raise-compare="yes">{raiseCtx.comparisons.get(r.snapshot_id)!.text}</Text>
-                  )}
-                </Table.Td>
-                {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly). */}
-                <Table.Td ta="right">{r.fte || '—'}</Table.Td>
-              </Table.Tr>
-              );
-            })}
-          </Table.Tbody>
-        </Table>
-        </Table.ScrollContainer>
-        {anySplit && (
-          <Text size="xs" c="dimmed" mt="sm">
-            Each concurrent appointment runs as its own line down the left of the table, held for as
-            long as that appointment can be followed, and each row is a letter on its line.{' '}
-            <LaneStationSample /> continues the same appointment from the snapshot above;{' '}
-            <LaneStationSample start /> means the source does not connect it to the previous snapshot, so
-            its line starts there; a line that stops with a bar is an appointment that ended.
-            {anyCombined &&
-              ' “Across both” = two appointments under one title that the source does not distinguish' +
-              ' — same department, same appointment percentage — so the change is shown across them' +
-              ' together rather than guessed at per line.'}
-          </Text>
-        )}
-      </Card>
+      {/* Title & salary history: the person page's own table, so the printed report cannot disagree with it. */}
+      <HistoryTable rows={historyRows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} csvName={name} />
 
       {/* Same-title comparison (compact) */}
       {peer && peer.n === 1 && jobCode && (

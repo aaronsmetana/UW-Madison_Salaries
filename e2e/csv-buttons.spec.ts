@@ -26,7 +26,7 @@ test('Reports has no page-level CSV: the one-person report’s history has its o
   const shown = await card.locator('table tbody tr').count();
   const csv = await download(page, 'CSV of the title and salary history');
   expect(csv.name).toBe('Aaron Smetana-history.csv');
-  expect(csv.head).toEqual(['snapshot', 'title', 'job_code', 'school', 'department', 'pay', 'fte']);
+  expect(csv.head).toEqual(['snapshot', 'title', 'job_code', 'school', 'department', 'rate', 'actual_pay', 'change', 'change_note', 'fte', 'basis']);
   expect(csv.rows.length).toBe(shown);
 });
 
