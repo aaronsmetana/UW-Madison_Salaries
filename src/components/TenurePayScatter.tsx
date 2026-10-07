@@ -11,7 +11,7 @@ import { num, usd, fmtYears } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { tenureFit, onCurveBand, TENURE_MIN_PEERS } from '../lib/stats';
 import { measureText, placeEndLabels } from '../lib/labelLayout';
-import { placeLabel, sampleSegment, type Placement } from '../lib/labelPlace';
+import { heldAt, placeLabel, sampleSegment, type Held, type Placement } from '../lib/labelPlace';
 import { nudgeApart, NUDGE_MAX } from '../lib/nudge';
 import { sideOf, type PayWindow } from '../lib/payWindow';
 
@@ -136,8 +136,8 @@ function DotsLayer({
   /** What to write beside the subject's dot: "Aaron · $116,491". */
   selfText: string | null;
 }) {
-  // The subject's name is placed once, and moves only as what is round it does (lib/labelPlace `current`).
-  const placedSelf = useRef<Pt | null>(null);
+  // The subject's name is placed once, and moves only as what is round it does (lib/labelPlace `heldAt`).
+  const placedSelf = useRef<Held | null>(null);
   const xScale = xAxisMap ? Object.values(xAxisMap)[0]?.scale : undefined;
   const yScale = yAxisMap ? Object.values(yAxisMap)[0]?.scale : undefined;
   // Recharts hands over new scale and box objects on every render (a hover is one), so the placing is
@@ -205,6 +205,7 @@ function DotsLayer({
           { points: sampleSegment({ x: self.x, y: self.y }, { x: self.x, y: full.bottom }), weight: 0.6 },
         ]),
       ];
+      const frame = [geometry, w, h, self.x, self.y, layout.placed.length].join();
       const p = placeLabel({
         anchor: { x: self.x, y: self.y },
         size: { w, h },
@@ -212,9 +213,9 @@ function DotsLayer({
         dots: layout.placed.filter((d) => d !== self).map((d) => ({ x: d.x, y: d.y, r: d.r, weight: d.p.dimmed ? 0.12 : 1 })),
         boxes: fitLabel ? [{ x0: fitLabel.box.left, y0: fitLabel.box.top, x1: fitLabel.box.right, y1: fitLabel.box.bottom }] : [],
         lines,
-        current: placedSelf.current,
+        current: heldAt(placedSelf.current, frame),
       });
-      placedSelf.current = { x: p.x, y: p.y };
+      placedSelf.current = { at: { x: p.x, y: p.y }, frame };
       you = { ...p, w, h };
     }
     return { fitLabel, you, self };

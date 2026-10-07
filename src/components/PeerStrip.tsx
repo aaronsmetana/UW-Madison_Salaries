@@ -11,7 +11,7 @@ import { binSalaries } from '../lib/histogram';
 import { smoothBins } from '../lib/distribution';
 import { beeswarm } from '../lib/swarm';
 import { moneyTicks } from '../lib/rangeScale';
-import { placeLabel, sampleVertical, type Box, type Placement } from '../lib/labelPlace';
+import { heldAt, placeLabel, sampleVertical, type Box, type Held } from '../lib/labelPlace';
 import { ChartData } from './ChartData';
 import { DotField } from './chart/DotField';
 import { Z } from '../lib/layers';
@@ -368,9 +368,10 @@ export function PeerStrip({
   // The subject's name: placed by lib/labelPlace, as close to their dot as the people, the words and the
   // median's line round it allow. It moves when what is round it does (the cohort, the width, the fonts),
   // never because something is pointed at.
-  const placedRef = useRef<Placement | null>(null);
+  const placedRef = useRef<Held | null>(null);
   const place = useMemo(() => {
     if (!(plotW > 0) || !sizes.youW) return null;
+    const frame = [plotW, plotH, sizes.youW, sizes.youH, selfX, selfY, medX, popTop, bandWords, lowAside, highAside, useRibbon, inPlot.length].join();
     const dots = useRibbon || !swarm ? [] : inPlot.map((p, i) => (p.isSelf ? null : { x: at(p.pay) * plotW, y: midY + swarm[i], r: R, weight: p.dimmed ? 0.12 : 1 }))
       .filter((d): d is NonNullable<typeof d> => d != null);
     const p = placeLabel({
@@ -380,9 +381,9 @@ export function PeerStrip({
       dots,
       boxes: [medBox, ...(bandWords ? [bandBox] : [])],
       lines: [{ points: sampleVertical(medX, popTop, plotH), weight: 0.25 }],
-      current: placedRef.current,
+      current: heldAt(placedRef.current, frame),
     });
-    placedRef.current = p;
+    placedRef.current = { at: { x: p.x, y: p.y }, frame };
     return p;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the boxes are functions of these
   }, [plotW, sizes, useRibbon, swarm, inPlot, at, selfX, selfY, lowAside, highAside, plotH, medX, popTop, bandWords, medRight]);

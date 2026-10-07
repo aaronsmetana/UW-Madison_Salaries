@@ -18,7 +18,8 @@
  * - a dividing line (`divides`) between the name and its dot (the way from the dot to the name's centre
  *   crosses it), 40 × the line's weight: a name across a trend line from its dot reads as the other side's (the scatter's rule
  *   before this placement, kept);
- * - how far it would move from where it is now (×0.006), so it does not jump for nothing.
+ * - how far it would move from where it is now (×0.006), so it does not jump for nothing — `current` only
+ *   while the frame it was placed in holds (`heldAt`).
  *
  * The leader runs from 7px outside the dot's centre to the nearest point of the label, and is left out
  * when that is under 11px: a label that close needs no line to say whose it is.
@@ -30,6 +31,16 @@ export interface Dot { x: number; y: number; r: number; weight?: number }
 /** A line on the plot, sampled. `divides`: a name must stay on its dot's side of it (a trend line). */
 export interface Line { points: Pt[]; weight: number; divides?: boolean }
 export interface Placement { x: number; y: number; leader: { x1: number; y1: number; x2: number; y2: number } | null }
+
+/**
+ * A label's centre and the frame it was placed in: the plot's size, the dot's place, the label's own measured
+ * size and how many dots there are. A label holds its place (`current`) only while that frame is the same —
+ * across a filter that dims or lights the people round it — and is placed afresh when the frame changes. Held
+ * across the fonts or the data arriving, a near tie went to whichever came first, and one page drew its name
+ * above the dot on one load and beside it on the next.
+ */
+export interface Held { at: Pt; frame: string }
+export const heldAt = (held: Held | null, frame: string): Pt | null => (held && held.frame === frame ? held.at : null);
 
 const ANGLES = 36;
 const GAPS = [2, 6, 11, 17, 24, 32, 42, 54, 68];

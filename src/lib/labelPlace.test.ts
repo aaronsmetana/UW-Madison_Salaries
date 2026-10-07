@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placeLabel, sampleVertical, sampleSegment } from './labelPlace';
+import { heldAt, placeLabel, sampleVertical, sampleSegment } from './labelPlace';
 
 const bounds = { x0: 0, y0: 0, x1: 600, y1: 176 };
 const size = { w: 110, h: 25 };
@@ -76,5 +76,15 @@ describe('placeLabel', () => {
     const crowd = [...Array(32)].map((_, i) => ({ x: 310 + (i % 8) * 14, y: 104 + Math.floor(i / 8) * 12, r: 5 }));
     const p = placeLabel({ anchor, size, bounds, dots: crowd, lines: [line] });
     expect(boxAt(p).y0, 'the name crossed the line').toBeGreaterThan(90);
+  });
+});
+
+describe('heldAt', () => {
+  it('holds a label where it is only within the frame it was placed in', () => {
+    const held = { at: { x: 40, y: 20 }, frame: '600,176,110,25' };
+    expect(heldAt(held, '600,176,110,25')).toEqual({ x: 40, y: 20 });
+    // The fonts in: the label's own width changed, so it is placed afresh, as a load with the fonts in first would.
+    expect(heldAt(held, '600,176,104,25')).toBeNull();
+    expect(heldAt(null, '600,176,110,25')).toBeNull();
   });
 });
