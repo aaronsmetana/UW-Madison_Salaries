@@ -1,18 +1,5 @@
-import type { ReactNode, RefObject } from 'react';
+import type { ReactNode } from 'react';
 import { Card, Stack, ThemeIcon, Text, Title } from '@mantine/core';
-import { prefersReducedMotion } from '../lib/motion';
-
-/**
- * The action every page-level empty state wants: put the cursor in the control the state is telling
- * you to use. One helper rather than three, so "above" always means the same gesture — and so the
- * hint text and the button can never point at different controls.
- */
-export function focusControl(ref: RefObject<HTMLElement | null>): void {
-  const el = ref.current?.querySelector<HTMLElement>('input, [role="combobox"], button');
-  if (!el) return;
-  el.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  el.focus();
-}
 
 /**
  * One "nothing here" design for blank cards that would otherwise read as breakage — a dimmed icon, a
@@ -20,9 +7,9 @@ export function focusControl(ref: RefObject<HTMLElement | null>): void {
  * not-yet-configured states alike; a genuinely well-designed empty state (like Compare's own build-a-
  * comparison prompt) can stay bespoke instead of being forced through this.
  *
- * `action` is the part that matters and was going unused at all seven call sites: every one of them
- * read "search and pick an employee above" / "pick a title above" — an instruction pointing somewhere
- * else. A state that names the thing you need should hand you the thing you need.
+ * `action` is for something the state can do itself — widen a screen to everyone in scope — and never a
+ * second way to the control directly above it: a "Choose a title" button under the title picker only
+ * repeated the picker, so the hint says where the control is ("above") and the page has one of each.
  */
 export function EmptyState({
   icon,

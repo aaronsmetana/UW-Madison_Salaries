@@ -30,7 +30,6 @@ import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { encodeSel, decodeSel } from '../lib/share';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
-import { focusControl } from '../components/EmptyState';
 import { Sparkline } from '../components/chart/Sparkline';
 import { cadenceOf, type CadencePoint } from '../lib/cadence';
 import { DOT_RIM } from '../components/markers';
@@ -85,8 +84,6 @@ function TrajectoryEndLabel({ x, y, index, count, name, color }: {
 const TRAJECTORY_LOADING_H = 369;
 
 export default function Compare() {
-  /** The add box's card, so the empty state below can put the cursor in it. */
-  const addBlocksRef = useRef<HTMLDivElement | null>(null);
   const reduceMotion = prefersReducedMotion();
   useDocTitle('Compare');
   const nav = useNavigate();
@@ -353,7 +350,7 @@ export default function Compare() {
       {/* ── Build your comparison: one add box ──
            The site's search, with all three groups: a person, a title or a division goes to the tray
            as what it is. The card carries the border; the box and the chips sit inside it bare. */}
-      <Card withBorder padding="lg" ref={addBlocksRef}>
+      <Card withBorder padding="lg">
         <Eyebrow>Add a person, title or division</Eyebrow>
         <div style={{ marginTop: 8 }}>
           <SearchBox
@@ -389,9 +386,8 @@ export default function Compare() {
             {/* h2: the page's main content under PageHeader's h1 (see EmptyState's note). */}
             <Title order={2} fz="h3" ta="center">Build a side-by-side comparison</Title>
             <Text c="dimmed" ta="center" maw="var(--measure-narrow)">
-              Add people, titles, or schools — or use the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
+              Add people, titles, or schools above — or use the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
             </Text>
-            <Button variant="light" onClick={() => focusControl(addBlocksRef)}>Add someone to compare</Button>
           </Stack>
         </Card>
       )}

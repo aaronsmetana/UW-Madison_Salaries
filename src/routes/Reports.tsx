@@ -21,7 +21,7 @@ import { toReal } from '../lib/cpi';
 import { tenureFit, TENURE_MIN_PEERS, ordinal } from '../lib/stats';
 import { readPref, writePref, clearPref } from '../lib/prefs';
 import { PersonDashboard } from '../components/PersonDashboard';
-import { EmptyState, focusControl } from '../components/EmptyState';
+import { EmptyState } from '../components/EmptyState';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { Eyebrow } from '../components/Eyebrow';
@@ -88,8 +88,6 @@ export default function Reports() {
   // The "Copied" confirmation resets itself after a beat; hold the timer so navigating away mid-beat
   // cancels it rather than setting state on an unmounted page.
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** The "Report on" card, so the empty state below can put the cursor in its search box. */
-  const reportOnRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => () => { if (copyResetTimer.current) clearTimeout(copyResetTimer.current); }, []);
 
   // ── Comparison studio (tray) — subject resolution lives here (ahead of the person-mode URL-sync
@@ -1104,7 +1102,7 @@ export default function Reports() {
 
       {type === 'person' && (
         <>
-          <Card withBorder padding="lg" className="no-print" ref={reportOnRef}>
+          <Card withBorder padding="lg" className="no-print">
             <Eyebrow mb={6}>Report on</Eyebrow>
             <SearchBox kinds={['people']} placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
             {selPerson && <Text size="sm" mt="sm">Showing report for <b>{selPerson.name}</b>.</Text>}
@@ -1115,8 +1113,7 @@ export default function Reports() {
             <EmptyState
               icon={<IconFileReport size={ICON.feature} />}
               title="No employee selected"
-              hint="Pick an employee to generate a single-page report on their pay, title history, and how they compare to others in their title."
-              action={<Button variant="light" onClick={() => focusControl(reportOnRef)}>Choose an employee</Button>}
+              hint="Pick an employee above for a single-page report on their pay, title history, and how they compare to others in their title."
             />
           )}
         </>
