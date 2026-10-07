@@ -14,6 +14,7 @@ import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql, GRADED_APP
 import { useTray } from '../state/tray';
 import { decodeSel, encodeSel } from '../lib/share';
 import { CopyLinkButton } from '../components/CopyLinkButton';
+import { PayMeasure } from '../components/PayMeasure';
 import { usd, pct, fullName, plural, fmtToday } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
@@ -1052,7 +1053,8 @@ export default function Reports() {
                   { value: 'comparison', label: isNarrow ? 'Raise case: set' : 'Raise case: the compare set' },
                 ]}
               />
-                  <ExportBar joined={!isNarrow}>
+              <PayMeasure />
+              <ExportBar joined={!isNarrow}>
                 <CopyLinkButton />
                 <Button
                   variant="default"

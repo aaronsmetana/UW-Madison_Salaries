@@ -1,25 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Group, Select, Text, Badge, Button, ActionIcon, HoverCard, Stack, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
-import { IconBuildingBank, IconCalendar, IconInfoCircle, IconSearch, IconRefresh } from '@tabler/icons-react';
-import { useControls, METRIC_LABEL, scopeLabel, type Metric, type Scope } from '../state/controls';
+import { Group, Select, Text, Badge, Button, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
+import { IconBuildingBank, IconCalendar, IconSearch, IconRefresh } from '@tabler/icons-react';
+import { useControls, METRIC_LABEL, scopeLabel, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { paidHeadcount } from '../lib/queries';
 import { num } from '../lib/format';
 import { FilterControls, ActiveFilters } from '../components/FilterControls';
-import { SegmentedToggle } from '../components/SegmentedToggle';
 import { NewBadge } from '../components/NewBadge';
 import { Eyebrow } from '../components/Eyebrow';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
 import { CopyLinkButton } from '../components/CopyLinkButton';
-
-/** Plain-language explanation of each pay metric, shown in the (i) hover card. */
-const METRIC_HELP: Record<Metric, string> = {
-  full: 'The listed annual salary (full-time-equivalent rate). For part-time staff this is more than they actually earned.',
-  fte: "Annual salary scaled to the person's FTE — closest to what they were actually paid.",
-  base: 'Base salary as reported (may exclude supplemental or overload pay).',
-};
+import { PayMeasure } from '../components/PayMeasure';
 
 /**
  * Scope / division picker. A Combobox (not a plain Select) so the floating menu can open wider than the
@@ -230,29 +223,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
           }}
         />
       </Group>
-      <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
-        <Eyebrow>Pay</Eyebrow>
-        <SegmentedToggle
-          size="xs"
-          value={metric}
-          onChange={(v) => setMetric(v as Metric)}
-          options={(Object.keys(METRIC_LABEL) as Metric[]).map((m) => ({ id: m, label: METRIC_LABEL[m] }))}
-        />
-        <HoverCard width={300} shadow="md" position="bottom" withArrow>
-          <HoverCard.Target>
-            <ActionIcon variant="subtle" color="gray" size="sm" aria-label="What do these pay options mean?">
-              <IconInfoCircle size={ICON.control} />
-            </ActionIcon>
-          </HoverCard.Target>
-          <HoverCard.Dropdown>
-            <Stack gap={6}>
-              {(Object.keys(METRIC_LABEL) as Metric[]).map((m) => (
-                <Text size="xs" key={m}><b>{METRIC_LABEL[m]}</b> — {METRIC_HELP[m]}</Text>
-              ))}
-            </Stack>
-          </HoverCard.Dropdown>
-        </HoverCard>
-      </Group>
+      <PayMeasure />
     </>
   );
 

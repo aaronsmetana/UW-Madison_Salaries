@@ -14,6 +14,7 @@ import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { ToolLinks } from '../components/ToolLinks';
 import { CopyLinkButton } from '../components/CopyLinkButton';
+import { PayMeasure } from '../components/PayMeasure';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
 
@@ -178,6 +179,7 @@ export default function PayCheck() {
             prefix="$"
             w={200}
           />
+          <PayMeasure />
         </Group>
         <Text size="xs" c="dimmed" mt="xs">
           Private — the salary you enter stays on this page. It is never uploaded, saved, or put in the

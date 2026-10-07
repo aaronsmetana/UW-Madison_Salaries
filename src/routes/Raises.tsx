@@ -6,6 +6,7 @@ import { IconCheck, IconTrendingUp } from '@tabler/icons-react';
 import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
+import { PayMeasure } from '../components/PayMeasure';
 import { EmptyState } from '../components/EmptyState';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
@@ -265,6 +266,7 @@ export default function Raises() {
           <Select {...dropdownProps('sm')} w={230} label="Title category" placeholder="All categories" searchable clearable
             data={(familyOpts ?? []).map((f) => ({ value: f.code, label: familyLabel(f.code, f.top) }))} value={filters.family ?? null}
             onChange={(v) => { update({ family: v }); setShowAll(false); }} />
+          <PayMeasure />
         </Group>
 
         <Box mt="md" className="raise-usual" data-usual-campus={usual?.campus.usual ?? ''} data-usual-how={usual?.campus.how ?? ''}>
