@@ -194,6 +194,31 @@ describe('computeHomeStats pay_counts: one count per $100, the dots the landing 
   });
 });
 
+// The graph's one scale: the tallest $1k column in ANY snapshot, not only the latest, each person once.
+describe('computeHomeStats column_peak: the most people in one column in any snapshot', () => {
+  const row = (snapshot_id, person_key, salary) => ({
+    snapshot_id, school: 'A', job_code: 'J', title: 'T', employee_category: 'C', person_key,
+    // A numeric salary_fte_adjusted on one row, so the column types as DOUBLE (see ROWS above).
+    salary, salary_fte_adjusted: person_key === 'e' ? salary : null, fte: 1, date_of_hire: '2020-01-01', snapshot_date: snapshot_id === 'old' ? '2025-01-01' : '2026-01-01',
+  });
+  const rows = [
+    // An older snapshot with three people in the $50k column…
+    row('old', 'a', 50100), row('old', 'b', 50500), row('old', 'c', 50900), row('old', 'd', 61000),
+    // …and the latest with two there, one of them on two appointments that sum into it (counted once), and
+    // four at or above the cap in one bin, who are not in a column at all.
+    row('new', 'a', 25000), row('new', 'a', 25500), row('new', 'b', 50200), row('new', 'e', 70000),
+    ...['w', 'x', 'y', 'z'].map((k) => row('new', k, 250000)),
+  ];
+  let s;
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-peak-'));
+    s = await computeHomeStats(await writeParquet(dir, rows), 'new');
+  });
+  it('is the older snapshot’s three, not the latest’s two', () => {
+    expect(s.column_peak).toBe(3);
+  });
+});
+
 // The "By category" dots: each person is one dot, so they wear one category — the one of their
 // highest-paid appointment — and the categories' counts are the dots' counts, bin by bin.
 describe('computeHomeStats pay_counts.categories: one category per person', () => {

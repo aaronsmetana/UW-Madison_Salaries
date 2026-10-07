@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, PILE_PER_ROW, STEP_ARC_WAVE_MS, STEP_MS, STEP_WAVE_MS,
+  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, PILE_PER_ROW, STEP_MS, stepTiming,
   colHeight, colLeft, easeInOut, fisheye, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
@@ -85,11 +85,17 @@ export interface StrataLayout {
  * The pile is fourteen squares a row past a break at the right — or, `unroll`ed, each of its people at their
  * own pay on an axis run out to the top salary, with the graph squeezed to its share of that axis.
  */
-export function layoutStrata(s: Strata, opts: { W: number; H: number; top: number; dpr: number; phone: boolean }, unroll = false): StrataLayout {
+export function layoutStrata(
+  s: Strata,
+  /** `peak`: the tallest column to make room for, if more than this field's own — the timeline's tallest in any
+   *  snapshot, so each is drawn to one scale. */
+  opts: { W: number; H: number; top: number; dpr: number; phone: boolean; peak?: number },
+  unroll = false,
+): StrataLayout {
   const { W, H, top, dpr, phone } = opts;
   const base = H - 1;
   const rowsH = Math.max(20, base - top);
-  let peak = 0;
+  let peak = opts.peak ?? 0;
   for (let c = 0; c < COLS; c++) peak = Math.max(peak, s.colCount[c]);
   const gap = phone ? PILE_GAP.phone : PILE_GAP.wide;
   const hasPile = s.pileKind.length > 0;
@@ -223,6 +229,8 @@ export interface Step {
   to: StrataLayout;
   from: { mx: Float64Array; my: Float64Array; px: Float64Array; py: Float64Array };
   arc: { main: Float32Array; pile: Float32Array } | null;
+  /** Who joined this step (1), dropping in from above the plot once the rest are on their way. */
+  joined: { main: Uint8Array; pile: Uint8Array };
   ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array } | null;
 }
 
@@ -267,9 +275,11 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   const cur = useRef({ mx: new Float64Array(0), my: new Float64Array(0), px: new Float64Array(0), py: new Float64Array(0) });
   const move = useRef<{
     start: number; fromMx: Float64Array; fromMy: Float64Array; fromPx: Float64Array; fromPy: Float64Array; wait: Float64Array; pwait: Float64Array; ms: number; land: boolean;
+    /** A timeline step's own time for each square, where it is not `ms` (lib/strata `stepTiming`). */
+    msM?: Float64Array; msP?: Float64Array;
     arcM?: Float32Array; arcP?: Float32Array;
     /** Who left, lifting out: from y0 to y1, and where they are now. */
-    ghost?: { x: Float64Array; y0: Float64Array; y1: Float64Array; y: Float64Array; wait: Float64Array; kind: Uint8Array };
+    ghost?: { x: Float64Array; y0: Float64Array; y1: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array };
   } | null>(null);
   const raf = useRef(0);
   const inks = useRef<Inks | null>(null);
@@ -572,18 +582,18 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       const t0 = performance.now();
       const { mx, my, px, py } = cur.current;
       let done = true;
-      const go = (from: Float64Array, to: Float64Array, out: Float64Array, wait: Float64Array, i: number, axis: 0 | 1, arc?: Float32Array) => {
-        const p = Math.min(1, Math.max(0, (now - mv.start - wait[i]) / mv.ms));
+      const go = (from: Float64Array, to: Float64Array, out: Float64Array, wait: Float64Array, i: number, axis: 0 | 1, arc?: Float32Array, ms?: Float64Array) => {
+        const p = Math.min(1, Math.max(0, (now - mv.start - wait[i]) / (ms ? ms[i] : mv.ms)));
         if (p < 1) done = false;
         const e = mv.land ? (axis === 1 ? landEase(p) : 1) : easeInOut(p);
         // A big mover rises over its path as it goes: highest halfway, back down as it lands.
         out[i] = from[i] + (to[i] - from[i]) * e - (axis === 1 && arc ? arc[i] * 4 * e * (1 - e) : 0);
       };
-      for (let i = 0; i < n; i++) { go(mv.fromMx, layout.mx, mx, mv.wait, i, 0); go(mv.fromMy, layout.my, my, mv.wait, i, 1, mv.arcM); }
-      for (let j = 0; j < m; j++) { go(mv.fromPx, layout.px, px, mv.pwait, j, 0); go(mv.fromPy, layout.py, py, mv.pwait, j, 1, mv.arcP); }
+      for (let i = 0; i < n; i++) { go(mv.fromMx, layout.mx, mx, mv.wait, i, 0, undefined, mv.msM); go(mv.fromMy, layout.my, my, mv.wait, i, 1, mv.arcM, mv.msM); }
+      for (let j = 0; j < m; j++) { go(mv.fromPx, layout.px, px, mv.pwait, j, 0, undefined, mv.msP); go(mv.fromPy, layout.py, py, mv.pwait, j, 1, mv.arcP, mv.msP); }
       const gh = mv.ghost;
       if (gh) for (let g = 0; g < gh.x.length; g++) {
-        const p = Math.min(1, Math.max(0, (now - mv.start - gh.wait[g]) / mv.ms));
+        const p = Math.min(1, Math.max(0, (now - mv.start - gh.wait[g]) / gh.ms));
         if (p < 1) done = false;
         gh.y[g] = gh.y0[g] + (gh.y1[g] - gh.y0[g]) * p * p;
       }
@@ -671,21 +681,23 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       cur.current = { mx: layout.mx.slice(), my: fromMy.slice(), px: layout.px.slice(), py: fromPy.slice() };
       move.current = { start: now, fromMx: layout.mx.slice(), fromMy, fromPx: layout.px.slice(), fromPy, wait, pwait, ms: DROP_MS, land: true };
     } else if (stepped && step) {
-      // A timeline step: from each person's place before, the big movers launching together.
-      const { from, arc, ghosts } = step;
-      const wait = new Float64Array(n), pwait = new Float64Array(m);
-      for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * (arc?.main[i] ? STEP_ARC_WAVE_MS : STEP_WAVE_MS);
-      for (let j = 0; j < m; j++) pwait[j] = (layout.px[j] / W) * (arc?.pile[j] ? STEP_ARC_WAVE_MS : STEP_WAVE_MS);
+      // A timeline step: from each person's place before, the big movers launching together, who left lifting
+      // out first and who joined dropping in last (lib/strata `stepTiming`).
+      const { from, arc, joined, ghosts } = step;
+      const wait = new Float64Array(n), pwait = new Float64Array(m), msM = new Float64Array(n), msP = new Float64Array(m);
+      const role = (arcs: Float32Array | undefined, join: Uint8Array, i: number) => (join[i] ? 'join' : arcs?.[i] ? 'arc' : 'stay');
+      for (let i = 0; i < n; i++) ({ wait: wait[i], ms: msM[i] } = stepTiming(role(arc?.main, joined.main, i), layout.mx[i], W));
+      for (let j = 0; j < m; j++) ({ wait: pwait[j], ms: msP[j] } = stepTiming(role(arc?.pile, joined.pile, j), layout.px[j], W));
       cur.current = { mx: from.mx.slice(), my: from.my.slice(), px: from.px.slice(), py: from.py.slice() };
       const g = ghosts && ghosts.x.length ? (() => {
         let seed = 0x9e3779b1 ^ ghosts.x.length;
         const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
         const k = ghosts.x.length;
         const y1 = new Float64Array(k), w = new Float64Array(k);
-        for (let q = 0; q < k; q++) { y1[q] = -14 - rand() * 60; w[q] = (ghosts.x[q] / W) * STEP_WAVE_MS; }
-        return { x: ghosts.x, y0: ghosts.y, y1, y: ghosts.y.slice(), wait: w, kind: ghosts.kind };
+        for (let q = 0; q < k; q++) { y1[q] = -14 - rand() * 60; w[q] = stepTiming('leave', ghosts.x[q], W).wait; }
+        return { x: ghosts.x, y0: ghosts.y, y1, y: ghosts.y.slice(), wait: w, ms: stepTiming('leave', 0, W).ms, kind: ghosts.kind };
       })() : undefined;
-      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g };
+      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS, msM, msP, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g };
     } else {
       const wait = new Float64Array(n), pwait = new Float64Array(m);
       for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * MOVE_WAVE_MS;

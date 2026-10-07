@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within, type Grid,
 } from './strata';
 
@@ -70,6 +70,16 @@ describe('strataGrid', () => {
     const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 1 });
     expect(g).toMatchObject({ per: 3, rowPitch: 2, gap: 1, sq: 1 });
     expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toMatchObject({ per: 3, rowPitch: 1, gap: 0 });
+  });
+  it('between rows of one height, fills the room while the squares stay near square', () => {
+    // The full page at 2x, room for the timeline's tallest column (742): two a row and three a row both give
+    // 1.5px rows; two stands the column 556px tall, three 372px.
+    const g = strataGrid({ colW: 5.3, rowsH: 600, peak: 742, dpr: 2 });
+    expect(g).toMatchObject({ per: 2, rowPitch: 1.5 });
+    expect(colHeight(742, g)).toBeGreaterThan(500);
+    expect(colHeight(742, g)).toBeLessThanOrEqual(600);
+    // Not by squares more than twice as wide as tall: on the page at 1x, two a row would be 2.65px by 1px.
+    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 }).per).toBe(3);
   });
   it('grows the squares full page', () => {
     const page = strataGrid({ colW: 5.2, rowsH: 320, peak: 572, dpr: 2 });
@@ -144,6 +154,26 @@ describe('snapReach', () => {
     // Thinner, further.
     expect(snapReach(40, 76, 1.5)).toBeGreaterThan(snapReach(400, 76, 1.5));
     expect(snapReach(0, 76, 1.5)).toBe(0);
+  });
+});
+
+describe('stepTiming', () => {
+  const W = 1000;
+  const end = (t: { wait: number; ms: number }) => t.wait + t.ms;
+  it('lifts who left out before anyone who joined has landed, and starts the joiners once the rest are on their way', () => {
+    for (const x of [0, 500, 1000]) {
+      expect(end(stepTiming('leave', x, W))).toBeLessThan(end(stepTiming('join', x, W)));
+      expect(stepTiming('join', x, W).wait).toBeGreaterThan(stepTiming('stay', x, W).wait + STEP_MS * 0.3);
+    }
+  });
+  it('has every square at rest by the wave and a square’s time, inside a playing step’s 1.2 s, with a beat to spare', () => {
+    for (const role of ['stay', 'arc', 'join', 'leave'] as const) for (const x of [0, 400, 1000, 1200]) {
+      expect(end(stepTiming(role, x, W))).toBeLessThanOrEqual(STEP_WAVE_MS + STEP_MS + 1e-9);
+    }
+    expect(STEP_WAVE_MS + STEP_MS).toBeLessThanOrEqual(1200 - 200);
+  });
+  it('runs at half the pace the timeline first had (450 ms a square, a 130 ms sweep)', () => {
+    expect(STEP_MS).toBeGreaterThanOrEqual(1.5 * 450);
   });
 });
 

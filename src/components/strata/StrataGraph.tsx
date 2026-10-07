@@ -5,7 +5,7 @@ import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
-import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
+import { bigMoves, snapStats, strataFromPeople, timelinePeak, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
 import { prefersReducedMotion } from '../../lib/motion';
@@ -76,8 +76,8 @@ export interface GraphTimeline {
 /** A snapshot's label without its note: "Nov 2021 (Pre-TTC)" is "Nov 2021" at the track's end. */
 const bareLabel = (l: string) => l.replace(/\s*\(.*\)\s*$/, '');
 /** Play waits this long between steps, and longer after starting over from the first. */
-const PLAY_MS = 600;
-const PLAY_RESTART_MS = 800;
+const PLAY_MS = 1200;
+const PLAY_RESTART_MS = 1600;
 
 /** Whose a square is, as the lens's card names them. */
 export interface DotWho {
@@ -138,7 +138,7 @@ function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow
 export function StrataGraph({
   bins, payCounts, p25: p25Base, median: medianBase, p75: p75Base, cap, overflow, headcount: headcountBase, snapshotLabel: labelBase,
   found: foundBase = NO_FOUND, activeKey = null, openRef, search, onFullChange, group = null, previewing = false, onClearGroup, onPeel,
-  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null,
+  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null, columnPeak = null,
 }: {
   bins: readonly { bucket: number; n: number }[];
   payCounts?: StrataCounts | null;
@@ -173,6 +173,9 @@ export function StrataGraph({
   /** True while the full page's search has its list open over the graph: a press then only puts it away. */
   searchOpenRef?: MutableRefObject<boolean>;
   timeline?: GraphTimeline | null;
+  /** The most people in one column in any snapshot (home-stats `column_peak`): the scale the graph is drawn to,
+   *  so the latest as the page opens and every snapshot of the timeline draw a person the same height. */
+  columnPeak?: number | null;
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
@@ -214,6 +217,11 @@ export function StrataGraph({
     return st;
   }, [tl, at, cap]);
   const strata: Strata | null = tStrata ?? baseStrata;
+  // One scale for every snapshot: room for the tallest column in any of them, the build's figure or the timeline's
+  // own once it is in. Each snapshot fitted to its own tallest drew the same headcount taller in one than the next,
+  // and a step moved every square up or down with the scale, not only the people whose pay moved.
+  const tlPeak = useMemo(() => (tl ? timelinePeak(tl, cap ?? 250_000) : 0), [tl, cap]);
+  const scalePeak = Math.max(columnPeak ?? 0, tlPeak);
   const stats = useMemo(() => (tl && at != null ? snapStats(tl.at[at], tl.names.length, cap ?? 250_000) : null), [tl, at, cap]);
   const p25 = stats ? stats.p25 : p25Base;
   const median = stats ? stats.median : medianBase;
@@ -306,8 +314,8 @@ export function StrataGraph({
   const [unrolled, setUnrolled] = useState(false);
   useEffect(() => { if (!canUnroll) setUnrolled(false); }, [canUnroll]);
   const layout = useMemo(
-    () => (strata && plotW > 0 ? layoutStrata(strata, { W: plotW, H, top: PIN_BAND + 4, dpr, phone }, unrolled && canUnroll) : null),
-    [strata, plotW, H, dpr, phone, unrolled, canUnroll],
+    () => (strata && plotW > 0 ? layoutStrata(strata, { W: plotW, H, top: PIN_BAND + 4, dpr, phone, peak: scalePeak }, unrolled && canUnroll) : null),
+    [strata, plotW, H, dpr, phone, unrolled, canUnroll, scalePeak],
   );
   const tail = layout?.tail ?? null;
 
@@ -337,16 +345,16 @@ export function StrataGraph({
     let seed = 0x5bd1e995 ^ (at ?? 0);
     const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
     const place = (ids: Int32Array, X: Float64Array) => {
-      const fx = new Float64Array(ids.length), fy = new Float64Array(ids.length), arc = new Float32Array(ids.length);
+      const fx = new Float64Array(ids.length), fy = new Float64Array(ids.length), arc = new Float32Array(ids.length), join = new Uint8Array(ids.length);
       ids.forEach((id, i) => {
         stays[id] = 1;
-        if (Number.isNaN(ox[id])) { fx[i] = X[i]; fy[i] = -14 - rand() * 60; return; }
+        if (Number.isNaN(ox[id])) { fx[i] = X[i]; fy[i] = -14 - rand() * 60; join[i] = 1; return; }
         fx[i] = ox[id];
         fy[i] = oy[id];
         // A big mover arcs, and the person followed always does.
         if (moves?.[id] || id === followId) arc[i] = arcHeight(X[i] - ox[id]);
       });
-      return { fx, fy, arc };
+      return { fx, fy, arc, join };
     };
     const mm = place(B.mainId, L1.mx), pp = place(B.pileId, L1.px);
     const gx: number[] = [], gy: number[] = [], gk: number[] = [];
@@ -356,6 +364,7 @@ export function StrataGraph({
       to: L1,
       from: { mx: mm.fx, my: mm.fy, px: pp.fx, py: pp.fy },
       arc: moves || followId != null ? { main: mm.arc, pile: pp.arc } : null,
+      joined: { main: mm.join, pile: pp.join },
       ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
     };
     // `shownRef` is the layout drawn before this one: read, not a dependency.

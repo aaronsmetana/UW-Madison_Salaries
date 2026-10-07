@@ -198,10 +198,12 @@ test('the lens names the square under the pointer: who, their title, pay and its
  * No seam: across the crowded floor, from one column into the next, no dark line runs down between the squares
  * — read off the canvas a device pixel at a time, where one once fell between every $1k column. On a 2x screen
  * every gap is the same; on a 1x one a gap is now and then a pixel wider, and those never line up down the rows.
+ * Rows are fitted to the timeline's tallest column (Apr 2024's 742 at $56k), so a 1x screen has a gap at all only
+ * from about 2,200px wide; narrower, its rows are a pixel each and touch.
  */
 for (const dpr of [1, 2]) {
   test(`the squares lie on one even lattice, with no seam down between the columns (${dpr}x)`, async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport: { width: 1800, height: 1260 }, deviceScaleFactor: dpr });
+    const ctx = await browser.newContext({ viewport: { width: 2200, height: 1300 }, deviceScaleFactor: dpr });
     const page = await ctx.newPage();
     await home(page);
     const f = field(page);

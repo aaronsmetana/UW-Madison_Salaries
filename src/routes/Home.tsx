@@ -560,6 +560,7 @@ export default function Home() {
               median={artifactUsable ? homeStats.p50 : (summary?.latest?.median ?? null)}
               p75={artifactUsable ? homeStats.p75 : null}
               cap={artifactUsable ? homeStats.bin_cap : null}
+              columnPeak={artifactUsable ? homeStats.column_peak ?? null : null}
               overflow={artifactUsable ? homeStats.bins_overflow : null}
               headcount={summary?.latest?.headcount ?? null}
               snapshotLabel={summary?.latest?.label ?? null}

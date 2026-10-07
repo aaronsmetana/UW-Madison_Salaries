@@ -243,3 +243,59 @@ test('the track is a radio group: arrows step between snapshots, Home and End go
   await page.keyboard.press('End');
   await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
 });
+
+test.describe('one scale for every snapshot, at half the pace', () => {
+  // At two device pixels a pixel, where it shows: each snapshot fitted to its own tallest column drew Apr 2024's
+  // (742 people in one $1k column) with rows 2px tall and the latest's (576) with rows 2.5px — the same headcount
+  // a quarter taller in one snapshot than the next, and every square moving with the scale at each step.
+  test.use({ deviceScaleFactor: 2 });
+
+  test('every snapshot draws a person the same height as the latest does as the page opens', async ({ page }) => {
+    test.setTimeout(120_000);
+    const peaks = await oracle<{ s: string; peak: number }>(
+      `WITH p AS (SELECT snapshot_id s, person_key, sum(${PAY}) pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING sum(${PAY}) > 0)
+       SELECT s, max(n) peak FROM (SELECT s, floor(pay / 1000) b, count(*) n FROM p WHERE pay < ${CAP} GROUP BY 1, 2) GROUP BY 1 ORDER BY peak DESC, s`,
+    );
+    const tallest = SNAPS.findIndex((x) => x.id === peaks[0].s), lowest = SNAPS.findIndex((x) => x.id === peaks[peaks.length - 1].s);
+    expect(peaks[0].peak, 'the snapshots no longer differ in their tallest column, so this proves nothing').toBeGreaterThan(peaks[peaks.length - 1].peak * 1.1);
+    await home(page);
+    const grid = () => field(page).evaluate((el) => ['per', 'pitch', 'rowPitch', 'gap'].map((k) => `${k} ${(el as HTMLElement).dataset[k]}`).join(', '));
+    const opened = await grid();
+    for (const i of [tallest, lowest, LAST]) {
+      await goTo(page, i);
+      expect(await grid(), `${SNAPS[i].label} is drawn to a scale of its own`).toBe(opened);
+    }
+  });
+
+  test('Play shows a snapshot every 1.2 s, each at rest before the next', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await page.evaluate(() => {
+      const log: [string, number][] = [];
+      (window as unknown as { log: typeof log }).log = log;
+      const bar = document.querySelector('.strata-timeline') as HTMLElement, f = document.querySelector('.strata-field') as HTMLElement;
+      new MutationObserver(() => log.push([`snap ${bar.dataset.snap}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+      new MutationObserver(() => log.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
+    });
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[0].id, { timeout: 60_000 });
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    const log = await page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
+    // From the first snapshot on, one step after another.
+    const first = log.findIndex(([e]) => e === `snap ${SNAPS[0].id}`);
+    const steps = log.slice(first).flatMap(([e, t], k) => (e.startsWith('snap ') ? [{ t, k: first + k }] : []));
+    expect(steps.length).toBe(SNAPS.length);
+    const gaps: number[] = [], rests: number[] = [];
+    for (let s = 1; s < steps.length; s++) {
+      gaps.push(steps[s].t - steps[s - 1].t);
+      // When the field came to rest in between, and how long it stayed so.
+      const between = log.slice(steps[s - 1].k, steps[s].k);
+      const settled = between.filter(([e]) => e === 'settled true').pop();
+      rests.push(settled ? steps[s].t - settled[1] : -1);
+    }
+    for (const g of gaps) expect(g, `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(1150);
+    expect(Math.min(...rests), `rests ${rests.map(Math.round).join(', ')} ms: a step began before the last had landed`).toBeGreaterThan(0);
+    rests.sort((a, b) => a - b);
+    expect(rests[rests.length >> 1], 'each snapshot is barely seen at rest').toBeGreaterThanOrEqual(150);
+  });
+});

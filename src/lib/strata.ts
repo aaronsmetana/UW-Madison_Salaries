@@ -165,12 +165,23 @@ export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: nu
     const ud = Math.floor(up * dpr + 1e-6);
     const rowPitch = ud >= 1 ? ud / dpr : up;
     const gap = ud >= 2 ? Math.max(1, Math.round(ud * 0.2)) : 0;
-    // The tallest rows; between equals (a 1x screen, where several give one pixel), the nearest to 3a's three a row.
-    if (!best || rowPitch > best.rowPitch + 1e-9 || (Math.abs(rowPitch - best.rowPitch) <= 1e-9 && Math.abs(per - 3) < Math.abs(best.per - 3))) {
-      best = { per, pitch, rowPitch, gap, sq: rowPitch - gap / dpr, sqW: pitch - gap / dpr };
-    }
+    const g = { per, pitch, rowPitch, gap, sq: rowPitch - gap / dpr, sqW: pitch - gap / dpr };
+    if (!best || rowPitch > best.rowPitch + 1e-9 || (Math.abs(rowPitch - best.rowPitch) <= 1e-9 && evener(g, best))) best = g;
   }
   return best ?? { per: 1, pitch: colW, rowPitch: 1, gap: 0, sq: 1, sqW: colW };
+
+  // Between rows of one height (rows are whole device pixels, so several give the same): the one that fills the
+  // room — fewer a row, so the tallest column stands taller — while its squares stay near square, at most twice
+  // as wide as tall; else the nearest to 3a's three a row. Rows fitted to the timeline's tallest column (742 people
+  // where the latest has 576) tied two a row with three, and three drew the full page's tallest column at 248px of
+  // 600 where two draws it at 371.
+  function evener(a: Grid, b: Grid): boolean {
+    const near = (g: Grid) => g.pitch <= 2 * g.rowPitch + 1e-9;
+    const stands = (g: Grid) => g.rowPitch * Math.ceil(tall / g.per);
+    if (near(a) !== near(b)) return near(a);
+    if (near(a) && Math.abs(stands(a) - stands(b)) > 1e-9) return stands(a) > stands(b);
+    return Math.abs(a.per - 3) < Math.abs(b.per - 3);
+  }
 }
 
 /** On the device's pixel grid. */
@@ -314,11 +325,27 @@ export const DROP_MS = 350;
 export const DROP_WAVE_MS = 210;
 export const DROP_ROW_MS = 0.55;
 
-/** A timeline step (3a §8): this long, set off left to right over STEP_WAVE_MS; the big movers, which arc,
- *  over STEP_ARC_WAVE_MS, so they launch together. */
-export const STEP_MS = 450;
-export const STEP_WAVE_MS = 130;
-export const STEP_ARC_WAVE_MS = 60;
+/** A timeline step (3a §8), at half the pace it first had: while playing a snapshot every 1.2 s (StrataGraph
+ *  PLAY_MS), and each step's motion over within a second, so every snapshot is seen at rest before the next.
+ *  A square is STEP_MS on its way, set off left to right over STEP_WAVE_MS; the big movers, which arc, over
+ *  STEP_ARC_WAVE_MS, so they launch together. */
+export const STEP_MS = 760;
+export const STEP_WAVE_MS = 180;
+export const STEP_ARC_WAVE_MS = 90;
+/** A step in stages, so a square going out never crosses one coming in: who left lifts out in the first
+ *  STEP_OUT of a square's time, who stayed moves through all of it, and who joined drops in after STEP_IN. */
+export const STEP_OUT = 0.6;
+export const STEP_IN = 0.4;
+/** When a square sets off in a step and how long it takes, by what it is doing; `x` is where it is across a plot
+ *  `W` wide. Every one is done by STEP_WAVE_MS + STEP_MS. */
+export function stepTiming(role: 'stay' | 'arc' | 'join' | 'leave', x: number, W: number): { wait: number; ms: number } {
+  const across = W > 0 ? Math.min(1, Math.max(0, x / W)) : 0;
+  if (role === 'arc') return { wait: across * STEP_ARC_WAVE_MS, ms: STEP_MS };
+  const wait = across * STEP_WAVE_MS;
+  if (role === 'leave') return { wait, ms: STEP_MS * STEP_OUT };
+  if (role === 'join') return { wait: wait + STEP_MS * STEP_IN, ms: STEP_MS * (1 - STEP_IN) };
+  return { wait, ms: STEP_MS };
+}
 /** A big mover's arc: rising this far over its path, at most `ARC_MAX` px. */
 export const arcHeight = (dx: number) => Math.min(110, 24 + Math.abs(dx) * 0.5);
 
