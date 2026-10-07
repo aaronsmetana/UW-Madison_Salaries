@@ -7,12 +7,13 @@ describe('cohortDocLabel', () => {
     expect(cohortDocLabel('all', ctx)).toBe('all UW–Madison employees with this title');
     expect(cohortDocLabel('school', ctx)).toBe('same-title peers in School of Medicine and Public Health');
     expect(cohortDocLabel('tenure', ctx)).toBe('same-title peers within ±3 years of tenure');
-    expect(cohortDocLabel('grade', ctx)).toBe('employees in pay grade 27');
+    expect(cohortDocLabel('grade', ctx)).toBe('employees in grade 27');
     expect(cohortDocLabel('curated', ctx)).toBe('the peers listed in this comparison');
   });
   it('falls back sensibly when context is missing', () => {
     expect(cohortDocLabel('school', {})).toBe('same-title peers in this school/division');
-    expect(cohortDocLabel('grade', {})).toBe('employees in pay grade —');
+    expect(cohortDocLabel('grade', {})).toBe('employees in grade —');
+    expect(cohortDocLabel('grade', { grade: 27, gradeBasis: 'annual_12mo' })).toBe('employees in grade 27 (12-month)');
     expect(cohortDocLabel('tenure', {})).toBe('same-title peers within ±3 years of tenure');
   });
 });

@@ -312,7 +312,7 @@ test.describe('R5 — standing is one query, per person, the department inside i
     await page.goto(`./person/${encodeURIComponent(AARON)}?tab=pay`);
     const dept = page.locator('.chart-plot', { hasText: `Administration · ${SMPH}` });
     await expect(dept).toContainText(`of ${o.dept.toLocaleString('en-US')}`, { timeout: 60_000 });
-    await expect(page.locator('.chart-plot', { hasText: 'Salary grade 27 (12-month)' })).toContainText(`of ${o.grade.toLocaleString('en-US')}`);
+    await expect(page.locator('.chart-plot', { hasText: 'Grade 27 (12-month)' })).toContainText(`of ${o.grade.toLocaleString('en-US')}`);
   });
 
   /** Page and printed report, for you and for someone paid exactly what a quarter of their school is. */

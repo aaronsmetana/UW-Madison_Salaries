@@ -1,6 +1,6 @@
 // Shared types + pure helpers for the raise case studio (left setup pane + right brief).
 import type { ReactNode } from 'react';
-import { usd, pct, plural } from '../../lib/format';
+import { usd, pct, plural, fmtGrade } from '../../lib/format';
 import { percentile as percentileOf } from '../../lib/stats';
 import { POLICY } from './sources';
 import type { ScatterPoint } from '../TenurePayScatter';
@@ -15,7 +15,7 @@ export const COHORT_DEFS: { value: CohortMode; label: string; help: string }[] =
   { value: 'all', label: 'All same-title at UW', help: 'The broad market benchmark — everyone in this job code campus-wide.' },
   { value: 'school', label: 'Same title + school/division', help: 'Same job code within the subject’s school/division.' },
   { value: 'tenure', label: 'Same title + similar tenure', help: 'Same-title peers within a tenure band of the subject.' },
-  { value: 'grade', label: 'Same pay grade', help: 'Parity by pay grade, across titles.' },
+  { value: 'grade', label: 'Same grade', help: 'Parity by grade, across titles.' },
   { value: 'curated', label: 'Only my curated set', help: 'Just the people you picked — your true comparators (e.g. peers who also supervise).' },
 ];
 
@@ -23,12 +23,12 @@ export const COHORT_DEFS: { value: CohortMode; label: string; help: string }[] =
  *  UI-only text for the setup pane's radio group. Internal labels like "Only my curated set" or "All
  *  same-title at UW" read as first-person notes-to-self and shouldn't appear in a document handed to
  *  a supervisor or HR — this renders the same cohort as a plain, third-person description instead. */
-export function cohortDocLabel(mode: CohortMode, ctx: { school?: string | null; grade?: number | null; tenureBand?: number }): string {
+export function cohortDocLabel(mode: CohortMode, ctx: { school?: string | null; grade?: number | null; gradeBasis?: string | null; tenureBand?: number }): string {
   switch (mode) {
     case 'all': return 'all UW–Madison employees with this title';
     case 'school': return `same-title peers in ${ctx.school ?? 'this school/division'}`;
     case 'tenure': return `same-title peers within ±${ctx.tenureBand ?? 3} years of tenure`;
-    case 'grade': return `employees in pay grade ${ctx.grade ?? '—'}`;
+    case 'grade': return `employees in grade ${fmtGrade(ctx.grade, ctx.gradeBasis)}`;
     case 'curated': return 'the peers listed in this comparison';
   }
 }

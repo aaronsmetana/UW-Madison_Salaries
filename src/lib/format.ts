@@ -127,6 +127,18 @@ export function fmtGradeBasis(b: string | null | undefined): string | null {
 }
 
 /**
+ * A grade as the app writes it (G7): its number — "27", never the source's "Grade 027 Madison 12 Month" — after
+ * "Grade" or "grade", and its schedule in brackets, "27 (12-month)", where `schedule` is given: wherever the
+ * schedule is part of what is said, since a grade number is a grade only on its own schedule (grade 18 is hourly,
+ * 12-month and 9-month pay at once).
+ */
+export function fmtGrade(grade: number | null | undefined, schedule?: string | null): string {
+  if (grade == null) return '—';
+  const s = fmtGradeBasis(schedule);
+  return s ? `${grade} (${s})` : String(grade);
+}
+
+/**
  * How a group's median sits against the campus one, in words: "19% below campus", "34% above campus", or
  * "about the campus median" within a point either way, a gap too small to be worth a number. Empty when
  * there is nothing to compare.

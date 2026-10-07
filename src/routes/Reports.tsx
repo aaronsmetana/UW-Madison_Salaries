@@ -15,7 +15,7 @@ import { useTray } from '../state/tray';
 import { decodeSel, encodeSel } from '../lib/share';
 import { CopyLinkButton } from '../components/CopyLinkButton';
 import { PayMeasure } from '../components/PayMeasure';
-import { usd, pct, fullName, plural, fmtToday } from '../lib/format';
+import { usd, pct, fullName, plural, fmtToday, fmtGrade } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
@@ -436,7 +436,7 @@ export default function Reports() {
   // Document-facing phrasing for the active cohort — `COHORT_DEFS[].label` (used only in the setup
   // pane's radio group) is UI-only text like "Only my curated set" or "All same-title at UW" and must
   // never appear verbatim in a document handed to a supervisor or HR.
-  const docCohortLabel = cohortDocLabel(selectedMode, { school, grade, tenureBand: config.tenureBand });
+  const docCohortLabel = cohortDocLabel(selectedMode, { school, grade, gradeBasis: subj?.grade_basis, tenureBand: config.tenureBand });
 
   // Market-standing panel: a distribution view of the ACTIVE cohort (the one selected in "Benchmark
   // cohort") plus a broader multi-pool percentile table drawn from every other AVAILABLE lens (title
@@ -448,7 +448,7 @@ export default function Reports() {
       .filter((m) => m !== 'curated' && cohortAvailable[m])
       .map((m) => {
         const s = statsByMode[m];
-        return { label: cohortDocLabel(m, { school, grade, tenureBand: config.tenureBand }), n: s.n, med: s.med, percentile: s.percentile, gapToMed: s.gapToMed };
+        return { label: cohortDocLabel(m, { school, grade, gradeBasis: subj?.grade_basis, tenureBand: config.tenureBand }), n: s.n, med: s.med, percentile: s.percentile, gapToMed: s.gapToMed };
       });
     return { min: stats.min, p25: stats.p25, med: stats.med, p75: stats.p75, max: stats.max, values, cohortLabel: docCohortLabel, pools };
   }, [subjectPay, stats, cohortRowsFor, selectedMode, school, grade, config.tenureBand, docCohortLabel, statsByMode, cohortAvailable]);
@@ -787,7 +787,7 @@ export default function Reports() {
 
   // "prepared {date}" moves to the brief's dedicated provenance line (below the header) instead of
   // living here, so it doesn't compete with the identifying facts (title/grade/school/snapshot).
-  const headerMeta = [subj?.title, grade != null ? `grade ${grade}` : null, school, snapLabel, METRIC_LABEL[metric]].filter(Boolean).join(' · ');
+  const headerMeta = [subj?.title, grade != null ? `grade ${fmtGrade(grade, subj?.grade_basis)}` : null, school, snapLabel, METRIC_LABEL[metric]].filter(Boolean).join(' · ');
 
   // ── "Basis under UW salary guidelines" — the SAG provisions this document's evidence actually
   //    supports, in the guideline's own vocabulary. One row per supported provision; objective

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, vsCampus } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -117,5 +117,14 @@ describe('vsCampus', () => {
     expect(vsCampus(null, 76694)).toBe('');
     expect(vsCampus(50000, 0)).toBe('');
     expect(vsCampus(50000, null)).toBe('');
+  });
+});
+
+describe('fmtGrade', () => {
+  it('writes a grade as its number, its schedule in brackets where given', () => {
+    expect(fmtGrade(27)).toBe('27');
+    expect(fmtGrade(80, 'annual_9mo')).toBe('80 (9-month)');
+    expect(fmtGrade(15, 'hourly')).toBe('15 (hourly)');
+    expect(fmtGrade(null)).toBe('—');
   });
 });

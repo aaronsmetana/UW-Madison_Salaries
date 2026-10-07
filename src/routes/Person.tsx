@@ -31,7 +31,7 @@ import { personPay, actualPay, gradedAppt, standingSql, poolPercentile, continui
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
-import { usd, num, fullName, fmtBasis, spanLabel, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
@@ -584,13 +584,12 @@ export default function Person() {
   // final size from the start (their labels, and placeholders for the bars), rather than arriving above the
   // pay band and the simulator and pushing them down (layout shift 0.21).
   const poolLabels = useMemo(() => {
-    const sched = fmtGradeBasis(latest?.grade_basis);
     return [
       { key: 'all', label: 'All UW–Madison', ok: true },
       { key: 'div', label: latest?.school ?? 'Division', ok: !!latest?.school },
       // Named with its school: "Administration" alone is twelve different units.
       { key: 'dept', label: [latest?.department, latest?.school].filter(Boolean).join(' · ') || 'Department', ok: !!latest?.department },
-      { key: 'grade', label: latest?.grade_number != null ? `Salary grade ${latest.grade_number}${sched ? ` (${sched})` : ''}` : 'Salary grade', ok: latest?.grade_number != null },
+      { key: 'grade', label: `Grade ${fmtGrade(latest?.grade_number, latest?.grade_basis)}`, ok: latest?.grade_number != null },
       { key: 'title', label: latest?.title ?? 'Title', ok: !!latest?.job_code },
     ].filter((x) => x.ok);
   }, [latest]);
@@ -893,7 +892,10 @@ export default function Person() {
         label="About this appointment"
         facts={[
           { label: 'Job code', value: latest?.job_code },
-          { label: <GlossaryTerm term="grade">Grade</GlossaryTerm>, value: latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? (latest?.grade_number != null ? String(latest.grade_number) : null) },
+          // The number, as everywhere (format `fmtGrade`); its schedule only where it is not the basis beside it.
+          { label: <GlossaryTerm term="grade">Grade</GlossaryTerm>, value: latest?.grade_number != null
+            ? fmtGrade(latest.grade_number, fmtBasis(latest.comp_basis).toLowerCase().startsWith(fmtGradeBasis(latest.grade_basis) ?? '') ? null : latest.grade_basis)
+            : latest?.salary_grade_raw?.replace(/^grade\s*/i, '') ?? null },
           { label: 'Category', value: latest?.employee_category },
           { label: 'Type', value: [latest?.employee_type, latest?.contract_type].filter(Boolean).join(' · ') || null },
           { label: <GlossaryTerm term="basis">Basis</GlossaryTerm>, value: latest?.comp_basis ? fmtBasis(latest.comp_basis) : null },
