@@ -24,7 +24,7 @@ test('mod+K opens the palette and puts the cursor in the search box', async ({ p
 
 test('Escape closes it and hands focus back', async ({ page }) => {
   await ready(page);
-  const field = page.getByPlaceholder('Search an employee by name…');
+  const field = page.getByPlaceholder('Search yourself by name to begin…');
   await field.click();
   await page.keyboard.press('ControlOrMeta+k');
   await expect(page.locator(DIALOG)).toBeVisible();
@@ -37,9 +37,9 @@ test('Escape closes it and hands focus back', async ({ page }) => {
 
 test('the shortcut still fires while a text field has focus', async ({ page }) => {
   await ready(page);
-  // /reports leads with its own person search; a palette that dies inside an input is a palette that
-  // fails exactly when someone is typing in the wrong box, which is the case it exists for.
-  await page.getByPlaceholder('Search an employee by name…').click();
+  // /reports leads with its own person search (the raise case's subject); a palette that dies inside an input
+  // is a palette that fails exactly when someone is typing in the wrong box, which is the case it exists for.
+  await page.getByPlaceholder('Search yourself by name to begin…').click();
   await page.keyboard.type('smith');
 
   await page.keyboard.press('ControlOrMeta+k');

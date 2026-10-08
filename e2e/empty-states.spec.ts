@@ -2,12 +2,11 @@ import { test, expect } from '@playwright/test';
 
 /**
  * An empty state says where the control it needs is, and is not a second way to it (G5): under the title
- * picker, a "Choose a title" button only repeated the picker. Each page that opens empty — Titles, a one-person
- * report, Screening, Compare — says "above", and its empty card holds no button.
+ * picker, a "Choose a title" button only repeated the picker. Each page that opens empty — Titles, Screening,
+ * Compare — says "above", and its empty card holds no button. (Reports opens on the raise case's own search.)
  */
 for (const [page_, path, heading] of [
   ['Titles', './paycheck', 'No title selected'],
-  ['Reports', './reports', 'No employee selected'],
   ['Screening', './screening', 'No screen run yet'],
   ['Compare', './compare', 'Build a side-by-side comparison'],
 ] as const) {
