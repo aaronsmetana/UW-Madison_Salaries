@@ -295,3 +295,100 @@ test('a raise case keeps its own people: the compare set starts a case about one
   await expect(c.page.locator('.setup-panel').getByRole('button', { name: 'Add 2 people from the compare set' })).toBeVisible();
   await c.ctx.close();
 });
+
+test('a person to match: the closest first, the two side by side, what tenure explains, the gap over time, what they have too', async ({ browser }) => {
+  test.setTimeout(240_000);
+  const snap = await latestSnapshot();
+  // Someone with Aaron's job code paid more, and how many snapshots both were paid in.
+  const [peer] = await oracle<{ k: string; nm: string; pay: number; shared: number }>(
+    // A snapshot published in two versions (before and after the title change) is one date, one row.
+    `WITH p AS (SELECT person_key k, snapshot_id s, any_value(snapshot_date) d, any_value(first_name || ' ' || last_name) nm, sum(${PAY}) pay
+         FROM $SAL WHERE salary > 0 GROUP BY 1, 2),
+       me AS (SELECT * FROM p WHERE k = '${AARON}')
+     SELECT p.k, p.nm, p.pay, (SELECT count(DISTINCT q.d) FROM p q JOIN me USING (s) WHERE q.k = p.k) shared FROM p
+     WHERE p.s = '${snap}' AND p.k <> '${AARON}' AND p.pay > (SELECT pay FROM me WHERE s = '${snap}')
+       AND p.k IN (SELECT person_key FROM $SAL WHERE snapshot_id = '${snap}'
+         AND job_code = (SELECT any_value(job_code) FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}'))
+     ORDER BY shared DESC, p.k LIMIT 1`,
+  );
+  const { ctx, page } = await caseFor(browser, AARON, [{ id: AARON, label: 'Aaron Smetana' }]);
+  const setup = page.locator('.setup-panel');
+  const brief = page.locator('.report-brief');
+  const dollars = (t: string) => Number(t.match(/\$([\d,]+)/)?.[1].replace(/,/g, ''));
+  const readout = async () => dollars(await setup.locator('text="Recommended"').locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]').innerText());
+
+  // One list of whom to add, closest first: the same school or division, then the nearest tenure.
+  await expect(setup).toContainText('Closest matches with this title', { timeout: 60_000 });
+  await expect(setup).not.toContainText(/top earners|Strong comparators/);
+  const [me] = await oracle<{ school: string; tenure: number; mates: number }>(
+    `SELECT any_value(school) school, any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
+       (SELECT count(DISTINCT o.person_key) FROM $SAL o WHERE o.snapshot_id = '${snap}' AND o.salary > 0 AND o.person_key <> '${AARON}'
+          AND o.job_code = any_value(a.job_code) AND o.school = any_value(a.school)) mates
+     FROM $SAL a WHERE snapshot_id = '${snap}' AND person_key = '${AARON}'`,
+  );
+  const lines = await setup.getByRole('button', { name: /^Add (?!a justification)/ }).evaluateAll((bs) =>
+    bs.filter((b) => !/from the compare set/.test(b.textContent ?? '')).map((b) => b.closest('.mantine-Group-root')?.querySelector('p:last-of-type')?.textContent ?? ''));
+  expect(lines.length, 'no matches listed').toBeGreaterThan(2);
+  const rank = lines.map((l) => ({ same: l.endsWith(me.school), far: Math.abs(Number(l.match(/^(\d+\.\d) yrs/)?.[1]) - me.tenure) }));
+  expect(me.mates, 'no one else with this title in Aaron’s school, so this tests nothing').toBeGreaterThan(0);
+  expect(rank.slice(0, me.mates).every((r) => r.same), 'the same school’s people do not lead the list').toBe(true);
+  for (let i = 1; i < rank.length; i++) {
+    const [a, b] = [rank[i - 1], rank[i]];
+    expect(Number(b.same) <= Number(a.same), `"${lines[i]}" from another school ahead of the same school`).toBe(true);
+    // Each shown to a tenth of a year.
+    if (a.same === b.same) expect(b.far + 0.1, `"${lines[i]}" nearer in tenure than the one above it`).toBeGreaterThanOrEqual(a.far);
+  }
+
+  // Asked to match them, the brief sets the two side by side.
+  await setup.getByPlaceholder('Add a comparator by name…').fill(peer.nm);
+  await page.getByRole('option').filter({ hasText: new RegExp(peer.nm, 'i') }).first().click();
+  await setup.getByRole('radio', { name: new RegExp(`^Match ${peer.nm}$`, 'i') }).click();
+  const card = brief.locator('.match-card');
+  await expect(card).toContainText(/side by side/i, { timeout: 30_000 });
+  const salary = await card.locator('tr', { hasText: 'Salary' }).locator('td').allInnerTexts();
+  expect(dollars(salary[2]), 'their pay').toBe(Math.round(peer.pay));
+  expect(Number(salary[2].match(/\(\+\$([\d,]+)\)/)?.[1].replace(/,/g, '')), 'the gap beside their pay').toBe(Math.round(peer.pay) - dollars(salary[1]));
+  // What tenure accounts for adds up: explained and the rest make the gap.
+  const said = await card.locator('.match-tenure').innerText();
+  expect(said).toMatch(/each year of UW tenure goes with about \$[\d,]+ more pay|does not go with higher pay/);
+  const parts = said.match(/about \$([\d,]+) more pay\. .+ has (\d+\.\d) years more UW tenure than .+ accounts for about \$([\d,]+) of the \$([\d,]+) gap; the other \$([\d,]+)/);
+  if (parts) {
+    const [perYear, years, e, g, r] = parts.slice(1).map((x) => Number(x.replace(/,/g, '')));
+    // The years are shown to a tenth, so the product is good to half a tenth of a year's pay.
+    expect(Math.abs(perYear * years - e), 'what tenure explains is not its pay per year times the years').toBeLessThanOrEqual(perYear * 0.05 + 1);
+    expect(Math.abs(e + r - g), 'what tenure explains and the rest do not make the gap').toBeLessThanOrEqual(1);
+    expect(g).toBe(Math.round(peer.pay) - dollars(salary[1]));
+  }
+  // The gap at each snapshot both were paid in, the last one today's.
+  const rows = card.locator('.match-history tbody tr');
+  await expect(rows).toHaveCount(peer.shared);
+  expect(dollars(await rows.last().locator('td').last().innerText())).toBe(Math.round(peer.pay) - dollars(salary[1]));
+
+  // A factor: added to the ask, unless the person matched has it too.
+  await setup.getByRole('button', { name: 'Add a justification factor' }).click();
+  await page.getByRole('menuitem', { name: 'Certifications & education' }).click();
+  await setup.getByRole('textbox', { name: '+$ (optional)' }).first().fill('2500');
+  await expect.poll(readout).toBe(Math.round(peer.pay) + 2_500);
+  await expect(card).toContainText(/brings: Certifications & education \(\+\$2,500\)/);
+  const has = setup.getByRole('checkbox', { name: new RegExp(`^${peer.nm} has this too$`, 'i') });
+  await has.check();
+  await expect.poll(readout, 'a factor they have too was added to the ask').toBe(Math.round(peer.pay));
+  await expect(card).toContainText(/has these too, so they are not added to the ask: Certifications & education\./);
+  // What the requester attests the two share.
+  await setup.getByRole('textbox', { name: new RegExp(`^Duties shared with ${peer.nm}`, 'i') }).fill('Both run the on-call rota');
+  await expect(card).toContainText('Duties they share, as attested in this request: Both run the on-call rota');
+
+  // Under masked names the card names them as the peer table does.
+  await setup.getByText('Anonymize peer names in document', { exact: true }).click();
+  await expect(card).toContainText(/Aaron and Peer [A-Z], side by side/);
+  await expect(card).not.toContainText(new RegExp(peer.nm, 'i'));
+  await setup.getByText('Anonymize peer names in document', { exact: true }).click();
+
+  // Another ask: no one to set beside, and nothing of them left behind.
+  await setup.getByRole('radio', { name: /^The (tenure-adjusted )?median of all / }).click();
+  await expect(card).toHaveCount(0);
+  await expect(has).toHaveCount(0);
+  await setup.getByRole('radio', { name: new RegExp(`^Match ${peer.nm}$`, 'i') }).click();
+  await expect(has).not.toBeChecked();
+  await ctx.close();
+});

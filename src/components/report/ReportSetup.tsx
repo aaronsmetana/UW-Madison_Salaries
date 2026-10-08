@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import {
-  Stack, Card, Text, Select, Group, Badge, Button, TextInput, NumberInput, Switch, Radio,
+  Stack, Card, Text, Select, Group, Badge, Button, TextInput, Textarea, NumberInput, Switch, Radio,
   SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
@@ -18,12 +18,12 @@ import {
 } from './model';
 
 export interface SetupComparator { key: string; name: string; title: string | null; school: string | null; tenure: number | null; pay: number | null; isSubject: boolean }
-export interface SuggestPerson { key: string; name: string; pay: number }
+export interface SuggestPerson { key: string; name: string; school: string | null; tenure: number | null; pay: number; outEarns: boolean }
 
 const SectionLabel = ({ children }: { children: ReactNode }) => <Eyebrow>{children}</Eyebrow>;
 
 export function ReportSetup({
-  config, onChange, comparators, subjectKey, onSubject, fromSet, basePay, suggestions, inversionSuggestions, onAddPeople, onRemovePerson,
+  config, onChange, comparators, subjectKey, onSubject, matchName, fromSet, basePay, matches, onAddPeople, onRemovePerson,
   asks, askValue, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, readout, onReset, onHover,
   supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, performanceGuide,
 }: {
@@ -32,11 +32,13 @@ export function ReportSetup({
   comparators: SetupComparator[];
   subjectKey: string | null;
   onSubject: (key: string | null) => void;
+  /** Whom the case asks to match, when it asks to match someone: what they share is asked of each factor. */
+  matchName: string | null;
   /** The compare set's people this case does not have: a subject to choose, or people to take in. */
   fromSet: { key: string; name: string }[];
   basePay: number | null;
-  suggestions: SuggestPerson[];
-  inversionSuggestions: SuggestPerson[];
+  /** Whom to add: the people with this title most like the subject, closest first (`closestMatches`). */
+  matches: SuggestPerson[];
   onAddPeople: (ps: { key: string; name: string }[]) => void;
   onRemovePerson: (key: string) => void;
   /** What the case may ask for, each with its figure, and which it asks for (`askOptions`, `askValueOf`). */
@@ -82,6 +84,14 @@ export function ReportSetup({
   const peers = comparators.filter((c) => !c.isSubject);
 
   const pill = (amt: number) => Math.round(amt);
+  // A factor the person matched has too: already in their pay, so not added to the ask.
+  const sharedBox = (id: string) => (
+    <Checkbox
+      label={`${matchName} has this too`}
+      checked={config.sharedFactors.includes(id)}
+      onChange={(e) => set({ sharedFactors: e.currentTarget.checked ? [...config.sharedFactors, id] : config.sharedFactors.filter((k) => k !== id) })}
+    />
+  );
 
   return (
     <Stack gap="lg">
@@ -151,10 +161,23 @@ export function ReportSetup({
             ))}
           </Stack>
         </Radio.Group>
+        {matchName && (
+          <Textarea
+            mt="sm"
+            autosize
+            minRows={2}
+            label={`Duties shared with ${matchName} (optional)`}
+            placeholder="What the two of you both do, as you would attest to it"
+            value={config.sharedDuties}
+            onChange={(e) => set({ sharedDuties: e.currentTarget.value })}
+          />
+        )}
         <Text size="xs" c="dimmed" mt="sm">
           {askValue === 'own'
             ? 'Asked as written: the factors’ amounts are not added to it.'
-            : 'The factors’ amounts below are added to it.'}
+            : matchName
+              ? `The factors’ amounts below are added to it, except for what ${matchName} has too.`
+              : 'The factors’ amounts below are added to it.'}
         </Text>
         <TextInput
           mt="sm"
@@ -205,29 +228,24 @@ export function ReportSetup({
           </Button>
         )}
 
-        {suggestions.length > 0 && (
+        {matches.length > 0 && (
           <Box mt="sm">
-            <Text size="xs" c="dimmed" mb={4}>Suggested benchmarks (top earners in this title):</Text>
-            <Group gap={6}>
-              {suggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPeople([{ key: s.key, name: s.name }])}>
-                  {s.name} ({usd(s.pay)})
-                </Button>
+            <Text size="xs" c="dimmed" mb={4}>Closest matches with this title: the same school or division first, then the nearest UW tenure.</Text>
+            <Stack gap={4}>
+              {matches.map((m) => (
+                <Group key={m.key} justify="space-between" wrap="nowrap" gap="xs">
+                  <Box style={{ minWidth: 0 }}>
+                    <Text size="sm" truncate>{m.name}</Text>
+                    <Text size="xs" c="dimmed" truncate>
+                      {[m.tenure != null ? fmtYears(m.tenure) : null, usd(m.pay), m.outEarns ? 'paid more with less tenure' : null, m.school].filter(Boolean).join(' · ')}
+                    </Text>
+                  </Box>
+                  <Button size="xs" variant="subtle" leftSection={<IconPlus size={ICON.compact} />} aria-label={`Add ${m.name}`} onClick={() => onAddPeople([{ key: m.key, name: m.name }])}>
+                    Add
+                  </Button>
+                </Group>
               ))}
-            </Group>
-          </Box>
-        )}
-
-        {inversionSuggestions.length > 0 && (
-          <Box mt="sm">
-            <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
-            <Group gap={6}>
-              {inversionSuggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPeople([{ key: s.key, name: s.name }])}>
-                  {s.name} ({usd(s.pay)})
-                </Button>
-              ))}
-            </Group>
+            </Stack>
           </Box>
         )}
       </Card>
@@ -281,6 +299,7 @@ export function ReportSetup({
                         </>
                       )}
                     </Group>
+                    {matchName && sharedBox(f.key)}
 
                     {/* Supervisory pay-inversion check — report-local, distinct from the peer/comparator tray */}
                     {f.key === 'supervision' && (
@@ -406,6 +425,7 @@ export function ReportSetup({
                     </>
                   )}
                 </Group>
+                {matchName && <Box mt={6}>{sharedBox(c.id)}</Box>}
               </Box>
             ))}
           </Stack>

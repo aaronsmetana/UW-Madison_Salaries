@@ -5,7 +5,7 @@
 // ignores classes/external CSS anyway, so hand-rolled inline styles are the only way to keep the
 // exported look under our control.
 import { raiseBucketLabel } from './raiseBuckets';
-import { fmtYearsToParity, SECTION_ORDER, type BriefModel } from '../components/report/model';
+import { fmtYearsToParity, matchTenureSentence, SECTION_ORDER, type BriefModel } from '../components/report/model';
 import { usd, pct, fmtYears } from './format';
 import { ordinal } from './stats';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
@@ -44,7 +44,7 @@ export function briefToWordHtml(model: BriefModel): string {
     recommended, belowTarget, targetDelta, targetPct, basisLabel,
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved,
     realErosion, rows, showTenure, anonymize, attrition, divergence, history, format, sections,
-    supervisory, guidelineCompression, guidelineProvisions, standing, raiseCycle, cohortBasisScoped,
+    supervisory, guidelineCompression, guidelineProvisions, standing, raiseCycle, cohortBasisScoped, match,
   } = model;
 
   const body: string[] = [];
@@ -197,6 +197,31 @@ export function briefToWordHtml(model: BriefModel): string {
   // ── Peer comparison ──
   if (sectionShow.peers) {
     body.push(h2(`${num.peers}. Peer comparison`));
+    if (match) {
+      // The person the case asks to match, beside its subject (ReportBrief's card).
+      const them = anonymize ? anonName(match.key) : match.name;
+      const [a, b] = match.sides;
+      body.push(p(`<b>${esc(subjectFirst)} and ${esc(them)}, side by side</b>`));
+      body.push(table(['', subjectFirst, them], [
+        ['Title', esc(a.title ?? '—'), esc(b.title ?? '—')],
+        ['School or division', esc(a.school ?? '—'), esc(b.school ?? '—')],
+        ['UW tenure', fmtYears(a.tenure), fmtYears(b.tenure)],
+        ['Salary', usd(a.pay), `${usd(b.pay)} (+${usd(match.gap)})`],
+      ]));
+      const sentence = matchTenureSentence(match, subjectFirst, them);
+      if (sentence) body.push(p(esc(sentence)));
+      if (match.duties) body.push(p(`Duties they share, as attested in this request: ${esc(match.duties)}`));
+      if (match.shared.length) body.push(p(`${esc(them)} has these too, so they are not added to the ask: ${esc(match.shared.join(', '))}.`));
+      if (match.beyond.length) {
+        body.push(p(`Beyond ${esc(them)}, ${esc(subjectFirst)} brings: ${match.beyond.map((f) => esc(f.amount != null ? `${f.label} (+${usd(f.amount)})` : f.label)).join(', ')}.`));
+      }
+      if (match.history.length >= 2) {
+        body.push(p('<b>The gap at each snapshot</b>'));
+        body.push(table(['Snapshot', subjectFirst, them, 'Gap'], match.history.map((h) => [
+          esc(h.label), usd(h.subject), usd(h.peer), `${h.gap > 0 ? '+' : h.gap < 0 ? '&minus;' : ''}${usd(Math.abs(h.gap))}`,
+        ]), ['l', 'r', 'r', 'r']));
+      }
+    }
     const headers = ['Name', 'Title', ...(showTenure ? ['Tenure'] : []), 'Salary', `vs ${subjectFirst}`];
     const tRows = rows.map((r) => {
       const name = r.isSubject ? `<b>${esc(r.name)}</b> (Review Subject)` : anonymize ? anonName(r.key) : esc(r.name);

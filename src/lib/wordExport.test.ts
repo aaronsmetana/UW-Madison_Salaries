@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { briefToWordHtml, htmlToPlainText } from './wordExport';
-import type { BriefModel } from '../components/report/model';
+import type { BriefModel, MatchSide } from '../components/report/model';
 
 function baseModel(overrides: Partial<BriefModel> = {}): BriefModel {
   return {
@@ -60,6 +60,7 @@ function baseModel(overrides: Partial<BriefModel> = {}): BriefModel {
       pools: [{ label: 'All UW–Madison', n: 40, med: 70_000, percentile: 30, gapToMed: 2_000 }],
     },
     tenureRegression: null,
+    match: null,
     tenureScatterPoints: [],
     raiseCycle: { n: 10, medianPct: 0.03, subjectPct: 0.01, fromLabel: 'May 2024', toLabel: 'May 2026', annualRate: 0.015, dist: [{ bucket: 0, n: 2 }, { bucket: 3, n: 6 }], subjectBucket: 0 },
     ...overrides,
@@ -122,6 +123,32 @@ describe('briefToWordHtml', () => {
     const html = briefToWordHtml(baseModel({ subjectPay: null }));
     expect(html).toContain('Pick a subject');
     expect(html).not.toContain('Recommendation');
+  });
+
+  it('sets the person a case asks to match beside its subject, as the brief does, under their peer name when masked', () => {
+    const match = {
+      key: 'p1', name: 'Alex Chen', gap: 11_000, duties: '', shared: [] as string[], beyond: [] as { label: string; amount: number | null }[],
+      sides: [
+        { title: 'Senior Analyst', school: 'L&S', tenure: 6.2, pay: 68_000 },
+        { title: 'Senior Analyst', school: 'L&S', tenure: 2.1, pay: 79_000 },
+      ] as [MatchSide, MatchSide],
+      tenure: { n: 12, perYear: 500, years: -4.1, explained: -2_050, rest: 13_050 },
+      history: [{ label: 'May 2024', subject: 64_000, peer: 72_000, gap: 8_000 }, { label: 'May 2026', subject: 68_000, peer: 79_000, gap: 11_000 }],
+    };
+    const open = briefToWordHtml(baseModel({ match }));
+    expect(open).toContain('Jordan and Alex Chen, side by side');
+    expect(open).toContain('L&amp;S');
+    expect(open).toContain('Alex Chen has 4.1 years less UW tenure than Jordan: on tenure alone, Alex Chen would be paid about $2,050 less, not $11,000 more.');
+    expect(open).toContain('The gap at each snapshot');
+    expect(open).toContain('+$8,000');
+    const masked = briefToWordHtml(baseModel({ match, anonymize: true }));
+    expect(masked).toContain('Jordan and Peer A, side by side');
+    expect(masked).not.toContain('Alex Chen');
+    expect(briefToWordHtml(baseModel()), 'no one to match, no block').not.toContain('side by side');
+    const said = briefToWordHtml(baseModel({ match: { ...match, duties: 'Both run the <on-call> rota', shared: ['Certifications & education'], beyond: [{ label: 'Supervisory scope', amount: 2_500 }, { label: 'Bilingual', amount: null }] } }));
+    expect(said).toContain('Duties they share, as attested in this request: Both run the &lt;on-call&gt; rota');
+    expect(said).toContain('Alex Chen has these too, so they are not added to the ask: Certifications &amp; education.');
+    expect(said).toContain('Beyond Alex Chen, Jordan brings: Supervisory scope (+$2,500), Bilingual.');
   });
 
   it('wraps output in a Word-flavored HTML document with the subject name in the title', () => {

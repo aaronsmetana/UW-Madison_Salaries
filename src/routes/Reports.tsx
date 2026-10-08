@@ -27,13 +27,13 @@ import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
 import { Eyebrow } from '../components/Eyebrow';
 import { type ScatterPoint } from '../components/TenurePayScatter';
-import { ReportSetup, type SetupComparator, type SuggestPerson } from '../components/report/ReportSetup';
+import { ReportSetup, type SetupComparator } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
 import { ReportFlow } from '../components/report/ReportFlow';
 import {
   COHORT_MODES, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, caseStrength, buildTalkingPoints, askOptions, askValueOf,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
-  casePeople, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
+  casePeople, closestMatches, tenureExplains, gapHistory, type MatchModel, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { ICON } from '../lib/ui';
@@ -323,21 +323,21 @@ export default function Reports() {
     cmpReady && !!jobCode
   );
 
-  const { data: peerHist } = useSql<{ person_key: string; date: string; pay: number }>(
+  const { data: peerHist } = useSql<{ person_key: string; date: string; snapshot_label: string; pay: number }>(
     ['rpt-peer-hist', personIds, metric],
-    `SELECT person_key, any_value(snapshot_date) date, ${personPay(metric)} pay
+    `SELECT person_key, any_value(snapshot_date) date, any_value(snapshot_label) snapshot_label, ${personPay(metric)} pay
      FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key, snapshot_id ORDER BY date`,
     type === 'comparison' && caseIds.length > 0
   );
 
   // Also carries tenure (not just top-10-by-pay) so the same rows can surface tenure-inversion
   // suggestions — peers who out-earn the subject despite less UW tenure — not just top earners.
-  const { data: suggestRows } = useSql<{ person_key: string; fn: string; ln: string; pay: number; tenure: number | null }>(
+  const { data: suggestRows } = useSql<{ person_key: string; fn: string; ln: string; school: string | null; pay: number; tenure: number | null }>(
     ['rpt-suggest', jobCode ?? '', snap ?? '', metric, compBasisWhere],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${personPay(metric)} pay,
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(school) school, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(jobCode ?? '')} ${compBasisWhere}
-     GROUP BY person_key ORDER BY pay DESC LIMIT 200`,
+     GROUP BY person_key`,
     cmpReady && !!jobCode
   );
 
@@ -504,7 +504,7 @@ export default function Reports() {
     // argues shortfalls), the opposite sign of tenureFit's own.
     const fit = tenureFit(pts, { x: tenureYears, y: subjectPay });
     if (!fit) return null;
-    return { n: fit.n, expected: fit.expected, gap: -fit.gap, verdict: fit.verdict };
+    return { n: fit.n, expected: fit.expected, gap: -fit.gap, verdict: fit.verdict, perYear: fit.slope };
   }, [peerListRows, subjectPay, tenureYears, subjectKey]);
 
   // Points for the (detailed-format-only) tenure-vs-pay scatter — same-title peers + the subject. Peer
@@ -701,19 +701,21 @@ export default function Reports() {
       ? `${fullName(targetPerson.fn, targetPerson.ln)}'s salary`
       : `${medianKind} of ${docCohortLabel}`;
 
-  const activeFactors = useMemo(
-    () => [
-      ...FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => {
-        const a = config.factors[f.key].amount;
-        return { key: f.key, label: f.label, note: config.factors[f.key].note.trim(), amount: typeof a === 'number' && a > 0 ? a : null };
-      }),
+  // Matching someone: a factor they have too is already in their pay, so its amount is not added to the ask.
+  const matching = !(typeof config.override === 'number' && config.override > 0) && !winningAnchor && !!targetPerson;
+  const activeFactors = useMemo(() => {
+    const shared = new Set(matching ? config.sharedFactors : []);
+    const amount = (key: string, a: number | '') => (!shared.has(key) && typeof a === 'number' && a > 0 ? a : null);
+    return [
+      ...FACTOR_DEFS.filter((f) => config.factors[f.key].on).map((f) => (
+        { key: f.key, label: f.label, note: config.factors[f.key].note.trim(), amount: amount(f.key, config.factors[f.key].amount), shared: shared.has(f.key) }
+      )),
       // Custom (user-typed) factors: active once given a label, regardless of whether a $ amount is set.
       ...config.customFactors
         .filter((c) => c.label.trim())
-        .map((c) => ({ key: c.id, label: c.label.trim(), note: c.note.trim(), amount: typeof c.amount === 'number' && c.amount > 0 ? c.amount : null })),
-    ],
-    [config.factors, config.customFactors]
-  );
+        .map((c) => ({ key: c.id, label: c.label.trim(), note: c.note.trim(), amount: amount(c.id, c.amount), shared: shared.has(c.id) })),
+    ];
+  }, [config.factors, config.customFactors, config.sharedFactors, matching]);
   const addOnSum = activeFactors.reduce((s, f) => s + (f.amount ?? 0), 0);
   const computed = baseParity != null ? baseParity + addOnSum : null;
   const override = typeof config.override === 'number' && config.override > 0 ? config.override : null;
@@ -721,6 +723,27 @@ export default function Reports() {
   // The setup's one "What to ask for": read from what the ask actually rests on, so a case saved with two
   // guideline targets on (they used to be two boxes) shows the one that won.
   const askValue = askValueOf({ override, anchor: winningAnchor?.key ?? null, target: targetPerson?.person_key ?? null, cohort: selectedMode });
+  // The person the case asks to match, beside its subject: what tenure accounts for between them, and the gap
+  // at each snapshot both were paid in.
+  const match: MatchModel | null = useMemo(() => {
+    if (!targetPerson || askValue !== `peer:${targetPerson.person_key}` || subjectPay == null || targetPerson.pay <= subjectPay) return null;
+    const gap = targetPerson.pay - subjectPay;
+    return {
+      key: targetPerson.person_key, name: fullName(targetPerson.fn, targetPerson.ln),
+      sides: [
+        { title: subj?.title ?? null, school, tenure: tenureYears, pay: subjectPay },
+        { title: targetPerson.title, school: targetPerson.school, tenure: targetPerson.tenure, pay: targetPerson.pay },
+      ],
+      gap,
+      tenure: tenureRegression && tenureYears != null && targetPerson.tenure != null
+        ? { n: tenureRegression.n, perYear: tenureRegression.perYear, ...tenureExplains(tenureRegression.perYear, tenureYears, targetPerson.tenure, gap) }
+        : null,
+      history: gapHistory(peerHist ?? [], subjectKey ?? '', targetPerson.person_key),
+      duties: config.sharedDuties.trim(),
+      shared: activeFactors.filter((f) => f.shared).map((f) => f.label),
+      beyond: activeFactors.filter((f) => !f.shared).map((f) => ({ label: f.label, amount: f.amount })),
+    };
+  }, [targetPerson, askValue, subjectPay, subj?.title, school, tenureYears, tenureRegression, peerHist, subjectKey, config.sharedDuties, activeFactors]);
   const belowTarget = subjectPay != null && recommended != null && recommended > subjectPay;
   const targetDelta = belowTarget && recommended != null && subjectPay != null ? recommended - subjectPay : 0;
   const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
@@ -919,7 +942,7 @@ export default function Reports() {
     marketPosition,
     guidelineProvisions,
     cohortBasisScoped: !!subj?.comp_basis,
-    standing, tenureRegression, tenureScatterPoints, raiseCycle: raiseCycleDoc,
+    standing, tenureRegression, tenureScatterPoints, raiseCycle: raiseCycleDoc, match,
   };
 
   // Evidence-completeness checklist (private, setup-pane only): which document sections will actually
@@ -954,20 +977,11 @@ export default function Reports() {
   // Fall back to the case's own names before its rows resolve, so the subject is always selectable.
   const comparatorOptions = comparators.length ? comparators
     : [{ key: subjectKey ?? '', name: subjectName }, ...peers].filter((p) => p.key).map((p) => ({ key: p.key, name: p.name, title: null, school: null, tenure: null, pay: null, isSubject: p.key === subjectKey }));
-  const suggestions: SuggestPerson[] = caseIds.length >= 5 ? [] : (suggestRows ?? [])
-    .filter((s) => !caseIds.includes(s.person_key))
-    .slice(0, 3)
-    .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
-  // Tenure-inversion suggestions — peers with LESS UW tenure who are already paid MORE than the
-  // subject. These are the strongest possible comparators (they make the equity case directly),
-  // distinct from `suggestions` above (which is just top earners in the title).
-  const minTenure = tenureYears;
-  const minPay = subjectPay;
-  const inversionSuggestions: SuggestPerson[] = caseIds.length >= 5 || minPay == null || minTenure == null ? [] : (suggestRows ?? [])
-    .filter((s) => !caseIds.includes(s.person_key) && s.tenure != null && s.tenure < minTenure && s.pay > minPay)
-    .sort((a, b) => b.pay - a.pay)
-    .slice(0, 3)
-    .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
+  // One list of whom to add: the people with this title most like the subject, closest first.
+  const matches = caseIds.length >= 5 ? [] : closestMatches(
+    (suggestRows ?? []).map((r) => ({ key: r.person_key, name: fullName(r.fn, r.ln), school: r.school, tenure: r.tenure, pay: r.pay })),
+    { school, tenure: tenureYears, pay: subjectPay }, new Set(caseIds),
+  );
   // The ask's choices, each with its figure: every group's median (the curated one once it is more than one
   // person, where it would only repeat "Match …"), each named person, and the guideline figures that apply.
   const all = statsByMode.all;
@@ -1026,10 +1040,10 @@ export default function Reports() {
         comparators={comparatorOptions}
         subjectKey={subjectKey}
         onSubject={chooseSubject}
+        matchName={matching && targetPerson ? fullName(targetPerson.fn, targetPerson.ln) : null}
         fromSet={fromSet}
         basePay={subjectPay}
-        suggestions={suggestions}
-        inversionSuggestions={inversionSuggestions}
+        matches={matches}
         onAddPeople={(ps) => setPeers([...peers, ...ps])}
         onRemovePerson={(key) => setPeers(peers.filter((p) => p.key !== key))}
         asks={asks}

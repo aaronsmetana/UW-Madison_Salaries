@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -302,5 +302,65 @@ describe('a case’s own people', () => {
     const c = { ...defaultConfig(), peers: [A] };
     expect(encodeCase(c)).toBe('');
     expect(applyCase(c, encodeCase({ ...c, cohort: 'school' })).peers).toEqual([A]);
+  });
+});
+
+describe('a named comparator', () => {
+  const row = (key: string, school: string | null, tenure: number | null, pay: number) => ({ key, name: key.toUpperCase(), school, tenure, pay });
+
+  it('is suggested closest first: the same school, then the nearest tenure, never by pay', () => {
+    const rows = [row('far', 'SMPH', 20, 200_000), row('near', 'SMPH', 9, 90_000), row('other', 'L&S', 10, 300_000), row('in', 'SMPH', 10, 100_000), row('nopay', 'SMPH', 10, 0)];
+    const got = closestMatches(rows, { school: 'SMPH', tenure: 10, pay: 95_000 }, new Set(['in']));
+    expect(got.map((r) => r.key)).toEqual(['near', 'far', 'other']);
+    expect(got.map((r) => r.outEarns), 'paid more with less tenure').toEqual([false, false, false]);
+    expect(closestMatches([row('x', 'SMPH', 8, 96_000)], { school: 'SMPH', tenure: 10, pay: 95_000 }, new Set())[0].outEarns).toBe(true);
+    expect(closestMatches(rows, { school: null, tenure: null, pay: null }, new Set(), 2).map((r) => r.key), 'by name when nothing else orders them')
+      .toEqual(['far', 'in']);
+  });
+
+  it('has what tenure explains of the gap: the title’s pay per year times the years between them', () => {
+    expect(tenureExplains(382, 11.9, 17.4, 28_492)).toEqual({ years: expect.closeTo(5.5, 5), explained: expect.closeTo(2101, 0), rest: expect.closeTo(26_391, 0) });
+    expect(tenureExplains(382, 12, 10, 5_000).explained, 'fewer years: tenure argues the other way').toBeCloseTo(-764, 5);
+  });
+
+  it('has the gap at each snapshot both were paid in, oldest first', () => {
+    const hist = [
+      { person_key: 's', date: '2024-09-01', snapshot_label: 'Sep 2024', pay: 90 }, { person_key: 'p', date: '2024-09-01', snapshot_label: 'Sep 2024', pay: 100 },
+      { person_key: 's', date: '2023-09-01', snapshot_label: 'Sep 2023', pay: 80 }, { person_key: 'p', date: '2023-09-01', snapshot_label: 'Sep 2023', pay: 95 },
+      { person_key: 's', date: '2022-09-01', snapshot_label: 'Sep 2022', pay: 70 }, { person_key: 'p', date: '2025-09-01', snapshot_label: 'Sep 2025', pay: 110 },
+    ];
+    expect(gapHistory(hist, 's', 'p')).toEqual([
+      { label: 'Sep 2023', subject: 80, peer: 95, gap: 15 },
+      { label: 'Sep 2024', subject: 90, peer: 100, gap: 10 },
+    ]);
+  });
+
+  it('says what tenure accounts for in each of its cases', () => {
+    const m = (perYear: number, years: number, gap: number): MatchModel => ({
+      key: 'p', name: 'Adam Koch', gap, history: [], duties: '', shared: [], beyond: [],
+      sides: [{ title: null, school: null, tenure: 10, pay: 100 }, { title: null, school: null, tenure: 10 + years, pay: 100 + gap }],
+      tenure: { n: 46, perYear, ...tenureExplains(perYear, 10, 10 + years, gap) },
+    });
+    expect(matchTenureSentence(m(382, 5.5, 28_492), 'Aaron', 'Adam'))
+      .toBe('Among the 46 others with this title, each year of UW tenure goes with about $382 more pay. Adam has 5.5 years more UW tenure than Aaron, which accounts for about $2,101 of the $28,492 gap; the other $26,391 is not explained by tenure.');
+    expect(matchTenureSentence(m(382, -2, 5_000), 'Aaron', 'Adam')).toContain('Adam has 2.0 years less UW tenure than Aaron: on tenure alone, Adam would be paid about $764 less, not $5,000 more.');
+    expect(matchTenureSentence(m(2_000, 5, 5_000), 'Aaron', 'Adam')).toContain('which accounts for all of the $5,000 gap.');
+    expect(matchTenureSentence(m(-50, 5, 5_000), 'Aaron', 'Adam')).toContain('does not go with higher pay');
+    expect(matchTenureSentence(m(382, 0.2, 5_000), 'Aaron', 'Adam')).toContain('about the same UW tenure');
+    expect(matchTenureSentence({ ...m(382, 5, 5_000), tenure: null }, 'Aaron', 'Adam')).toBeNull();
+  });
+});
+
+describe('what the person matched has too', () => {
+  it('travels in the link, the attested duties never; another ask starts with none', () => {
+    const c = { ...defaultConfig(), targetKey: 'p', sharedFactors: ['credentials'], sharedDuties: 'Both run the on-call rota' };
+    const back = applyCase(defaultConfig(), encodeCase(c));
+    expect(back.sharedFactors).toEqual(['credentials']);
+    expect(back.sharedDuties, 'words written into a case').toBe('');
+    expect(atob(encodeCase(c).replace(/-/g, '+').replace(/_/g, '/')), 'the duties in the link').not.toContain('on-call');
+    expect(applyAsk(c, 'peer:q', null).sharedFactors).toEqual([]);
+    expect(applyAsk(c, 'cohort:school', null).sharedFactors).toEqual([]);
+    expect(migrateConfig({ ...c, sharedFactors: ['credentials', 3] }).sharedFactors).toEqual(['credentials']);
+    expect(migrateConfig({}).sharedDuties).toBe('');
   });
 });

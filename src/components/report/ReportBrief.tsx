@@ -20,7 +20,7 @@ import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
-import { CAND, PEER, fmtYearsToParity, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
+import { CAND, PEER, fmtYearsToParity, matchTenureSentence, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
 import { raiseBucketLabel } from '../../lib/raiseBuckets';
 import { ordinal } from '../../lib/stats';
 import { payWindow } from '../../lib/payWindow';
@@ -88,7 +88,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
-    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped,
+    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped, match,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -438,6 +438,60 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
               >
                 Peer comparison
               </SectionHeading>
+              {match && (() => {
+                // The person the case asks to match, beside its subject: what is the same, what tenure accounts
+                // for, and whether the gap is new.
+                const them = anonymize ? anonName(match.key) : match.name;
+                const sentence = matchTenureSentence(match, subjectFirst, them);
+                const [a, b] = match.sides;
+                const line = (label: ReactNode, x: ReactNode, y: ReactNode) => (
+                  <Table.Tr><Table.Td c="dimmed">{label}</Table.Td><Table.Td>{x}</Table.Td><Table.Td>{y}</Table.Td></Table.Tr>
+                );
+                return (
+                  <Card p="md" mb="sm" className="match-card" style={{ maxWidth: 900 }}>
+                    <Text fw={600} mb={6}>{subjectFirst} and {them}, side by side</Text>
+                    <Table>
+                      <Table.Thead>
+                        <Table.Tr><Table.Th /><Table.Th>{subjectFirst}</Table.Th><Table.Th>{them}</Table.Th></Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {line('Title', a.title ?? '—', b.title ?? '—')}
+                        {line('School or division', a.school ?? '—', b.school ?? '—')}
+                        {line(<>UW tenure<Sup n={fn('tenure')} /></>, fmtYears(a.tenure), fmtYears(b.tenure))}
+                        {line('Salary', usd(a.pay), <>{usd(b.pay)} <Text span size="sm" c="dimmed">(+{usd(match.gap)})</Text></>)}
+                      </Table.Tbody>
+                    </Table>
+                    {sentence && <Text size="sm" mt="sm" className="match-tenure">{sentence}</Text>}
+                    {match.duties && <Text size="sm" mt="sm">Duties they share, as attested in this request: {match.duties}</Text>}
+                    {match.shared.length > 0 && <Text size="sm" mt="sm">{them} has these too, so they are not added to the ask: {match.shared.join(', ')}.</Text>}
+                    {match.beyond.length > 0 && (
+                      <Text size="sm" mt="sm">
+                        Beyond {them}, {subjectFirst} brings: {match.beyond.map((f) => (f.amount != null ? `${f.label} (+${usd(f.amount)})` : f.label)).join(', ')}.
+                      </Text>
+                    )}
+                    {match.history.length >= 2 && (
+                      <>
+                        <Text size="sm" fw={600} mt="md" mb={4}>The gap at each snapshot</Text>
+                        <Table className="match-history">
+                          <Table.Thead>
+                            <Table.Tr><Table.Th>Snapshot</Table.Th><Table.Th ta="right">{subjectFirst}</Table.Th><Table.Th ta="right">{them}</Table.Th><Table.Th ta="right">Gap</Table.Th></Table.Tr>
+                          </Table.Thead>
+                          <Table.Tbody>
+                            {match.history.map((h) => (
+                              <Table.Tr key={h.label}>
+                                <Table.Td>{h.label}</Table.Td>
+                                <Table.Td ta="right">{usd(h.subject)}</Table.Td>
+                                <Table.Td ta="right">{usd(h.peer)}</Table.Td>
+                                <Table.Td ta="right">{h.gap > 0 ? '+' : h.gap < 0 ? '−' : ''}{usd(Math.abs(h.gap))}</Table.Td>
+                              </Table.Tr>
+                            ))}
+                          </Table.Tbody>
+                        </Table>
+                      </>
+                    )}
+                  </Card>
+                );
+              })()}
               <Card p={0} mb="lg" style={{ maxWidth: 900, overflow: 'hidden' }}>
                 <Table>
                   <Table.Thead>

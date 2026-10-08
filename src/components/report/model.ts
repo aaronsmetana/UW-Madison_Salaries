@@ -85,6 +85,11 @@ export interface ReportConfig {
   /** Whom the case compares its subject with: the case's own, not the compare set's. Null until chosen (a new
    *  case, or one saved before cases kept their people), when `casePeople` starts it. */
   peers: CasePerson[] | null;
+  /** When the case asks to match someone: the factors they have too, which their pay already reflects and so
+   *  are not added to the ask (factor keys and custom factor ids). */
+  sharedFactors: string[];
+  /** When the case asks to match someone: the duties the requester attests the two share (words: never in a link). */
+  sharedDuties: string;
   supervisorTarget: boolean; // opt-in: raise base parity to ≥15% above the highest-paid supervisee
   marketFloorTarget: boolean; // opt-in: raise base parity to the SAG market-competitive floor (85% of band midpoint)
   override: number | ''; // manual final-salary override
@@ -104,6 +109,8 @@ export function defaultConfig(): ReportConfig {
     customFactors: [],
     supervisees: [],
     peers: null,
+    sharedFactors: [],
+    sharedDuties: '',
     supervisorTarget: false,
     marketFloorTarget: false,
     override: '',
@@ -135,6 +142,7 @@ export function encodeCase(c: ReportConfig): string {
   if (c.supervisorTarget) o.st = 1;
   if (c.marketFloorTarget) o.mf = 1;
   if (c.override !== '') o.o = c.override;
+  if (c.sharedFactors.length) o.sf = c.sharedFactors;
   if (c.format !== d.format) o.fm = c.format;
   if (c.sections.join() !== d.sections.join()) o.sc = c.sections;
   if (c.anonymize) o.an = 1;
@@ -179,6 +187,7 @@ export function applyCase(base: ReportConfig, param: string | null | undefined):
     supervisorTarget: o.st === 1,
     marketFloorTarget: o.mf === 1,
     override: typeof o.o === 'number' && Number.isFinite(o.o) ? o.o : '',
+    sharedFactors: Array.isArray(o.sf) ? o.sf.filter((x): x is string => typeof x === 'string') : [],
     format: o.fm === 'detailed' ? 'detailed' : d.format,
     sections: Array.isArray(o.sc) ? o.sc.filter((x): x is string => typeof x === 'string' && sections.includes(x)) : d.sections,
     anonymize: o.an === 1,
@@ -203,6 +212,8 @@ export function migrateConfig(saved: unknown): ReportConfig {
     sections: Array.isArray(s.sections) ? s.sections : base.sections,
     supervisees: Array.isArray(s.supervisees) ? s.supervisees : [],
     peers: Array.isArray(s.peers) ? casePeople('', s.peers, []) : null,
+    sharedFactors: Array.isArray(s.sharedFactors) ? s.sharedFactors.filter((x): x is string => typeof x === 'string') : [],
+    sharedDuties: typeof s.sharedDuties === 'string' ? s.sharedDuties : '',
     supervisorTarget: s.supervisorTarget ?? false,
     marketFloorTarget: s.marketFloorTarget ?? false,
     configVersion: CONFIG_VERSION,
@@ -236,6 +247,76 @@ export function casePeople(subject: string, has: unknown[] | null, from: CasePer
     out.push({ key: q.key, name: typeof q.name === 'string' ? q.name : '' });
   }
   return out;
+}
+
+// ── A named comparator: who is most like the subject, and what tenure accounts for between them ──
+
+export interface MatchCandidate { key: string; name: string; school: string | null; tenure: number | null; pay: number }
+
+/** The people with the subject's title most like them, closest first: the same school or division, then the
+ *  nearest UW tenure. Not the best paid: a comparator picked for their pay is the one a reader discounts.
+ *  `outEarns` marks those paid more with less tenure, the strongest comparators a case can name. */
+export function closestMatches(
+  rows: MatchCandidate[], subject: { school: string | null; tenure: number | null; pay: number | null }, exclude: Set<string>, n = 5,
+): (MatchCandidate & { outEarns: boolean })[] {
+  const far = (r: MatchCandidate) => (subject.tenure == null || r.tenure == null ? Infinity : Math.abs(r.tenure - subject.tenure));
+  const away = (r: MatchCandidate) => (subject.school != null && r.school === subject.school ? 0 : 1);
+  return rows
+    .filter((r) => !exclude.has(r.key) && r.pay > 0)
+    .sort((a, b) => away(a) - away(b) || far(a) - far(b) || a.name.localeCompare(b.name))
+    .slice(0, n)
+    .map((r) => ({
+      ...r,
+      outEarns: subject.pay != null && subject.tenure != null && r.tenure != null && r.pay > subject.pay && r.tenure < subject.tenure,
+    }));
+}
+
+/** The person a case asks to match, beside its subject, for the brief and the .doc alike. */
+export interface MatchModel {
+  key: string; name: string;
+  /** The subject, then the person matched. */
+  sides: [MatchSide, MatchSide];
+  /** Their pay less the subject's. */
+  gap: number;
+  /** What UW tenure accounts for in the gap: the title's pay per year of tenure (the slope of the fit the
+   *  brief's tenure line draws, over `n` others) times the years between them. Null without a fit. */
+  tenure: { n: number; perYear: number; years: number; explained: number; rest: number } | null;
+  /** The gap at each snapshot both were paid in, oldest first. */
+  history: { label: string; subject: number; peer: number; gap: number }[];
+  /** The duties the requester attests the two share. */
+  duties: string;
+  /** The subject's factors the person matched has too (not added to the ask), and those beyond them (added). */
+  shared: string[];
+  beyond: { label: string; amount: number | null }[];
+}
+export interface MatchSide { title: string | null; school: string | null; tenure: number | null; pay: number }
+
+export function tenureExplains(perYear: number, subjectTenure: number, peerTenure: number, gap: number) {
+  const years = peerTenure - subjectTenure;
+  const explained = perYear * years;
+  return { years, explained, rest: gap - explained };
+}
+
+export function gapHistory(hist: { person_key: string; date: string; snapshot_label?: string | null; pay: number | null }[], subject: string, peer: string) {
+  const at = (k: string) => new Map(hist.filter((r) => r.person_key === k && r.pay != null && r.pay > 0).map((r) => [r.date, r]));
+  const s = at(subject), p = at(peer);
+  return [...s.keys()].filter((d) => p.has(d)).sort().map((d) => {
+    const a = s.get(d)!.pay as number, b = p.get(d)!.pay as number;
+    return { label: s.get(d)!.snapshot_label ?? d, subject: a, peer: b, gap: b - a };
+  });
+}
+
+/** What tenure accounts for in the gap to the person matched, said once for the brief and the .doc. */
+export function matchTenureSentence(m: MatchModel, subjectFirst: string, peerName: string): string | null {
+  const t = m.tenure;
+  if (!t) return null;
+  const yrs = (y: number) => `${Math.abs(y).toFixed(1)} years`;
+  if (t.perYear <= 0) return `Among the ${t.n} others with this title, longer UW tenure does not go with higher pay, so tenure accounts for none of the ${usd(Math.abs(m.gap))} gap.`;
+  const rate = `Among the ${t.n} others with this title, each year of UW tenure goes with about ${usd(t.perYear)} more pay.`;
+  if (Math.abs(t.years) < 0.5) return `${rate} ${peerName} and ${subjectFirst} have about the same UW tenure, so tenure accounts for almost none of the gap.`;
+  if (t.years < 0) return `${rate} ${peerName} has ${yrs(t.years)} less UW tenure than ${subjectFirst}: on tenure alone, ${peerName} would be paid about ${usd(-t.explained)} less, not ${usd(m.gap)} more.`;
+  if (t.explained >= m.gap) return `${rate} ${peerName} has ${yrs(t.years)} more UW tenure than ${subjectFirst}, which accounts for all of the ${usd(m.gap)} gap.`;
+  return `${rate} ${peerName} has ${yrs(t.years)} more UW tenure than ${subjectFirst}, which accounts for about ${usd(t.explained)} of the ${usd(m.gap)} gap; the other ${usd(t.rest)} is not explained by tenure.`;
 }
 
 // ── Pure stats helpers ──
@@ -363,7 +444,8 @@ export function askOptions(ctx: {
  *  the brief measures standing against; any other ask is measured against everyone with the title. A figure of
  *  one's own starts from the ask as it stands. */
 export function applyAsk(c: ReportConfig, value: AskValue, current: number | null): ReportConfig {
-  const base: ReportConfig = { ...c, cohort: 'all', targetKey: null, supervisorTarget: false, marketFloorTarget: false, override: '' };
+  // What another person has too is theirs, not the next person's.
+  const base: ReportConfig = { ...c, cohort: 'all', targetKey: null, supervisorTarget: false, marketFloorTarget: false, override: '', sharedFactors: [] };
   if (value.startsWith('cohort:')) return { ...base, cohort: value.slice('cohort:'.length) as CohortMode };
   if (value.startsWith('peer:')) return { ...base, targetKey: value.slice('peer:'.length) };
   if (value === 'marketFloor') return { ...base, marketFloorTarget: true };
@@ -520,7 +602,7 @@ export interface BriefModel {
   recommended: number | null; belowTarget: boolean; targetDelta: number; targetPct: number;
   basisLabel: string;
   receipt: ReceiptLine[];
-  activeFactors: { key: string; label: string; note: string; amount: number | null }[];
+  activeFactors: { key: string; label: string; note: string; amount: number | null; shared?: boolean }[];
   proofs: ProofModel[];
   yearsToParity: number | null;
   yearsToParityRate: number; // the annual rate actually used (observed title raise rate, or the 2% fallback)
@@ -544,6 +626,8 @@ export interface BriefModel {
   standing: StandingModel | null;
   tenureRegression: { n: number; expected: number; gap: number } | null;
   tenureScatterPoints: ScatterPoint[];
+  /** The person the case asks to match, when it names one. */
+  match: MatchModel | null;
   raiseCycle: {
     n: number; medianPct: number; subjectPct: number | null; fromLabel: string; toLabel: string;
     annualRate: number | null; dist: { bucket: number; n: number }[]; subjectBucket: number | null;
