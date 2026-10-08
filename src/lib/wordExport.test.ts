@@ -184,6 +184,18 @@ describe('briefToWordHtml', () => {
     expect(briefToWordHtml(baseModel({ sections: [...baseModel().sections, 'counter'] }))).toContain('Nothing in the record stands out against this case.');
   });
 
+  it('in one page gives the ask, its three strongest grounds, where the pay stands, and nothing else', () => {
+    const many = [1, 2, 3, 4].map((i) => ({ kind: 'market' as const, value: `ground ${i}`, label: `label ${i}`, detail: '' }));
+    const html = briefToWordHtml(baseModel({ format: 'onepage', proofs: many }));
+    expect(html).toContain('<b>Recommendation: $78,000.</b> Adjust <b>Jordan Rivers</b> from <b>$68,000</b> to <b>$78,000</b> (+$10,000, 14.7%)');
+    expect(html).toContain('ground 3');
+    expect(html, 'a fourth ground').not.toContain('ground 4');
+    expect(html).toContain('Where the pay stands.');
+    expect(html).toContain('<b>$68,000</b>');
+    for (const gone of ['Peer comparison', 'Pay history', 'Notes &amp; sources', 'Basis under the UW', 'Retention']) expect(html, gone).not.toContain(gone);
+    expect(htmlToPlainText(html).split('\n').length, 'more than a page of lines').toBeLessThan(30);
+  });
+
   it('wraps output in a Word-flavored HTML document with the subject name in the title', () => {
     const html = briefToWordHtml(baseModel());
     expect(html).toMatch(/<html xmlns:o="urn:schemas-microsoft-com:office:office"/);

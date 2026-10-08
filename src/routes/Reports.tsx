@@ -29,6 +29,7 @@ import { Eyebrow } from '../components/Eyebrow';
 import { type ScatterPoint } from '../components/TenurePayScatter';
 import { ReportSetup, type SetupComparator } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
+import { OnePageBrief } from '../components/report/OnePageBrief';
 import { ReportFlow } from '../components/report/ReportFlow';
 import {
   COHORT_MODES, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, caseStrength, buildTalkingPoints, askOptions, askValueOf,
@@ -1107,8 +1108,10 @@ export default function Reports() {
   const briefPane = loading
     ? <Card withBorder padding="xl" className="report-brief"><Skeleton h={40} mb="lg" /><Skeleton h={120} mb="lg" /><Skeleton h={80} mb="lg" /><Skeleton h={160} /></Card>
     : (
-      <ReportBrief model={model} hovered={hovered} onHover={setHovered}
-        onPoolCsv={peerListRows?.length ? () => downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, peerListRows as unknown as Record<string, unknown>[]) : undefined} />
+      config.format === 'onepage' ? <OnePageBrief model={model} /> : (
+        <ReportBrief model={model} hovered={hovered} onHover={setHovered}
+          onPoolCsv={peerListRows?.length ? () => downloadCSV(`${subjectName || 'subject'}-title-peers-${snap}.csv`, peerListRows as unknown as Record<string, unknown>[]) : undefined} />
+      )
     );
 
   return (

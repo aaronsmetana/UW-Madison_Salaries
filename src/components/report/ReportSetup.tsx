@@ -601,7 +601,7 @@ export function ReportSetup({
             size="xs"
             value={config.format}
             onChange={(v) => set({ format: v as ReportConfig['format'] })}
-            data={[{ value: 'brief', label: 'Manager/HR brief' }, { value: 'detailed', label: 'Detailed review' }]}
+            data={[{ value: 'onepage', label: 'One page' }, { value: 'brief', label: 'Manager/HR brief' }, { value: 'detailed', label: 'Detailed review' }]}
           />
         </Box>
 

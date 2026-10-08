@@ -20,7 +20,7 @@ import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
-import { CAND, PEER, fmtYearsToParity, matchTenureSentence, monthLabel, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
+import { CAND, PEER, fmtYearsToParity, matchTenureSentence, monthLabel, peerAlias, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
 import { raiseBucketLabel } from '../../lib/raiseBuckets';
 import { ordinal } from '../../lib/stats';
 import { payWindow } from '../../lib/payWindow';
@@ -88,11 +88,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
     standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped, match, counterPoints,
   } = model;
-  const otherRows = rows.filter((r) => !r.isSubject);
-  const anonName = (key: string) => {
-    const idx = otherRows.findIndex((r) => r.key === key);
-    return idx >= 0 && idx < 26 ? `Peer ${String.fromCharCode(65 + idx)}` : 'Peer';
-  };
+  const anonName = (key: string) => peerAlias(rows, key);
 
   const animated = useAnimatedNumber(recommended ?? 0);
   const has = (s: string) => sections.includes(s);

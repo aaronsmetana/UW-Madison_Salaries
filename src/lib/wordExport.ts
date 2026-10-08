@@ -5,7 +5,7 @@
 // ignores classes/external CSS anyway, so hand-rolled inline styles are the only way to keep the
 // exported look under our control.
 import { raiseBucketLabel } from './raiseBuckets';
-import { fmtYearsToParity, matchTenureSentence, monthLabel, tenureTrendSentence, SECTION_ORDER, type BriefModel } from '../components/report/model';
+import { fmtYearsToParity, matchTenureSentence, monthLabel, peerAlias, tenureTrendSentence, SECTION_ORDER, type BriefModel } from '../components/report/model';
 import { usd, pct, fmtYears } from './format';
 import { ordinal } from './stats';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
@@ -64,11 +64,8 @@ export function briefToWordHtml(model: BriefModel): string {
     return wrap(subjectName, body.join(''));
   }
 
-  const otherRows = rows.filter((r) => !r.isSubject);
-  const anonName = (key: string) => {
-    const idx = otherRows.findIndex((r) => r.key === key);
-    return idx >= 0 && idx < 26 ? `Peer ${String.fromCharCode(65 + idx)}` : 'Peer';
-  };
+  const anonName = (key: string) => peerAlias(rows, key);
+  if (format === 'onepage') return wrap(subjectName, body.join('') + onePage(model, anonName));
 
   // ── Section presence + numbering — identical conditions/order to ReportBrief's sectionShow. ──
   const sectionShow = {
@@ -351,6 +348,32 @@ export function briefToWordHtml(model: BriefModel): string {
   }).join('')}</ol>`);
 
   return wrap(subjectName, body.join(''));
+}
+
+/** The one-page form (OnePageBrief): the ask, its three strongest grounds, where the pay stands, whom it matches. */
+function onePage(m: BriefModel, alias: (key: string) => string): string {
+  const out: string[] = [];
+  const pay = m.subjectPay as number;
+  out.push(p(m.belowTarget && m.recommended != null
+    ? `<b>Recommendation: ${usd(m.recommended)}.</b> Adjust <b>${esc(m.subjectName)}</b> from <b>${usd(pay)}</b> to <b>${usd(m.recommended)}</b> (+${usd(m.targetDelta)}, ${pct(m.targetPct)})${m.basisLabel ? ` &mdash; ${esc(m.basisLabel)}` : ''}.`
+    : `<b>Recommendation:</b> ${esc(m.subjectFirst)} is at or above the parity target${m.recommended != null ? ` (${usd(m.recommended)})` : ''} &mdash; maintain current pay.`));
+  if (m.proofs.length) {
+    out.push(p('<b>The strongest grounds</b>', `${P}margin-bottom:2pt;`));
+    out.push(table(['', 'Ground'], m.proofs.slice(0, 3).map((pr) => [`<b>${esc(pr.value)}</b>`, esc(String(pr.label))])));
+  }
+  const s = m.standing;
+  if (s && s.values.length >= 4) {
+    out.push(p(`<b>Where the pay stands.</b> ${esc(m.subjectFirst)}'s pay against ${esc(s.cohortLabel)} (n = ${s.values.length}).`, `${P}margin-bottom:2pt;`));
+    out.push(table(['Min', 'P25', 'Median', 'P75', 'Max', `${m.subjectFirst}'s pay`],
+      [[usd(s.min), usd(s.p25), usd(s.med), usd(s.p75), usd(s.max), `<b>${usd(pay)}</b>`]], ['r', 'r', 'r', 'r', 'r', 'r']));
+  }
+  if (m.match) {
+    const them = m.anonymize ? alias(m.match.key) : m.match.name;
+    const said = matchTenureSentence(m.match, m.subjectFirst, them);
+    out.push(p(`<b>${esc(m.subjectFirst)} and ${esc(them)}.</b> ${esc(them)} is paid ${usd(m.match.gap)} more.${said ? ` ${esc(said)}` : ''}`));
+  }
+  out.push(p(`Source: UW&ndash;Madison salary data through ${esc(m.snapLabel)}, a Wisconsin public record &middot; generated ${esc(m.generated)}. The methods, the notes and the rest of the evidence are in the full brief.`, `${SMALL}${DIM}`));
+  return out.join('');
 }
 
 function wrap(subjectName: string, bodyHtml: string): string {

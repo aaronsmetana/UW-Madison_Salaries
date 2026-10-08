@@ -469,3 +469,10 @@ describe('questions a reviewer may ask', () => {
     expect(qa).toEqual([{ q: 'Isn’t the difference down to tenure?', a: 'Tenure explains it all.' }, { q: 'Is anyone with less experience paid more?', a: 'No one with this title and less UW tenure is paid more than Aaron.' }]);
   });
 });
+
+describe('the one-page format', () => {
+  it('travels in a case’s link, and an unknown format reads as the brief', () => {
+    expect(applyCase(defaultConfig(), encodeCase({ ...defaultConfig(), format: 'onepage' })).format).toBe('onepage');
+    expect(applyCase(defaultConfig(), btoa(JSON.stringify({ fm: 'poster' })).replace(/=+$/, '')).format).toBe('brief');
+  });
+});

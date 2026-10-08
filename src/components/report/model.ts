@@ -106,7 +106,8 @@ export interface ReportConfig {
   marketFloorTarget: boolean; // opt-in: raise base parity to the SAG market-competitive floor (85% of band midpoint)
   override: number | ''; // manual final-salary override
   headline: string; // optional manual headline override
-  format: 'brief' | 'detailed';
+  /** The brief, the detailed review (its charts' detail), or the one page that goes in front of either. */
+  format: 'brief' | 'detailed' | 'onepage';
   sections: string[];
   anonymize: boolean; // render peers (not the subject) as "Peer A/B/C…" in the document
 }
@@ -201,7 +202,7 @@ export function applyCase(base: ReportConfig, param: string | null | undefined):
     marketFloorTarget: o.mf === 1,
     override: typeof o.o === 'number' && Number.isFinite(o.o) ? o.o : '',
     sharedFactors: Array.isArray(o.sf) ? o.sf.filter((x): x is string => typeof x === 'string') : [],
-    format: o.fm === 'detailed' ? 'detailed' : d.format,
+    format: o.fm === 'detailed' || o.fm === 'onepage' ? o.fm : d.format,
     sections: Array.isArray(o.sc) ? o.sc.filter((x): x is string => typeof x === 'string' && sections.includes(x)) : d.sections,
     anonymize: o.an === 1,
   };
@@ -282,6 +283,12 @@ export function closestMatches(
       ...r,
       outEarns: subject.pay != null && subject.tenure != null && r.tenure != null && r.pay > subject.pay && r.tenure < subject.tenure,
     }));
+}
+
+/** A comparator's name in a document that masks them: "Peer A", "Peer B"… in the order the peer table lists them. */
+export function peerAlias(rows: { key: string; isSubject: boolean }[], key: string): string {
+  const idx = rows.filter((r) => !r.isSubject).findIndex((r) => r.key === key);
+  return idx >= 0 && idx < 26 ? `Peer ${String.fromCharCode(65 + idx)}` : 'Peer';
 }
 
 /** The person a case asks to match, beside its subject, for the brief and the .doc alike. */
@@ -748,7 +755,7 @@ export interface BriefModel {
   attrition: { leftN: number; ofN: number; fromLabel: string; toLabel: string } | null;
   divergence: { avgAbs: number; subjAbs: number } | null;
   history: PayHistoryPoint[];
-  format: 'brief' | 'detailed'; sections: string[];
+  format: ReportConfig['format']; sections: string[];
   jobCode: string | null;
   supervisory: SupervisoryCase;
   guidelineCompression: GuidelineCompression | null;
