@@ -25,6 +25,7 @@ import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
 import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconFilter, IconPrinter } from '@tabler/icons-react';
 import { PersonDashboard } from '../components/PersonDashboard';
+import { PayMeasure } from '../components/PayMeasure';
 import { useControls } from '../state/controls';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -1644,7 +1645,9 @@ export default function Person() {
         <Tabs.Panel value="report" pt="md">
           {tab === 'report' && (
             <>
-              <Group justify="flex-end" mb="sm">
+              {/* The measure its figures use (G2), shown where they are: the rest of the page reads fixed ones. */}
+              <Group justify="space-between" mb="sm" gap="sm">
+                <PayMeasure />
                 <Button variant="default" leftSection={<IconPrinter size={ICON.control} />} onClick={() => window.print()}>
                   Print / Save as PDF
                 </Button>
