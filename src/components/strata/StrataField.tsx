@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, PILE_PER_ROW, STEP_MS, stepTiming,
-  colHeight, colLeft, easeInOut, fisheye, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
+  brokenRowY, colHeight, colLeft, columnBreak, easeInOut, fisheye, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
 import { parseRgb } from '../../lib/inkMix';
@@ -73,6 +73,12 @@ export interface StrataLayout {
   my: Float64Array;
   px: Float64Array;
   py: Float64Array;
+  /** The scale: the most people a column holds at full height. */
+  peak: number;
+  /** The columns taller than that, each broken (lib/strata `columnBreak`): its people, and the break's middle. */
+  breaks: { col: number; n: number; y: number }[];
+  /** Where any column breaks, each square's row pitch on the graph — squeezed over the break (null where none does). */
+  mPitch: Float32Array | null;
   /** The highest any square stands: the top of the tallest column or of the pile. */
   peakY: number;
   /** Unrolled: the pile's people at their own pay on an axis from $0 to the top salary (`top`, `scale` px a
@@ -89,8 +95,8 @@ export interface StrataLayout {
  */
 export function layoutStrata(
   s: Strata,
-  /** `peak`: the tallest column to make room for, if more than this field's own — the timeline's tallest in any
-   *  snapshot, so each is drawn to one scale. */
+  /** `peak`: the scale, the most people a column holds at full height — the latest snapshot's tallest, so every
+   *  snapshot is drawn to one; a column taller than that breaks. Without it, this field's own tallest. */
   opts: { W: number; H: number; top: number; dpr: number; phone: boolean; peak?: number },
   unroll = false,
 ): StrataLayout {
@@ -98,7 +104,7 @@ export function layoutStrata(
   const base = H - 1;
   const rowsH = Math.max(20, base - top);
   let peak = opts.peak ?? 0;
-  for (let c = 0; c < COLS; c++) peak = Math.max(peak, s.colCount[c]);
+  if (!(peak > 0)) for (let c = 0; c < COLS; c++) peak = Math.max(peak, s.colCount[c]);
   const gap = phone ? PILE_GAP.phone : PILE_GAP.wide;
   const hasPile = s.pileKind.length > 0;
   // The pile is as wide as fourteen of the columns' squares, and they follow the columns' width: so the plot's
@@ -114,11 +120,26 @@ export function layoutStrata(
   const colW = mainW / COLS;
   const n = s.col.length, m = s.pileKind.length;
   const main = stackColumns(s.col, s.kind, s.key, s.rank, COLS);
+  // The columns taller than the scale, broken.
+  const scaleRows = Math.ceil(peak / grid.per);
+  const broken = new Map<number, NonNullable<ReturnType<typeof columnBreak>>>();
+  const breaks: StrataLayout['breaks'] = [];
+  for (let c = 0; c < COLS; c++) {
+    const b = columnBreak(Math.ceil(s.colCount[c] / grid.per), scaleRows, grid.rowPitch, base);
+    if (b) { broken.set(c, b); breaks.push({ col: c, n: s.colCount[c], y: b.y }); }
+  }
+  const mPitch = broken.size ? new Float32Array(n).fill(grid.rowPitch) : null;
   const mx = new Float64Array(n), my = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     const at = squareAt(colLeft(s.col[i], colW), main.slot[i], grid.per, grid, base);
     mx[i] = at.x;
     my[i] = at.y;
+    const b = broken.get(s.col[i]);
+    if (b && mPitch) {
+      const r = Math.floor(main.slot[i] / grid.per);
+      my[i] = brokenRowY(r, b, grid.rowPitch, base);
+      if (r >= b.knee) mPitch[i] = b.pitch;
+    }
   }
   const px = new Float64Array(m), py = new Float64Array(m);
   let pile: Stack, tail: StrataLayout['tail'] = null, pileLeft = W, pileW = 0, pileTop = 0;
@@ -152,13 +173,13 @@ export function layoutStrata(
     pileTop = hasPile ? Math.ceil(m / PILE_PER_ROW) * grid.rowPitch : 0;
   }
   const peakY = base - Math.max(colHeight(peak, grid), pileTop);
-  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peakY, tail };
+  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peak, breaks, mPitch, peakY, tail };
 }
 
 /** The x of a pay on the main plot, CSS px. */
 export const payX = (L: Pick<StrataLayout, 'colW'>, pay: number) => (pay / 1000) * L.colW;
-/** The top of column `c`'s stack. */
-export const colTopY = (s: Strata, L: StrataLayout, c: number) => L.base - colHeight(s.colCount[Math.max(0, Math.min(COLS - 1, c))], L.grid);
+/** The top of column `c`'s stack: a broken one's is the scale's. */
+export const colTopY = (s: Strata, L: StrataLayout, c: number) => L.base - colHeight(Math.min(L.peak, s.colCount[Math.max(0, Math.min(COLS - 1, c))]), L.grid);
 
 /**
  * A search mark's centre, from its square's: on a pixel's centre where a mark is an odd number of device pixels
@@ -233,7 +254,7 @@ export interface Step {
   arc: { main: Float32Array; pile: Float32Array } | null;
   /** Who joined this step (1), fading in where they stand once the rest are on their way. */
   joined: { main: Uint8Array; pile: Uint8Array };
-  ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array } | null;
+  ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array; pitch: Float32Array } | null;
 }
 
 export const StrataField = forwardRef<StrataFieldHandle, {
@@ -262,11 +283,12 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   onMoving?: (moving: boolean) => void;
   /** A timeline step's movers, by square: +1 up, −1 down — drawn on top in the up and down inks. */
   hues?: { main: Int8Array; pile: Int8Array } | null;
-  /** How to arrive at `layout`, when it is a timeline step's. */
+  /** How to arrive at `layout`, when it is a timeline step's, and how fast: the timeline's 1×, 2× or 4×. */
   step?: Step | null;
+  speed?: number;
   follow?: Follow | null;
   className?: string;
-}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, follow = null, className }, ref) {
+}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, speed = 1, follow = null, className }, ref) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const lensRef = useRef<HTMLCanvasElement>(null);
@@ -281,7 +303,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     msM?: Float64Array; msP?: Float64Array;
     arcM?: Float32Array; arcP?: Float32Array;
     /** Who left, fading out where they stood. */
-    ghost?: { x: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array };
+    ghost?: { x: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array; pitch: Float32Array };
     /** Who joined, fading in: by square, and how far in each is (1 for everyone else). */
     fadeIn?: { main: Int32Array; pile: Int32Array; aM: Float32Array; aP: Float32Array };
     /** The frame's time, for the fades. */
@@ -360,8 +382,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const box: Px = { X: 0, Y: 0, w: 0, h: 0 };
     // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a
     // square of one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
-    const put = (x: number, y: number, c: number, least: number) => {
-      let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box);
+    const put = (x: number, y: number, c: number, least: number, rowPitch = grid.rowPitch) => {
+      let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box, rowPitch);
       if (w < least) { X -= (least - w) >> 1; w = least; }
       if (h < least) { Y -= (least - h) >> 1; h = least; }
       // Clipped to the canvas, not clamped to it: a square above the plot (one dropping in) is not drawn at
@@ -381,24 +403,25 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const gh = mv?.ghost;
     if (gh) for (let g = 0; g < gh.x.length; g++) {
       const a = 1 - into(gh.wait[g], gh.ms);
-      if (a > 0) put(gh.x[g], gh.y[g], faded(packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), a), 1);
+      if (a > 0) put(gh.x[g], gh.y[g], faded(packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), a), 1, gh.pitch[g]);
     }
+    const mp = layout.mPitch, rp = grid.rowPitch;
     const fi = mv?.fadeIn;
     if (mv && fi) {
-      const fade = (idx: Int32Array, A: Float32Array, X: Float64Array, Y: Float64Array, T: Uint8Array, wait: Float64Array, ms: Float64Array) => {
+      const fade = (idx: Int32Array, A: Float32Array, X: Float64Array, Y: Float64Array, T: Uint8Array, wait: Float64Array, ms: Float64Array, P: Float32Array | null) => {
         for (const i of idx) {
           const a = (A[i] = into(wait[i], ms[i]));
-          if (a > 0 && a < 1) put(X[i], Y[i], faded(packed(ink(T[i])), a), least(T[i]));
+          if (a > 0 && a < 1) put(X[i], Y[i], faded(packed(ink(T[i])), a), least(T[i]), P ? P[i] : rp);
         }
       };
-      fade(fi.main, fi.aM, mx, my, tint.main, mv.wait, mv.msM!);
-      fade(fi.pile, fi.aP, px, py, tint.pile, mv.pwait, mv.msP!);
+      fade(fi.main, fi.aM, mx, my, tint.main, mv.wait, mv.msM!, mp);
+      fade(fi.pile, fi.aP, px, py, tint.pile, mv.pwait, mv.msP!, null);
     }
     const aM = fi?.aM, aP = fi?.aP;
     for (const k of order) {
       const c = packed(ink(k)), l = least(k);
       const a = tint.mainBy[k], b = tint.pileBy[k];
-      for (let q = 0; q < a.length; q++) if (!aM || aM[a[q]] === 1) put(mx[a[q]], my[a[q]], c, l);
+      for (let q = 0; q < a.length; q++) if (!aM || aM[a[q]] === 1) put(mx[a[q]], my[a[q]], c, l, mp ? mp[a[q]] : rp);
       for (let q = 0; q < b.length; q++) if (!aP || aP[b[q]] === 1) put(px[b[q]], py[b[q]], c, l);
     }
     ctx.putImageData(img, 0, 0);
@@ -507,16 +530,19 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     let nameableHere = 0;
     // `a`: how strongly it is drawn — full where the lens magnifies, fainter in the crowded ring at its rim,
     // where whole columns are squeezed into lines and at full ink read as spokes rather than people.
-    const draws: { k: number; x: number; y: number; z: number; a: number }[] = [];
+    // Over a column's break its squares are squeezed: magnified, they stay as flat as they are drawn.
+    const mp = layout.mPitch;
+    const draws: { k: number; x: number; y: number; z: number; zh: number; a: number }[] = [];
     for (const { field, idx } of lists) {
       const X = field === 'main' ? mx : px, Y = field === 'main' ? my : py, T = field === 'main' ? tint.main : tint.pile;
       for (const i of idx) {
-        const ox = X[i] + hw, oy = Y[i] + hh;
+        const flat = field === 'main' && mp ? mp[i] / grid.rowPitch : 1;
+        const ox = X[i] + hw, oy = Y[i] + hh * flat;
         const f = fisheye(ox - sx, oy - sy, R);
         if (!f) continue;
         const z = Math.max(0.7, s * f.scale * 0.92);
         const x = cx + f.x, y = cy + f.y;
-        draws.push({ k: T[i], x, y, z, a: f.scale >= 0.7 ? 0 : f.scale >= 0.35 ? 1 : 2 });
+        draws.push({ k: T[i], x, y, z, zh: Math.max(0.7, z * flat), a: f.scale >= 0.7 ? 0 : f.scale >= 0.35 ? 1 : 2 });
         if (follow && follow.field === field && follow.index === i) followed = { x, y, z };
         if (ptr && nameable(field, T[i])) {
           nameableHere++;
@@ -536,8 +562,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
         ctx.beginPath();
         for (const d of draws) {
           if (d.k !== k || d.a !== a) continue;
-          if (d.z > 4) ctx.roundRect(d.x - d.z / 2, d.y - d.z / 2, d.z, d.z, d.z * 0.22);
-          else ctx.rect(d.x - d.z / 2, d.y - d.z / 2, d.z, d.z);
+          if (d.zh > 4) ctx.roundRect(d.x - d.z / 2, d.y - d.zh / 2, d.z, d.zh, d.zh * 0.22);
+          else ctx.rect(d.x - d.z / 2, d.y - d.zh / 2, d.z, d.zh);
         }
         ctx.fill();
       }
@@ -708,17 +734,17 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       const { from, arc, joined, ghosts } = step;
       const wait = new Float64Array(n), pwait = new Float64Array(m), msM = new Float64Array(n), msP = new Float64Array(m);
       const role = (arcs: Float32Array | undefined, join: Uint8Array, i: number) => (join[i] ? 'join' : arcs?.[i] ? 'arc' : 'stay');
-      for (let i = 0; i < n; i++) ({ wait: wait[i], ms: msM[i] } = stepTiming(role(arc?.main, joined.main, i), layout.mx[i], W));
-      for (let j = 0; j < m; j++) ({ wait: pwait[j], ms: msP[j] } = stepTiming(role(arc?.pile, joined.pile, j), layout.px[j], W));
+      for (let i = 0; i < n; i++) ({ wait: wait[i], ms: msM[i] } = stepTiming(role(arc?.main, joined.main, i), layout.mx[i], W, speed));
+      for (let j = 0; j < m; j++) ({ wait: pwait[j], ms: msP[j] } = stepTiming(role(arc?.pile, joined.pile, j), layout.px[j], W, speed));
       cur.current = { mx: from.mx.slice(), my: from.my.slice(), px: from.px.slice(), py: from.py.slice() };
       const g = ghosts && ghosts.x.length
-        ? { x: ghosts.x, y: ghosts.y, wait: Float64Array.from(ghosts.x, (x) => stepTiming('leave', x, W).wait), ms: stepTiming('leave', 0, W).ms, kind: ghosts.kind }
+        ? { x: ghosts.x, y: ghosts.y, wait: Float64Array.from(ghosts.x, (x) => stepTiming('leave', x, W, speed).wait), ms: stepTiming('leave', 0, W, speed).ms, kind: ghosts.kind, pitch: ghosts.pitch }
         : undefined;
       const who = (join: Uint8Array) => Int32Array.from(join.keys()).filter((i) => join[i] === 1);
       const fadeIn = { main: who(joined.main), pile: who(joined.pile), aM: new Float32Array(n).fill(1), aP: new Float32Array(m).fill(1) };
       for (const i of fadeIn.main) fadeIn.aM[i] = 0;
       for (const j of fadeIn.pile) fadeIn.aP[j] = 0;
-      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS, msM, msP, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g, fadeIn };
+      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS / speed, msM, msP, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g, fadeIn };
     } else {
       const wait = new Float64Array(n), pwait = new Float64Array(m);
       for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * MOVE_WAVE_MS;
@@ -778,7 +804,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     <div
       ref={wrapRef} className={className} data-settled="true" data-per={grid.per} data-pitch={grid.pitch} data-row-pitch={grid.rowPitch}
       data-sq={grid.sq} data-sq-w={grid.sqW} data-gap={grid.gap}
-      data-col-w={layout.colW} data-pile-left={layout.pileLeft} data-base={layout.base} data-room={layout.room} data-unrolled={layout.tail ? 'true' : undefined}
+      data-col-w={layout.colW} data-pile-left={layout.pileLeft} data-base={layout.base} data-room={layout.room} data-peak={layout.peak} data-unrolled={layout.tail ? 'true' : undefined}
       data-lit={litPrint(dim?.main)} data-pile-lit={litPrint(dim?.pile)}
       data-marks={marks.main.length ? marks.main.map((i) => (i < n ? `${i}:${markAt(layout.mx[i] + grid.sqW / 2, dpr).toFixed(2)}:${markAt(layout.my[i] + grid.sq / 2, dpr).toFixed(2)}` : `${i}`)).join(' ') : undefined}
       data-pile-marks={marks.pile.length ? marks.pile.join(' ') : undefined}

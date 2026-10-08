@@ -294,27 +294,100 @@ test('the track is a radio group: arrows step between snapshots, Home and End go
   await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
 });
 
-test.describe('one scale for every snapshot, at half the pace', () => {
+test.describe('one scale for every snapshot, the latest’s, and the pace', () => {
   // At two device pixels a pixel, where it shows: each snapshot fitted to its own tallest column drew Apr 2024's
   // (742 people in one $1k column) with rows 2px tall and the latest's (576) with rows 2.5px — the same headcount
-  // a quarter taller in one snapshot than the next, and every square moving with the scale at each step.
+  // a quarter taller in one snapshot than the next, and every square moving with the scale at each step. Fitted to
+  // Apr 2024's instead, every other snapshot stood under three quarters as tall: now the latest's tallest sets the
+  // scale, and a column taller than that breaks.
   test.use({ deviceScaleFactor: 2 });
 
-  test('every snapshot draws a person the same height as the latest does as the page opens', async ({ page }) => {
+  test('every snapshot draws a person the same height as the latest; a column taller than its tallest breaks, counted, every one of its people inside the scale', async ({ page }) => {
     test.setTimeout(120_000);
-    const peaks = await oracle<{ s: string; peak: number }>(
+    const cols = await oracle<{ s: string; b: number; n: number }>(
       `WITH p AS (SELECT snapshot_id s, person_key, sum(${PAY}) pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING sum(${PAY}) > 0)
-       SELECT s, max(n) peak FROM (SELECT s, floor(pay / 1000) b, count(*) n FROM p WHERE pay < ${CAP} GROUP BY 1, 2) GROUP BY 1 ORDER BY peak DESC, s`,
+       SELECT s, floor(pay / 1000) b, count(*) n FROM p WHERE pay < ${CAP} GROUP BY 1, 2`,
     );
-    const tallest = SNAPS.findIndex((x) => x.id === peaks[0].s), lowest = SNAPS.findIndex((x) => x.id === peaks[peaks.length - 1].s);
-    expect(peaks[0].peak, 'the snapshots no longer differ in their tallest column, so this proves nothing').toBeGreaterThan(peaks[peaks.length - 1].peak * 1.1);
+    const peakOf = (id: string) => Math.max(...cols.filter((c) => c.s === id).map((c) => c.n));
+    const latest = peakOf(SNAPS[LAST].id);
+    const byPeak = SNAPS.map((sn, i) => ({ i, peak: peakOf(sn.id) })).sort((a, b) => b.peak - a.peak);
+    const tallest = byPeak[0].i, lowest = byPeak[byPeak.length - 1].i;
+    expect(byPeak[0].peak, 'no snapshot has a column taller than the latest’s tallest, so nothing here breaks').toBeGreaterThan(latest * 1.1);
     await home(page);
+    await expect(field(page)).toHaveAttribute('data-peak', String(latest));
+    await expect(page.locator('.strata-break-count')).toHaveCount(0);
     const grid = () => field(page).evaluate((el) => ['per', 'pitch', 'rowPitch', 'gap'].map((k) => `${k} ${(el as HTMLElement).dataset[k]}`).join(', '));
-    const opened = await grid();
+    // The highest ink on the canvas, device px from the top, overall and in column `b`.
+    const inkTop = (b: number | null) => page.locator('.strata-base').evaluate((c: HTMLCanvasElement, a) => {
+      const colW = Number((document.querySelector('.strata-field') as HTMLElement).dataset.colW), k = c.width / c.getBoundingClientRect().width;
+      const x0 = a.b == null ? 0 : Math.round(a.b * colW * k), x1 = a.b == null ? c.width : Math.round((a.b + 1) * colW * k);
+      const d = c.getContext('2d')!.getImageData(x0, 0, x1 - x0, c.height).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i]) return Math.floor((i >> 2) / (x1 - x0));
+      return c.height;
+    }, { b });
+    const opened = await grid(), scaleTop = await inkTop(null);
     for (const i of [tallest, lowest, LAST]) {
-      await goTo(page, i);
+      if ((await bar(page).getAttribute('data-snap')) !== SNAPS[i].id) await goTo(page, i);
       expect(await grid(), `${SNAPS[i].label} is drawn to a scale of its own`).toBe(opened);
+      expect(await inkTop(null), `${SNAPS[i].label}: a square above the latest’s tallest column`).toBeGreaterThanOrEqual(scaleTop);
+      const over = cols.filter((c) => c.s === SNAPS[i].id && c.n > latest).sort((a, b) => a.b - b.b);
+      const counts = await page.locator('.strata-break-count').evaluateAll((els) => els.map((e) => [Number((e as HTMLElement).dataset.col), e.textContent]));
+      expect(counts, `${SNAPS[i].label}: its broken columns and their people`).toEqual(over.map((c) => [c.b, num(c.n)]));
+      for (const c of over) {
+        // Up to the scale's top, not cut short of it…
+        expect(Math.abs((await inkTop(c.b)) - scaleTop), `${SNAPS[i].label} $${c.b}k stands at the scale`).toBeLessThanOrEqual(1);
+        // …and every one of its people in it, each in a place of their own, none past the top.
+        const pts = await field(page).evaluate((el, b) => {
+          const f = el as HTMLElement & { squarePlaces: (f: string) => number[] };
+          const xy = f.squarePlaces('main'), colW = Number(f.dataset.colW), out: string[] = [];
+          for (let q = 0; q < xy.length; q += 2) if (Math.floor(xy[q] / colW) === b) out.push(`${xy[q].toFixed(2)},${xy[q + 1].toFixed(2)}`);
+          return { places: out, ys: out.map((p) => Number(p.split(',')[1])) };
+        }, c.b);
+        expect(pts.places.length).toBe(c.n);
+        expect(new Set(pts.places).size, `${SNAPS[i].label} $${c.b}k: two people in one place`).toBe(c.n);
+        expect(Math.min(...pts.ys) * 2, `${SNAPS[i].label} $${c.b}k: someone past the scale’s top`).toBeGreaterThanOrEqual(scaleTop);
+      }
     }
+  });
+
+  test('the speed is a radio group of 1×, 2× and 4×: at 4× Play shows a snapshot every 375 ms, each step’s motion as much faster', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    const speed = page.getByRole('radiogroup', { name: 'Playback speed' });
+    await expect(speed.getByRole('radio')).toHaveCount(3);
+    await expect(speed.getByRole('radio', { name: '1×' })).toBeChecked();
+    // In from the first snapshot at 1× (the timeline loads), then 4× from there.
+    await goTo(page, 0);
+    await speed.getByText('4×').click();
+    await expect(speed.getByRole('radio', { name: '4×' })).toBeChecked();
+    await page.evaluate(() => {
+      const log: [string, number][] = [];
+      (window as unknown as { log: typeof log }).log = log;
+      const bar = document.querySelector('.strata-timeline') as HTMLElement, f = document.querySelector('.strata-field') as HTMLElement;
+      new MutationObserver(() => log.push([`snap ${bar.dataset.snap}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+      new MutationObserver(() => log.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
+    });
+    const t0 = await page.evaluate(() => performance.now());
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    const log = await page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
+    const steps = log.flatMap(([e, t], k) => (e.startsWith('snap ') ? [{ t, k }] : []));
+    expect(steps.length).toBe(LAST);
+    const gaps = [steps[0].t - t0], rests: number[] = [], moves: number[] = [];
+    for (let s = 1; s < steps.length; s++) {
+      gaps.push(steps[s].t - steps[s - 1].t);
+      const settled = log.slice(steps[s - 1].k, steps[s].k).filter(([e]) => e === 'settled true').pop();
+      rests.push(settled ? steps[s].t - settled[1] : -1);
+      if (settled) moves.push(settled[1] - steps[s - 1].t);
+    }
+    for (const g of gaps) expect(g, `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(360);
+    gaps.sort((a, b) => a - b);
+    expect(gaps[gaps.length >> 1], `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeLessThan(600);
+    // Each step's motion a quarter of 1×'s too (a step there moves for 1.1 s and more), so each lands before the next.
+    moves.sort((a, b) => a - b);
+    expect(moves.length, `rests ${rests.map(Math.round).join(', ')} ms: steps began before the last had landed`).toBeGreaterThanOrEqual((LAST - 1) / 2);
+    expect(moves[moves.length >> 1], `steps moving for ${moves.map(Math.round).join(', ')} ms`).toBeLessThan(450);
   });
 
   test('Play shows a snapshot every 1.5 s, each step’s motion over a second and more, and each at rest before the next', async ({ page }) => {

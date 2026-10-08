@@ -198,8 +198,8 @@ test('the lens names the square under the pointer: who, their title, pay and its
  * No seam: across the crowded floor, from one column into the next, no dark line runs down between the squares
  * — read off the canvas a device pixel at a time, where one once fell between every $1k column. On a 2x screen
  * every gap is the same; on a 1x one a gap is now and then a pixel wider, and those never line up down the rows.
- * Rows are fitted to the timeline's tallest column (Apr 2024's 742 at $56k), so a 1x screen has a gap at all only
- * from about 2,200px wide; narrower, its rows are a pixel each and touch.
+ * Rows are fitted to the latest's tallest column (576 at $60k), so a 1x screen has a gap at all only on a wide
+ * window; narrower, its rows are a pixel each and touch.
  */
 for (const dpr of [1, 2]) {
   test(`the squares lie on one even lattice, with no seam down between the columns (${dpr}x)`, async ({ browser }) => {
@@ -217,17 +217,17 @@ for (const dpr of [1, 2]) {
       const k = c.width / c.getBoundingClientRect().width;
       const ctx = c.getContext('2d')!;
       const x0 = Math.round(55 * a.colW * k), x1 = Math.round(115 * a.colW * k);
-      const out: { runs: number[]; wide: number[] }[] = [];
+      const out: { runs: number[]; wide: number[]; narrow: number[] }[] = [];
       for (let r = 0; r < 20; r++) {
         // A row's squares start at the top of its cell (rounded as lib/strata's `squarePixels` does); its gap is at
         // the bottom.
         const y = Math.floor((a.base - (r + 1) * a.rowPitch) * k + 0.5 - 1e-6);
         const d = ctx.getImageData(x0, y, x1 - x0, 1).data;
-        const row = { runs: [] as number[], wide: [] as number[] };
+        const row = { runs: [] as number[], wide: [] as number[], narrow: [] as number[] };
         let dark = 0, inked = false;
         for (let i = 0; i < x1 - x0; i++) {
           if (d[4 * i + 3] === 0) { dark++; continue; }
-          if (inked && dark) { row.runs.push(dark); if (dark > a.gap) row.wide.push(i - 1); }
+          if (inked && dark) { row.runs.push(dark); (dark > a.gap ? row.wide : row.narrow).push(i - 1); }
           inked = true;
           dark = 0;
         }
@@ -238,11 +238,14 @@ for (const dpr of [1, 2]) {
     const runs = rows.flatMap((r) => r.runs);
     expect(runs.length, 'no gaps found, so nothing here is tested').toBeGreaterThan(2000);
     expect(Math.max(...runs), 'a gap two pixels wider than the rest').toBeLessThanOrEqual(gap + (dpr === 1 ? 1 : 0));
-    // Down the rows, how often each pixel across is the end of a wider gap: lined up into a seam, every row.
+    // Down the rows, how often each pixel across is the end of the odd gap out — a wider one where they are few, a
+    // narrower where the lattice's pitch makes most gaps wider (three a row 2.7px apart on a 1x screen 2,200px
+    // wide): lined up into a stripe, every row.
+    const wideRate = rows.reduce((k, r) => k + r.wide.length, 0) / runs.length;
     const at = new Map<number, number>();
-    for (const r of rows) for (const x of r.wide) at.set(x, (at.get(x) ?? 0) + 1);
+    for (const r of rows) for (const x of wideRate > 0.5 ? r.narrow : r.wide) at.set(x, (at.get(x) ?? 0) + 1);
     const worst = Math.max(0, ...at.values()) / rows.length;
-    expect(worst, 'wider gaps line up down the rows into a dark line').toBeLessThan(0.5);
+    expect(worst, `the odd gaps out (${wideRate > 0.5 ? 'narrower' : 'wider'}) line up down the rows into a stripe`).toBeLessThan(0.5);
     await ctx.close();
   });
 }

@@ -5,7 +5,7 @@ import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
 import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
-import { bigMoves, snapStats, strataFromPeople, timelinePeak, type Timeline, type TimelineStrata } from '../../lib/timeline';
+import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
 import { prefersReducedMotion } from '../../lib/motion';
@@ -13,6 +13,7 @@ import { fmtK } from '../../lib/chartStyle';
 import { num, usd, vsCampus } from '../../lib/format';
 import { poolPercentile } from '../../lib/queries';
 import { useReveal } from '../PersonReveal';
+import { SegmentedToggle } from '../SegmentedToggle';
 import type { ShownPerson } from '../SearchBox';
 import type { Emphasis } from '../../lib/homePeople';
 import { Z } from '../../lib/layers';
@@ -78,6 +79,8 @@ const bareLabel = (l: string) => l.replace(/\s*\(.*\)\s*$/, '');
 /** Play waits this long between steps, and longer after starting over from the first. */
 const PLAY_MS = 1500;
 const PLAY_RESTART_MS = 2000;
+/** Play's speeds: each divides the wait between steps and every step's motion. */
+const SPEEDS = [1, 2, 4] as const;
 
 /** Whose a square is, as the lens's card names them. */
 export interface DotWho {
@@ -138,7 +141,7 @@ function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow
 export function StrataGraph({
   bins, payCounts, p25: p25Base, median: medianBase, p75: p75Base, cap, overflow, headcount: headcountBase, snapshotLabel: labelBase,
   found: foundBase = NO_FOUND, activeKey = null, openRef, search, onFullChange, group = null, previewing = false, onClearGroup, onPeel,
-  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null, columnPeak = null,
+  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null,
 }: {
   bins: readonly { bucket: number; n: number }[];
   payCounts?: StrataCounts | null;
@@ -173,9 +176,6 @@ export function StrataGraph({
   /** True while the full page's search has its list open over the graph: a press then only puts it away. */
   searchOpenRef?: MutableRefObject<boolean>;
   timeline?: GraphTimeline | null;
-  /** The most people in one column in any snapshot (home-stats `column_peak`): the scale the graph is drawn to,
-   *  so the latest as the page opens and every snapshot of the timeline draw a person the same height. */
-  columnPeak?: number | null;
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
@@ -203,6 +203,8 @@ export function StrataGraph({
   // Where the last step set off from, for its big movers (neighbours only).
   const [stepFrom, setStepFrom] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  // How fast: 1×, a snapshot every PLAY_MS; 2× and 4× step and move that much faster.
+  const [speed, setSpeed] = useState(1);
   // Paused part way through playing: Play then reads "Resume".
   const [paused, setPaused] = useState(false);
   // A snapshot asked for before the timeline was in, or before the field had been drawn from people.
@@ -217,11 +219,11 @@ export function StrataGraph({
     return st;
   }, [tl, at, cap]);
   const strata: Strata | null = tStrata ?? baseStrata;
-  // One scale for every snapshot: room for the tallest column in any of them, the build's figure or the timeline's
-  // own once it is in. Each snapshot fitted to its own tallest drew the same headcount taller in one than the next,
-  // and a step moved every square up or down with the scale, not only the people whose pay moved.
-  const tlPeak = useMemo(() => (tl ? timelinePeak(tl, cap ?? 250_000) : 0), [tl, cap]);
-  const scalePeak = Math.max(columnPeak ?? 0, tlPeak);
+  // One scale for every snapshot, the latest's: its tallest column as tall as the room allows. Each snapshot fitted
+  // to its own tallest drew the same headcount taller in one than the next, and a step moved every square with
+  // the scale, not only the people whose pay moved; fitted to the tallest in any (Apr 2024's 742 at $56k), every
+  // other stood under three quarters as tall. A column taller than the latest's breaks (lib/strata `columnBreak`).
+  const scalePeak = useMemo(() => (baseStrata ? Math.max(...baseStrata.colCount) : 0), [baseStrata]);
   const stats = useMemo(() => (tl && at != null ? snapStats(tl.at[at], tl.names.length, cap ?? 250_000) : null), [tl, at, cap]);
   const p25 = stats ? stats.p25 : p25Base;
   const median = stats ? stats.median : medianBase;
@@ -355,15 +357,15 @@ export function StrataGraph({
       return { fx, fy, arc, join };
     };
     const mm = place(B.mainId, L1.mx, L1.my), pp = place(B.pileId, L1.px, L1.py);
-    const gx: number[] = [], gy: number[] = [], gk: number[] = [];
-    A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); } });
-    A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); } });
+    const gx: number[] = [], gy: number[] = [], gk: number[] = [], gp: number[] = [];
+    A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); gp.push(L0.mPitch ? L0.mPitch[i] : L0.grid.rowPitch); } });
+    A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); gp.push(L0.grid.rowPitch); } });
     return {
       to: L1,
       from: { mx: mm.fx, my: mm.fy, px: pp.fx, py: pp.fy },
       arc: moves || followId != null ? { main: mm.arc, pile: pp.arc } : null,
       joined: { main: mm.join, pile: pp.join },
-      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
+      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk), pitch: Float32Array.from(gp) },
     };
     // `shownRef` is the layout drawn before this one: read, not a dependency.
   }, [layout, tl, tStrata, moves, followId]);
@@ -387,14 +389,14 @@ export function StrataGraph({
     if (goal.to !== at) { setStepFrom(at); setAt(goal.to); }
     if (goal.play) setPlaying(true);
   }, [goal, tl, at, lastSnap, tStrata, layout]);
-  // Play: a step every PLAY_MS (longer after starting over from the first), to the latest, then stop.
+  // Play: a step every PLAY_MS (longer after starting over from the first) over the speed, to the latest, then stop.
   useEffect(() => {
     if (!playing || at == null || goal) return;
     if (at >= lastSnap) { setPlaying(false); return; }
-    const wait = restartRef.current ? PLAY_RESTART_MS : PLAY_MS;
+    const wait = (restartRef.current ? PLAY_RESTART_MS : PLAY_MS) / speed;
     const t = window.setTimeout(() => { restartRef.current = false; setStepFrom(at); setAt(at + 1); }, wait);
     return () => window.clearTimeout(t);
-  }, [playing, at, goal, lastSnap]);
+  }, [playing, at, goal, lastSnap, speed]);
   const onPlay = () => {
     if (playing) { setPlaying(false); setPaused(true); return; }
     setPaused(false);
@@ -1113,7 +1115,7 @@ export function StrataGraph({
               ref={fieldRef} className="hero-dots strata-field" strata={strata} layout={layout} kindInks={kindInks}
               dim={dim} matchSearch={!!lit} marks={marks} big={big} entrance={entrance && !droppedRef.current} replay={replay}
               lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={setMoving} hues={hues} step={step}
-              follow={followProp}
+              speed={speed} follow={followProp}
             />
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (
@@ -1127,6 +1129,11 @@ export function StrataGraph({
                   <path className="strata-break" d={`M${W + 3} ${layout.base + 4} L${W + 7} ${layout.base - 4} M${W + 8} ${layout.base + 4} L${W + 12} ${layout.base - 4}`} />
                 </>
               )}
+              {/* A column taller than the latest's tallest, broken where it leaves the scale, as the axis is before the pile. */}
+              {!tail && layout.breaks.map((b) => {
+                const x = (b.col + 0.5) * layout.colW;
+                return <path key={b.col} className="strata-break" d={`M${x - 5} ${b.y + 3} L${x - 1} ${b.y - 3} M${x + 1} ${b.y + 3} L${x + 5} ${b.y - 3}`} />;
+              })}
               {/* The pile under the pointer: outlined, as what a click there unrolls. */}
               {overPile && pileTop != null && (
                 <rect className="strata-pile-ring" x={layout.pileLeft - 3.5} y={pileTop - 3.5} width={plotW - layout.pileLeft + 3} height={layout.base - pileTop + 3} rx={3} />
@@ -1148,6 +1155,18 @@ export function StrataGraph({
                 {p.text}
               </div>
             ))}
+            {/* And how many it holds, beside the break: to its right, or its left where a pin's line crosses the right
+                and not the left. */}
+            {!tail && layout.breaks.map((b) => {
+              const x = (b.col + 0.5) * layout.colW, w = measureText(num(b.n), 12) * 1.06;
+              const crosses = (l: number) => pins.some((p) => p.x >= l - 2 && p.x <= l + w + 2);
+              const left = crosses(x + 9) && !crosses(x - 9 - w) ? x - 9 - w : x + 9;
+              return (
+                <div key={b.col} className="strata-break-count" data-col={b.col} style={{ left, top: b.y - 7.5 }}>
+                  {num(b.n)}
+                </div>
+              );
+            })}
           </>
         )}
         {foundLabels.length > 0 && (
@@ -1266,6 +1285,8 @@ export function StrataGraph({
             loading={!!goal && !tl && timeline.data === 'loading'} onClick={onPlay}>
             {playing ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}`}
           </Button>
+          <SegmentedToggle ariaLabel="Playback speed" className="strata-speed" value={String(speed)} onChange={(v) => setSpeed(Number(v))}
+            options={SPEEDS.map((v) => ({ id: String(v), label: `${v}×` }))} />
           <div className="strata-track">
             <span className="strata-track-end">{bareLabel(snaps[0].label)}</span>
             <div className="strata-track-dots" role="radiogroup" aria-label="Snapshot"

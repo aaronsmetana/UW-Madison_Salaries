@@ -116,15 +116,6 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       const overRows = await run(
         `SELECT cat, pay FROM ${peopleByCategory(src, snap)} WHERE pay >= ${BIN_CAP} ORDER BY cat, pay, person_key`
       );
-      // The most people in one $1k column under the cap in any snapshot, each person once at their total pay
-      // (as the timeline counts them, src/lib/timeline.ts `timelinePeak`): the scale the landing graph is drawn
-      // to, so the latest and every snapshot of its timeline draw a person the same height.
-      const [peakRow] = await run(
-        `SELECT max(n) AS peak FROM (
-           SELECT snapshot_id, floor(pay / ${BIN_W}) AS b, count(*) AS n
-           FROM (SELECT snapshot_id, person_key, sum(${PAY}) AS pay FROM ${src} WHERE salary > 0 GROUP BY snapshot_id, person_key)
-           WHERE pay > 0 AND pay < ${BIN_CAP} GROUP BY snapshot_id, b)`
-      );
       const [overflowRow] = await run(
         `SELECT count(*) AS n FROM ${people(src, snap)} WHERE pay >= ${BIN_CAP}`
       );
@@ -167,7 +158,6 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
           salary_hi: toNum(dimsRow?.hi),
           bins: bins.map((b) => ({ bucket: toNum(b.bucket), n: toNum(b.n) })),
           bin_cap: BIN_CAP,
-          column_peak: toNum(peakRow?.peak),
           pay_counts: (() => {
             if (!per100.length) return null;
             const lo100 = toNum(per100[0].b);

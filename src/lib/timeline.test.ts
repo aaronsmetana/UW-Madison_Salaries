@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BIG_STEP, CODED, bigMoves, buildTimeline, followText, quantileCont, snapStats, strataFromPeople, timelinePeak, timelineSql, type SnapPeople } from './timeline';
+import { BIG_STEP, CODED, bigMoves, buildTimeline, followText, quantileCont, snapStats, strataFromPeople, timelineSql, type SnapPeople } from './timeline';
 import { stableKey } from './strata';
 
 const NAMES = ['Academic Staff', 'University Staff', 'Faculty'];
@@ -44,17 +44,6 @@ describe('strataFromPeople', () => {
   it('places a person in their band by their own number, the same in every snapshot', () => {
     const s = strataFromPeople(p, NAMES, 250_000);
     expect(s.key[1]).toBe(stableKey(7));
-  });
-});
-
-describe('timelinePeak', () => {
-  it('is the tallest column in any snapshot, as strataFromPeople fills them, past the cap not counted', () => {
-    const at = [
-      snap([[1, 51_200, 0], [2, 51_900, 0], [3, 51_000, 1], [4, 70_000, 0]]),
-      snap([[1, 52_000, 0], [2, 51_900, 0], [5, 300_000, 2], [6, 300_000, 2], [7, 300_000, 2], [8, 300_000, 2]]),
-    ];
-    expect(timelinePeak({ at }, 250_000)).toBe(3);
-    expect(timelinePeak({ at }, 250_000)).toBe(Math.max(...at.map((p) => Math.max(...strataFromPeople(p, NAMES, 250_000).colCount))));
   });
 });
 

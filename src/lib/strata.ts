@@ -205,12 +205,14 @@ export interface Px { X: number; Y: number; w: number; h: number }
 /** To the nearest pixel, a hair short of half rounding down: the same lattice place, reached as one column's
  *  last square plus a pitch or as the next column's first, lands on the same pixel. */
 const px = (v: number) => Math.floor(v + 0.5 - 1e-6);
-export function squarePixels(x: number, y: number, g: Grid, dpr: number, out: Px = { X: 0, Y: 0, w: 0, h: 0 }): Px {
+export function squarePixels(x: number, y: number, g: Grid, dpr: number, out: Px = { X: 0, Y: 0, w: 0, h: 0 }, rowPitch = g.rowPitch): Px {
   const Y = px(y * dpr);
   const ud = Math.max(1, px(g.rowPitch * dpr));
   out.Y = Y;
-  // To the next row's first pixel, less the gap, as across: rows a quarter over whole pixels differ by one.
-  out.h = Math.max(1, px((y + g.rowPitch) * dpr) - Y - g.gap);
+  // To the next row's first pixel, less the gap, as across: rows a quarter over whole pixels differ by one. Above
+  // a column's break (`columnBreak`) its rows are squeezed, the gap kept only where they are two pixels or more.
+  const gap = rowPitch === g.rowPitch ? g.gap : g.gap && Math.floor(rowPitch * dpr + 1e-6) >= 2 ? Math.min(g.gap, Math.max(1, Math.round(rowPitch * dpr * 0.2))) : 0;
+  out.h = Math.max(1, px((y + rowPitch) * dpr) - Y - gap);
   if (g.gap > 0 && g.sqW * dpr < 2) {
     const shift = ((Math.floor(Y / ud) * 0.6180339887) % 1) - 0.5;
     out.X = px(x * dpr + shift);
@@ -232,6 +234,38 @@ export function squareAt(left: number, slot: number, per: number, g: Pick<Grid, 
 
 /** How tall a column of `n` stands, CSS px. */
 export const colHeight = (n: number, grid: Grid) => Math.ceil(n / grid.per) * grid.rowPitch;
+
+/**
+ * One scale for every snapshot, the latest's: its tallest column stands as tall as the room allows. Another
+ * snapshot can have a column taller than that — Apr 2024's $56k, where two pay floors (clinical assistant
+ * professors at about $56,300, research associates at the postdoc minimum of $56,484) fell in one $1k column, is
+ * 742 people to the latest's tallest 576 — and fitted to it, every other snapshot stood under three quarters as
+ * tall. Such a column breaks: its rows stand at the scale up to BREAK_AT of the scale's height, then a gap
+ * (BREAK_GAP px, marked), then the rest squeezed into what is left, so its top is the scale's and no one in it is
+ * left out.
+ */
+export const BREAK_AT = 0.8;
+export const BREAK_GAP = 4;
+export interface ColumnBreak {
+  /** Rows under the break, at the scale. */
+  knee: number;
+  /** The gap, CSS px, and the pitch of the rows squeezed over it. */
+  gap: number;
+  pitch: number;
+  /** The gap's middle, CSS px. */
+  y: number;
+}
+/** Where a column of `rows` breaks, under a scale of `scaleRows` rows of `rowPitch` on a baseline at `base`: null
+ *  if it fits. */
+export function columnBreak(rows: number, scaleRows: number, rowPitch: number, base: number): ColumnBreak | null {
+  if (rows <= scaleRows) return null;
+  const knee = Math.floor(scaleRows * BREAK_AT);
+  const gap = Math.min(BREAK_GAP, ((scaleRows - knee) * rowPitch) / 2);
+  return { knee, gap, pitch: ((scaleRows - knee) * rowPitch - gap) / (rows - knee), y: base - knee * rowPitch - gap / 2 };
+}
+/** The top of row `r` of a broken column. */
+export const brokenRowY = (r: number, b: ColumnBreak, rowPitch: number, base: number) =>
+  r < b.knee ? base - (r + 1) * rowPitch : base - b.knee * rowPitch - b.gap - (r - b.knee + 1) * b.pitch;
 
 /**
  * The pile unrolled: its people on an axis from $0 to the top salary at `scale` px a dollar, each in the
@@ -345,14 +379,15 @@ export const STEP_ARC_WAVE_MS = 112.5;
 export const STEP_OUT = 0.6;
 export const STEP_IN = 0.4;
 /** When a square sets off in a step and how long it takes, by what it is doing; `x` is where it is across a plot
- *  `W` wide. Every one is done by STEP_WAVE_MS + STEP_MS. */
-export function stepTiming(role: 'stay' | 'arc' | 'join' | 'leave', x: number, W: number): { wait: number; ms: number } {
+ *  `W` wide. Every one is done by STEP_WAVE_MS + STEP_MS — over `speed` (the timeline's 1×, 2× or 4×). */
+export function stepTiming(role: 'stay' | 'arc' | 'join' | 'leave', x: number, W: number, speed = 1): { wait: number; ms: number } {
   const across = W > 0 ? Math.min(1, Math.max(0, x / W)) : 0;
-  if (role === 'arc') return { wait: across * STEP_ARC_WAVE_MS, ms: STEP_MS };
+  const at = (wait: number, ms: number) => ({ wait: wait / speed, ms: ms / speed });
+  if (role === 'arc') return at(across * STEP_ARC_WAVE_MS, STEP_MS);
   const wait = across * STEP_WAVE_MS;
-  if (role === 'leave') return { wait, ms: STEP_MS * STEP_OUT };
-  if (role === 'join') return { wait: wait + STEP_MS * STEP_IN, ms: STEP_MS * (1 - STEP_IN) };
-  return { wait, ms: STEP_MS };
+  if (role === 'leave') return at(wait, STEP_MS * STEP_OUT);
+  if (role === 'join') return at(wait + STEP_MS * STEP_IN, STEP_MS * (1 - STEP_IN));
+  return at(wait, STEP_MS);
 }
 /** A big mover's arc: rising this far over its path, at most `ARC_MAX` px. */
 export const arcHeight = (dx: number) => Math.min(110, 24 + Math.abs(dx) * 0.5);

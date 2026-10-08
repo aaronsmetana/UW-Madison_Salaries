@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  COLS, colHeight, colLeft, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  BREAK_AT, COLS, brokenRowY, colHeight, colLeft, columnBreak, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within, type Grid,
 } from './strata';
 
@@ -168,6 +168,46 @@ describe('squarePixels', () => {
   });
 });
 
+describe('columnBreak', () => {
+  // Apr 2024's $56k column on the latest's scale at 1811px and 2x: 742 people three a row, where the latest's
+  // tallest is 576 (192 rows).
+  const rp = 2.354, base = 513, scaleRows = 192;
+  it('leaves a column the scale holds whole', () => {
+    expect(columnBreak(scaleRows, scaleRows, rp, base)).toBeNull();
+  });
+  it('breaks a taller one: at the scale to four fifths of its height, a gap, then the rest squeezed to the scale’s top', () => {
+    const rows = Math.ceil(742 / 3), b = columnBreak(rows, scaleRows, rp, base)!;
+    expect(b.knee).toBe(Math.floor(scaleRows * BREAK_AT));
+    for (let r = 0; r < b.knee; r++) expect(brokenRowY(r, b, rp, base)).toBeCloseTo(base - (r + 1) * rp, 9);
+    // The gap: from the top of the last row at the scale to the bottom of the first squeezed over it.
+    expect(base - b.knee * rp - (brokenRowY(b.knee, b, rp, base) + b.pitch)).toBeCloseTo(b.gap, 9);
+    expect(b.gap).toBeGreaterThanOrEqual(3);
+    expect(b.y).toBeCloseTo(base - b.knee * rp - b.gap / 2, 9);
+    // Every row drawn, the top one's top the scale's, none past it.
+    expect(brokenRowY(rows - 1, b, rp, base)).toBeCloseTo(base - scaleRows * rp, 9);
+    expect(b.pitch).toBeLessThan(rp);
+    expect(b.pitch).toBeGreaterThan(0);
+  });
+  it('stacks the squeezed rows one on the next, none over another where a row has a pixel, all inside the break and the scale', () => {
+    const g: Grid = { per: 3, pitch: 2.216, rowPitch: rp, gap: 1, sq: rp - 0.5, sqW: 1.716 };
+    for (const [n, dpr] of [[742, 2], [652, 2], [742, 1]] as const) {
+      const rows = Math.ceil(n / 3), b = columnBreak(rows, scaleRows, rp, base)!;
+      // Under a device pixel a row (742 at 1x) the squeezed rows share pixels, as 1x rows of the graph touch.
+      const own = b.pitch * dpr >= 1;
+      expect(own, 'every case the same, so nothing here is told apart').toBe(!(n === 742 && dpr === 1));
+      let below = squarePixels(0, brokenRowY(b.knee, b, rp, base), g, dpr, undefined, b.pitch);
+      expect(below.Y + below.h).toBeLessThanOrEqual(Math.round((base - b.knee * rp - b.gap) * dpr));
+      for (let r = b.knee + 1; r < rows; r++) {
+        const sq = squarePixels(0, brokenRowY(r, b, rp, base), g, dpr, { X: 0, Y: 0, w: 0, h: 0 }, b.pitch);
+        expect(sq.h, `${n} at ${dpr}x, row ${r}`).toBeGreaterThanOrEqual(1);
+        if (own) expect(sq.Y + sq.h, `${n} at ${dpr}x, row ${r}`).toBeLessThanOrEqual(below.Y);
+        expect(sq.Y, `${n} at ${dpr}x, row ${r}`).toBeGreaterThanOrEqual(Math.round((base - scaleRows * rp) * dpr));
+        below = sq;
+      }
+    }
+  });
+});
+
 describe('tailColumns', () => {
   it('puts each of the pile\'s people in the lattice column their own pay falls in', () => {
     // An axis to $3M across 1,500px: $2,000 a px; two px a column.
@@ -206,6 +246,14 @@ describe('stepTiming', () => {
   });
   it('runs at half the pace the timeline first had (450 ms a square, a 130 ms sweep)', () => {
     expect(STEP_MS).toBeGreaterThanOrEqual(1.5 * 450);
+  });
+  it('at 2× and 4× sets every square off and lands it that much sooner, still at rest before the next step', () => {
+    for (const speed of [2, 4]) for (const role of ['stay', 'arc', 'join', 'leave'] as const) for (const x of [0, 400, 1000]) {
+      const one = stepTiming(role, x, W), fast = stepTiming(role, x, W, speed);
+      expect(fast.wait).toBeCloseTo(one.wait / speed, 9);
+      expect(fast.ms).toBeCloseTo(one.ms / speed, 9);
+      expect(end(fast)).toBeLessThanOrEqual(1500 / speed - 200 / speed);
+    }
   });
 });
 

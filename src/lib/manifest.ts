@@ -102,9 +102,6 @@ export interface HomeStats {
   bins: Bin[];
   /** Upper edge of the histogram, in dollars — reported so the page can label the cap. */
   bin_cap: number | null;
-  /** The most people in one $1k column under `bin_cap` in any snapshot: the scale the landing graph is drawn to,
-   *  so the latest and each snapshot of its timeline draw a person the same height. Absent from older builds. */
-  column_peak?: number | null;
   /** People at or above `bin_cap`, excluded from `bins` so outliers don't flatten the curve. */
   bins_overflow: number | null;
   /** Everyone under the cap as a count per $100 of pay (floored), from `lo100` × $100 up — the dots

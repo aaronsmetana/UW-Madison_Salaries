@@ -87,29 +87,14 @@ export interface TimelineStrata extends Strata {
   mainPay: Float64Array;
 }
 
+/** A pay's $1k column on the graph. */
+const colOf = (pay: number) => Math.min(COLS - 1, Math.max(0, Math.floor(pay / COL_DOLLARS)));
+
 /**
  * A snapshot as squares (lib/strata): under the cap each person in their $1k column, the pile past it — the
  * same columns and pile the counts give the latest. Each one's place in their band is a hash of their number,
  * the same in every snapshot, so from one to the next the people who stayed keep their order.
  */
-/** A pay's $1k column on the graph. */
-const colOf = (pay: number) => Math.min(COLS - 1, Math.max(0, Math.floor(pay / COL_DOLLARS)));
-
-/**
- * The most people in one column under the cap in any snapshot, placed as `strataFromPeople` places them: the
- * scale every snapshot is drawn to, so a column's height means the same headcount in each and a step moves only
- * the people who moved. The build ships the same figure (home-stats `column_peak`) for the latest as the page opens.
- */
-export function timelinePeak(t: Pick<Timeline, 'at'>, cap: number): number {
-  let peak = 0;
-  const count = new Uint32Array(COLS);
-  for (const p of t.at) {
-    count.fill(0);
-    for (let r = 0; r < p.pay.length; r++) if (p.pay[r] < cap) peak = Math.max(peak, ++count[colOf(p.pay[r])]);
-  }
-  return peak;
-}
-
 export function strataFromPeople(p: SnapPeople, names: readonly string[], cap: number): TimelineStrata {
   const order = Array.from(p.pay.keys()).sort((a, b) => p.pay[a] - p.pay[b] || p.id[a] - p.id[b]);
   const under = order.filter((r) => p.pay[r] < cap);

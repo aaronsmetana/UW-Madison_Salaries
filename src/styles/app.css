@@ -2423,7 +2423,14 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-pin-median { stroke: var(--mantine-color-accent-6); stroke-width: 1.5; stroke-dasharray: none; }
 .strata-pin-filter { stroke-width: 1.5; stroke-dasharray: none; }
 .strata-baseline { stroke: var(--hairline-strong); stroke-width: 1; }
-.strata-break { stroke: var(--guide); stroke-width: 1; fill: none; }
+.strata-break { stroke: var(--guide-strong); stroke-width: 1; fill: none; }
+/* How many a broken column holds, beside its break: a pin's words. */
+.strata-break-count {
+  position: absolute; font-size: var(--mantine-font-size-xs); line-height: 15px; font-weight: 600; color: var(--mantine-color-dimmed);
+  white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
+  /* Over a pin's line where there is no clear side (a phone's crowded middle), the line stops round the figures. */
+  text-shadow: 0 0 2px var(--surface), 0 0 2px var(--surface), 0 0 3px var(--surface);
+}
 /* Under the baseline: the middle half of pay as a bar, the median a tick on it; then the salary axis. */
 .strata-ruler { position: relative; height: 9px; margin-top: 3px; }
 .strata-iqr { position: absolute; top: 2px; height: 4px; border-radius: 2px; background: var(--tint-accent-strong); }
@@ -2465,7 +2472,7 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
   display: flex; align-items: center; gap: 14px; margin-top: 6px; padding: 4px 12px 4px 4px; min-height: 38px; box-sizing: border-box;
   border-radius: var(--mantine-radius-lg); background: var(--surface-sunken); border: 1px solid var(--hairline-soft);
 }
-.strata-play { flex: none; }
+.strata-play, .strata-speed { flex: none; }
 .strata-track { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .strata-track-end { flex: none; font-size: var(--mantine-font-size-xs); color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .strata-track-dots {
