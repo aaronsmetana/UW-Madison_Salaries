@@ -51,14 +51,23 @@ describe('stackColumns', () => {
 });
 
 describe('strataGrid', () => {
-  it('runs the lattice across a column to the hundredth of a pixel, so columns meet with no seam; rows on whole device pixels', () => {
+  it('runs the lattice across a column to the hundredth of a pixel, so columns meet with no seam', () => {
     // 1,654px of plot at 2x (a 1,800px window): 6.616px a column, three a row.
     const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 2 });
     expect(g.per).toBe(3);
     expect(g.per * g.pitch).toBeCloseTo(6.616, 9);
-    expect(g.rowPitch * 2).toBe(Math.round(g.rowPitch * 2));
     expect(g.gap).toBe(1);
-    expect(colHeight(576, g)).toBeLessThanOrEqual(450);
+    expect(colHeight(576, g)).toBeLessThanOrEqual(450 + 1e-9);
+  });
+  it('stands the rows a quarter taller than whole device pixels would, never past the room', () => {
+    // 1,325px of plot, room for the timeline's tallest column (742): whole pixels stood it 371px tall at 1x and 2x.
+    for (const dpr of [1, 2]) {
+      const g = strataGrid({ colW: 5.3, rowsH: 490, peak: 742, dpr });
+      expect(colHeight(742, g), `${dpr}x`).toBeGreaterThan(1.25 * 371 - 1);
+      expect(colHeight(742, g), `${dpr}x`).toBeLessThanOrEqual(490);
+    }
+    // Where a quarter more would pass the room, as tall as the room.
+    expect(colHeight(742, strataGrid({ colW: 5.3, rowsH: 600, peak: 742, dpr: 2 }))).toBeCloseTo(600, 9);
   });
   it('fits the tallest column in the room on a phone, as a solid run', () => {
     const g = strataGrid({ colW: 310 / 250, rowsH: 215, peak: 572, dpr: 3 });
@@ -66,26 +75,26 @@ describe('strataGrid', () => {
     expect(g.per * g.pitch).toBeCloseTo(310 / 250, 9);
     expect(g.gap).toBe(0);
   });
-  it('keeps three a row on a 1x screen, a pixel square and a pixel gap where there is room for both', () => {
+  it('keeps three a row on a 1x screen, and a pixel gap where there is room for one', () => {
     const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 1 });
-    expect(g).toMatchObject({ per: 3, rowPitch: 2, gap: 1, sq: 1 });
-    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toMatchObject({ per: 2, rowPitch: 1, gap: 0 });
+    expect(g).toMatchObject({ per: 3, gap: 1 });
+    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toMatchObject({ per: 2, gap: 0 });
   });
   it('between rows of one height, fills the room', () => {
     // The full page at 2x, room for the timeline's tallest column (742): two a row and three a row both give
     // 1.5px rows; two stands the column 556px tall, three 372px.
     const g = strataGrid({ colW: 5.3, rowsH: 600, peak: 742, dpr: 2 });
-    expect(g).toMatchObject({ per: 2, rowPitch: 1.5 });
+    expect(g.per).toBe(2);
     expect(colHeight(742, g)).toBeGreaterThan(500);
     expect(colHeight(742, g)).toBeLessThanOrEqual(600);
     // Taller rows first: at 2x in a 340px room, three a row's 1.5px rows over two a row's 1px.
-    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 2 })).toMatchObject({ per: 3, rowPitch: 1.5 });
+    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 2 }).per).toBe(3);
   });
   it('where no gap shows the squares (1px rows on a 1x screen), stands the tallest column as tall as the room allows', () => {
-    // A 1,800px window at 1x, the scale room for the timeline's tallest column (742): every grid has 1px rows. Kept
-    // near square, four a row stood the latest's tallest (576) at 144px of 490.
+    // A 1,800px window at 1x, the scale room for the timeline's tallest column (742): every grid has 1px rows,
+    // stood a quarter taller. Kept near square, four a row stood the latest's tallest (576) at 144px of 490.
     const g = strataGrid({ colW: 6.76, rowsH: 490, peak: 742, dpr: 1 });
-    expect(g).toMatchObject({ rowPitch: 1, gap: 0 });
+    expect(g).toMatchObject({ rowPitch: 1.25, gap: 0 });
     expect(colHeight(576, g), 'the latest’s tallest, no taller than it was').toBeGreaterThanOrEqual(2 * 144);
     expect(colHeight(742, g)).toBeLessThanOrEqual(490);
   });
@@ -138,6 +147,21 @@ describe('squarePixels', () => {
     const share = rows[0].map((_, k) => rows.filter((r) => r[k].gap > g.gap).length / rows.length);
     expect(Math.max(...share)).toBeLessThan(0.5);
   });
+  it('stacks rows a quarter over whole pixels one on the next, no pixel row skipped or doubled', () => {
+    for (const dpr of [1, 2]) {
+      const g = strataGrid({ colW: 5.3, rowsH: 490, peak: 742, dpr });
+      // Up a column from a baseline: each square's bottom, and its gap, is the top of the one below.
+      let below = squarePixels(0, 480 - g.rowPitch, g, dpr, { X: 0, Y: 0, w: 0, h: 0 });
+      const heights = new Set<number>();
+      for (let r = 1; r < 60; r++) {
+        const b = squarePixels(0, 480 - (r + 1) * g.rowPitch, g, dpr, { X: 0, Y: 0, w: 0, h: 0 });
+        expect(b.Y + b.h + g.gap, `${dpr}x, row ${r}`).toBe(below.Y);
+        heights.add(b.h);
+        below = b;
+      }
+      expect(heights.size, `${dpr}x: every row the same height, so nothing here is tested`).toBe(2);
+    }
+  });
   it('is the same rows on a 2x screen, where a pixel either side is a small part of a square', () => {
     const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 2 });
     expect(row(g, 2, 300).map((r) => r.w)).toEqual(row(g, 2, 296).map((r) => r.w));
@@ -168,17 +192,17 @@ describe('snapReach', () => {
 describe('stepTiming', () => {
   const W = 1000;
   const end = (t: { wait: number; ms: number }) => t.wait + t.ms;
-  it('lifts who left out before anyone who joined has landed, and starts the joiners once the rest are on their way', () => {
+  it('fades who left out before anyone who joined is in, and starts the joiners once the rest are on their way', () => {
     for (const x of [0, 500, 1000]) {
       expect(end(stepTiming('leave', x, W))).toBeLessThan(end(stepTiming('join', x, W)));
       expect(stepTiming('join', x, W).wait).toBeGreaterThan(stepTiming('stay', x, W).wait + STEP_MS * 0.3);
     }
   });
-  it('has every square at rest by the wave and a square’s time, inside a playing step’s 1.2 s, with a beat to spare', () => {
+  it('has every square at rest by the wave and a square’s time, inside a playing step’s 1.5 s, with a beat to spare', () => {
     for (const role of ['stay', 'arc', 'join', 'leave'] as const) for (const x of [0, 400, 1000, 1200]) {
       expect(end(stepTiming(role, x, W))).toBeLessThanOrEqual(STEP_WAVE_MS + STEP_MS + 1e-9);
     }
-    expect(STEP_WAVE_MS + STEP_MS).toBeLessThanOrEqual(1200 - 200);
+    expect(STEP_WAVE_MS + STEP_MS).toBeLessThanOrEqual(1500 - 200);
   });
   it('runs at half the pace the timeline first had (450 ms a square, a 130 ms sweep)', () => {
     expect(STEP_MS).toBeGreaterThanOrEqual(1.5 * 450);

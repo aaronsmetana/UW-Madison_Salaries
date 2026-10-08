@@ -224,14 +224,14 @@ export interface Follow extends Spot { name: string; pay: number | null; from: n
 
 /**
  * A timeline step onto `to`: where each of its squares sets off — its person's place in the snapshot before, or
- * above the plot for someone who joined — how high a big mover arcs on the way (0 for the rest), and who left:
- * from their old place up out of the top, gone when the step ends.
+ * for someone who joined, where they will stand — how high a big mover arcs on the way (0 for the rest), and who
+ * left: fading out where they stood, gone when the step ends.
  */
 export interface Step {
   to: StrataLayout;
   from: { mx: Float64Array; my: Float64Array; px: Float64Array; py: Float64Array };
   arc: { main: Float32Array; pile: Float32Array } | null;
-  /** Who joined this step (1), dropping in from above the plot once the rest are on their way. */
+  /** Who joined this step (1), fading in where they stand once the rest are on their way. */
   joined: { main: Uint8Array; pile: Uint8Array };
   ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array } | null;
 }
@@ -280,8 +280,12 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     /** A timeline step's own time for each square, where it is not `ms` (lib/strata `stepTiming`). */
     msM?: Float64Array; msP?: Float64Array;
     arcM?: Float32Array; arcP?: Float32Array;
-    /** Who left, lifting out: from y0 to y1, and where they are now. */
-    ghost?: { x: Float64Array; y0: Float64Array; y1: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array };
+    /** Who left, fading out where they stood. */
+    ghost?: { x: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array };
+    /** Who joined, fading in: by square, and how far in each is (1 for everyone else). */
+    fadeIn?: { main: Int32Array; pile: Int32Array; aM: Float32Array; aP: Float32Array };
+    /** The frame's time, for the fades. */
+    now?: number;
   } | null>(null);
   const raf = useRef(0);
   const inks = useRef<Inks | null>(null);
@@ -352,6 +356,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     buf.fill(0);
     // The faded first, then each kind, then the search's own, then a step's movers on top of all.
     const order = tint.order;
+    const least = (k: number) => ((dim && k !== tint.C) || k >= tint.C + 2 ? LIT_MIN : 1);
     const box: Px = { X: 0, Y: 0, w: 0, h: 0 };
     // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a
     // square of one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
@@ -359,8 +364,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box);
       if (w < least) { X -= (least - w) >> 1; w = least; }
       if (h < least) { Y -= (least - h) >> 1; h = least; }
-      // Clipped to the canvas, not clamped to it: a square above the plot (one dropping in, or lifting out) is
-      // not drawn at all, rather than along its top edge.
+      // Clipped to the canvas, not clamped to it: a square above the plot (one dropping in) is not drawn at
+      // all, rather than along its top edge.
       if (X < 0) { w += X; X = 0; }
       if (Y < 0) { h += Y; Y = 0; }
       w = Math.min(w, cw - X);
@@ -368,16 +373,34 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       if (w <= 0 || h <= 0) return;
       for (let r = 0; r < h; r++) { const o = (Y + r) * cw + X; for (let q = 0; q < w; q++) buf[o + q] = c; }
     };
-    for (const k of order) {
-      const c = packed(ink(k));
-      const least = (dim && k !== tint.C) || k >= tint.C + 2 ? LIT_MIN : 1;
-      const a = tint.mainBy[k], b = tint.pileBy[k];
-      for (let q = 0; q < a.length; q++) put(mx[a[q]], my[a[q]], c, least);
-      for (let q = 0; q < b.length; q++) put(px[b[q]], py[b[q]], c, least);
+    // A step's comings and goings, first: who left fading out where they stood, who joined fading in where they
+    // stand (lib/strata `stepTiming`). A pixel is written, not blended, so anyone moving over them is drawn whole.
+    const mv = move.current;
+    const into = (wait: number, ms: number) => (mv ? easeInOut(Math.min(1, Math.max(0, ((mv.now ?? mv.start) - mv.start - wait) / ms))) : 1);
+    const faded = (c: number, a: number) => ((c & 0xffffff) | (Math.round(255 * a) << 24)) >>> 0;
+    const gh = mv?.ghost;
+    if (gh) for (let g = 0; g < gh.x.length; g++) {
+      const a = 1 - into(gh.wait[g], gh.ms);
+      if (a > 0) put(gh.x[g], gh.y[g], faded(packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), a), 1);
     }
-    // Who left, on their way up and out.
-    const gh = move.current?.ghost;
-    if (gh) for (let g = 0; g < gh.x.length; g++) put(gh.x[g], gh.y[g], packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), 1);
+    const fi = mv?.fadeIn;
+    if (mv && fi) {
+      const fade = (idx: Int32Array, A: Float32Array, X: Float64Array, Y: Float64Array, T: Uint8Array, wait: Float64Array, ms: Float64Array) => {
+        for (const i of idx) {
+          const a = (A[i] = into(wait[i], ms[i]));
+          if (a > 0 && a < 1) put(X[i], Y[i], faded(packed(ink(T[i])), a), least(T[i]));
+        }
+      };
+      fade(fi.main, fi.aM, mx, my, tint.main, mv.wait, mv.msM!);
+      fade(fi.pile, fi.aP, px, py, tint.pile, mv.pwait, mv.msP!);
+    }
+    const aM = fi?.aM, aP = fi?.aP;
+    for (const k of order) {
+      const c = packed(ink(k)), l = least(k);
+      const a = tint.mainBy[k], b = tint.pileBy[k];
+      for (let q = 0; q < a.length; q++) if (!aM || aM[a[q]] === 1) put(mx[a[q]], my[a[q]], c, l);
+      for (let q = 0; q < b.length; q++) if (!aP || aP[b[q]] === 1) put(px[b[q]], py[b[q]], c, l);
+    }
     ctx.putImageData(img, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // The search's people: a white square ringed in ink, with their type's colour at its heart.
@@ -594,11 +617,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       for (let i = 0; i < n; i++) { go(mv.fromMx, layout.mx, mx, mv.wait, i, 0, undefined, mv.msM); go(mv.fromMy, layout.my, my, mv.wait, i, 1, mv.arcM, mv.msM); }
       for (let j = 0; j < m; j++) { go(mv.fromPx, layout.px, px, mv.pwait, j, 0, undefined, mv.msP); go(mv.fromPy, layout.py, py, mv.pwait, j, 1, mv.arcP, mv.msP); }
       const gh = mv.ghost;
-      if (gh) for (let g = 0; g < gh.x.length; g++) {
-        const p = Math.min(1, Math.max(0, (now - mv.start - gh.wait[g]) / gh.ms));
-        if (p < 1) done = false;
-        gh.y[g] = gh.y0[g] + (gh.y1[g] - gh.y0[g]) * p * p;
-      }
+      if (gh) for (let g = 0; g < gh.x.length; g++) if (now - mv.start - gh.wait[g] < gh.ms) done = false;
+      mv.now = now;
       drawBase();
       // Each moving frame's cost, for the frame-budget guards (diagnostic only).
       try { performance.measure('strata-frame', { start: t0, end: performance.now() }); } catch { /* unsupported */ }
@@ -683,23 +703,22 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       cur.current = { mx: layout.mx.slice(), my: fromMy.slice(), px: layout.px.slice(), py: fromPy.slice() };
       move.current = { start: now, fromMx: layout.mx.slice(), fromMy, fromPx: layout.px.slice(), fromPy, wait, pwait, ms: DROP_MS, land: true };
     } else if (stepped && step) {
-      // A timeline step: from each person's place before, the big movers launching together, who left lifting
-      // out first and who joined dropping in last (lib/strata `stepTiming`).
+      // A timeline step: from each person's place before, the big movers launching together, who left fading
+      // out first and who joined fading in last (lib/strata `stepTiming`).
       const { from, arc, joined, ghosts } = step;
       const wait = new Float64Array(n), pwait = new Float64Array(m), msM = new Float64Array(n), msP = new Float64Array(m);
       const role = (arcs: Float32Array | undefined, join: Uint8Array, i: number) => (join[i] ? 'join' : arcs?.[i] ? 'arc' : 'stay');
       for (let i = 0; i < n; i++) ({ wait: wait[i], ms: msM[i] } = stepTiming(role(arc?.main, joined.main, i), layout.mx[i], W));
       for (let j = 0; j < m; j++) ({ wait: pwait[j], ms: msP[j] } = stepTiming(role(arc?.pile, joined.pile, j), layout.px[j], W));
       cur.current = { mx: from.mx.slice(), my: from.my.slice(), px: from.px.slice(), py: from.py.slice() };
-      const g = ghosts && ghosts.x.length ? (() => {
-        let seed = 0x9e3779b1 ^ ghosts.x.length;
-        const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-        const k = ghosts.x.length;
-        const y1 = new Float64Array(k), w = new Float64Array(k);
-        for (let q = 0; q < k; q++) { y1[q] = -14 - rand() * 60; w[q] = stepTiming('leave', ghosts.x[q], W).wait; }
-        return { x: ghosts.x, y0: ghosts.y, y1, y: ghosts.y.slice(), wait: w, ms: stepTiming('leave', 0, W).ms, kind: ghosts.kind };
-      })() : undefined;
-      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS, msM, msP, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g };
+      const g = ghosts && ghosts.x.length
+        ? { x: ghosts.x, y: ghosts.y, wait: Float64Array.from(ghosts.x, (x) => stepTiming('leave', x, W).wait), ms: stepTiming('leave', 0, W).ms, kind: ghosts.kind }
+        : undefined;
+      const who = (join: Uint8Array) => Int32Array.from(join.keys()).filter((i) => join[i] === 1);
+      const fadeIn = { main: who(joined.main), pile: who(joined.pile), aM: new Float32Array(n).fill(1), aP: new Float32Array(m).fill(1) };
+      for (const i of fadeIn.main) fadeIn.aM[i] = 0;
+      for (const j of fadeIn.pile) fadeIn.aP[j] = 0;
+      move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS, msM, msP, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g, fadeIn };
     } else {
       const wait = new Float64Array(n), pwait = new Float64Array(m);
       for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * MOVE_WAVE_MS;

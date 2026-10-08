@@ -219,8 +219,9 @@ for (const dpr of [1, 2]) {
       const x0 = Math.round(55 * a.colW * k), x1 = Math.round(115 * a.colW * k);
       const out: { runs: number[]; wide: number[] }[] = [];
       for (let r = 0; r < 20; r++) {
-        // A row's squares start at the top of its cell; its gap is at the bottom.
-        const y = Math.round((a.base - (r + 1) * a.rowPitch) * k);
+        // A row's squares start at the top of its cell (rounded as lib/strata's `squarePixels` does); its gap is at
+        // the bottom.
+        const y = Math.floor((a.base - (r + 1) * a.rowPitch) * k + 0.5 - 1e-6);
         const d = ctx.getImageData(x0, y, x1 - x0, 1).data;
         const row = { runs: [] as number[], wide: [] as number[] };
         let dark = 0, inked = false;
@@ -584,11 +585,12 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 /**
- * The graph uses its room: the latest's tallest $1k column stands at least half the plot's height, on a 1x screen
- * as on a 2x one. At 1x every row is a pixel and no gap shows the squares, and kept near square, four a row stood
- * that column at 144px of a 490px plot.
+ * The graph uses its room: the latest's tallest $1k column stands at least 70% of the plot's height, on a 1x
+ * screen as on a 2x one. At 1x every row is a pixel and no gap shows the squares, and kept near square, four a row
+ * stood that column at 144px of a 490px plot; on whole-pixel rows, two a row at 64%. Rows a quarter taller stand it
+ * at 77%, the timeline's tallest (Apr 2024's) filling the room.
  */
-test('the tallest column stands at least half the plot, at 1x as at 2x', async ({ browser }) => {
+test('the tallest column stands at least 70% of the plot, at 1x as at 2x', async ({ browser }) => {
   const snap = await latestSnapshot();
   const [{ peak }] = await oracle<{ peak: number }>(
     `SELECT max(n) peak FROM (SELECT floor(pay / 1000) b, count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL
@@ -603,8 +605,8 @@ test('the tallest column stands at least half the plot, at 1x as at 2x', async (
     const [per, rowPitch, room] = await Promise.all(['data-per', 'data-row-pitch', 'data-room'].map(async (a) => Number(await f.getAttribute(a))));
     const tall = Math.ceil(peak / per) * rowPitch;
     share.push(tall / room);
-    expect(tall / room, `${dpr}x: the tallest of ${peak} stands ${Math.round(tall)}px of ${Math.round(room)}`).toBeGreaterThanOrEqual(0.5);
-    expect(tall, `${dpr}x: past the plot`).toBeLessThanOrEqual(room);
+    expect(tall / room, `${dpr}x: the tallest of ${peak} stands ${Math.round(tall)}px of ${Math.round(room)}`).toBeGreaterThanOrEqual(0.7);
+    expect(tall, `${dpr}x: past the plot`).toBeLessThanOrEqual(room + 1e-6);
     await ctx.close();
   }
   expect(Math.abs(share[0] - share[1]), 'a 1x screen draws it a different height from a 2x one').toBeLessThan(0.15);

@@ -10,8 +10,8 @@ import { parseColor } from './color';
  * The landing graph's timeline (mockup 3a §8, lib/timeline): under the plot, Play and a track of the
  * snapshots. Each snapshot is drawn from its own people, as the landing counts a person — total pay over paid
  * appointments, in the category of their highest-paid one — with its own headcount, median, quartiles, pile
- * and types; a step from one to the next carries each person from where they were, drops in who joined, lifts
- * out who left, and between neighbours names who moved pay by 8% or more. Every figure here is restated from
+ * and types; a step from one to the next carries each person from where they were, fades in who joined and
+ * fades out who left, each in their own place, and between neighbours names who moved pay by 8% or more. Every figure here is restated from
  * the data in SQL, not taken from the page's code.
  */
 
@@ -101,7 +101,7 @@ test('each snapshot shows its own people: headcount, median and quartiles, the p
   }
 });
 
-test('a step between neighbours carries each person over, drops in who joined, lifts out who left, and names who moved pay by 8% or more', async ({ page }) => {
+test('a step between neighbours carries each person over, fades in who joined, fades out who left, and names who moved pay by 8% or more', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);
   const [a, b] = [7, 8];
@@ -133,6 +133,56 @@ test('a step between neighbours carries each person over, drops in who joined, l
   // Not neighbours: no one is named as a mover.
   await goTo(page, 2);
   await expect(page.locator('.strata-movers')).toHaveCount(0);
+});
+
+test('a step fades out who left where they stood and fades in who joined where they stand: nothing drops in or lifts out', async ({ page }) => {
+  test.setTimeout(120_000);
+  await home(page);
+  await goTo(page, 7);
+  // How high the squares stand at rest, CSS px from the top.
+  const top = async () => {
+    const pts = await field(page).evaluate((el) => ['main', 'pile'].flatMap((f) => (el as HTMLElement & { squarePlaces: (f: string) => number[] }).squarePlaces(f)));
+    let y = Infinity;
+    for (let i = 1; i < pts.length; i += 2) y = Math.min(y, pts[i]);
+    return y;
+  };
+  const before = await top();
+  // Every frame of a step to a snapshot that is not a neighbour (so no one arcs): how high any ink reaches, and
+  // how many pixels are part-way faded, by how far into the step.
+  await page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => {
+    const w = window as unknown as { frames: { t: number; top: number; part: number }[]; t0: number | null; stop: boolean };
+    w.frames = [];
+    w.t0 = null;
+    w.stop = false;
+    const f = document.querySelector('.strata-field') as HTMLElement;
+    new MutationObserver(() => { if (f.dataset.settled === 'false' && w.t0 == null) w.t0 = performance.now(); }).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
+    const ctx = c.getContext('2d')!;
+    const frame = () => {
+      if (w.stop) return;
+      if (w.t0 != null) {
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        let top = c.height, part = 0;
+        for (let i = 3; i < d.length; i += 4) {
+          if (!d[i]) continue;
+          if (d[i] < 255) part++;
+          if (top === c.height) top = Math.floor((i >> 2) / c.width);
+        }
+        w.frames.push({ t: performance.now() - w.t0, top, part });
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+  await goTo(page, 2);
+  const frames = await page.evaluate(() => { const w = window as unknown as { frames: { t: number; top: number; part: number }[]; stop: boolean }; w.stop = true; return w.frames; });
+  const k = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => c.width / c.getBoundingClientRect().width);
+  const highest = Math.floor(Math.min(before, await top()) * k) - 1;
+  expect(frames.length, 'no frames of the step seen').toBeGreaterThan(10);
+  expect(frames.filter((f) => f.top < highest).map((f) => `${Math.round(f.t)} ms: ink at ${f.top}px`).slice(0, 3), `a square above the tallest column (${highest}px), on its way in or out`).toEqual([]);
+  // Who left fade in the first part of the step, before any joiner has begun; who joined in the last, after.
+  expect(frames.some((f) => f.t < 300 && f.part > 0), 'who left did not fade out').toBe(true);
+  expect(frames.some((f) => f.t > 900 && f.part > 0), 'who joined did not fade in').toBe(true);
+  expect(frames[frames.length - 1].part, 'part-faded squares left once the step was over').toBe(0);
 });
 
 test('a step lands every square where the snapshot lays them out, however it was reached', async ({ browser }) => {
@@ -267,7 +317,7 @@ test.describe('one scale for every snapshot, at half the pace', () => {
     }
   });
 
-  test('Play shows a snapshot every 1.2 s, each at rest before the next', async ({ page }) => {
+  test('Play shows a snapshot every 1.5 s, each step’s motion over a second and more, and each at rest before the next', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
     await page.evaluate(() => {
@@ -285,15 +335,18 @@ test.describe('one scale for every snapshot, at half the pace', () => {
     const first = log.findIndex(([e]) => e === `snap ${SNAPS[0].id}`);
     const steps = log.slice(first).flatMap(([e, t], k) => (e.startsWith('snap ') ? [{ t, k: first + k }] : []));
     expect(steps.length).toBe(SNAPS.length);
-    const gaps: number[] = [], rests: number[] = [];
+    const gaps: number[] = [], rests: number[] = [], moves: number[] = [];
     for (let s = 1; s < steps.length; s++) {
       gaps.push(steps[s].t - steps[s - 1].t);
       // When the field came to rest in between, and how long it stayed so.
       const between = log.slice(steps[s - 1].k, steps[s].k);
       const settled = between.filter(([e]) => e === 'settled true').pop();
       rests.push(settled ? steps[s].t - settled[1] : -1);
+      if (settled) moves.push(settled[1] - steps[s - 1].t);
     }
-    for (const g of gaps) expect(g, `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(1150);
+    for (const g of gaps) expect(g, `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(1450);
+    moves.sort((a, b) => a - b);
+    expect(moves[moves.length >> 1], `steps moving for ${moves.map(Math.round).join(', ')} ms`).toBeGreaterThanOrEqual(1100);
     expect(Math.min(...rests), `rests ${rests.map(Math.round).join(', ')} ms: a step began before the last had landed`).toBeGreaterThan(0);
     rests.sort((a, b) => a - b);
     expect(rests[rests.length >> 1], 'each snapshot is barely seen at rest').toBeGreaterThanOrEqual(150);

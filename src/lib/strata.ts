@@ -138,12 +138,12 @@ export interface Grid {
   /** Across, CSS px: exactly a column's width over `per`, so every column's squares lie on one even lattice —
    *  a column's last square as far from the next column's first as from its own neighbour, with no seam. */
   pitch: number;
-  /** Up, CSS px: a whole number of device pixels, so the rows are even. */
+  /** Up, CSS px: a quarter more than a whole number of device pixels, or as tall as the room allows. */
   rowPitch: number;
   /** The gap between squares, device px, the same across and up. */
   gap: number;
-  /** A square's height, and its width on average, CSS px: the pitch less the gap. Drawn on whole device
-   *  pixels, a square is that wide or a pixel either side; the gap is always the gap. */
+  /** A square's height and its width on average, CSS px: the pitch less the gap. Drawn on whole device
+   *  pixels, a square is that wide (or tall) or a pixel either side; the gap is always the gap. */
   sq: number;
   sqW: number;
 }
@@ -151,10 +151,14 @@ export interface Grid {
 /**
  * The largest squares that fit: `per` a row in a column `colW` wide, the tallest column (`peak` people) in
  * `rowsH`. Across, the lattice is the column's width over `per`, to the hundredth of a pixel, so the columns
- * meet without a seam; up, it is whole device pixels. A gap of a device pixel (two for big squares) parts
- * every square from the next both ways; where a row is under two device pixels (a phone's narrow plot) there
- * is no room for one, and the stack is a solid histogram of bands.
+ * meet without a seam; up, rows are chosen in whole device pixels, then stood a quarter taller (ROW_STRETCH)
+ * where the room allows. A gap of a device pixel (two for big squares) parts every square from the next both
+ * ways; where a row is under two device pixels (a phone's narrow plot) there is no room for one, and the stack
+ * is a solid histogram of bands.
  */
+/** How much taller than whole device pixels the rows stand: at 1440px, whole pixels stood the latest's tallest
+ *  column at 59% of the plot. */
+export const ROW_STRETCH = 1.25;
 export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: number; peak: number; dpr: number }): Grid {
   let best: Grid | null = null;
   const tall = Math.max(1, peak);
@@ -168,7 +172,10 @@ export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: nu
     const g = { per, pitch, rowPitch, gap, sq: rowPitch - gap / dpr, sqW: pitch - gap / dpr };
     if (!best || rowPitch > best.rowPitch + 1e-9 || (Math.abs(rowPitch - best.rowPitch) <= 1e-9 && evener(g, best))) best = g;
   }
-  return best ?? { per: 1, pitch: colW, rowPitch: 1, gap: 0, sq: 1, sqW: colW };
+  if (!best) return { per: 1, pitch: colW, rowPitch: 1, gap: 0, sq: 1, sqW: colW };
+  // A quarter taller, never past the room: the rows are then a device pixel apart in height (`squarePixels`).
+  const rowPitch = Math.min(best.rowPitch * ROW_STRETCH, rowsH / Math.ceil(tall / best.per));
+  return { ...best, rowPitch, sq: rowPitch - best.gap / dpr };
 
   // Between rows of one height (rows are whole device pixels, so several give the same): the one that fills the
   // room, fewer a row so the tallest column stands taller; else the nearest to 3a's three a row. Rows fitted to
@@ -188,7 +195,7 @@ export const snap = (v: number, dpr: number) => Math.round(v * dpr) / dpr;
 
 /**
  * A square's device-pixel box, from its corner `x, y` (CSS px): from its corner's pixel to the next lattice
- * place's, less the gap — every gap the same, the squares a pixel either side of their width. Where a square
+ * place's, less the gap, across and up — every gap the same, the squares a pixel either side of their size. Where a square
  * is under two device pixels (a 1x screen) that pixel is half of it; there every square is the same instead,
  * and now and then a gap is a pixel wider. Lined up, those would draw a dark line down every fifth column, so
  * each row is set over by its own fraction of a pixel (the golden ratio's steps, which never repeat) and the
@@ -202,7 +209,8 @@ export function squarePixels(x: number, y: number, g: Grid, dpr: number, out: Px
   const Y = px(y * dpr);
   const ud = Math.max(1, px(g.rowPitch * dpr));
   out.Y = Y;
-  out.h = Math.max(1, ud - g.gap);
+  // To the next row's first pixel, less the gap, as across: rows a quarter over whole pixels differ by one.
+  out.h = Math.max(1, px((y + g.rowPitch) * dpr) - Y - g.gap);
   if (g.gap > 0 && g.sqW * dpr < 2) {
     const shift = ((Math.floor(Y / ud) * 0.6180339887) % 1) - 0.5;
     out.X = px(x * dpr + shift);
@@ -324,15 +332,16 @@ export const DROP_MS = 350;
 export const DROP_WAVE_MS = 210;
 export const DROP_ROW_MS = 0.55;
 
-/** A timeline step (3a §8), at half the pace it first had: while playing a snapshot every 1.2 s (StrataGraph
- *  PLAY_MS), and each step's motion over within a second, so every snapshot is seen at rest before the next.
+/** A timeline step (3a §8), at 40% of the pace it first had: while playing a snapshot every 1.5 s (StrataGraph
+ *  PLAY_MS), and each step's motion over within 1.2 s, so every snapshot is seen at rest before the next.
  *  A square is STEP_MS on its way, set off left to right over STEP_WAVE_MS; the big movers, which arc, over
  *  STEP_ARC_WAVE_MS, so they launch together. */
-export const STEP_MS = 760;
-export const STEP_WAVE_MS = 180;
-export const STEP_ARC_WAVE_MS = 90;
-/** A step in stages, so a square going out never crosses one coming in: who left lifts out in the first
- *  STEP_OUT of a square's time, who stayed moves through all of it, and who joined drops in after STEP_IN. */
+export const STEP_MS = 950;
+export const STEP_WAVE_MS = 225;
+export const STEP_ARC_WAVE_MS = 112.5;
+/** A step in stages, so who goes and who comes are seen apart: who left fades out where they stood in the first
+ *  STEP_OUT of a square's time, who stayed moves through all of it, and who joined fades in where they stand
+ *  after STEP_IN. */
 export const STEP_OUT = 0.6;
 export const STEP_IN = 0.4;
 /** When a square sets off in a step and how long it takes, by what it is doing; `x` is where it is across a plot

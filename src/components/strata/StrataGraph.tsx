@@ -76,8 +76,8 @@ export interface GraphTimeline {
 /** A snapshot's label without its note: "Nov 2021 (Pre-TTC)" is "Nov 2021" at the track's end. */
 const bareLabel = (l: string) => l.replace(/\s*\(.*\)\s*$/, '');
 /** Play waits this long between steps, and longer after starting over from the first. */
-const PLAY_MS = 1200;
-const PLAY_RESTART_MS = 1600;
+const PLAY_MS = 1500;
+const PLAY_RESTART_MS = 2000;
 
 /** Whose a square is, as the lens's card names them. */
 export interface DotWho {
@@ -329,8 +329,8 @@ export function StrataGraph({
   const hues = useMemo(() => (moves && tStrata
     ? { main: Int8Array.from(tStrata.mainId, (id) => moves[id]), pile: Int8Array.from(tStrata.pileId, (id) => moves[id]) }
     : null), [moves, tStrata]);
-  // The step onto this layout: each person from their place in the one shown before (a joiner from above the
-  // plot), the big movers arcing, who left lifting out. Only between two snapshots drawn from people; anything
+  // The step onto this layout: each person from their place in the one shown before (a joiner where they will
+  // stand, to fade in), the big movers arcing, who left fading out. Only between two snapshots drawn from people; anything
   // else — the first time from the counts, a resize — is a layout of the same people, or simply there.
   const shownRef = useRef<{ layout: StrataLayout; strata: Strata } | null>(null);
   const step = useMemo<Step | null>(() => {
@@ -342,13 +342,11 @@ export function StrataGraph({
     A.mainId.forEach((id, i) => { ox[id] = L0.mx[i]; oy[id] = L0.my[i]; });
     A.pileId.forEach((id, j) => { ox[id] = L0.px[j]; oy[id] = L0.py[j]; });
     const stays = new Uint8Array(N);
-    let seed = 0x5bd1e995 ^ (at ?? 0);
-    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-    const place = (ids: Int32Array, X: Float64Array) => {
+    const place = (ids: Int32Array, X: Float64Array, Y: Float64Array) => {
       const fx = new Float64Array(ids.length), fy = new Float64Array(ids.length), arc = new Float32Array(ids.length), join = new Uint8Array(ids.length);
       ids.forEach((id, i) => {
         stays[id] = 1;
-        if (Number.isNaN(ox[id])) { fx[i] = X[i]; fy[i] = -14 - rand() * 60; join[i] = 1; return; }
+        if (Number.isNaN(ox[id])) { fx[i] = X[i]; fy[i] = Y[i]; join[i] = 1; return; }
         fx[i] = ox[id];
         fy[i] = oy[id];
         // A big mover arcs, and the person followed always does.
@@ -356,7 +354,7 @@ export function StrataGraph({
       });
       return { fx, fy, arc, join };
     };
-    const mm = place(B.mainId, L1.mx), pp = place(B.pileId, L1.px);
+    const mm = place(B.mainId, L1.mx, L1.my), pp = place(B.pileId, L1.px, L1.py);
     const gx: number[] = [], gy: number[] = [], gk: number[] = [];
     A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); } });
     A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); } });
@@ -368,7 +366,7 @@ export function StrataGraph({
       ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
     };
     // `shownRef` is the layout drawn before this one: read, not a dependency.
-  }, [layout, tl, tStrata, moves, at, followId]);
+  }, [layout, tl, tStrata, moves, followId]);
   useEffect(() => { if (layout && strata) shownRef.current = { layout, strata }; }, [layout, strata]);
   // Go to a snapshot. The first time, the field is first drawn from the latest's people where it stands (no
   // one moves: the same people in the same columns), and the step taken from there.
@@ -1261,7 +1259,7 @@ export function StrataGraph({
       {timeline && snaps.length > 1 && (
         <div className="strata-timeline" data-timeline={tl ? 'ready' : timeline.data === 'loading' ? 'loading' : timeline.data === 'error' ? 'error' : 'off'}
           data-snap={at != null ? snaps[at].id : snaps[lastSnap].id} data-playing={playing || undefined}
-          data-step={step ? `${step.from.my.reduce((n, y, i) => n + (y < 0 && step.to.my[i] >= 0 ? 1 : 0), 0) + step.from.py.reduce((n, y) => n + (y < 0 ? 1 : 0), 0)}:${step.ghosts?.x.length ?? 0}` : undefined}
+          data-step={step ? `${[...step.joined.main, ...step.joined.pile].reduce((n, j) => n + j, 0)}:${step.ghosts?.x.length ?? 0}` : undefined}
           data-movers={movers ?? undefined}>
           <Button size="compact-sm" radius="xl" color="accent" className="strata-play"
             leftSection={playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
