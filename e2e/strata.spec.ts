@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY } from './oracle';
+import { oracle, PAY, latestSnapshot } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
 import { parseColor, flatten, contrast } from './color';
@@ -582,3 +582,30 @@ for (const scheme of ['light', 'dark'] as const) {
     }
   });
 }
+
+/**
+ * The graph uses its room: the latest's tallest $1k column stands at least half the plot's height, on a 1x screen
+ * as on a 2x one. At 1x every row is a pixel and no gap shows the squares, and kept near square, four a row stood
+ * that column at 144px of a 490px plot.
+ */
+test('the tallest column stands at least half the plot, at 1x as at 2x', async ({ browser }) => {
+  const snap = await latestSnapshot();
+  const [{ peak }] = await oracle<{ peak: number }>(
+    `SELECT max(n) peak FROM (SELECT floor(pay / 1000) b, count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL
+       WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY 1) WHERE pay > 0 AND pay < 250000 GROUP BY 1)`,
+  );
+  const share: number[] = [];
+  for (const dpr of [1, 2]) {
+    const ctx = await browser.newContext({ viewport: { width: 1804, height: 1300 }, deviceScaleFactor: dpr });
+    const page = await ctx.newPage();
+    await home(page);
+    const f = field(page);
+    const [per, rowPitch, room] = await Promise.all(['data-per', 'data-row-pitch', 'data-room'].map(async (a) => Number(await f.getAttribute(a))));
+    const tall = Math.ceil(peak / per) * rowPitch;
+    share.push(tall / room);
+    expect(tall / room, `${dpr}x: the tallest of ${peak} stands ${Math.round(tall)}px of ${Math.round(room)}`).toBeGreaterThanOrEqual(0.5);
+    expect(tall, `${dpr}x: past the plot`).toBeLessThanOrEqual(room);
+    await ctx.close();
+  }
+  expect(Math.abs(share[0] - share[1]), 'a 1x screen draws it a different height from a 2x one').toBeLessThan(0.15);
+});

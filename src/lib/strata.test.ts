@@ -69,17 +69,25 @@ describe('strataGrid', () => {
   it('keeps three a row on a 1x screen, a pixel square and a pixel gap where there is room for both', () => {
     const g = strataGrid({ colW: 6.616, rowsH: 450, peak: 576, dpr: 1 });
     expect(g).toMatchObject({ per: 3, rowPitch: 2, gap: 1, sq: 1 });
-    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toMatchObject({ per: 3, rowPitch: 1, gap: 0 });
+    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 })).toMatchObject({ per: 2, rowPitch: 1, gap: 0 });
   });
-  it('between rows of one height, fills the room while the squares stay near square', () => {
+  it('between rows of one height, fills the room', () => {
     // The full page at 2x, room for the timeline's tallest column (742): two a row and three a row both give
     // 1.5px rows; two stands the column 556px tall, three 372px.
     const g = strataGrid({ colW: 5.3, rowsH: 600, peak: 742, dpr: 2 });
     expect(g).toMatchObject({ per: 2, rowPitch: 1.5 });
     expect(colHeight(742, g)).toBeGreaterThan(500);
     expect(colHeight(742, g)).toBeLessThanOrEqual(600);
-    // Not by squares more than twice as wide as tall: on the page at 1x, two a row would be 2.65px by 1px.
-    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 1 }).per).toBe(3);
+    // Taller rows first: at 2x in a 340px room, three a row's 1.5px rows over two a row's 1px.
+    expect(strataGrid({ colW: 5.3, rowsH: 340, peak: 572, dpr: 2 })).toMatchObject({ per: 3, rowPitch: 1.5 });
+  });
+  it('where no gap shows the squares (1px rows on a 1x screen), stands the tallest column as tall as the room allows', () => {
+    // A 1,800px window at 1x, the scale room for the timeline's tallest column (742): every grid has 1px rows. Kept
+    // near square, four a row stood the latest's tallest (576) at 144px of 490.
+    const g = strataGrid({ colW: 6.76, rowsH: 490, peak: 742, dpr: 1 });
+    expect(g).toMatchObject({ rowPitch: 1, gap: 0 });
+    expect(colHeight(576, g), 'the latest’s tallest, no taller than it was').toBeGreaterThanOrEqual(2 * 144);
+    expect(colHeight(742, g)).toBeLessThanOrEqual(490);
   });
   it('grows the squares full page', () => {
     const page = strataGrid({ colW: 5.2, rowsH: 320, peak: 572, dpr: 2 });

@@ -171,15 +171,14 @@ export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: nu
   return best ?? { per: 1, pitch: colW, rowPitch: 1, gap: 0, sq: 1, sqW: colW };
 
   // Between rows of one height (rows are whole device pixels, so several give the same): the one that fills the
-  // room — fewer a row, so the tallest column stands taller — while its squares stay near square, at most twice
-  // as wide as tall; else the nearest to 3a's three a row. Rows fitted to the timeline's tallest column (742 people
-  // where the latest has 576) tied two a row with three, and three drew the full page's tallest column at 248px of
-  // 600 where two draws it at 371.
+  // room, fewer a row so the tallest column stands taller; else the nearest to 3a's three a row. Rows fitted to
+  // the timeline's tallest column (742 people where the latest has 576) tied two a row with three, and three drew
+  // the full page's tallest column at 248px of 600 where two draws it at 371. Squares were also kept near square,
+  // at most twice as wide as tall; but every grid that rule set aside had rows a device pixel tall, where no gap
+  // shows a square's shape, and on a 1x screen it stood the latest's tallest column at 144px of a 490px plot.
   function evener(a: Grid, b: Grid): boolean {
-    const near = (g: Grid) => g.pitch <= 2 * g.rowPitch + 1e-9;
     const stands = (g: Grid) => g.rowPitch * Math.ceil(tall / g.per);
-    if (near(a) !== near(b)) return near(a);
-    if (near(a) && Math.abs(stands(a) - stands(b)) > 1e-9) return stands(a) > stands(b);
+    if (Math.abs(stands(a) - stands(b)) > 1e-9) return stands(a) > stands(b);
     return Math.abs(a.per - 3) < Math.abs(b.per - 3);
   }
 }

@@ -56,6 +56,8 @@ export interface StrataLayout {
   dpr: number;
   /** The baseline's y; the squares stand on it. */
   base: number;
+  /** How tall a column may stand: the baseline less the band the pins keep at the top. */
+  room: number;
   /** CSS px per $1k column, and the main plot's width: $0 at 0, $250k at `mainW`. */
   colW: number;
   mainW: number;
@@ -150,7 +152,7 @@ export function layoutStrata(
     pileTop = hasPile ? Math.ceil(m / PILE_PER_ROW) * grid.rowPitch : 0;
   }
   const peakY = base - Math.max(colHeight(peak, grid), pileTop);
-  return { W, H, dpr, base, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peakY, tail };
+  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peakY, tail };
 }
 
 /** The x of a pay on the main plot, CSS px. */
@@ -757,7 +759,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     <div
       ref={wrapRef} className={className} data-settled="true" data-per={grid.per} data-pitch={grid.pitch} data-row-pitch={grid.rowPitch}
       data-sq={grid.sq} data-sq-w={grid.sqW} data-gap={grid.gap}
-      data-col-w={layout.colW} data-pile-left={layout.pileLeft} data-base={layout.base} data-unrolled={layout.tail ? 'true' : undefined}
+      data-col-w={layout.colW} data-pile-left={layout.pileLeft} data-base={layout.base} data-room={layout.room} data-unrolled={layout.tail ? 'true' : undefined}
       data-lit={litPrint(dim?.main)} data-pile-lit={litPrint(dim?.pile)}
       data-marks={marks.main.length ? marks.main.map((i) => (i < n ? `${i}:${markAt(layout.mx[i] + grid.sqW / 2, dpr).toFixed(2)}:${markAt(layout.my[i] + grid.sq / 2, dpr).toFixed(2)}` : `${i}`)).join(' ') : undefined}
       data-pile-marks={marks.pile.length ? marks.pile.join(' ') : undefined}
