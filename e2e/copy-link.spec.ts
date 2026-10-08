@@ -97,9 +97,10 @@ test('a raise case reopens from its link — its people and its settings — wit
   await expect(b.page.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / })).toBeChecked();
   await expect(b.page.getByRole('switch', { name: 'Supervisory scope' })).toBeChecked();
   await expect(b.page.getByRole('textbox', { name: '+$ (optional)' }).first()).toHaveValue('$2,500');
-  // Its people are the compare set it is built from, all three.
-  await expect.poll(async () => JSON.parse(await b.page.evaluate(() => localStorage.getItem('uwsal.tray.v1') ?? '[]')).map((i: { id: string }) => i.id).sort())
-    .toEqual(people.map((p) => p.id).sort());
+  // Its people are the case's, all three; the reader's own compare set is left as it was.
+  await expect.poll(() => b.page.locator('.setup-panel').getByRole('button', { name: /^Remove / }).count()).toBe(people.length - 1);
+  for (const p of peers) await expect(b.page.locator('.setup-panel').getByRole('button', { name: new RegExp(`^Remove ${p.nm}$`, 'i') })).toBeVisible();
+  expect(await b.page.evaluate(() => localStorage.getItem('uwsal.tray.v1') ?? '[]')).toBe('[]');
   // The words stayed behind.
   await expect(b.page.getByText('Leads the on-call rota since March')).toHaveCount(0);
   await expect(b.page.getByRole('textbox', { name: 'Headline (optional)' })).toHaveValue('');

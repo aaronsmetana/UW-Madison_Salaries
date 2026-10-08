@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -276,5 +276,31 @@ describe('the ask: one choice', () => {
       expect(c.cohort).toBe(v === 'cohort:tenure' ? 'tenure' : 'all');
     }
     expect(applyAsk(start, 'own', 131_400.6).override).toBe(131_401);
+  });
+});
+
+describe('a case’s own people', () => {
+  const A = { key: 'a', name: 'Ann' }, B = { key: 'b', name: 'Bo' }, S = { key: 's', name: 'Sam' };
+
+  it('are those it has, else those it starts from, never its subject and each once', () => {
+    expect(casePeople('s', [A], [B])).toEqual([A]);
+    expect(casePeople('s', [], [B]), 'a case left with no one keeps no one').toEqual([]);
+    expect(casePeople('s', null, [S, A, B, A])).toEqual([A, B]);
+    expect(casePeople('s', [A, { key: '' }, null, { name: 'no key' }, { key: 'c' }], [])).toEqual([A, { key: 'c', name: '' }]);
+  });
+
+  it('are kept with the saved case; one saved before cases kept people has none chosen yet', () => {
+    expect(defaultConfig().peers).toBeNull();
+    expect(migrateConfig({ ...defaultConfig(), peers: [A, B] }).peers).toEqual([A, B]);
+    expect(migrateConfig({ ...defaultConfig(), peers: [] }).peers).toEqual([]);
+    const old: Record<string, unknown> = { ...defaultConfig() };
+    delete old.peers;
+    expect(migrateConfig(old).peers).toBeNull();
+  });
+
+  it('travel in the link’s people, not in its settings', () => {
+    const c = { ...defaultConfig(), peers: [A] };
+    expect(encodeCase(c)).toBe('');
+    expect(applyCase(c, encodeCase({ ...c, cohort: 'school' })).peers).toEqual([A]);
   });
 });

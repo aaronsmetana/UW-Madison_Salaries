@@ -82,6 +82,9 @@ export interface ReportConfig {
   factors: Record<FactorKey, FactorState>;
   customFactors: CustomFactor[]; // open-ended, user-typed justifications (label + optional +$)
   supervisees: string[]; // person_keys of named direct reports (report-local, not tray items)
+  /** Whom the case compares its subject with: the case's own, not the compare set's. Null until chosen (a new
+   *  case, or one saved before cases kept their people), when `casePeople` starts it. */
+  peers: CasePerson[] | null;
   supervisorTarget: boolean; // opt-in: raise base parity to ≥15% above the highest-paid supervisee
   marketFloorTarget: boolean; // opt-in: raise base parity to the SAG market-competitive floor (85% of band midpoint)
   override: number | ''; // manual final-salary override
@@ -100,6 +103,7 @@ export function defaultConfig(): ReportConfig {
     factors: Object.fromEntries(FACTOR_DEFS.map((f) => [f.key, { on: false, amount: '', note: '' }])) as Record<FactorKey, FactorState>,
     customFactors: [],
     supervisees: [],
+    peers: null,
     supervisorTarget: false,
     marketFloorTarget: false,
     override: '',
@@ -198,6 +202,7 @@ export function migrateConfig(saved: unknown): ReportConfig {
     customFactors: s.customFactors ?? [],
     sections: Array.isArray(s.sections) ? s.sections : base.sections,
     supervisees: Array.isArray(s.supervisees) ? s.supervisees : [],
+    peers: Array.isArray(s.peers) ? casePeople('', s.peers, []) : null,
     supervisorTarget: s.supervisorTarget ?? false,
     marketFloorTarget: s.marketFloorTarget ?? false,
     configVersion: CONFIG_VERSION,
@@ -215,6 +220,22 @@ export function migrateConfig(saved: unknown): ReportConfig {
     if (!merged.sections.includes('guidelineBasis')) merged.sections.push('guidelineBasis');
   }
   return merged;
+}
+
+export interface CasePerson { key: string; name: string }
+
+/** A case's people, never its subject and each once: those it has, else those it starts from (a link's, the
+ *  case it was switched from, or the compare set). */
+export function casePeople(subject: string, has: unknown[] | null, from: CasePerson[]): CasePerson[] {
+  const seen = new Set([subject]);
+  const out: CasePerson[] = [];
+  for (const p of has ?? from) {
+    const q = p as Partial<CasePerson> | null;
+    if (!q || typeof q.key !== 'string' || !q.key || seen.has(q.key)) continue;
+    seen.add(q.key);
+    out.push({ key: q.key, name: typeof q.name === 'string' ? q.name : '' });
+  }
+  return out;
 }
 
 // ── Pure stats helpers ──

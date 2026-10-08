@@ -33,7 +33,7 @@ import { ReportFlow } from '../components/report/ReportFlow';
 import {
   COHORT_MODES, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, caseStrength, buildTalkingPoints, askOptions, askValueOf,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
-  type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey,
+  casePeople, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { ICON } from '../lib/ui';
@@ -49,7 +49,7 @@ interface Subject {
   band_comp: string | null;
 }
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
-interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
+interface PersonRow { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
 
 const ALL_MODES = COHORT_MODES;
 
@@ -67,7 +67,7 @@ export default function Reports() {
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
-  const { items, add, remove, clear } = useTray();
+  const { items } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = fmtToday();
   const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
@@ -91,59 +91,52 @@ export default function Reports() {
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (copyResetTimer.current) clearTimeout(copyResetTimer.current); }, []);
 
-  // ── Comparison studio (tray) — subject resolution lives here (ahead of the person-mode URL-sync
-  // effect below) so that effect can also read/write ?subject= for the comparison studio. ──
+  // ── Raise case: its subject and the people it is compared with, which are the case's own (`config.peers`),
+  // not the compare set's. Resolved here, ahead of the URL-sync effect below, which writes both into the link. ──
   const persons = items.filter((i) => i.type === 'person');
-  const personIds = persons.map((p) => sqlStr(p.id)).join(',');
-
-  const [subjectKey, setSubjectKey] = useState<string | null>(() => params.get('subject'));
-  // A copied raise case reopens from its link: its people (`?sel=`, as Compare's) become the compare set it is
-  // built from — exactly those, as on Compare — and its settings (`?case=`, model `encodeCase`) go onto the
-  // case. Read once, as the page opens; until the set is in, the subject is left as the link says.
-  const shared = useRef({ sel: type === 'comparison' ? decodeSel(params.get('sel')) : null, caseParam: params.get('case'), subject: params.get('subject') });
-  const hydrating = useRef(!!shared.current.sel?.length);
-  // A link with only ?subject= (the person page's "Raise case", or one pasted) opens that person's case: they join
-  // the compare set as its subject. Left to the set, a viewer whose set did not hold them got its first person's
-  // case under that person's link.
-  const linkSubject = type === 'comparison' && !shared.current.sel?.length ? shared.current.subject : null;
-  const awaitingSubject = useRef(!!linkSubject);
-  const { data: linkSubjectRow } = useSql<{ fn: string | null; ln: string | null }>(
-    ['rpt-link-subject', linkSubject ?? ''],
-    `SELECT arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln FROM salaries
-     WHERE person_key = ${sqlStr(linkSubject ?? '')} HAVING count(*) > 0`,
-    !!linkSubject && !persons.some((p) => p.id === linkSubject),
+  // A copied raise case reopens from its link: its subject, its people (`?sel=`, as Compare's) and its settings
+  // (`?case=`, model `encodeCase`). Read once, as the page opens; the reader's own compare set is left alone.
+  const shared = useRef((() => {
+    const sel = type === 'comparison' ? decodeSel(params.get('sel'))?.filter((i) => i.type === 'person') ?? null : null;
+    return { sel, caseParam: params.get('case'), subject: params.get('subject') ?? sel?.[0]?.id ?? null, read: false };
+  })());
+  // With no subject named, a case starts on the compare set's first person.
+  const [subjectKey, setSubjectKey] = useState<string | null>(() => shared.current.subject ?? (type === 'comparison' ? persons[0]?.id ?? null : null));
+  useEffect(() => {
+    if (type === 'comparison' && !subjectKey && persons.length) setSubjectKey(persons[0].id);
+  }, [type, subjectKey, persons]);
+  // The people a new case starts from when another subject is chosen: the case it was switched from.
+  const seed = useRef<CasePerson[] | null>(null);
+  const peers = (config.peers ?? []).filter((p) => p.key !== subjectKey);
+  const caseIds = subjectKey ? [subjectKey, ...peers.map((p) => p.key)] : [];
+  const personIds = caseIds.map(sqlStr).join(',');
+  const { data: caseRows } = useSql<PersonRow>(
+    ['rpt-case', personIds, snap ?? '', metric],
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
+        any_value(school) school, ${personPay(metric)} pay,
+        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
+     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
+    type === 'comparison' && caseIds.length > 0 && !!snap
   );
-  useEffect(() => {
-    const r = linkSubjectRow?.[0];
-    if (linkSubject && r && !persons.some((p) => p.id === linkSubject)) add({ type: 'person', id: linkSubject, label: fullName(r.fn, r.ln) || linkSubject });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkSubjectRow]);
-  useEffect(() => {
-    const sel = shared.current.sel;
-    if (!sel?.length) return;
-    clear();
-    sel.forEach((i) => add(i));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    // Until every one of the link's people is in the set: the set this page opened on is not the case's.
-    if (hydrating.current) {
-      if (!shared.current.sel!.every((i) => persons.some((p) => p.id === i.id))) return;
-      hydrating.current = false;
-    }
-    // Until the link's subject is in it, or is no one the data knows.
-    if (awaitingSubject.current) {
-      if (!persons.some((p) => p.id === linkSubject) && !(linkSubjectRow && linkSubjectRow.length === 0)) return;
-      awaitingSubject.current = false;
-    }
-    // The first person in the compare set is the subject when none (or one no longer in the set) is
-    // chosen; the setup's Subject select chooses another. A subject from ?subject= (above) is left
-    // alone as long as it's still in the set.
-    if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) setSubjectKey(persons[0].id);
-    if (!persons.length && subjectKey) setSubjectKey(null);
-  }, [persons, subjectKey, linkSubjectRow, linkSubject]);
-  const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
+  const subjectRow = caseRows?.find((p) => p.person_key === subjectKey);
+  const knownName = [...(shared.current.sel ?? []), ...persons].find((p) => p.id === subjectKey)?.label;
+  // Someone not paid in the latest snapshot is named from the last one they were: never by their key.
+  const { data: pastName } = useSql<{ fn: string | null; ln: string | null }>(
+    ['rpt-subject-name', subjectKey ?? ''],
+    `SELECT arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln FROM salaries
+     WHERE person_key = ${sqlStr(subjectKey ?? '')} HAVING count(*) > 0`,
+    !!caseRows && !subjectRow && !knownName,
+  );
+  const subjectName = (subjectRow ? fullName(subjectRow.fn, subjectRow.ln) : '')
+    || knownName || (pastName?.[0] ? fullName(pastName[0].fn, pastName[0].ln) : '');
   const subjectFirst = subjectName.split(' ')[0] || 'They';
+  // The compare set's people the case does not have yet, which it can take in.
+  const fromSet = persons.filter((p) => !caseIds.includes(p.id)).map((p) => ({ key: p.id, name: p.label }));
+  const setPeers = (next: CasePerson[]) => setConfig((c) => ({ ...c, peers: casePeople(subjectKey ?? '', next, []) }));
+  const chooseSubject = (key: string | null) => {
+    if (subjectKey && key !== subjectKey) seed.current = [{ key: subjectKey, name: subjectName }, ...peers];
+    setSubjectKey(key);
+  };
 
   // ── Report on person ── hydrated once from ?person=/?pname= on mount (a finished report is
   // shareable), then kept in sync (with ?type=) the same way Compare syncs its ?sel= tray link.
@@ -182,7 +175,9 @@ export default function Reports() {
         if (type === 'comparison' && subjectKey) n.set('subject', subjectKey);
         else n.delete('subject');
         // And the case itself: its people and its settings, so the link reopens it (above).
-        const people = type === 'comparison' ? items.filter((i) => i.type === 'person') : [];
+        const people = type === 'comparison' && subjectKey
+          ? [{ type: 'person' as const, id: subjectKey, label: subjectName }, ...peers.map((p) => ({ type: 'person' as const, id: p.key, label: p.name }))]
+          : [];
         if (people.length) n.set('sel', encodeSel(people));
         else n.delete('sel');
         const cs = type === 'comparison' ? encodeCase(config) : '';
@@ -193,7 +188,7 @@ export default function Reports() {
       { replace: true }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, selPerson, subjectKey, items, config]);
+  }, [type, selPerson, subjectKey, subjectName, config]);
   const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
     ['rpt-person-hist', selPerson?.key ?? '', metric],
     `SELECT snapshot_label AS snapshot, title, job_code, school, ${expr} AS pay, fte
@@ -205,10 +200,19 @@ export default function Reports() {
   // several in-progress raise cases (or a page refresh) doesn't lose the work already done on each.
   useEffect(() => {
     let cfg = subjectKey ? migrateConfig(readPref<unknown>(`report.cfg.${subjectKey}`, null)) : defaultConfig();
-    if (shared.current.caseParam && subjectKey && subjectKey === shared.current.subject) {
-      cfg = applyCase(cfg, shared.current.caseParam);
-      shared.current.caseParam = null;
+    const link = shared.current;
+    if (subjectKey && subjectKey === link.subject && !link.read) {
+      link.read = true;
+      if (link.sel) cfg = { ...cfg, peers: casePeople(subjectKey, null, link.sel.map((i) => ({ key: i.id, name: i.label }))) };
+      cfg = applyCase(cfg, link.caseParam);
     }
+    // A new case (or one saved before cases kept their people) starts from the case it was switched from, or
+    // from the compare set when the set holds its subject; a set without them is about someone else.
+    if (subjectKey && cfg.peers == null) {
+      const from = seed.current ?? (persons.some((p) => p.id === subjectKey) ? persons.map((p) => ({ key: p.id, name: p.label })) : []);
+      cfg = { ...cfg, peers: casePeople(subjectKey, null, from) };
+    }
+    seed.current = null;
     setConfig(cfg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjectKey]);
@@ -301,15 +305,6 @@ export default function Reports() {
     cmpReady && grade != null
   );
 
-  const { data: trayPeople } = useSql<TrayPerson>(
-    ['rpt-tray', personIds, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
-        any_value(school) school, ${personPay(metric)} pay,
-        any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
-     FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
-    type === 'comparison' && persons.length > 0 && !!snap
-  );
-
   const { data: medHist } = useSql<{ date: string; med: number | null; pay: number | null }>(
     ['rpt-med-hist', jobCode ?? '', subjectKey ?? '', metric, compBasisWhere],
     `WITH per_snap AS (
@@ -332,7 +327,7 @@ export default function Reports() {
     ['rpt-peer-hist', personIds, metric],
     `SELECT person_key, any_value(snapshot_date) date, ${personPay(metric)} pay
      FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key, snapshot_id ORDER BY date`,
-    type === 'comparison' && persons.length > 0
+    type === 'comparison' && caseIds.length > 0
   );
 
   // Also carries tenure (not just top-10-by-pay) so the same rows can surface tenure-inversion
@@ -347,9 +342,9 @@ export default function Reports() {
   );
 
   // Direct reports named under the Supervisory-scope factor — resolved at the same snapshot, kept
-  // separate from `trayPeople` (they are not comparators; naming one here never affects cohort stats).
+  // separate from `caseRows` (they are not comparators; naming one here never affects cohort stats).
   const superviseeIds = config.supervisees.map((k) => sqlStr(k)).join(',');
-  const { data: superviseeRows } = useSql<TrayPerson>(
+  const { data: superviseeRows } = useSql<PersonRow>(
     ['rpt-supervisees', superviseeIds, snap ?? '', metric],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
         any_value(school) school, ${personPay(metric)} pay,
@@ -434,7 +429,7 @@ export default function Reports() {
   const cohortRowsFor = useMemo(() => {
     const peers = (peerListRows ?? []).filter((r) => r.person_key !== subjectKey);
     const grades = (gradeListRows ?? []).filter((r) => r.person_key !== subjectKey);
-    const curated = (trayPeople ?? []).filter((r) => r.person_key !== subjectKey).map((r) => ({ pay: r.pay, tenure: r.tenure }));
+    const curated = (caseRows ?? []).filter((r) => r.person_key !== subjectKey).map((r) => ({ pay: r.pay, tenure: r.tenure }));
     return (mode: CohortMode): CohortRow[] => {
       switch (mode) {
         case 'all': return peers.map((r) => ({ pay: r.pay, tenure: r.tenure }));
@@ -444,7 +439,7 @@ export default function Reports() {
         case 'curated': return curated;
       }
     };
-  }, [peerListRows, trayPeople, gradeListRows, school, tenureYears, config.tenureBand, subjectKey]);
+  }, [peerListRows, caseRows, gradeListRows, school, tenureYears, config.tenureBand, subjectKey]);
 
   const statsByMode = useMemo(() => {
     const out = {} as Record<CohortMode, ReturnType<typeof cohortStats>>;
@@ -541,8 +536,8 @@ export default function Reports() {
 
   // Comparator rows for the matrix (+ equity anomaly)
   const otherPeers = useMemo(
-    () => (trayPeople ?? []).filter((p) => p.person_key !== subjectKey).sort((a, b) => b.pay - a.pay),
-    [trayPeople, subjectKey]
+    () => (caseRows ?? []).filter((p) => p.person_key !== subjectKey).sort((a, b) => b.pay - a.pay),
+    [caseRows, subjectKey]
   );
   const anomalyKey = useMemo(() => {
     if (subjectPay == null || tenureYears == null) return null;
@@ -665,7 +660,7 @@ export default function Reports() {
   const showTenure = rows.some((r) => r.tenure != null);
 
   // ── Target + receipt math ──
-  const targetPerson = (trayPeople ?? []).find((p) => p.person_key === config.targetKey) ?? null;
+  const targetPerson = (caseRows ?? []).find((p) => p.person_key === config.targetKey) ?? null;
   const targetPay = targetPerson?.pay ?? null;
   const baseParityCore = targetPay ?? stats.expMed ?? med ?? null;
   const medianKind = stats.expMed != null ? 'tenure-adjusted median' : 'median';
@@ -952,15 +947,15 @@ export default function Reports() {
   }, [config.sections, config.supervisees.length, proofs, standing, stats.invCount, supervisoryCase, tenureRegression, band, grade, raiseCycle, longevity, guidelineCompression, exempt, marketPosition]);
 
   // ── Setup-pane data ──
-  const comparators: SetupComparator[] = (trayPeople ?? []).map((p) => ({
+  const comparators: SetupComparator[] = (caseRows ?? []).map((p) => ({
     key: p.person_key, name: fullName(p.fn, p.ln), title: p.title ?? null, school: p.school ?? null,
     tenure: p.tenure ?? null, pay: p.pay, isSubject: p.person_key === subjectKey,
   })).sort((a, b) => (a.isSubject ? -1 : b.isSubject ? 1 : b.pay - a.pay));
-  // Fall back to tray labels before trayPeople resolves, so the subject is always selectable.
-  const comparatorOptions = comparators.length ? comparators : persons.map((p) => ({ key: p.id, name: p.label, title: null, school: null, tenure: null, pay: null, isSubject: p.id === subjectKey }));
-  const trayIds = new Set(persons.map((p) => p.id));
-  const suggestions: SuggestPerson[] = persons.length >= 5 ? [] : (suggestRows ?? [])
-    .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey)
+  // Fall back to the case's own names before its rows resolve, so the subject is always selectable.
+  const comparatorOptions = comparators.length ? comparators
+    : [{ key: subjectKey ?? '', name: subjectName }, ...peers].filter((p) => p.key).map((p) => ({ key: p.key, name: p.name, title: null, school: null, tenure: null, pay: null, isSubject: p.key === subjectKey }));
+  const suggestions: SuggestPerson[] = caseIds.length >= 5 ? [] : (suggestRows ?? [])
+    .filter((s) => !caseIds.includes(s.person_key))
     .slice(0, 3)
     .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
   // Tenure-inversion suggestions — peers with LESS UW tenure who are already paid MORE than the
@@ -968,8 +963,8 @@ export default function Reports() {
   // distinct from `suggestions` above (which is just top earners in the title).
   const minTenure = tenureYears;
   const minPay = subjectPay;
-  const inversionSuggestions: SuggestPerson[] = persons.length >= 5 || minPay == null || minTenure == null ? [] : (suggestRows ?? [])
-    .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey && s.tenure != null && s.tenure < minTenure && s.pay > minPay)
+  const inversionSuggestions: SuggestPerson[] = caseIds.length >= 5 || minPay == null || minTenure == null ? [] : (suggestRows ?? [])
+    .filter((s) => !caseIds.includes(s.person_key) && s.tenure != null && s.tenure < minTenure && s.pay > minPay)
     .sort((a, b) => b.pay - a.pay)
     .slice(0, 3)
     .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
@@ -1016,7 +1011,7 @@ export default function Reports() {
     }
   }
 
-  const loading = cmpReady && (!subjRows || !trayPeople || (!!jobCode && !peerListRows));
+  const loading = cmpReady && (!subjRows || !caseRows || (!!jobCode && !peerListRows));
 
   // Over-ask credibility guard: warn (private, setup-pane only) when the recommended figure exceeds
   // this cohort's 75th percentile — an ask that high risks reading as unanchored to the comparators shown.
@@ -1030,12 +1025,13 @@ export default function Reports() {
         onChange={setConfig}
         comparators={comparatorOptions}
         subjectKey={subjectKey}
-        onSubject={setSubjectKey}
+        onSubject={chooseSubject}
+        fromSet={fromSet}
         basePay={subjectPay}
         suggestions={suggestions}
         inversionSuggestions={inversionSuggestions}
-        onAddPerson={(p) => add({ type: 'person', id: p.key, label: p.name })}
-        onRemovePerson={(key) => remove(key)}
+        onAddPeople={(ps) => setPeers([...peers, ...ps])}
+        onRemovePerson={(key) => setPeers(peers.filter((p) => p.key !== key))}
         asks={asks}
         askValue={askValue}
         caseStrength={strength}
@@ -1088,7 +1084,7 @@ export default function Reports() {
                 // Sentence case, as every other control in the app; the wide labels were Title Case.
                 data={[
                   { value: 'person', label: 'One person' },
-                  { value: 'comparison', label: isNarrow ? 'Raise case: set' : 'Raise case: the compare set' },
+                  { value: 'comparison', label: 'Raise case' },
                 ]}
               />
               <PayMeasure />
@@ -1165,11 +1161,11 @@ export default function Reports() {
       )}
 
       {type === 'comparison' && (
-        persons.length === 0 ? (
+        !subjectKey ? (
           <Card withBorder padding="xl" className="no-print">
             <Text fw={600} mb={4}>Start your raise case</Text>
             <Text c="dimmed" size="sm" mb="md">Add the subject, then the peers to compare them with.</Text>
-            <SearchBox kinds={['people']} placeholder="Search yourself by name to begin…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
+            <SearchBox kinds={['people']} placeholder="Search yourself by name to begin…" onPick={(h) => chooseSubject(h.person_key)} />
           </Card>
         ) : isDesktop ? (
           <div style={{ display: 'flex', gap: 'var(--mantine-spacing-lg)', alignItems: 'flex-start' }}>

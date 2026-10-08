@@ -68,6 +68,7 @@ for (const width of [1280, 375]) {
     await expect(types).toHaveCount(2, { timeout: 60_000 });
     const labels = await types.allTextContents();
     expect(labels.filter((l) => !/^[A-Z][^A-Z]*$/.test(l)), 'a report type in Title Case').toEqual([]);
-    expect(labels[1]).toMatch(/^Raise case: /);
+    // A raise case's people are its own, so its name no longer says whose set it is built from.
+    expect(labels).toEqual(['One person', 'Raise case']);
   });
 }

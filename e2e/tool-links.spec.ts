@@ -20,7 +20,8 @@ test('a person links to their report and to a raise case with them as its subjec
   await page.goBack();
   await links(page).getByRole('link', { name: 'Raise case →' }).click();
   await expect(page).toHaveURL(/\/reports\?.*type=comparison/);
-  // The case is for them: put in the compare set it is built from, and picked as its subject.
+  // The case is for them, as its subject; the compare set is left as it was.
+  expect(await page.evaluate(() => localStorage.getItem('uwsal.tray.v1') ?? '[]')).toBe('[]');
   await expect(page.getByRole('textbox', { name: 'Pick the person the case is for' })).toHaveValue(name);
   await expect(page.getByText(new RegExp(`^Prepared for ${name}`))).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`subject=${encodeURIComponent(KEY).replace(/[|]/g, '\\$&')}`));

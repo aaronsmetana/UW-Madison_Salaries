@@ -19,7 +19,6 @@ import { useSql, useActiveSnapshotId, useGrades, useSummary } from '../lib/hooks
 import { sqlStr } from '../lib/duckdb';
 import { personPay, GRADED_APPT, gradedCols } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
-import { useTray } from '../state/tray';
 import { computeScreeningResults, type ScreeningResult } from '../lib/screening';
 import { downloadCSV } from '../lib/csv';
 
@@ -41,7 +40,6 @@ const BELOW_MIN = 'below-min';
 
 export default function Screening() {
   const nav = useNavigate();
-  const { add } = useTray();
   const snap = useActiveSnapshotId();
   const { data: grades } = useGrades();
   const { data: summary } = useSummary();
@@ -238,10 +236,6 @@ export default function Screening() {
     setParams((prev) => { const n = new URLSearchParams(prev); n.delete('flag'); return n; }, { replace: true });
 
   const draftReport = (r: ScreeningResult) => {
-    add({ type: 'person', id: r.key, label: r.name });
-    // Pass ?subject= so Reports opens ON this person even when the tray already holds others —
-    // Reports hydrates its subject from ?subject= on mount (and keeps it while it's a valid tray
-    // member, which the add above guarantees). Without it, the tray's existing primary would win.
     nav(`/reports?type=comparison&subject=${encodeURIComponent(r.key)}`);
   };
 

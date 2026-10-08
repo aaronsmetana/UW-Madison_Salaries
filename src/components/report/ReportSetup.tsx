@@ -23,7 +23,7 @@ export interface SuggestPerson { key: string; name: string; pay: number }
 const SectionLabel = ({ children }: { children: ReactNode }) => <Eyebrow>{children}</Eyebrow>;
 
 export function ReportSetup({
-  config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
+  config, onChange, comparators, subjectKey, onSubject, fromSet, basePay, suggestions, inversionSuggestions, onAddPeople, onRemovePerson,
   asks, askValue, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, readout, onReset, onHover,
   supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, performanceGuide,
 }: {
@@ -32,10 +32,12 @@ export function ReportSetup({
   comparators: SetupComparator[];
   subjectKey: string | null;
   onSubject: (key: string | null) => void;
+  /** The compare set's people this case does not have: a subject to choose, or people to take in. */
+  fromSet: { key: string; name: string }[];
   basePay: number | null;
   suggestions: SuggestPerson[];
   inversionSuggestions: SuggestPerson[];
-  onAddPerson: (p: { key: string; name: string }) => void;
+  onAddPeople: (ps: { key: string; name: string }[]) => void;
   onRemovePerson: (key: string) => void;
   /** What the case may ask for, each with its figure, and which it asks for (`askOptions`, `askValueOf`). */
   asks: AskOption[];
@@ -90,7 +92,10 @@ export function ReportSetup({
           {...dropdownProps('md')}
           mt={6}
           placeholder="Pick the person the case is for"
-          data={comparators.map((c) => ({ value: c.key, label: c.name }))}
+          data={fromSet.length
+            ? [{ group: 'This case', items: comparators.map((c) => ({ value: c.key, label: c.name })) },
+              { group: 'Compare set', items: fromSet.map((c) => ({ value: c.key, label: c.name })) }]
+            : comparators.map((c) => ({ value: c.key, label: c.name }))}
           value={subjectKey}
           onChange={onSubject}
           allowDeselect={false}
@@ -160,7 +165,7 @@ export function ReportSetup({
         />
       </Card>
 
-      {/* Comparators — the subject is the anchor above; this tray holds only the other side of the scale. */}
+      {/* Comparators — the subject is the anchor above; this list holds only the other side of the scale. */}
       <Card withBorder padding="md">
         <SectionLabel>Compared with</SectionLabel>
         <Box mt={8} style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -191,16 +196,21 @@ export function ReportSetup({
           ))}
           {/* Docked input — typing here injects a comparator into the list above. */}
           <Box px={8} py={6}>
-            <SearchBox kinds={['people']} placeholder="Add a comparator by name…" onPick={(h) => onAddPerson({ key: h.person_key, name: h.name })} />
+            <SearchBox kinds={['people']} placeholder="Add a comparator by name…" onPick={(h) => onAddPeople([{ key: h.person_key, name: h.name }])} />
           </Box>
         </Box>
+        {fromSet.length > 0 && (
+          <Button mt="xs" size="xs" variant="subtle" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPeople(fromSet)}>
+            Add {fromSet.length === 1 ? fromSet[0].name : `${fromSet.length} people`} from the compare set
+          </Button>
+        )}
 
         {suggestions.length > 0 && (
           <Box mt="sm">
             <Text size="xs" c="dimmed" mb={4}>Suggested benchmarks (top earners in this title):</Text>
             <Group gap={6}>
               {suggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="accent" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPeople([{ key: s.key, name: s.name }])}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}
@@ -213,7 +223,7 @@ export function ReportSetup({
             <Text size="xs" c="dimmed" mb={4}>Strong comparators — less UW tenure, paid more:</Text>
             <Group gap={6}>
               {inversionSuggestions.map((s) => (
-                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPerson({ key: s.key, name: s.name })}>
+                <Button key={s.key} size="compact-xs" variant="light" color="orange" leftSection={<IconPlus size={ICON.compact} />} onClick={() => onAddPeople([{ key: s.key, name: s.name }])}>
                   {s.name} ({usd(s.pay)})
                 </Button>
               ))}

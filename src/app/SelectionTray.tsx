@@ -8,6 +8,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useTray, type TrayItem } from '../state/tray';
 import { ICON } from '../lib/ui';
+import { encodeSel } from '../lib/share';
 import { Z } from '../lib/layers';
 
 const TYPE_META: Record<TrayItem['type'], { icon: typeof IconUser; one: string; many: string; href: (id: string) => string }> = {
@@ -177,7 +178,7 @@ export function SelectionTray() {
             <Button
               size="xs"
               component={Link}
-              to="/reports?mode=compare"
+              to={`/reports?type=comparison&sel=${encodeURIComponent(encodeSel(items.filter((i) => i.type === 'person')))}`}
               className="compare-bar-case"
               data-disabled={!hasPerson || undefined}
               aria-disabled={!hasPerson || undefined}

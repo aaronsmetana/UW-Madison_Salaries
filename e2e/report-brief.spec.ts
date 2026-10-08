@@ -1,4 +1,4 @@
-import { test, expect, type Browser } from '@playwright/test';
+import { test, expect, type Browser, type Page } from '@playwright/test';
 import { oracle, latestSnapshot, PAY } from './oracle';
 
 /**
@@ -241,4 +241,57 @@ test('an ask at or below current pay reads as no raise, in the setup and on a ph
     }
     await ctx.close();
   }
+});
+
+test('a raise case keeps its own people: the compare set starts a case about one of its people, and no case changes it', async ({ browser }) => {
+  test.setTimeout(240_000);
+  const snap = await latestSnapshot();
+  const [p1, p2] = await oracle<{ k: string; nm: string }>(
+    `SELECT person_key k, any_value(first_name || ' ' || last_name) nm FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0
+       AND job_code = (SELECT any_value(job_code) FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}') AND person_key <> '${AARON}'
+     GROUP BY 1 ORDER BY 1 LIMIT 2`,
+  );
+  const traySet = (p: Page) => p.evaluate(() => JSON.parse(localStorage.getItem('uwsal.tray.v1') ?? '[]').map((i: { id: string }) => i.id).sort());
+  const listed = (p: Page) => p.locator('.setup-panel').getByRole('button', { name: /^Remove / })
+    .evaluateAll((bs) => bs.map((b) => (b.getAttribute('aria-label') ?? '').replace(/^Remove /, '').toLowerCase()).sort());
+  const names = (...ps: { nm: string }[]) => ps.map((p) => p.nm.toLowerCase()).sort();
+
+  // A compare set that holds the subject starts their case with its others.
+  const set = [{ id: AARON, label: 'Aaron Smetana' }, { id: p1.k, label: p1.nm }];
+  const { ctx, page } = await caseFor(browser, AARON, set);
+  const setup = page.locator('.setup-panel');
+  await expect.poll(() => listed(page), { timeout: 60_000 }).toEqual(names(p1));
+
+  // Whom the case adds or takes out is the case's: the compare set is as it was.
+  await setup.getByPlaceholder('Add a comparator by name…').fill(p2.nm);
+  await page.getByRole('option').filter({ hasText: new RegExp(p2.nm, 'i') }).first().click();
+  await expect.poll(() => listed(page)).toEqual(names(p1, p2));
+  await setup.getByRole('button', { name: new RegExp(`^Remove ${p1.nm}$`, 'i') }).click();
+  await expect.poll(() => listed(page)).toEqual(names(p2));
+  expect(await traySet(page), 'the case changed the compare set').toEqual([AARON, p1.k].sort());
+
+  // The case keeps its people from one visit to the next (opened afresh, not from its link), and can take in
+  // the set's others.
+  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+  await expect.poll(() => listed(page), { timeout: 60_000 }).toEqual(names(p2));
+  await setup.getByRole('button', { name: new RegExp(`^Add ${p1.nm} from the compare set$`, 'i') }).click();
+  await expect.poll(() => listed(page)).toEqual(names(p1, p2));
+  await expect(setup.getByRole('button', { name: /from the compare set$/ })).toHaveCount(0);
+  const link = page.url();
+  expect(link).toContain('sel=');
+  await ctx.close();
+
+  // Its link opens the same people for a reader with a set of their own, which stays theirs.
+  const b = await caseFor(browser, HALZEN, [{ id: HALZEN, label: 'Francis Halzen' }]);
+  await b.page.goto(link);
+  await expect(b.page.locator('.report-brief')).toContainText('Prepared for Aaron Smetana', { timeout: 60_000 });
+  await expect.poll(() => listed(b.page), { timeout: 60_000 }).toEqual(names(p1, p2));
+  expect(await traySet(b.page), 'the link replaced the reader’s compare set').toEqual([HALZEN]);
+  await b.ctx.close();
+
+  // A set without the subject is about someone else: their case starts with no one, and can take the set in.
+  const c = await caseFor(browser, HALZEN, set);
+  await expect(c.page.locator('.setup-panel')).toContainText('No comparators yet', { timeout: 60_000 });
+  await expect(c.page.locator('.setup-panel').getByRole('button', { name: 'Add 2 people from the compare set' })).toBeVisible();
+  await c.ctx.close();
 });

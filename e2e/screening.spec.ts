@@ -24,6 +24,8 @@ test('screening a school renders ranked rows and drafts a report', async ({ page
   await expect(page.locator('#report-sec-notes').or(page.getByText('at or above'))).toBeVisible({ timeout: 60_000 });
   // The brief's "Prepared for" header must name the person we drafted.
   await expect(page.getByText(`Prepared for ${draftedName}`)).toBeVisible({ timeout: 10_000 });
+  // The case is theirs; the compare set is left as it was.
+  expect(await page.evaluate(() => localStorage.getItem('uwsal.tray.v1') ?? '[]')).toBe('[]');
 });
 
 // A screen is the most link-worthy artifact this app produces — it is what you hand to a steward —

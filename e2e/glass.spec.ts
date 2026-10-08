@@ -458,7 +458,8 @@ test.describe('the compare bar', () => {
     await expect(bar.getByRole('button', { name: /subject|primary|star/i })).toHaveCount(0);
     await expect(bar.getByRole('button', { name: 'Remove Aaron Smetana' })).toBeVisible();
     const kase = bar.getByRole('link', { name: 'Raise case' });
-    await expect(kase).toHaveAttribute('href', /\/reports\?mode=compare$/);
+    // The case starts from these people, in its link; the set itself is never the case's to change.
+    await expect(kase).toHaveAttribute('href', /\/reports\?type=comparison&sel=p%2C/);
     await expect(bar.getByRole('link', { name: 'Compare' })).not.toHaveAttribute('aria-disabled', 'true');
 
     await bar.getByRole('button', { name: 'Clear' }).click();
