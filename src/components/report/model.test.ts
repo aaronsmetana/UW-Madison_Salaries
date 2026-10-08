@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, counterPoints, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, counterPoints, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, FACTOR_GROUPS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -407,5 +407,27 @@ describe('points a reviewer may raise', () => {
   it('are a section the requester turns on, off in a new case and in one saved before it existed', () => {
     expect(defaultConfig().sections).not.toContain('counter');
     expect(migrateConfig({ configVersion: 2, sections: ['highlights', 'peers'] }).sections).not.toContain('counter');
+  });
+});
+
+describe('the factor catalog', () => {
+  it('has a place in the menu, a label and an example for every factor, each once', () => {
+    expect(new Set(FACTOR_DEFS.map((f) => f.key)).size).toBe(FACTOR_DEFS.length);
+    for (const f of FACTOR_DEFS) {
+      expect(FACTOR_GROUPS as readonly string[], f.key).toContain(f.group);
+      expect(f.placeholder, f.key).toMatch(/^e\.g\. /);
+    }
+    for (const g of FACTOR_GROUPS) expect(FACTOR_DEFS.some((f) => f.group === g), g).toBe(true);
+    // Factors any role can claim, beside the research and systems ones.
+    for (const k of ['licensure', 'language', 'oncall', 'training', 'budget', 'recognition', 'hardToFill']) expect(FACTOR_DEFS.map((f) => f.key)).toContain(k);
+  });
+
+  it('gives a case saved before a factor existed that factor, off; and carries a new one in a link', () => {
+    const old = { ...defaultConfig(), factors: { supervision: { on: true, amount: 2500, note: 'team of 4' } } };
+    const c = migrateConfig(old);
+    expect(c.factors.supervision.on).toBe(true);
+    expect(c.factors.licensure).toEqual({ on: false, amount: '', note: '' });
+    const on = { ...defaultConfig(), factors: { ...defaultConfig().factors, oncall: { on: true, amount: 1800, note: '' } } };
+    expect(applyCase(defaultConfig(), encodeCase(on)).factors.oncall).toEqual({ on: true, amount: 1800, note: '' });
   });
 });

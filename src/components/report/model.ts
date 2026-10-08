@@ -29,18 +29,28 @@ export function cohortDocLabel(mode: CohortMode, ctx: { school?: string | null; 
 }
 
 // ── Justification factors (each gets an optional +$ add-on) ──
+// Grouped as the setup's menu lists them; in this order wherever the active ones are listed.
+export const FACTOR_GROUPS = ['Responsibilities', 'Qualifications', 'Research & systems', 'Performance & market'] as const;
 export const FACTOR_DEFS = [
-  { key: 'supervision', label: 'Supervisory scope', placeholder: 'e.g. 4 direct reports / team of 8' },
-  { key: 'credentials', label: 'Certifications & education', placeholder: 'e.g. AWS Solutions Architect; M.S. 2024' },
-  { key: 'scope', label: 'Expanded scope / out-of-class', placeholder: 'e.g. acting lead; duties above grade' },
-  { key: 'market', label: 'Market & retention', placeholder: 'e.g. competing offer; actively recruited' },
-  { key: 'performance', label: 'Performance & impact', placeholder: 'e.g. "Exceeds"; secured $1.2M grant' },
-  { key: 'skills', label: 'Specialized skills & experience', placeholder: 'e.g. 6 years of relevant prior experience' },
+  { key: 'supervision', group: 'Responsibilities', label: 'Supervisory scope', placeholder: 'e.g. 4 direct reports / team of 8' },
+  { key: 'credentials', group: 'Qualifications', label: 'Certifications & education', placeholder: 'e.g. AWS Solutions Architect; M.S. 2024' },
+  { key: 'scope', group: 'Responsibilities', label: 'Expanded scope / out-of-class', placeholder: 'e.g. acting lead; duties above grade' },
+  { key: 'market', group: 'Performance & market', label: 'Market & retention', placeholder: 'e.g. competing offer; actively recruited' },
+  { key: 'performance', group: 'Performance & market', label: 'Performance & impact', placeholder: 'e.g. "Exceeds"; secured $1.2M grant' },
+  { key: 'skills', group: 'Qualifications', label: 'Specialized skills & experience', placeholder: 'e.g. 6 years of relevant prior experience' },
   // Research-university leverage (School of Medicine & Public Health and similar units)
-  { key: 'grants', label: 'Sponsored research / grant infrastructure', placeholder: 'e.g. maintains data-compliance systems for a $4.2M NIH R01' },
-  { key: 'spof', label: 'Sole system owner (single point of failure)', placeholder: 'e.g. only admin of the Epic interface — no internal backup' },
-  { key: 'escalation', label: 'De-facto onboarding / Tier-III escalation', placeholder: 'e.g. senior code review + escalation for 6 Grade-25 staff' },
-  { key: 'vendor', label: 'External vendor management', placeholder: 'e.g. owns the AWS / Microsoft / Epic technical contract' },
+  { key: 'grants', group: 'Research & systems', label: 'Sponsored research / grant infrastructure', placeholder: 'e.g. maintains data-compliance systems for a $4.2M NIH R01' },
+  { key: 'spof', group: 'Research & systems', label: 'Sole system owner (single point of failure)', placeholder: 'e.g. only admin of the Epic interface — no internal backup' },
+  { key: 'escalation', group: 'Responsibilities', label: 'De-facto onboarding / Tier-III escalation', placeholder: 'e.g. senior code review + escalation for 6 Grade-25 staff' },
+  { key: 'vendor', group: 'Responsibilities', label: 'External vendor management', placeholder: 'e.g. owns the AWS / Microsoft / Epic technical contract' },
+  // Any role's: what the guideline's "knowledge, skills, experience, and education/certification/licenses" covers.
+  { key: 'licensure', group: 'Qualifications', label: 'Licensure or registration', placeholder: 'e.g. RN; professional engineer; CPA' },
+  { key: 'language', group: 'Qualifications', label: 'Languages used in the job', placeholder: 'e.g. Spanish with patients, every day' },
+  { key: 'oncall', group: 'Responsibilities', label: 'On-call or after-hours duties', placeholder: 'e.g. on call one week in four' },
+  { key: 'training', group: 'Responsibilities', label: 'Trains or mentors others', placeholder: 'e.g. trains every new hire in the unit' },
+  { key: 'budget', group: 'Responsibilities', label: 'Budget or revenue responsibility', placeholder: 'e.g. manages a $2M operating budget' },
+  { key: 'recognition', group: 'Performance & market', label: 'Awards and recognition', placeholder: 'e.g. campus staff award, 2025' },
+  { key: 'hardToFill', group: 'Performance & market', label: 'Hard-to-fill role', placeholder: 'e.g. two searches for this position failed' },
 ] as const;
 export type FactorKey = (typeof FACTOR_DEFS)[number]['key'];
 

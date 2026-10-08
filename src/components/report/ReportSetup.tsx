@@ -13,7 +13,7 @@ import { dropdownProps } from '../../lib/selectProps';
 import { ICON } from '../../lib/ui';
 import { Z } from '../../lib/layers';
 import {
-  FACTOR_DEFS, SECTION_DEFS, newCustomFactor, applyAsk, type ReportConfig, type FactorKey,
+  FACTOR_DEFS, FACTOR_GROUPS, SECTION_DEFS, newCustomFactor, applyAsk, type ReportConfig, type FactorKey,
   type CaseStrength, type StrengthKey, type SupervisoryCase, type AskOption, type AskValue,
 } from './model';
 
@@ -437,9 +437,13 @@ export function ReportSetup({
             </Button>
           </Menu.Target>
           <Menu.Dropdown>
-            {FACTOR_DEFS.filter((f) => !config.factors[f.key].on).map((f) => (
-              <Menu.Item key={f.key} onClick={() => setFactor(f.key, { on: true })}>{f.label}</Menu.Item>
-            ))}
+            {FACTOR_GROUPS.map((g) => {
+              const left = FACTOR_DEFS.filter((f) => f.group === g && !config.factors[f.key].on);
+              return left.length > 0 && [
+                <Menu.Label key={g}>{g}</Menu.Label>,
+                ...left.map((f) => <Menu.Item key={f.key} onClick={() => setFactor(f.key, { on: true })}>{f.label}</Menu.Item>),
+              ];
+            })}
             <Menu.Divider />
             <Menu.Item onClick={() => set({ customFactors: [...config.customFactors, newCustomFactor()] })}>
               Custom factor…
