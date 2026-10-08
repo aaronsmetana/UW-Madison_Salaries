@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ShowAll, useShowAll } from './ShowAll';
 import { Accordion, Anchor, Box, Card, Group, List, Paper, ScrollArea, SimpleGrid, Skeleton, Table, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { CardTitle } from './CardTitle';
@@ -163,6 +164,9 @@ export function SalaryRanges() {
   const rows = (grades ?? []).filter((g) => g.basis === 'annual_12mo').sort((a, b) => a.grade - b.grade);
   const ranges = rows.filter((g): g is typeof g & { max: number } => isRange(g));
   const floors = rows.filter((g) => !isRange(g));
+  // The first rows of each, the rest on "Show all" (G11): the page's one scroll, not two boxes inside it.
+  const rangePage = useShowAll(ranges, ranges.length);
+  const floorPage = useShowAll(floors, floors.length);
   const none = ref && ref.coverage != null && ref.floor_coverage != null ? Math.max(0, 1 - ref.coverage - ref.floor_coverage) : null;
   return (
     <Card id="salary-ranges" className="salary-ranges">
@@ -207,13 +211,13 @@ export function SalaryRanges() {
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg" mt="md">
         <Box>
           <Text size="sm" fw={600} mb={6}>Grades with a range ({num(ranges.length)})</Text>
-          <ScrollArea.Autosize mah={420} type="auto" offsetScrollbars="present" viewportProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Grades with a range' }}>
+          <ScrollArea.Autosize type="auto" offsetScrollbars="present" viewportProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Grades with a range' }}>
             <Table striped={false} verticalSpacing={6} className="salary-ranges-table" data-kind="range">
               <Table.Thead>
                 <Table.Tr><Table.Th>Grade</Table.Th><Table.Th ta="right">Minimum</Table.Th><Table.Th ta="right">Midpoint</Table.Th><Table.Th ta="right">Maximum</Table.Th></Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {ranges.map((g) => (
+                {rangePage.shown.map((g) => (
                   <Table.Tr key={g.grade} data-grade={g.grade}>
                     <Table.Td>{g.grade}</Table.Td>
                     <Table.Td ta="right">{usd(g.min)}</Table.Td>
@@ -224,16 +228,17 @@ export function SalaryRanges() {
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
+          <ShowAll shown={rangePage.shown.length} total={rangePage.total} onShowAll={rangePage.showAll} />
         </Box>
         <Box>
           <Text size="sm" fw={600} mb={6}>Grades with a minimum only ({num(floors.length)})</Text>
-          <ScrollArea.Autosize mah={420} type="auto" offsetScrollbars="present" viewportProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Grades with a minimum only' }}>
+          <ScrollArea.Autosize type="auto" offsetScrollbars="present" viewportProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Grades with a minimum only' }}>
             <Table striped={false} verticalSpacing={6} className="salary-ranges-table" data-kind="minimum">
               <Table.Thead>
                 <Table.Tr><Table.Th>Grade</Table.Th><Table.Th ta="right">Minimum</Table.Th></Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {floors.map((g) => (
+                {floorPage.shown.map((g) => (
                   <Table.Tr key={g.grade} data-grade={g.grade}>
                     <Table.Td>{g.grade}</Table.Td>
                     <Table.Td ta="right">{usd(g.min)}</Table.Td>
@@ -242,6 +247,7 @@ export function SalaryRanges() {
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
+          <ShowAll shown={floorPage.shown.length} total={floorPage.total} onShowAll={floorPage.showAll} />
         </Box>
       </SimpleGrid>
       <Text size="xs" c="dimmed" mt="sm">

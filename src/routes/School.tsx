@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom';
+import { ShowAll, useShowAll } from '../components/ShowAll';
 import { useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Card, SimpleGrid, Table, Anchor, Loader, Alert, Tabs,
@@ -215,6 +216,8 @@ export default function School() {
     });
     return sorted;
   }, [depts, deptSort]);
+  // The first rows, the rest on "Show all" (G11): the page's one scroll, not a box inside it.
+  const deptPage = useShowAll(deptView, `${deptSort.key}|${deptSort.dir}`);
   const maxDeptHc = useMemo(() => Math.max(1, ...(depts ?? []).map((d) => d.headcount)), [depts]);
   const exportDeptsCsv = () =>
     downloadCSV(
@@ -477,8 +480,9 @@ export default function School() {
               // clipped out of reach either. Without this the Card's `overflow: hidden` swallowed
               // 219px at phone width: Headcount, Median and Total payroll, i.e. every number in the
               // table, with no scrollbar to reach them. Matches the five other wide tables in the app.
-              <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-                <Table stickyHeader miw={560}>
+              <>
+              <ScrollArea.Autosize type="auto" offsetScrollbars="present">
+                <Table miw={560}>
                 <Table.Thead>
                   <Table.Tr>
                     <SortableTh sortKey="department" label="Department" sort={deptSort} onSort={setDeptSort} />
@@ -488,7 +492,7 @@ export default function School() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {deptView.map((d) => (
+                  {deptPage.shown.map((d) => (
                     <Table.Tr
                       key={d.department}
                       className="peer-row"
@@ -511,6 +515,8 @@ export default function School() {
                 </Table.Tbody>
                 </Table>
               </ScrollArea.Autosize>
+              <ShowAll shown={deptPage.shown.length} total={deptPage.total} onShowAll={deptPage.showAll} />
+              </>
             )}
             <Text size="xs" c="dimmed" mt="sm">
               Click a department to see it on its own under Divisions.

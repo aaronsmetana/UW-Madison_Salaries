@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ShowAll, useShowAll } from './ShowAll';
 import {
   Stack, Card, Text, Group, Table, Badge, Anchor, ScrollArea, TextInput, Alert, ActionIcon, Skeleton,
 } from '@mantine/core';
@@ -91,7 +92,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
         date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 AS tenure,
         ${personPay(metric)} pay
         FROM salaries WHERE ${base} GROUP BY person_key)
-     SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC LIMIT 1000`,
+     SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     enabled
   );
   const people = useMemo(() => peopleRows ?? [], [peopleRows]);
@@ -157,6 +158,8 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
     });
     return sorted;
   }, [people, q, binFilter, peopleSort]);
+  // The first rows, the rest on "Show all" (G11): the page's one scroll, not a 460px box inside it.
+  const peoplePage = useShowAll(filteredPeople, `${q}|${binFilter ? `${binFilter.lo}-${binFilter.hi}` : ''}|${peopleSort.key}|${peopleSort.dir}`);
 
   const scopeLabel = school ? ` in ${school}` : '';
 
@@ -289,8 +292,8 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
         />
-        <ScrollArea.Autosize mah={460} type="auto" offsetScrollbars="present">
-          <Table stickyHeader miw={760} className="fold-table">
+        <ScrollArea.Autosize type="auto" offsetScrollbars="present">
+          <Table miw={760} className="fold-table">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={48} ta="right" data-fold>#</Table.Th>
@@ -302,7 +305,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {filteredPeople.map((p) => {
+              {peoplePage.shown.map((p) => {
                 const realRank = payRank.get(p.person_key) ?? 0;
                 const inTray = has(p.person_key);
                 return (
@@ -343,7 +346,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
             </Table.Tbody>
           </Table>
         </ScrollArea.Autosize>
-        {people.length >= 1000 && <Text size="xs" c="dimmed" mt="xs">Showing the top 1,000 by pay.</Text>}
+        <ShowAll shown={peoplePage.shown.length} total={peoplePage.total} onShowAll={peoplePage.showAll} />
       </Card>
 
       <Card withBorder padding="lg">

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Anchor, Box, List, ScrollArea, SimpleGrid, UnstyledButton } from '@mantine/core';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { IconCheck, IconTrendingUp } from '@tabler/icons-react';
+import { ShowAll, LIST_PAGE } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
@@ -28,7 +29,7 @@ import {
   type ModeRow, type ReviewRow, type TitleChangeRow, type Account, type RaiseFilters, type Usual, type Why,
 } from '../lib/raiseReview';
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = LIST_PAGE;
 
 const WHY: Record<Why, { label: string; color: string }> = {
   range: { label: 'Pay range minimum', color: 'orange' },
@@ -381,8 +382,8 @@ export default function Raises() {
             {!sorted.length ? (
               <Text size="sm" c="dimmed" px="md" pb="md">No one here got more than the usual raise.</Text>
             ) : (
-              <ScrollArea.Autosize mah={720} type="auto">
-                <Table stickyHeader striped miw={960} className="fold-table raise-above-table">
+              <ScrollArea.Autosize type="auto">
+                <Table striped miw={960} className="fold-table raise-above-table">
                   <Table.Thead>
                     <Table.Tr>
                       <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
@@ -424,9 +425,7 @@ export default function Raises() {
                 </Table>
               </ScrollArea.Autosize>
             )}
-            {!showAll && sorted.length > PAGE_SIZE && (
-              <Group justify="center" p="md"><Button variant="default" onClick={() => setShowAll(true)}>Show all {num(sorted.length)}</Button></Group>
-            )}
+            {!showAll && <ShowAll shown={PAGE_SIZE} total={sorted.length} onShowAll={() => setShowAll(true)} />}
           </Card>
 
           <Card withBorder padding={0} className="raise-title-changes" data-count={changes?.length ?? ''}>
@@ -441,8 +440,8 @@ export default function Raises() {
             {!changesSorted.length ? (
               <Text size="sm" c="dimmed" px="md" pb="md">No one here changed title.</Text>
             ) : (
-              <ScrollArea.Autosize mah={560} type="auto">
-                <Table stickyHeader striped miw={820} className="fold-table raise-changes-table">
+              <ScrollArea.Autosize type="auto">
+                <Table striped miw={820} className="fold-table raise-changes-table">
                   <Table.Thead>
                     <Table.Tr>
                       <SortableTh sortKey="name" label="Name" sort={changeSort} onSort={setChangeSort} />
@@ -473,9 +472,7 @@ export default function Raises() {
                 </Table>
               </ScrollArea.Autosize>
             )}
-            {!showAllChanges && changesSorted.length > PAGE_SIZE && (
-              <Group justify="center" p="md"><Button variant="default" onClick={() => setShowAllChanges(true)}>Show all {num(changesSorted.length)}</Button></Group>
-            )}
+            {!showAllChanges && <ShowAll shown={PAGE_SIZE} total={changesSorted.length} onShowAll={() => setShowAllChanges(true)} />}
           </Card>
 
           {account && (

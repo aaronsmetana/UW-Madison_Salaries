@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
+import { ShowAll, LIST_PAGE } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
@@ -33,7 +34,7 @@ interface SubjectRow {
 interface CohortRowSql { person_key: string; job_code: string; comp_basis: string | null; pay: number; tenure: number | null }
 interface HistRowSql { person_key: string; snapshot_date: string; pay: number }
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = LIST_PAGE;
 const DEFAULT_MIN_N = 4;
 /** `?flag=below-min`: the run is of the people paid below their grade's minimum only — Data's link here. */
 const BELOW_MIN = 'below-min';
@@ -350,8 +351,8 @@ export default function Screening() {
               <CsvButton onClick={exportCsv} />
             </Group>
           </Group>
-          <ScrollArea.Autosize mah={720} type="auto">
-            <Table stickyHeader striped highlightOnHover>
+          <ScrollArea.Autosize type="auto">
+            <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
                   <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
@@ -411,11 +412,7 @@ export default function Screening() {
               <PayBandNote mt={2} snapshotId={snap} />
             </Box>
           )}
-          {!showAll && results.length > PAGE_SIZE && (
-            <Group justify="center" p="md">
-              <Button variant="default" onClick={() => setShowAll(true)}>Show all {results.length}</Button>
-            </Group>
-          )}
+          {!showAll && <ShowAll shown={PAGE_SIZE} total={results.length} onShowAll={() => setShowAll(true)} />}
         </Card>
       )}
     </Stack>

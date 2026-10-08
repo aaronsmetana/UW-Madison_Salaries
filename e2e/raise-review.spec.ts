@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { oracle } from './oracle';
 import { raisesCte } from './raiseOracle';
 
+/** A list's first rows before its "Show all" (components/ShowAll `LIST_PAGE`). */
+const PAGE = 25;
+
 /**
  * The Raises page (src/routes/Raises.tsx): who got more than the usual raise between two snapshots, and what
  * may explain it. Every expected figure is the page's rule restated here in SQL over the parquet the preview
@@ -242,7 +245,7 @@ test('a change of title is its own list, and no one in it is counted as a raise'
                 FROM $SAL WHERE salary > 0 AND snapshot_id IN ('${p.from}', '${p.to}') GROUP BY 1, 2)
      SELECT b.sch, b.dept FROM s a JOIN s b ON b.person_key = a.person_key AND a.snapshot_id = '${p.from}' AND b.snapshot_id = '${p.to}'
      WHERE a.k = 1 AND b.k = 1 AND a.j IS DISTINCT FROM b.j AND b.sch IS NOT NULL AND b.dept IS NOT NULL
-     GROUP BY 1, 2 HAVING count(*) BETWEEN 4 AND 60 ORDER BY count(*) DESC, 1, 2 LIMIT 1`,
+     GROUP BY 1, 2 HAVING count(*) BETWEEN 4 AND ${PAGE} ORDER BY count(*) DESC, 1, 2 LIMIT 1`,
   );
   const where = inDept(d.sch, d.dept);
   const changed = await oracle<{ pk: string }>(
@@ -253,7 +256,7 @@ test('a change of title is its own list, and no one in it is counted as a raise'
   );
   const above = await expected(p, where);
   expect(above.length, 'the premise: someone in the department got more than usual').toBeGreaterThan(0);
-  expect(above.length, 'the premise: the list is shown whole').toBeLessThanOrEqual(100);
+  expect(above.length, 'the premise: the list is shown whole').toBeLessThanOrEqual(PAGE);
   await page.goto(`./raises?sch=${encodeURIComponent(d.sch)}&dept=${encodeURIComponent(d.dept)}`);
   await loaded(page);
   const keys = (sel: string) => page.locator(`${sel} tbody tr`).evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-person')!).sort());
@@ -286,7 +289,7 @@ test('each raise is explained by the first reason that fits, and a pattern line 
   await loaded(page);
   const rows = await page.locator('.raise-above-table tbody tr').evaluateAll((trs) => Object.fromEntries(trs.map((tr) => [tr.getAttribute('data-person'), tr.getAttribute('data-why')])));
   const mine = all.filter((r) => codeOf.get(r.person_key) === code);
-  expect(Object.keys(rows).length).toBe(Math.min(100, mine.length));
+  expect(Object.keys(rows).length).toBe(Math.min(PAGE, mine.length));
   for (const r of mine) if (rows[r.person_key]) expect(rows[r.person_key], r.person_key).toBe(r.why);
   expect(Object.values(rows)).toContain('title');
   // A range minimum, where the ranges came out with the later snapshot; its department's list shows it.
@@ -297,6 +300,9 @@ test('each raise is explained by the first reason that fits, and a pattern line 
       WHERE snapshot_id = '${p.to}' AND person_key = ${lit(range!.person_key)} AND salary > 0`);
     await page.goto(`./raises?sch=${encodeURIComponent(at.sch)}&dept=${encodeURIComponent(at.dept)}`);
     await loaded(page);
+    // The whole list: past its first rows they may be anywhere in it.
+    const more = page.locator('.raise-above .show-all button');
+    if (await more.count()) await more.click();
     await expect(page.locator(`.raise-above-table tr[data-person="${range!.person_key}"]`)).toHaveAttribute('data-why', 'range');
   }
 });
@@ -312,7 +318,7 @@ test('the explanation badges narrow the list to one explanation, and the link ca
   await expect(page).toHaveURL(/why=title/);
   await expect(badge).toHaveAttribute('aria-pressed', 'true');
   const whys = await page.locator('.raise-above-table tbody tr').evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-why')));
-  expect(whys.length).toBe(Math.min(100, want.filter((w) => w.why === 'title').length));
+  expect(whys.length).toBe(Math.min(PAGE, want.filter((w) => w.why === 'title').length));
   expect(new Set(whys)).toEqual(new Set(['title']));
   // The count above is still of everyone, and a reload keeps the narrowing.
   expect(await n(page, 'data-above')).toBe(want.length);

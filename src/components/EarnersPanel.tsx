@@ -158,8 +158,8 @@ export function EarnersPanel() {
           hint={`Nothing in this scope${q ? ' matches your search' : ''}. Try widening the scope or clearing filters.`}
         />
       ) : (
-      <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
-        <Table stickyHeader miw={760} className="fold-table">
+      <ScrollArea.Autosize type="auto" offsetScrollbars="present">
+        <Table miw={760} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={56} ta="right" data-fold>#</Table.Th>

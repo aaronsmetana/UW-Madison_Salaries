@@ -155,6 +155,8 @@ for (const theme of THEMES) {
       await page.goto(`./explore?tab=${tab}`);
       await setTheme(page, theme);
       await expect(page.locator(row).first()).toBeAttached({ timeout: 60_000 });
+      // Once the theme's change of colour is over: scanned mid-fade, a list's dimmed foot read 3.41:1.
+      await settled(page);
       const bad = await runAxe(page);
       expect(bad, tab).toEqual([]);
     }

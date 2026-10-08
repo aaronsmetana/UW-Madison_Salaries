@@ -1122,7 +1122,9 @@ export default function Reports() {
           </Card>
         ) : isDesktop ? (
           <div style={{ display: 'flex', gap: 'var(--mantine-spacing-lg)', alignItems: 'flex-start' }}>
-            <div style={{ width: '40%', maxWidth: 460, position: 'sticky', top: 16, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
+            {/* The one list with a scroll of its own (G11): the setup stays beside the brief as it scrolls, so a
+                setup taller than the window scrolls inside itself. */}
+            <div data-own-scroll="setup beside the brief" style={{ width: '40%', maxWidth: 460, position: 'sticky', top: 16, alignSelf: 'flex-start', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
               {setupPane}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>{briefPane}</div>

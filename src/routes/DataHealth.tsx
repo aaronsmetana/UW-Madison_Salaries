@@ -577,17 +577,13 @@ export default function DataHealth() {
             <> · <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" inherit>data dictionary →</Anchor></>
           )}
         </Text>
-        {/* `stickyHeaderOffset` resolves against the nearest scrolling ancestor, which inside a
-            ScrollContainer is the ScrollArea viewport — not the document. The old 108px offset therefore
-            pushed the header 108px DOWN INTO the table, over the first two rows. `ScrollArea.Autosize`
-            with a bounded height and no offset is what the app's seven other sticky tables use.
+        {/* No bounded height (G11): the page has one vertical scroll, and the box only ever scrolls sideways.
 
             The keyboard region goes on the viewport rather than on a Box around it. Arrow keys scroll
             the nearest scrollable *ancestor* of the focused element, never a scroller nested inside it,
             so announcing a region on a wrapper gave the reader a focus stop that scrolled the page
             instead of the table. */}
         <ScrollArea.Autosize
-          mah={620}
           type="auto"
           offsetScrollbars="present"
           className="data-snap-scroll"
@@ -607,7 +603,7 @@ export default function DataHealth() {
           it is here so the call site asks for what the stylesheet delivers instead of requesting a
           stripe that is then silently discarded. `highlightOnHover` stays and still paints: its rule
           outranks that background, and a transient highlight cannot be mistaken for a permanent mark. */}
-      <Table stickyHeader striped={false} miw={compact ? 680 : 920} className="data-snap-table">
+      <Table striped={false} miw={compact ? 680 : 920} className="data-snap-table">
         <Table.Thead>
           <Table.Tr>
             <SortableTh sortKey="date" label="Snapshot" sort={sort} onSort={setSort} />

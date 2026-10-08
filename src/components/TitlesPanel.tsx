@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import { ShowAll, useShowAll } from './ShowAll';
 import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
@@ -89,6 +90,8 @@ export function TitlesPanel() {
     });
     return sorted;
   }, [titles, q, minN, sortKey, sortDir]);
+  // The first titles, the rest on "Show all" (G11): one scroll for the page, not a box inside it.
+  const page = useShowAll(view, `${q}|${minN}|${sortKey}|${sortDir}|${where}`);
 
   const maxN = useMemo(() => Math.max(1, ...(titles ?? []).map((t) => t.n)), [titles]);
   // One scale for the whole column, so equal widths are equal dollars on every row.
@@ -141,8 +144,8 @@ export function TitlesPanel() {
           hint={`Nothing in this scope${q || minN ? ' matches your search/filters' : ''}. Try widening the scope or clearing filters.`}
         />
       ) : (
-      <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-        <Table stickyHeader miw={820} className="fold-table">
+      <ScrollArea.Autosize type="auto" offsetScrollbars="present">
+        <Table miw={820} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
@@ -154,7 +157,7 @@ export function TitlesPanel() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {view.map((t) => {
+            {page.shown.map((t) => {
               const inTray = has(t.job_code);
               const canPlot = t.lo != null && t.p25 != null && t.med != null && t.p75 != null && t.hi != null && t.hi > t.lo;
               return (
@@ -211,6 +214,7 @@ export function TitlesPanel() {
         </Table>
       </ScrollArea.Autosize>
       )}
+      <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
       <Text size="xs" c="dimmed" mt="xs">
         Each spread is on one scale, printed in the header, so equal widths are equal dollars on every row:
         the line runs from the lowest to the highest pay, the box is the middle 50%, and the tick the median.

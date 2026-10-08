@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import { ShowAll, useShowAll } from './ShowAll';
 import { Group, Text, Table, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Tooltip } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconSearchOff, IconChevronRight } from '@tabler/icons-react';
@@ -113,6 +114,8 @@ export function SchoolsPanel() {
     });
     return sorted;
   }, [schools, q, sort]);
+  // The first rows, the rest on "Show all" (G11): the page's one scroll, not a box inside it.
+  const page = useShowAll(view, `${q}|${sort.key}|${sort.dir}`);
 
   const maxHc = useMemo(() => Math.max(1, ...(schools ?? []).map((s) => s.headcount)), [schools]);
   const medExtent = useMemo(() => {
@@ -160,8 +163,9 @@ export function SchoolsPanel() {
           hint={`Nothing in this scope${q ? ' matches your search' : ''}. Try widening the scope or clearing filters.`}
         />
       ) : (
-      <ScrollArea.Autosize mah={620} type="auto" offsetScrollbars="present">
-        <Table stickyHeader miw={680} className="fold-table">
+      <>
+      <ScrollArea.Autosize type="auto" offsetScrollbars="present">
+        <Table miw={680} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="school" label="School / Division" sort={sort} onSort={setSort} />
@@ -172,7 +176,7 @@ export function SchoolsPanel() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {view.map((s) => {
+            {page.shown.map((s) => {
               const isOpen = expanded.has(s.school);
               const inTray = has(s.school);
               const canPlot = s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && s.hi > s.lo;
@@ -233,6 +237,8 @@ export function SchoolsPanel() {
           </Table.Tbody>
         </Table>
       </ScrollArea.Autosize>
+      <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
+      </>
       )}
     </>
   );

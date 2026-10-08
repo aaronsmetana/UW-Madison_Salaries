@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
-import { Card, Stack, Group, Text, Badge, Anchor, ScrollArea, Switch, Popover, Loader } from '@mantine/core';
+import { ShowAll, useShowAll } from './ShowAll';
+import { Card, Stack, Group, Text, Badge, Anchor, Switch, Popover, Loader } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconChevronRight, IconAlertTriangle } from '@tabler/icons-react';
 import { useSql } from '../lib/hooks';
@@ -112,6 +113,8 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
   const flaggedCount = useMemo(() => groups.filter((g) => g.flagged).length, [groups]);
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const view = flaggedOnly ? groups.filter((g) => g.flagged) : groups;
+  // The first groups, the rest on "Show all" (G11): the page's one scroll, not a box inside it.
+  const page = useShowAll(view, flaggedOnly);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (name: string) =>
     setExpanded((p) => { const n = new Set(p); if (n.has(name)) n.delete(name); else n.add(name); return n; });
@@ -146,9 +149,9 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
             {view.length === 0 ? (
               <Text size="sm" c="dimmed">No flagged groups.</Text>
             ) : (
-              <ScrollArea.Autosize mah={560} type="auto" offsetScrollbars="present">
+              <>
                 <Stack gap={0}>
-                  {view.map((g) => {
+                  {page.shown.map((g) => {
                     const open = expanded.has(g.name);
                     return (
                       <Fragment key={`${g.fn}|${g.ln}`}>
@@ -193,7 +196,8 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
                     );
                   })}
                 </Stack>
-              </ScrollArea.Autosize>
+                <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
+              </>
             )}
           </>
         )}
