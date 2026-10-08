@@ -458,7 +458,8 @@ export function ReportSetup({
 
       {/* Strategy tools — Kitchen-only (never on the right pane) */}
       <Card withBorder padding="md" bg="var(--mantine-color-default-hover)">
-        <Group justify="space-between" align="center" wrap="nowrap">
+        {/* On a phone the label and the button share no line: wrapped, the button keeps its words. */}
+        <Group justify="space-between" align="center" wrap="wrap" gap="xs">
           <SectionLabel>Strategy tools (private)</SectionLabel>
           <Button
             variant="subtle"
@@ -565,7 +566,8 @@ export function ReportSetup({
           </Group>
         )}
 
-        <Box mt="md" className="fallback-ladder">
+        {/* Only a raise can be refused. */}
+        {recommended != null && basePay != null && recommended > basePay && <Box mt="md" className="fallback-ladder">
           <CardTitle mb={6} sub="The case's other asks below this one, highest first, each with its basis.">If the ask is refused</CardTitle>
           {ladder.length > 0 ? (
             <List type="ordered" size="xs" spacing={3}>
@@ -578,7 +580,7 @@ export function ReportSetup({
           ) : (
             <Text size="xs" c="dimmed">No smaller ask has a basis in the record.</Text>
           )}
-        </Box>
+        </Box>}
 
         {questions.length > 0 && (
           <Box mt="md" className="reviewer-questions">

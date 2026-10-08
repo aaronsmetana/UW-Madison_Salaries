@@ -238,6 +238,7 @@ test('an ask at or below current pay reads as no raise, in the setup and on a ph
       expect(pcts.filter((t) => /\$/.test(t)).every((t) => /−\d/.test(t)), 'a choice above their pay, so this tests nothing').toBe(true);
       const readout = setup.locator('text="Recommended"').locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]');
       await expect(readout, 'a cut shown as the recommendation').toHaveText(/^Recommended\s*Maintain current pay$/);
+      await expect(setup.locator('.fallback-ladder'), 'what to ask if no raise is refused').toHaveCount(0);
     }
     await ctx.close();
   }
