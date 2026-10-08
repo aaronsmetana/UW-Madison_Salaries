@@ -102,6 +102,22 @@ export default function Reports() {
   // case. Read once, as the page opens; until the set is in, the subject is left as the link says.
   const shared = useRef({ sel: type === 'comparison' ? decodeSel(params.get('sel')) : null, caseParam: params.get('case'), subject: params.get('subject') });
   const hydrating = useRef(!!shared.current.sel?.length);
+  // A link with only ?subject= (the person page's "Raise case", or one pasted) opens that person's case: they join
+  // the compare set as its subject. Left to the set, a viewer whose set did not hold them got its first person's
+  // case under that person's link.
+  const linkSubject = type === 'comparison' && !shared.current.sel?.length ? shared.current.subject : null;
+  const awaitingSubject = useRef(!!linkSubject);
+  const { data: linkSubjectRow } = useSql<{ fn: string | null; ln: string | null }>(
+    ['rpt-link-subject', linkSubject ?? ''],
+    `SELECT arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln FROM salaries
+     WHERE person_key = ${sqlStr(linkSubject ?? '')} HAVING count(*) > 0`,
+    !!linkSubject && !persons.some((p) => p.id === linkSubject),
+  );
+  useEffect(() => {
+    const r = linkSubjectRow?.[0];
+    if (linkSubject && r && !persons.some((p) => p.id === linkSubject)) add({ type: 'person', id: linkSubject, label: fullName(r.fn, r.ln) || linkSubject });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkSubjectRow]);
   useEffect(() => {
     const sel = shared.current.sel;
     if (!sel?.length) return;
@@ -115,12 +131,17 @@ export default function Reports() {
       if (!shared.current.sel!.every((i) => persons.some((p) => p.id === i.id))) return;
       hydrating.current = false;
     }
+    // Until the link's subject is in it, or is no one the data knows.
+    if (awaitingSubject.current) {
+      if (!persons.some((p) => p.id === linkSubject) && !(linkSubjectRow && linkSubjectRow.length === 0)) return;
+      awaitingSubject.current = false;
+    }
     // The first person in the compare set is the subject when none (or one no longer in the set) is
     // chosen; the setup's Subject select chooses another. A subject from ?subject= (above) is left
     // alone as long as it's still in the set.
     if (persons.length && (!subjectKey || !persons.some((p) => p.id === subjectKey))) setSubjectKey(persons[0].id);
     if (!persons.length && subjectKey) setSubjectKey(null);
-  }, [persons, subjectKey]);
+  }, [persons, subjectKey, linkSubjectRow, linkSubject]);
   const subjectName = persons.find((p) => p.id === subjectKey)?.label ?? '';
   const subjectFirst = subjectName.split(' ')[0] || 'They';
 
@@ -128,9 +149,21 @@ export default function Reports() {
   // shareable), then kept in sync (with ?type=) the same way Compare syncs its ?sel= tray link.
   const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(() => {
     const key = params.get('person');
-    return key ? { key, name: params.get('pname') || key } : null;
+    return key ? { key, name: params.get('pname') ?? '' } : null;
   });
-  useDocTitle(type === 'person' && selPerson ? `Report — ${selPerson.name}` : 'Reports');
+  // A link with no ?pname= names its person from the data, never by their key ("aaronsmetana|2014-10-15").
+  const { data: selNameRow } = useSql<{ fn: string | null; ln: string | null }>(
+    ['rpt-person-name', selPerson?.key ?? ''],
+    `SELECT arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln FROM salaries
+     WHERE person_key = ${sqlStr(selPerson?.key ?? '')} HAVING count(*) > 0`,
+    type === 'person' && !!selPerson && !selPerson.name,
+  );
+  useEffect(() => {
+    const r = selNameRow?.[0];
+    if (r && selPerson && !selPerson.name) setSelPerson({ key: selPerson.key, name: fullName(r.fn, r.ln) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selNameRow]);
+  useDocTitle(type === 'person' && selPerson?.name ? `Report — ${selPerson.name}` : 'Reports');
   useEffect(() => {
     setSearchParams(
       (prev) => {
@@ -140,7 +173,7 @@ export default function Reports() {
         else n.delete('type');
         if (type === 'person' && selPerson) {
           n.set('person', selPerson.key);
-          n.set('pname', selPerson.name);
+          if (selPerson.name) n.set('pname', selPerson.name);
         } else {
           n.delete('person');
           n.delete('pname');
@@ -710,7 +743,7 @@ export default function Reports() {
   const proofs: ProofModel[] = useMemo(() => {
     if (subjectPay == null) return [];
     const out: ProofModel[] = [];
-    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: printedPercentile(stats.percentile), label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the ${docCohortLabel} median.` : `Current pay is at or above the ${docCohortLabel} median.`, detail: `n = ${stats.n}` });
+    if (stats.percentile != null && stats.n >= 4) out.push({ kind: 'market', value: printedPercentile(stats.percentile), label: stats.gapToMed != null && stats.gapToMed > 0 ? `Current pay sits below the median of ${docCohortLabel}.` : `Current pay is at or above the median of ${docCohortLabel}.`, detail: `${plural(stats.n, 'other')} in the comparison` });
     if (stats.invCount > 0) out.push({ kind: 'inversion', value: plural(stats.invCount, 'peer'), label: stats.invCount === 1 ? 'tenure inversion — less UW tenure, higher pay' : 'tenure inversions — less UW tenure, higher pay', detail: `paid up to +${usd(stats.invMaxGap)} more with fewer years at UW` });
     if (guidelineCompression && guidelineCompression.count > 0) {
       const gc = guidelineCompression;
@@ -803,7 +836,7 @@ export default function Reports() {
         quote: POLICY.parityQuote,
         supportedBy: poolsBelow.length > 1
           ? `paid below the median in ${plural(poolsBelow.length, 'comparison pool')} (see Market standing)`
-          : `paid below the ${docCohortLabel} median (${stats.percentile != null ? printedPercentile(stats.percentile) : 'see Market standing'})`,
+          : `paid below the median of ${docCohortLabel} (${stats.percentile != null ? printedPercentile(stats.percentile) : 'see Market standing'})`,
       });
     }
     const supBelowFloor = supervisoryCase.reports.filter((r) => r.belowFloor);
@@ -1099,7 +1132,6 @@ export default function Reports() {
           <Card withBorder padding="lg" className="no-print">
             <Eyebrow mb={6}>Report on</Eyebrow>
             <SearchBox kinds={['people']} placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
-            {selPerson && <Text size="sm" mt="sm">Showing report for <b>{selPerson.name}</b>.</Text>}
           </Card>
           {selPerson ? (
             <div className="print-area"><PersonDashboard personKey={selPerson.key} metric={metric} /></div>
@@ -1107,7 +1139,7 @@ export default function Reports() {
             <EmptyState
               icon={<IconFileReport size={ICON.feature} />}
               title="No employee selected"
-              hint="Pick an employee above for a single-page report on their pay, title history, and how they compare to others in their title."
+              hint="Pick an employee above for a report on their pay, title history, and how they compare to others in their title."
             />
           )}
         </>
@@ -1117,7 +1149,7 @@ export default function Reports() {
         persons.length === 0 ? (
           <Card withBorder padding="xl" className="no-print">
             <Text fw={600} mb={4}>Start your raise case</Text>
-            <Text c="dimmed" size="sm" mb="md">Add yourself (the subject), then add the peers you want to be compared against.</Text>
+            <Text c="dimmed" size="sm" mb="md">Add the subject, then the peers to compare them with.</Text>
             <SearchBox kinds={['people']} placeholder="Search yourself by name to begin…" onPick={(h) => add({ type: 'person', id: h.person_key, label: h.name })} />
           </Card>
         ) : isDesktop ? (

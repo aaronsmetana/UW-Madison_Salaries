@@ -857,7 +857,7 @@ export default function Person() {
           {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
           <ToolLinks
             links={[
-              { label: 'One-page report', to: `/reports?person=${encodeURIComponent(key)}&pname=${encodeURIComponent(name)}` },
+              { label: 'Report', to: `/reports?person=${encodeURIComponent(key)}&pname=${encodeURIComponent(name)}` },
               // A raise case is built from the compare set: its person goes in, as its subject.
               { label: 'Raise case', to: `/reports?type=comparison&subject=${encodeURIComponent(key)}`, onClick: () => add({ type: 'person', id: key, label: name }) },
             ]}

@@ -36,7 +36,7 @@ const FLOW: Record<'person' | 'comparison', [Step, Step, Step]> = {
     },
     {
       eyebrow: 'What you get',
-      body: 'A one-page brief that cites every figure it uses. Print it, save it as a .doc, or paste it straight into an email.',
+      body: 'A brief that cites every figure it uses. Print it, save it as a .doc, or paste it straight into an email.',
     },
   ],
   person: [
@@ -45,7 +45,7 @@ const FLOW: Record<'person' | 'comparison', [Step, Step, Step]> = {
       eyebrow: 'What it shows',
       body: 'Their pay and title history across every snapshot, and where they sit among everyone else holding the same title.',
     },
-    { eyebrow: 'What you get', body: 'A one-page profile you can print or save as a PDF.' },
+    { eyebrow: 'What you get', body: 'A profile you can print or save as a PDF.' },
   ],
 };
 

@@ -94,7 +94,7 @@ export function ReportSetup({
     <Stack gap="lg">
       {/* Subject */}
       <Card withBorder padding="md">
-        <SectionLabel>This is me (subject)</SectionLabel>
+        <SectionLabel>Subject</SectionLabel>
         <Select
           {...dropdownProps('md')}
           mt={6}
@@ -108,7 +108,7 @@ export function ReportSetup({
 
       {/* Comparators — the subject is the anchor above; this tray holds only the other side of the scale. */}
       <Card withBorder padding="md">
-        <SectionLabel>Who you're compared against</SectionLabel>
+        <SectionLabel>Compared with</SectionLabel>
         <Box mt={8} style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 10, overflow: 'hidden' }}>
           {peers.length === 0 && (
             <Text size="sm" c="dimmed" px="sm" py={8}>No comparators yet — search below, or add a suggestion.</Text>

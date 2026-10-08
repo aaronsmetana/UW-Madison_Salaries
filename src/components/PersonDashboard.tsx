@@ -13,7 +13,7 @@ import { BreakLabels } from './chart/BreakLabel';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from './GapBreakdown';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday, fmtYears } from '../lib/format';
+import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday, fmtYears, fmtGrade } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { EndLabels } from './chart/EndLabels';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -280,7 +280,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Text c="dimmed">
           {[
             latest?.title,
-            latest?.grade_number != null ? `grade ${latest.grade_number}` : null,
+            latest?.grade_number != null ? `grade ${fmtGrade(latest.grade_number, latest.grade_basis)}` : null,
             latest?.school,
             latest?.department,
           ].filter(Boolean).join(' · ')}

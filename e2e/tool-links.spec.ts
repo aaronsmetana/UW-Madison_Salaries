@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { oracle, latestSnapshot } from './oracle';
 
 /**
- * A page about one thing links to the tools that take it (G10): a person to their one-page report and a raise
+ * A page about one thing links to the tools that take it (G10): a person to their report and a raise
  * case, a title to its raises, a division to its raises and its screening — one line of links under the
  * page's name, the same everywhere. Each lands on the tool with the subject already in it.
  */
@@ -10,11 +10,11 @@ import { oracle, latestSnapshot } from './oracle';
 const KEY = 'aaronsmetana|2014-10-15';
 const links = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Take this further' });
 
-test('a person links to their one-page report and to a raise case with them as its subject', async ({ page }) => {
+test('a person links to their report and to a raise case with them as its subject', async ({ page }) => {
   await page.goto(`./person/${encodeURIComponent(KEY)}`);
   const name = (await page.getByRole('heading', { level: 1 }).innerText()).trim();
-  await expect(links(page).getByRole('link')).toHaveText(['One-page report →', 'Raise case →']);
-  await links(page).getByRole('link', { name: 'One-page report →' }).click();
+  await expect(links(page).getByRole('link')).toHaveText(['Report →', 'Raise case →']);
+  await links(page).getByRole('link', { name: 'Report →' }).click();
   await expect(page).toHaveURL(new RegExp(`/reports\\?person=${encodeURIComponent(KEY).replace(/[|]/g, '\\$&')}`));
   await expect(page).toHaveTitle(new RegExp(`Report — ${name}`));
   await page.goBack();

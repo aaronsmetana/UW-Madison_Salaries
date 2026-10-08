@@ -114,13 +114,13 @@ export const POLICY = {
 
 // ── Presentational: numbered footnote markers + the Notes/Sources lists that anchor them. ──
 
-/** Superscript footnote marker linking to the Notes & Methodology list. Renders nothing when `n` is
- *  0 or less (the claim it would annotate isn't in this printing — see `ReportBrief`'s `fn()` helper). */
+/** Superscript footnote marker linking to its own note in the Notes & Methodology list. Renders nothing when
+ *  `n` is 0 or less (the claim it would annotate isn't in this printing — see `ReportBrief`'s `fn()` helper). */
 export function Sup({ n }: { n: number }) {
   if (n <= 0) return null;
   return (
     <sup className="footnote-ref">
-      <a href="#report-notes" aria-label={`note ${n}`}>{n}</a>
+      <a href={`#report-note-${n}`} aria-label={`note ${n}`}>{n}</a>
     </sup>
   );
 }
@@ -130,7 +130,7 @@ export function NotesList({ notes }: { notes: ReactNode[] }) {
   if (!notes.length) return null;
   return (
     <List id="report-notes" type="ordered" size="xs" c="dimmed" spacing={4} styles={{ item: { paddingLeft: 4 } }}>
-      {notes.map((n, i) => <List.Item key={i}>{n}</List.Item>)}
+      {notes.map((n, i) => <List.Item key={i} id={`report-note-${i + 1}`}>{n}</List.Item>)}
     </List>
   );
 }

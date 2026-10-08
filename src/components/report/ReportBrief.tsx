@@ -151,10 +151,16 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
     { id: 'retention', when: has('risk'), text: "Replacement-cost estimates are industry-wide benchmarks, not specific to this employee, role, or institution; the attrition figure, where shown, is drawn directly from the public salary record. The retention-bonus alternative is drawn from the UW–Madison Salary Administration Guidelines. See Sources." },
   ];
   const activeNotes = noteDefs.filter((n) => n.when);
+  // Numbered in reading order, as a printed footnote is: the first claim to cite a note gives it the next number
+  // (the brief's JSX below is built top to bottom), and the notes list follows; a note no marker cites comes last.
+  // Numbered by definition, the markers ran 1, 2, 4, 3, 8, 10, 6, 11 down the page.
+  const cited: string[] = [];
   const fn = (id: string) => {
-    const i = activeNotes.findIndex((n) => n.id === id);
-    return i >= 0 ? i + 1 : 0;
+    if (!activeNotes.some((n) => n.id === id)) return 0;
+    if (!cited.includes(id)) cited.push(id);
+    return cited.indexOf(id) + 1;
   };
+  const notesInOrder = () => [...cited.map((id) => activeNotes.find((n) => n.id === id)!), ...activeNotes.filter((n) => !cited.includes(n.id))];
   // uwSalaryGuidelines is cited whenever any SAG-anchored claim renders (supervisory differential,
   // guideline compression, or — Phase 3 — the market-competitive floor).
   const citesGuidelines = supervisory.reports.length > 0
@@ -281,10 +287,12 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                       <ThemeIcon variant="light" color="accent" size={34} radius="md" style={{ flexShrink: 0 }}>{PROOF_ICON[p.kind]}</ThemeIcon>
                       <div style={{ minWidth: 0 }}>
                         <Text fw={700} fz="xl" lh={1.1}>{p.value}</Text>
-                        <Text size="sm" c="dimmed" mt={4}>{p.label}</Text>
+                        {/* The note's marker after the label's last word: after the detail it followed a figure,
+                            and "n = 46" with note 6 read "n = 466". */}
+                        <Text size="sm" c="dimmed" mt={4}>{p.label}{PROOF_NOTE[p.kind] && <Sup n={fn(PROOF_NOTE[p.kind]!)} />}</Text>
                       </div>
                     </Group>
-                    {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}{PROOF_NOTE[p.kind] && <Sup n={fn(PROOF_NOTE[p.kind]!)} />}</Text>}
+                    {p.detail && <Text size="xs" c="dimmed" mt={6}>{p.detail}</Text>}
                     {(p.kind === 'gradeband' || p.kind === 'marketFloor') && model.payBandNote && (
                       <Text size="xs" c="dimmed" mt={6} className="payband-note" data-payband-note>{model.payBandNote}</Text>
                     )}
@@ -631,7 +639,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
           <SectionHeading id="notes" num={notesSectionNum}>Notes &amp; sources</SectionHeading>
           <Box mb="md">
             <Eyebrow mb={4}>Methodology notes</Eyebrow>
-            <NotesList notes={activeNotes.map((n) => n.text)} />
+            <NotesList notes={notesInOrder().map((n) => n.text)} />
             {anonymize && <Text size="xs" c="dimmed" mt={6}>Peer identities anonymized in this printing; names available on request.</Text>}
           </Box>
           <Box>
