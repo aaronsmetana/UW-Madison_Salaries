@@ -20,7 +20,7 @@ import { GlossaryTerm } from '../GlossaryTerm';
 import { Eyebrow } from '../Eyebrow';
 import { Sup, NotesList, SourcesList, POLICY, type CitationKey } from './sources';
 import { REPO_URL } from '../../lib/links';
-import { CAND, PEER, fmtYearsToParity, matchTenureSentence, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
+import { CAND, PEER, fmtYearsToParity, matchTenureSentence, monthLabel, type BriefModel, type ProofKind, SECTION_ORDER } from './model';
 import { raiseBucketLabel } from '../../lib/raiseBuckets';
 import { ordinal } from '../../lib/stats';
 import { payWindow } from '../../lib/payWindow';
@@ -32,8 +32,6 @@ function fmtHistTick(d: string): string {
   const m = Number(d.slice(5, 7));
   return `${MON[m - 1] ?? ''} '${d.slice(2, 4)}`;
 }
-/** "2024-03-15" → "Mar 2024", a snapshot label the shared date axis can tick. */
-const histLabel = (d: string): string => `${MON[Number(d.slice(5, 7)) - 1] ?? ''} ${d.slice(0, 4)}`;
 
 /** Smoothly tween a number toward its target (respects reduced-motion). */
 function useAnimatedNumber(target: number, duration = 500) {
@@ -106,7 +104,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
   // The pay window the person page zooms the same chart to (lib/payWindow), from the peers it plots.
   const tenureWindow = useMemo(() => payWindow(tenureScatterPoints.map((p) => p.pay)), [tenureScatterPoints]);
   // Pay history on the shared date axis. One job code, so never the TTC twins (their codes differ).
-  const historyRows = history.map((h) => ({ ...h, label: histLabel(h.date), x: snapX(h.date, '') }));
+  const historyRows = history.map((h) => ({ ...h, label: monthLabel(h.date), x: snapX(h.date, '') }));
   const raiseDistMax = raiseCycle ? Math.max(1, ...raiseCycle.dist.map((d) => d.n)) : 1;
 
   // ── Section numbering — sequential, based on what actually renders (a toggled-off section leaves
@@ -135,6 +133,8 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
     { id: 'identity', when: true, text: 'Source: UW–Madison salary data (Wisconsin public record); zero/unreported salaries excluded; identity matched on name + date of hire.' },
     { id: 'basis', when: belowTarget, text: "The title median is the median pay of everyone sharing the subject's job code at this snapshot. The tenure-adjusted target (used once at least 5 same-title peers meet or exceed the subject's tenure) is the median for that narrower, more comparable group instead." },
     { id: 'equityTerm', when: sectionShow.guidelineBasis, text: POLICY.equityAdjustmentScope },
+    // Each provision in the guideline's own words, cited from its one line in the section.
+    ...guidelineProvisions.map((g) => ({ id: `provision-${g.key}`, when: sectionShow.guidelineBasis, text: <>{g.name}: &ldquo;{g.quote}&rdquo;</> })),
     { id: 'parity', when: yearsToParity != null && yearsToParity >= 0.5, text: 'Time-to-parity assumes compounding raises at the stated annual rate with no other adjustment — a projection, not a commitment.' },
     { id: 'tenure', when: showTenure, text: '"Tenure" = years since the UW–Madison date of hire (not total career experience), computed as of this snapshot.' },
     { id: 'percentile', when: hasPercentileClaim, text: 'Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.' },
@@ -316,23 +316,15 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
           {sectionShow.guidelineBasis && (
             <>
               <SectionHeading id="guidelineBasis" num={sectionNum.guidelineBasis} sup={fn('equityTerm')}>Basis under the UW Salary Administration Guidelines</SectionHeading>
-              <Card mb="lg">
-                <Stack gap="md">
+              {/* One line a provision: what it is and what here supports it. Its words are in the notes. */}
+              <Card mb="lg" className="guideline-basis">
+                <Stack gap={6}>
                   {guidelineProvisions.map((p) => (
-                    <Box key={p.key}>
-                      <Group gap={8} wrap="nowrap" align="center" mb={2}>
-                        <Text size="sm" fw={700}>{p.name}</Text>
-                        {p.selfReported && <Badge size="xs" variant="light" color="gray">self-reported</Badge>}
-                      </Group>
-                      <Text size="xs" c="dimmed" fs="italic" mb={2}>“{p.quote}”</Text>
-                      <Text size="xs">Supported here by: {p.supportedBy}.</Text>
-                    </Box>
+                    <Text key={p.key} size="sm">
+                      <b>{p.name}</b>{p.selfReported && <Badge size="xs" variant="light" color="gray" ml={6}>self-reported</Badge>}: {p.supportedBy}.<Sup n={fn(`provision-${p.key}`)} />
+                    </Text>
                   ))}
                 </Stack>
-                <Text size="xs" c="dimmed" mt="md">
-                  Terms follow the guideline: this is a request for a <b>parity / compression adjustment</b>, not an
-                  “equity adjustment” (a term the guideline reserves for protected-category inequities).<Sup n={fn('equityTerm')} />
-                </Text>
               </Card>
             </>
           )}

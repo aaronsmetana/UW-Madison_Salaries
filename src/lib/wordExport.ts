@@ -5,7 +5,7 @@
 // ignores classes/external CSS anyway, so hand-rolled inline styles are the only way to keep the
 // exported look under our control.
 import { raiseBucketLabel } from './raiseBuckets';
-import { fmtYearsToParity, matchTenureSentence, SECTION_ORDER, type BriefModel } from '../components/report/model';
+import { fmtYearsToParity, matchTenureSentence, monthLabel, tenureTrendSentence, SECTION_ORDER, type BriefModel } from '../components/report/model';
 import { usd, pct, fmtYears } from './format';
 import { ordinal } from './stats';
 import { CITATIONS, POLICY, type CitationKey } from '../components/report/sources';
@@ -45,6 +45,7 @@ export function briefToWordHtml(model: BriefModel): string {
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved,
     realErosion, rows, showTenure, anonymize, attrition, divergence, history, format, sections,
     supervisory, guidelineCompression, guidelineProvisions, standing, raiseCycle, cohortBasisScoped, match,
+    tenureRegression, tenureScatterPoints,
   } = model;
 
   const body: string[] = [];
@@ -143,16 +144,10 @@ export function briefToWordHtml(model: BriefModel): string {
   // ── Basis under the UW Salary Administration Guidelines ──
   if (sectionShow.guidelineBasis) {
     body.push(h2(`${num.guidelineBasis}. Basis under the UW Salary Administration Guidelines`));
+    // One line a provision (ReportBrief); its words are in the notes.
     for (const g of guidelineProvisions) {
-      body.push(p(`<b>${esc(g.name)}</b>${g.selfReported ? ' <i style="color:#888;">(self-reported)</i>' : ''}`, `${P}margin-bottom:2pt;`));
-      body.push(p(`&ldquo;${esc(g.quote)}&rdquo;`, `${SMALL}${DIM}font-style:italic;margin:0 0 2pt 0;`));
-      body.push(p(`Supported here by: ${esc(g.supportedBy)}.`, `${SMALL}margin:0 0 10pt 0;`));
+      body.push(p(`<b>${esc(g.name)}</b>${g.selfReported ? ' <i style="color:#888;">(self-reported)</i>' : ''}: ${esc(g.supportedBy)}.`, `${P}margin-bottom:4pt;`));
     }
-    body.push(p(
-      `Terms follow the guideline: this is a request for a <b>parity / compression adjustment</b>, not an ` +
-      `&ldquo;equity adjustment&rdquo; (a term the guideline reserves for protected-category inequities).`,
-      `${SMALL}${DIM}`,
-    ));
   }
 
   // ── Market standing ──
@@ -178,6 +173,11 @@ export function briefToWordHtml(model: BriefModel): string {
         ]),
         ['l', 'r', 'r', 'r', 'r'],
       ));
+    }
+    // The brief's pay-vs-tenure chart (detailed format), in words.
+    const self = tenureScatterPoints.find((pt) => pt.isSelf);
+    if (format === 'detailed' && tenureRegression && self) {
+      body.push(p(`<b>Pay vs. tenure &mdash; same-title peers.</b> ${esc(tenureTrendSentence(tenureRegression, subjectFirst, self.tenure, self.pay))}`));
     }
   }
 
@@ -238,8 +238,8 @@ export function briefToWordHtml(model: BriefModel): string {
     body.push(h2(`${num.history}. Pay history`));
     body.push(p(`${esc(subjectFirst)}'s pay against the median for this title at each snapshot.`, `${SMALL}${DIM}`));
     body.push(table(
-      ['Date', subjectFirst, 'Title median'],
-      history.map((pt) => [esc(pt.date), usd(pt.pay), usd(pt.med)]),
+      ['Snapshot', subjectFirst, 'Title median'],
+      history.map((pt) => [esc(monthLabel(pt.date)), usd(pt.pay), usd(pt.med)]),
       ['l', 'r', 'r'],
     ));
     if (raiseCycle) {
@@ -300,6 +300,7 @@ export function briefToWordHtml(model: BriefModel): string {
     { when: true, text: `Source: UW&ndash;Madison salary data (Wisconsin public record); zero/unreported salaries excluded; identity matched on name + date of hire.` },
     { when: belowTarget, text: `The title median is the median pay of everyone sharing the subject's job code at this snapshot. The tenure-adjusted target (used once at least 5 same-title peers meet or exceed the subject's tenure) is the median for that narrower, more comparable group instead.` },
     { when: sectionShow.guidelineBasis, text: esc(POLICY.equityAdjustmentScope) },
+    ...guidelineProvisions.map((g) => ({ when: sectionShow.guidelineBasis, text: `${esc(g.name)}: &ldquo;${esc(g.quote)}&rdquo;` })),
     { when: yearsToParity != null && yearsToParity >= 0.5, text: `Time-to-parity assumes compounding raises at the stated annual rate with no other adjustment &mdash; a projection, not a commitment.` },
     { when: showTenure, text: `&ldquo;Tenure&rdquo; = years since the UW&ndash;Madison date of hire (not total career experience), computed as of this snapshot.` },
     { when: hasPercentileClaim, text: `Percentile = the share of the comparison pool paid less than the subject; the subject is never counted against themself.` },

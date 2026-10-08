@@ -22,6 +22,18 @@
     display: none !important;
   }
 
+  /* Tools are for the screen. A button or an icon button does something, and on paper it cannot: a chart's
+     About, CSV and Table, Copy link, Compare, Show all. A text field with nothing in it prints as an empty box.
+     What a control says stays, since it tells the reader what the page shows: a tab, a chosen filter, a
+     pressed toggle (a list printed filtered says so), the pay measure, a column's sortable heading. */
+  .mantine-AppShell-main .mantine-Button-root:not([aria-pressed='true']),
+  .mantine-AppShell-main .mantine-ActionIcon-root,
+  .mantine-AppShell-main .chart-tool,
+  .mantine-AppShell-main .mantine-TextInput-root:has(input:placeholder-shown),
+  .mantine-AppShell-main .mantine-NumberInput-root:has(input:placeholder-shown) {
+    display: none !important;
+  }
+
   /* Mantine reserves the bar's height as padding on <main>, and the page keeps a gutter of its own. With
      that chrome gone those are just empty margins round the page. */
   .mantine-AppShell-main,

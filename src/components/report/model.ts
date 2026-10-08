@@ -319,6 +319,20 @@ export function matchTenureSentence(m: MatchModel, subjectFirst: string, peerNam
   return `${rate} ${peerName} has ${yrs(t.years)} more UW tenure than ${subjectFirst}, which accounts for about ${usd(t.explained)} of the ${usd(m.gap)} gap; the other ${usd(t.rest)} is not explained by tenure.`;
 }
 
+/** "2024-03-15" → "Mar 2024": a snapshot's month, as the brief's history and the .doc both name it. */
+export function monthLabel(d: string): string {
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${MON[Number(d.slice(5, 7)) - 1] ?? ''} ${d.slice(0, 4)}`;
+}
+
+/** What the brief's pay-vs-tenure chart shows, in words, for a page that has no chart (the .doc). */
+export function tenureTrendSentence(t: { n: number; expected: number; gap: number; perYear?: number }, subjectFirst: string, tenure: number, pay: number): string {
+  const rise = t.perYear != null && t.perYear > 0 ? `, rising about ${usd(t.perYear)} a year of tenure` : '';
+  const off = Math.round(Math.abs(pay - t.expected));
+  const where = off === 0 ? 'on it' : `${usd(off)} ${pay < t.expected ? 'below' : 'above'} it`;
+  return `Among the ${t.n} others with this title, the trend of pay on UW tenure puts pay at ${usd(t.expected)} for ${subjectFirst}'s ${tenure.toFixed(1)} years${rise}. ${subjectFirst} is paid ${usd(pay)}, ${where}.`;
+}
+
 // ── Pure stats helpers ──
 export function median(nums: number[]): number | null {
   const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);
@@ -624,7 +638,7 @@ export interface BriefModel {
    *  is unknown, so no basis filter could be applied (drives a methodology note, not a claim gate). */
   cohortBasisScoped: boolean;
   standing: StandingModel | null;
-  tenureRegression: { n: number; expected: number; gap: number } | null;
+  tenureRegression: { n: number; expected: number; gap: number; perYear?: number } | null;
   tenureScatterPoints: ScatterPoint[];
   /** The person the case asks to match, when it names one. */
   match: MatchModel | null;

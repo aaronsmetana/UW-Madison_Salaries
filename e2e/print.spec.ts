@@ -105,3 +105,38 @@ test('a page that declares a print region still prints only that region', async 
   // ...and the interactive setup pane beside it does not.
   await expect(page.locator('.setup-panel'), 'the setup pane must never print').toBeHidden();
 });
+
+/**
+ * Tools are for the screen: a chart's About, CSV and Table, Copy link, Compare, Show all, an empty search
+ * box all printed on paper. What a control says stays: a tab, a chosen filter, the pay measure, a sortable
+ * column's heading, since each tells the reader what the page shows.
+ */
+const AARON = encodeURIComponent('aaronsmetana|2014-10-15');
+const SMPH = encodeURIComponent('School of Medicine and Public Health');
+for (const [name, path, says] of [
+  ['a person', `./person/${AARON}`, ['tab', 'Sort by Salary']],
+  ['a person, pay & standing', `./person/${AARON}?tab=pay`, ['tab']],
+  ['a title', './paycheck?code=IT040', ['Sort by Salary', 'measure']],
+  ['Divisions', './explore', ['tab', 'measure']],
+  ['Raises', `./raises?sch=${SMPH}&dept=Neurology`, ['Sort by Raise', 'measure']],
+  ['the one-person report', `./reports?person=${AARON}`, []],
+] as const) {
+  test(`prints what the page shows, not the tools on it: ${name}`, async ({ page }) => {
+    await page.goto(path, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2_000);
+    await page.emulateMedia({ media: 'print' });
+    const tools = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(
+      'main .mantine-Button-root, main .mantine-ActionIcon-root, main .chart-tool, main input[type="text"], main input:not([type]), main input[type="search"]',
+    )].filter((e) => e.checkVisibility({ visibilityProperty: true }) && e.getBoundingClientRect().width > 0)
+      // A select says its scope even unset ("All schools"); a pressed toggle says the list is filtered.
+      .filter((e) => e.getAttribute('aria-pressed') !== 'true' && !(e instanceof HTMLInputElement && e.value) && !e.closest('.mantine-Select-root'))
+      .map((e) => (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || e.tagName).trim().slice(0, 30)));
+    expect([...new Set(tools)], `${name}: a tool on paper`).toEqual([]);
+    for (const s of says) {
+      const el = s === 'tab' ? page.getByRole('tab', { selected: true })
+        : s === 'measure' ? page.getByRole('radio', { name: 'Actual pay' }).locator('xpath=ancestor::*[contains(@class, "mantine-SegmentedControl-root")][1]')
+        : page.getByRole('button', { name: s });
+      await expect(el.first(), `${name}: "${s}" says what the page shows, and no longer prints`).toBeVisible();
+    }
+  });
+}

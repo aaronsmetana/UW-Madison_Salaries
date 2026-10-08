@@ -392,3 +392,32 @@ test('a person to match: the closest first, the two side by side, what tenure ex
   await expect(has).not.toBeChecked();
   await ctx.close();
 });
+
+test('each evidence card’s figure says what it counts', async ({ browser }) => {
+  const { ctx, page } = await caseFor(browser, AARON, [{ id: AARON, label: 'Aaron Smetana' }]);
+  const cards = page.locator('.report-brief .evidence-card');
+  await expect(cards.first()).toBeVisible({ timeout: 60_000 });
+  // Aaron's brief has the two that gave a bare number: years below the median, and the compa-ratio.
+  await expect(page.locator('.report-brief')).toContainText(/\d+ years\s*in a row below the title median/);
+  await expect(page.locator('.report-brief')).toContainText(/\d\.\d\d compa-ratio\s*below the university/);
+  const values = await cards.evaluateAll((cs) => cs.map((c) => c.querySelector('p')?.textContent?.trim() ?? ''));
+  expect(values.length).toBeGreaterThan(3);
+  for (const v of values) expect(v, `"${v}" does not say what it counts`).toMatch(/[A-Za-z%$]/);
+  await ctx.close();
+});
+
+test('the guideline section gives each provision one line, its words in the note it cites', async ({ browser }) => {
+  const { ctx, page } = await caseFor(browser, AARON, [{ id: AARON, label: 'Aaron Smetana' }]);
+  const section = page.locator('.report-brief .guideline-basis');
+  await expect(section).toBeVisible({ timeout: 60_000 });
+  await expect(section, 'a provision quoted in the section').not.toContainText(/[“”]/);
+  await expect(page.locator('.report-brief')).not.toContainText('Terms follow the guideline');
+  const lines = section.locator('p');
+  expect(await lines.count()).toBeGreaterThan(0);
+  for (const line of await lines.all()) {
+    const name = (await line.locator('b').innerText()).trim();
+    const n = await line.locator('.footnote-ref a').innerText();
+    await expect(page.locator(`#report-note-${n}`), `${name}: its note is not its words`).toContainText(new RegExp(`^${name}: “.+”`));
+  }
+  await ctx.close();
+});

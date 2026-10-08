@@ -2115,6 +2115,24 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
 }
 /* Its paper counterpart: shown only in print (print.css), where a cell marked `data-print-fold` hides. */
 .print-under { display: none; }
+/* A history on a screen too narrow for its columns (a tablet, a narrow window: the table needs 880px and
+   22 more per lane) folds as it does on paper, its job code, school and department, rate and basis under the
+   title, the pay and the FTE, rather than scrolling sideways in its card. Measured on the card, not the
+   window; a phone folds its own way (below). 1000px holds a history of up to four lanes unfolded. */
+@media screen and (min-width: 48.001em) {
+  .appt-history-card { container: appt-history / inline-size; }
+  @container appt-history (max-width: 1000px) {
+    .appt-history [data-print-fold] { display: none !important; }
+    .appt-history .print-under { display: block !important; }
+    .appt-history-card .mantine-TableScrollContainer-scrollContainerInner { min-width: 0 !important; }
+    .appt-history-card .mantine-ScrollArea-viewport > div { display: block !important; }
+    .appt-history [data-raise-compare],
+    .appt-history [data-raise-compare] *,
+    .appt-history .appt-reporting-note,
+    .appt-history .appt-rate-note,
+    .appt-history .appt-snapshot { white-space: normal !important; }
+  }
+}
 @media screen and (max-width: 48em) {
   .fold-table [data-fold] { display: none; }
   /* The tray column is sized for the word; on a phone it holds only the icon. */

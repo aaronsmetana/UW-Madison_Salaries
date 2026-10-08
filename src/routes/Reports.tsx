@@ -786,7 +786,7 @@ export default function Reports() {
           : `UW guideline calls for ≥15% above a non-managing subordinate — narrower for ${plural(belowFloorReports.length, 'named direct report')}`,
       });
     }
-    if (longevity.streak > 0) out.push({ kind: 'sustained', value: String(longevity.streakYears), label: 'consecutive years below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
+    if (longevity.streak > 0) out.push({ kind: 'sustained', value: plural(longevity.streakYears, 'year'), label: 'in a row below the title median', detail: longevity.streak >= longevity.total ? 'below the title median in every year on record' : 'most recent unbroken run below the median' });
     // A grade with a minimum only has no range to be placed in; the one thing it can say is "below it".
     if (band && !isRange(band) && bandRate != null && belowMinimum(bandRate, band, subj?.grade_basis)) {
       out.push({ kind: 'gradeband', value: `${usd(band.min - bandRate)} below`, label: `the grade ${grade} minimum`, detail: `grade ${grade} minimum ${usd(band.min)} · full-time rate ${usd(bandRate)}` });
@@ -798,7 +798,7 @@ export default function Reports() {
         out.push({ kind: 'gradeband', value: `${Math.max(0, posPct)}% through the band`, label: `position in range (PIR) — ${mp.position}`, detail: `grade ${mp.grade} band ${usd(band.min)}–${usd(band.max)} · full-time rate ${usd(mp.rate)} · compa-ratio ${mp.compa.toFixed(2)}` });
       }
       if (mp.belowCompetitive) {
-        out.push({ kind: 'marketFloor', value: mp.compa.toFixed(2), label: `compa-ratio — below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
+        out.push({ kind: 'marketFloor', value: `${mp.compa.toFixed(2)} compa-ratio`, label: `below the university's market-competitive range (85–115% of grade ${mp.grade} midpoint)`, detail: `the UW guideline provides that a market competitive pay request can be made for OHR to review and approve — the 85% floor for grade ${mp.grade} is ${usd(mp.floorPay)}` });
       }
     }
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });

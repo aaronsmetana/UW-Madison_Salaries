@@ -151,6 +151,27 @@ describe('briefToWordHtml', () => {
     expect(said).toContain('Beyond Alex Chen, Jordan brings: Supervisory scope (+$2,500), Bilingual.');
   });
 
+  it('gives each guideline provision one line, its words in the notes', () => {
+    const html = briefToWordHtml(baseModel());
+    const section = html.slice(html.indexOf('Basis under the UW Salary Administration Guidelines'), html.indexOf('Market standing'));
+    expect(section).toContain('<b>Parity adjustment</b>: the market-standing and peer-comparison evidence above.');
+    expect(section, 'a quote in the section').not.toContain('Balanced salary relationships');
+    expect(section).not.toContain('Terms follow the guideline');
+    expect(html.slice(html.indexOf('Notes &amp; sources'))).toContain('Parity adjustment: &ldquo;Balanced salary relationships should be maintained…&rdquo;');
+  });
+
+  it('says in figures what the brief draws: each snapshot by its month, the pay-vs-tenure trend', () => {
+    const html = briefToWordHtml(baseModel({
+      tenureRegression: { n: 40, expected: 72_500, gap: 4_500, perYear: 900 },
+      tenureScatterPoints: [{ tenure: 6.2, pay: 68_000, sameSchool: true, isSelf: true, name: 'Jordan Rivers', personKey: 'subj' }],
+    }));
+    expect(html).toContain('>May 2024<');
+    expect(html).not.toContain('2024-05-01');
+    expect(html).toContain("Among the 40 others with this title, the trend of pay on UW tenure puts pay at $72,500 for Jordan's 6.2 years");
+    expect(html).toContain(', rising about $900 a year of tenure. Jordan is paid $68,000, $4,500 below it.');
+    expect(briefToWordHtml(baseModel({ format: 'brief', tenureRegression: { n: 40, expected: 72_500, gap: 4_500 } })), 'the brief format draws no scatter').not.toContain('trend of pay on UW tenure');
+  });
+
   it('wraps output in a Word-flavored HTML document with the subject name in the title', () => {
     const html = briefToWordHtml(baseModel());
     expect(html).toMatch(/<html xmlns:o="urn:schemas-microsoft-com:office:office"/);

@@ -81,6 +81,36 @@ test('on a Letter page the history fits the sheet, its job code, department, rat
   await ctx.close();
 });
 
+test('on a screen too narrow for its columns the history folds as on paper, never scrolling sideways', async ({ browser }) => {
+  test.setTimeout(360_000);
+  // A tablet and a narrow window fold; a wide window keeps every column. A phone folds its own way (responsive.spec).
+  for (const [width, folds] of [[1024, true], [820, true], [1440, false]] as const) {
+    const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+    const page = await ctx.newPage();
+    for (const [why, key] of await people()) {
+      for (const path of [`./reports?person=${encodeURIComponent(key)}`, `./person/${encodeURIComponent(key)}?tab=history`]) {
+        await page.goto(path);
+        await rowsOf(page);
+        const fit = await page.locator('table.appt-history').evaluate((t) => {
+          const vp = t.closest('.mantine-ScrollArea-viewport') as HTMLElement | null;
+          const shown = (sel: string) => [...t.querySelectorAll(sel)].filter((c) => getComputedStyle(c).display !== 'none').length;
+          return { sideways: vp ? vp.scrollWidth - vp.clientWidth : 0, folded: shown('[data-print-fold]'), under: shown('tbody td .print-under') };
+        });
+        const at = `${why} at ${width}px, ${path}`;
+        expect(fit.sideways, `${at}: the history scrolls sideways`).toBeLessThanOrEqual(1);
+        if (folds) {
+          expect(fit.folded, `${at}: a folded column still shows`).toBe(0);
+          expect(fit.under, `${at}: nothing folded under the cells`).toBeGreaterThan(0);
+        } else {
+          expect(fit.folded, `${at}: a wide window lost its columns`).toBeGreaterThan(0);
+          expect(fit.under, `${at}: a wide window folded`).toBe(0);
+        }
+      }
+    }
+    await ctx.close();
+  }
+});
+
 test('the history has its CSV on the person page too, stating each change as its cell does', async ({ page }) => {
   await page.goto(`./person/${encodeURIComponent(HALZEN)}?tab=history`);
   const { rows } = await rowsOf(page);
