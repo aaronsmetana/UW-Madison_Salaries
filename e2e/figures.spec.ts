@@ -27,6 +27,8 @@ for (const [name, route] of PAGES) {
     await expect(row, name).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(800);
     await expect(page.locator('[data-stat-card]'), `${name}: a figure in a card of its own`).toHaveCount(0);
+    // Read off the screen, so in view: the page's header may run to two lines and put the row below the fold.
+    await row.scrollIntoViewIfNeeded();
     // Between the first two cells of the first row, a divider a reader can see; at the row's start, none.
     const g = await row.evaluate((r) => {
       const [a, b] = [...r.children].map((c) => c.getBoundingClientRect());
