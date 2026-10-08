@@ -199,14 +199,18 @@ test.describe('the plot surface', () => {
       await card.evaluate((e) => e.scrollIntoView({ block: 'center' }));
       await page.waitForTimeout(1_000);
       const cardBox = (await card.boundingBox())!;
-      const plot = (await card.locator('.recharts-cartesian-grid-bg').boundingBox())!;
       // Between the plot's top two gridlines, just inside its left edge (no bar starts there — the
       // first bin is the "< −10%" catch-all), against the card face in its left padding.
-      // Inside the plot only: a capped chart draws one gridline above it.
-      const lines = (await card.locator('.recharts-cartesian-grid-horizontal line').evaluateAll((ls) =>
-        ls.map((l) => l.getBoundingClientRect().y).sort((a, b) => a - b)))
-        .filter((ly) => ly >= plot.y && ly <= plot.y + plot.height);
-      expect(lines.length, 'the chart drew fewer than two gridlines in its plot').toBeGreaterThanOrEqual(2);
+      // Inside the plot only: a capped chart draws one gridline above it. Read together, and again until the
+      // chart has drawn them: on a slow runner the plot's box was read before a redraw moved its lines.
+      const read = () => card.evaluate((c) => {
+        const bg = c.querySelector('.recharts-cartesian-grid-bg')!.getBoundingClientRect();
+        const ys = [...c.querySelectorAll('.recharts-cartesian-grid-horizontal line')].map((l) => l.getBoundingClientRect().y).sort((a, b) => a - b);
+        return { plot: { x: bg.x, y: bg.y, width: bg.width, height: bg.height }, lines: ys.filter((ly) => ly >= bg.y && ly <= bg.y + bg.height) };
+      });
+      await expect.poll(async () => (await read()).lines.length, { message: 'the chart drew fewer than two gridlines in its plot', timeout: 30_000 })
+        .toBeGreaterThanOrEqual(2);
+      const { plot, lines } = await read();
       const y = Math.round((lines[0] + lines[1]) / 2);
       // Nothing but the card in front of either point: not the sticky header, not a tooltip.
       const hits = await page.evaluate(([px, fx, yy]) => [px, fx].map((x) =>
