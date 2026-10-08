@@ -421,3 +421,125 @@ test('the guideline section gives each provision one line, its words in the note
   }
   await ctx.close();
 });
+
+test('the points a reviewer may raise: off until asked for, then each one a figure the brief gives', async ({ browser }) => {
+  const snap = await latestSnapshot();
+  // Same-title peers with more UW tenure than Aaron who are paid less.
+  const [{ n: seniorLess }] = await oracle<{ n: number }>(
+    `WITH p AS (SELECT person_key k, sum(${PAY}) pay, any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) t
+       FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0
+         AND job_code = (SELECT any_value(job_code) FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}') GROUP BY 1),
+       me AS (SELECT * FROM p WHERE k = '${AARON}')
+     SELECT count(*) n FROM p, me WHERE p.k <> me.k AND p.t > me.t AND p.pay < me.pay`,
+  );
+  const { ctx, page } = await caseFor(browser, AARON, [{ id: AARON, label: 'Aaron Smetana' }]);
+  const brief = page.locator('.report-brief');
+  const box = page.locator('.setup-panel').getByRole('checkbox', { name: 'Points a reviewer may raise' });
+  await expect(box).not.toBeChecked({ timeout: 60_000 });
+  await expect(brief).not.toContainText('Points a reviewer may raise');
+  await page.locator('.setup-panel').getByText('Points a reviewer may raise', { exact: true }).click();
+  const points = brief.locator('.counter-points li');
+  await expect(points.first()).toBeVisible();
+  const said = await points.allInnerTexts();
+  // A pool it is paid at or above the median of, at the percentile the market-standing table gives it.
+  for (const t of said.filter((x) => x.includes('paid at or above the median of'))) {
+    const [, pool, nth] = t.match(/median of (.+?) \(the (\d+\w\w) percentile\)/)!;
+    const row = brief.locator('tr', { hasText: pool }).first();
+    await expect(row, `"${pool}" is not a pool the brief lists`).toContainText(nth);
+  }
+  if (seniorLess > 0) expect(said).toContain(`${seniorLess} same-title peer${seniorLess === 1 ? '' : 's'} with more UW tenure ${seniorLess === 1 ? 'is' : 'are'} paid less than Aaron.`);
+  else expect(said.join(' ')).not.toContain('with more UW tenure');
+  // In its place: after the pay history, numbered next.
+  const order = await page.evaluate(() => {
+    const a = document.querySelector('#report-sec-history'), b = document.querySelector('#report-sec-counter');
+    return a && b ? !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) : null;
+  });
+  expect(order, 'the section is not after the pay history').toBe(true);
+  const num = (id: string) => page.locator(`#report-sec-${id}`).innerText().then((t) => Number(t.match(/^(\d+)\./)?.[1]));
+  expect(await num('counter')).toBe((await num('history')) + 1);
+  await ctx.close();
+});
+
+test('the factor menu lists every factor by its kind, and a new one is added, described and counted like the rest', async ({ browser }) => {
+  const { ctx, page } = await caseFor(browser, AARON, [{ id: AARON, label: 'Aaron Smetana' }]);
+  const setup = page.locator('.setup-panel');
+  await expect(page.locator('.report-brief')).toContainText('Prepared for Aaron Smetana', { timeout: 60_000 });
+  await setup.getByRole('button', { name: 'Add a justification factor' }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.locator('.mantine-Menu-label')).toHaveText(['Responsibilities', 'Qualifications', 'Research & systems', 'Performance & market']);
+  for (const f of ['Licensure or registration', 'Languages used in the job', 'On-call or after-hours duties', 'Trains or mentors others',
+    'Budget or revenue responsibility', 'Awards and recognition', 'Hard-to-fill role']) await expect(menu.getByRole('menuitem', { name: f })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'On-call or after-hours duties' }).click();
+  await expect(setup.getByPlaceholder('e.g. on call one week in four')).toBeVisible();
+  await setup.getByPlaceholder('e.g. on call one week in four').fill('On call one week in four for the data center');
+  await setup.getByRole('textbox', { name: '+$ (optional)' }).first().fill('1800');
+  const brief = page.locator('.report-brief');
+  await expect(brief).toContainText('On-call or after-hours duties');
+  await expect(brief).toContainText('On call one week in four for the data center');
+  await expect(brief).toContainText('+$1,800');
+  // Once in use, it leaves the menu; its kind stays while the kind has others.
+  await setup.getByRole('button', { name: 'Add a justification factor' }).click();
+  await expect(page.getByRole('menu').getByRole('menuitem', { name: 'On-call or after-hours duties' })).toHaveCount(0);
+  await expect(page.getByRole('menu').locator('.mantine-Menu-label', { hasText: 'Responsibilities' })).toBeVisible();
+  await ctx.close();
+});
+
+test('private to the requester: what to ask if the ask is refused, and a reviewer’s questions answered from the brief’s own figures', async ({ browser }) => {
+  const snap = await latestSnapshot();
+  const [{ pay }] = await oracle<{ pay: number }>(`SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}' AND salary > 0`);
+  const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+  await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
+  const page = await ctx.newPage();
+  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+  const setup = page.locator('.setup-panel');
+  const brief = page.locator('.report-brief');
+  await expect(brief.locator('.evidence-card').first()).toBeVisible({ timeout: 60_000 });
+  const dollars = (t: string) => Number(t.match(/\$([\d,]+)/)?.[1].replace(/,/g, ''));
+  const ask = dollars(await setup.locator('text="Recommended"').locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]').innerText());
+
+  // Each rung under the ask and over the pay, highest first, and none of them the ask.
+  const rungs = (await setup.locator('.fallback-ladder li').allInnerTexts()).map(dollars);
+  for (const r of rungs) {
+    expect(r, 'a rung at or above the ask').toBeLessThan(ask);
+    expect(r, 'a rung at or below the pay').toBeGreaterThan(Math.round(pay));
+  }
+  expect(rungs).toEqual([...rungs].sort((a, b) => b - a));
+  if (!rungs.length) await expect(setup.locator('.fallback-ladder')).toContainText('No smaller ask has a basis in the record.');
+
+  // The answers agree with the brief: the share paid less with its percentile card, the peers paid more with its inversions.
+  const qa = setup.locator('.reviewer-questions');
+  const why = await qa.getByText(/^Why compare Aaron with /).locator('xpath=following-sibling::p[1]').innerText();
+  const card = await brief.locator('.evidence-card').filter({ hasText: /percentile/ }).first().innerText();
+  expect(Number(why.match(/paid more than (\d+)% of them/)?.[1]), 'the answer’s share is not the brief’s percentile').toBe(Number(card.match(/(\d+)\w\w percentile/)?.[1]));
+  const more = await qa.getByText('Is anyone with less experience paid more?').locator('xpath=following-sibling::p[1]').innerText();
+  const inv = await brief.locator('.evidence-card').filter({ hasText: /tenure inversion/ }).first().innerText();
+  expect(Number(more.match(/^(\d+) same-title/)?.[1])).toBe(Number(inv.match(/(\d+) peers?/)?.[1]));
+  await expect(qa, 'a print word in the setup').not.toContainText(/percentile/i);
+  await expect(brief, 'the private tools printed in the brief').not.toContainText(/If the ask is refused|Questions a reviewer may ask/);
+
+  // Both go out with the talking points.
+  await setup.getByRole('button', { name: 'Export talking points' }).click();
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toContain('Questions a reviewer may ask:');
+  if (rungs.length) expect(text).toContain('If the ask is refused:');
+  await ctx.close();
+});
+
+test('the one-page form fits one Letter page, with the ask, three grounds and where the pay stands', async ({ browser }) => {
+  const { ctx, page } = await caseFor(browser, AARON, [{ id: AARON, label: 'Aaron Smetana' }]);
+  await expect(page.locator('.report-brief .evidence-card').first()).toBeVisible({ timeout: 60_000 });
+  const grounds = await page.locator('.report-brief .evidence-card').count();
+  await page.locator('.setup-panel').getByText('One page', { exact: true }).click();
+  const one = page.locator('.report-brief.one-page');
+  await expect(one).toBeVisible();
+  await expect(one.locator('.one-page-grounds > *')).toHaveCount(Math.min(3, grounds));
+  await expect(one).toContainText('Where the pay stands');
+  await expect(one).not.toContainText(/Notes & sources|Peer comparison|Pay history/);
+  await expect(page).toHaveURL(/case=/);
+  // On paper the brief is 7.5in wide (print.css); a Letter page inside its 0.6in margins is 9.8in, 941px, tall.
+  await page.emulateMedia({ media: 'print' });
+  const box = await one.evaluate((e) => e.getBoundingClientRect());
+  expect(box.width, 'not laid out at the printed width').toBeLessThanOrEqual(721);
+  expect(box.height, 'the one page runs onto a second').toBeLessThanOrEqual(941);
+  await ctx.close();
+});
