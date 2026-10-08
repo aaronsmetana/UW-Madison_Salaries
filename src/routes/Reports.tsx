@@ -1187,7 +1187,7 @@ export default function Reports() {
               <Group justify="space-between" wrap="nowrap">
                 <Text size="sm" c="dimmed">Current {subjectPay != null ? usd(subjectPay) : '—'}</Text>
                 <Text size="sm" fw={700} c={belowTarget ? 'pos' : undefined}>
-                  → {recommended != null ? usd(recommended) : '—'}{belowTarget ? ` (+${pct(targetPct)})` : ''}
+                  → {recommended == null ? '—' : belowTarget ? `${usd(recommended)} (+${pct(targetPct)})` : 'maintain current pay'}
                 </Text>
               </Group>
             </Paper>

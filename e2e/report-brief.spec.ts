@@ -217,3 +217,28 @@ test('a raise case asks for one thing, chosen second, each choice with its dolla
   await expect.poll(readout).toBe(medianPay);
   await ctx.close();
 });
+
+test('an ask at or below current pay reads as no raise, in the setup and on a phone as in the brief', async ({ browser }) => {
+  // Someone paid above every group's median (their premise is checked below): every choice is a cut.
+  const snap = await latestSnapshot();
+  const [kp] = await oracle<{ k: string }>(
+    `SELECT person_key k FROM $SAL WHERE snapshot_id = '${snap}' AND lower(first_name) = 'kenneth' AND lower(last_name) = 'poss' LIMIT 1`,
+  );
+  for (const [width, height, phone] of [[1440, 900, false], [375, 812, true]] as const) {
+    const ctx = await browser.newContext({ viewport: { width, height } });
+    const page = await ctx.newPage();
+    await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(kp.k)}`);
+    await expect(page.locator('.report-brief')).toContainText('maintain current pay', { timeout: 60_000 });
+    if (phone) {
+      await expect(page.getByText(/^→ /)).toHaveText('→ maintain current pay');
+    } else {
+      const setup = page.locator('.setup-panel');
+      const ask = setup.getByRole('radiogroup').filter({ has: page.getByRole('radio', { name: /^The (tenure-adjusted )?median of all / }) });
+      const pcts = await ask.locator('.mantine-Group-root').allInnerTexts();
+      expect(pcts.filter((t) => /\$/.test(t)).every((t) => /−\d/.test(t)), 'a choice above their pay, so this tests nothing').toBe(true);
+      const readout = setup.locator('text="Recommended"').locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]');
+      await expect(readout, 'a cut shown as the recommendation').toHaveText(/^Recommended\s*Maintain current pay$/);
+    }
+    await ctx.close();
+  }
+});

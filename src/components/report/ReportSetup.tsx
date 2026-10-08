@@ -578,10 +578,13 @@ export function ReportSetup({
         >
           <Group justify="space-between" wrap="nowrap">
             <Eyebrow>Recommended</Eyebrow>
-            <Text size="sm" fw={700} c="pos">
-              {usd(recommended)}
-              {recommended > basePay && <Text span c="dimmed" fw={600}> (+{pct((recommended - basePay) / basePay)})</Text>}
-            </Text>
+            {/* As the brief says it: an ask at or below current pay is no raise. */}
+            {recommended > basePay ? (
+              <Text size="sm" fw={700} c="pos">
+                {usd(recommended)}
+                <Text span c="dimmed" fw={600}> (+{pct((recommended - basePay) / basePay)})</Text>
+              </Text>
+            ) : <Text size="sm" fw={700}>Maintain current pay</Text>}
           </Group>
         </Box>
       )}
