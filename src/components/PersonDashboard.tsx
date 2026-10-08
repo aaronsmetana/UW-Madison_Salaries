@@ -6,6 +6,7 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
+import { latestHire } from '../lib/personQuery';
 import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras } from '../lib/payHistory';
@@ -179,7 +180,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   // As-of the record's own latest snapshot date (not the viewer's "now") — matches the comparison
   // report's tenure calc (Reports.tsx), so the two report types never disagree on the same person's tenure.
   const tenureYears = useMemo(() => {
-    const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
+    const hire = latestHire(rows);
     if (!hire || !latest?.snapshot_date) return null;
     return Math.max(0, (new Date(latest.snapshot_date).getTime() - new Date(hire).getTime()) / (365.25 * 864e5));
   }, [rows, latest]);
@@ -189,7 +190,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
   const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
 
-  const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
+  const hire = latestHire(rows);
   const hireYear = hire ? String(hire).slice(0, 4) : null;
   // The title before TTC, when the earliest record is the pre-TTC snapshot and it differs from now; the hire-era
   // title otherwise cannot be assumed. The line used to repeat the title above it, the hire year and the growth

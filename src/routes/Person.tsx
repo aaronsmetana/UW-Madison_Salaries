@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton,
 } from '@mantine/core';
@@ -27,7 +27,8 @@ import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconFilter, IconPrin
 import { PersonDashboard } from '../components/PersonDashboard';
 import { PayMeasure } from '../components/PayMeasure';
 import { useControls } from '../state/controls';
-import { useSql, useGrades, useSummary } from '../lib/hooks';
+import { useSql, useGrades, useSummary, usePersonAlias } from '../lib/hooks';
+import { latestHire } from '../lib/personQuery';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
 import { personPay, actualPay, gradedAppt, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
@@ -298,6 +299,8 @@ export default function Person() {
   const { data: summary } = useSummary();
 
   const rows = useMemo(() => data ?? [], [data]);
+  // An address from before a person split in two was joined back leads to them as they are now.
+  const alias = usePersonAlias(key, !!data && !data.length);
   const latest = rows[rows.length - 1];
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
   useDocTitle(latest ? name : 'People');
@@ -512,7 +515,7 @@ export default function Person() {
   // As-of the latest snapshot (not today) — matches the peer SQL's tenure basis (Person.tsx peer
   // queries use snapshot_date), so this card, the tenure-curve callout, and the peer table all agree.
   const tenureYears = useMemo(() => {
-    const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
+    const hire = latestHire(rows);
     const asOf = rows[rows.length - 1]?.snapshot_date;
     if (!hire || !asOf) return null;
     return Math.max(0, (new Date(asOf).getTime() - new Date(hire).getTime()) / (365.25 * 864e5));
@@ -529,7 +532,7 @@ export default function Person() {
   const lastDate = trend[trend.length - 1]?.date ?? null;
   const spanYears = firstDate && lastDate ? (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
   const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
-  const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4) ?? null;
+  const hireYear = latestHire(rows)?.slice(0, 4) ?? trend[0]?.date?.slice(0, 4) ?? null;
   // Full-time rate (and its growth) — shown alongside actual pay where they diverge (FTE changes).
   const firstRate = trend[0]?.rate ?? null;
   const lastRate = trend[trend.length - 1]?.rate ?? null;
@@ -552,7 +555,7 @@ export default function Person() {
     const firstTitle = trend[0]?.title;
     const latestTitle = latest?.title;
     if (!latestTitle || trend.length === 0) return null;
-    const hireYear = rows.find((r) => r.date_of_hire)?.date_of_hire?.slice(0, 4) ?? null;
+    const hireYear = latestHire(rows)?.slice(0, 4) ?? null;
     const at = hireYear ? `At UW since ${hireYear}` : null;
     const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && !sameTitleText(firstTitle, latestTitle);
     if (hasPreTTC) return `${at ? `${at} · ` : ''}Title before TTC: ${firstTitle}`;
@@ -831,7 +834,11 @@ export default function Person() {
 
   if (isLoading) return <LoadingState label="Loading person…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
-  if (!rows.length) return <Alert color="gray">No records found for this person.</Alert>;
+  if (!rows.length) {
+    if (alias.data) return <Navigate to={{ pathname: `/person/${encodeURIComponent(alias.data)}`, search: params.toString() }} replace />;
+    if (alias.isPending) return <LoadingState label="Loading person…" />;
+    return <Alert color="gray">No records found for this person.</Alert>;
+  }
 
   return (
     <Stack gap="lg">

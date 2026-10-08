@@ -27,6 +27,7 @@ import {
 import { computeHomeStats, serializeHomeStats } from './lib/home-stats.mjs';
 import { computeRaiseSteps } from './lib/raise-steps.mjs';
 import { computeSearchIndex, serializeSearchIndex } from './lib/search-index.mjs';
+import { linkSplitPeople } from './lib/identity.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RAW_DIR = path.join(ROOT, 'data', 'raw');
@@ -458,6 +459,13 @@ async function main() {
   // Now carry them, so every snapshot files a renamed department under its name today.
   for (const r of allRows) r.department = mapDepartment(DEPT_MAP, r.school, r.department);
 
+  // One person split in two by a hire date the source changed, or by a rehire (lib/identity): joined back
+  // under their latest key, on department names as carried. The old keys are kept as aliases, so a link to
+  // one still finds the person. Never two keys in one snapshot, so no snapshot's headcount moves.
+  const identity = linkSplitPeople(allRows);
+  for (const r of allRows) r.person_key = identity.canon.get(r.person_key) ?? r.person_key;
+  console.log(`\nIdentity: ${identity.links.length} records split by a changed hire date joined back into ${new Set(identity.canon.values()).size} people`);
+
   // Hard gate — the NEWEST snapshot only. A >40% paid-headcount swing vs its immediate predecessor is
   // far outside anything seen in this dataset's history and more likely a mapping/ingestion break than
   // a real staffing change. This fails the CI job (site keeps serving the last good deploy) instead of
@@ -543,7 +551,11 @@ async function main() {
     // Divisions formed from whole departments of others (normalize `divisionReorganizations`), so a move
     // of every member of a department is read as the reorganization it is.
     reorganizations,
+    // People whose records a changed hire date had split, joined back (lib/identity).
+    joined_people: new Set(identity.canon.values()).size,
   }, null, 2));
+  // Their old keys, for a link made before they were joined.
+  fs.writeFileSync(path.join(OUT_DIR, 'person-aliases.json'), JSON.stringify(Object.fromEntries(identity.canon)));
 
   // pay-band reference (grade → range, or → minimum) + freshness status
   const gradeRows = readGrades();

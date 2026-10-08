@@ -28,6 +28,15 @@ export function useSummary() {
   return useQuery({ queryKey: ['summary'], queryFn: () => fetchData<Summary>('summary.json') });
 }
 
+/** Where an old address leads: the key a person split in two by a changed hire date now has
+ *  (scripts/lib/identity), or null. Only fetched for an address with no records. */
+export function usePersonAlias(key: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['person-aliases'], queryFn: () => fetchData<Record<string, string>>('person-aliases.json'),
+    staleTime: Infinity, retry: false, enabled, select: (m) => m[key] ?? null,
+  });
+}
+
 /** Every step's continuing raises, campus-wide (scripts/lib/raise-steps.mjs) — what a person's raises
  *  are compared against. Static and small, so it never waits on DuckDB. */
 export function useRaiseSteps() {

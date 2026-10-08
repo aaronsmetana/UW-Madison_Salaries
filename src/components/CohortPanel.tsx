@@ -82,12 +82,14 @@ export function CohortPanel() {
 
   const { data, isFetching } = useSql<{ hire_year: number; total: number; still_here: number }>(
     ['cohort', scope.kind, scopeVal, latest?.id ?? '', filterKey(filters)],
-    `WITH latest AS (SELECT DISTINCT person_key FROM salaries WHERE snapshot_id = ${sqlStr(latest?.id ?? '')} AND ${where})
-     SELECT s.hire_year hire_year, count(DISTINCT s.person_key) total,
-        count(DISTINCT s.person_key) FILTER (WHERE l.person_key IS NOT NULL) still_here
-     FROM salaries s LEFT JOIN latest l ON s.person_key = l.person_key
-     WHERE s.hire_year IS NOT NULL AND s.hire_year BETWEEN 1990 AND 2026 AND ${where}
-     GROUP BY s.hire_year ORDER BY s.hire_year`,
+    // Each person once, in the year their latest record says they were hired: someone a changed hire date
+    // had split in two (scripts/lib/identity) carries both years on their rows.
+    `WITH latest AS (SELECT DISTINCT person_key FROM salaries WHERE snapshot_id = ${sqlStr(latest?.id ?? '')} AND ${where}),
+     hired AS (SELECT person_key, arg_max(hire_year, snapshot_date) hire_year FROM salaries WHERE hire_year IS NOT NULL AND ${where} GROUP BY person_key)
+     SELECT h.hire_year hire_year, count(*) total, count(*) FILTER (WHERE l.person_key IS NOT NULL) still_here
+     FROM hired h LEFT JOIN latest l ON h.person_key = l.person_key
+     WHERE h.hire_year BETWEEN 1990 AND 2026
+     GROUP BY h.hire_year ORDER BY h.hire_year`,
     !!latest
   );
 

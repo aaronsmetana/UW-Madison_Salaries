@@ -16,3 +16,10 @@ export function personRowsSql(key: string): string {
 
 /** The cache key `useSql(['person', key], personRowsSql(key))` stores those rows under. */
 export const personRowsKey = (key: string) => ['sql', 'person', key, personRowsSql(key)] as const;
+
+/** A person's hire date as their latest record gives it: someone a changed hire date had split in two
+ *  (scripts/lib/identity) carries the earlier date on their earlier rows. Rows oldest first. */
+export function latestHire(rows: readonly { date_of_hire: string | null }[]): string | null {
+  for (let i = rows.length - 1; i >= 0; i--) if (rows[i].date_of_hire) return rows[i].date_of_hire;
+  return null;
+}

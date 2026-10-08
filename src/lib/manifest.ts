@@ -41,6 +41,8 @@ export interface Summary {
   latest: { id: string; label: string; headcount: number; median: number | null; median_rows?: number | null } | null;
   /** Divisions formed from whole departments of others, step by step (normalize `divisionReorganizations`). */
   reorganizations?: Reorganization[];
+  /** People whose records a changed hire date had split in two, joined back (scripts/lib/identity). */
+  joined_people?: number;
 }
 
 /** A division new at `to_id`, formed from whole departments of the divisions in `from`. */

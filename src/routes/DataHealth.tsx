@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { useLocation } from 'react-router-dom';
 import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, Switch, ThemeIcon, Select, ScrollArea, VisuallyHidden } from '@mantine/core';
 import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconStack2, IconArrowUp, IconReload } from '@tabler/icons-react';
-import { useManifest, useActiveSnapshotId } from '../lib/hooks';
+import { useManifest, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { num, usd } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
 import { Eyebrow } from '../components/Eyebrow';
@@ -194,6 +194,7 @@ function JumpNav({ items }: { items: [string, string][] }) {
 export default function DataHealth() {
   useDocTitle('About the data');
   const { data: manifest, isLoading, error, refetch } = useManifest();
+  const { data: summary } = useSummary();
   const snapId = useActiveSnapshotId();
   // `null` until the reader touches the switch, so the measured default below can win before then and
   // an explicit choice wins forever after — in both directions.
@@ -411,7 +412,7 @@ export default function DataHealth() {
             <DItem lead="Nov 2021 (TTC)">nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</DItem>
             <DItem lead="Oct 2023 scope change">some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</DItem>
             <DItem lead="Column mapping">columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</DItem>
-            <DItem id="identity" lead="Identity matching">people are matched by name + hire date, with no employee ID in the source. Two different people can be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
+            <DItem id="identity" lead="Identity matching">people are matched by name + hire date, with no employee ID in the source. Where the hire date changes — corrected by the source, or a rehire — one record ends and another with the same name begins in the next snapshot; when no one else has that name in either snapshot, and the two are in the same division with the same title or department, they are joined back into one person{summary?.joined_people ? ` (${summary.joined_people.toLocaleString('en-US')} people)` : ''}, whose latest hire date is shown. Two different people can still be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
             <DItem lead="Name formatting & transcription">ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</DItem>
           </Box>
           <Text size="sm" mt={4}>
