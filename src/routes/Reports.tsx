@@ -134,6 +134,8 @@ export default function Reports() {
 
   useDocTitle('Reports');
   useEffect(() => {
+    // Handing a one-person link on to the person's page: this page writes nothing into that page's address.
+    if (onePerson) return;
     setSearchParams(
       (prev) => {
         const n = new URLSearchParams(prev);
