@@ -15,39 +15,24 @@ import { usePref } from '../../lib/prefs';
  * second sentence of prose — "What comes out is a one-page brief you can print, download, or paste
  * into an email" — which is exactly the third column here. Moving it into the strip is what pays for
  * the strip's height; the header is one sentence shorter than it was.
- *
- * The two report types check genuinely different things — the comparison brief argues a case against
- * the salary guidelines, while the person report is a profile — so the middle column is not shared
- * copy with a swapped noun. Writing one strip for both would have meant claiming the person report
- * tests parity and compression, which it does not.
  */
 
 type Step = { eyebrow: string; body: string };
 
-const FLOW: Record<'person' | 'comparison', [Step, Step, Step]> = {
-  comparison: [
-    {
-      eyebrow: 'What you give',
-      body: 'The person the case is about, and the peers you want them measured against. Anything they have taken on that their title does not say, if you want it counted.',
-    },
-    {
-      eyebrow: 'What it checks',
-      body: 'Parity, compression, and the market floor — the three adjustments the UW Salary Administration Guidelines name, tested against the comparators you chose.',
-    },
-    {
-      eyebrow: 'What you get',
-      body: 'A brief that cites every figure it uses. Print it, save it as a .doc, or paste it straight into an email.',
-    },
-  ],
-  person: [
-    { eyebrow: 'What you give', body: 'One employee’s name.' },
-    {
-      eyebrow: 'What it shows',
-      body: 'Their pay and title history across every snapshot, and where they sit among everyone else holding the same title.',
-    },
-    { eyebrow: 'What you get', body: 'A profile you can print or save as a PDF.' },
-  ],
-};
+const FLOW: [Step, Step, Step] = [
+  {
+    eyebrow: 'What you give',
+    body: 'The person the case is about, and the peers you want them measured against. Anything they have taken on that their title does not say, if you want it counted.',
+  },
+  {
+    eyebrow: 'What it checks',
+    body: 'Parity, compression, and the market floor — the three adjustments the UW Salary Administration Guidelines name, tested against the comparators you chose.',
+  },
+  {
+    eyebrow: 'What you get',
+    body: 'A brief that cites every figure it uses. Print it, save it as a .doc, or paste it straight into an email.',
+  },
+];
 
 /**
  * In full until a subject is picked — the moment the page is an empty pane and the strip is what
@@ -55,7 +40,7 @@ const FLOW: Record<'person' | 'comparison', [Step, Step, Step]> = {
  * open is remembered per viewer: someone who wants the strip keeps it; everyone else gets the brief
  * a screen higher.
  */
-export function ReportFlow({ type, hasSubject }: { type: 'person' | 'comparison'; hasSubject: boolean }) {
+export function ReportFlow({ hasSubject }: { hasSubject: boolean }) {
   const [open, setOpen] = usePref<boolean>('reportFlowOpen', false);
   const id = useId();
   const expanded = !hasSubject || open;
@@ -75,7 +60,7 @@ export function ReportFlow({ type, hasSubject }: { type: 'person' | 'comparison'
       )}
       {expanded && (
       <div className="report-flow" id={id}>
-        {FLOW[type].map((s, i) => (
+        {FLOW.map((s, i) => (
           <Fragment key={s.eyebrow}>
             {i > 0 && (
               <IconChevronRight className="report-flow-arrow" size={ICON.control} aria-hidden stroke={2.5} />

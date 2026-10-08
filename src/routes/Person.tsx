@@ -23,7 +23,9 @@ import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../li
 import { ttcRank } from '../lib/snapshotOrder';
 import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconFilter } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconFilter, IconPrinter } from '@tabler/icons-react';
+import { PersonDashboard } from '../components/PersonDashboard';
+import { useControls } from '../state/controls';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
@@ -272,6 +274,7 @@ export default function Person() {
   const key = decodeURIComponent(id ?? '');
   const nav = useNavigate();
   const { add, has } = useTray();
+  const { metric } = useControls();
 
   // Active tab lives in the URL (?tab=…), same convention as Explore, so a shared/bookmarked link
   // opens on the same tab; "overview" is the implicit default and stays out of the query string.
@@ -857,7 +860,6 @@ export default function Person() {
           {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
           <ToolLinks
             links={[
-              { label: 'Report', to: `/reports?person=${encodeURIComponent(key)}&pname=${encodeURIComponent(name)}` },
               { label: 'Raise case', to: `/reports?type=comparison&subject=${encodeURIComponent(key)}` },
             ]}
           />
@@ -915,6 +917,7 @@ export default function Person() {
           <Tabs.Tab value="pay">Pay &amp; standing</Tabs.Tab>
           <Tabs.Tab value="trends">Salary trend</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
+          <Tabs.Tab value="report">Report</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="overview" pt="md">
@@ -1634,6 +1637,21 @@ export default function Person() {
 
         <Tabs.Panel value="history" pt="md">
       <HistoryTable rows={rows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} csvName={name} />
+        </Tabs.Panel>
+
+        {/* Everything above on one page, to print or save: what the Reports page's one-person report was. Its
+            queries run only once the tab is open. */}
+        <Tabs.Panel value="report" pt="md">
+          {tab === 'report' && (
+            <>
+              <Group justify="flex-end" mb="sm">
+                <Button variant="default" leftSection={<IconPrinter size={ICON.control} />} onClick={() => window.print()}>
+                  Print / Save as PDF
+                </Button>
+              </Group>
+              <div className="print-area"><PersonDashboard personKey={key} metric={metric} /></div>
+            </>
+          )}
         </Tabs.Panel>
       </Tabs>
     </Stack>

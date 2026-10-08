@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton, Menu } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck, IconDownload, IconChevronDown } from '@tabler/icons-react';
+import { IconPrinter, IconFileTypeDoc, IconCopy, IconCheck, IconDownload, IconChevronDown } from '@tabler/icons-react';
 import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades, useReferenceStatus } from '../lib/hooks';
@@ -21,11 +21,8 @@ import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
 import { tenureFit, TENURE_MIN_PEERS, printedPercentile } from '../lib/stats';
 import { readPref, writePref, clearPref } from '../lib/prefs';
-import { PersonDashboard } from '../components/PersonDashboard';
-import { EmptyState } from '../components/EmptyState';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
-import { Eyebrow } from '../components/Eyebrow';
 import { type ScatterPoint } from '../components/TenurePayScatter';
 import { ReportSetup, type SetupComparator } from '../components/report/ReportSetup';
 import { ReportBrief } from '../components/report/ReportBrief';
@@ -76,13 +73,9 @@ export default function Reports() {
   // pushed the whole page 274px wider than a 375px viewport and scrolled the app sideways.
   const isNarrow = useMediaQuery('(max-width: 48em)') ?? false;
 
-  // The tray's "Report →" shortcut deep-links here with ?mode=compare to open the comparison studio
-  // (kept working as a legacy trigger); ?type= is the current, shareable form this page now writes.
   const [params, setSearchParams] = useSearchParams();
-  const [type, setType] = useState(() => {
-    if (params.get('type') === 'comparison' || params.get('mode') === 'compare') return 'comparison';
-    return 'person';
-  });
+  // A report on one person is their page's Report tab: a link to the one this page used to make goes there.
+  const onePerson = params.get('person');
   const [hovered, setHovered] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'setup' | 'preview'>('setup');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig);
@@ -98,14 +91,14 @@ export default function Reports() {
   // A copied raise case reopens from its link: its subject, its people (`?sel=`, as Compare's) and its settings
   // (`?case=`, model `encodeCase`). Read once, as the page opens; the reader's own compare set is left alone.
   const shared = useRef((() => {
-    const sel = type === 'comparison' ? decodeSel(params.get('sel'))?.filter((i) => i.type === 'person') ?? null : null;
+    const sel = decodeSel(params.get('sel'))?.filter((i) => i.type === 'person') ?? null;
     return { sel, caseParam: params.get('case'), subject: params.get('subject') ?? sel?.[0]?.id ?? null, read: false };
   })());
   // With no subject named, a case starts on the compare set's first person.
-  const [subjectKey, setSubjectKey] = useState<string | null>(() => shared.current.subject ?? (type === 'comparison' ? persons[0]?.id ?? null : null));
+  const [subjectKey, setSubjectKey] = useState<string | null>(() => shared.current.subject ?? persons[0]?.id ?? null);
   useEffect(() => {
-    if (type === 'comparison' && !subjectKey && persons.length) setSubjectKey(persons[0].id);
-  }, [type, subjectKey, persons]);
+    if (!subjectKey && persons.length) setSubjectKey(persons[0].id);
+  }, [subjectKey, persons]);
   // The people a new case starts from when another subject is chosen: the case it was switched from.
   const seed = useRef<CasePerson[] | null>(null);
   const peers = (config.peers ?? []).filter((p) => p.key !== subjectKey);
@@ -117,7 +110,7 @@ export default function Reports() {
         any_value(school) school, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
-    type === 'comparison' && caseIds.length > 0 && !!snap
+    caseIds.length > 0 && !!snap
   );
   const subjectRow = caseRows?.find((p) => p.person_key === subjectKey);
   const knownName = [...(shared.current.sel ?? []), ...persons].find((p) => p.id === subjectKey)?.label;
@@ -139,49 +132,23 @@ export default function Reports() {
     setSubjectKey(key);
   };
 
-  // ── Report on person ── hydrated once from ?person=/?pname= on mount (a finished report is
-  // shareable), then kept in sync (with ?type=) the same way Compare syncs its ?sel= tray link.
-  const [selPerson, setSelPerson] = useState<{ key: string; name: string } | null>(() => {
-    const key = params.get('person');
-    return key ? { key, name: params.get('pname') ?? '' } : null;
-  });
-  // A link with no ?pname= names its person from the data, never by their key ("aaronsmetana|2014-10-15").
-  const { data: selNameRow } = useSql<{ fn: string | null; ln: string | null }>(
-    ['rpt-person-name', selPerson?.key ?? ''],
-    `SELECT arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln FROM salaries
-     WHERE person_key = ${sqlStr(selPerson?.key ?? '')} HAVING count(*) > 0`,
-    type === 'person' && !!selPerson && !selPerson.name,
-  );
-  useEffect(() => {
-    const r = selNameRow?.[0];
-    if (r && selPerson && !selPerson.name) setSelPerson({ key: selPerson.key, name: fullName(r.fn, r.ln) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selNameRow]);
-  useDocTitle(type === 'person' && selPerson?.name ? `Report — ${selPerson.name}` : 'Reports');
+  useDocTitle('Reports');
   useEffect(() => {
     setSearchParams(
       (prev) => {
         const n = new URLSearchParams(prev);
         n.delete('mode'); // superseded by ?type=
-        if (type === 'comparison') n.set('type', 'comparison');
-        else n.delete('type');
-        if (type === 'person' && selPerson) {
-          n.set('person', selPerson.key);
-          if (selPerson.name) n.set('pname', selPerson.name);
-        } else {
-          n.delete('person');
-          n.delete('pname');
-        }
+        n.set('type', 'comparison');
         // Mirrors Compare's ?sel= pattern: a finished comparison report is shareable via its subject.
-        if (type === 'comparison' && subjectKey) n.set('subject', subjectKey);
+        if (subjectKey) n.set('subject', subjectKey);
         else n.delete('subject');
         // And the case itself: its people and its settings, so the link reopens it (above).
-        const people = type === 'comparison' && subjectKey
+        const people = subjectKey
           ? [{ type: 'person' as const, id: subjectKey, label: subjectName }, ...peers.map((p) => ({ type: 'person' as const, id: p.key, label: p.name }))]
           : [];
         if (people.length) n.set('sel', encodeSel(people));
         else n.delete('sel');
-        const cs = type === 'comparison' ? encodeCase(config) : '';
+        const cs = encodeCase(config);
         if (cs) n.set('case', cs);
         else n.delete('case');
         return n;
@@ -189,13 +156,7 @@ export default function Reports() {
       { replace: true }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, selPerson, subjectKey, subjectName, config]);
-  const { data: personHistory } = useSql<{ snapshot: string; title: string | null; job_code: string | null; school: string | null; pay: number | null; fte: number | null }>(
-    ['rpt-person-hist', selPerson?.key ?? '', metric],
-    `SELECT snapshot_label AS snapshot, title, job_code, school, ${expr} AS pay, fte
-     FROM salaries WHERE person_key = ${sqlStr(selPerson?.key ?? '')} ORDER BY snapshot_date`,
-    type === 'person' && !!selPerson
-  );
+  }, [subjectKey, subjectName, config]);
 
   // Persist the whole setup (cohort, factors, override, sections…) per subject, so switching between
   // several in-progress raise cases (or a page refresh) doesn't lose the work already done on each.
@@ -221,7 +182,7 @@ export default function Reports() {
     if (subjectKey) writePref(`report.cfg.${subjectKey}`, config);
   }, [subjectKey, config]);
 
-  const cmpReady = type === 'comparison' && !!snap && !!subjectKey;
+  const cmpReady = !!snap && !!subjectKey;
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
@@ -328,7 +289,7 @@ export default function Reports() {
     ['rpt-peer-hist', personIds, metric],
     `SELECT person_key, any_value(snapshot_date) date, any_value(snapshot_label) snapshot_label, ${personPay(metric)} pay
      FROM salaries WHERE person_key IN (${personIds}) GROUP BY person_key, snapshot_id ORDER BY date`,
-    type === 'comparison' && caseIds.length > 0
+    caseIds.length > 0
   );
 
   // Also carries tenure (not just top-10-by-pay) so the same rows can surface tenure-inversion
@@ -1114,26 +1075,16 @@ export default function Reports() {
       )
     );
 
+  if (onePerson) return <Navigate to={`/person/${encodeURIComponent(onePerson)}?tab=report`} replace />;
   return (
     <Stack gap="lg">
       <div className="no-print">
         <PageHeader
           title="Reports"
-          // Both kinds of report (G9): it described only the raise case, over the one-person report too.
-          description="A report on one person's pay, or a raise case for one person built on the UW Salary Administration Guidelines."
+          // A report on one person is their page's Report tab; this page builds the case for a raise.
+          description="A raise case for one person, built on the UW Salary Administration Guidelines."
           right={
             <Group gap="md" w={isNarrow ? '100%' : undefined}>
-              <SegmentedControl
-                fullWidth={isNarrow}
-                w={isNarrow ? '100%' : undefined}
-                value={type}
-                onChange={setType}
-                // Sentence case, as every other control in the app; the wide labels were Title Case.
-                data={[
-                  { value: 'person', label: 'One person' },
-                  { value: 'comparison', label: 'Raise case' },
-                ]}
-              />
               <PayMeasure />
               <ExportBar joined={!isNarrow}>
                 <CopyLinkButton />
@@ -1145,7 +1096,7 @@ export default function Reports() {
                       variant="default"
                       leftSection={<IconDownload size={ICON.control} />}
                       rightSection={<IconChevronDown size={ICON.compact} />}
-                      disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
+                      disabled={!peerListRows?.length}
                     >
                       Export
                     </Button>
@@ -1154,9 +1105,7 @@ export default function Reports() {
                     <Menu.Item leftSection={<IconPrinter size={ICON.control} />} onClick={() => window.print()}>
                       Print / Save as PDF
                     </Menu.Item>
-                    {type === 'comparison' && (
-                      <>
-                        <Menu.Item
+                    <Menu.Item
                           leftSection={<IconFileTypeDoc size={ICON.control} />}
                           disabled={subjectPay == null}
                           onClick={() => downloadDoc(briefToWordHtml(model), `Salary brief - ${subjectName || 'employee'}.doc`)}
@@ -1178,37 +1127,16 @@ export default function Reports() {
                         >
                           {docCopyState === 'rich' ? 'Copied' : docCopyState === 'plain' ? 'Copied (plain text)' : 'Copy for email'}
                         </Menu.Item>
-                      </>
-                    )}
                   </Menu.Dropdown>
                 </Menu>
               </ExportBar>
             </Group>
           }
         />
-        <ReportFlow type={type === 'comparison' ? 'comparison' : 'person'} hasSubject={type === 'comparison' ? !!subjectKey : !!selPerson} />
+        <ReportFlow hasSubject={!!subjectKey} />
       </div>
 
-      {type === 'person' && (
-        <>
-          <Card withBorder padding="lg" className="no-print">
-            <Eyebrow mb={6}>Report on</Eyebrow>
-            <SearchBox kinds={['people']} placeholder="Search an employee by name…" onPick={(h) => setSelPerson({ key: h.person_key, name: h.name })} />
-          </Card>
-          {selPerson ? (
-            <div className="print-area"><PersonDashboard personKey={selPerson.key} metric={metric} /></div>
-          ) : (
-            <EmptyState
-              icon={<IconFileReport size={ICON.feature} />}
-              title="No employee selected"
-              hint="Pick an employee above for a report on their pay, title history, and how they compare to others in their title."
-            />
-          )}
-        </>
-      )}
-
-      {type === 'comparison' && (
-        !subjectKey ? (
+      {!subjectKey ? (
           <Card withBorder padding="xl" className="no-print">
             <Text fw={600} mb={4}>Start your raise case</Text>
             <Text c="dimmed" size="sm" mb="md">Add the subject, then the peers to compare them with.</Text>
@@ -1244,8 +1172,7 @@ export default function Reports() {
             <div style={{ display: mobileTab === 'setup' ? undefined : 'none' }}>{setupPane}</div>
             <div style={{ display: mobileTab === 'preview' ? undefined : 'none' }}>{briefPane}</div>
           </>
-        )
-      )}
+        )}
     </Stack>
   );
 }
