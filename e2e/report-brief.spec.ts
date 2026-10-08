@@ -1,4 +1,5 @@
 import { test, expect, type Browser } from '@playwright/test';
+import { oracle, latestSnapshot, PAY } from './oracle';
 
 /**
  * The reports' words (section 4): footnotes as a printed page has them, sentences built from the cohort's name
@@ -131,4 +132,88 @@ test('the one-person report gives each figure once: standing in its comparison c
   await expect(tiles).toContainText(/Growth since/);
   // The header names the person and their job; the figures are below it.
   await expect(report.locator('div:has(> h3)').first(), 'the header repeats a figure').not.toContainText(/%|years of salary data/);
+});
+
+test('a raise case asks for one thing, chosen second, each choice with its dollars and percent', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const snap = await latestSnapshot();
+  // Two others with Aaron's job code: one paid more, whom the case can ask to match, and one paid less, whom it cannot.
+  const others = await oracle<{ k: string; nm: string; pay: number; more: boolean }>(
+    `WITH p AS (SELECT person_key k, any_value(first_name || ' ' || last_name) nm, sum(${PAY}) pay FROM $SAL
+       WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY 1)
+     SELECT k, nm, pay, pay > (SELECT pay FROM p WHERE k = '${AARON}') more FROM p
+     WHERE k <> '${AARON}' AND k IN (SELECT person_key FROM $SAL WHERE snapshot_id = '${snap}'
+       AND job_code = (SELECT any_value(job_code) FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}'))
+     ORDER BY k`,
+  );
+  const peer = others.find((o) => o.more)!;
+  const lower = others.find((o) => !o.more)!;
+  expect(peer && lower, 'no one in Aaron’s job code paid more, or less, so this tests nothing').toBeTruthy();
+  const { ctx, page } = await caseFor(browser, AARON, [AARON, peer, lower].map((p) => typeof p === 'string' ? { id: p, label: 'Aaron Smetana' } : { id: p.k, label: p.nm }));
+  const setup = page.locator('.setup-panel');
+  const dollars = (t: string) => Number(t.match(/\$([\d,]+)/)?.[1].replace(/,/g, ''));
+  const row = (name: string | RegExp) => setup.getByRole('radio', { name }).locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]');
+  const readout = async () => dollars(await setup.locator('text="Recommended"').locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]').innerText());
+
+  const everyone = /^The (tenure-adjusted )?median of all UW–Madison employees with this title$/;
+  const median = setup.getByRole('radio', { name: everyone });
+  await expect(median).toBeChecked({ timeout: 60_000 });
+  await expect(row(everyone)).toContainText(/\$[\d,]+/, { timeout: 60_000 });
+  // The controls it replaces: a benchmark radio with its badges, a target Select, guideline boxes, an override.
+  await expect(setup).not.toContainText(/Benchmark cohort|Target salary|Override the outcome|Set target to/i);
+  // The cohorts' badges are gone from the ask (the case-strength panel keeps its own "market deficit" signal).
+  expect((await setup.innerText()).split(/Compared with/i)[0], 'a badge on a choice').not.toMatch(/deficit|weak case/i);
+  await expect(setup.getByRole('checkbox', { name: /target/i })).toHaveCount(0);
+  await expect(setup.getByRole('button', { name: /parity target/i }), 'a second way to choose whom to match').toHaveCount(0);
+  // In the order a case is argued: whose pay, what to ask, with whom, why it is more, then the private review.
+  const text = (await setup.innerText()).toLowerCase();
+  const order = ['subject', 'what to ask for', 'compared with', 'justification factors', 'strategy tools'].map((s) => [s, text.indexOf(s)] as const);
+  for (const [s, i] of order) expect(i, `"${s}" is not in the setup`).toBeGreaterThanOrEqual(0);
+  expect(order.map(([s]) => s)).toEqual([...order].sort((a, b) => a[1] - b[1]).map(([s]) => s));
+
+  // Each choice with a figure gives its dollars and its percent against the subject's pay.
+  const ask = setup.getByRole('radiogroup').filter({ has: page.getByRole('radio', { name: everyone }) });
+  const choices = await ask.getByRole('radio').evaluateAll((rs) => rs.map((r) => r.closest('.mantine-Group-root')?.textContent ?? ''));
+  expect(choices.length, 'the choices were not found, so none was read').toBeGreaterThan(3);
+  for (const t of choices) {
+    if (/A figure of my own/.test(t)) continue;
+    expect(t, 'a choice without its dollars').toMatch(/\$[\d,]+/);
+    expect(t, 'a choice without its percent').toMatch(/[+−]\d+\.\d%|0%/);
+  }
+
+  // No factors: the ask is the median as its row gives it.
+  const medianPay = dollars(await row(everyone).innerText());
+  await expect.poll(readout).toBe(medianPay);
+
+  // A named person paid more: their pay is the ask. Matching someone paid less is not offered.
+  await expect(setup.getByRole('radio', { name: new RegExp(`^Match ${lower.nm}$`, 'i') }), 'an ask below the subject’s pay').toHaveCount(0);
+  const match = setup.getByRole('radio', { name: new RegExp(`^Match ${peer.nm}$`, 'i') });
+  await match.click();
+  const peerPay = dollars(await match.locator('xpath=ancestor::div[contains(@class, "mantine-Group-root")][1]').innerText());
+  expect(peerPay, 'the match row gives their pay').toBe(Math.round(peer.pay));
+  await expect.poll(readout).toBe(peerPay);
+  await expect(page.locator('.report-brief')).toContainText(/'s salary/);
+
+  // A figure of one's own starts from the ask as it stands, and is asked as written.
+  await setup.getByRole('radio', { name: 'A figure of my own' }).click();
+  const own = setup.getByRole('textbox', { name: 'Salary to ask for' });
+  await expect(own).toHaveValue(`$${peerPay.toLocaleString('en-US')}`);
+  await own.fill('150000');
+  await expect.poll(readout).toBe(150_000);
+  await expect(page.locator('.report-brief')).toContainText('$150,000');
+
+  // Another group's median: that group is also the one standing is measured against.
+  const school = setup.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / });
+  if (await school.count()) {
+    await school.click();
+    await expect(own).toHaveCount(0);
+    await expect.poll(readout).toBe(dollars(await row(/^The (tenure-adjusted )?median of same-title peers in /).innerText()));
+    await expect(page.locator('.report-brief')).toContainText(/same-title peers in /);
+  }
+
+  // Back to everyone: one choice, so nothing of the others is left behind.
+  await median.click();
+  await expect(own).toHaveCount(0);
+  await expect.poll(readout).toBe(medianPay);
+  await ctx.close();
 });

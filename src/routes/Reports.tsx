@@ -31,9 +31,9 @@ import { ReportSetup, type SetupComparator, type SuggestPerson } from '../compon
 import { ReportBrief } from '../components/report/ReportBrief';
 import { ReportFlow } from '../components/report/ReportFlow';
 import {
-  COHORT_DEFS, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, deficitBadge, caseStrength, buildTalkingPoints,
+  COHORT_MODES, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, caseStrength, buildTalkingPoints, askOptions, askValueOf,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
-  type ProofModel, type ReceiptLine, type BriefModel, type BadgeTone, type StrengthKey,
+  type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey,
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { ICON } from '../lib/ui';
@@ -51,7 +51,7 @@ interface Subject {
 interface PeerRow { person_key: string; pay: number; tenure: number | null; school: string | null }
 interface TrayPerson { person_key: string; fn: string; ln: string; title: string | null; school: string | null; pay: number; tenure: number | null }
 
-const ALL_MODES: CohortMode[] = ['all', 'school', 'tenure', 'grade', 'curated'];
+const ALL_MODES = COHORT_MODES;
 
 /**
  * The report export controls. `Button.Group` pins its children to a single row, which ran the last two
@@ -466,9 +466,7 @@ export default function Reports() {
   const selectedMode: CohortMode = cohortAvailable[config.cohort] ? config.cohort : 'all';
   const stats = statsByMode[selectedMode];
   const med = stats.med;
-  // Document-facing phrasing for the active cohort — `COHORT_DEFS[].label` (used only in the setup
-  // pane's radio group) is UI-only text like "Only my curated set" or "All same-title at UW" and must
-  // never appear verbatim in a document handed to a supervisor or HR.
+  // The active cohort in words, as the setup and the document both give it.
   const docCohortLabel = cohortDocLabel(selectedMode, { school, grade, gradeBasis: subj?.grade_basis, tenureBand: config.tenureBand });
 
   // Market-standing panel: a distribution view of the ACTIVE cohort (the one selected in "Benchmark
@@ -484,7 +482,7 @@ export default function Reports() {
         return { label: cohortDocLabel(m, { school, grade, gradeBasis: subj?.grade_basis, tenureBand: config.tenureBand }), n: s.n, med: s.med, percentile: s.percentile, gapToMed: s.gapToMed };
       });
     return { min: stats.min, p25: stats.p25, med: stats.med, p75: stats.p75, max: stats.max, values, cohortLabel: docCohortLabel, pools };
-  }, [subjectPay, stats, cohortRowsFor, selectedMode, school, grade, config.tenureBand, docCohortLabel, statsByMode, cohortAvailable]);
+  }, [subjectPay, stats, cohortRowsFor, selectedMode, school, grade, config.tenureBand, docCohortLabel, statsByMode, cohortAvailable, subj?.grade_basis]);
 
   // Longevity (consecutive years below the title median)
   const longevity = useMemo(() => {
@@ -725,6 +723,9 @@ export default function Reports() {
   const computed = baseParity != null ? baseParity + addOnSum : null;
   const override = typeof config.override === 'number' && config.override > 0 ? config.override : null;
   const recommended = override ?? computed;
+  // The setup's one "What to ask for": read from what the ask actually rests on, so a case saved with two
+  // guideline targets on (they used to be two boxes) shows the one that won.
+  const askValue = askValueOf({ override, anchor: winningAnchor?.key ?? null, target: targetPerson?.person_key ?? null, cohort: selectedMode });
   const belowTarget = subjectPay != null && recommended != null && recommended > subjectPay;
   const targetDelta = belowTarget && recommended != null && subjectPay != null ? recommended - subjectPay : 0;
   const targetPct = belowTarget && subjectPay ? targetDelta / subjectPay : 0;
@@ -957,7 +958,6 @@ export default function Reports() {
   })).sort((a, b) => (a.isSubject ? -1 : b.isSubject ? 1 : b.pay - a.pay));
   // Fall back to tray labels before trayPeople resolves, so the subject is always selectable.
   const comparatorOptions = comparators.length ? comparators : persons.map((p) => ({ key: p.id, name: p.label, title: null, school: null, tenure: null, pay: null, isSubject: p.id === subjectKey }));
-  const targetOptions = comparators.filter((c) => !c.isSubject).map((c) => ({ value: c.key, label: c.name }));
   const trayIds = new Set(persons.map((p) => p.id));
   const suggestions: SuggestPerson[] = persons.length >= 5 ? [] : (suggestRows ?? [])
     .filter((s) => !trayIds.has(s.person_key) && s.person_key !== subjectKey)
@@ -973,34 +973,38 @@ export default function Reports() {
     .sort((a, b) => b.pay - a.pay)
     .slice(0, 3)
     .map((s) => ({ key: s.person_key, name: fullName(s.fn, s.ln), pay: s.pay }));
-  // Semantic scenting: highlight the single biggest-deficit lens as the strongest ("best") case.
-  let bestMode: CohortMode | null = null;
-  let bestGap = 0;
-  for (const m of ALL_MODES) {
-    if (!cohortAvailable[m]) continue;
-    const g = statsByMode[m].gapToMed ?? 0;
-    if (g > bestGap) { bestGap = g; bestMode = m; }
-  }
-  const cohortBadges = Object.fromEntries(ALL_MODES.map((m) => {
-    if (!cohortAvailable[m]) return [m, null];
-    const b = deficitBadge(statsByMode[m].gapToMed);
-    if (b && b.tone === 'deficit' && m === bestMode) return [m, { text: b.text, tone: 'best' as BadgeTone }];
-    return [m, b];
-  })) as Record<CohortMode, { text: string; tone: BadgeTone } | null>;
+  // The ask's choices, each with its figure: every group's median (the curated one once it is more than one
+  // person, where it would only repeat "Match …"), each named person, and the guideline figures that apply.
+  const all = statsByMode.all;
+  const asks = askOptions({
+    cohorts: ALL_MODES
+      .filter((m) => cohortAvailable[m] && (m !== 'curated' || statsByMode.curated.n > 1 || selectedMode === 'curated'))
+      .map((m) => ({
+        mode: m, pay: statsByMode[m].expMed ?? statsByMode[m].med ?? null, adjusted: statsByMode[m].expMed != null,
+        label: cohortDocLabel(m, { school, grade, gradeBasis: subj?.grade_basis, tenureBand: config.tenureBand }),
+      })),
+    // Matching someone paid no more would not raise the ask; a case that already names them keeps them.
+    peers: comparators
+      .filter((c) => !c.isSubject && (subjectPay == null || (c.pay ?? 0) > subjectPay || c.key === config.targetKey))
+      .map((c) => ({ key: c.key, name: c.name, pay: c.pay })),
+    marketFloor: marketPosition?.belowCompetitive ? { floorPay: marketPosition.floorPay, floorAsk: marketPosition.floorAsk, compa: marketPosition.compa, grade: marketPosition.grade } : null,
+    supervisor: supervisoryCase.top && supervisoryCase.target15 != null && supervisoryCase.reports.some((r) => r.belowFloor)
+      && (subjectPay == null || supervisoryCase.target15 > subjectPay)
+      ? { name: supervisoryCase.top.name, pay: supervisoryCase.target15 } : null,
+    median: all.expMed ?? all.med ?? null,
+  });
 
-  // Per-signal coaching: for any case-strength bar that isn't maxed, the concrete lever to lift it.
-  const bestLabel = COHORT_DEFS.find((c) => c.value === bestMode)?.label ?? '';
+  // Per-signal coaching: for any case-strength bar that isn't maxed, the concrete lever to lift it. Not which
+  // group would make the gap look largest: shopping for the most favourable pool is what a reader discounts.
   const strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>> = {};
   for (const p of strength.parts) {
     if (p.value >= p.max) continue;
     const head = p.max - p.value;
     if (p.key === 'market') {
-      if (bestMode && bestMode !== selectedMode && bestGap > (stats.gapToMed ?? 0)) {
-        strengthHints.market = { text: `up to +${head} pts · strongest available lens: “${bestLabel}” (−${usd(bestGap)})`, tone: 'action' };
-      } else if (stats.gapToMed != null && stats.gapToMed > 0 && med) {
-        strengthHints.market = { text: `the largest gap available — ${pct(stats.gapToMed / med)} below this cohort’s median`, tone: 'fixed' };
+      if (stats.gapToMed != null && stats.gapToMed > 0 && med) {
+        strengthHints.market = { text: `${pct(stats.gapToMed / med)} below this group’s median`, tone: 'fixed' };
       } else {
-        strengthHints.market = { text: 'at or above this cohort’s median', tone: 'fixed' };
+        strengthHints.market = { text: 'at or above this group’s median', tone: 'fixed' };
       }
     } else if (p.key === 'inversion') {
       strengthHints.inversion = { text: `up to +${head} pts · add comparators with less UW tenure who out-earn ${subjectFirst}`, tone: 'action' };
@@ -1032,17 +1036,17 @@ export default function Reports() {
         inversionSuggestions={inversionSuggestions}
         onAddPerson={(p) => add({ type: 'person', id: p.key, label: p.name })}
         onRemovePerson={(key) => remove(key)}
-        cohortBadges={cohortBadges}
-        cohortAvailable={cohortAvailable}
-        targetOptions={targetOptions}
+        asks={asks}
+        askValue={askValue}
         caseStrength={strength}
         strengthHints={strengthHints}
         talkingPoints={talkingPoints}
         overAsk={overAsk}
         overAskAnchor={winningAnchor?.key ?? null}
         cohortP75={stats.p75}
+        recommended={recommended}
         // On a phone the ledger pinned above the tabs already shows it; the setup's own readout said it twice.
-        recommended={isDesktop ? recommended : null}
+        readout={isDesktop}
         onReset={() => {
           if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
           setConfig(defaultConfig());
@@ -1055,7 +1059,6 @@ export default function Reports() {
         }}
         onRemoveSupervisee={(key) => setConfig({ ...config, supervisees: config.supervisees.filter((k) => k !== key) })}
         evidenceChecklist={evidenceChecklist}
-        marketFloor={marketPosition?.belowCompetitive ? { floorPay: marketPosition.floorPay, floorAsk: marketPosition.floorAsk, compa: marketPosition.compa, grade: marketPosition.grade } : null}
         performanceGuide={performanceGuide}
       />
     </Box>

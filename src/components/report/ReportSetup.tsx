@@ -4,17 +4,17 @@ import {
   SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
-import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconTarget, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
+import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
 import { SearchBox } from '../SearchBox';
 import { Eyebrow } from '../Eyebrow';
 import { CardTitle } from '../CardTitle';
-import { usd, pct, fmtYears } from '../../lib/format';
+import { usd, pct, fmtYears, fmtChange } from '../../lib/format';
 import { dropdownProps } from '../../lib/selectProps';
 import { ICON } from '../../lib/ui';
 import { Z } from '../../lib/layers';
 import {
-  COHORT_DEFS, FACTOR_DEFS, SECTION_DEFS, newCustomFactor, type ReportConfig, type CohortMode, type FactorKey,
-  type CaseStrength, type BadgeTone, type StrengthKey, type SupervisoryCase,
+  FACTOR_DEFS, SECTION_DEFS, newCustomFactor, applyAsk, type ReportConfig, type FactorKey,
+  type CaseStrength, type StrengthKey, type SupervisoryCase, type AskOption, type AskValue,
 } from './model';
 
 export interface SetupComparator { key: string; name: string; title: string | null; school: string | null; tenure: number | null; pay: number | null; isSubject: boolean }
@@ -24,8 +24,8 @@ const SectionLabel = ({ children }: { children: ReactNode }) => <Eyebrow>{childr
 
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, basePay, suggestions, inversionSuggestions, onAddPerson, onRemovePerson,
-  cohortBadges, cohortAvailable, targetOptions, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, onReset, onHover,
-  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, marketFloor, performanceGuide,
+  asks, askValue, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, readout, onReset, onHover,
+  supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, performanceGuide,
 }: {
   config: ReportConfig;
   onChange: (next: ReportConfig) => void;
@@ -37,9 +37,9 @@ export function ReportSetup({
   inversionSuggestions: SuggestPerson[];
   onAddPerson: (p: { key: string; name: string }) => void;
   onRemovePerson: (key: string) => void;
-  cohortBadges: Record<CohortMode, { text: string; tone: BadgeTone } | null>;
-  cohortAvailable: Record<CohortMode, boolean>;
-  targetOptions: { value: string; label: string }[];
+  /** What the case may ask for, each with its figure, and which it asks for (`askOptions`, `askValueOf`). */
+  asks: AskOption[];
+  askValue: AskValue;
   caseStrength: CaseStrength | null;
   strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>>;
   talkingPoints: string;
@@ -48,9 +48,11 @@ export function ReportSetup({
    *  tone: an anchored over-ask is informational, an unanchored one is a credibility warning. */
   overAskAnchor: 'supervisor' | 'marketFloor' | null;
   cohortP75: number | null;
-  /** The current recommended salary — powers the sticky footer that tracks factor toggles. Null on a phone, where
-   *  the page's own ledger shows it. */
+  /** The current recommended salary: the sticky readout that tracks factor toggles, and where a figure of one's
+   *  own starts. */
   recommended: number | null;
+  /** Whether the setup shows its own readout of it: not on a phone, where the page's ledger shows it. */
+  readout: boolean;
   onReset: () => void;
   onHover: (id: string | null) => void;
   /** Resolved direct reports named under the Supervisory-scope factor (pay/differential vs. the
@@ -62,9 +64,6 @@ export function ReportSetup({
    *  a private nudge so the user can see how to strengthen the case before printing. `sectionId` links
    *  a row to its document section so clicking it scrolls the brief there. */
   evidenceChecklist: { label: string; ok: boolean; note?: string; sectionId?: string }[];
-  /** The SAG market-competitive floor (85% of the grade midpoint) when the subject is below it — powers
-   *  the opt-in floor target next to the target Select. Null when no published band / already competitive. */
-  marketFloor: { floorPay: number; floorAsk: number; compa: number; grade: number } | null;
   /** SAG performance-adjustment coaching for the Performance factor (5–10% general range + the annual-
    *  review matrix cell for the subject's position in grade, with midrange dollar suggestions). */
   performanceGuide: {
@@ -81,15 +80,6 @@ export function ReportSetup({
   const peers = comparators.filter((c) => !c.isSubject);
 
   const pill = (amt: number) => Math.round(amt);
-  // Semantic scenting: the strongest (biggest-deficit) lens is the magnet; a surplus is a warning.
-  const badgeStyle = (tone: BadgeTone): { variant: string; color: string } => {
-    switch (tone) {
-      case 'best': return { variant: 'filled', color: 'accent' };
-      case 'deficit': return { variant: 'light', color: 'accent' };
-      case 'surplus': return { variant: 'light', color: 'orange' };
-      default: return { variant: 'light', color: 'gray' };
-    }
-  };
 
   return (
     <Stack gap="lg">
@@ -104,6 +94,69 @@ export function ReportSetup({
           value={subjectKey}
           onChange={onSubject}
           allowDeselect={false}
+        />
+      </Card>
+
+      {/* What to ask for: one choice, second, as a case is argued: whose pay, then what to ask, then with whom and
+          why it is more (`askOptions` in the model). */}
+      <Card withBorder padding="md">
+        <SectionLabel>What to ask for</SectionLabel>
+        <Radio.Group value={askValue} onChange={(v) => onChange(applyAsk(config, v as AskValue, recommended))} mt={8}>
+          <Stack gap={8}>
+            {asks.map((o) => (
+              <div key={o.value}>
+                <Group gap="xs" wrap="nowrap" justify="space-between" align="flex-start">
+                  <Radio value={o.value} label={o.label} disabled={o.disabled} />
+                  {o.pay != null && (
+                    <Box ta="right" style={{ flexShrink: 0 }}>
+                      <Text size="sm" fw={600} c={o.disabled ? 'dimmed' : undefined}>{usd(o.pay)}</Text>
+                      {basePay != null && basePay > 0 && <Text size="xs" c="dimmed">{fmtChange((o.pay - basePay) / basePay)}</Text>}
+                    </Box>
+                  )}
+                </Group>
+                {(askValue === o.value || o.disabled) && o.help && <Text size="xs" c="dimmed" mt={2} ml={28}>{o.help}</Text>}
+                {o.value === 'cohort:tenure' && askValue === o.value && (
+                  <NumberInput
+                    size="xs"
+                    mt={6}
+                    ml={28}
+                    w={160}
+                    label="± years of tenure"
+                    value={config.tenureBand}
+                    onChange={(v) => set({ tenureBand: typeof v === 'number' ? v : 3 })}
+                    min={1}
+                    max={20}
+                  />
+                )}
+                {o.value === 'own' && askValue === 'own' && (
+                  <NumberInput
+                    size="xs"
+                    mt={6}
+                    ml={28}
+                    w={180}
+                    aria-label="Salary to ask for"
+                    prefix="$"
+                    thousandSeparator=","
+                    value={config.override}
+                    onChange={(v) => set({ override: typeof v === 'number' ? v : '' })}
+                    min={0}
+                  />
+                )}
+              </div>
+            ))}
+          </Stack>
+        </Radio.Group>
+        <Text size="xs" c="dimmed" mt="sm">
+          {askValue === 'own'
+            ? 'Asked as written: the factors’ amounts are not added to it.'
+            : 'The factors’ amounts below are added to it.'}
+        </Text>
+        <TextInput
+          mt="sm"
+          label="Headline (optional)"
+          placeholder="Override the recommendation sentence"
+          value={config.headline}
+          onChange={(e) => set({ headline: e.currentTarget.value })}
         />
       </Card>
 
@@ -131,21 +184,9 @@ export function ReportSetup({
                   {[c.title, c.school, c.tenure != null ? fmtYears(c.tenure) : null, c.pay != null ? usd(c.pay) : null].filter(Boolean).join(' · ')}
                 </Text>
               </Box>
-              <Group gap={4} wrap="nowrap">
-                <Tooltip label={config.targetKey === c.key ? 'Parity target — click to clear' : 'Set as parity target'} withArrow>
-                  <ActionIcon
-                    variant={config.targetKey === c.key ? 'filled' : 'subtle'}
-                    color={config.targetKey === c.key ? 'accent' : 'gray'}
-                    aria-label={config.targetKey === c.key ? `Clear ${c.name} as parity target` : `Set ${c.name} as parity target`}
-                    onClick={() => set({ targetKey: config.targetKey === c.key ? null : c.key })}
-                  >
-                    <IconTarget size={ICON.control} />
-                  </ActionIcon>
-                </Tooltip>
-                <ActionIcon variant="subtle" color="gray" aria-label={`Remove ${c.name}`} onClick={() => onRemovePerson(c.key)}>
-                  <IconX size={ICON.control} />
-                </ActionIcon>
-              </Group>
+              <ActionIcon variant="subtle" color="gray" aria-label={`Remove ${c.name}`} onClick={() => onRemovePerson(c.key)}>
+                <IconX size={ICON.control} />
+              </ActionIcon>
             </Group>
           ))}
           {/* Docked input — typing here injects a comparator into the list above. */}
@@ -178,77 +219,6 @@ export function ReportSetup({
               ))}
             </Group>
           </Box>
-        )}
-      </Card>
-
-      {/* Benchmark cohort */}
-      <Card withBorder padding="md">
-        <SectionLabel>Benchmark cohort</SectionLabel>
-        <Radio.Group value={config.cohort} onChange={(v) => set({ cohort: v as CohortMode })} mt={8}>
-          <Stack gap={8}>
-            {COHORT_DEFS.filter((c) => cohortAvailable[c.value]).map((c) => {
-              const badge = cohortBadges[c.value];
-              return (
-                <div key={c.value}>
-                  <Group gap="xs" wrap="nowrap" justify="space-between">
-                    <Radio value={c.value} label={c.label} />
-                    {badge && (
-                      <Badge
-                        size="sm"
-                        {...badgeStyle(badge.tone)}
-                        style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                      >
-                        {badge.text}
-                      </Badge>
-                    )}
-                  </Group>
-                  {config.cohort === c.value && <Text size="xs" c="dimmed" mt={2} ml={28}>{c.help}</Text>}
-                  {c.value === 'tenure' && config.cohort === 'tenure' && (
-                    <NumberInput
-                      size="xs"
-                      mt={6}
-                      ml={28}
-                      w={160}
-                      label="± years of tenure"
-                      value={config.tenureBand}
-                      onChange={(v) => set({ tenureBand: typeof v === 'number' ? v : 3 })}
-                      min={1}
-                      max={20}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </Stack>
-        </Radio.Group>
-      </Card>
-
-      {/* Target */}
-      <Card withBorder padding="md">
-        <SectionLabel>Target salary (optional)</SectionLabel>
-        <Select
-          {...dropdownProps('md')}
-          mt={6}
-          placeholder="Leave empty → tenure-adjusted median"
-          data={targetOptions}
-          value={config.targetKey}
-          onChange={(v) => set({ targetKey: v })}
-          clearable
-        />
-        <Text size="xs" c="dimmed" mt={4}>Naming a peer sets the base parity to their pay; value-adds stack on top.</Text>
-        {marketFloor && (
-          <Checkbox
-            mt={10}
-            size="xs"
-            label={`Set target to the market-competitive floor — 85% of grade ${marketFloor.grade}'s midpoint (${usd(marketFloor.floorPay)} full-time${marketFloor.floorAsk !== marketFloor.floorPay ? `, ${usd(marketFloor.floorAsk)} at this appointment` : ''}) · UW salary guideline`}
-            checked={config.marketFloorTarget}
-            onChange={(e) => set({ marketFloorTarget: e.currentTarget.checked })}
-          />
-        )}
-        {marketFloor && (
-          <Text size="xs" c="dimmed" mt={4}>
-            The full-time rate is a {marketFloor.compa.toFixed(2)} compa-ratio — below the guideline's 0.85 market-competitive floor. The highest opted-in guideline anchor wins; it never lowers the ask.
-          </Text>
         )}
       </Card>
 
@@ -331,17 +301,6 @@ export function ReportSetup({
                               </Group>
                             ))}
                           </Stack>
-                        )}
-                        {supervisoryCase.top && supervisoryCase.target15 != null
-                          && supervisoryCase.reports.some((r) => r.belowFloor)
-                          && (basePay == null || supervisoryCase.target15 > basePay) && (
-                          <Checkbox
-                            mt={8}
-                            size="xs"
-                            label={`Set target to 15% above ${supervisoryCase.top.name} (${usd(supervisoryCase.target15)}) — UW Salary Administration Guidelines`}
-                            checked={config.supervisorTarget}
-                            onChange={(e) => set({ supervisorTarget: e.currentTarget.checked })}
-                          />
                         )}
                       </Box>
                     )}
@@ -459,29 +418,6 @@ export function ReportSetup({
         </Menu>
       </Card>
 
-      {/* Outcome override */}
-      <Card withBorder padding="md">
-        <SectionLabel>Override the outcome</SectionLabel>
-        <NumberInput
-          mt={6}
-          label="Final recommended salary"
-          description="Leave empty to use base + value-adds"
-          placeholder="Auto"
-          prefix="$"
-          thousandSeparator=","
-          value={config.override}
-          onChange={(v) => set({ override: typeof v === 'number' ? v : '' })}
-          min={0}
-        />
-        <TextInput
-          mt="sm"
-          label="Headline (optional)"
-          placeholder="Override the recommendation sentence"
-          value={config.headline}
-          onChange={(e) => set({ headline: e.currentTarget.value })}
-        />
-      </Card>
-
       {/* Strategy tools — Kitchen-only (never on the right pane) */}
       <Card withBorder padding="md" bg="var(--mantine-color-default-hover)">
         <Group justify="space-between" align="center" wrap="nowrap">
@@ -576,7 +512,7 @@ export function ReportSetup({
               <>
                 <IconInfoCircle size={ICON.compact} color="var(--mantine-color-accent-6)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <Text size="xs" c="accent.7" className="accent7-text">
-                  The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''}, but it's anchored to the
+                  The ask exceeds this group's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''}, but it's anchored to the
                   UW guideline's {overAskAnchor === 'supervisor' ? '15% supervisory differential above a named direct report' : 'market-competitive floor (85% of the grade midpoint)'} — cite the guideline when you present it, not an unsupported reach.
                 </Text>
               </>
@@ -584,7 +520,7 @@ export function ReportSetup({
               <>
                 <IconAlertTriangle size={ICON.compact} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <Text size="xs" c="orange">
-                  The ask exceeds this cohort's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''} — consider trimming value-adds for credibility.
+                  The ask exceeds this group's 75th percentile{cohortP75 != null ? ` (${usd(cohortP75)})` : ''} — consider trimming value-adds for credibility.
                 </Text>
               </>
             )}
@@ -620,7 +556,7 @@ export function ReportSetup({
           </Stack>
         </Checkbox.Group>
         <Group justify="flex-end" mt="md">
-          <Tooltip label="Clear all factors, target, override and cohort back to defaults">
+          <Tooltip label="Clear the factors and the ask back to defaults">
             <Button variant="subtle" color="gray" size="xs" leftSection={<IconRefresh size={ICON.compact} />} onClick={onReset}>
               Reset setup
             </Button>
@@ -630,7 +566,7 @@ export function ReportSetup({
 
       {/* Sticky recommendation readout — the long setup pane means a factor toggle near the top moves the
           number well off-screen; this pins the current figure so every edit shows its effect at a glance. */}
-      {recommended != null && basePay != null && (
+      {readout && recommended != null && basePay != null && (
         <Box
           style={{
             position: 'sticky', bottom: 0, zIndex: Z.local,

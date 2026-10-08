@@ -11,18 +11,12 @@ export const PEER = 'var(--mantine-color-gray-5)'; //  peers — neutral gray
 
 // ── Cohort lenses ──
 export type CohortMode = 'all' | 'school' | 'tenure' | 'grade' | 'curated';
-export const COHORT_DEFS: { value: CohortMode; label: string; help: string }[] = [
-  { value: 'all', label: 'All same-title at UW', help: 'The broad market benchmark — everyone in this job code campus-wide.' },
-  { value: 'school', label: 'Same title + school/division', help: 'Same job code within the subject’s school/division.' },
-  { value: 'tenure', label: 'Same title + similar tenure', help: 'Same-title peers within a tenure band of the subject.' },
-  { value: 'grade', label: 'Same grade', help: 'Parity by grade, across titles.' },
-  { value: 'curated', label: 'Only my curated set', help: 'Just the people you picked — your true comparators (e.g. peers who also supervise).' },
-];
 
-/** Document-facing phrasing for the active cohort — distinct from `COHORT_DEFS[].label`, which is
- *  UI-only text for the setup pane's radio group. Internal labels like "Only my curated set" or "All
- *  same-title at UW" read as first-person notes-to-self and shouldn't appear in a document handed to
- *  a supervisor or HR — this renders the same cohort as a plain, third-person description instead. */
+/** The groups a case can be benchmarked against, in the order the setup offers their medians. */
+export const COHORT_MODES: CohortMode[] = ['all', 'school', 'tenure', 'grade', 'curated'];
+
+/** A cohort in words, the same in the setup and in the document handed to a supervisor or HR: plain and in the
+ *  third person. The setup's own labels ("Only my curated set", "All same-title at UW") were notes to self. */
 export function cohortDocLabel(mode: CohortMode, ctx: { school?: string | null; grade?: number | null; gradeBasis?: string | null; tenureBand?: number }): string {
   switch (mode) {
     case 'all': return 'all UW–Madison employees with this title';
@@ -161,7 +155,7 @@ export function applyCase(base: ReportConfig, param: string | null | undefined):
     return base;
   }
   const d = defaultConfig();
-  const cohorts = COHORT_DEFS.map((x) => x.value) as string[];
+  const cohorts = COHORT_MODES as string[];
   const keys = FACTOR_DEFS.map((x) => x.key) as string[];
   const sections = SECTION_DEFS.map((x) => x.value) as string[];
   const on = new Map<string, number | ''>();
@@ -290,13 +284,70 @@ export function cohortStats(rows: CohortRow[], subjectPay: number | null, tenure
   return { n, min, p25, med, p75, max, expMed, percentile, gapToMed, invCount, invMaxGap };
 }
 
-/** Short deficit/surplus badge for a cohort radio label (tone drives semantic-scenting color). */
-export type BadgeTone = 'best' | 'deficit' | 'surplus' | 'neutral';
-export function deficitBadge(gapToMed: number | null): { text: string; tone: BadgeTone } | null {
-  if (gapToMed == null) return null;
-  if (gapToMed > 0) return { text: `−${usd(gapToMed)} deficit`, tone: 'deficit' };
-  if (gapToMed < 0) return { text: `+${usd(-gapToMed)} — weak case`, tone: 'surplus' };
-  return { text: 'at the median', tone: 'neutral' };
+/**
+ * What a raise case asks for, as the setup's one choice: a group's median, a named person's pay, a guideline
+ * figure, or a figure of one's own. It was four controls in three places (a benchmark radio whose badges said
+ * "−$3,828 deficit" beside a $28,492 ask, a target Select, two guideline boxes and an override card), whose
+ * precedence a reader had to work out. Read back from the fields that hold it, so saved cases and links keep
+ * their shape.
+ */
+export type AskValue = `cohort:${CohortMode}` | `peer:${string}` | 'marketFloor' | 'supervisor' | 'own';
+export interface AskOption { value: AskValue; label: string; pay: number | null; disabled?: boolean; help?: string }
+
+/** The choice a case's settings make, as the math reads them: an own figure wins, then a guideline figure that
+ *  raised the ask, then a named person, then the benchmark group's median. */
+export function askValueOf(a: { override: number | null; anchor: 'supervisor' | 'marketFloor' | null; target: string | null; cohort: CohortMode }): AskValue {
+  if (a.override != null) return 'own';
+  if (a.anchor) return a.anchor;
+  if (a.target) return `peer:${a.target}`;
+  return `cohort:${a.cohort}`;
+}
+
+/** The choices, each with its figure. A guideline figure no higher than the median it would replace is shown
+ *  but not offered: those exist to raise an ask, never to lower it. */
+export function askOptions(ctx: {
+  cohorts: { mode: CohortMode; label: string; pay: number | null; adjusted: boolean }[];
+  peers: { key: string; name: string; pay: number | null }[];
+  marketFloor: { floorPay: number; floorAsk: number; compa: number; grade: number } | null;
+  supervisor: { name: string; pay: number } | null;
+  /** The median of everyone with the title: what a guideline figure replaces, so what it must beat. */
+  median: number | null;
+}): AskOption[] {
+  const notAbove = (pay: number) => ctx.median != null && pay <= ctx.median;
+  const lower = 'No higher than the median of everyone with this title, so it would not raise the ask.';
+  const out: AskOption[] = ctx.cohorts.map((c) => ({
+    value: `cohort:${c.mode}`, label: `The ${c.adjusted ? 'tenure-adjusted ' : ''}median of ${c.label}`, pay: c.pay,
+  }));
+  for (const p of ctx.peers) out.push({ value: `peer:${p.key}`, label: `Match ${p.name}`, pay: p.pay });
+  const f = ctx.marketFloor;
+  if (f) {
+    out.push({
+      value: 'marketFloor', label: `The market-competitive floor for grade ${f.grade}`, pay: f.floorAsk, disabled: notAbove(f.floorAsk),
+      help: notAbove(f.floorAsk) ? lower
+        : `85% of the grade's midpoint${f.floorAsk !== f.floorPay ? ` (${usd(f.floorPay)} full-time, carried to this appointment)` : ''}, per the UW salary guideline: the full-time rate is a ${f.compa.toFixed(2)} compa-ratio, below its 0.85 floor.`,
+    });
+  }
+  const v = ctx.supervisor;
+  if (v) {
+    out.push({
+      value: 'supervisor', label: `15% above ${v.name}`, pay: v.pay, disabled: notAbove(v.pay),
+      help: notAbove(v.pay) ? lower : 'The UW salary guideline’s differential between a supervisor and the people they supervise.',
+    });
+  }
+  out.push({ value: 'own', label: 'A figure of my own', pay: null });
+  return out;
+}
+
+/** A case with its ask chosen, and nothing of the other choices left behind. A group's median is also the group
+ *  the brief measures standing against; any other ask is measured against everyone with the title. A figure of
+ *  one's own starts from the ask as it stands. */
+export function applyAsk(c: ReportConfig, value: AskValue, current: number | null): ReportConfig {
+  const base: ReportConfig = { ...c, cohort: 'all', targetKey: null, supervisorTarget: false, marketFloorTarget: false, override: '' };
+  if (value.startsWith('cohort:')) return { ...base, cohort: value.slice('cohort:'.length) as CohortMode };
+  if (value.startsWith('peer:')) return { ...base, targetKey: value.slice('peer:'.length) };
+  if (value === 'marketFloor') return { ...base, marketFloorTarget: true };
+  if (value === 'supervisor') return { ...base, supervisorTarget: true };
+  return { ...base, override: current != null ? Math.round(current) : '' };
 }
 
 // ── Supervisory pay-inversion — anchored to the UW Salary Administration Guidelines' own

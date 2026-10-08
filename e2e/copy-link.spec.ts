@@ -85,7 +85,7 @@ test('a raise case reopens from its link — its people and its settings — wit
     localStorage.setItem('uwsal.tray.v1', set);
   }, [KEY, JSON.stringify(people.map((p, i) => ({ ...p, colorIdx: i })))] as const);
   await a.page.goto(`./reports?type=comparison&subject=${encodeURIComponent(KEY)}`);
-  await expect(a.page.getByRole('radio', { name: 'Same title + school/division' })).toBeChecked({ timeout: 60_000 });
+  await expect(a.page.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / })).toBeChecked({ timeout: 60_000 });
   await expect(a.page).toHaveURL(/case=/);
   const link = await copyLink(a.page);
   expect(link).toContain('sel=');
@@ -94,7 +94,7 @@ test('a raise case reopens from its link — its people and its settings — wit
   const b = await fresh(browser);
   await b.page.goto(link);
   await expect(b.page.getByRole('textbox', { name: 'Pick the person the case is for' })).toHaveValue('Aaron Smetana', { timeout: 60_000 });
-  await expect(b.page.getByRole('radio', { name: 'Same title + school/division' })).toBeChecked();
+  await expect(b.page.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / })).toBeChecked();
   await expect(b.page.getByRole('switch', { name: 'Supervisory scope' })).toBeChecked();
   await expect(b.page.getByRole('textbox', { name: '+$ (optional)' }).first()).toHaveValue('$2,500');
   // Its people are the compare set it is built from, all three.

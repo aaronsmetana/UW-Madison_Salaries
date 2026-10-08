@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, deficitBadge, defaultConfig, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -35,15 +35,6 @@ describe('cohortStats percentile', () => {
     expect(stats.min).toBe(90_000);
     expect(stats.max).toBe(120_000);
     expect(stats.p25).not.toBeNull();
-  });
-});
-
-describe('deficitBadge', () => {
-  it('labels a positive gap as a deficit and a negative gap as a weak case', () => {
-    expect(deficitBadge(5000)?.tone).toBe('deficit');
-    expect(deficitBadge(-5000)?.tone).toBe('surplus');
-    expect(deficitBadge(0)?.tone).toBe('neutral');
-    expect(deficitBadge(null)).toBeNull();
   });
 });
 
@@ -232,5 +223,58 @@ describe('a raise case in its link', () => {
     const base = defaultConfig();
     expect(applyCase(base, '%%%not-a-case')).toBe(base);
     expect(applyCase(base, null)).toBe(base);
+  });
+});
+
+describe('the ask: one choice', () => {
+  const ctx = {
+    cohorts: [
+      { mode: 'all' as const, label: 'all UW–Madison employees with this title', pay: 120_000, adjusted: true },
+      { mode: 'school' as const, label: 'same-title peers in SMPH', pay: 118_000, adjusted: false },
+    ],
+    peers: [{ key: 'adam|2009-01-01', name: 'Adam Koch', pay: 144_983 }],
+    marketFloor: { floorPay: 119_968, floorAsk: 119_968, compa: 0.83, grade: 27 },
+    supervisor: { name: 'Riley Park', pay: 131_000 },
+    median: 120_000,
+  };
+
+  it('offers each group’s median, each named person, the guideline figures and an own figure, each with its pay', () => {
+    const o = askOptions(ctx);
+    expect(o.map((x) => x.value)).toEqual(['cohort:all', 'cohort:school', 'peer:adam|2009-01-01', 'marketFloor', 'supervisor', 'own']);
+    expect(o[0].label).toBe('The tenure-adjusted median of all UW–Madison employees with this title');
+    expect(o[1].label).toBe('The median of same-title peers in SMPH');
+    expect(o[2]).toMatchObject({ label: 'Match Adam Koch', pay: 144_983 });
+    expect(o.at(-1)).toMatchObject({ label: 'A figure of my own', pay: null });
+  });
+
+  it('shows a guideline figure no higher than the median, but does not offer it', () => {
+    const o = askOptions(ctx);
+    expect(o.find((x) => x.value === 'marketFloor')).toMatchObject({ disabled: true, help: expect.stringMatching(/would not raise the ask/) });
+    expect(o.find((x) => x.value === 'supervisor')?.disabled).toBe(false);
+  });
+
+  it('reads the choice the settings make, in the order the math applies them', () => {
+    expect(askValueOf({ override: 150_000, anchor: 'supervisor', target: 'a', cohort: 'school' })).toBe('own');
+    expect(askValueOf({ override: null, anchor: 'marketFloor', target: 'a', cohort: 'school' })).toBe('marketFloor');
+    expect(askValueOf({ override: null, anchor: null, target: 'a', cohort: 'school' })).toBe('peer:a');
+    expect(askValueOf({ override: null, anchor: null, target: null, cohort: 'school' })).toBe('cohort:school');
+  });
+
+  it('leaves nothing of another choice behind, and reads each choice back', () => {
+    const start = { ...defaultConfig(), cohort: 'school' as const, targetKey: 'x', supervisorTarget: true, marketFloorTarget: true, override: 99_000 as const };
+    const read = (c: ReturnType<typeof defaultConfig>) => askValueOf({
+      override: typeof c.override === 'number' ? c.override : null,
+      anchor: c.supervisorTarget ? 'supervisor' : c.marketFloorTarget ? 'marketFloor' : null,
+      target: c.targetKey, cohort: c.cohort,
+    });
+    for (const v of ['cohort:tenure', 'peer:adam|2009-01-01', 'marketFloor', 'supervisor', 'own'] as const) {
+      const c = applyAsk(start, v, 131_400.6);
+      expect(read(c), v).toBe(v);
+      const set = [c.targetKey != null, c.supervisorTarget, c.marketFloorTarget, c.override !== ''].filter(Boolean).length;
+      expect(set, `${v}: more than one ask set`).toBeLessThanOrEqual(1);
+      // A group's median is the group standing is measured against; any other ask, everyone with the title.
+      expect(c.cohort).toBe(v === 'cohort:tenure' ? 'tenure' : 'all');
+    }
+    expect(applyAsk(start, 'own', 131_400.6).override).toBe(131_401);
   });
 });
