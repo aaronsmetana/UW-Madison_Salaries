@@ -108,12 +108,19 @@ test('clicking the pile unrolls its people onto an axis to the top salary, each 
   const ring = page.locator('.strata-tail-top');
   expect(Math.abs(Number(await ring.getAttribute('cx')) - tail[2 * jTop])).toBeLessThan(0.5);
   expect(Math.abs(Number(await ring.getAttribute('cy')) - tail[2 * jTop + 1])).toBeLessThan(0.5);
-  // A click on the squeezed graph folds them back, every square to where it was.
+  // A click on the squeezed graph folds them back, every square to where it was — straight off one of them, too:
+  // moved and clicked in one go, before the lens put away there has had a frame to let go of them.
   const box = (await plot(page).boundingBox())!;
   await page.mouse.move(box.x + 20, box.y + box.height - 20, { steps: 3 });
   await expect(page.locator('.strata-fold-word')).toBeVisible();
-  await page.mouse.down();
-  await page.mouse.up();
+  const j = pays.findIndex((p) => p > 400_000 && p < 500_000);
+  await page.mouse.move(box.x + tail[2 * j], box.y + tail[2 * j + 1] - 6, { steps: 3 });
+  await expect(plot(page)).toHaveAttribute('data-pick', /^pile:\d+$/);
+  await plot(page).evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    const at = { bubbles: true, pointerType: 'mouse', pointerId: 1, isPrimary: true, clientX: b.left + 20, clientY: b.bottom - 20 };
+    for (const type of ['pointermove', 'pointerdown', 'pointerup']) el.dispatchEvent(new PointerEvent(type, { ...at, button: type === 'pointermove' ? -1 : 0 }));
+  });
   await expect(plot(page)).toHaveAttribute('data-tail', 'off');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 5_000 });
   expect({ main: await placesOf(page, 'main'), pile: await placesOf(page, 'pile') }, 'folded, squares out of place').toEqual(before);

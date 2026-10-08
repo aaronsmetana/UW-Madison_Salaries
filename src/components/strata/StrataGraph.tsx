@@ -730,8 +730,10 @@ export function StrataGraph({
       pressRef.current = null;
       if (!press) return;
       const at = local(e);
-      // A click on the pile unrolls it; unrolled, a click on someone opens them, and anywhere else folds it back.
+      // A click on the pile unrolls it; unrolled, a click on the squeezed graph folds it back — even while the lens,
+      // put away there, still shrinks over whoever it last showed — on someone follows them, and anywhere else folds.
       if (onPile(at)) { unroll(); return; }
+      if (onSqueezed(at)) { fold(); return; }
       if (pick) { if (who) toggleFollow(who, pick); return; }
       if (tail) fold();
       return;
