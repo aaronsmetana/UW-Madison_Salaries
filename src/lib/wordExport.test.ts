@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { briefToWordHtml } from './wordExport';
+import { briefToWordHtml, htmlToPlainText } from './wordExport';
 import type { BriefModel } from '../components/report/model';
 
 function baseModel(overrides: Partial<BriefModel> = {}): BriefModel {
@@ -128,5 +128,35 @@ describe('briefToWordHtml', () => {
     const html = briefToWordHtml(baseModel());
     expect(html).toMatch(/<html xmlns:o="urn:schemas-microsoft-com:office:office"/);
     expect(html).toContain('<title>Salary brief - Jordan Rivers</title>');
+  });
+});
+
+describe('htmlToPlainText (the email copy without formatting)', () => {
+  it('keeps paragraphs, breaks and numbered lists on their own lines, with every entity as its character', () => {
+    expect(htmlToPlainText('<p>A &amp; B&nbsp;&mdash; C&#8217;s</p>\n<p>D<br/>E</p><ol style="x"><li>one</li><li>two</li></ol>'))
+      .toBe('A & B — C’s\n\nD\nE\n\n1. one\n2. two');
+  });
+
+  it('reads a table a row to a line, its cells apart', () => {
+    expect(htmlToPlainText('<table><thead><tr><th>Name</th><th>Pay</th></tr></thead><tbody><tr><td>Alex</td><td>$79,000</td></tr></tbody></table>'))
+      .toBe('Name | Pay\nAlex | $79,000');
+  });
+
+  it('leaves out the document head, and keeps written angle brackets as text', () => {
+    expect(htmlToPlainText('<html><head><title>T</title><style>p{}</style></head><body><p>&lt;b&gt; stays</p></body></html>')).toBe('<b> stays');
+  });
+
+  it('turns a whole brief into lines a reader can follow: its title alone, its headings, its notes numbered', () => {
+    const text = htmlToPlainText(briefToWordHtml(baseModel()));
+    const lines = text.split('\n');
+    expect(lines[0]).toBe('Pay Parity Review');
+    expect(lines.filter((l) => /^\d+\. Notes & sources$/.test(l))).toHaveLength(1);
+    expect(lines.some((l) => /^1\. Source: /.test(l)), 'the first methodology note is numbered').toBe(true);
+    expect(lines, 'a peer table row reads across, and a cell keeps its two lines in its row').toEqual(expect.arrayContaining([
+      'Alex Chen [Pay inversion] | Senior Analyst | 2.1 yrs | $79,000 | +$11,000',
+      'Certifications & education — AWS Solutions Architect | +$3,000',
+    ]));
+    expect(text).not.toMatch(/<[a-z/]|&[a-z#0-9]+;/i);
+    expect(lines.length).toBeGreaterThan(40);
   });
 });

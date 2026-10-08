@@ -342,8 +342,44 @@ export function downloadDoc(html: string, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+const ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', middot: '·', ndash: '–', mdash: '—', minus: '−',
+  divide: '÷', times: '×', rarr: '→', larr: '←', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', hellip: '…',
+};
+
+/**
+ * The brief as an email's plain text: what a mail client pastes when it takes no formatting. Flattening
+ * every tag to a space ran the whole brief into one line and left `&mdash;` and its kin as gaps. Here each
+ * heading and paragraph keeps its own lines, a list its numbers, a table row its cells (`a | b | c`), and
+ * every entity its character.
+ */
+export function htmlToPlainText(html: string): string {
+  const text = html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(head|style|script|title)\b[\s\S]*?<\/\1>/gi, '')
+    // The source's own line breaks are not the document's.
+    .replace(/\s+/g, ' ')
+    .replace(/<ol\b[^>]*>([\s\S]*?)<\/ol>/gi, (_, items: string) => {
+      let n = 0;
+      return `\n\n${items.replace(/<li\b[^>]*>/gi, () => `\n${++n}. `)}\n\n`;
+    })
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    // A break inside a cell would split its row across two lines.
+    .replace(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi, (row) => row.replace(/<br\s*\/?>/gi, ' — '))
+    .replace(/<\/t[dh]>\s*(?=<t[dh]\b)/gi, ' | ')
+    .replace(/<br\s*\/?>|<\/tr>/gi, '\n')
+    .replace(/<hr\b[^>]*>|<\/?(p|h[1-6]|div|table|ul)\b[^>]*>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    // After the tags are gone, so a written `&lt;b&gt;` stays text.
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => e[0] !== '#'
+      ? ENTITIES[e.toLowerCase()] ?? m
+      : String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)));
+  return text
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Copies `html` to the clipboard as rich text (pastes formatted into an email/Word) via the native
@@ -353,13 +389,13 @@ export async function copyBriefRichText(html: string): Promise<boolean> {
   try {
     const item = new ClipboardItem({
       'text/html': new Blob([html], { type: 'text/html' }),
-      'text/plain': new Blob([stripHtml(html)], { type: 'text/plain' }),
+      'text/plain': new Blob([htmlToPlainText(html)], { type: 'text/plain' }),
     });
     await navigator.clipboard.write([item]);
     return true;
   } catch {
     try {
-      await navigator.clipboard.writeText(stripHtml(html));
+      await navigator.clipboard.writeText(htmlToPlainText(html));
     } catch {
       // clipboard unavailable (permissions/private context) — caller surfaces the failure
     }

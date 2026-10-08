@@ -329,12 +329,13 @@ test.describe('R5 — standing is one query, per person, the department inside i
 
     await page.goto(`./reports?type=person&person=${encodeURIComponent(key)}`);
     const report = page.locator('.print-area');
-    await expect(report).toContainText(/standing/i, { timeout: 60_000 });
-    await expect(report).toContainText(/more than \d+%/);
-    const text = (await report.innerText()).replace(/\s+/g, ' ');
+    // Said once, in the comparison card's line, where the tiles used to say it again.
+    const line = report.locator('[data-standing="campus"]');
+    await expect(line).toContainText(/more than \d+%/, { timeout: 60_000 });
+    const text = (await line.innerText()).replace(/\s+/g, ' ');
     const inReport = {
-      uw: Number(text.match(/all-uw standing more than (\d+)%/i)?.[1]),
-      school: Number(text.match(new RegExp(`within ${school.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} more than (\\d+)%`, 'i'))?.[1]),
+      uw: Number(text.match(/all of UW–Madison, more than (\d+)%/)?.[1]),
+      school: Number(text.match(new RegExp(`within ${school.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, more than (\\d+)%`))?.[1]),
     };
     expect(inReport).toEqual(onPage);
     return onPage;

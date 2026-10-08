@@ -70,3 +70,65 @@ test('the raise case setup names its people neutrally', async ({ browser }) => {
   await expect(page.locator('main')).not.toContainText(/this is me|compared against/i);
   await ctx.close();
 });
+
+test('one Export menu holds what each report can export, and the email copy keeps its lines', async ({ browser }) => {
+  const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+  await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
+  const page = await ctx.newPage();
+  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+  await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
+  // Copy link beside it, and no export a button of its own.
+  await expect(page.getByRole('button', { name: /Print|Download \.doc|Copy for email/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await expect(page.getByRole('menuitem')).toHaveText(['Print / Save as PDF', 'Download .doc', 'Copy for email']);
+  await page.getByRole('menuitem', { name: 'Copy for email' }).click();
+  await expect(page.getByRole('menuitem', { name: /^Copied/ })).toBeVisible();
+  // What a mail client pastes when it takes no formatting: the brief's own lines, not one run-on line.
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  const lines = text.split('\n');
+  expect(lines[0]).toBe('Pay Parity Review');
+  expect(lines.filter((l) => /^\d+\. Notes & sources$/.test(l))).toHaveLength(1);
+  expect(lines.some((l) => /^1\. Source: /.test(l)), 'the notes are numbered').toBe(true);
+  expect(text, 'a tag or an entity left in the text').not.toMatch(/<[a-z/]|&[a-z#0-9]+;/i);
+  expect(lines.length).toBeGreaterThan(30);
+  await ctx.close();
+
+  // The one-person report prints; that is all it exports.
+  const one = await browser.newPage();
+  await one.goto(`./reports?person=${encodeURIComponent(AARON)}`);
+  await expect(one.locator('.print-area')).toContainText('Aaron Smetana', { timeout: 60_000 });
+  await one.getByRole('button', { name: 'Export', exact: true }).click();
+  await expect(one.getByRole('menuitem')).toHaveText(['Print / Save as PDF']);
+  await one.close();
+});
+
+test('the recommended figure shows once: beside the setup on a desktop, in the pinned ledger on a phone', async ({ browser }) => {
+  for (const [width, height, phone] of [[1440, 900, false], [375, 812, true]] as const) {
+    const ctx = await browser.newContext({ viewport: { width, height } });
+    await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
+    const page = await ctx.newPage();
+    await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+    const where = phone ? 'phone' : 'desktop';
+    if (phone) {
+      // The ledger has the figure, so the setup's readout would have it too.
+      await expect(page.getByText(/^→ \$[\d,]+/), where).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator('text="Recommended"'), `${where}: the setup says it again`).toHaveCount(0);
+    } else {
+      await expect(page.locator('text="Recommended"'), where).toHaveCount(1, { timeout: 60_000 });
+      await expect(page.getByText(/^→ \$[\d,]+/), `${where}: a ledger beside the setup's readout`).toHaveCount(0);
+    }
+    await ctx.close();
+  }
+});
+
+test('the one-person report gives each figure once: standing in its comparison card, growth in its tile', async ({ page }) => {
+  await page.goto(`./reports?person=${encodeURIComponent(AARON)}`);
+  const report = page.locator('.print-area');
+  await expect(report.locator('[data-standing="campus"]')).toContainText(/all of UW–Madison, more than \d+%; within .+, more than \d+%\./, { timeout: 60_000 });
+  const tiles = report.locator('.stat-row').first();
+  await expect(tiles.locator('> *')).toHaveCount(3);
+  await expect(tiles, 'a standing figure in the tiles too').not.toContainText(/more than/);
+  await expect(tiles).toContainText(/Growth since/);
+  // The header names the person and their job; the figures are below it.
+  await expect(report.locator('div:has(> h3)').first(), 'the header repeats a figure').not.toContainText(/%|years of salary data/);
+});

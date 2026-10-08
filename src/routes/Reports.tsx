@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton } from '@mantine/core';
+import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton, Menu } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck } from '@tabler/icons-react';
+import { IconPrinter, IconFileReport, IconFileTypeDoc, IconCopy, IconCheck, IconDownload, IconChevronDown } from '@tabler/icons-react';
 import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSummary, useSql, useActiveSnapshotId, useGrades, useReferenceStatus } from '../lib/hooks';
@@ -1041,7 +1041,8 @@ export default function Reports() {
         overAsk={overAsk}
         overAskAnchor={winningAnchor?.key ?? null}
         cohortP75={stats.p75}
-        recommended={recommended}
+        // On a phone the ledger pinned above the tabs already shows it; the setup's own readout said it twice.
+        recommended={isDesktop ? recommended : null}
         onReset={() => {
           if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
           setConfig(defaultConfig());
@@ -1090,36 +1091,51 @@ export default function Reports() {
               <PayMeasure />
               <ExportBar joined={!isNarrow}>
                 <CopyLinkButton />
-                <Button
-                  variant="default"
-                  leftSection={<IconPrinter size={ICON.control} />}
-                  disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
-                  onClick={() => window.print()}
-                >
-                  Print / Save as PDF
-                </Button>
-                <Button
-                  variant="default"
-                  leftSection={<IconFileTypeDoc size={ICON.control} />}
-                  disabled={type !== 'comparison' || subjectPay == null}
-                  onClick={() => downloadDoc(briefToWordHtml(model), `Salary brief - ${subjectName || 'employee'}.doc`)}
-                >
-                  Download .doc
-                </Button>
-                <Button
-                  variant="default"
-                  color={docCopyState !== 'idle' ? 'pos' : undefined}
-                  leftSection={docCopyState !== 'idle' ? <IconCheck size={ICON.control} /> : <IconCopy size={ICON.control} />}
-                  disabled={type !== 'comparison' || subjectPay == null}
-                  onClick={async () => {
-                    const rich = await copyBriefRichText(briefToWordHtml(model));
-                    setDocCopyState(rich ? 'rich' : 'plain');
-                    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-                    copyResetTimer.current = setTimeout(() => setDocCopyState('idle'), 1500);
-                  }}
-                >
-                  {docCopyState === 'rich' ? 'Copied' : docCopyState === 'plain' ? 'Copied (plain text)' : 'Copy for email'}
-                </Button>
+                {/* One Export control: printing, the .doc and the email copy were three buttons side by side, and
+                    the last two did nothing on a one-person report but sit there disabled. */}
+                <Menu position="bottom-end" shadow="md" withinPortal>
+                  <Menu.Target>
+                    <Button
+                      variant="default"
+                      leftSection={<IconDownload size={ICON.control} />}
+                      rightSection={<IconChevronDown size={ICON.compact} />}
+                      disabled={type === 'person' ? !personHistory?.length : !peerListRows?.length}
+                    >
+                      Export
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item leftSection={<IconPrinter size={ICON.control} />} onClick={() => window.print()}>
+                      Print / Save as PDF
+                    </Menu.Item>
+                    {type === 'comparison' && (
+                      <>
+                        <Menu.Item
+                          leftSection={<IconFileTypeDoc size={ICON.control} />}
+                          disabled={subjectPay == null}
+                          onClick={() => downloadDoc(briefToWordHtml(model), `Salary brief - ${subjectName || 'employee'}.doc`)}
+                        >
+                          Download .doc
+                        </Menu.Item>
+                        <Menu.Item
+                          // Stays open so the confirmation shows where it was pressed.
+                          closeMenuOnClick={false}
+                          color={docCopyState !== 'idle' ? 'pos' : undefined}
+                          leftSection={docCopyState !== 'idle' ? <IconCheck size={ICON.control} /> : <IconCopy size={ICON.control} />}
+                          disabled={subjectPay == null}
+                          onClick={async () => {
+                            const rich = await copyBriefRichText(briefToWordHtml(model));
+                            setDocCopyState(rich ? 'rich' : 'plain');
+                            if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+                            copyResetTimer.current = setTimeout(() => setDocCopyState('idle'), 1500);
+                          }}
+                        >
+                          {docCopyState === 'rich' ? 'Copied' : docCopyState === 'plain' ? 'Copied (plain text)' : 'Copy for email'}
+                        </Menu.Item>
+                      </>
+                    )}
+                  </Menu.Dropdown>
+                </Menu>
               </ExportBar>
             </Group>
           }

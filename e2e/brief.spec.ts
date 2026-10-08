@@ -66,7 +66,7 @@ test('the brief and its .doc give their sections one order, grounds before basis
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Download .doc' }).click(),
+    page.getByRole('button', { name: 'Export', exact: true }).click().then(() => page.getByRole('menuitem', { name: 'Download .doc' }).click()),
   ]);
   const html = readFileSync((await download.path())!, 'utf8');
   const inDoc = [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)]

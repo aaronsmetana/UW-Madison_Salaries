@@ -48,7 +48,7 @@ test.describe('raise case brief', () => {
     await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('button', { name: 'Download .doc' }).click(),
+      page.getByRole('button', { name: 'Export', exact: true }).click().then(() => page.getByRole('menuitem', { name: 'Download .doc' }).click()),
     ]);
     expect(download.suggestedFilename()).toMatch(/\.doc$/);
   });

@@ -48,7 +48,8 @@ export function ReportSetup({
    *  tone: an anchored over-ask is informational, an unanchored one is a credibility warning. */
   overAskAnchor: 'supervisor' | 'marketFloor' | null;
   cohortP75: number | null;
-  /** The current recommended salary — powers the sticky footer that tracks factor toggles. */
+  /** The current recommended salary — powers the sticky footer that tracks factor toggles. Null on a phone, where
+   *  the page's own ledger shows it. */
   recommended: number | null;
   onReset: () => void;
   onHover: (id: string | null) => void;

@@ -13,7 +13,7 @@ import { BreakLabels } from './chart/BreakLabel';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from './GapBreakdown';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, pct, fullName, spanLabel, fmtChange, fmtToday, fmtYears, fmtGrade } from '../lib/format';
+import { usd, num, plural, fullName, spanLabel, fmtChange, fmtToday, fmtYears, fmtGrade } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { EndLabels } from './chart/EndLabels';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -187,33 +187,19 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const firstSalary = trend[0]?.salary ?? null;
   const lastSalary = trend[trend.length - 1]?.salary ?? null;
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
-  // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
-  const firstDate = trend[0]?.date ?? null;
-  const lastDate = trend[trend.length - 1]?.date ?? null;
-  const spanYears = firstDate && lastDate ? (new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
   const oldestLabel = trend[0]?.label?.replace(/\s*\((?:Pre|Post)-TTC\)/, '') ?? null;
-  const oldestAgeYears = firstDate ? (Date.now() - new Date(firstDate).getTime()) / (365.25 * 864e5) : null;
 
+  const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
+  const hireYear = hire ? String(hire).slice(0, 4) : null;
+  // The title before TTC, when the earliest record is the pre-TTC snapshot and it differs from now; the hire-era
+  // title otherwise cannot be assumed. The line used to repeat the title above it, the hire year and the growth
+  // figure the tiles below give.
   const careerLine = useMemo(() => {
-    if (!trend.length) return null;
-    const firstTitle = trend[0].title;
-    const lastTitle = trend[trend.length - 1].title;
-    const hire = rows.find((r) => r.date_of_hire)?.date_of_hire;
-    const hireYear = hire ? String(hire).slice(0, 4) : null;
-    const at = hireYear ? `At UW since ${hireYear}` : null;
-    const span = spanYears != null && spanYears >= 0.1 ? `${spanYears.toFixed(1)} years of salary data` : null;
-    const growth = totalChange != null && span ? ` (${totalChange > 0 ? '+' : ''}${pct(totalChange)} over ${span})` : '';
-    // Only surface a prior title when it's a genuine pre-TTC title (earliest record is the pre-TTC snapshot
-    // and it differs from now); otherwise we can't assume the hire-era title, so just show the current one.
+    const firstTitle = trend[0]?.title;
+    const lastTitle = trend[trend.length - 1]?.title;
     const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && firstTitle !== lastTitle;
-    if (hasPreTTC) {
-      const lead = at ? `${at} · Title before TTC` : 'Title before TTC';
-      return `${lead}: ${firstTitle}; now ${lastTitle}${growth}.`;
-    }
-    const t = lastTitle ?? firstTitle;
-    if (!t) return null;
-    return `${[at, t].filter(Boolean).join(' · ')}${growth}.`;
-  }, [trend, rows, totalChange, spanYears]);
+    return hasPreTTC ? `Title before TTC: ${firstTitle}; now ${lastTitle}.` : null;
+  }, [trend]);
 
   // As on /person: the band is read against the appointment that carries the grade, at its full-time rate.
   const graded = useMemo(
@@ -295,25 +281,17 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Alert>
       )}
 
-      {/* Headline stats */}
-      <StatRow cols={{ base: 2, sm: 4 }}>
+      {/* Headline figures. Where this person stands is the comparison card's, once: three tiles here said it again. */}
+      <StatRow cols={{ base: 1, sm: 3 }}>
         <Stat label="Current salary" value={usd(lastSalary)} />
-        <Stat label="Tenure" value={fmtYears(tenureYears)} />
+        <Stat label="Tenure" value={fmtYears(tenureYears)} sub={hireYear ? `at UW since ${hireYear}` : undefined} />
         <Stat
-          label="Total growth (first→latest)"
+          label={oldestLabel ? `Growth since ${oldestLabel}` : 'Growth'}
           value={totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}
           sub={totalChange != null && reporting.changes.length
             ? `${fmtChange((1 + totalChange) / reporting.factor - 1)} without the ${reporting.changes[0].sinceLabel} change in ${reporting.changes[0].what}`
-            : undefined}
+            : `across ${plural(trend.length, 'snapshot')}`}
         />
-        <Stat
-          label="Salary snapshots on record"
-          value={num(trend.length)}
-          sub={oldestLabel ? `oldest ${oldestLabel}${oldestAgeYears != null ? ` · ${fmtYears(oldestAgeYears)} ago` : ''}` : undefined}
-        />
-        <Stat label="Among title peers" value={peerPct != null ? `more than ${peerPct}%` : '—'} />
-        <Stat label="All-UW standing" value={standing?.uw != null ? `more than ${standing.uw}%` : '—'} />
-        {standing?.sch != null && <Stat label={`Within ${latest?.school ?? 'school'}`} value={`more than ${standing.sch}%`} />}
       </StatRow>
 
       {/* Salary over time */}
@@ -396,6 +374,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
           </CardTitle>
           <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} values={peerPays} />
           <PercentileNote pct={peerPct} pool="people with this title" mt="sm" />
+          {standing?.uw != null && (
+            <Text size="sm" data-standing="campus">
+              Across all of UW–Madison, more than <b>{standing.uw}%</b>
+              {standing.sch != null && <>; within {latest?.school}, more than <b>{standing.sch}%</b></>}.
+            </Text>
+          )}
           <Text size="xs" c="dimmed" mt={4} mb="md">
             Among {num(peer.n)} people with job code {jobCode} in the latest snapshot.
           </Text>
