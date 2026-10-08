@@ -193,7 +193,7 @@ export function ReportSetup({
         <SectionLabel>Compared with</SectionLabel>
         <Box mt={8} style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 10, overflow: 'hidden' }}>
           {peers.length === 0 && (
-            <Text size="sm" c="dimmed" px="sm" py={8}>No comparators yet — search below, or add a suggestion.</Text>
+            <Text size="sm" c="dimmed" px="sm" py={8}>No comparators yet — search below, or add one of the closest matches.</Text>
           )}
           {peers.map((c) => (
             <Group
@@ -240,7 +240,7 @@ export function ReportSetup({
                       {[m.tenure != null ? fmtYears(m.tenure) : null, usd(m.pay), m.outEarns ? 'paid more with less tenure' : null, m.school].filter(Boolean).join(' · ')}
                     </Text>
                   </Box>
-                  <Button size="xs" variant="subtle" leftSection={<IconPlus size={ICON.compact} />} aria-label={`Add ${m.name}`} onClick={() => onAddPeople([{ key: m.key, name: m.name }])}>
+                  <Button size="xs" variant="subtle" leftSection={<IconPlus size={ICON.compact} />} aria-label={`Add ${m.name}`} style={{ flexShrink: 0 }} onClick={() => onAddPeople([{ key: m.key, name: m.name }])}>
                     Add
                   </Button>
                 </Group>
