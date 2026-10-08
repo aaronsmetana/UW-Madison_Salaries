@@ -303,7 +303,9 @@ test('on a phone, every target a finger can reach is 24px or more each way', asy
 
 test('a radio or a checkbox sits centred on the first line of its label, which reads at the body line height', async ({ page }) => {
   await page.goto(`./reports?type=comparison&subject=${AARON}`);
-  await expect(page.locator('.setup-panel .mantine-Radio-root').first()).toBeVisible({ timeout: 60_000 });
+  // The whole setup: the ask's choices with their figures, down to the last of the report's sections.
+  await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('checkbox', { name: 'Retention & replacement cost' })).toBeVisible();
   const rows = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.mantine-Radio-root, .mantine-Checkbox-root')]
     .filter((r) => r.checkVisibility())
     .map((r) => {
