@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, counterPoints, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, FACTOR_GROUPS, SECTION_DEFS, buildTalkingPoints } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, counterPoints, fallbackLadder, reviewerQuestions, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, FACTOR_GROUPS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -429,5 +429,43 @@ describe('the factor catalog', () => {
     expect(c.factors.licensure).toEqual({ on: false, amount: '', note: '' });
     const on = { ...defaultConfig(), factors: { ...defaultConfig().factors, oncall: { on: true, amount: 1800, note: '' } } };
     expect(applyCase(defaultConfig(), encodeCase(on)).factors.oncall).toEqual({ on: true, amount: 1800, note: '' });
+  });
+});
+
+describe('if the ask is refused', () => {
+  const o = (value: string, pay: number | null, disabled = false) => ({ value, label: value, pay, disabled }) as Parameters<typeof fallbackLadder>[0][number];
+  it('falls back through the case’s other asks between its pay and the ask, highest first, each figure once', () => {
+    const asks = [o('cohort:all', 120_000), o('cohort:school', 118_000), o('cohort:tenure', 99_000), o('marketFloor', 118_000), o('peer:a', 130_000), o('supervisor', 115_000, true), o('own', null)];
+    expect(fallbackLadder(asks, 'peer:a', 130_000, 100_000).map((x) => x.value)).toEqual(['cohort:all', 'cohort:school']);
+    expect(fallbackLadder(asks, 'cohort:all', 120_000, 100_000).map((x) => x.value), 'the ask itself, a figure under the pay, a disabled one').toEqual(['cohort:school']);
+    expect(fallbackLadder(asks, 'cohort:all', null, 100_000)).toEqual([]);
+  });
+});
+
+describe('questions a reviewer may ask', () => {
+  const base = { subjectFirst: 'Aaron', group: null, tenure: null, pay: 116_491, matchTenure: null, raise: null, market: null, inversions: 0 };
+  it('each answered from the record, in the screen’s words', () => {
+    const qa = reviewerQuestions({
+      ...base,
+      group: { label: 'all UW–Madison employees with this title', n: 46, paidMoreThan: 33 },
+      tenure: { n: 46, perYear: 382, expected: 118_000 },
+      raise: { subjectPct: 0.031, medianPct: 0.02, fromLabel: 'Mar 2026', toLabel: 'Sep 2026', n: 40 },
+      market: { rate: 116_491, pir: 0.21, compa: 0.83, grade: 27 },
+      inversions: 5,
+    });
+    expect(qa.map((x) => x.q)).toEqual([
+      'Why compare Aaron with all UW–Madison employees with this title?', 'Isn’t the difference down to tenure?',
+      'Didn’t Aaron get the usual raise?', 'Where does Aaron\'s pay sit in the grade?', 'Is anyone with less experience paid more?',
+    ]);
+    expect(qa[0].a).toBe('They are 46 other people paid under the same title, the comparison the guideline\'s parity provision names; Aaron is paid more than 33% of them.');
+    expect(qa[1].a).toBe('Among the 46 others with this title, each year of UW tenure goes with about $382 more pay; for Aaron\'s tenure that puts pay at $118,000, $1,509 more than Aaron is paid.');
+    expect(qa[2].a).toBe('Aaron\'s raise from Mar 2026 to Sep 2026 was 3.1%; the median for the title\'s 40 continuing staff was 2.0%.');
+    expect(qa[3].a).toContain('$116,491 is 21% through the grade 27 band, a 0.83 compa-ratio');
+    expect(qa[4].a).toBe('5 same-title peers with less UW tenure are paid more than Aaron.');
+    expect(qa.map((x) => x.a).join(' '), 'a print word on screen').not.toMatch(/percentile/i);
+  });
+  it('asks only what the record can answer, and says when no one is paid more', () => {
+    const qa = reviewerQuestions({ ...base, matchTenure: 'Tenure explains it all.' });
+    expect(qa).toEqual([{ q: 'Isn’t the difference down to tenure?', a: 'Tenure explains it all.' }, { q: 'Is anyone with less experience paid more?', a: 'No one with this title and less UW tenure is paid more than Aaron.' }]);
   });
 });

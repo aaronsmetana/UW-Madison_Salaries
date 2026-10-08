@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import {
   Stack, Card, Text, Select, Group, Badge, Button, TextInput, Textarea, NumberInput, Switch, Radio,
-  SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu,
+  SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu, List,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
 import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
@@ -24,7 +24,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => <Eyebrow>{childr
 
 export function ReportSetup({
   config, onChange, comparators, subjectKey, onSubject, matchName, fromSet, basePay, matches, onAddPeople, onRemovePerson,
-  asks, askValue, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, readout, onReset, onHover,
+  asks, askValue, ladder, questions, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, readout, onReset, onHover,
   supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, performanceGuide,
 }: {
   config: ReportConfig;
@@ -44,6 +44,10 @@ export function ReportSetup({
   /** What the case may ask for, each with its figure, and which it asks for (`askOptions`, `askValueOf`). */
   asks: AskOption[];
   askValue: AskValue;
+  /** If the ask is refused: the case's other asks below it, highest first (`fallbackLadder`). */
+  ladder: AskOption[];
+  /** What a reviewer is likely to ask, each with the record's answer (`reviewerQuestions`). */
+  questions: { q: string; a: string }[];
   caseStrength: CaseStrength | null;
   strengthHints: Partial<Record<StrengthKey, { text: string; tone: 'action' | 'fixed' }>>;
   talkingPoints: string;
@@ -559,6 +563,35 @@ export function ReportSetup({
               </>
             )}
           </Group>
+        )}
+
+        <Box mt="md" className="fallback-ladder">
+          <CardTitle mb={6} sub="The case's other asks below this one, highest first, each with its basis.">If the ask is refused</CardTitle>
+          {ladder.length > 0 ? (
+            <List type="ordered" size="xs" spacing={3}>
+              {ladder.map((o) => (
+                <List.Item key={o.value}>
+                  {o.label}: {usd(o.pay)}{basePay != null && basePay > 0 && o.pay != null ? ` (${fmtChange((o.pay - basePay) / basePay)})` : ''}
+                </List.Item>
+              ))}
+            </List>
+          ) : (
+            <Text size="xs" c="dimmed">No smaller ask has a basis in the record.</Text>
+          )}
+        </Box>
+
+        {questions.length > 0 && (
+          <Box mt="md" className="reviewer-questions">
+            <CardTitle mb={6} sub="With the answer the record gives to each.">Questions a reviewer may ask</CardTitle>
+            <Stack gap={6}>
+              {questions.map(({ q, a }) => (
+                <Box key={q}>
+                  <Text size="xs" fw={600}>{q}</Text>
+                  <Text size="xs" c="dimmed">{a}</Text>
+                </Box>
+              ))}
+            </Stack>
+          </Box>
         )}
 
         <Box mt="md">

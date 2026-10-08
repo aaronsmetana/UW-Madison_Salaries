@@ -395,6 +395,65 @@ export function counterPoints(i: {
   return out;
 }
 
+/** What to ask for next if the ask is refused: the case's own other asks between the subject's pay and the ask,
+ *  highest first, one for each figure. Each has a basis in the record, as the ask does. */
+export function fallbackLadder(asks: AskOption[], current: AskValue, ask: number | null, pay: number | null): AskOption[] {
+  if (ask == null || pay == null) return [];
+  const seen = new Set<number>();
+  return asks
+    .filter((o) => o.value !== current && !o.disabled && o.pay != null && o.pay > pay && o.pay < ask)
+    .sort((a, b) => (b.pay as number) - (a.pay as number))
+    .filter((o) => !seen.has(Math.round(o.pay as number)) && !!seen.add(Math.round(o.pay as number)));
+}
+
+/** The questions a reviewer is likely to put to a case, each with the answer the record gives. Private: the
+ *  setup's strategy tools, in the screen's words (a standing as a share paid less). */
+export function reviewerQuestions(i: {
+  subjectFirst: string;
+  group: { label: string; n: number; paidMoreThan: number | null } | null;
+  tenure: { n: number; perYear: number; expected: number } | null;
+  pay: number;
+  /** What tenure explains of the gap to the person matched (`matchTenureSentence`), when the case asks to match one. */
+  matchTenure: string | null;
+  raise: { subjectPct: number | null; medianPct: number; fromLabel: string; toLabel: string; n: number } | null;
+  market: { rate: number; pir: number; compa: number; grade: number } | null;
+  inversions: number;
+}): { q: string; a: string }[] {
+  const S = i.subjectFirst;
+  const out: { q: string; a: string }[] = [];
+  if (i.group) {
+    out.push({
+      q: `Why compare ${S} with ${i.group.label}?`,
+      a: `They are ${plural(i.group.n, 'other person', 'other people')} paid under the same title, the comparison the guideline's parity provision names${i.group.paidMoreThan != null ? `; ${S} is paid more than ${i.group.paidMoreThan}% of them` : ''}.`,
+    });
+  }
+  const tenure = i.matchTenure ?? (i.tenure
+    ? i.tenure.perYear <= 0
+      ? `Among the ${i.tenure.n} others with this title, longer UW tenure does not go with higher pay.`
+      : `Among the ${i.tenure.n} others with this title, each year of UW tenure goes with about ${usd(i.tenure.perYear)} more pay; for ${S}'s tenure that puts pay at ${usd(i.tenure.expected)}, ${i.pay < i.tenure.expected ? `${usd(i.tenure.expected - i.pay)} more than ${S} is paid` : `no more than ${S} is paid`}.`
+    : null);
+  if (tenure) out.push({ q: 'Isn’t the difference down to tenure?', a: tenure });
+  if (i.raise && i.raise.subjectPct != null) {
+    out.push({
+      q: `Didn’t ${S} get the usual raise?`,
+      a: `${S}'s raise from ${i.raise.fromLabel} to ${i.raise.toLabel} was ${pct(i.raise.subjectPct)}; the median for the title's ${i.raise.n} continuing staff was ${pct(i.raise.medianPct)}.`,
+    });
+  }
+  if (i.market) {
+    out.push({
+      q: `Where does ${S}'s pay sit in the grade?`,
+      a: `The full-time rate of ${usd(i.market.rate)} is ${Math.round(i.market.pir * 100)}% through the grade ${i.market.grade} band, a ${i.market.compa.toFixed(2)} compa-ratio; the guideline's market-competitive range is 0.85 to 1.15.`,
+    });
+  }
+  out.push({
+    q: 'Is anyone with less experience paid more?',
+    a: i.inversions > 0
+      ? `${plural(i.inversions, 'same-title peer')} with less UW tenure ${i.inversions === 1 ? 'is' : 'are'} paid more than ${S}.`
+      : `No one with this title and less UW tenure is paid more than ${S}.`,
+  });
+  return out;
+}
+
 // ── Pure stats helpers ──
 export function median(nums: number[]): number | null {
   const a = nums.filter((n) => Number.isFinite(n)).sort((x, y) => x - y);

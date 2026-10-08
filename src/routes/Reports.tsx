@@ -33,7 +33,7 @@ import { ReportFlow } from '../components/report/ReportFlow';
 import {
   COHORT_MODES, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, caseStrength, buildTalkingPoints, askOptions, askValueOf,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
-  casePeople, closestMatches, tenureExplains, counterPoints, gapHistory, type MatchModel, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
+  casePeople, closestMatches, tenureExplains, counterPoints, fallbackLadder, reviewerQuestions, matchTenureSentence, gapHistory, type MatchModel, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { ICON } from '../lib/ui';
@@ -1013,6 +1013,23 @@ export default function Reports() {
       ? { name: supervisoryCase.top.name, pay: supervisoryCase.target15 } : null,
     median: all.expMed ?? all.med ?? null,
   });
+  // Private: what to ask for next if the ask is refused, and the questions a reviewer is likely to put.
+  const ladder = fallbackLadder(asks, askValue, recommended, subjectPay);
+  const questions = subjectPay == null ? [] : reviewerQuestions({
+    subjectFirst, pay: subjectPay,
+    group: stats.n > 0 ? { label: docCohortLabel, n: stats.n, paidMoreThan: stats.percentile } : null,
+    tenure: tenureRegression,
+    matchTenure: match ? matchTenureSentence(match, subjectFirst, match.name) : null,
+    raise: raiseCycle,
+    market: marketPosition && isRange(band) ? marketPosition : null,
+    inversions: stats.invCount,
+  });
+  // The talking points carry both, for the conversation the case is for.
+  const talkingPointsAll = [
+    talkingPoints,
+    ladder.length ? `If the ask is refused:\n${ladder.map((o, i) => `${i + 1}. ${o.label}: ${usd(o.pay)}`).join('\n')}` : '',
+    questions.length ? `Questions a reviewer may ask:\n${questions.map((x) => `- ${x.q} ${x.a}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
 
   // Per-signal coaching: for any case-strength bar that isn't maxed, the concrete lever to lift it. Not which
   // group would make the gap look largest: shopping for the most favourable pool is what a reader discounts.
@@ -1061,7 +1078,9 @@ export default function Reports() {
         askValue={askValue}
         caseStrength={strength}
         strengthHints={strengthHints}
-        talkingPoints={talkingPoints}
+        talkingPoints={talkingPointsAll}
+        ladder={ladder}
+        questions={questions}
         overAsk={overAsk}
         overAskAnchor={winningAnchor?.key ?? null}
         cohortP75={stats.p75}
