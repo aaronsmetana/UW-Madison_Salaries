@@ -61,6 +61,7 @@ function baseModel(overrides: Partial<BriefModel> = {}): BriefModel {
     },
     tenureRegression: null,
     match: null,
+    counterPoints: [],
     tenureScatterPoints: [],
     raiseCycle: { n: 10, medianPct: 0.03, subjectPct: 0.01, fromLabel: 'May 2024', toLabel: 'May 2026', annualRate: 0.015, dist: [{ bucket: 0, n: 2 }, { bucket: 3, n: 6 }], subjectBucket: 0 },
     ...overrides,
@@ -170,6 +171,17 @@ describe('briefToWordHtml', () => {
     expect(html).toContain("Among the 40 others with this title, the trend of pay on UW tenure puts pay at $72,500 for Jordan's 6.2 years");
     expect(html).toContain(', rising about $900 a year of tenure. Jordan is paid $68,000, $4,500 below it.');
     expect(briefToWordHtml(baseModel({ format: 'brief', tenureRegression: { n: 40, expected: 72_500, gap: 4_500 } })), 'the brief format draws no scatter').not.toContain('trend of pay on UW tenure');
+  });
+
+  it('states the points a reviewer may raise only when the section is on, numbered in its place', () => {
+    const points = ['Jordan is paid at or above the median of <the> pool.', 'The ask is above the 75th percentile ($76,000).'];
+    expect(briefToWordHtml(baseModel({ counterPoints: points })), 'off unless asked for').not.toContain('Points a reviewer may raise');
+    const on = briefToWordHtml(baseModel({ counterPoints: points, sections: [...baseModel().sections, 'counter'] }));
+    expect(on).toMatch(/\d+\. Points a reviewer may raise/);
+    expect(on).toContain('<li>Jordan is paid at or above the median of &lt;the&gt; pool.</li>');
+    expect(on.indexOf('Pay history'), 'out of its place').toBeLessThan(on.indexOf('Points a reviewer may raise'));
+    expect(on.indexOf('Points a reviewer may raise')).toBeLessThan(on.indexOf('Retention'));
+    expect(briefToWordHtml(baseModel({ sections: [...baseModel().sections, 'counter'] }))).toContain('Nothing in the record stands out against this case.');
   });
 
   it('wraps output in a Word-flavored HTML document with the subject name in the title', () => {

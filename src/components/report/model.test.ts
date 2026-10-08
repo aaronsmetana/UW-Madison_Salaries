@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
+import { cohortDocLabel, cohortStats, caseStrength, defaultConfig, askOptions, askValueOf, applyAsk, migrateConfig, casePeople, closestMatches, tenureExplains, gapHistory, matchTenureSentence, counterPoints, type MatchModel, buildSupervisoryCase, buildGuidelineCompression, fmtYearsToParity, type CohortRow, encodeCase, applyCase, FACTOR_DEFS, SECTION_DEFS, buildTalkingPoints } from './model';
 
 describe('cohortDocLabel', () => {
   it('renders document-facing (third-person) phrasing for every cohort mode', () => {
@@ -362,5 +362,50 @@ describe('what the person matched has too', () => {
     expect(applyAsk(c, 'cohort:school', null).sharedFactors).toEqual([]);
     expect(migrateConfig({ ...c, sharedFactors: ['credentials', 3] }).sharedFactors).toEqual(['credentials']);
     expect(migrateConfig({}).sharedDuties).toBe('');
+  });
+});
+
+describe('points a reviewer may raise', () => {
+  const none = {
+    subjectFirst: 'Aaron', subjectPay: 100_000, pools: [], seniorPaidLess: 0, raise: null, market: null, tenure: null,
+    overP75: null, tenureExplainsMatch: null, selfReported: 0,
+  };
+
+  it('are each a figure the record holds against the case', () => {
+    expect(counterPoints({
+      ...none,
+      pools: [{ label: 'all UW–Madison employees with this title', med: 120_000, percentile: 33 }, { label: 'same-title peers within ±3 years of tenure', med: 99_000, percentile: 55 }],
+      seniorPaidLess: 2,
+      raise: { subjectPct: 0.05, medianPct: 0.02, fromLabel: 'Mar 2026', toLabel: 'Sep 2026' },
+      market: { compa: 0.92, pir: 0.6, belowCompetitive: false, grade: 27 },
+      tenure: { verdict: 'on', expected: 101_000 },
+      overP75: 128_000, tenureExplainsMatch: 'Adam Koch', selfReported: 1,
+    })).toEqual([
+      'Aaron is paid at or above the median of same-title peers within ±3 years of tenure (the 55th percentile).',
+      '2 same-title peers with more UW tenure are paid less than Aaron.',
+      'Aaron\'s raise from Mar 2026 to Sep 2026 (5.0%) was above the title\'s median (2.0%).',
+      'The full-time rate is within the university\'s market-competitive range for grade 27 (a 0.92 compa-ratio).',
+      'The full-time rate is above the midpoint of the grade 27 band (60% through it).',
+      'Aaron\'s pay is in line with what UW tenure alone predicts for this title ($101,000).',
+      'The ask is above the 75th percentile of the group it is measured against ($128,000).',
+      'UW tenure accounts for all of the gap to Adam Koch.',
+      'The 1 qualification under Documented qualifications & responsibilities is self-reported, not checked against a position description or review.',
+    ]);
+  });
+
+  it('leave out what the record does not hold against it', () => {
+    expect(counterPoints({
+      ...none,
+      pools: [{ label: 'all', med: 120_000, percentile: 33 }, { label: 'no median', med: null, percentile: null }],
+      raise: { subjectPct: 0.01, medianPct: 0.02, fromLabel: 'a', toLabel: 'b' },
+      market: { compa: 0.8, pir: 0.2, belowCompetitive: true, grade: 27 },
+      tenure: { verdict: 'below', expected: 110_000 },
+    })).toEqual([]);
+    expect(counterPoints({ ...none, raise: { subjectPct: null, medianPct: 0.02, fromLabel: 'a', toLabel: 'b' } })).toEqual([]);
+  });
+
+  it('are a section the requester turns on, off in a new case and in one saved before it existed', () => {
+    expect(defaultConfig().sections).not.toContain('counter');
+    expect(migrateConfig({ configVersion: 2, sections: ['highlights', 'peers'] }).sections).not.toContain('counter');
   });
 });

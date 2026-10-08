@@ -33,7 +33,7 @@ import { ReportFlow } from '../components/report/ReportFlow';
 import {
   COHORT_MODES, FACTOR_DEFS, applyCase, defaultConfig, encodeCase, migrateConfig, cohortStats, caseStrength, buildTalkingPoints, askOptions, askValueOf,
   cohortDocLabel, buildSupervisoryCase, buildGuidelineCompression, median, type ReportConfig, type CohortMode, type CohortRow, type ComparatorRow,
-  casePeople, closestMatches, tenureExplains, gapHistory, type MatchModel, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
+  casePeople, closestMatches, tenureExplains, counterPoints, gapHistory, type MatchModel, type ProofModel, type ReceiptLine, type BriefModel, type StrengthKey, type CasePerson,
 } from '../components/report/model';
 import { POLICY } from '../components/report/sources';
 import { ICON } from '../lib/ui';
@@ -943,6 +943,17 @@ export default function Reports() {
     guidelineProvisions,
     cohortBasisScoped: !!subj?.comp_basis,
     standing, tenureRegression, tenureScatterPoints, raiseCycle: raiseCycleDoc, match,
+    counterPoints: subjectPay == null ? [] : counterPoints({
+      subjectFirst, subjectPay,
+      pools: standing?.pools ?? [],
+      seniorPaidLess: tenureYears == null ? 0 : (peerListRows ?? []).filter((r) => r.person_key !== subjectKey && r.tenure != null && r.tenure > tenureYears && r.pay > 0 && r.pay < subjectPay).length,
+      raise: raiseCycle,
+      market: marketPosition && isRange(band) ? marketPosition : null,
+      tenure: tenureRegression,
+      overP75: recommended != null && stats.p75 != null && recommended > stats.p75 ? stats.p75 : null,
+      tenureExplainsMatch: match?.tenure && match.tenure.perYear > 0 && match.tenure.explained >= match.gap ? (config.anonymize ? 'the person the case asks to match' : match.name) : null,
+      selfReported: activeFactors.length,
+    }),
   };
 
   // Evidence-completeness checklist (private, setup-pane only): which document sections will actually

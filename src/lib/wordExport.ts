@@ -45,7 +45,7 @@ export function briefToWordHtml(model: BriefModel): string {
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved,
     realErosion, rows, showTenure, anonymize, attrition, divergence, history, format, sections,
     supervisory, guidelineCompression, guidelineProvisions, standing, raiseCycle, cohortBasisScoped, match,
-    tenureRegression, tenureScatterPoints,
+    tenureRegression, tenureScatterPoints, counterPoints,
   } = model;
 
   const body: string[] = [];
@@ -78,6 +78,7 @@ export function briefToWordHtml(model: BriefModel): string {
     factors: sections.includes('factors') && activeFactors.length > 0,
     peers: sections.includes('peers') && rows.length > 1,
     history: sections.includes('history') && history.length >= 2,
+    counter: sections.includes('counter'),
     risk: sections.includes('risk'),
   };
   const order: (keyof typeof sectionShow)[] = [...SECTION_ORDER];
@@ -264,6 +265,14 @@ export function briefToWordHtml(model: BriefModel): string {
         `<b>${usd(divergence.avgAbs - divergence.subjAbs)} less</b> over the same period.`,
       ));
     }
+  }
+
+  // ── Points a reviewer may raise ──
+  if (sectionShow.counter) {
+    body.push(h2(`${num.counter}. Points a reviewer may raise`));
+    body.push(counterPoints.length
+      ? `<ul style="${P}">${counterPoints.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`
+      : p('Nothing in the record stands out against this case.'));
   }
 
   // ── Retention & replacement cost ──

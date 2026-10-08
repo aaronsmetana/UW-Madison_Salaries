@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor } from '@mantine/core';
+import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor, List } from '@mantine/core';
 import { useReducedMotion } from '@mantine/hooks';
 import { Link } from 'react-router-dom';
 import {
@@ -86,7 +86,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
     subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
-    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped, match,
+    standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped, match, counterPoints,
   } = model;
   const otherRows = rows.filter((r) => !r.isSubject);
   const anonName = (key: string) => {
@@ -116,6 +116,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
     factors: has('factors') && activeFactors.length > 0,
     peers: has('peers') && rows.length > 1,
     history: has('history') && history.length >= 2,
+    counter: has('counter'),
     risk: has('risk'),
   };
   const sectionOrder: (keyof typeof sectionShow)[] = [...SECTION_ORDER];
@@ -645,6 +646,23 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                 </Box>
               )}
             </Card>
+            </>
+          )}
+
+          {/* The points against the case — off by default (see Report sections): what a reviewer may weigh against
+              it, each from a figure in the record, so the requester meets them first. */}
+          {sectionShow.counter && (
+            <>
+              <SectionHeading id="counter" num={sectionNum.counter}>Points a reviewer may raise</SectionHeading>
+              <Card mb="lg" className="counter-points">
+                {counterPoints.length > 0 ? (
+                  <List size="sm" spacing={6}>
+                    {counterPoints.map((t) => <List.Item key={t}>{t}</List.Item>)}
+                  </List>
+                ) : (
+                  <Text size="sm">Nothing in the record stands out against this case.</Text>
+                )}
+              </Card>
             </>
           )}
 

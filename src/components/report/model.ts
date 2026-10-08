@@ -1,6 +1,7 @@
 // Shared types + pure helpers for the raise case studio (left setup pane + right brief).
 import type { ReactNode } from 'react';
 import { usd, pct, plural, fmtGrade } from '../../lib/format';
+import { printedPercentile } from '../../lib/stats';
 import { percentile as percentileOf } from '../../lib/stats';
 import { POLICY } from './sources';
 import type { ScatterPoint } from '../TenurePayScatter';
@@ -56,7 +57,7 @@ export function newCustomFactor(): CustomFactor {
  * three cannot drift. The brief and the export each kept their own copy, and both put the guideline
  * basis ahead of the evidence it rests on: the grounds come first, then the provisions they support.
  */
-export const SECTION_ORDER = ['highlights', 'guidelineBasis', 'standing', 'factors', 'peers', 'history', 'risk'] as const;
+export const SECTION_ORDER = ['highlights', 'guidelineBasis', 'standing', 'factors', 'peers', 'history', 'counter', 'risk'] as const;
 export type SectionKey = (typeof SECTION_ORDER)[number];
 
 const SECTION_LABEL: Record<SectionKey, string> = {
@@ -66,6 +67,7 @@ const SECTION_LABEL: Record<SectionKey, string> = {
   factors: 'Documented qualifications & responsibilities',
   peers: 'Peer comparison',
   history: 'Pay history',
+  counter: 'Points a reviewer may raise',
   risk: 'Retention & replacement cost',
 };
 export const SECTION_DEFS: { value: SectionKey; label: string }[] = SECTION_ORDER.map((value) => ({ value, label: SECTION_LABEL[value] }));
@@ -118,7 +120,8 @@ export function defaultConfig(): ReportConfig {
     format: 'brief',
     // Retention/replacement-cost is opt-in, not default-on — it reads as abrasive in a document handed
     // to a supervisor; every other section (incl. the new market-standing panel) stays default-on.
-    sections: SECTION_DEFS.map((s) => s.value).filter((v) => v !== 'risk'),
+    // Off until asked for: the points against the case, which a requester may want to see before a reader does.
+    sections: SECTION_DEFS.map((s) => s.value).filter((v) => v !== 'risk' && v !== 'counter'),
     anonymize: false,
   };
 }
@@ -331,6 +334,55 @@ export function tenureTrendSentence(t: { n: number; expected: number; gap: numbe
   const off = Math.round(Math.abs(pay - t.expected));
   const where = off === 0 ? 'on it' : `${usd(off)} ${pay < t.expected ? 'below' : 'above'} it`;
   return `Among the ${t.n} others with this title, the trend of pay on UW tenure puts pay at ${usd(t.expected)} for ${subjectFirst}'s ${tenure.toFixed(1)} years${rise}. ${subjectFirst} is paid ${usd(pay)}, ${where}.`;
+}
+
+/** What the record holds against a case, said plainly, so its requester meets each point before a reviewer
+ *  raises it. Each from a figure the brief computes anyway; nothing the record does not show. */
+export function counterPoints(i: {
+  subjectFirst: string; subjectPay: number;
+  /** The comparison pools, as the brief's market standing lists them. */
+  pools: { label: string; med: number | null; percentile: number | null }[];
+  /** Same-title peers with more UW tenure who are paid less, of how many with a tenure on record. */
+  seniorPaidLess: number;
+  /** The last raise cycle: the subject's raise and the title's median. */
+  raise: { subjectPct: number | null; medianPct: number; fromLabel: string; toLabel: string } | null;
+  /** Where the full-time rate sits in its grade, when the grade has a range. */
+  market: { compa: number; pir: number; belowCompetitive: boolean; grade: number } | null;
+  /** What tenure alone predicts, and where the subject's pay falls against it. */
+  tenure: { verdict: 'above' | 'on' | 'below'; expected: number } | null;
+  /** The 75th percentile of the group the ask is measured against, when the ask is above it. */
+  overP75: number | null;
+  /** The person the case asks to match, when UW tenure accounts for all of the gap to them. */
+  tenureExplainsMatch: string | null;
+  selfReported: number;
+}): string[] {
+  const S = i.subjectFirst;
+  const out: string[] = [];
+  const atOrAbove = i.pools.filter((p) => p.med != null && i.subjectPay >= p.med);
+  for (const p of atOrAbove) {
+    out.push(`${S} is paid at or above the median of ${p.label}${p.percentile != null ? ` (the ${printedPercentile(p.percentile)})` : ''}.`);
+  }
+  if (i.seniorPaidLess > 0) {
+    out.push(`${plural(i.seniorPaidLess, 'same-title peer')} with more UW tenure ${i.seniorPaidLess === 1 ? 'is' : 'are'} paid less than ${S}.`);
+  }
+  if (i.raise && i.raise.subjectPct != null && i.raise.subjectPct > i.raise.medianPct) {
+    out.push(`${S}'s raise from ${i.raise.fromLabel} to ${i.raise.toLabel} (${pct(i.raise.subjectPct)}) was above the title's median (${pct(i.raise.medianPct)}).`);
+  }
+  if (i.market && !i.market.belowCompetitive) {
+    out.push(`The full-time rate is within the university's market-competitive range for grade ${i.market.grade} (a ${i.market.compa.toFixed(2)} compa-ratio).`);
+  }
+  if (i.market && i.market.pir >= 0.5) {
+    out.push(`The full-time rate is above the midpoint of the grade ${i.market.grade} band (${Math.round(i.market.pir * 100)}% through it).`);
+  }
+  if (i.tenure && i.tenure.verdict !== 'below') {
+    out.push(`${S}'s pay is ${i.tenure.verdict === 'on' ? 'in line with' : 'above'} what UW tenure alone predicts for this title (${usd(i.tenure.expected)}).`);
+  }
+  if (i.overP75 != null) out.push(`The ask is above the 75th percentile of the group it is measured against (${usd(i.overP75)}).`);
+  if (i.tenureExplainsMatch) out.push(`UW tenure accounts for all of the gap to ${i.tenureExplainsMatch}.`);
+  if (i.selfReported > 0) {
+    out.push(`The ${plural(i.selfReported, 'qualification')} under Documented qualifications & responsibilities ${i.selfReported === 1 ? 'is' : 'are'} self-reported, not checked against a position description or review.`);
+  }
+  return out;
 }
 
 // ── Pure stats helpers ──
@@ -642,6 +694,8 @@ export interface BriefModel {
   tenureScatterPoints: ScatterPoint[];
   /** The person the case asks to match, when it names one. */
   match: MatchModel | null;
+  /** What the record holds against the case (`counterPoints`), for the section that states it. */
+  counterPoints: string[];
   raiseCycle: {
     n: number; medianPct: number; subjectPct: number | null; fromLabel: string; toLabel: string;
     annualRate: number | null; dist: { bucket: number; n: number }[]; subjectBucket: number | null;
