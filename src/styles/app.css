@@ -830,6 +830,11 @@ path.recharts-tooltip-cursor {
 }
 .mantine-SegmentedControl-label { line-height: 20px; }
 .mantine-Tabs-tab { height: 36px; padding-block: 0; }
+/* A radio's or a checkbox's label at the one body line height (P4): Mantine sets it to the control's size,
+   20px on 15px text, which crowds a label long enough to wrap. The control sits centred on its first line. */
+.mantine-Radio-root, .mantine-Checkbox-root { --label-lh-sm: calc(var(--mantine-font-size-sm) * var(--mantine-line-height)); }
+.mantine-Radio-inner { margin-top: calc((var(--label-lh) - var(--radio-size)) / 2); }
+.mantine-Checkbox-inner { margin-top: calc((var(--label-lh) - var(--checkbox-size)) / 2); }
 
 /* Compare's key: a series' colour, as a dot that hides or shows it on the charts. */
 .series-toggle {

@@ -300,3 +300,21 @@ test('on a phone, every target a finger can reach is 24px or more each way', asy
   await ctx.close();
   expect(small, 'a target under 24px for a finger').toEqual([]);
 });
+
+test('a radio or a checkbox sits centred on the first line of its label, which reads at the body line height', async ({ page }) => {
+  await page.goto(`./reports?type=comparison&subject=${AARON}`);
+  await expect(page.locator('.setup-panel .mantine-Radio-root').first()).toBeVisible({ timeout: 60_000 });
+  const rows = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.mantine-Radio-root, .mantine-Checkbox-root')]
+    .filter((r) => r.checkVisibility())
+    .map((r) => {
+      const control = r.querySelector<HTMLElement>('.mantine-Radio-inner, .mantine-Checkbox-inner')!.getBoundingClientRect();
+      const label = r.querySelector<HTMLElement>('.mantine-Radio-label, .mantine-Checkbox-label')!;
+      const cs = getComputedStyle(label);
+      const lh = parseFloat(cs.lineHeight);
+      const top = label.getBoundingClientRect().top;
+      return { text: (label.textContent ?? '').slice(0, 30), lh: +(lh / parseFloat(cs.fontSize)).toFixed(2), off: +((control.top + control.height / 2) - (top + lh / 2)).toFixed(1) };
+    }));
+  expect(rows.length, 'no radios or checkboxes to measure').toBeGreaterThan(8);
+  expect(rows.filter((r) => r.lh !== 1.55).map((r) => `${r.lh} "${r.text}"`), 'a label at another line height').toEqual([]);
+  expect(rows.filter((r) => Math.abs(r.off) > 1).map((r) => `${r.off}px "${r.text}"`), 'a control off its first line').toEqual([]);
+});
