@@ -147,7 +147,7 @@ test('the printed report says the same about each raise, and draws the same typi
   await expect(page.locator('[data-raise-compare="yes"]').first()).toBeVisible({ timeout: 60_000 });
   const onPage = (await page.locator('table.appt-history [data-raise-compare="yes"]').allInnerTexts()).map((t) => t.trim());
 
-  await page.goto(`./reports?type=person&person=${encodeURIComponent(AARON)}`);
+  await page.goto(`./person/${encodeURIComponent(AARON)}?tab=report`);
   const report = page.locator('.print-area');
   await expect(report.locator('[data-raise-compare="yes"]').first()).toBeVisible({ timeout: 60_000 });
   const inReport = (await report.locator('[data-raise-compare="yes"]').allInnerTexts()).map((t) => t.trim());

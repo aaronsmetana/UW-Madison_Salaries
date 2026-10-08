@@ -56,12 +56,11 @@ test('a raise case link opens on its own subject, whoever is in the compare set'
   }
 });
 
-test("the one-person report names its person from the data, never by their key, and promises no page count", async ({ page }) => {
-  await page.goto(`./reports?person=${encodeURIComponent(AARON)}`);
+test("a person's report names them from the data, never by their key, and promises no page count", async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(AARON)}?tab=report`);
   await expect(page.locator('.print-area')).toContainText('Aaron Smetana', { timeout: 60_000 });
-  await expect(page).toHaveTitle(/Report — Aaron Smetana/);
-  await expect(page.locator('main')).not.toContainText(AARON);
-  await expect(page.locator('main')).not.toContainText(/one-page|single-page/i);
+  await expect(page.locator('.print-area')).not.toContainText(AARON);
+  await expect(page.locator('.print-area')).not.toContainText(/one-page|single-page/i);
 });
 
 test('the raise case setup names its people neutrally', async ({ browser }) => {
@@ -94,12 +93,12 @@ test('one Export menu holds what each report can export, and the email copy keep
   expect(lines.length).toBeGreaterThan(30);
   await ctx.close();
 
-  // The one-person report prints; that is all it exports.
+  // A person's report prints; that is all it exports, so it is one button, not a menu of one.
   const one = await browser.newPage();
-  await one.goto(`./reports?person=${encodeURIComponent(AARON)}`);
+  await one.goto(`./person/${encodeURIComponent(AARON)}?tab=report`);
   await expect(one.locator('.print-area')).toContainText('Aaron Smetana', { timeout: 60_000 });
-  await one.getByRole('button', { name: 'Export', exact: true }).click();
-  await expect(one.getByRole('menuitem')).toHaveText(['Print / Save as PDF']);
+  await expect(one.getByRole('button', { name: 'Print / Save as PDF' })).toBeVisible();
+  await expect(one.getByRole('button', { name: 'Export', exact: true })).toHaveCount(0);
   await one.close();
 });
 
@@ -122,8 +121,8 @@ test('the recommended figure shows once: beside the setup on a desktop, in the p
   }
 });
 
-test('the one-person report gives each figure once: standing in its comparison card, growth in its tile', async ({ page }) => {
-  await page.goto(`./reports?person=${encodeURIComponent(AARON)}`);
+test('a person’s report gives each figure once: standing in its comparison card, growth in its tile', async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(AARON)}?tab=report`);
   const report = page.locator('.print-area');
   await expect(report.locator('[data-standing="campus"]')).toContainText(/all of UW–Madison, more than \d+%; within .+, more than \d+%\./, { timeout: 60_000 });
   const tiles = report.locator('.stat-row').first();

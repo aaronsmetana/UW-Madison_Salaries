@@ -236,7 +236,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     const charts: Array<[string, string, number, ((page: Page) => Promise<void>)?]> = [
       // The report's dashboard trend: pay, the title median and pay had raises been typical.
-      [`./reports?person=${encodeURIComponent(AARON)}`, '.print-area', 3],
+      [`./person/${encodeURIComponent(AARON)}?tab=report`, '.print-area', 3],
       // The headcount panel under the median, whose two lines end 10px apart at the top of the plot.
       ['./explore?tab=trends', 'body', 2],
       // The raise case's pay history: pay and the title median. It kept a hand-drawn legend under the

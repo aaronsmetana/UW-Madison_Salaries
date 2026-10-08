@@ -13,11 +13,14 @@ const links = (page: import('@playwright/test').Page) => page.getByRole('navigat
 test('a person links to their report and to a raise case with them as its subject', async ({ page }) => {
   await page.goto(`./person/${encodeURIComponent(KEY)}`);
   const name = (await page.getByRole('heading', { level: 1 }).innerText()).trim();
-  await expect(links(page).getByRole('link')).toHaveText(['Report →', 'Raise case →']);
-  await links(page).getByRole('link', { name: 'Report →' }).click();
-  await expect(page).toHaveURL(new RegExp(`/reports\\?person=${encodeURIComponent(KEY).replace(/[|]/g, '\\$&')}`));
-  await expect(page).toHaveTitle(new RegExp(`Report — ${name}`));
-  await page.goBack();
+  // Their report is a tab of their own page, beside the others; a raise case is a tool of its own.
+  await expect(links(page).getByRole('link')).toHaveText(['Raise case →']);
+  // The report asks for its own figures only once it is opened: the page's other tabs do not carry it hidden.
+  await expect(page.locator('.print-area')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Report' }).click();
+  await expect(page).toHaveURL(/tab=report/);
+  await expect(page.locator('.print-area')).toContainText(name, { timeout: 60_000 });
+  // The links are the page's own, under its name on every tab.
   await links(page).getByRole('link', { name: 'Raise case →' }).click();
   await expect(page).toHaveURL(/\/reports\?.*type=comparison/);
   // The case is for them, as its subject; the compare set is left as it was.

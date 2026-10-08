@@ -55,20 +55,18 @@ test.describe('raise case brief', () => {
 });
 
 /**
- * The two report types in sentence case, as every other control in the app: they read "On a Specified
- * Person" and "Salary Increase Justification (People In Tray)" on a desktop, while the phone already had
- * "One person" and "Raise case (tray)".
+ * Reports builds a raise case and nothing else: a report on one person is their page's Report tab, and a link
+ * to the one this page used to make opens it there.
  */
-for (const width of [1280, 375]) {
-  test(`the report types are named in sentence case at ${width}px`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 800 });
-    await page.goto('./reports');
-    // Found by what the options are, not what they say.
-    const types = page.locator('.mantine-SegmentedControl-root:has(input[value="comparison"])').locator('.mantine-SegmentedControl-label');
-    await expect(types).toHaveCount(2, { timeout: 60_000 });
-    const labels = await types.allTextContents();
-    expect(labels.filter((l) => !/^[A-Z][^A-Z]*$/.test(l)), 'a report type in Title Case').toEqual([]);
-    // A raise case's people are its own, so its name no longer says whose set it is built from.
-    expect(labels).toEqual(['One person', 'Raise case']);
-  });
-}
+test('Reports is the raise case alone; a one-person report link opens the person’s Report tab', async ({ page }) => {
+  await page.goto('./reports');
+  await expect(page.getByPlaceholder('Search yourself by name to begin…')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('main')).not.toContainText(/One person/);
+  await expect(page.locator('.mantine-SegmentedControl-root:has(input[value="person"])')).toHaveCount(0);
+  for (const old of ['./reports?person=aaronsmetana%7C2014-10-15&pname=Aaron%20Smetana', './reports?type=person&person=aaronsmetana%7C2014-10-15']) {
+    await page.goto(old);
+    await expect(page).toHaveURL(/\/person\/aaronsmetana%7C2014-10-15\?tab=report$/, { timeout: 30_000 });
+    await expect(page.getByRole('tab', { name: 'Report' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.print-area')).toContainText('Aaron Smetana', { timeout: 60_000 });
+  }
+});

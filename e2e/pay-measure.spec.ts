@@ -11,7 +11,7 @@ const measure = (page: Page) => page.getByRole('radiogroup').filter({ has: page.
 for (const [name, path] of [
   ['Titles', './paycheck?code=FA020'],
   ['Raises', './raises'],
-  ['Reports, one person', `./reports?person=${encodeURIComponent('aaronsmetana|2014-10-15')}&pname=Aaron%20Smetana`],
+  ['a person’s report', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=report`],
   ['Reports, a raise case', './reports?type=comparison'],
   ['Compare', './compare'],
   ['a division', `./school/${encodeURIComponent('School of Education')}`],

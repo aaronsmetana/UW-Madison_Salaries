@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { oracle, latestSnapshot } from './oracle';
 
@@ -11,20 +11,20 @@ import { oracle, latestSnapshot } from './oracle';
 const KEY = 'aaronsmetana|2014-10-15';
 
 /** Press a CSV button and read the file: its header and its rows. */
-async function download(page: Page, name: string | RegExp) {
-  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name }).click()]);
+async function download(page: Page, name: string | RegExp, within: Page | Locator = page) {
+  const [file] = await Promise.all([page.waitForEvent('download'), within.getByRole('button', { name }).click()]);
   const text = readFileSync((await file.path())!, 'utf8').trim();
   const [head, ...rows] = text.split(/\r?\n/);
   return { name: file.suggestedFilename(), head: head.split(','), rows };
 }
 
-test('Reports has no page-level CSV: the one-person report’s history has its own, of the rows it shows', async ({ page }) => {
-  await page.goto(`./reports?person=${encodeURIComponent(KEY)}&pname=${encodeURIComponent('Aaron Smetana')}`);
-  const card = page.locator('.mantine-Card-root', { has: page.getByText('Title & salary history', { exact: true }) });
+test('a person’s report has no page-level CSV: its history has its own, of the rows it shows', async ({ page }) => {
+  await page.goto(`./person/${encodeURIComponent(KEY)}?tab=report`);
+  const card = page.locator('.print-area .mantine-Card-root', { has: page.getByText('Title & salary history', { exact: true }) });
   await expect(card.locator('table tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Download CSV' })).toHaveCount(0);
   const shown = await card.locator('table tbody tr').count();
-  const csv = await download(page, 'CSV of the title and salary history');
+  const csv = await download(page, 'CSV of the title and salary history', page.locator('.print-area'));
   expect(csv.name).toBe('Aaron Smetana-history.csv');
   expect(csv.head).toEqual(['snapshot', 'title', 'job_code', 'school', 'department', 'rate', 'actual_pay', 'change', 'change_note', 'fte', 'basis']);
   expect(csv.rows.length).toBe(shown);

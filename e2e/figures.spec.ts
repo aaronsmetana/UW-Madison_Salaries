@@ -17,13 +17,14 @@ const PAGES: [string, string][] = [
   ['Divisions, changes', './explore?tab=changes'],
   ['Divisions, cohorts', './explore?tab=cohorts'],
   ['a division', `./school/${encodeURIComponent(SMPH)}`],
-  ['one-person report', `./reports?type=person&person=${encodeURIComponent(AARON)}`],
+  ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`],
 ];
 
 for (const [name, route] of PAGES) {
   test(`${name}: the figures are one card of cells, with a hairline between two cells`, async ({ page }) => {
     await page.goto(route);
-    const row = page.locator('.stat-row').first();
+    // A person's report sits beside their other tabs, which stay mounted, hidden: its own row, not theirs.
+    const row = page.locator(route.includes('tab=report') ? '.print-area .stat-row' : '.stat-row').first();
     await expect(row, name).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(800);
     await expect(page.locator('[data-stat-card]'), `${name}: a figure in a card of its own`).toHaveCount(0);

@@ -94,9 +94,9 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
       await expect(cell).not.toContainText(fmt(p.b / p.a - 1));
       // A continuing raise like for like, so it is compared with that step's raises campus-wide, as any other is.
       await expect(cell.locator('[data-raise-compare="yes"]')).toContainText(/typical [+−]?\d/, { timeout: 30_000 });
-      // And the one-person report's history, which draws its own table.
-      await page.goto(`./reports?person=${encodeURIComponent(p.pk)}`);
-      const card = page.locator('.mantine-Card-root', { has: page.getByText('Title & salary history', { exact: true }) });
+      // And the person's report's history, which draws its own table.
+      await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=report`);
+      const card = page.locator('.print-area .mantine-Card-root', { has: page.getByText('Title & salary history', { exact: true }) });
       const row = card.locator('table tbody tr').filter({ hasText: 'Sep 2025' });
       await expect(row).toContainText('9-month pay reported differently · ×11/9 taken out', { timeout: 60_000 });
       await expect(row).toContainText(fmt(Math.round((p.b / p.a / (11 / 9) - 1) * 1e4) / 1e4));
@@ -327,7 +327,7 @@ test.describe('R5 — standing is one query, per person, the department inside i
     };
     const onPage = { uw: pctOf((l) => l === 'All UW–Madison'), school: pctOf((l) => l === school) };
 
-    await page.goto(`./reports?type=person&person=${encodeURIComponent(key)}`);
+    await page.goto(`./person/${encodeURIComponent(key)}?tab=report`);
     const report = page.locator('.print-area');
     // Said once, in the comparison card's line, where the tiles used to say it again.
     const line = report.locator('[data-standing="campus"]');

@@ -37,13 +37,13 @@ async function rowsOf(page: Page, scope = page.locator('body')) {
   return { head, rows };
 }
 
-test('the person page and the one-person report draw the same history, whatever measure the report is set to', async ({ page }) => {
+test('the person page’s History and its Report tab draw the same history, whatever measure the report is set to', async ({ page }) => {
   test.setTimeout(240_000);
   for (const [why, key] of await people()) {
     await page.goto(`./person/${encodeURIComponent(key)}?tab=history`);
     const onPage = await rowsOf(page);
     for (const metric of ['', '&metric=full']) {
-      await page.goto(`./reports?person=${encodeURIComponent(key)}${metric}`);
+      await page.goto(`./person/${encodeURIComponent(key)}?tab=report${metric}`);
       if (metric) await expect(page.getByRole('radio', { name: 'Full-time rate' })).toBeChecked({ timeout: 60_000 });
       const inReport = await rowsOf(page, page.locator('.print-area'));
       expect(inReport.head, `${why}${metric}: the columns`).toEqual(onPage.head);
@@ -58,11 +58,12 @@ test('on a Letter page the history fits the sheet, its job code, department, rat
   const ctx = await browser.newContext({ viewport: { width: 701, height: 1000 } });
   const page = await ctx.newPage();
   for (const [why, key] of await people()) {
-    for (const path of [`./reports?person=${encodeURIComponent(key)}`, `./person/${encodeURIComponent(key)}?tab=history`]) {
+    for (const path of [`./person/${encodeURIComponent(key)}?tab=report`, `./person/${encodeURIComponent(key)}?tab=history`]) {
+        const scope = page.locator(path.endsWith('report') ? '.print-area' : 'body');
       await page.goto(path);
-      await rowsOf(page);
+      await rowsOf(page, scope);
       await page.emulateMedia({ media: 'print' });
-      const fit = await page.locator('table.appt-history').evaluate((t) => {
+      const fit = await scope.locator('table.appt-history').evaluate((t) => {
         const card = t.closest('.mantine-Card-root')!.getBoundingClientRect();
         const cells = [...t.querySelectorAll('th, td')].filter((c) => getComputedStyle(c).display !== 'none');
         return {
@@ -88,10 +89,11 @@ test('on a screen too narrow for its columns the history folds as on paper, neve
     const ctx = await browser.newContext({ viewport: { width, height: 900 } });
     const page = await ctx.newPage();
     for (const [why, key] of await people()) {
-      for (const path of [`./reports?person=${encodeURIComponent(key)}`, `./person/${encodeURIComponent(key)}?tab=history`]) {
+      for (const path of [`./person/${encodeURIComponent(key)}?tab=report`, `./person/${encodeURIComponent(key)}?tab=history`]) {
+        const scope = page.locator(path.endsWith('report') ? '.print-area' : 'body');
         await page.goto(path);
-        await rowsOf(page);
-        const fit = await page.locator('table.appt-history').evaluate((t) => {
+        await rowsOf(page, scope);
+        const fit = await scope.locator('table.appt-history').evaluate((t) => {
           const vp = t.closest('.mantine-ScrollArea-viewport') as HTMLElement | null;
           const shown = (sel: string) => [...t.querySelectorAll(sel)].filter((c) => getComputedStyle(c).display !== 'none').length;
           return { sideways: vp ? vp.scrollWidth - vp.clientWidth : 0, folded: shown('[data-print-fold]'), under: shown('tbody td .print-under') };

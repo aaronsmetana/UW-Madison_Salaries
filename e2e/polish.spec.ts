@@ -35,7 +35,7 @@ export const PAGES: [string, string][] = [
   ['Compare', `./compare?sel=${TRAY}`],
   ['Compare, empty', './compare'],
   ['Raises', `./raises?sch=${SMPH}&dept=Neurology`],
-  ['Reports, one person', `./reports?type=person&person=${AARON}`],
+  ['a person, report', `./person/${AARON}?tab=report`],
   ['Reports, raise case', `./reports?type=comparison&subject=${AARON}`],
   ['Screening', './screening?run=1&flag=below-min'],
   // With people in the tray, so its bar (and its grey "Clear") is on the page.

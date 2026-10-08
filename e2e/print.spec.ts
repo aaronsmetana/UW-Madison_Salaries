@@ -119,7 +119,7 @@ for (const [name, path, says] of [
   ['a title', './paycheck?code=IT040', ['Sort by Salary', 'measure']],
   ['Divisions', './explore', ['tab', 'measure']],
   ['Raises', `./raises?sch=${SMPH}&dept=Neurology`, ['Sort by Raise', 'measure']],
-  ['the one-person report', `./reports?person=${AARON}`, []],
+  ['a person’s report', `./person/${AARON}?tab=report`, []],
 ] as const) {
   test(`prints what the page shows, not the tools on it: ${name}`, async ({ page }) => {
     await page.goto(path, { waitUntil: 'networkidle' });

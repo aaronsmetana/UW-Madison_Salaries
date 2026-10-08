@@ -67,7 +67,7 @@ for (const [name, route, ready, svg] of [
   ['Divisions', './explore?tab=schools', '.school-row', false],
   ['a division', `./school/${encodeURIComponent(SMPH)}?tab=dist`, '.card-title', true],
   ['Raises', `./raises?sch=${encodeURIComponent(SMPH)}&dept=Neurology`, '.raise-summary', true],
-  ['Reports, one person', `./reports?type=person&person=${encodeURIComponent(AARON)}`, '.card-title', true],
+  ['a person, report', `./person/${encodeURIComponent(AARON)}?tab=report`, '.print-area .card-title', true],
   ['Reports, raise case', `./reports?type=comparison&subject=${encodeURIComponent(AARON)}`, '.report-brief', false],
   ['Compare', `./compare?sel=${TRAY}`, '.card-title', true],
   ['Screening', './screening?run=1&flag=below-min', '.mantine-Table-table', false],
