@@ -9,6 +9,7 @@ const description = async (page: Page) => (await page.locator('.page-description
 
 test('Divisions describes every one of its tabs', async ({ page }) => {
   await page.goto('./explore');
+  await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 60_000 });
   const tabs = (await page.getByRole('tab').allInnerTexts()).map((t) => t.trim().toLowerCase());
   expect(tabs.length).toBeGreaterThan(4);
   const text = await description(page);
@@ -17,6 +18,7 @@ test('Divisions describes every one of its tabs', async ({ page }) => {
 
 test('Reports describes both of its reports', async ({ page }) => {
   await page.goto('./reports');
+  await expect(page.getByRole('radiogroup').first().getByRole('radio').first()).toBeAttached({ timeout: 60_000 });
   const modes = (await page.getByRole('radiogroup').first().getByRole('radio').evaluateAll((rs) => rs.map((r) => (r.closest('label, .mantine-SegmentedControl-control')?.textContent ?? r.getAttribute('value') ?? ''))))
     .map((t) => t.split(':')[0].trim().toLowerCase()).filter(Boolean);
   expect(modes).toEqual(['one person', 'raise case']);
