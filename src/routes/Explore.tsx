@@ -232,7 +232,8 @@ export default function Explore() {
     <Stack gap="lg">
       <PageHeader
         title="Divisions"
-        description="Every school and division side by side: how many people work there, what they are paid, and who earns the most. Add any of them to your compare set to line them up on the Compare page."
+        // Every tab in it (G9): a description that names one tab reads, on the others, as the wrong page.
+        description="Campus by its schools and divisions: headcount and pay, the top earners, titles, trends over time, changes between two snapshots, and retention."
       />
 
       {/* No page-wide search here: its table has its own filter, and finding a person, title or division is

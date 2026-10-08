@@ -19,7 +19,7 @@ export function PageHeader({
       {/* Size + letter-spacing come from the shared heading ramp (theme.ts + app.css). */}
       <Title order={1}>{title}</Title>
       {description != null && (
-        <Text c="dimmed" maw="var(--measure)" mt={6} size="lg">
+        <Text c="dimmed" maw="var(--measure)" mt={6} size="lg" className="page-description">
           {description}
         </Text>
       )}

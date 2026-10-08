@@ -1039,7 +1039,8 @@ export default function Reports() {
       <div className="no-print">
         <PageHeader
           title="Reports"
-          description="Build a written case for one person's pay, using the UW Salary Administration Guidelines."
+          // Both kinds of report (G9): it described only the raise case, over the one-person report too.
+          description="A report on one person's pay, or a raise case for one person built on the UW Salary Administration Guidelines."
           right={
             <Group gap="md" w={isNarrow ? '100%' : undefined}>
               <SegmentedControl
