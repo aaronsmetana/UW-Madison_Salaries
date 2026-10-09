@@ -210,6 +210,47 @@ export function squareAt(left: number, slot: number, per: number, g: Pick<Grid, 
 export const colHeight = (n: number, grid: Grid) => Math.ceil(n / grid.per) * grid.rowPitch;
 
 /**
+ * Floors (3a): a second layout of everyone, in $10k bands stacked from the bottom up — under $30k, $30–40k …
+ * $190–200k, and $200k or more — each band a block of squares as wide as the others, wrapping into rows, sorted by
+ * salary from its bottom row up. The band's name stands at its left and its people at its right.
+ */
+export const FLOORS = 19;
+export const floorOf = (pay: number) => (pay < 30_000 ? 0 : pay >= 200_000 ? FLOORS - 1 : Math.floor((pay - 30_000) / 10_000) + 1);
+export const floorLabel = (f: number) => (f === 0 ? 'Under $30k' : f === FLOORS - 1 ? '$200k+' : `$${20 + f * 10}–${30 + f * 10}k`);
+/** The lowest pay a floor holds. */
+export const floorPay = (f: number) => (f === 0 ? 0 : 20_000 + f * 10_000);
+/** A floor's square, CSS px, at most (3a's 6px): smaller where the floors would not all fit. */
+export const FLOOR_PITCH = 6;
+/** The gap between floors, CSS px: at least (on a phone, less), and at most where there is room to spare. */
+export const FLOOR_GAP = { least: 3, phone: 2, most: 10 };
+
+export interface FloorsGrid {
+  /** Squares a row, every floor alike; the pitch, CSS px (whole device pixels); the gap between floors. */
+  per: number;
+  pitch: number;
+  gap: number;
+}
+/**
+ * The largest squares, up to FLOOR_PITCH, with which every floor fits a block `width` wide in `room`: each floor as
+ * many rows as its people (`counts`, `headroom` more for another snapshot's), and never shorter than `least` (its
+ * label's line). The gap between floors is what is left, within FLOOR_GAP.
+ */
+export function floorsGrid({ width, room, counts, least, dpr, gapLeast = FLOOR_GAP.least, headroom = 1.05 }: { width: number; room: number; counts: ArrayLike<number>; least: number; dpr: number; gapLeast?: number; headroom?: number }): FloorsGrid {
+  const tallBy = (p: number, per: number, k: number) => {
+    let h = 0;
+    for (let f = 0; f < counts.length; f++) h += Math.max(least, Math.max(1, Math.ceil((counts[f] * k) / per)) * p);
+    return h;
+  };
+  for (let pd = Math.round(FLOOR_PITCH * dpr); pd >= 1; pd--) {
+    const pitch = pd / dpr, per = Math.floor(width / pitch);
+    if (per < 1 || tallBy(pitch, per, headroom) + (counts.length - 1) * gapLeast > room) continue;
+    const gap = Math.min(FLOOR_GAP.most, Math.max(gapLeast, (room - tallBy(pitch, per, 1)) / Math.max(1, counts.length - 1)));
+    return { per, pitch, gap };
+  }
+  return { per: Math.max(1, Math.floor(width * dpr)), pitch: 1 / dpr, gap: gapLeast };
+}
+
+/**
  * The pile unrolled: its people on an axis from $0 to the top salary at `scale` px a dollar, each in the
  * column of the lattice (`pitch` wide, one square a row) that their own pay falls in.
  */
@@ -298,6 +339,14 @@ export function placePins(pins: readonly { x: number; w: number }[], width: numb
   });
 }
 
+/** A change of view, histogram and floors (3a): about 2.2 s in all — each square sets off over the first VIEW_WAVE
+ *  of it (into the floors bottom first, back left first) and VIEW_JITTER more at random, moves for VIEW_MOVE of it,
+ *  and hops up to VIEW_HOP px on the way. */
+export const VIEW_MS = 2200;
+export const VIEW_WAVE = 0.42;
+export const VIEW_JITTER = 0.1;
+export const VIEW_MOVE = 0.46;
+export const VIEW_HOP = 30;
 /** A move from one layout to another — the pile unrolling or folding back: this long, cubic in and out, set
  *  off left to right over MOVE_WAVE_MS. */
 export const MOVE_MS = 425;

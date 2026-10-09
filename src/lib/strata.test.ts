@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -138,6 +138,39 @@ describe('squarePixels', () => {
       }
       expect(seen.size).toBe(g.per * 4);
     }
+  });
+});
+
+describe('floors', () => {
+  it('puts everyone in a $10k band: under $30k, $30–40k … $190–200k, and $200k or more', () => {
+    expect(FLOORS).toBe(19);
+    expect([29_999, 30_000, 39_999.5, 40_000, 199_999, 200_000, 1_400_000].map(floorOf)).toEqual([0, 1, 1, 2, 17, 18, 18]);
+    expect([0, 1, 5, 17, 18].map(floorLabel)).toEqual(['Under $30k', '$30–40k', '$70–80k', '$190–200k', '$200k+']);
+    for (let f = 1; f < FLOORS; f++) expect(floorOf(floorPay(f))).toBe(f);
+    expect(floorPay(0)).toBe(0);
+  });
+  // The latest's floors, from the bottom up.
+  const counts = [631, 961, 1859, 2039, 3288, 2557, 1974, 1704, 1269, 930, 755, 574, 592, 400, 336, 273, 243, 207, 1370];
+  const height = (g: { per: number; pitch: number; gap: number }, least: number, k = 1) =>
+    counts.reduce((t, n) => t + Math.max(least, Math.max(1, Math.ceil((n * k) / g.per)) * g.pitch), 0) + (counts.length - 1) * g.gap;
+  it('takes the largest whole-pixel square up to 3a’s 6px with which every floor fits the room, with room for another snapshot', () => {
+    for (const [width, room, dpr, least, gapLeast] of [[1144, 394, 2, 14, 3], [1144, 394, 1, 14, 3], [1800, 900, 2, 14, 3], [276, 293, 2, 13, 2]] as const) {
+      const g = floorsGrid({ width, room, counts, least, dpr, gapLeast });
+      const pd = Math.round(g.pitch * dpr);
+      expect(g.pitch * dpr, `${width}@${dpr}x`).toBeCloseTo(pd, 9);
+      expect(g.pitch).toBeLessThanOrEqual(FLOOR_PITCH);
+      expect(g.per).toBe(Math.floor(width / g.pitch));
+      expect(height(g, least), `${width}@${dpr}x: past the room`).toBeLessThanOrEqual(room + 1e-9);
+      expect(g.gap).toBeGreaterThanOrEqual(gapLeast);
+      expect(g.gap).toBeLessThanOrEqual(FLOOR_GAP.most);
+      // A pixel more, and it would not fit (or would pass 6px).
+      const p1 = (pd + 1) / dpr, per1 = Math.floor(width / p1);
+      if (p1 <= FLOOR_PITCH) expect(height({ per: per1, pitch: p1, gap: gapLeast }, least, 1.05), `${width}@${dpr}x: ${pd + 1}px would fit`).toBeGreaterThan(room);
+    }
+    // Room to spare: 3a's own 6px, the floors a most-gap apart.
+    const roomy = floorsGrid({ width: 1144, room: 2000, counts, least: 14, dpr: 2 });
+    expect(roomy.pitch).toBe(FLOOR_PITCH);
+    expect(roomy.gap).toBe(FLOOR_GAP.most);
   });
 });
 

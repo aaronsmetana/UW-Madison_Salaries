@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
-import { COLS, COL_DOLLARS, READ_RADIUS, arcHeight, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
+import { COLS, COL_DOLLARS, FLOORS, READ_RADIUS, arcHeight, floorLabel, floorOf, floorPay, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
@@ -326,11 +326,16 @@ export function StrataGraph({
   const canUnroll = !!strata?.pilePay;
   const [unrolled, setUnrolled] = useState(false);
   useEffect(() => { if (!canUnroll) setUnrolled(false); }, [canUnroll]);
+  // The histogram, or the floors (3a): everyone in $10k bands stacked from the bottom up.
+  const [view, setView] = useState<'hist' | 'floors'>('hist');
   const layout = useMemo(
-    () => (strata && plotW > 0 ? layoutStrata(strata, { W: plotW, H, top: PIN_BAND + 4, dpr, phone, peak: scalePeak }, unrolled && canUnroll) : null),
-    [strata, plotW, H, dpr, phone, unrolled, canUnroll, scalePeak],
+    () => (strata && plotW > 0 ? layoutStrata(strata, { W: plotW, H, top: PIN_BAND + 4, dpr, phone, peak: scalePeak, view }, unrolled && canUnroll && view === 'hist') : null),
+    [strata, plotW, H, dpr, phone, unrolled, canUnroll, scalePeak, view],
   );
   const tail = layout?.tail ?? null;
+  // The floors last laid out, kept while they fade out on the way back to the histogram.
+  const floorsRef = useRef<Pick<StrataLayout, 'floors' | 'floorX'> | null>(null);
+  if (layout?.floors) floorsRef.current = { floors: layout.floors, floorX: layout.floorX };
 
   // A step's big movers (lib/timeline `bigMoves`), between neighbouring snapshots only: by person, +1 or −1.
   const moves = useMemo(
@@ -497,7 +502,16 @@ export function StrataGraph({
   const wantWhoRef = useRef(onWantWho);
   wantWhoRef.current = onWantWho;
   useEffect(() => { if (lensAt) wantWhoRef.current?.(); }, [lensAt]);
-  const lensCol = lensAt && layout && !tail ? Math.max(0, Math.min(COLS - 1, Math.floor(lensAt.x / layout.colW))) : null;
+  const lensCol = lensAt && layout && !tail && layout.view === 'hist' ? Math.max(0, Math.min(COLS - 1, Math.floor(lensAt.x / layout.colW))) : null;
+  // In the floors, the floor under the lens: the one whose band (and half the gap round it) holds its height.
+  const floorAt = (y: number) => {
+    const fl = layout?.floors;
+    if (!fl) return null;
+    let best = 0, d = Infinity;
+    fl.forEach((f, k) => { const dd = y > f.base ? y - f.base : y < f.base - f.h ? f.base - f.h - y : 0; if (dd < d) { d = dd; best = k; } });
+    return best;
+  };
+  const lensFloor = lensAt ? floorAt(lensAt.y) : null;
   // The pile is a button: over it, no lens but a word on what a click does; unrolled, the squeezed graph is the
   // way to fold it back. Where the pointer is over either, for that word.
   const [overPile, setOverPile] = useState(false);
@@ -508,7 +522,7 @@ export function StrataGraph({
     for (let j = 0; j < layout.py.length; j++) t = Math.min(t, layout.py[j]);
     return t;
   }, [layout]);
-  const onPile = (at: { x: number; y: number }) => canUnroll && pileTop != null && !!layout && at.x >= layout.pileLeft - 6 && at.y >= pileTop - 12;
+  const onPile = (at: { x: number; y: number }) => canUnroll && pileTop != null && !!layout && layout.view === 'hist' && at.x >= layout.pileLeft - 6 && at.y >= pileTop - 12;
   const onSqueezed = (at: { x: number; y: number }) => !!tail && at.x < tail.capX + 3;
   // The tail's people by pay, for the keyboard to walk.
   const tailOrder = useMemo(() => {
@@ -566,7 +580,7 @@ export function StrataGraph({
         width: Math.ceil(Math.min(FOUND_LABEL.maxW, measureText(s.f.name, FOUND_LABEL.font) * 1.08 + FOUND_LABEL.pad)),
         priority: s.f.person_key === activeKey ? 1 : 0,
       })),
-      { left: 0, right: layout.mainW, top: PIN_BAND, bottom: layout.base - 2 },
+      layout.floorX ? { left: layout.floorX.left, right: layout.floorX.right, top: 0, bottom: layout.base - 2 } : { left: 0, right: layout.mainW, top: PIN_BAND, bottom: layout.base - 2 },
       { height: FOUND_LABEL.h, levels: phone ? 4 : 7 },
     );
     return placed.map((l) => {
@@ -642,6 +656,19 @@ export function StrataGraph({
       for (const v of strata.pilePay) { if (Math.abs(v - pay) <= TAIL_READ) near++; if (v >= pay) above++; }
       return `${fmtTail(pay)} · ${num(near)} ${near === 1 ? 'person' : 'people'} within ±${fmtK(TAIL_READ)} · ${above ? `${topShare(above)} of everyone is paid this or more` : 'no one is paid more'}`;
     }
+    // In the floors: the floor under it, its people, and where it stands.
+    if (layout.floors && lensFloor != null) {
+      const f = lensFloor, fl = layout.floors;
+      let below = 0;
+      for (let k = 0; k < f; k++) below += fl[k].n;
+      let lit = 0;
+      if (dim) {
+        for (let i = 0; i < strata.col.length; i++) if (!dim.main[i] && floorOf(strata.pay[i]) === f) lit++;
+        if (f === FLOORS - 1) for (let j = 0; j < strata.pileKind.length; j++) if (!dim.pile[j]) lit++;
+      }
+      const pct = Math.min(99, Math.max(1, Math.round(((below + fl[f].n / 2) / Math.max(1, total)) * 100)));
+      return `${floorLabel(f)} · ${num(fl[f].n)} ${fl[f].n === 1 ? 'person' : 'people'} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
+    }
     const c = lensCol ?? 0;
     const near = within(strata.colCount, c, READ_RADIUS);
     let lit = 0;
@@ -649,7 +676,7 @@ export function StrataGraph({
     const pct = Math.min(99, Math.max(1, Math.round(shareAt(strata.colCount, c, total) * 100)));
     return `${fmtK(c * COL_DOLLARS)}–${fmtK((c + 1) * COL_DOLLARS)} · ${num(near)} people within ±${fmtK(READ_RADIUS * COL_DOLLARS)} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strata, layout, lensAt, lensFrom, lensCol, dim, total]);
+  }, [strata, layout, lensAt, lensFrom, lensCol, lensFloor, dim, total]);
 
   // Who the square under the lens is: from the names, once they are in — and for one of the search's people,
   // from the search itself, so a mark names and opens its person before the names have loaded.
@@ -684,6 +711,16 @@ export function StrataGraph({
     setOverFold(null);
     setPinned(false);
     putAway();
+  };
+  // Histogram or floors: the lens put away and the pile folded back while everyone moves to the other view.
+  const switchView = (v: 'hist' | 'floors') => {
+    if (v === view) return;
+    setUnrolled(false);
+    setOverPile(false);
+    setOverFold(null);
+    setPinned(false);
+    putAway();
+    setView(v);
   };
   const foldRef = useRef(fold);
   foldRef.current = fold;
@@ -804,8 +841,16 @@ export function StrataGraph({
   }, [pinned]);
   // The keyboard: the plot is a slider over pay. The arrows move the lens a column ($1k; with Shift $10k),
   // Home and End go to the ends, Enter opens the person at its centre, and Escape puts it away.
+  // In the floors, over the middle of a floor's people.
+  const keyFloor = (f: number) => {
+    const fl = layout?.floors?.[f], fx = layout?.floorX;
+    if (!layout || !fl || !fx) return null;
+    const rows = Math.max(1, Math.ceil(fl.n / layout.grid.per));
+    return { x: fx.left + (Math.min(fl.n, layout.grid.per) * layout.grid.pitch) / 2, y: fl.base - Math.min(rows * layout.grid.pitch, fl.h) / 2 };
+  };
   const keyAt = (c: number) => {
     if (!strata || !layout) return null;
+    if (layout.floors) return keyFloor(c);
     const x = Math.min(layout.mainW - 1, (c + 0.5) * layout.colW);
     const top = colTopY(strata, layout, c);
     const y = Math.max(PIN_BAND + R / 2, Math.min(layout.base - 4, (top + layout.base) / 2));
@@ -835,16 +880,19 @@ export function StrataGraph({
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (pick && who) toggleFollow(who, pick); }
       return;
     }
-    const c = lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS);
+    // A column at a time ($5k; with Shift $25k) — or in the floors, a floor at a time.
+    const floors = layout.view === 'floors';
+    const c = floors ? lensFloor ?? floorOf(median ?? 0) : lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS);
+    const last = floors ? FLOORS - 1 : COLS - 1;
     const step = e.shiftKey ? 5 : 1;
     let next: number | null = null;
     switch (e.key) {
-      case 'ArrowRight': case 'ArrowUp': next = Math.min(COLS - 1, c + step); break;
+      case 'ArrowRight': case 'ArrowUp': next = Math.min(last, c + step); break;
       case 'ArrowLeft': case 'ArrowDown': next = Math.max(0, c - step); break;
-      case 'PageUp': next = Math.min(COLS - 1, c + 5); break;
+      case 'PageUp': next = Math.min(last, c + 5); break;
       case 'PageDown': next = Math.max(0, c - 5); break;
       case 'Home': next = 0; break;
-      case 'End': next = COLS - 1; break;
+      case 'End': next = last; break;
       case 'Enter': case ' ':
         e.preventDefault();
         if (pick && who) toggleFollow(who, pick);
@@ -1075,6 +1123,7 @@ export function StrataGraph({
       ref={panelRef}
       className={`hero-dist strata glass${full ? ' hero-dist-full' : ''}`}
       data-full={full ? 'on' : 'off'}
+      data-view={view}
       role={full ? 'dialog' : undefined}
       aria-modal={full || undefined}
       aria-label={full ? 'Pay distribution, full page' : undefined}
@@ -1083,6 +1132,8 @@ export function StrataGraph({
         {full && search && <div className="hero-dist-search">{search}</div>}
         <div className="strata-toolbar-left">{chip}{followChip}</div>
         <div className="strata-toolbar-right">
+          <SegmentedToggle ariaLabel="View" className="strata-view" value={view} onChange={(v) => switchView(v as 'hist' | 'floors')}
+            options={[{ id: 'hist', label: 'Histogram' }, { id: 'floors', label: 'Floors' }]} />
           {motion && (phone ? (
             <ActionIcon variant="default" size="md" aria-label="Drop the squares again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
               <IconArrowBarToDown size={ICON.control} />
@@ -1123,6 +1174,7 @@ export function StrataGraph({
         data-group-count={filterStats?.count}
         data-group-median={filterStats?.median ?? undefined}
         data-tail={tail ? 'on' : 'off'}
+        data-view={layout?.view ?? view}
         data-over-pile={overPile || undefined}
         data-pick={pick ? `${pick.field}:${pick.index}` : undefined}
         data-pick-size={pick ? pick.s.toFixed(2) : undefined}
@@ -1133,12 +1185,12 @@ export function StrataGraph({
         onPointerMove={onMove} onPointerLeave={onLeave} onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
         tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution" aria-describedby={summaryId}
         aria-valuemin={0} aria-valuemax={tail ? tail.top : COLS * COL_DOLLARS}
-        aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : (lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS)) * COL_DOLLARS} aria-valuetext={readText}
+        aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : layout?.floors ? floorPay(lensFloor ?? floorOf(median ?? 0)) : (lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS)) * COL_DOLLARS} aria-valuetext={readText}
         onKeyDown={onKey}
         onFocus={(e) => {
           if (lensAt || !e.currentTarget.matches(':focus-visible')) return;
           if (tail) { keyTail(tailRankRef.current ?? 0); return; }
-          const at = keyAt(Math.floor((median ?? 0) / COL_DOLLARS));
+          const at = keyAt(layout?.floors ? floorOf(median ?? 0) : Math.floor((median ?? 0) / COL_DOLLARS));
           setLensAt(at);
           setPointer(at);
         }}
@@ -1154,10 +1206,23 @@ export function StrataGraph({
             />
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (
-                <line key={p.key} className={`strata-pin-line strata-pin-${p.key}`} x1={p.x} x2={p.x} y1={p.y1} y2={p.y2}
+                <line key={p.key} className={`strata-pin-line strata-pin-${p.key} strata-hist-only`} x1={p.x} x2={p.x} y1={p.y1} y2={p.y2}
                   style={p.ink ? ({ stroke: p.ink } as CSSProperties) : undefined} />
               ))}
-              <line className="strata-baseline" x1={0} x2={plotW} y1={layout.base + 0.5} y2={layout.base + 0.5} />
+              <line className="strata-baseline strata-hist-only" x1={0} x2={plotW} y1={layout.base + 0.5} y2={layout.base + 0.5} />
+              {/* The floors (3a): a hairline under each, and the median's floor marked at its left. */}
+              {floorsRef.current?.floorX && (
+                <g className="strata-floors-only">
+                  {floorsRef.current.floors!.map((f, k) => (
+                    <line key={k} className="strata-floor-rule" x1={floorsRef.current!.floorX!.left - 6} x2={floorsRef.current!.floorX!.right + 6}
+                      y1={Math.round(f.base + 2) + 0.5} y2={Math.round(f.base + 2) + 0.5} />
+                  ))}
+                  {median != null && (() => {
+                    const f = floorsRef.current!.floors![floorOf(median)];
+                    return <rect className="strata-floor-median" x={floorsRef.current!.floorX!.left - (phone ? 5 : 9)} y={f.base - f.h} width={2} height={f.h} />;
+                  })()}
+                </g>
+              )}
               {/* The pile under the pointer: outlined, as what a click there unrolls. */}
               {overPile && pileTop != null && (
                 <rect className="strata-pile-ring" x={layout.pileLeft + 0.5} y={pileTop - 3.5} width={layout.pileW - 1} height={layout.base - pileTop + 3} rx={3} />
@@ -1174,11 +1239,28 @@ export function StrataGraph({
               <div className="strata-tail-edge-label" style={{ left: tail.capX + 6, top: Math.max(PIN_BAND, layout.peakY - 6) }}>{fmtK(cap ?? 250_000)}{phone ? '' : ", the graph's edge"}</div>
             )}
             {pins.map((p) => (
-              <div key={p.key} className={`strata-pin strata-pin-label-${p.key}`} data-strong={p.strong || undefined} data-filter={p.filter || undefined}
+              <div key={p.key} className={`strata-pin strata-pin-label-${p.key} strata-hist-only`} data-strong={p.strong || undefined} data-filter={p.filter || undefined}
                 style={{ left: p.left, top: p.top, width: p.w, ...(p.ink ? { color: p.ink } : {}) }}>
                 {p.text}{p.change && <span className="strata-pin-change" data-up={p.change.up || undefined} data-down={!p.change.up || undefined}> {p.change.text}</span>}
               </div>
             ))}
+            {/* Each floor's band at its left, the median's named; its people at its right. */}
+            {floorsRef.current?.floorX && (
+              <div className="strata-floors-only strata-floor-labels" aria-hidden>
+                {floorsRef.current.floors!.map((f, k) => {
+                  const mid = median != null && floorOf(median) === k;
+                  return (
+                    <div key={k} className="strata-floor" data-floor={k} data-median={mid || undefined} style={{ top: f.base - f.h / 2 }}>
+                      <span className="strata-floor-label" style={{ right: plotW - floorsRef.current!.floorX!.left + (phone ? 8 : 16) }}>
+                        {phone && k === 0 ? '<$30k' : floorLabel(k)}
+                        {mid && !phone && <span className="strata-floor-median-word">Median</span>}
+                      </span>
+                      <span className="strata-floor-count" style={{ left: floorsRef.current!.floorX!.right + (phone ? 8 : 18) }}>{num(f.n)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
         {foundLabels.length > 0 && (
@@ -1264,10 +1346,10 @@ export function StrataGraph({
       {layout && (
         <>
           {/* Under the baseline, the median's mark (3a). */}
-          <div className="strata-ruler" aria-hidden style={{ width: plotW }}>
+          <div className="strata-ruler strata-hist-only" aria-hidden style={{ width: plotW }}>
             {!tail && median != null && <span className="strata-median-mark" style={{ left: payX(layout, median) }} />}
           </div>
-          <div className="hero-dist-axis strata-axis" style={{ position: 'relative', width: plotW }}>
+          <div className="hero-dist-axis strata-axis strata-hist-only" style={{ position: 'relative', width: plotW }}>
             {ticks.map((v) => (
               <span key={v} className="hero-dist-tick" style={{ left: xOf(v) }}>{fmtTail(v)}</span>
             ))}

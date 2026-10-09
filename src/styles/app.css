@@ -2432,6 +2432,29 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-pin-change { font-weight: 600; font-variant-numeric: tabular-nums; }
 .strata-pin-change[data-up] { color: var(--text-pos); }
 .strata-pin-change[data-down] { color: var(--text-neg); }
+/* Histogram and floors (3a): what belongs to one view fades out as the other's comes in, and is out of reach
+   (its links and buttons too) once it has gone. */
+/* Shown at once (step-start); hidden only once faded (step-end). */
+.strata-hist-only, .strata-floors-only { transition: opacity var(--dur-slow) var(--ease), visibility var(--dur-slow) step-start; }
+.strata[data-view='floors'] .strata-hist-only,
+.strata:not([data-view='floors']) .strata-floors-only {
+  opacity: 0; visibility: hidden; transition: opacity var(--dur-slow) var(--ease), visibility var(--dur-slow) step-end;
+}
+.strata-floor-rule { stroke: var(--hairline-soft); stroke-width: 1; }
+.strata-floor-median { fill: var(--mantine-color-accent-6); }
+.strata-floor-labels { position: absolute; inset: 0; pointer-events: none; }
+.strata-floor { position: absolute; left: 0; right: 0; height: 0; }
+.strata-floor-label, .strata-floor-count {
+  position: absolute; top: 0; transform: translateY(-50%); font-size: var(--mantine-font-size-xs); line-height: 15px;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.strata-floor-label { font-weight: 500; color: var(--mantine-color-dimmed); text-align: right; }
+.strata-floor[data-median] .strata-floor-label { color: var(--text-accent); font-weight: 700; }
+.strata-floor-median-word { display: block; font-size: var(--mantine-font-size-xxs); font-weight: var(--label-weight); letter-spacing: var(--label-tracking); text-transform: uppercase; line-height: 13px; }
+.strata-floor-count { font-weight: 600; color: var(--mantine-color-text); }
+@media screen and (max-width: 30em) {
+  .strata-floor-label, .strata-floor-count { font-size: var(--mantine-font-size-xxs); line-height: 13px; }
+}
 .strata-axis { height: 18px; margin-top: 1px; }
 .strata-axis .hero-dist-tick,
 .strata-axis .hero-dist-pile-label {
