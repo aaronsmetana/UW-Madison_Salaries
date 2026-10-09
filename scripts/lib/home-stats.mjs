@@ -21,6 +21,8 @@ export function serializeHomeStats(stats) {
  *  `bins_overflow` rather than binned, so a handful of extreme outliers don't compress the bars that
  *  describe where almost everyone actually sits. */
 const BIN_CAP = 250000;
+/** The landing graph's columns, $5k each (src/lib/strata `COL_DOLLARS`). */
+const COL_W = 5000;
 
 /** Width of one histogram bucket, in dollars.
  *
@@ -116,6 +118,15 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       const overRows = await run(
         `SELECT cat, pay FROM ${peopleByCategory(src, snap)} WHERE pay >= ${BIN_CAP} ORDER BY cat, pay, person_key`
       );
+      // The most people in one $5k column in any snapshot, each person once at their total pay, everyone at the cap
+      // or above as a column of their own (as the landing graph lays them out, src/lib/strata `COL_DOLLARS`): the
+      // scale it is drawn to, so the latest and every snapshot of its timeline draw a person the same height.
+      const [peakRow] = await run(
+        `SELECT max(n) AS peak FROM (
+           SELECT snapshot_id, least(floor(pay / ${COL_W}), ${BIN_CAP / COL_W}) AS b, count(*) AS n
+           FROM (SELECT snapshot_id, person_key, sum(${PAY}) AS pay FROM ${src} WHERE salary > 0 GROUP BY snapshot_id, person_key)
+           WHERE pay > 0 GROUP BY snapshot_id, b)`
+      );
       const [overflowRow] = await run(
         `SELECT count(*) AS n FROM ${people(src, snap)} WHERE pay >= ${BIN_CAP}`
       );
@@ -158,6 +169,7 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
           salary_hi: toNum(dimsRow?.hi),
           bins: bins.map((b) => ({ bucket: toNum(b.bucket), n: toNum(b.n) })),
           bin_cap: BIN_CAP,
+          column_peak: toNum(peakRow?.peak),
           pay_counts: (() => {
             if (!per100.length) return null;
             const lo100 = toNum(per100[0].b);

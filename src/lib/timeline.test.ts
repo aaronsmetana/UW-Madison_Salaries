@@ -32,11 +32,12 @@ describe('buildTimeline', () => {
 
 describe('strataFromPeople', () => {
   const p = snap([[7, 51_200, 0], [3, 51_900, 2], [9, 300_000, 2], [4, 260_000, 0], [5, 12_000, 1]]);
-  it('puts each person in their $1k column, the pile in kind blocks, and keeps who each square is', () => {
+  it('puts each person in their $5k column with their own pay, the pile in kind blocks, and keeps who each square is', () => {
     const s = strataFromPeople(p, NAMES, 250_000);
     expect([...s.mainId]).toEqual([5, 7, 3]);
-    expect([...s.col]).toEqual([12, 51, 51]);
-    expect(s.colCount[51]).toBe(2);
+    expect([...s.col]).toEqual([2, 10, 10]);
+    expect(s.colCount[10]).toBe(2);
+    expect(s.pay).toBe(s.mainPay);
     expect([...s.pileId]).toEqual([4, 9]);
     expect([...s.pilePay!]).toEqual([260_000, 300_000]);
     expect([...s.mainPay]).toEqual([12_000, 51_200, 51_900]);

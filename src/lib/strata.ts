@@ -1,28 +1,29 @@
 /**
- * The landing graph as strata (mockup 3a): one square per person, in $1k columns a few squares wide,
- * filled from the baseline up, each column's people stacked by employment type so the field reads as
- * horizontal bands of colour. Everything here is a pure function of the counts and the plot's size —
- * who sits where, the grid's measures, the lens's fisheye, the pins' rows, the motions' timing — so the
- * canvas (components/strata/StrataField) only draws what these say.
+ * The landing graph (mockup 3a): one square per person, in $5k columns from $0 to $250k and a last column for
+ * everyone paid more, each column's people sorted by salary from the baseline up — the lowest paid at the
+ * bottom left — and coloured by employment type. Everything here is a pure function of the counts and the
+ * plot's size — who sits where, the grid's measures, the lens's fisheye, the pins' rows, the motions' timing —
+ * so the canvas (components/strata/StrataField) only draws what these say.
  *
  * People are indexed exactly as `dotSpots` (lib/homePeople) indexes them: under the cap, $100 bucket by
  * bucket, each bucket's categories in the counts' order; past it, each category's block in turn. So a
  * filter's mask (`emphasis`) and a search's marks apply to the squares unchanged.
  */
 
-/** $0–$250k in $1k columns. */
-export const COLS = 250;
-export const COL_DOLLARS = 1000;
-/** The pile past the cap: this many squares a row. */
-export const PILE_PER_ROW = 14;
-/** From the baseline up (3a): the two largest bands at the floor, so the skyline's shape is theirs. */
-export const TYPE_ORDER = ['Academic Staff', 'University Staff', 'Employees in Training', 'Faculty', 'Limited'] as const;
+/** $0–$250k in $5k columns; the pile past the cap is the column after them. */
+export const COLS = 50;
+export const COL_DOLLARS = 5000;
+/** The legend's order (3a's: the largest first), and the tie-break between equal pays. */
+export const TYPE_ORDER = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'] as const;
 /** The readout counts the columns this far either side of the one under the lens: ±$5k. */
-export const READ_RADIUS = 5;
-/** The largest a square's pitch grows, CSS px (full page on a wide screen). */
-export const MAX_PITCH = 4;
+export const READ_RADIUS = 1;
+/** The largest a square's pitch grows, device px (full page on a big screen). */
+export const MAX_PITCH_D = 12;
+/** The gutter between two columns' squares, CSS px, and at most this share of a column (a phone's narrow ones). */
+export const GUTTER = 3;
+export const GUTTER_SHARE = 0.125;
 
-/** Each category's stacking rank: its place in TYPE_ORDER, and any other after those, in the counts' order. */
+/** Each category's rank: its place in TYPE_ORDER, and any other after those, in the counts' order. */
 export function typeRanks(names: readonly string[]): Uint8Array {
   const out = new Uint8Array(names.length);
   names.forEach((n, i) => {
@@ -48,10 +49,12 @@ export interface StrataCounts {
 }
 
 export interface Strata {
-  /** Under the cap, one each, in `dotSpots` order: the $1k column, the category, the band key. */
+  /** Under the cap, one each, in `dotSpots` order: the $5k column, the category, a fixed key, and the pay each is
+   *  sorted by in their column — their own, or from the counts their $100 bucket's. */
   col: Uint8Array;
   kind: Uint8Array;
   key: Uint32Array;
+  pay: Float64Array;
   /** Past the cap, in the pile's order. */
   pileKind: Uint8Array;
   pileKey: Uint32Array;
@@ -60,7 +63,7 @@ export interface Strata {
   pilePay: Float64Array | null;
   /** People under the cap per column. */
   colCount: Uint32Array;
-  /** Category index → stacking rank (`typeRanks`). */
+  /** Category index → rank (`typeRanks`). */
   rank: Uint8Array;
   names: string[];
 }
@@ -72,17 +75,17 @@ export function strataFromCounts(pc: StrataCounts): Strata | null {
   if (!cats?.length) return null;
   let n = 0;
   for (const v of pc.counts) n += v;
-  const col = new Uint8Array(n), kind = new Uint8Array(n), key = new Uint32Array(n);
+  const col = new Uint8Array(n), kind = new Uint8Array(n), key = new Uint32Array(n), pay = new Float64Array(n);
   const colCount = new Uint32Array(COLS);
   let i = 0;
   for (let b = 0; b < pc.counts.length; b++) {
-    const c = Math.min(COLS - 1, Math.max(0, Math.floor((pc.lo100 + b) / 10)));
+    const c = Math.min(COLS - 1, Math.max(0, Math.floor(((pc.lo100 + b) * 100) / COL_DOLLARS)));
     let inBucket = 0;
     for (let k = 0; k < cats.length; k++) {
       const m = cats[k].counts[b] ?? 0;
       inBucket += m;
       if (i + m > n) return null;
-      for (let r = 0; r < m; r++, i++) { col[i] = c; kind[i] = k; key[i] = stableKey(i); }
+      for (let r = 0; r < m; r++, i++) { col[i] = c; kind[i] = k; key[i] = stableKey(i); pay[i] = (pc.lo100 + b) * 100; }
     }
     if (inBucket !== pc.counts[b]) return null;
     colCount[c] += inBucket;
@@ -99,7 +102,7 @@ export function strataFromCounts(pc: StrataCounts): Strata | null {
     }
   });
   if (pilePay && !pilePay.every((v) => v > 0)) pilePay = null;
-  return { col, kind, key, pileKind, pileKey, pilePay, colCount, rank: typeRanks(cats.map((c) => c.name)), names: cats.map((c) => c.name) };
+  return { col, kind, key, pay, pileKind, pileKey, pilePay, colCount, rank: typeRanks(cats.map((c) => c.name)), names: cats.map((c) => c.name) };
 }
 
 export interface Stack {
@@ -111,10 +114,11 @@ export interface Stack {
 }
 
 /**
- * Who stands where in each column: by type rank, then by band key — every column the same bands in the same
- * order. A filter never moves anyone: it lights its people where they stand.
+ * Who stands where in each column: by salary from the baseline up, the lowest paid at the bottom left — ties
+ * (the counts know a pay only to its $100) by type, then by a fixed key. A filter never moves anyone: it lights
+ * its people where they stand. Without pays (a pile whose pays the counts do not carry), by type, then key.
  */
-export function stackColumns(col: ArrayLike<number>, kind: ArrayLike<number>, key: ArrayLike<number>, rank: ArrayLike<number>, cols: number): Stack {
+export function stackColumns(col: ArrayLike<number>, pay: ArrayLike<number> | null, kind: ArrayLike<number>, key: ArrayLike<number>, rank: ArrayLike<number>, cols: number): Stack {
   const n = col.length;
   const start = new Int32Array(cols + 1);
   for (let i = 0; i < n; i++) start[col[i] + 1]++;
@@ -122,7 +126,7 @@ export function stackColumns(col: ArrayLike<number>, kind: ArrayLike<number>, ke
   const fill = start.slice(0, cols);
   const order = new Int32Array(n);
   for (let i = 0; i < n; i++) order[fill[col[i]]++] = i;
-  const cmp = (a: number, b: number) => rank[kind[a]] - rank[kind[b]] || key[a] - key[b] || a - b;
+  const cmp = (a: number, b: number) => (pay ? pay[a] - pay[b] : 0) || rank[kind[a]] - rank[kind[b]] || key[a] - key[b] || a - b;
   const slot = new Uint16Array(n);
   for (let c = 0; c < cols; c++) {
     const part = order.subarray(start[c], start[c + 1]);
@@ -135,97 +139,67 @@ export function stackColumns(col: ArrayLike<number>, kind: ArrayLike<number>, ke
 export interface Grid {
   /** Squares a row in a column. */
   per: number;
-  /** Across, CSS px: exactly a column's width over `per`, so every column's squares lie on one even lattice —
-   *  a column's last square as far from the next column's first as from its own neighbour, with no seam. */
+  /** A square's pitch across and up, CSS px: a whole number of device pixels, the same both ways — except a
+   *  solid run's (`gap` 0), whose rows stretch to stand the tallest column in the room. */
   pitch: number;
-  /** Up, CSS px: a quarter more than a whole number of device pixels, or as tall as the room allows. */
   rowPitch: number;
-  /** The gap between squares, device px, the same across and up. */
+  /** The gap between squares, device px: one, or none in a solid run. */
   gap: number;
-  /** A square's height and its width on average, CSS px: the pitch less the gap. Drawn on whole device
-   *  pixels, a square is that wide (or tall) or a pixel either side; the gap is always the gap. */
+  /** A square's height and width, CSS px: the pitch less the gap. */
   sq: number;
   sqW: number;
+  /** From a column's left edge (on its device pixel) to its first square, device px: the bar centred in it. */
+  off: number;
 }
 
-/**
- * The largest squares that fit: `per` a row in a column `colW` wide, the tallest column (`peak` people) in
- * `rowsH`. Across, the lattice is the column's width over `per`, to the hundredth of a pixel, so the columns
- * meet without a seam; up, rows are chosen in whole device pixels, then stood a quarter taller (ROW_STRETCH)
- * where the room allows. A gap of a device pixel (two for big squares) parts every square from the next both
- * ways; where a row is under two device pixels (a phone's narrow plot) there is no room for one, and the stack
- * is a solid histogram of bands.
- */
-/** How much taller than whole device pixels the rows stand: at 1440px, whole pixels stood the latest's tallest
- *  column at 59% of the plot. */
-export const ROW_STRETCH = 1.25;
-export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: number; peak: number; dpr: number }): Grid {
-  let best: Grid | null = null;
-  const tall = Math.max(1, peak);
-  for (let per = 1; per <= 8; per++) {
-    const pitch = colW / per;
-    if (!(pitch > 0) || (pitch > MAX_PITCH && per < 8)) continue;
-    const up = Math.min(pitch, rowsH / Math.ceil(tall / per));
-    const ud = Math.floor(up * dpr + 1e-6);
-    const rowPitch = ud >= 1 ? ud / dpr : up;
-    const gap = ud >= 2 ? Math.max(1, Math.round(ud * 0.2)) : 0;
-    const g = { per, pitch, rowPitch, gap, sq: rowPitch - gap / dpr, sqW: pitch - gap / dpr };
-    if (!best || rowPitch > best.rowPitch + 1e-9 || (Math.abs(rowPitch - best.rowPitch) <= 1e-9 && evener(g, best))) best = g;
-  }
-  if (!best) return { per: 1, pitch: colW, rowPitch: 1, gap: 0, sq: 1, sqW: colW };
-  // A quarter taller, never past the room: the rows are then a device pixel apart in height (`squarePixels`).
-  const rowPitch = Math.min(best.rowPitch * ROW_STRETCH, rowsH / Math.ceil(tall / best.per));
-  return { ...best, rowPitch, sq: rowPitch - best.gap / dpr };
+/** A bar is never narrower than this share of its column (less the gutter). */
+export const BAR_MIN = 2 / 3;
 
-  // Between rows of one height (rows are whole device pixels, so several give the same): the one that fills the
-  // room, fewer a row so the tallest column stands taller; else the nearest to 3a's three a row. Rows fitted to
-  // the timeline's tallest column (742 people where the latest has 576) tied two a row with three, and three drew
-  // the full page's tallest column at 248px of 600 where two draws it at 371. Squares were also kept near square,
-  // at most twice as wide as tall; but every grid that rule set aside had rows a device pixel tall, where no gap
-  // shows a square's shape, and on a 1x screen it stood the latest's tallest column at 144px of a 490px plot.
-  function evener(a: Grid, b: Grid): boolean {
-    const stands = (g: Grid) => g.rowPitch * Math.ceil(tall / g.per);
-    if (Math.abs(stands(a) - stands(b)) > 1e-9) return stands(a) > stands(b);
-    return Math.abs(a.per - 3) < Math.abs(b.per - 3);
+/**
+ * The largest squares that fit (3a): the largest whole number of device pixels for a square's pitch with which the
+ * tallest column (`peak` people) still fits in `rowsH`, a bar as wide as its column less a gutter. Each square is a
+ * device pixel short of its pitch, so a gap always parts it from the next. Then as few a row as still stand that
+ * column in the room — the pitch is whole pixels, so the widest bars could leave a third of it empty (56% of a
+ * 1440x900 plot) — but never a bar under BAR_MIN of its column. Where no pitch of two pixels fits (a phone; a 1x
+ * screen), the bars are solid runs of single-pixel columns, their rows stretched to fill the room.
+ */
+export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: number; peak: number; dpr: number }): Grid {
+  const tall = Math.max(1, peak);
+  const cw = Math.floor(colW * dpr + 1e-6), ph = Math.floor(rowsH * dpr + 1e-6);
+  const gutter = Math.max(1, Math.round(Math.min(GUTTER, colW * GUTTER_SHARE) * dpr));
+  const room = Math.max(1, cw - gutter);
+  const off = (wide: number) => Math.floor((cw - wide) / 2);
+  for (let pd = MAX_PITCH_D; pd >= 2; pd--) {
+    const most = Math.floor(room / pd);
+    if (most < 1 || Math.ceil(tall / most) * pd > ph) continue;
+    const per = Math.min(most, Math.max(Math.ceil(tall / Math.floor(ph / pd)), Math.ceil((BAR_MIN * room) / pd)));
+    return { per, pitch: pd / dpr, rowPitch: pd / dpr, gap: 1, sq: (pd - 1) / dpr, sqW: (pd - 1) / dpr, off: off(per * pd) };
   }
+  const per = Math.min(room, Math.max(Math.ceil(tall / Math.max(1, ph)), Math.ceil(BAR_MIN * room)));
+  const rowPitch = rowsH / Math.ceil(tall / per);
+  return { per, pitch: 1 / dpr, rowPitch, gap: 0, sq: rowPitch, sqW: 1 / dpr, off: off(per) };
 }
 
 /** On the device's pixel grid. */
 export const snap = (v: number, dpr: number) => Math.round(v * dpr) / dpr;
 
-/**
- * A square's device-pixel box, from its corner `x, y` (CSS px): from its corner's pixel to the next lattice
- * place's, less the gap, across and up — every gap the same, the squares a pixel either side of their size. Where a square
- * is under two device pixels (a 1x screen) that pixel is half of it; there every square is the same instead,
- * and now and then a gap is a pixel wider. Lined up, those would draw a dark line down every fifth column, so
- * each row is set over by its own fraction of a pixel (the golden ratio's steps, which never repeat) and the
- * wider gaps scatter through the field.
- */
+/** A square's device-pixel box, from its corner `x, y` (CSS px): on the corner's pixel, to the next row's first
+ *  pixel less the gap (a solid run's stretched rows differ by a pixel), and its width. */
 export interface Px { X: number; Y: number; w: number; h: number }
-/** To the nearest pixel, a hair short of half rounding down: the same lattice place, reached as one column's
- *  last square plus a pitch or as the next column's first, lands on the same pixel. */
+/** To the nearest pixel, a hair short of half rounding down. */
 const px = (v: number) => Math.floor(v + 0.5 - 1e-6);
-export function squarePixels(x: number, y: number, g: Grid, dpr: number, out: Px = { X: 0, Y: 0, w: 0, h: 0 }, rowPitch = g.rowPitch): Px {
-  const Y = px(y * dpr);
-  const ud = Math.max(1, px(g.rowPitch * dpr));
-  out.Y = Y;
-  // To the next row's first pixel, less the gap, as across: rows a quarter over whole pixels differ by one. Above
-  // a column's break (`columnBreak`) its rows are squeezed, the gap kept only where they are two pixels or more.
-  const gap = rowPitch === g.rowPitch ? g.gap : g.gap && Math.floor(rowPitch * dpr + 1e-6) >= 2 ? Math.min(g.gap, Math.max(1, Math.round(rowPitch * dpr * 0.2))) : 0;
-  out.h = Math.max(1, px((y + rowPitch) * dpr) - Y - gap);
-  if (g.gap > 0 && g.sqW * dpr < 2) {
-    const shift = ((Math.floor(Y / ud) * 0.6180339887) % 1) - 0.5;
-    out.X = px(x * dpr + shift);
-    out.w = Math.max(1, Math.floor(g.pitch * dpr) - g.gap);
-  } else {
-    out.X = px(x * dpr);
-    out.w = Math.max(1, px((x + g.pitch) * dpr) - out.X - g.gap);
-  }
+export function squarePixels(x: number, y: number, g: Grid, dpr: number, out: Px = { X: 0, Y: 0, w: 0, h: 0 }): Px {
+  out.X = px(x * dpr);
+  out.Y = px(y * dpr);
+  out.w = Math.max(1, px(g.sqW * dpr));
+  out.h = Math.max(1, px((y + g.rowPitch) * dpr) - out.Y - g.gap);
   return out;
 }
 
-/** The left edge of column `c`'s squares. */
-export const colLeft = (c: number, colW: number, x0 = 0) => x0 + c * colW;
+/** The left edge of column `c`, CSS px, on its device pixel. */
+export const colLeft = (c: number, colW: number, dpr = 1, x0 = 0) => x0 + Math.round(c * colW * dpr) / dpr;
+/** Where column `c`'s first square is, CSS px: its left edge and the grid's offset. */
+export const colX = (c: number, colW: number, g: Pick<Grid, 'off'>, dpr: number, x0 = 0) => colLeft(c, colW, dpr, x0) + g.off / dpr;
 
 /** A square's top-left corner, from its slot: across its column's row, then up from the baseline. */
 export function squareAt(left: number, slot: number, per: number, g: Pick<Grid, 'pitch' | 'rowPitch'>, base: number): { x: number; y: number } {
@@ -234,38 +208,6 @@ export function squareAt(left: number, slot: number, per: number, g: Pick<Grid, 
 
 /** How tall a column of `n` stands, CSS px. */
 export const colHeight = (n: number, grid: Grid) => Math.ceil(n / grid.per) * grid.rowPitch;
-
-/**
- * One scale for every snapshot, the latest's: its tallest column stands as tall as the room allows. Another
- * snapshot can have a column taller than that — Apr 2024's $56k, where two pay floors (clinical assistant
- * professors at about $56,300, research associates at the postdoc minimum of $56,484) fell in one $1k column, is
- * 742 people to the latest's tallest 576 — and fitted to it, every other snapshot stood under three quarters as
- * tall. Such a column breaks: its rows stand at the scale up to BREAK_AT of the scale's height, then a gap
- * (BREAK_GAP px, marked), then the rest squeezed into what is left, so its top is the scale's and no one in it is
- * left out.
- */
-export const BREAK_AT = 0.8;
-export const BREAK_GAP = 4;
-export interface ColumnBreak {
-  /** Rows under the break, at the scale. */
-  knee: number;
-  /** The gap, CSS px, and the pitch of the rows squeezed over it. */
-  gap: number;
-  pitch: number;
-  /** The gap's middle, CSS px. */
-  y: number;
-}
-/** Where a column of `rows` breaks, under a scale of `scaleRows` rows of `rowPitch` on a baseline at `base`: null
- *  if it fits. */
-export function columnBreak(rows: number, scaleRows: number, rowPitch: number, base: number): ColumnBreak | null {
-  if (rows <= scaleRows) return null;
-  const knee = Math.floor(scaleRows * BREAK_AT);
-  const gap = Math.min(BREAK_GAP, ((scaleRows - knee) * rowPitch) / 2);
-  return { knee, gap, pitch: ((scaleRows - knee) * rowPitch - gap) / (rows - knee), y: base - knee * rowPitch - gap / 2 };
-}
-/** The top of row `r` of a broken column. */
-export const brokenRowY = (r: number, b: ColumnBreak, rowPitch: number, base: number) =>
-  r < b.knee ? base - (r + 1) * rowPitch : base - b.knee * rowPitch - b.gap - (r - b.knee + 1) * b.pitch;
 
 /**
  * The pile unrolled: its people on an axis from $0 to the top salary at `scale` px a dollar, each in the

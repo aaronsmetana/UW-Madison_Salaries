@@ -3,10 +3,12 @@ import { oracle, PAY, latestSnapshot } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
 import { parseColor, flatten, contrast } from './color';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /**
- * The landing graph as strata (mockup 3a, components/strata): one square per person in $1k columns, stacked
- * from the baseline by employment type, on one even lattice with no seam between columns; a lens that
+ * The landing graph (mockup 3a, components/strata): one square per person in $5k columns, sorted by salary from
+ * the baseline up and coloured by employment type, each square on whole pixels with a gap round it; a lens that
  * magnifies where the pointer is and names the square under it, reaching further where the people it can name
  * are few; a type isolated from the legend, lit where its people stand. Who is where is checked against the
  * data through the same indexing the search's marks use (homeDots `spots`), each rule restated here. The pile
@@ -18,8 +20,10 @@ const CAP = HOME_STATS.bin_cap;
 const { counts, categories } = HOME_STATS.pay_counts;
 const UNDER = counts.reduce((t, n) => t + n, 0);
 const OVER = categories.reduce((t, c) => t + c.over, 0);
-/** 3a's stacking order, from the floor up. */
-const ORDER = ['Academic Staff', 'University Staff', 'Employees in Training', 'Faculty', 'Limited'];
+/** A column's width. */
+const COL = 5000;
+/** The snapshots, oldest first, each with its median. */
+const SUMMARY = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/summary.json', import.meta.url)), 'utf8')) as { snapshots: { label: string; median: number }[] };
 const num = (n: number) => n.toLocaleString('en-US');
 const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
 
@@ -40,7 +44,7 @@ async function home(page: Page, { drop = false } = {}) {
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
 
-/** Everyone's $1k column (under the cap) and category, by their square's index. */
+/** Everyone's $5k column (under the cap) and category, by their square's index. */
 async function byIndex() {
   const at = await spots();
   const rows = await people();
@@ -49,7 +53,7 @@ async function byIndex() {
   for (const p of rows) {
     const s = at.get(p.person_key);
     if (!s) continue;
-    if (s.field === 'main') main[s.index] = { key: p.person_key, col: Math.floor(p.pay / 1000), cat: p.cat, pay: p.pay };
+    if (s.field === 'main') main[s.index] = { key: p.person_key, col: Math.floor(p.pay / COL), cat: p.cat, pay: p.pay };
     else pile[s.index] = { key: p.person_key, cat: p.cat, pay: p.pay };
   }
   return { main, pile, rows };
@@ -70,29 +74,30 @@ test('the landing page draws one square for each person, under the cap and in th
   expect(requests.filter((u) => /\.parquet|duckdb/i.test(u)), 'the landing page fetched the database').toEqual([]);
 });
 
-test('each column stands its own people from the baseline up, a few a row, stacked by type — the same on every load', async ({ page }) => {
+test('each column stands its own people from the baseline up, a few a row, sorted by salary — the same on every load', async ({ page }) => {
   await home(page);
   const { main } = await byIndex();
   const pts = await placesOf(page, 'main');
   const slots = await slotsOf(page, 'main');
   const per = Number(await field(page).getAttribute('data-per'));
   const rowPitch = Number(await field(page).getAttribute('data-row-pitch'));
-  // A column is $1k: every square of column c lies in its own share of the axis, before the next one's.
+  // A column is $5k: every square of column c lies in its own share of the axis, before the next one's.
   const lefts = new Map<number, number>();
   for (let i = 0; i < main.length; i++) {
-    const c = Math.min(249, main[i].col);
+    const c = Math.min(49, main[i].col);
     lefts.set(c, Math.min(lefts.get(c) ?? Infinity, pts[2 * i]));
   }
   const sorted = [...lefts.entries()].sort((a, b) => a[0] - b[0]);
   for (let k = 1; k < sorted.length; k++) expect(sorted[k][1], `column ${sorted[k][0]} starts before ${sorted[k - 1][0]}`).toBeGreaterThan(sorted[k - 1][1]);
-  // Slots fill each column from the floor with no gaps, `per` a row, and by type from the floor up.
+  // Slots fill each column from the floor with no gaps, `per` a row, and by pay from the floor up — to the $100 the
+  // page's counts know a pay by.
   const cols = new Map<number, number[]>();
   for (let i = 0; i < main.length; i++) cols.set(main[i].col, [...(cols.get(main[i].col) ?? []), i]);
   for (const [c, idx] of cols) {
     const bySlot = idx.sort((a, b) => slots[a] - slots[b]);
     expect(bySlot.map((i) => slots[i]), `column ${c}'s slots`).toEqual(bySlot.map((_, k) => k));
-    const ranks = bySlot.map((i) => ORDER.indexOf(main[i].cat));
-    expect(ranks, `column ${c} is not stacked by type`).toEqual([...ranks].sort((a, b) => a - b));
+    const pays = bySlot.map((i) => Math.floor(main[i].pay / 100));
+    expect(pays, `column ${c} is not sorted by salary`).toEqual([...pays].sort((a, b) => a - b));
     // Up a row every `per` squares.
     const y0 = pts[2 * bySlot[0] + 1];
     bySlot.forEach((i, k) => expect(Math.abs(pts[2 * i + 1] - (y0 - Math.floor(k / per) * rowPitch))).toBeLessThan(0.01));
@@ -195,57 +200,55 @@ test('the lens names the square under the pointer: who, their title, pay and its
 });
 
 /**
- * No seam: across the crowded floor, from one column into the next, no dark line runs down between the squares
- * — read off the canvas a device pixel at a time, where one once fell between every $1k column. On a 2x screen
- * every gap is the same; on a 1x one a gap is now and then a pixel wider, and those never line up down the rows.
- * Rows are fitted to the latest's tallest column (576 at $60k), so a 1x screen has a gap at all only on a wide
- * window; narrower, its rows are a pixel each and touch.
+ * Every square on whole device pixels (3a): along the bottom rows of the crowded floor, $55k to $115k, every square
+ * the pitch less a pixel wide, a pixel between squares in a bar, and a wider gutter between one $5k column's bar and
+ * the next — read off the canvas a device pixel at a time. At 2200x1300 both a 1x and a 2x screen have room for a
+ * pitch of two pixels or more; narrower, a 1x screen's bars are solid runs (strataGrid's fallback).
  */
 for (const dpr of [1, 2]) {
-  test(`the squares lie on one even lattice, with no seam down between the columns (${dpr}x)`, async ({ browser }) => {
+  test(`every square lies on whole pixels, a pixel apart in its bar, a gutter between bars (${dpr}x)`, async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 2200, height: 1300 }, deviceScaleFactor: dpr });
     const page = await ctx.newPage();
     await home(page);
     const f = field(page);
-    const gap = Number(await f.getAttribute('data-gap'));
+    const gap = Number(await f.getAttribute('data-gap')), per = Number(await f.getAttribute('data-per'));
     const base = Number(await f.getAttribute('data-base')), rowPitch = Number(await f.getAttribute('data-row-pitch'));
-    const colW = Number(await f.getAttribute('data-col-w'));
-    expect(gap, 'no gap at this size, so nothing here is tested').toBeGreaterThan(0);
-    // The bottom twenty rows, from $55k to $115k, where every column stands taller than that: each gap's width,
-    // and where the wider ones fall.
+    const pitch = Number(await f.getAttribute('data-pitch')), colW = Number(await f.getAttribute('data-col-w'));
+    expect(gap, 'no gap at this size, so nothing here is tested').toBe(1);
+    expect(pitch * dpr, 'a pitch off whole pixels').toBeCloseTo(Math.round(pitch * dpr), 9);
     const rows = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement, a) => {
       const k = c.width / c.getBoundingClientRect().width;
       const ctx = c.getContext('2d')!;
-      const x0 = Math.round(55 * a.colW * k), x1 = Math.round(115 * a.colW * k);
-      const out: { runs: number[]; wide: number[]; narrow: number[] }[] = [];
+      const x0 = Math.round(11 * a.colW * k), x1 = Math.round(23 * a.colW * k);
+      const out: { inks: number[]; gaps: number[] }[] = [];
       for (let r = 0; r < 20; r++) {
-        // A row's squares start at the top of its cell (rounded as lib/strata's `squarePixels` does); its gap is at
-        // the bottom.
         const y = Math.floor((a.base - (r + 1) * a.rowPitch) * k + 0.5 - 1e-6);
         const d = ctx.getImageData(x0, y, x1 - x0, 1).data;
-        const row = { runs: [] as number[], wide: [] as number[], narrow: [] as number[] };
-        let dark = 0, inked = false;
-        for (let i = 0; i < x1 - x0; i++) {
-          if (d[4 * i + 3] === 0) { dark++; continue; }
-          if (inked && dark) { row.runs.push(dark); (dark > a.gap ? row.wide : row.narrow).push(i - 1); }
-          inked = true;
-          dark = 0;
+        const row = { inks: [] as number[], gaps: [] as number[] };
+        let run = 0, on = d[3] !== 0;
+        for (let i = 0; i <= x1 - x0; i++) {
+          const ink = i < x1 - x0 && d[4 * i + 3] !== 0;
+          if (ink === on && i < x1 - x0) { run++; continue; }
+          (on ? row.inks : row.gaps).push(run);
+          on = ink;
+          run = 1;
         }
+        // The first and last runs are cut by the window.
+        row.inks = row.inks.slice(1, -1);
+        row.gaps = row.gaps.slice(1, -1);
         out.push(row);
       }
       return out;
-    }, { colW, base, rowPitch, gap });
-    const runs = rows.flatMap((r) => r.runs);
-    expect(runs.length, 'no gaps found, so nothing here is tested').toBeGreaterThan(2000);
-    expect(Math.max(...runs), 'a gap two pixels wider than the rest').toBeLessThanOrEqual(gap + (dpr === 1 ? 1 : 0));
-    // Down the rows, how often each pixel across is the end of the odd gap out — a wider one where they are few, a
-    // narrower where the lattice's pitch makes most gaps wider (three a row 2.7px apart on a 1x screen 2,200px
-    // wide): lined up into a stripe, every row.
-    const wideRate = rows.reduce((k, r) => k + r.wide.length, 0) / runs.length;
-    const at = new Map<number, number>();
-    for (const r of rows) for (const x of wideRate > 0.5 ? r.narrow : r.wide) at.set(x, (at.get(x) ?? 0) + 1);
-    const worst = Math.max(0, ...at.values()) / rows.length;
-    expect(worst, `the odd gaps out (${wideRate > 0.5 ? 'narrower' : 'wider'}) line up down the rows into a stripe`).toBeLessThan(0.5);
+    }, { colW, base, rowPitch });
+    const pd = Math.round(pitch * dpr);
+    for (const [r, row] of rows.entries()) {
+      expect(new Set(row.inks), `row ${r}: a square not ${pd - 1} pixels wide`).toEqual(new Set([pd - 1]));
+      const within = row.gaps.filter((g) => g === 1).length, between = row.gaps.filter((g) => g > 1).length;
+      expect(within + between, `row ${r}: a gap of no pixels`).toBe(row.gaps.length);
+      // Twelve columns' bars, $55k–$115k: a gutter between each, a pixel between the squares inside.
+      expect(between, `row ${r}: gutters`).toBeGreaterThanOrEqual(10);
+      expect(within, `row ${r}: gaps inside the bars`).toBeGreaterThanOrEqual(10 * (per - 1));
+    }
     await ctx.close();
   });
 }
@@ -260,7 +263,8 @@ test('the lens follows a mouse with the cursor put away, magnifies what is under
   // Magnified: the square under the pointer is drawn several times the field's own size (about six at the
   // lens's centre).
   await expect(plot(page)).toHaveAttribute('data-pick', /^main:\d+$/);
-  const sq = Number(await field(page).getAttribute('data-sq'));
+  // A square's size is its side; where a 1x screen draws solid bars of single-pixel columns, the mean of its sides.
+  const sq = (Number(await field(page).getAttribute('data-sq')) + Number(await field(page).getAttribute('data-sq-w'))) / 2;
   const size = Number(await plot(page).getAttribute('data-pick-size'));
   expect(size, `the square under the lens is drawn ${size}px against the field's ${sq}px`).toBeGreaterThan(4 * sq);
   await page.mouse.move(box.x + box.width * 0.4, box.y - 60);
@@ -290,18 +294,29 @@ test('the lens redraws inside the frame budget', async ({ page }) => {
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
 });
 
-test('the readout counts everyone within ±$5k of the lens and says where that pay stands', async ({ page }) => {
+test('the readout names the $5k column under the lens, counts everyone within ±$5k of it and says where that pay stands', async ({ page }) => {
   await home(page);
   await pointAt(page, 0.3, 0.9);
-  const c = Number(await plot(page).getAttribute('aria-valuenow')) / 1000;
+  const c = Number(await plot(page).getAttribute('aria-valuenow')) / COL;
   const rows = await people();
   const under = rows.filter((p) => p.pay < CAP);
-  const near = under.filter((p) => Math.abs(Math.floor(p.pay / 1000) - c) <= 5).length;
-  const below = under.filter((p) => Math.floor(p.pay / 1000) < c).length;
-  const own = under.filter((p) => Math.floor(p.pay / 1000) === c).length;
+  const near = under.filter((p) => Math.abs(Math.floor(p.pay / COL) - c) <= 1).length;
+  const below = under.filter((p) => Math.floor(p.pay / COL) < c).length;
+  const own = under.filter((p) => Math.floor(p.pay / COL) === c).length;
   const headcount = rows.length;
   const pct = Math.min(99, Math.max(1, Math.round(((below + own / 2) / headcount) * 100)));
-  await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * 1000)} · ${num(near)} people within ±$5k · ${pct}% paid less`);
+  await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * COL)}–${fmtK((c + 1) * COL)} · ${num(near)} people within ±$5k · ${pct}% paid less`);
+});
+
+test('the legend sits over the plot (3a): each type in order, with its people in the snapshot shown', async ({ page }) => {
+  await home(page);
+  const legend = (await page.locator('.strata-legend').boundingBox())!, box = (await plot(page).boundingBox())!;
+  expect(legend.y + legend.height, 'the legend is not over the plot').toBeLessThanOrEqual(box.y + 0.5);
+  const items = await page.locator('.strata-legend-item').evaluateAll((els) => els.map((e) => [e.getAttribute('data-category'), e.textContent]));
+  const want = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'];
+  expect(items.map(([c]) => c)).toEqual(want);
+  const n = new Map(categories.map((c) => [c.name, (c as unknown as { n: number }).n]));
+  for (const [c, text] of items) expect(text).toBe(`${c}${num(n.get(c!)!)}`);
 });
 
 test('isolating a type lights its people where they stand, moves no one, and the lens names only them', async ({ page }) => {
@@ -355,10 +370,17 @@ test('under a filter, each of its people is drawn big enough to see on a 1x scre
   const page = await ctx.newPage();
   await home(page);
   const { main } = await byIndex();
-  const perCol = new Map<number, number[]>();
-  main.forEach((p, i) => { if (p.cat === 'Faculty') perCol.set(p.col, [...(perCol.get(p.col) ?? []), i]); });
-  const alone = [...perCol.entries()].filter(([c, idx]) => idx.length === 1 && c > 20 && c < 200).map(([, idx]) => idx[0]);
-  expect(alone.length, 'no Faculty member alone in a column').toBeGreaterThan(2);
+  // Faculty members with no other round them in their bar, $20k–$200k: where each lit square is seen on its own.
+  const slots = await slotsOf(page, 'main'), per = Number(await field(page).getAttribute('data-per'));
+  const at = new Map<string, number>();
+  main.forEach((p, i) => at.set(`${p.col}:${slots[i]}`, i));
+  const alone = main.flatMap((p, i) => {
+    if (p.cat !== 'Faculty' || p.col <= 4 || p.col >= 40) return [];
+    const s0 = slots[i], x = s0 % per;
+    const round = [-per - 1, -per, -per + 1, -1, 1, per - 1, per, per + 1].filter((d) => { const x1 = x + (((d % per) + per + 1) % per) - 1; return x1 >= 0 && x1 < per; });
+    return round.every((d) => main[at.get(`${p.col}:${s0 + d}`) ?? -1]?.cat !== 'Faculty') ? [i] : [];
+  });
+  expect(alone.length, 'no Faculty member alone in their bar').toBeGreaterThan(2);
   await page.getByRole('button', { name: /^Faculty/ }).click();
   await expect(field(page)).toHaveAttribute('data-lit', /^\d+:/);
   await page.waitForTimeout(300);
@@ -391,7 +413,7 @@ test('the lens names no one in the empty sky, and reaches across itself for the 
   const all = await placesOf(page, 'main');
   const { main: who } = await byIndex();
   let top = Infinity, cx = 0;
-  for (let i = 0; i < who.length; i++) if (who[i].col === 200) { top = Math.min(top, all[2 * i + 1]); cx = all[2 * i]; }
+  for (let i = 0; i < who.length; i++) if (who[i].col === 40) { top = Math.min(top, all[2 * i + 1]); cx = all[2 * i]; }
   await page.mouse.move(pb.x + cx, pb.y + top - 45, { steps: 4 });
   await expect(plot(page)).toHaveAttribute('data-lens', 'on');
   await page.waitForTimeout(500);
@@ -423,21 +445,21 @@ test('the lens names no one in the empty sky, and reaches across itself for the 
 
 test('the keyboard walks the lens a column at a time, and Escape puts it away', async ({ page }) => {
   await home(page);
-  const median = Math.floor(HOME_STATS.p50 / 1000) * 1000;
-  // Reached by Tab from the toolbar, the lens comes up at the median.
-  await page.locator('.hero-dist-full-toggle').focus();
+  const median = Math.floor(HOME_STATS.p50 / COL) * COL;
+  // Reached by Tab from the legend over it, the lens comes up at the median's column.
+  await page.locator('.strata-legend-item').last().focus();
   await page.keyboard.press('Tab');
   await expect(plot(page)).toBeFocused();
   await expect(plot(page)).toHaveAttribute('data-lens', 'on');
   await expect(plot(page)).toHaveAttribute('aria-valuenow', String(median));
   await page.keyboard.press('ArrowRight');
-  const at = median + 1000;
+  const at = median + COL;
   await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at));
   await page.keyboard.press('Shift+ArrowRight');
-  await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at + 10_000));
+  await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at + 5 * COL));
   await page.keyboard.press('ArrowLeft');
-  await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at + 9_000));
-  await expect(plot(page)).toHaveAttribute('aria-valuetext', new RegExp(`^${fmtK(at + 9_000).replace('$', '\\$')} · [\\d,]+ people within ±\\$5k`));
+  await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at + 4 * COL));
+  await expect(plot(page)).toHaveAttribute('aria-valuetext', new RegExp(`^${fmtK(at + 4 * COL).replace('$', '\\$')}–${fmtK(at + 5 * COL).replace('$', '\\$')} · [\\d,]+ people within ±\\$5k`));
   await page.keyboard.press('Escape');
   await expect(plot(page)).toHaveAttribute('data-lens', 'off');
 });
@@ -499,7 +521,7 @@ test('after a window resize the squares are laid out for the width they are draw
   await fresh.close();
 });
 
-test('the pins sit over the skyline, clear of each other and inside the plot, each line down to its column; the ruler marks the middle half', async ({ page }) => {
+test('the pins sit over the skyline, clear of each other and inside the plot, each line down to its column; the median says how it moved, and is marked under the baseline', async ({ page }) => {
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 900 });
     await home(page);
@@ -510,7 +532,9 @@ test('the pins sit over the skyline, clear of each other and inside the plot, ea
     const box = (await plot(page).boundingBox())!;
     // Named in full where there is room; a phone keeps the shorthand.
     expect(pins.map((p) => p.text.split(' ')[0])).toEqual(width > 480 ? ['Median', '25th', '75th'] : ['Median', 'P25', 'P75']);
-    expect(pins[0].text).toBe(`Median $${Math.round(HOME_STATS.p50).toLocaleString('en-US')}`);
+    // With the change since the snapshot before, from the data's own medians.
+    const prev = SUMMARY.snapshots[SUMMARY.snapshots.length - 2], moved = HOME_STATS.p50 - prev.median;
+    expect(pins[0].text).toBe(`Median $${Math.round(HOME_STATS.p50).toLocaleString('en-US')} ${moved >= 0 ? '+' : '−'}$${Math.round(Math.abs(moved)).toLocaleString('en-US')} since ${prev.label}`);
     for (const p of pins) { expect(p.l).toBeGreaterThanOrEqual(box.x - 0.5); expect(p.r).toBeLessThanOrEqual(box.x + box.width + 0.5); }
     for (let i = 0; i < pins.length; i++) for (let j = i + 1; j < pins.length; j++) {
       const a = pins[i], b = pins[j];
@@ -522,14 +546,13 @@ test('the pins sit over the skyline, clear of each other and inside the plot, ea
     const { main } = await byIndex();
     const tops = new Map<number, number>();
     for (let i = 0; i < main.length; i++) tops.set(main[i].col, Math.min(tops.get(main[i].col) ?? Infinity, pts[2 * i + 1]));
-    const medCol = Math.floor(HOME_STATS.p50 / 1000);
+    const medCol = Math.floor(HOME_STATS.p50 / COL);
     expect(lines[0].y2).toBeLessThan(tops.get(medCol)!);
     expect(tops.get(medCol)! - lines[0].y2).toBeLessThan(8);
-    // The ruler spans P25 to P75 with the median's tick on it.
-    const iqr = (await page.locator('.strata-iqr').boundingBox())!;
-    const tick = (await page.locator('.strata-iqr-median').boundingBox())!;
-    expect(tick.x).toBeGreaterThan(iqr.x);
-    expect(tick.x + tick.width).toBeLessThan(iqr.x + iqr.width);
+    // The median's mark under the baseline, under its line.
+    const mark = (await page.locator('.strata-median-mark').boundingBox())!;
+    expect(Math.abs(mark.x + mark.width / 2 - (box.x + lines[0].x))).toBeLessThan(1);
+    expect(mark.y).toBeGreaterThan(box.y + box.height - 1);
   }
 });
 
@@ -588,15 +611,14 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 /**
- * The graph uses its room: the latest's tallest $1k column stands at least 70% of the plot's height, on a 1x
- * screen as on a 2x one. At 1x every row is a pixel and no gap shows the squares, and kept near square, four a row
- * stood that column at 144px of a 490px plot; on whole-pixel rows, two a row at 64%. Rows a quarter taller stand it
- * at 77%, the timeline's tallest (Apr 2024's) filling the room.
+ * The graph uses its room: the latest's tallest $5k column stands at least 70% of the plot's height, on a 1x screen
+ * as on a 2x one. Whole-pixel squares at their widest (3a) stood it at 56% of a 1440x900 plot: as few a row as fit
+ * the tallest column in any snapshot stand it at 76% (lib/strata `strataGrid`).
  */
 test('the tallest column stands at least 70% of the plot, at 1x as at 2x', async ({ browser }) => {
   const snap = await latestSnapshot();
   const [{ peak }] = await oracle<{ peak: number }>(
-    `SELECT max(n) peak FROM (SELECT floor(pay / 1000) b, count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL
+    `SELECT max(n) peak FROM (SELECT floor(pay / ${COL}) b, count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL
        WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY 1) WHERE pay > 0 AND pay < 250000 GROUP BY 1)`,
   );
   const share: number[] = [];

@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, PILE_PER_ROW, STEP_MS, stepTiming,
-  brokenRowY, colHeight, colLeft, columnBreak, easeInOut, fisheye, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
+  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, STEP_MS, stepTiming,
+  colHeight, colX, easeInOut, fisheye, landEase, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
 import { parseRgb } from '../../lib/inkMix';
@@ -15,8 +15,6 @@ import { Z } from '../../lib/layers';
  * the lens only while it follows the pointer; at rest nothing runs.
  */
 
-/** The break between the plot and the pile past the cap, CSS px, on a phone and wider. */
-export const PILE_GAP = { phone: 12, wide: 20 };
 /** The lens's radius at full size, CSS px, and how far it moves toward the pointer each frame. */
 export const LENS_R = { phone: 56, wide: 76 };
 const LENS_FOLLOW = 0.34;
@@ -58,10 +56,10 @@ export interface StrataLayout {
   base: number;
   /** How tall a column may stand: the baseline less the band the pins keep at the top. */
   room: number;
-  /** CSS px per $1k column, and the main plot's width: $0 at 0, $250k at `mainW`. */
+  /** CSS px per $5k column, and the main plot's width: $0 at 0, $250k at `mainW`, the pile's column after it. */
   colW: number;
   mainW: number;
-  /** The pile's left edge and width (none while it is unrolled). */
+  /** The pile's column: its left edge and width (none while it is unrolled). */
   pileLeft: number;
   pileW: number;
   grid: Grid;
@@ -75,10 +73,6 @@ export interface StrataLayout {
   py: Float64Array;
   /** The scale: the most people a column holds at full height. */
   peak: number;
-  /** The columns taller than that, each broken (lib/strata `columnBreak`): its people, and the break's middle. */
-  breaks: { col: number; n: number; y: number }[];
-  /** Where any column breaks, each square's row pitch on the graph — squeezed over the break (null where none does). */
-  mPitch: Float32Array | null;
   /** The highest any square stands: the top of the tallest column or of the pile. */
   peakY: number;
   /** Unrolled: the pile's people at their own pay on an axis from $0 to the top salary (`top`, `scale` px a
@@ -88,58 +82,34 @@ export interface StrataLayout {
 }
 
 /**
- * Where everyone stands, for a plot `W` by `H` whose squares may rise to `top`: the grid (lib/strata
- * `strataGrid`) for the room there is, the columns stacked by type (`stackColumns`), and each square's corner.
- * The pile is fourteen squares a row past a break at the right — or, `unroll`ed, each of its people at their
- * own pay on an axis run out to the top salary, with the graph squeezed to its share of that axis.
+ * Where everyone stands, for a plot `W` by `H` whose squares may rise to `top`: fifty $5k columns and the pile
+ * past the cap as a fifty-first, each as wide as the others; the grid (lib/strata `strataGrid`) for the room
+ * there is; each column sorted by salary (`stackColumns`); and each square's corner. Unrolled, the pile's people
+ * stand at their own pay on an axis run out to the top salary, with the graph squeezed to its share of that axis.
  */
 export function layoutStrata(
   s: Strata,
-  /** `peak`: the scale, the most people a column holds at full height — the latest snapshot's tallest, so every
-   *  snapshot is drawn to one; a column taller than that breaks. Without it, this field's own tallest. */
+  /** `peak`: the scale, the most people a column holds at full height — the tallest column in any snapshot (the
+   *  build's `column_peak`), so every snapshot is drawn to one. Never less than this field's own tallest. */
   opts: { W: number; H: number; top: number; dpr: number; phone: boolean; peak?: number },
   unroll = false,
 ): StrataLayout {
-  const { W, H, top, dpr, phone } = opts;
+  const { W, H, top, dpr } = opts;
   const base = H - 1;
   const rowsH = Math.max(20, base - top);
-  let peak = opts.peak ?? 0;
-  if (!(peak > 0)) for (let c = 0; c < COLS; c++) peak = Math.max(peak, s.colCount[c]);
-  const gap = phone ? PILE_GAP.phone : PILE_GAP.wide;
-  const hasPile = s.pileKind.length > 0;
-  // The pile is as wide as fourteen of the columns' squares, and they follow the columns' width: so the plot's
-  // share, for a given number a row, is (W − gap) over 1 + 14 / (250 × per). Settled in a round or two.
-  let mainW = hasPile ? W - gap - PILE_PER_ROW * 1.5 : W;
-  let grid = strataGrid({ colW: mainW / COLS, rowsH, peak, dpr });
-  for (let k = 0; k < 4 && hasPile; k++) {
-    mainW = (W - gap) / (1 + PILE_PER_ROW / (COLS * grid.per));
-    const next = strataGrid({ colW: mainW / COLS, rowsH, peak, dpr });
-    if (next.per === grid.per && Math.abs(next.pitch - grid.pitch) < 1e-9) { grid = next; break; }
-    grid = next;
-  }
-  const colW = mainW / COLS;
+  let peak = Math.max(opts.peak ?? 0, s.pileKind.length);
+  for (let c = 0; c < COLS; c++) peak = Math.max(peak, s.colCount[c]);
+  const colW = W / (COLS + 1);
+  const mainW = COLS * colW;
+  const grid = strataGrid({ colW, rowsH, peak, dpr });
   const n = s.col.length, m = s.pileKind.length;
-  const main = stackColumns(s.col, s.kind, s.key, s.rank, COLS);
-  // The columns taller than the scale, broken.
-  const scaleRows = Math.ceil(peak / grid.per);
-  const broken = new Map<number, NonNullable<ReturnType<typeof columnBreak>>>();
-  const breaks: StrataLayout['breaks'] = [];
-  for (let c = 0; c < COLS; c++) {
-    const b = columnBreak(Math.ceil(s.colCount[c] / grid.per), scaleRows, grid.rowPitch, base);
-    if (b) { broken.set(c, b); breaks.push({ col: c, n: s.colCount[c], y: b.y }); }
-  }
-  const mPitch = broken.size ? new Float32Array(n).fill(grid.rowPitch) : null;
+  const main = stackColumns(s.col, s.pay, s.kind, s.key, s.rank, COLS);
   const mx = new Float64Array(n), my = new Float64Array(n);
+  const lefts = Float64Array.from({ length: COLS + 1 }, (_, c) => colX(c, colW, grid, dpr));
   for (let i = 0; i < n; i++) {
-    const at = squareAt(colLeft(s.col[i], colW), main.slot[i], grid.per, grid, base);
+    const at = squareAt(lefts[s.col[i]], main.slot[i], grid.per, grid, base);
     mx[i] = at.x;
     my[i] = at.y;
-    const b = broken.get(s.col[i]);
-    if (b && mPitch) {
-      const r = Math.floor(main.slot[i] / grid.per);
-      my[i] = brokenRowY(r, b, grid.rowPitch, base);
-      if (r >= b.knee) mPitch[i] = b.pitch;
-    }
   }
   const px = new Float64Array(m), py = new Float64Array(m);
   let pile: Stack, tail: StrataLayout['tail'] = null, pileLeft = W, pileW = 0, pileTop = 0;
@@ -154,7 +124,7 @@ export function layoutStrata(
     const cols = tailColumns(s.pilePay, scale, grid.pitch);
     let last = 0;
     for (let j = 0; j < m; j++) last = Math.max(last, cols[j]);
-    pile = stackColumns(cols, s.pileKind, s.pileKey, s.rank, last + 1);
+    pile = stackColumns(cols, s.pilePay, s.pileKind, s.pileKey, s.rank, last + 1);
     for (let j = 0; j < m; j++) {
       px[j] = cols[j] * grid.pitch;
       py[j] = base - (pile.slot[j] + 1) * grid.rowPitch;
@@ -162,24 +132,24 @@ export function layoutStrata(
     }
     tail = { top: topPay, scale, capX: COLS * COL_DOLLARS * scale, squeeze, topIndex };
   } else {
-    pileW = hasPile ? PILE_PER_ROW * grid.pitch : 0;
-    pileLeft = snap(W - pileW, dpr);
-    pile = stackColumns(new Uint8Array(m), s.pileKind, s.pileKey, s.rank, 1);
+    pileLeft = mainW;
+    pileW = W - mainW;
+    pile = stackColumns(new Uint8Array(m), s.pilePay, s.pileKind, s.pileKey, s.rank, 1);
     for (let j = 0; j < m; j++) {
-      const at = squareAt(pileLeft, pile.slot[j], PILE_PER_ROW, grid, base);
+      const at = squareAt(lefts[COLS], pile.slot[j], grid.per, grid, base);
       px[j] = at.x;
       py[j] = at.y;
     }
-    pileTop = hasPile ? Math.ceil(m / PILE_PER_ROW) * grid.rowPitch : 0;
+    pileTop = m ? colHeight(m, grid) : 0;
   }
   const peakY = base - Math.max(colHeight(peak, grid), pileTop);
-  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peak, breaks, mPitch, peakY, tail };
+  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peak, peakY, tail };
 }
 
 /** The x of a pay on the main plot, CSS px. */
-export const payX = (L: Pick<StrataLayout, 'colW'>, pay: number) => (pay / 1000) * L.colW;
-/** The top of column `c`'s stack: a broken one's is the scale's. */
-export const colTopY = (s: Strata, L: StrataLayout, c: number) => L.base - colHeight(Math.min(L.peak, s.colCount[Math.max(0, Math.min(COLS - 1, c))]), L.grid);
+export const payX = (L: Pick<StrataLayout, 'colW'>, pay: number) => (pay / COL_DOLLARS) * L.colW;
+/** The top of column `c`'s stack. */
+export const colTopY = (s: Strata, L: StrataLayout, c: number) => L.base - colHeight(s.colCount[Math.max(0, Math.min(COLS - 1, c))], L.grid);
 
 /**
  * A search mark's centre, from its square's: on a pixel's centre where a mark is an odd number of device pixels
@@ -254,7 +224,7 @@ export interface Step {
   arc: { main: Float32Array; pile: Float32Array } | null;
   /** Who joined this step (1), fading in where they stand once the rest are on their way. */
   joined: { main: Uint8Array; pile: Uint8Array };
-  ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array; pitch: Float32Array } | null;
+  ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array } | null;
 }
 
 export const StrataField = forwardRef<StrataFieldHandle, {
@@ -303,7 +273,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     msM?: Float64Array; msP?: Float64Array;
     arcM?: Float32Array; arcP?: Float32Array;
     /** Who left, fading out where they stood. */
-    ghost?: { x: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array; pitch: Float32Array };
+    ghost?: { x: Float64Array; y: Float64Array; wait: Float64Array; ms: number; kind: Uint8Array };
     /** Who joined, fading in: by square, and how far in each is (1 for everyone else). */
     fadeIn?: { main: Int32Array; pile: Int32Array; aM: Float32Array; aP: Float32Array };
     /** The frame's time, for the fades. */
@@ -382,8 +352,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const box: Px = { X: 0, Y: 0, w: 0, h: 0 };
     // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a
     // square of one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
-    const put = (x: number, y: number, c: number, least: number, rowPitch = grid.rowPitch) => {
-      let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box, rowPitch);
+    const put = (x: number, y: number, c: number, least: number) => {
+      let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box);
       if (w < least) { X -= (least - w) >> 1; w = least; }
       if (h < least) { Y -= (least - h) >> 1; h = least; }
       // Clipped to the canvas, not clamped to it: a square above the plot (one dropping in) is not drawn at
@@ -403,25 +373,24 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const gh = mv?.ghost;
     if (gh) for (let g = 0; g < gh.x.length; g++) {
       const a = 1 - into(gh.wait[g], gh.ms);
-      if (a > 0) put(gh.x[g], gh.y[g], faded(packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), a), 1, gh.pitch[g]);
+      if (a > 0) put(gh.x[g], gh.y[g], faded(packed(dim ? t.dim : t.kinds[gh.kind[g]] ?? t.dim), a), 1);
     }
-    const mp = layout.mPitch, rp = grid.rowPitch;
     const fi = mv?.fadeIn;
     if (mv && fi) {
-      const fade = (idx: Int32Array, A: Float32Array, X: Float64Array, Y: Float64Array, T: Uint8Array, wait: Float64Array, ms: Float64Array, P: Float32Array | null) => {
+      const fade = (idx: Int32Array, A: Float32Array, X: Float64Array, Y: Float64Array, T: Uint8Array, wait: Float64Array, ms: Float64Array) => {
         for (const i of idx) {
           const a = (A[i] = into(wait[i], ms[i]));
-          if (a > 0 && a < 1) put(X[i], Y[i], faded(packed(ink(T[i])), a), least(T[i]), P ? P[i] : rp);
+          if (a > 0 && a < 1) put(X[i], Y[i], faded(packed(ink(T[i])), a), least(T[i]));
         }
       };
-      fade(fi.main, fi.aM, mx, my, tint.main, mv.wait, mv.msM!, mp);
-      fade(fi.pile, fi.aP, px, py, tint.pile, mv.pwait, mv.msP!, null);
+      fade(fi.main, fi.aM, mx, my, tint.main, mv.wait, mv.msM!);
+      fade(fi.pile, fi.aP, px, py, tint.pile, mv.pwait, mv.msP!);
     }
     const aM = fi?.aM, aP = fi?.aP;
     for (const k of order) {
       const c = packed(ink(k)), l = least(k);
       const a = tint.mainBy[k], b = tint.pileBy[k];
-      for (let q = 0; q < a.length; q++) if (!aM || aM[a[q]] === 1) put(mx[a[q]], my[a[q]], c, l, mp ? mp[a[q]] : rp);
+      for (let q = 0; q < a.length; q++) if (!aM || aM[a[q]] === 1) put(mx[a[q]], my[a[q]], c, l);
       for (let q = 0; q < b.length; q++) if (!aP || aP[b[q]] === 1) put(px[b[q]], py[b[q]], c, l);
     }
     ctx.putImageData(img, 0, 0);
@@ -530,19 +499,16 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     let nameableHere = 0;
     // `a`: how strongly it is drawn — full where the lens magnifies, fainter in the crowded ring at its rim,
     // where whole columns are squeezed into lines and at full ink read as spokes rather than people.
-    // Over a column's break its squares are squeezed: magnified, they stay as flat as they are drawn.
-    const mp = layout.mPitch;
-    const draws: { k: number; x: number; y: number; z: number; zh: number; a: number }[] = [];
+    const draws: { k: number; x: number; y: number; z: number; a: number }[] = [];
     for (const { field, idx } of lists) {
       const X = field === 'main' ? mx : px, Y = field === 'main' ? my : py, T = field === 'main' ? tint.main : tint.pile;
       for (const i of idx) {
-        const flat = field === 'main' && mp ? mp[i] / grid.rowPitch : 1;
-        const ox = X[i] + hw, oy = Y[i] + hh * flat;
+        const ox = X[i] + hw, oy = Y[i] + hh;
         const f = fisheye(ox - sx, oy - sy, R);
         if (!f) continue;
         const z = Math.max(0.7, s * f.scale * 0.92);
         const x = cx + f.x, y = cy + f.y;
-        draws.push({ k: T[i], x, y, z, zh: Math.max(0.7, z * flat), a: f.scale >= 0.7 ? 0 : f.scale >= 0.35 ? 1 : 2 });
+        draws.push({ k: T[i], x, y, z, a: f.scale >= 0.7 ? 0 : f.scale >= 0.35 ? 1 : 2 });
         if (follow && follow.field === field && follow.index === i) followed = { x, y, z };
         if (ptr && nameable(field, T[i])) {
           nameableHere++;
@@ -562,8 +528,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
         ctx.beginPath();
         for (const d of draws) {
           if (d.k !== k || d.a !== a) continue;
-          if (d.zh > 4) ctx.roundRect(d.x - d.z / 2, d.y - d.zh / 2, d.z, d.zh, d.zh * 0.22);
-          else ctx.rect(d.x - d.z / 2, d.y - d.zh / 2, d.z, d.zh);
+          if (d.z > 4) ctx.roundRect(d.x - d.z / 2, d.y - d.z / 2, d.z, d.z, d.z * 0.22);
+          else ctx.rect(d.x - d.z / 2, d.y - d.z / 2, d.z, d.z);
         }
         ctx.fill();
       }
@@ -724,7 +690,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       }
       for (let j = 0; j < m; j++) {
         fromPy[j] = -10 - rand() * 140;
-        pwait[j] = (layout.px[j] / W) * DROP_WAVE_MS + layout.pile.slot[j] / PILE_PER_ROW * DROP_ROW_MS;
+        pwait[j] = (layout.px[j] / W) * DROP_WAVE_MS + layout.pile.slot[j] / grid.per * DROP_ROW_MS;
       }
       cur.current = { mx: layout.mx.slice(), my: fromMy.slice(), px: layout.px.slice(), py: fromPy.slice() };
       move.current = { start: now, fromMx: layout.mx.slice(), fromMy, fromPx: layout.px.slice(), fromPy, wait, pwait, ms: DROP_MS, land: true };
@@ -738,7 +704,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       for (let j = 0; j < m; j++) ({ wait: pwait[j], ms: msP[j] } = stepTiming(role(arc?.pile, joined.pile, j), layout.px[j], W, speed));
       cur.current = { mx: from.mx.slice(), my: from.my.slice(), px: from.px.slice(), py: from.py.slice() };
       const g = ghosts && ghosts.x.length
-        ? { x: ghosts.x, y: ghosts.y, wait: Float64Array.from(ghosts.x, (x) => stepTiming('leave', x, W, speed).wait), ms: stepTiming('leave', 0, W, speed).ms, kind: ghosts.kind, pitch: ghosts.pitch }
+        ? { x: ghosts.x, y: ghosts.y, wait: Float64Array.from(ghosts.x, (x) => stepTiming('leave', x, W, speed).wait), ms: stepTiming('leave', 0, W, speed).ms, kind: ghosts.kind }
         : undefined;
       const who = (join: Uint8Array) => Int32Array.from(join.keys()).filter((i) => join[i] === 1);
       const fadeIn = { main: who(joined.main), pile: who(joined.pile), aM: new Float32Array(n).fill(1), aP: new Float32Array(m).fill(1) };

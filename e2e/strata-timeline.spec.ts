@@ -88,8 +88,14 @@ test('each snapshot shows its own people: headcount, median and quartiles, the p
     await goTo(page, i);
     await expect(page.locator('.strata-timeline-said')).toHaveText(`${s.label} · ${num(who.length)} people · median ${usd(quantile(pays, 0.5))}`);
     await expect(page.locator('.strata-count')).toHaveText(`${num(who.length)} people · ${s.label}`);
+    // The median with its change since the snapshot before, each from its own people.
+    const before = (await peopleIn(SNAPS[i - 1].id)).map((p) => p.pay).sort((a, b) => a - b);
+    const moved = quantile(pays, 0.5) - quantile(before, 0.5);
     const pins = await page.locator('.strata-pin').allTextContents();
-    expect(pins).toEqual([`Median ${usd(quantile(pays, 0.5))}`, `25th percentile ${fmtK(quantile(pays, 0.25))}`, `75th percentile ${fmtK(quantile(pays, 0.75))}`]);
+    expect(pins).toEqual([
+      `Median ${usd(quantile(pays, 0.5))} ${moved >= 0 ? '+' : '−'}${usd(Math.abs(moved))} since ${SNAPS[i - 1].label.replace(/\s*\(.*\)\s*$/, '')}`,
+      `25th percentile ${fmtK(quantile(pays, 0.25))}`, `75th percentile ${fmtK(quantile(pays, 0.75))}`,
+    ]);
     await expect(page.locator('.strata-pile-toggle')).toHaveText(`${num(who.filter((p) => p.pay >= CAP).length)} at ${fmtK(CAP)}+`);
     await expect(plot(page)).toHaveAttribute('data-squares', `${who.filter((p) => p.pay < CAP).length}:${who.filter((p) => p.pay >= CAP).length}`);
     // The types: each with its people, as spelled now; the codes only where there are any.
@@ -294,59 +300,40 @@ test('the track is a radio group: arrows step between snapshots, Home and End go
   await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
 });
 
-test.describe('one scale for every snapshot, the latest’s, and the pace', () => {
-  // At two device pixels a pixel, where it shows: each snapshot fitted to its own tallest column drew Apr 2024's
-  // (742 people in one $1k column) with rows 2px tall and the latest's (576) with rows 2.5px — the same headcount
-  // a quarter taller in one snapshot than the next, and every square moving with the scale at each step. Fitted to
-  // Apr 2024's instead, every other snapshot stood under three quarters as tall: now the latest's tallest sets the
-  // scale, and a column taller than that breaks.
+test.describe('one scale for every snapshot, and the pace', () => {
+  // At two device pixels a pixel, where it shows: each snapshot fitted to its own tallest column drew the same
+  // headcount taller in one than the next, and every square moved with the scale at each step. In $5k columns the
+  // tallest in any snapshot (Apr 2024's, 2,099) is a little over the latest's (1,895): it sets the one scale.
   test.use({ deviceScaleFactor: 2 });
 
-  test('every snapshot draws a person the same height as the latest; a column taller than its tallest breaks, counted, every one of its people inside the scale', async ({ page }) => {
+  test('every snapshot draws a person the same height, to the scale of the tallest $5k column in any, which it fills', async ({ page }) => {
     test.setTimeout(120_000);
     const cols = await oracle<{ s: string; b: number; n: number }>(
       `WITH p AS (SELECT snapshot_id s, person_key, sum(${PAY}) pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING sum(${PAY}) > 0)
-       SELECT s, floor(pay / 1000) b, count(*) n FROM p WHERE pay < ${CAP} GROUP BY 1, 2`,
+       SELECT s, least(floor(pay / 5000), ${CAP / 5000}) b, count(*) n FROM p GROUP BY 1, 2`,
     );
     const peakOf = (id: string) => Math.max(...cols.filter((c) => c.s === id).map((c) => c.n));
-    const latest = peakOf(SNAPS[LAST].id);
     const byPeak = SNAPS.map((sn, i) => ({ i, peak: peakOf(sn.id) })).sort((a, b) => b.peak - a.peak);
     const tallest = byPeak[0].i, lowest = byPeak[byPeak.length - 1].i;
-    expect(byPeak[0].peak, 'no snapshot has a column taller than the latest’s tallest, so nothing here breaks').toBeGreaterThan(latest * 1.1);
+    expect(byPeak[0].peak, 'the snapshots no longer differ in their tallest column, so this proves nothing').toBeGreaterThan(byPeak[byPeak.length - 1].peak * 1.1);
     await home(page);
-    await expect(field(page)).toHaveAttribute('data-peak', String(latest));
-    await expect(page.locator('.strata-break-count')).toHaveCount(0);
+    await expect(field(page)).toHaveAttribute('data-peak', String(byPeak[0].peak));
     const grid = () => field(page).evaluate((el) => ['per', 'pitch', 'rowPitch', 'gap'].map((k) => `${k} ${(el as HTMLElement).dataset[k]}`).join(', '));
-    // The highest ink on the canvas, device px from the top, overall and in column `b`.
-    const inkTop = (b: number | null) => page.locator('.strata-base').evaluate((c: HTMLCanvasElement, a) => {
-      const colW = Number((document.querySelector('.strata-field') as HTMLElement).dataset.colW), k = c.width / c.getBoundingClientRect().width;
-      const x0 = a.b == null ? 0 : Math.round(a.b * colW * k), x1 = a.b == null ? c.width : Math.round((a.b + 1) * colW * k);
-      const d = c.getContext('2d')!.getImageData(x0, 0, x1 - x0, c.height).data;
-      for (let i = 3; i < d.length; i += 4) if (d[i]) return Math.floor((i >> 2) / (x1 - x0));
+    // The highest ink on the canvas, device px from the top.
+    const inkTop = () => page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i]) return Math.floor((i >> 2) / c.width);
       return c.height;
-    }, { b });
-    const opened = await grid(), scaleTop = await inkTop(null);
-    for (const i of [tallest, lowest, LAST]) {
+    });
+    const opened = await grid();
+    const [base, rowPitch, per] = await Promise.all(['data-base', 'data-row-pitch', 'data-per'].map(async (a) => Number(await field(page).getAttribute(a))));
+    const scaleTop = Math.round((base - Math.ceil(byPeak[0].peak / per) * rowPitch) * 2);
+    for (const i of [lowest, tallest, LAST]) {
       if ((await bar(page).getAttribute('data-snap')) !== SNAPS[i].id) await goTo(page, i);
       expect(await grid(), `${SNAPS[i].label} is drawn to a scale of its own`).toBe(opened);
-      expect(await inkTop(null), `${SNAPS[i].label}: a square above the latest’s tallest column`).toBeGreaterThanOrEqual(scaleTop);
-      const over = cols.filter((c) => c.s === SNAPS[i].id && c.n > latest).sort((a, b) => a.b - b.b);
-      const counts = await page.locator('.strata-break-count').evaluateAll((els) => els.map((e) => [Number((e as HTMLElement).dataset.col), e.textContent]));
-      expect(counts, `${SNAPS[i].label}: its broken columns and their people`).toEqual(over.map((c) => [c.b, num(c.n)]));
-      for (const c of over) {
-        // Up to the scale's top, not cut short of it…
-        expect(Math.abs((await inkTop(c.b)) - scaleTop), `${SNAPS[i].label} $${c.b}k stands at the scale`).toBeLessThanOrEqual(1);
-        // …and every one of its people in it, each in a place of their own, none past the top.
-        const pts = await field(page).evaluate((el, b) => {
-          const f = el as HTMLElement & { squarePlaces: (f: string) => number[] };
-          const xy = f.squarePlaces('main'), colW = Number(f.dataset.colW), out: string[] = [];
-          for (let q = 0; q < xy.length; q += 2) if (Math.floor(xy[q] / colW) === b) out.push(`${xy[q].toFixed(2)},${xy[q + 1].toFixed(2)}`);
-          return { places: out, ys: out.map((p) => Number(p.split(',')[1])) };
-        }, c.b);
-        expect(pts.places.length).toBe(c.n);
-        expect(new Set(pts.places).size, `${SNAPS[i].label} $${c.b}k: two people in one place`).toBe(c.n);
-        expect(Math.min(...pts.ys) * 2, `${SNAPS[i].label} $${c.b}k: someone past the scale’s top`).toBeGreaterThanOrEqual(scaleTop);
-      }
+      const top = await inkTop();
+      expect(top, `${SNAPS[i].label}: a square above the scale`).toBeGreaterThanOrEqual(scaleTop);
+      if (i === tallest) expect(top, `${SNAPS[i].label}'s tallest column does not reach the top of the scale`).toBe(scaleTop);
     }
   });
 

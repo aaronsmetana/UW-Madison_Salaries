@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
-import { COLS, READ_RADIUS, arcHeight, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
+import { COLS, COL_DOLLARS, READ_RADIUS, arcHeight, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
@@ -20,8 +20,8 @@ import { Z } from '../../lib/layers';
 import { ICON } from '../../lib/ui';
 
 /**
- * The landing graph (mockup 3a, "strata + lens"): everyone paid, one square each, in $1k columns stacked by
- * employment type (StrataField), under percentile pins and over a salary axis with the middle half marked;
+ * The landing graph (mockup 3a): everyone paid, one square each, in $5k columns sorted by salary and coloured by
+ * employment type (StrataField), under percentile pins and over a salary axis with the median marked;
  * a lens that magnifies where the pointer is, with a readout and the person under it; a filter that lights
  * its own people where they stand and fades the rest; the pile past the cap, which unrolls to show each of
  * its people at their own pay on an axis run out to the top salary; and the page's full-page view of it.
@@ -124,7 +124,7 @@ function flipFrames(from: DOMRect, to: DOMRect): Keyframe[] {
 const NO_FOUND: FoundPerson[] = [];
 const NO_SNAPS: GraphTimeline['snaps'] = [];
 
-/** Everyone from the $1k bins alone (an older snapshot, drawn through live SQL): one kind, no pile types. */
+/** Everyone from the $1k bins alone (an older build without the per-$100 counts): one kind, no pile types. */
 function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow: number): Strata | null {
   if (!bins.length) return null;
   const lo100 = Math.floor(bins[0].bucket / 100);
@@ -141,7 +141,8 @@ function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow
 export function StrataGraph({
   bins, payCounts, p25: p25Base, median: medianBase, p75: p75Base, cap, overflow, headcount: headcountBase, snapshotLabel: labelBase,
   found: foundBase = NO_FOUND, activeKey = null, openRef, search, onFullChange, group = null, previewing = false, onClearGroup, onPeel,
-  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null,
+  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null, columnPeak = null, prevMedian: prevMedianBase = null,
+  prevLabel: prevLabelBase = null,
 }: {
   bins: readonly { bucket: number; n: number }[];
   payCounts?: StrataCounts | null;
@@ -176,6 +177,12 @@ export function StrataGraph({
   /** True while the full page's search has its list open over the graph: a press then only puts it away. */
   searchOpenRef?: MutableRefObject<boolean>;
   timeline?: GraphTimeline | null;
+  /** The most people in one $5k column in any snapshot (home-stats `column_peak`): the scale every snapshot is
+   *  drawn to, so a person stands the same height in each. */
+  columnPeak?: number | null;
+  /** The snapshot before the latest: its median and name, for the median's change. */
+  prevMedian?: number | null;
+  prevLabel?: string | null;
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
@@ -219,12 +226,16 @@ export function StrataGraph({
     return st;
   }, [tl, at, cap]);
   const strata: Strata | null = tStrata ?? baseStrata;
-  // One scale for every snapshot, the latest's: its tallest column as tall as the room allows. Each snapshot fitted
+  // One scale for every snapshot: room for the tallest $5k column in any of them (the build's figure). Each fitted
   // to its own tallest drew the same headcount taller in one than the next, and a step moved every square with
-  // the scale, not only the people whose pay moved; fitted to the tallest in any (Apr 2024's 742 at $56k), every
-  // other stood under three quarters as tall. A column taller than the latest's breaks (lib/strata `columnBreak`).
-  const scalePeak = useMemo(() => (baseStrata ? Math.max(...baseStrata.colCount) : 0), [baseStrata]);
+  // the scale, not only the people whose pay moved. In $5k columns the snapshots' tallest differ by a few hundred
+  // (1,621–2,099), so the tallest in any fits them all — where $1k columns' pay-floor spikes did not.
+  const scalePeak = columnPeak ?? 0;
   const stats = useMemo(() => (tl && at != null ? snapStats(tl.at[at], tl.names.length, cap ?? 250_000) : null), [tl, at, cap]);
+  // The snapshot before the one shown, for the median's change: from its people once the timeline is in.
+  const prevStats = useMemo(() => (tl && at != null && at > 0 ? snapStats(tl.at[at - 1], tl.names.length, cap ?? 250_000) : null), [tl, at, cap]);
+  const prevMedian = at != null ? (at > 0 ? prevStats?.median ?? null : null) : prevMedianBase;
+  const prevLabel = at != null ? (at > 0 ? snaps[at - 1]?.label ?? null : null) : prevLabelBase;
   const p25 = stats ? stats.p25 : p25Base;
   const median = stats ? stats.median : medianBase;
   const p75 = stats ? stats.p75 : p75Base;
@@ -357,15 +368,15 @@ export function StrataGraph({
       return { fx, fy, arc, join };
     };
     const mm = place(B.mainId, L1.mx, L1.my), pp = place(B.pileId, L1.px, L1.py);
-    const gx: number[] = [], gy: number[] = [], gk: number[] = [], gp: number[] = [];
-    A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); gp.push(L0.mPitch ? L0.mPitch[i] : L0.grid.rowPitch); } });
-    A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); gp.push(L0.grid.rowPitch); } });
+    const gx: number[] = [], gy: number[] = [], gk: number[] = [];
+    A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); } });
+    A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); } });
     return {
       to: L1,
       from: { mx: mm.fx, my: mm.fy, px: pp.fx, py: pp.fy },
       arc: moves || followId != null ? { main: mm.arc, pile: pp.arc } : null,
       joined: { main: mm.join, pile: pp.join },
-      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk), pitch: Float32Array.from(gp) },
+      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
     };
     // `shownRef` is the layout drawn before this one: read, not a dependency.
   }, [layout, tl, tStrata, moves, followId]);
@@ -431,7 +442,7 @@ export function StrataGraph({
     if (lit && solo == null) return { name: group!.name, count: lit.count, median: lit.median, ink: 'var(--strata-match)' };
     // Both: those lit by each, at their column's pay.
     const pays: number[] = [];
-    for (let i = 0; i < dim.main.length; i++) if (!dim.main[i]) pays.push(strata.col[i] * 1000 + 500);
+    for (let i = 0; i < dim.main.length; i++) if (!dim.main[i]) pays.push(strata.pay[i]);
     let over = 0;
     for (let j = 0; j < dim.pile.length; j++) if (!dim.pile[j]) over++;
     pays.sort((a, b) => a - b);
@@ -570,8 +581,15 @@ export function StrataGraph({
   // The percentile pins over the skyline, each a line up from its column to a label placed clear of the others.
   const pins = useMemo(() => {
     if (!strata || !layout || layout.tail) return [];
-    const list: { key: string; v: number; text: string; strong?: boolean; filter?: boolean; ink?: string }[] = [];
-    if (median != null) list.push({ key: 'median', v: median, text: `Median ${usd(median)}`, strong: true });
+    const list: { key: string; v: number; text: string; strong?: boolean; filter?: boolean; ink?: string; change?: { text: string; up: boolean } }[] = [];
+    // The median, and how it moved since the snapshot before (3a): "+$1,631 since Mar 2026".
+    const moved = median != null && prevMedian != null && prevLabel ? median - prevMedian : null;
+    if (median != null) {
+      list.push({
+        key: 'median', v: median, text: `Median ${usd(median)}`, strong: true,
+        change: moved != null ? { text: `${moved >= 0 ? '+' : '−'}${usd(Math.abs(moved))} since ${bareLabel(prevLabel!)}`, up: moved >= 0 } : undefined,
+      });
+    }
     // Named in full where there is room: "P25" is a statistician's shorthand on a page written for everyone
     // else. A phone keeps it — three crowd at 375px, and a wrapped label is worse than a terse one.
     if (p25 != null) list.push({ key: 'p25', v: p25, text: `${phone ? 'P25' : '25th percentile'} ${fmtK(p25)}` });
@@ -579,15 +597,15 @@ export function StrataGraph({
     if (filterStats?.median != null && filterStats.count > 0 && (cap == null || filterStats.median < cap)) {
       list.push({ key: 'filter', v: filterStats.median, text: `${filterStats.name} median ${fmtK(filterStats.median)}`, filter: true, ink: filterStats.ink });
     }
-    const boxes = list.map((p) => ({ x: payX(layout, p.v), w: Math.ceil(measureText(p.text, PIN_FONT) * (p.strong ? 1.1 : 1.06)) }));
+    const boxes = list.map((p) => ({ x: payX(layout, p.v), w: Math.ceil(measureText(p.text, PIN_FONT) * (p.strong ? 1.1 : 1.06) + (p.change ? measureText(` ${p.change.text}`, 12) * 1.06 : 0)) }));
     const rows = placePins(boxes, layout.mainW, PIN_ROWS);
     return list.map((p, i) => {
       const x = boxes[i].x;
       const top = rows[i].row * PIN_ROW + 2;
-      const colTop = colTopY(strata, layout, Math.floor(p.v / 1000));
+      const colTop = colTopY(strata, layout, Math.floor(p.v / COL_DOLLARS));
       return { ...p, x, left: rows[i].left, top, w: boxes[i].w, y1: top + PIN_ROW - 2, y2: Math.max(top + PIN_ROW, colTop - 4) };
     });
-  }, [strata, layout, median, p25, p75, filterStats, cap, phone]);
+  }, [strata, layout, median, prevMedian, prevLabel, p25, p75, filterStats, cap, phone]);
 
   // The pile's label at the axis's right end, which is also the way to unroll it and fold it back.
   const over = strata?.pileKind.length ?? 0;
@@ -606,8 +624,8 @@ export function StrataGraph({
       for (let v = step; v <= layout.tail.top; v += step) if (fits(v)) out.push(v);
       return out;
     }
-    const step = TICK_STEPS.find((s) => (s / 1000) * layout.colW >= AXIS_LABEL_W) ?? TICK_STEPS[TICK_STEPS.length - 1];
-    for (let v = step; v < 250_000; v += step) if (fits(v)) out.push(v);
+    const step = TICK_STEPS.find((s) => (s / COL_DOLLARS) * layout.colW >= AXIS_LABEL_W) ?? TICK_STEPS[TICK_STEPS.length - 1];
+    for (let v = 0; v < 250_000; v += step) if (fits(v)) out.push(v);
     return out;
   }, [layout, plotW, pileLabel, xOf]);
 
@@ -629,7 +647,7 @@ export function StrataGraph({
     let lit = 0;
     if (dim) for (let i = 0; i < strata.col.length; i++) if (!dim.main[i] && Math.abs(strata.col[i] - c) <= READ_RADIUS) lit++;
     const pct = Math.min(99, Math.max(1, Math.round(shareAt(strata.colCount, c, total) * 100)));
-    return `${fmtK(c * 1000)} · ${num(near)} people within ±${fmtK(READ_RADIUS * 1000)} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
+    return `${fmtK(c * COL_DOLLARS)}–${fmtK((c + 1) * COL_DOLLARS)} · ${num(near)} people within ±${fmtK(READ_RADIUS * COL_DOLLARS)} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strata, layout, lensAt, lensFrom, lensCol, dim, total]);
 
@@ -817,14 +835,14 @@ export function StrataGraph({
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (pick && who) toggleFollow(who, pick); }
       return;
     }
-    const c = lensCol ?? Math.floor((median ?? 0) / 1000);
-    const step = e.shiftKey ? 10 : 1;
+    const c = lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS);
+    const step = e.shiftKey ? 5 : 1;
     let next: number | null = null;
     switch (e.key) {
       case 'ArrowRight': case 'ArrowUp': next = Math.min(COLS - 1, c + step); break;
       case 'ArrowLeft': case 'ArrowDown': next = Math.max(0, c - step); break;
-      case 'PageUp': next = Math.min(COLS - 1, c + 10); break;
-      case 'PageDown': next = Math.max(0, c - 10); break;
+      case 'PageUp': next = Math.min(COLS - 1, c + 5); break;
+      case 'PageDown': next = Math.max(0, c - 5); break;
       case 'Home': next = 0; break;
       case 'End': next = COLS - 1; break;
       case 'Enter': case ' ':
@@ -996,7 +1014,6 @@ export function StrataGraph({
     <Text size="sm" c="dimmed" className="strata-count">{num(total)} people{snapshotLabel ? ` · ${snapshotLabel}` : ''}</Text>
   );
 
-  const W = layout?.mainW ?? plotW;
   // The readout's width, so it can be kept inside the plot: its words at the pill's size, and its padding.
   const readoutW = readout ? Math.ceil(measureText(readout, 12) * 1.08 + 20) : 0;
   const lensY = lensAt?.y ?? 0;
@@ -1020,11 +1037,12 @@ export function StrataGraph({
   // What the graph shows, said in words, and its columns in $10k bands with each type's people.
   const bandKinds = strata.names.map((_, k) => k).filter((k) => (cats ?? []).some((c) => c.kind === k && c.n > 0));
   const bands = (() => {
-    const out = Array.from({ length: COLS / 10 + 1 }, (_, b) => ({
-      label: b < COLS / 10 ? `${fmtK(b * 10_000)}–${fmtK((b + 1) * 10_000)}` : `${fmtK(cap ?? 250_000)} or more`,
+    const per = 10_000 / COL_DOLLARS, bandsN = COLS / per;
+    const out = Array.from({ length: bandsN + 1 }, (_, b) => ({
+      label: b < bandsN ? `${fmtK(b * 10_000)}–${fmtK((b + 1) * 10_000)}` : `${fmtK(cap ?? 250_000)} or more`,
       n: 0, byKind: new Array<number>(strata.names.length).fill(0),
     }));
-    for (let i = 0; i < strata.col.length; i++) { const b = out[Math.floor(strata.col[i] / 10)]; b.n++; b.byKind[strata.kind[i]]++; }
+    for (let i = 0; i < strata.col.length; i++) { const b = out[Math.floor(strata.col[i] / per)]; b.n++; b.byKind[strata.kind[i]]++; }
     const pile = out[out.length - 1];
     for (let j = 0; j < strata.pileKind.length; j++) { pile.n++; pile.byKind[strata.pileKind[j]]++; }
     return out;
@@ -1078,6 +1096,23 @@ export function StrataGraph({
         </div>
       </div>
 
+      {/* Above the plot (3a): each type in the legend's order with its people in the snapshot shown; a click shows it alone. */}
+      {cats && (
+        <div className="hero-dist-legend strata-legend" data-solo={solo ?? undefined}>
+          <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">
+            Coloured by highest-paid appointment · {canHover ? 'click' : 'tap'} to isolate
+          </Text>
+          {cats.map((c) => (
+            <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
+              aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
+              <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
+              <Text span size="xs" fw={600}>{c.name}</Text>
+              <Text span size="xs" className="strata-legend-meta">{num(c.n)}</Text>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div
         ref={plotRef}
         className="hero-dist-main strata-plot"
@@ -1097,13 +1132,13 @@ export function StrataGraph({
         data-squares={`${strata.col.length}:${strata.pileKind.length}`}
         onPointerMove={onMove} onPointerLeave={onLeave} onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
         tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution" aria-describedby={summaryId}
-        aria-valuemin={0} aria-valuemax={tail ? tail.top : COLS * 1000}
-        aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : (lensCol ?? Math.floor((median ?? 0) / 1000)) * 1000} aria-valuetext={readText}
+        aria-valuemin={0} aria-valuemax={tail ? tail.top : COLS * COL_DOLLARS}
+        aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : (lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS)) * COL_DOLLARS} aria-valuetext={readText}
         onKeyDown={onKey}
         onFocus={(e) => {
           if (lensAt || !e.currentTarget.matches(':focus-visible')) return;
           if (tail) { keyTail(tailRankRef.current ?? 0); return; }
-          const at = keyAt(Math.floor((median ?? 0) / 1000));
+          const at = keyAt(Math.floor((median ?? 0) / COL_DOLLARS));
           setLensAt(at);
           setPointer(at);
         }}
@@ -1122,21 +1157,10 @@ export function StrataGraph({
                 <line key={p.key} className={`strata-pin-line strata-pin-${p.key}`} x1={p.x} x2={p.x} y1={p.y1} y2={p.y2}
                   style={p.ink ? ({ stroke: p.ink } as CSSProperties) : undefined} />
               ))}
-              <line className="strata-baseline" x1={0} x2={tail ? plotW : W} y1={layout.base + 0.5} y2={layout.base + 0.5} />
-              {layout.pileW > 0 && (
-                <>
-                  <line className="strata-baseline" x1={layout.pileLeft - 2} x2={plotW} y1={layout.base + 0.5} y2={layout.base + 0.5} />
-                  <path className="strata-break" d={`M${W + 3} ${layout.base + 4} L${W + 7} ${layout.base - 4} M${W + 8} ${layout.base + 4} L${W + 12} ${layout.base - 4}`} />
-                </>
-              )}
-              {/* A column taller than the latest's tallest, broken where it leaves the scale, as the axis is before the pile. */}
-              {!tail && layout.breaks.map((b) => {
-                const x = (b.col + 0.5) * layout.colW;
-                return <path key={b.col} className="strata-break" d={`M${x - 5} ${b.y + 3} L${x - 1} ${b.y - 3} M${x + 1} ${b.y + 3} L${x + 5} ${b.y - 3}`} />;
-              })}
+              <line className="strata-baseline" x1={0} x2={plotW} y1={layout.base + 0.5} y2={layout.base + 0.5} />
               {/* The pile under the pointer: outlined, as what a click there unrolls. */}
               {overPile && pileTop != null && (
-                <rect className="strata-pile-ring" x={layout.pileLeft - 3.5} y={pileTop - 3.5} width={plotW - layout.pileLeft + 3} height={layout.base - pileTop + 3} rx={3} />
+                <rect className="strata-pile-ring" x={layout.pileLeft + 0.5} y={pileTop - 3.5} width={layout.pileW - 1} height={layout.base - pileTop + 3} rx={3} />
               )}
               {/* Unrolled: where the graph used to end, and the top salary ringed at the far end — a lone square there is easy to miss. */}
               {tail && (
@@ -1152,21 +1176,9 @@ export function StrataGraph({
             {pins.map((p) => (
               <div key={p.key} className={`strata-pin strata-pin-label-${p.key}`} data-strong={p.strong || undefined} data-filter={p.filter || undefined}
                 style={{ left: p.left, top: p.top, width: p.w, ...(p.ink ? { color: p.ink } : {}) }}>
-                {p.text}
+                {p.text}{p.change && <span className="strata-pin-change" data-up={p.change.up || undefined} data-down={!p.change.up || undefined}> {p.change.text}</span>}
               </div>
             ))}
-            {/* And how many it holds, beside the break: to its right, or its left where a pin's line crosses the right
-                and not the left. */}
-            {!tail && layout.breaks.map((b) => {
-              const x = (b.col + 0.5) * layout.colW, w = measureText(num(b.n), 12) * 1.06;
-              const crosses = (l: number) => pins.some((p) => p.x >= l - 2 && p.x <= l + w + 2);
-              const left = crosses(x + 9) && !crosses(x - 9 - w) ? x - 9 - w : x + 9;
-              return (
-                <div key={b.col} className="strata-break-count" data-col={b.col} style={{ left, top: b.y - 7.5 }}>
-                  {num(b.n)}
-                </div>
-              );
-            })}
           </>
         )}
         {foundLabels.length > 0 && (
@@ -1251,11 +1263,9 @@ export function StrataGraph({
 
       {layout && (
         <>
+          {/* Under the baseline, the median's mark (3a). */}
           <div className="strata-ruler" aria-hidden style={{ width: plotW }}>
-            {!tail && p25 != null && p75 != null && (
-              <span className="strata-iqr" style={{ left: payX(layout, p25), width: payX(layout, p75) - payX(layout, p25) }} />
-            )}
-            {!tail && median != null && <span className="strata-iqr-median" style={{ left: payX(layout, median) }} />}
+            {!tail && median != null && <span className="strata-median-mark" style={{ left: payX(layout, median) }} />}
           </div>
           <div className="hero-dist-axis strata-axis" style={{ position: 'relative', width: plotW }}>
             {ticks.map((v) => (
@@ -1323,24 +1333,6 @@ export function StrataGraph({
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {cats && (
-        <div className="hero-dist-legend strata-legend" data-solo={solo ?? undefined}>
-          <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">
-            Stacked by highest-paid appointment · {canHover ? 'click' : 'tap'} to isolate
-          </Text>
-          {cats.map((c) => (
-            <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
-              aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
-              <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
-              <Text span size="xs" fw={600}>{c.name}</Text>
-              <Text span size="xs" className="strata-legend-meta">
-                {num(c.n)}{c.median != null && <span className="hero-dist-legend-median"> · median {fmtK(c.median)}</span>}
-              </Text>
-            </button>
-          ))}
         </div>
       )}
 

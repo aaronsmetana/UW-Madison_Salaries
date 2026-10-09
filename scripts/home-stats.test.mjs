@@ -196,6 +196,30 @@ describe('computeHomeStats pay_counts: one count per $100, the dots the landing 
 
 // The "By category" dots: each person is one dot, so they wear one category — the one of their
 // highest-paid appointment — and the categories' counts are the dots' counts, bin by bin.
+// The graph's one scale: the tallest $5k column in ANY snapshot, not only the latest, each person once, and everyone
+// at the cap or above a column of their own.
+describe('computeHomeStats column_peak: the most people in one $5k column in any snapshot', () => {
+  const row = (snapshot_id, person_key, salary) => ({
+    snapshot_id, school: 'A', job_code: 'J', title: 'T', employee_category: 'C', person_key,
+    // A numeric salary_fte_adjusted on one row, so the column types as DOUBLE (see ROWS above).
+    salary, salary_fte_adjusted: person_key === 'e' ? salary : null, fte: 1, date_of_hire: '2020-01-01', snapshot_date: snapshot_id.startsWith('old') ? '2025-01-01' : '2026-01-01',
+  });
+  const base = [
+    // An older snapshot with three people in the $50k–$55k column ($1k apart, so not one $1k column)…
+    row('old', 'a', 50100), row('old', 'b', 51500), row('old', 'c', 54900), row('old', 'd', 61000),
+    // …and the latest with two there, one of them on two appointments that sum into it (counted once).
+    row('new', 'a', 25000), row('new', 'a', 25500), row('new', 'b', 52200), row('new', 'e', 70000),
+  ];
+  const build = async (rows) => computeHomeStats(await writeParquet(fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-peak-')), rows), 'new');
+  it('is the older snapshot’s three, not the latest’s two', async () => {
+    expect((await build(base)).column_peak).toBe(3);
+  });
+  it('counts everyone at the cap or above as one column, however far past it', async () => {
+    const s = await build([...base, ...['w', 'x', 'y', 'z'].map((k, i) => row('new', k, 250000 + i * 400000))]);
+    expect(s.column_peak).toBe(4);
+  });
+});
+
 describe('computeHomeStats pay_counts.categories: one category per person', () => {
   let c;
   beforeAll(async () => {

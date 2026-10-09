@@ -57,7 +57,7 @@ for (const { name, width, height } of [
     // named in full where there is room and in the shorthand on a phone, so both are allowed here.
     const labels = [
       page.getByText(/^(P25|25th percentile) \$[\d.,]+k$/).first(),
-      page.getByText(/^Median \$[\d,]+$/).first(),
+      page.getByText(/^Median \$[\d,]+( [+−]\$[\d,]+ since .+)?$/).first(),
       page.getByText(/^(P75|75th percentile) \$[\d.,]+k$/).first(),
     ];
     await expect(labels[0]).toBeVisible({ timeout: 60_000 });
@@ -266,10 +266,10 @@ test.describe('the landing distribution', () => {
       await page.mouse.move(box.x + box.width * frac, box.y + box.height * 0.8);
       await expect(pill).toBeVisible();
       const text = (await pill.textContent()) ?? '';
-      // "$75k · 2,848 people within ±$5k · 50% paid less" — a column, a headcount, the width it was
+      // "$75k–$80k · 3,621 people within ±$5k · 48% paid less" — a $5k column, a headcount, the width it was
       // counted over, and where that pay falls in the payroll.
       expect(text, 'the readout stopped naming a salary and a headcount').toMatch(
-        /^\$[\d,]+k · [\d,]+ people within ±\$\d+k · \d+% paid less$/
+        /^\$[\d,]+k–\$[\d,]+k · [\d,]+ people within ±\$\d+k · \d+% paid less$/
       );
       return Number(text.replace(/^.*· ([\d,]+) people.*$/, '$1').replace(/,/g, ''));
     };

@@ -143,15 +143,14 @@
   --inverse-chip: rgba(255, 255, 255, 0.09);
   --inverse-button-bg: #ffffff;
   --inverse-button-ink: var(--mantine-color-text);
-  /* The landing dots by staff category, one ink each, every one a lone dot at 3:1 or better against the
-     card at the dots' 0.85 alpha (e2e/dots.spec). Hues far apart, and neighbouring bands (Academic /
-     University Staff, University Staff / Employees in Training, Academic Staff / Faculty, Faculty /
-     Limited) differ in lightness too. Light, on white: 3.58 / 3.67 / 4.5 / 4.22 / 5.47. */
-  --cat-academic: var(--mantine-color-accent-6);
-  --cat-university: #b35c00;
-  --cat-faculty: var(--mantine-color-pink-8);
-  --cat-training: var(--mantine-color-violet-7);
-  --cat-limited: var(--mantine-color-gray-7);
+  /* Staff categories, one ink each, the same hue on every page (the landing graph's colours, mockup 3a): every
+     one a square at 3:1 or better against the card (e2e/strata.spec). Dark takes 3a's own; light the same hue
+     darkened to clear white: 3.38 / 3.38 / 3.36 / 3.42 / 3.45. */
+  --cat-academic: #4896a9;
+  --cat-university: #8f7de3;
+  --cat-faculty: #d962a6;
+  --cat-training: #b58130;
+  --cat-limited: #7f8c96;
   --cat-other: var(--mantine-color-gray-6);
   /* A person a search found, marked on the landing dots: a bright green no category wears, a lone mark
      at 3:1 or better against the card (e2e/dots.spec). */
@@ -457,12 +456,12 @@ body {
   --inverse-chip: rgba(255, 255, 255, 0.07);
   --inverse-button-bg: var(--mantine-color-text);
   --inverse-button-ink: var(--base);
-  /* On the #141619 card: 4.1 / 7.17 / 5.8 / 4.23 / 6.61. */
-  --cat-academic: var(--mantine-color-accent-5);
-  --cat-university: var(--mantine-color-orange-4);
-  --cat-faculty: var(--mantine-color-pink-4);
-  --cat-training: var(--mantine-color-violet-4);
-  --cat-limited: var(--mantine-color-gray-5);
+  /* On the #141619 card: 6.06 / 6.31 / 6.8 / 8.06 / 5.26. */
+  --cat-academic: #4fa0b4;
+  --cat-university: #9c8ce6;
+  --cat-faculty: #e07fb6;
+  --cat-training: #d4a55b;
+  --cat-limited: #7f8c96;
   --cat-other: var(--mantine-color-gray-6);
   --found: #4be37f;
   --found-cover: #34d06c;
@@ -2423,18 +2422,16 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-pin-median { stroke: var(--mantine-color-accent-6); stroke-width: 1.5; stroke-dasharray: none; }
 .strata-pin-filter { stroke-width: 1.5; stroke-dasharray: none; }
 .strata-baseline { stroke: var(--hairline-strong); stroke-width: 1; }
-.strata-break { stroke: var(--guide-strong); stroke-width: 1; fill: none; }
-/* How many a broken column holds, beside its break: a pin's words. */
-.strata-break-count {
-  position: absolute; font-size: var(--mantine-font-size-xs); line-height: 15px; font-weight: 600; color: var(--mantine-color-dimmed);
-  white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
-  /* Over a pin's line where there is no clear side (a phone's crowded middle), the line stops round the figures. */
-  text-shadow: 0 0 2px var(--surface), 0 0 2px var(--surface), 0 0 3px var(--surface);
-}
-/* Under the baseline: the middle half of pay as a bar, the median a tick on it; then the salary axis. */
 .strata-ruler { position: relative; height: 9px; margin-top: 3px; }
-.strata-iqr { position: absolute; top: 2px; height: 4px; border-radius: 2px; background: var(--tint-accent-strong); }
-.strata-iqr-median { position: absolute; top: 0; width: 1.5px; height: 7px; margin-left: -0.75px; background: var(--mantine-color-accent-6); }
+/* The median's mark under the baseline (3a): a small accent triangle pointing up at it. */
+.strata-median-mark {
+  position: absolute; top: 2px; width: 8px; height: 6px; margin-left: -4px; background: var(--mantine-color-accent-6);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+/* The median's change since the snapshot before, after its label: up green, down red. */
+.strata-pin-change { font-weight: 600; font-variant-numeric: tabular-nums; }
+.strata-pin-change[data-up] { color: var(--text-pos); }
+.strata-pin-change[data-down] { color: var(--text-neg); }
 .strata-axis { height: 18px; margin-top: 1px; }
 .strata-axis .hero-dist-tick,
 .strata-axis .hero-dist-pile-label {
@@ -2524,7 +2521,9 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 /* The legend's types: a square each, the count and median in the faint grey; the one isolated, tinted. */
 .strata-legend .hero-dist-swatch { border-radius: 2px; background-image: none; }
 .strata-legend-meta { color: var(--text-faint); }
-.strata-legend .hero-dist-legend-lead { flex-basis: 100%; text-align: center; }
+/* Above the plot (3a): the hint at the left, the types after it. */
+.strata-legend { justify-content: flex-start; align-items: center; margin: 2px 0 6px; }
+.strata-legend .hero-dist-legend-lead { margin-right: auto; }
 button.strata-legend-item[aria-pressed='true'] { background: var(--tint-accent); box-shadow: inset 0 0 0 1px var(--mantine-color-accent-6); }
 /* On a phone the legend keeps each category's count and leaves its median to wider screens: five
    medians made it five lines long. */

@@ -32,7 +32,7 @@ function medianOf(xs: number[]) {
 /** A pay's x on the plot, CSS px: its $1k column's share of the axis (the field prints its column width). */
 async function xOf(page: Page, pay: number) {
   const colW = Number(await page.locator('.hero-dist-full .hero-dots').getAttribute('data-col-w'));
-  return (pay / 1000) * colW;
+  return (pay / 5000) * colW;
 }
 /** The chip in the toolbar that names what is shown: "{name} · {n} people · median {$Nk} · {against campus}". */
 const chip = (page: Page) => page.locator('.strata-chip > span');
@@ -377,9 +377,9 @@ test('the readout counts the filter’s people within its window', async ({ page
   const pill = page.locator('.strata-readout');
   await expect(pill).toContainText('in the filter');
   const text = (await pill.textContent())!;
-  // The window is the readout's: every $1k bucket within ±$5k of the one under the pointer.
-  const bucket = Number(/^\$(\d+)k/.exec(text)![1]) * 1000;
-  const want = who.filter((p) => p.pay < HOME_STATS.bin_cap && Math.abs(Math.floor(p.pay / 1000) * 1000 - bucket) <= 5000).length;
+  // The window is the readout's: the $5k column under the pointer and its neighbours either side (±$5k).
+  const bucket = Number(/^\$(\d+)k–/.exec(text)![1]) * 1000;
+  const want = who.filter((p) => p.pay < HOME_STATS.bin_cap && Math.abs(Math.floor(p.pay / 5000) * 5000 - bucket) <= 5000).length;
   expect(want, 'nobody of the group near the pointer, so nothing here is tested').toBeGreaterThan(5);
   expect(text).toContain(` · ${num(want)} in the filter`);
 });

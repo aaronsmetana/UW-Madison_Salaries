@@ -87,11 +87,11 @@ export interface TimelineStrata extends Strata {
   mainPay: Float64Array;
 }
 
-/** A pay's $1k column on the graph. */
+/** A pay's $5k column on the graph. */
 const colOf = (pay: number) => Math.min(COLS - 1, Math.max(0, Math.floor(pay / COL_DOLLARS)));
 
 /**
- * A snapshot as squares (lib/strata): under the cap each person in their $1k column, the pile past it — the
+ * A snapshot as squares (lib/strata): under the cap each person in their $5k column, the pile past it — the
  * same columns and pile the counts give the latest. Each one's place in their band is a hash of their number,
  * the same in every snapshot, so from one to the next the people who stayed keep their order.
  */
@@ -119,7 +119,7 @@ export function strataFromPeople(p: SnapPeople, names: readonly string[], cap: n
     pileId[j] = p.id[r];
     pilePay[j] = p.pay[r];
   });
-  return { col, kind, key, pileKind, pileKey, pilePay: m ? pilePay : null, colCount, rank: typeRanks(names), names: [...names], mainId, pileId, mainPay };
+  return { col, kind, key, pay: mainPay, pileKind, pileKey, pilePay: m ? pilePay : null, colCount, rank: typeRanks(names), names: [...names], mainId, pileId, mainPay };
 }
 
 /** DuckDB's `quantile_cont`: the value at (n − 1)·q along the sorted values, between neighbours linearly. */

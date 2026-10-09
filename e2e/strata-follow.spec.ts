@@ -112,7 +112,7 @@ test('through the timeline the label goes with them: a step from a neighbour cou
 
 test('from the keyboard Enter follows whoever the lens names, and again stops', async ({ page }) => {
   await home(page);
-  await page.locator('.hero-dist-full-toggle').focus();
+  await page.locator('.strata-legend-item').last().focus();
   await page.keyboard.press('Tab');
   await expect(plot(page)).toBeFocused();
   await expect(plot(page)).toHaveAttribute('data-pick', /^main:\d+$/, { timeout: 10_000 });
@@ -143,7 +143,7 @@ test('Escape takes off one layer at a time: the person followed, then the lens, 
   await home(page);
   await page.getByRole('button', { name: /^Faculty/ }).click();
   await expect(plot(page)).toHaveAttribute('data-filter', 'Faculty');
-  await page.locator('.hero-dist-full-toggle').focus();
+  await page.locator('.strata-legend-item').last().focus();
   await page.keyboard.press('Tab');
   await expect(plot(page)).toBeFocused();
   await expect(page.locator('.strata-card-name')).toBeVisible({ timeout: 60_000 });
