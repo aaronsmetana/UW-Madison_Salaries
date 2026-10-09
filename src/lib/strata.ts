@@ -163,13 +163,13 @@ export const BAR_MIN = 2 / 3;
  * 1440x900 plot) — but never a bar under BAR_MIN of its column. Where no pitch of two pixels fits (a phone; a 1x
  * screen), the bars are solid runs of single-pixel columns, their rows stretched to fill the room.
  */
-export function strataGrid({ colW, rowsH, peak, dpr }: { colW: number; rowsH: number; peak: number; dpr: number }): Grid {
+export function strataGrid({ colW, rowsH, peak, dpr, maxPitch = MAX_PITCH_D, gutter: gutterCss = GUTTER }: { colW: number; rowsH: number; peak: number; dpr: number; maxPitch?: number; gutter?: number }): Grid {
   const tall = Math.max(1, peak);
   const cw = Math.floor(colW * dpr + 1e-6), ph = Math.floor(rowsH * dpr + 1e-6);
-  const gutter = Math.max(1, Math.round(Math.min(GUTTER, colW * GUTTER_SHARE) * dpr));
+  const gutter = Math.max(1, Math.round(Math.min(gutterCss, colW * GUTTER_SHARE) * dpr));
   const room = Math.max(1, cw - gutter);
   const off = (wide: number) => Math.floor((cw - wide) / 2);
-  for (let pd = MAX_PITCH_D; pd >= 2; pd--) {
+  for (let pd = maxPitch; pd >= 2; pd--) {
     const most = Math.floor(room / pd);
     if (most < 1 || Math.ceil(tall / most) * pd > ph) continue;
     const per = Math.min(most, Math.max(Math.ceil(tall / Math.floor(ph / pd)), Math.ceil((BAR_MIN * room) / pd)));
@@ -208,6 +208,20 @@ export function squareAt(left: number, slot: number, per: number, g: Pick<Grid, 
 
 /** How tall a column of `n` stands, CSS px. */
 export const colHeight = (n: number, grid: Grid) => Math.ceil(n / grid.per) * grid.rowPitch;
+
+/**
+ * Magnify (3a): the histogram's columns six to the plot — a $30k window — with much larger squares, the window
+ * panned along the axis; a strip over it shows the whole of it and where the window is.
+ */
+export const MAG_COLS = 6;
+/** Magnified, a square's pitch grows to this many device pixels, and columns stand this far apart, CSS px. */
+export const MAG_MAX_PITCH_D = 30;
+export const MAG_GUTTER = 12;
+/** The window's left edge, in dollars, at its furthest: the pile's column the last in view. */
+export const MAG_LEFT_MAX = (COLS + 1 - MAG_COLS) * COL_DOLLARS;
+/** The window centred on a pay's column, as far as it goes. */
+export const magLeftFor = (pay: number) =>
+  Math.max(0, Math.min(MAG_LEFT_MAX, (Math.min(COLS, Math.floor(pay / COL_DOLLARS)) + 0.5) * COL_DOLLARS - (MAG_COLS * COL_DOLLARS) / 2));
 
 /**
  * Floors (3a): a second layout of everyone, in $10k bands stacked from the bottom up — under $30k, $30–40k …
@@ -347,6 +361,10 @@ export const VIEW_WAVE = 0.42;
 export const VIEW_JITTER = 0.1;
 export const VIEW_MOVE = 0.46;
 export const VIEW_HOP = 30;
+/** Into the magnified view and out (3a): about 1.3 s, every square together but for a little at random. */
+export const ZOOM_MS = 1300;
+export const ZOOM_JITTER = 0.04;
+export const ZOOM_MOVE = 0.92;
 /** A move from one layout to another — the pile unrolling or folding back: this long, cubic in and out, set
  *  off left to right over MOVE_WAVE_MS. */
 export const MOVE_MS = 425;

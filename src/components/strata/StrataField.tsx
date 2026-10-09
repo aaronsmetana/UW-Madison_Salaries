@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MOVE_MS, MOVE_WAVE_MS, STEP_MS, VIEW_HOP, VIEW_JITTER, VIEW_MOVE, VIEW_MS, VIEW_WAVE, stepTiming,
+  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, STEP_MS, VIEW_HOP, VIEW_JITTER,
+  VIEW_MOVE, VIEW_MS, VIEW_WAVE, ZOOM_JITTER, ZOOM_MOVE, ZOOM_MS, stepTiming,
   FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, fisheye, floorOf, floorsGrid, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
@@ -48,6 +49,19 @@ export interface Dim { main: Uint8Array; pile: Uint8Array }
 export type Field = 'main' | 'pile';
 export interface Spot { field: Field; index: number }
 
+export type StrataView = 'hist' | 'floors' | 'magnify';
+
+/** Each field's columns sorted by salary (lib/strata `stackColumns`), once: a pan or a resize lays out the same order. */
+const stacks = new WeakMap<Strata, { main: Stack; pile: Stack }>();
+function columnStacks(s: Strata) {
+  let st = stacks.get(s);
+  if (!st) {
+    st = { main: stackColumns(s.col, s.pay, s.kind, s.key, s.rank, COLS), pile: stackColumns(new Uint8Array(s.pileKind.length), s.pilePay, s.pileKind, s.pileKey, s.rank, 1) };
+    stacks.set(s, st);
+  }
+  return st;
+}
+
 export interface StrataLayout {
   W: number;
   H: number;
@@ -75,8 +89,10 @@ export interface StrataLayout {
   peak: number;
   /** The highest any square stands: the top of the tallest column or of the pile. */
   peakY: number;
-  /** The histogram, or the floors: everyone in $10k bands stacked from the bottom up (lib/strata `floorOf`). */
-  view: 'hist' | 'floors';
+  /** The histogram; the floors, everyone in $10k bands stacked from the bottom up (lib/strata `floorOf`); or the
+   *  histogram magnified, six columns to the plot, panned `ox` px along it (0 but magnified). */
+  view: StrataView;
+  ox: number;
   /** Floors: each one's bottom, height and people, from the lowest up; and the blocks' left and right edges. */
   floors: { base: number; h: number; n: number }[] | null;
   floorX: { left: number; right: number } | null;
@@ -96,7 +112,7 @@ export function layoutStrata(
   s: Strata,
   /** `peak`: the scale, the most people a column holds at full height — the tallest column in any snapshot (the
    *  build's `column_peak`), so every snapshot is drawn to one. Never less than this field's own tallest. */
-  opts: { W: number; H: number; top: number; dpr: number; phone: boolean; peak?: number; view?: 'hist' | 'floors' },
+  opts: { W: number; H: number; top: number; dpr: number; phone: boolean; peak?: number; view?: StrataView; magLeft?: number },
   unroll = false,
 ): StrataLayout {
   const { W, H, top, dpr } = opts;
@@ -105,13 +121,16 @@ export function layoutStrata(
   const rowsH = Math.max(20, base - top);
   let peak = Math.max(opts.peak ?? 0, s.pileKind.length);
   for (let c = 0; c < COLS; c++) peak = Math.max(peak, s.colCount[c]);
-  const colW = W / (COLS + 1);
+  // Magnified: six columns to the plot, much larger squares, the window `magLeft` dollars along the axis.
+  const mag = opts.view === 'magnify';
+  const colW = W / (mag ? MAG_COLS : COLS + 1);
+  const ox = mag ? snap(((opts.magLeft ?? 0) / COL_DOLLARS) * colW, dpr) : 0;
   const mainW = COLS * colW;
-  const grid = strataGrid({ colW, rowsH, peak, dpr });
+  const grid = mag ? strataGrid({ colW, rowsH, peak, dpr, maxPitch: MAG_MAX_PITCH_D, gutter: MAG_GUTTER }) : strataGrid({ colW, rowsH, peak, dpr });
   const n = s.col.length, m = s.pileKind.length;
-  const main = stackColumns(s.col, s.pay, s.kind, s.key, s.rank, COLS);
+  const { main, pile: pileStack } = columnStacks(s);
   const mx = new Float64Array(n), my = new Float64Array(n);
-  const lefts = Float64Array.from({ length: COLS + 1 }, (_, c) => colX(c, colW, grid, dpr));
+  const lefts = Float64Array.from({ length: COLS + 1 }, (_, c) => colX(c, colW, grid, dpr) - ox);
   for (let i = 0; i < n; i++) {
     const at = squareAt(lefts[s.col[i]], main.slot[i], grid.per, grid, base);
     mx[i] = at.x;
@@ -119,7 +138,7 @@ export function layoutStrata(
   }
   const px = new Float64Array(m), py = new Float64Array(m);
   let pile: Stack, tail: StrataLayout['tail'] = null, pileLeft = W, pileW = 0, pileTop = 0;
-  if (unroll && s.pilePay && m > 0) {
+  if (unroll && !mag && s.pilePay && m > 0) {
     let topIndex = 0;
     for (let j = 1; j < m; j++) if (s.pilePay[j] >= s.pilePay[topIndex]) topIndex = j;
     const topPay = s.pilePay[topIndex];
@@ -138,9 +157,9 @@ export function layoutStrata(
     }
     tail = { top: topPay, scale, capX: COLS * COL_DOLLARS * scale, squeeze, topIndex };
   } else {
-    pileLeft = mainW;
-    pileW = W - mainW;
-    pile = stackColumns(new Uint8Array(m), s.pilePay, s.pileKind, s.pileKey, s.rank, 1);
+    pileLeft = mainW - ox;
+    pileW = colW;
+    pile = pileStack;
     for (let j = 0; j < m; j++) {
       const at = squareAt(lefts[COLS], pile.slot[j], grid.per, grid, base);
       px[j] = at.x;
@@ -149,7 +168,7 @@ export function layoutStrata(
     pileTop = m ? colHeight(m, grid) : 0;
   }
   const peakY = base - Math.max(colHeight(peak, grid), pileTop);
-  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peak, peakY, tail, view: 'hist', floors: null, floorX: null };
+  return { W, H, dpr, base, room: rowsH, colW, mainW, pileLeft, pileW, grid, main, pile, mx, my, px, py, peak, peakY, tail, view: mag ? 'magnify' : 'hist', ox, floors: null, floorX: null };
 }
 
 /** Floors: the columns either side of the blocks, CSS px — the band's name at the left, its people at the right. */
@@ -200,12 +219,12 @@ function layoutFloors(s: Strata, opts: { W: number; H: number; dpr: number; phon
   const colW = W / (COLS + 1);
   return {
     W, H, dpr, base, room, colW, mainW: COLS * colW, pileLeft: W, pileW: 0, grid, main, pile, mx, my, px, py,
-    peak: opts.peak ?? 0, peakY: Math.max(0, y + g.gap), tail: null, view: 'floors', floors, floorX: { left, right: left + g.per * g.pitch },
+    peak: opts.peak ?? 0, peakY: Math.max(0, y + g.gap), tail: null, view: 'floors', ox: 0, floors, floorX: { left, right: left + g.per * g.pitch },
   };
 }
 
 /** The x of a pay on the main plot, CSS px. */
-export const payX = (L: Pick<StrataLayout, 'colW'>, pay: number) => (pay / COL_DOLLARS) * L.colW;
+export const payX = (L: Pick<StrataLayout, 'colW' | 'ox'>, pay: number) => (pay / COL_DOLLARS) * L.colW - L.ox;
 /** The top of column `c`'s stack. */
 export const colTopY = (s: Strata, L: StrataLayout, c: number) => L.base - colHeight(s.colCount[Math.max(0, Math.min(COLS - 1, c))], L.grid);
 
@@ -504,6 +523,20 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
   };
 
+  // Magnified: who stands at a point, by the lattice (columns from the axis, rows from the baseline) — a faded square,
+  // under a filter, is no one to name.
+  const squareUnder = (x: number, y: number): Spot | null => {
+    const L = layout, g = grid, wx = x + L.ox, c = Math.floor(wx / L.colW);
+    if (c < 0 || c > COLS) return null;
+    const col = Math.floor((wx - colX(c, L.colW, g, dpr)) / g.pitch), row = Math.floor((L.base - y) / g.rowPitch);
+    if (col < 0 || col >= g.per || row < 0) return null;
+    const slot = row * g.per + col;
+    const st = c === COLS ? L.pile : L.main, k = c === COLS ? 0 : c;
+    if (slot >= st.start[k + 1] - st.start[k]) return null;
+    const index = st.order[st.start[k] + slot], field: Field = c === COLS ? 'pile' : 'main';
+    if (dim && (field === 'main' ? tint.main : tint.pile)[index] === tint.C) return null;
+    return { field, index };
+  };
   const drawLens = (): LensHit | null => {
     const cv = lensRef.current, t = inks.current;
     if (!cv || !t) return null;
@@ -511,6 +544,21 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     if (!ctx) return null;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
+    // Magnified, no glass: the square under the pointer is ringed where it stands (3a).
+    if (layout.view === 'magnify') {
+      const ptr = props.current.pointer;
+      const hit = ptr && props.current.lensAt ? squareUnder(ptr.x, ptr.y) : null;
+      if (!hit) return null;
+      const { mx, my, px, py } = cur.current;
+      const x = (hit.field === 'main' ? mx : px)[hit.index] + grid.sqW / 2, y = (hit.field === 'main' ? my : py)[hit.index] + grid.sq / 2;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = t.ink;
+      ctx.beginPath();
+      ctx.arc(x, y, grid.sq / 2 + 3, 0, Math.PI * 2);
+      ctx.stroke();
+      return { ...hit, x, y, s: Math.max(grid.sq, PICK_MIN) };
+    }
     const { x: cx, y: cy, r: R } = lens.current;
     if (R < 0.5) return null;
     // Where the magnified picture is taken from: the lens's own place, or a finger's, drawn above it.
@@ -733,12 +781,15 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const fresh = was.mx.length !== n || was.px.length !== m || lastStrata.current !== strata;
     const drop = (first.current && entrance) || replay !== lastReplay.current;
     const stepped = !!step && step.to === layout && !drop && shown.current;
-    const morphing = layout.view !== lastView.current && !drop && !stepped;
+    const prevView = lastView.current;
+    const morphing = layout.view !== prevView && !drop && !stepped;
     lastView.current = layout.view;
+    // Panned along the magnified axis (or resized there): simply there, as a page scrolls.
+    const panned = !morphing && !drop && !stepped && layout.view === 'magnify' && prevView === 'magnify';
     first.current = false;
     lastReplay.current = replay;
     lastStrata.current = strata;
-    if (prefersReducedMotion() || ((fresh || !shown.current) && !drop && !stepped)) {
+    if (prefersReducedMotion() || ((fresh || !shown.current) && !drop && !stepped) || panned) {
       cur.current = { mx: layout.mx.slice(), my: layout.my.slice(), px: layout.px.slice(), py: layout.py.slice() };
       move.current = null;
       setMoving(false);
@@ -780,22 +831,26 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       for (const j of fadeIn.pile) fadeIn.aP[j] = 0;
       move.current = { start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py, wait, pwait, ms: STEP_MS / speed, msM, msP, land: false, arcM: arc?.main, arcP: arc?.pile, ghost: g, fadeIn };
     } else if (morphing) {
-      // Histogram and floors (3a): everyone from where they are to their place in the other view, staggered — into the
-      // floors from the bottom up, back to the histogram left to right, a little at random — each on a small hop.
+      // A change of view (3a). To or from the floors: everyone from where they are to their place in the other view,
+      // staggered — into the floors from the bottom up, back left to right, a little at random — each on a small hop,
+      // over VIEW_MS. In or out of the magnified view: everyone together but for a little at random, over ZOOM_MS.
+      const zoom = layout.view !== 'floors' && prevView !== 'floors';
+      const total = zoom ? ZOOM_MS : VIEW_MS, moving = (zoom ? ZOOM_MOVE : VIEW_MOVE) * total;
       const wait = new Float64Array(n), pwait = new Float64Array(m);
-      const msM = new Float64Array(n).fill(VIEW_MOVE * VIEW_MS), msP = new Float64Array(m).fill(VIEW_MOVE * VIEW_MS);
+      const msM = new Float64Array(n).fill(moving), msP = new Float64Array(m).fill(moving);
       const arcM = new Float32Array(n), arcP = new Float32Array(m);
       const along = (x: number, y: number) => Math.min(1, Math.max(0, layout.view === 'floors' ? (H - y) / H : x / W));
       const frac = (k: number, at: number) => ((k >>> at) % 1024) / 1024;
+      const setOff = (x: number, y: number, k: number) => total * (zoom ? ZOOM_JITTER * frac(k, 0) : VIEW_WAVE * along(x, y) + VIEW_JITTER * frac(k, 0));
       for (let i = 0; i < n; i++) {
-        wait[i] = VIEW_MS * (VIEW_WAVE * along(layout.mx[i], layout.my[i]) + VIEW_JITTER * frac(strata.key[i], 0));
-        arcM[i] = VIEW_HOP * frac(strata.key[i], 10);
+        wait[i] = setOff(layout.mx[i], layout.my[i], strata.key[i]);
+        if (!zoom) arcM[i] = VIEW_HOP * frac(strata.key[i], 10);
       }
       for (let j = 0; j < m; j++) {
-        pwait[j] = VIEW_MS * (VIEW_WAVE * along(layout.px[j], layout.py[j]) + VIEW_JITTER * frac(strata.pileKey[j], 0));
-        arcP[j] = VIEW_HOP * frac(strata.pileKey[j], 10);
+        pwait[j] = setOff(layout.px[j], layout.py[j], strata.pileKey[j]);
+        if (!zoom) arcP[j] = VIEW_HOP * frac(strata.pileKey[j], 10);
       }
-      move.current = { start: now, fromMx: was.mx.slice(), fromMy: was.my.slice(), fromPx: was.px.slice(), fromPy: was.py.slice(), wait, pwait, ms: VIEW_MOVE * VIEW_MS, msM, msP, land: false, arcM, arcP };
+      move.current = { start: now, fromMx: was.mx.slice(), fromMy: was.my.slice(), fromPx: was.px.slice(), fromPy: was.py.slice(), wait, pwait, ms: moving, msM, msP, land: false, arcM, arcP };
     } else {
       const wait = new Float64Array(n), pwait = new Float64Array(m);
       for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * MOVE_WAVE_MS;

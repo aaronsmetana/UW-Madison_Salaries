@@ -2436,7 +2436,7 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
    (its links and buttons too) once it has gone. */
 /* Shown at once (step-start); hidden only once faded (step-end). */
 .strata-hist-only, .strata-floors-only { transition: opacity var(--dur-slow) var(--ease), visibility var(--dur-slow) step-start; }
-.strata[data-view='floors'] .strata-hist-only,
+.strata:not([data-view='hist']) .strata-hist-only,
 .strata:not([data-view='floors']) .strata-floors-only {
   opacity: 0; visibility: hidden; transition: opacity var(--dur-slow) var(--ease), visibility var(--dur-slow) step-end;
 }
@@ -2455,6 +2455,21 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 @media screen and (max-width: 30em) {
   .strata-floor-label, .strata-floor-count { font-size: var(--mantine-font-size-xxs); line-height: 13px; }
 }
+/* Magnified (3a): the strip over the plot — the whole distribution, the window outlined, a place to drag it — and each
+   column in view counted over its bar and named under it. */
+.strata-strip { position: absolute; left: 0; right: 0; top: 0; z-index: var(--z-local, 2); cursor: pointer; touch-action: none; }
+.strata-strip-label {
+  position: absolute; top: 0; font-size: var(--mantine-font-size-xs); line-height: 14px; font-weight: 600; color: var(--mantine-color-text);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.strata-strip-bar { fill: var(--strata-dim); }
+.strata-strip-bar[data-in] { fill: var(--mantine-color-accent-6); }
+.strata-strip-window { fill: none; stroke: var(--mantine-color-text); stroke-width: 1; }
+.strata-strip-tick, .strata-mag-count {
+  position: absolute; transform: translateX(-50%); font-size: var(--mantine-font-size-xxs); line-height: 13px; color: var(--text-faint);
+  white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.strata-mag-count { font-weight: 600; }
 .strata-axis { height: 18px; margin-top: 1px; }
 .strata-axis .hero-dist-tick,
 .strata-axis .hero-dist-pile-label {
@@ -2544,9 +2559,13 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 /* The legend's types: a square each, the count and median in the faint grey; the one isolated, tinted. */
 .strata-legend .hero-dist-swatch { border-radius: 2px; background-image: none; }
 .strata-legend-meta { color: var(--text-faint); }
-/* Above the plot (3a): the hint at the left, the types after it. */
+/* Above the plot (3a): the views at the left, then the types, each a button that shows it alone. */
 .strata-legend { justify-content: flex-start; align-items: center; margin: 2px 0 6px; }
-.strata-legend .hero-dist-legend-lead { margin-right: auto; }
+.strata-view-controls { display: flex; align-items: center; gap: 8px; margin-right: auto; }
+/* Where the row would wrap, the types' lead goes first (its hint is its title). */
+.strata-legend { container-type: inline-size; }
+@container (max-width: 1340px) { .strata-legend .hero-dist-legend-lead { display: none; } }
+@media screen and (max-width: 30em) { .strata-legend .hero-dist-legend-lead { display: none; } }
 button.strata-legend-item[aria-pressed='true'] { background: var(--tint-accent); box-shadow: inset 0 0 0 1px var(--mantine-color-accent-6); }
 /* On a phone the legend keeps each category's count and leaves its median to wider screens: five
    medians made it five lines long. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -138,6 +138,23 @@ describe('squarePixels', () => {
       }
       expect(seen.size).toBe(g.per * 4);
     }
+  });
+});
+
+describe('magnify', () => {
+  it('centres a $30k window on a pay’s column, as far as the axis goes', () => {
+    expect(MAG_COLS * 5000).toBe(30_000);
+    expect(magLeftFor(92_000)).toBe(77_500);
+    expect(magLeftFor(3_000)).toBe(0);
+    expect(magLeftFor(900_000)).toBe(MAG_LEFT_MAX);
+    expect(MAG_LEFT_MAX + MAG_COLS * 5000).toBe(51 * 5000);
+  });
+  it('magnified, the squares grow past the histogram’s cap, the columns a wider gutter apart', () => {
+    const page = strataGrid({ colW: 1360 / 51, rowsH: 341, peak: 2099, dpr: 2 });
+    const mag = strataGrid({ colW: 1360 / 6, rowsH: 300, peak: 2099, dpr: 2, maxPitch: 30, gutter: 12 });
+    expect(mag.pitch).toBeGreaterThan(2 * page.pitch);
+    expect(colHeight(2099, mag)).toBeLessThanOrEqual(300);
+    expect(Math.floor((1360 / 6) * 2) - mag.per * mag.pitch * 2).toBeGreaterThanOrEqual(24);
   });
 });
 

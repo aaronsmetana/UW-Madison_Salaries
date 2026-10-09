@@ -307,6 +307,19 @@ test('visual: home full page, floors', async ({ page }) => {
   await shots(page, 'home-full-floors', { fullPage: false });
 });
 
+// Magnified (3a): a $30k window at the median, the strip over it; once the zoom has landed.
+test('visual: home magnified', async ({ page }) => {
+  await page.goto('./');
+  await page.getByText(/\$[\d,]+/).first().waitFor({ timeout: 60_000 }).catch(() => {});
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await page.locator('.strata-magnify').click();
+  await expect(page.locator('.strata-plot').first()).toHaveAttribute('data-view', 'magnify');
+  await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  await page.waitForTimeout(600);
+  await page.mouse.move(1, 1);
+  await shots(page, 'home-magnified', { fullPage: false });
+});
+
 test('visual: home full page, filtered', async ({ page }) => {
   await page.goto('./');
   await page.getByText(/\$[\d,]+/).first().waitFor({ timeout: 60_000 }).catch(() => {});

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { oracle, PAY, usd } from './oracle';
 
 /**
- * Following a person on the landing graph (mockup 3a §9): a click on someone's square in the lens follows them
+ * Following a person on the landing graph (mockup 3a §9): a click on someone's square — magnified, in the floors,
+ * or on a search's mark — follows them
  * — their square marked, a dark label "{name} · $pay" on a leader, a chip in the toolbar with a way to open
  * them and to stop — and a click on them again stops. Through the timeline the label goes with them: a step
  * from a neighbouring snapshot counts their pay to the new one and adds the change; in a snapshot without
@@ -40,10 +41,16 @@ const click = async (page: Page) => { await page.mouse.down(); await page.mouse.
 const payIn = async (key: string, snap: string) =>
   (await oracle<{ pay: number | null }>(`SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 AND person_key = '${key.replace(/'/g, "''")}'`))[0].pay;
 
-test('a click on a square follows its person — mark, label with their pay, a chip — and a click on them again stops', async ({ page }) => {
+test('magnified, a click on a square follows its person — mark, label with their pay, a chip — and a click on them again stops', async ({ page }) => {
   await home(page);
   const box = (await plot(page).boundingBox())!;
   const at = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.9 };
+  // On the histogram a click magnifies (3a); magnified, a click on someone follows them.
+  await lensOn(page, at.x, at.y);
+  await expect(page.locator('.strata-card-foot')).toHaveText('Click to magnify here');
+  await click(page);
+  await expect(plot(page)).toHaveAttribute('data-view', 'magnify');
+  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   const who = await lensOn(page, at.x, at.y);
   await expect(page.locator('.strata-card-foot')).toHaveText('Click to follow through time');
   await click(page);

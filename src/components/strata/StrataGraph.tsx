@@ -2,9 +2,9 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX } from '@tabler/icons-react';
-import { COLS, COL_DOLLARS, FLOORS, READ_RADIUS, arcHeight, floorLabel, floorOf, floorPay, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout } from './StrataField';
+import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
+import { COLS, COL_DOLLARS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, arcHeight, colHeight, floorLabel, floorOf, floorPay, magLeftFor, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
+import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
@@ -44,6 +44,9 @@ const PLOT_ASPECT = 0.3;
 const PIN_ROW = 17;
 const PIN_ROWS = 3;
 const PIN_BAND = PIN_ROWS * PIN_ROW + 6;
+/** Magnified, the strip over the plot (3a's minimap): the window's name, the whole distribution's bars, its axis. */
+const STRIP = { label: 16, bars: 30, axis: 16 };
+const STRIP_BAND = STRIP.label + STRIP.bars + STRIP.axis + 8;
 const PIN_FONT = 13;
 /** An axis label's least pitch, CSS px. */
 const AXIS_LABEL_W = 56;
@@ -326,11 +329,15 @@ export function StrataGraph({
   const canUnroll = !!strata?.pilePay;
   const [unrolled, setUnrolled] = useState(false);
   useEffect(() => { if (!canUnroll) setUnrolled(false); }, [canUnroll]);
-  // The histogram, or the floors (3a): everyone in $10k bands stacked from the bottom up.
-  const [view, setView] = useState<'hist' | 'floors'>('hist');
+  // The histogram; the floors (3a), everyone in $10k bands stacked from the bottom up; or the histogram magnified,
+  // a $30k window of it (`magLeft`, in dollars) six columns to the plot.
+  const [view, setView] = useState<StrataView>('hist');
+  const [magLeft, setMagLeft] = useState(0);
   const layout = useMemo(
-    () => (strata && plotW > 0 ? layoutStrata(strata, { W: plotW, H, top: PIN_BAND + 4, dpr, phone, peak: scalePeak, view }, unrolled && canUnroll && view === 'hist') : null),
-    [strata, plotW, H, dpr, phone, unrolled, canUnroll, scalePeak, view],
+    () => (strata && plotW > 0
+      ? layoutStrata(strata, { W: plotW, H, top: view === 'magnify' ? STRIP_BAND : PIN_BAND + 4, dpr, phone, peak: scalePeak, view, magLeft }, unrolled && canUnroll && view === 'hist')
+      : null),
+    [strata, plotW, H, dpr, phone, unrolled, canUnroll, scalePeak, view, magLeft],
   );
   const tail = layout?.tail ?? null;
   // The floors last laid out, kept while they fade out on the way back to the histogram.
@@ -572,7 +579,9 @@ export function StrataGraph({
   }, [found, layout, moving]);
   const foundLabels = useMemo(() => {
     if (!layout || layout.tail || !foundMain.length) return [];
-    const spots = foundMain.map((f) => ({ f, at: foundAt.get(f.person_key) })).filter((s): s is { f: FoundPerson; at: { x: number; y: number } } => !!s.at).sort((a, b) => a.at.x - b.at.x);
+    // Magnified, only those in the window are named.
+    const spots = foundMain.map((f) => ({ f, at: foundAt.get(f.person_key) }))
+      .filter((s): s is { f: FoundPerson; at: { x: number; y: number } } => !!s.at && s.at.x >= 0 && s.at.x <= plotW).sort((a, b) => a.at.x - b.at.x);
     if (!spots.length) return [];
     const placed = placeNearLabels(
       spots.map((s, i) => ({
@@ -580,7 +589,8 @@ export function StrataGraph({
         width: Math.ceil(Math.min(FOUND_LABEL.maxW, measureText(s.f.name, FOUND_LABEL.font) * 1.08 + FOUND_LABEL.pad)),
         priority: s.f.person_key === activeKey ? 1 : 0,
       })),
-      layout.floorX ? { left: layout.floorX.left, right: layout.floorX.right, top: 0, bottom: layout.base - 2 } : { left: 0, right: layout.mainW, top: PIN_BAND, bottom: layout.base - 2 },
+      layout.floorX ? { left: layout.floorX.left, right: layout.floorX.right, top: 0, bottom: layout.base - 2 }
+        : layout.view === 'magnify' ? { left: 0, right: plotW, top: STRIP_BAND, bottom: layout.base - 2 } : { left: 0, right: layout.mainW, top: PIN_BAND, bottom: layout.base - 2 },
       { height: FOUND_LABEL.h, levels: phone ? 4 : 7 },
     );
     return placed.map((l) => {
@@ -590,7 +600,7 @@ export function StrataGraph({
       const d = Math.hypot(end.x - s.at.x, end.y - s.at.y) || 1;
       return { key: s.f.person_key, name: s.f.name, active: s.f.person_key === activeKey, cx: left + w / 2, w, top, from: { x: s.at.x + ((end.x - s.at.x) / d) * 7, y: s.at.y + ((end.y - s.at.y) / d) * 7 }, to: end };
     });
-  }, [layout, foundMain, foundAt, activeKey, phone]);
+  }, [layout, foundMain, foundAt, activeKey, phone, plotW]);
 
   // The percentile pins over the skyline, each a line up from its column to a label placed clear of the others.
   const pins = useMemo(() => {
@@ -649,7 +659,8 @@ export function StrataGraph({
   const topShare = (n: number) => { const p = (n / Math.max(1, total)) * 100; return p >= 0.1 ? `${p.toFixed(1)}%` : 'under 0.1%'; };
   const pileWord = `${num(over)} at ${fmtK(cap ?? 250_000)} or more · the top ${topShare(over)} · ${canHover ? 'click' : 'tap'} to see each at their own pay`;
   const readout = useMemo(() => {
-    if (!strata || !layout || !lensAt) return null;
+    // Magnified there is no glass to read: the columns are labelled under the plot, and counted over each.
+    if (!strata || !layout || !lensAt || layout.view === 'magnify') return null;
     if (layout.tail && strata.pilePay) {
       const pay = Math.max(0, (lensFrom ?? lensAt).x / layout.tail.scale);
       let near = 0, above = 0;
@@ -712,8 +723,8 @@ export function StrataGraph({
     setPinned(false);
     putAway();
   };
-  // Histogram or floors: the lens put away and the pile folded back while everyone moves to the other view.
-  const switchView = (v: 'hist' | 'floors') => {
+  // Another view: the lens put away and the pile folded back while everyone moves to it.
+  const switchView = (v: StrataView) => {
     if (v === view) return;
     setUnrolled(false);
     setOverPile(false);
@@ -722,6 +733,9 @@ export function StrataGraph({
     putAway();
     setView(v);
   };
+  // Magnify (3a): the window centred on a pay's column, and in.
+  const magnifyAt = (pay: number) => { setMagLeft(magLeftFor(pay)); switchView('magnify'); };
+  const panTo = (left: number) => setMagLeft(Math.max(0, Math.min(MAG_LEFT_MAX, left)));
   const foldRef = useRef(fold);
   foldRef.current = fold;
   // Escape folds it back — before anything else Escape does (full page's own, say).
@@ -736,8 +750,34 @@ export function StrataGraph({
     document.addEventListener('keydown', esc, true);
     return () => document.removeEventListener('keydown', esc, true);
   }, [unrolled]);
+  // Magnified, Escape lets go of whoever is followed, then zooms back out — before the page's own Escape (full page's),
+  // but never out of a field being typed in.
+  const escMagRef = useRef(() => {});
+  escMagRef.current = () => { if (follow) setFollow(null); else switchView('hist'); };
+  useEffect(() => {
+    if (view !== 'magnify') return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || (e.target as HTMLElement | null)?.closest?.('input, textarea, [role="listbox"]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      escMagRef.current();
+    };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [view]);
+  // Magnified, a press and a drag pans the window: from where it was, by the pointer's way along the axis.
+  const panRef = useRef<{ id: number; x: number; left: number; moved: boolean } | null>(null);
+  const [panning, setPanning] = useState(false);
+  const payAt = (x: number) => (layout ? ((x + layout.ox) / layout.colW) * COL_DOLLARS : 0);
+  const markNear = (at: { x: number; y: number }) => [...foundAt.values()].some((p) => Math.hypot(p.x - at.x, p.y - at.y) < 14);
   const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const at = local(e);
+    const pan = panRef.current;
+    if (pan && pan.id === e.pointerId && layout?.view === 'magnify') {
+      const dx = e.clientX - pan.x;
+      if (!pan.moved && Math.abs(dx) > 4) { pan.moved = true; setPanning(true); putAway(); pressRef.current = null; clearHold(); }
+      if (pan.moved) { panTo(pan.left - (dx / layout.colW) * COL_DOLLARS); return; }
+    }
     if (e.pointerType === 'mouse') {
       if (pressRef.current && Math.hypot(e.clientX - pressRef.current.x, e.clientY - pressRef.current.y) > 6) pressRef.current = null;
       const pile = onPile(at), squeezed = onSqueezed(at);
@@ -761,7 +801,12 @@ export function StrataGraph({
   };
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (dismissSearch(e)) return;
+    if (layout?.view === 'magnify' && (e.pointerType !== 'mouse' || e.button === 0)) {
+      panRef.current = { id: e.pointerId, x: e.clientX, left: magLeft, moved: false };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ }
+    }
     if (e.pointerType === 'mouse') { if (e.button === 0) pressRef.current = { x: e.clientX, y: e.clientY }; return; }
+    if (layout?.view === 'magnify') return;
     clearHold();
     const at = local(e);
     holdRef.current = {
@@ -780,6 +825,10 @@ export function StrataGraph({
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (dismissedRef.current === e.pointerId) { dismissedRef.current = null; return; }
+    const pan = panRef.current;
+    panRef.current = null;
+    // A drag that panned the window is not a click.
+    if (pan?.moved) { setPanning(false); pressRef.current = null; return; }
     if (e.pointerType === 'mouse') {
       const press = pressRef.current;
       pressRef.current = null;
@@ -787,10 +836,22 @@ export function StrataGraph({
       const at = local(e);
       // A click on the pile unrolls it; unrolled, a click on the squeezed graph folds it back — even while the lens,
       // put away there, still shrinks over whoever it last showed — on someone follows them, and anywhere else folds.
+      // On the histogram, a click magnifies where it is (3a) — but on a search's mark it follows them, as it does
+      // magnified or in the floors on anyone.
       if (onPile(at)) { unroll(); return; }
       if (onSqueezed(at)) { fold(); return; }
+      if (layout?.view === 'hist' && !tail && !foundPick) { magnifyAt(payAt(at.x)); return; }
       if (pick) { if (who) toggleFollow(who, pick); return; }
       if (tail) fold();
+      return;
+    }
+    // Magnified, a tap rings whoever is under the finger, and their card stays.
+    if (layout?.view === 'magnify') {
+      const at = local(e);
+      setLensAt(at);
+      setLensFrom(null);
+      setPointer(at);
+      setPinned(true);
       return;
     }
     // A finger: lifted from a hold, the lens stays where it was; a tap puts it there — or, on the pile, unrolls
@@ -801,6 +862,9 @@ export function StrataGraph({
       const at = local(e);
       if (onPile(at)) { unroll(); return; }
       if (onSqueezed(at)) { fold(); return; }
+      // A tap on the histogram magnifies where it is (3a) — on a search's mark it brings their card up, as a held finger
+      // brings the lens up anywhere.
+      if (layout?.view === 'hist' && !tail && !markNear(at)) { magnifyAt(payAt(at.x)); return; }
       const lifted = { x: at.x, y: Math.max(R, at.y - (R + HOLD_LIFT)) };
       setLensAt(lifted);
       setLensFrom(at);
@@ -808,7 +872,7 @@ export function StrataGraph({
       setPinned(true);
     }
   };
-  const onCancel = () => { clearHold(); heldRef.current = false; };
+  const onCancel = () => { clearHold(); heldRef.current = false; panRef.current = null; setPanning(false); };
   const onLeave = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== 'mouse') return;
     setOverPile(false);
@@ -871,6 +935,15 @@ export function StrataGraph({
   };
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!layout) return;
+    // Magnified: the arrows pan the window a column ($5k; with Shift $25k), Home and End to the ends, Enter follows
+    // whoever is ringed, and Escape lets go of them, then zooms back out.
+    if (layout.view === 'magnify') {
+      const step = (e.shiftKey ? 5 : 1) * COL_DOLLARS;
+      const to: Record<string, number> = { ArrowRight: magLeft + step, ArrowUp: magLeft + step, ArrowLeft: magLeft - step, ArrowDown: magLeft - step, PageUp: magLeft + 5 * COL_DOLLARS, PageDown: magLeft - 5 * COL_DOLLARS, Home: 0, End: MAG_LEFT_MAX };
+      if (e.key in to) { e.preventDefault(); panTo(to[e.key]); return; }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (pick && who) toggleFollow(who, pick); }
+      return;
+    }
     if (layout.tail) {
       const r = tailRankRef.current ?? 0;
       const step = e.shiftKey ? 10 : 1;
@@ -1074,7 +1147,12 @@ export function StrataGraph({
   const cardTop = pick
     ? Math.max(crossesPill && pillTop < lensY ? pillTop + 32 : 0, Math.min(H - CARD_H, pick.y - CARD_H / 2))
     : 0;
-  const readText = readout ?? 'Move along the pay distribution with the arrow keys';
+  // The magnified window's name: to the pile's column, the pile's own.
+  const magHi = magLeft + MAG_COLS * COL_DOLLARS;
+  const magWindowText = `${fmtK(magLeft)}–${magHi > COLS * COL_DOLLARS ? `${fmtK(COLS * COL_DOLLARS)}+` : fmtK(magHi)}`;
+  const readText = layout?.view === 'magnify'
+    ? `${magWindowText} magnified · the arrow keys move it, Escape zooms out`
+    : readout ?? 'Move along the pay distribution with the arrow keys';
   const change = who && who.pay != null && who.prev !== undefined
     ? who.prev == null ? { text: 'New this snapshot', up: true } : who.prev > 0 ? (() => {
       const pct = ((who.pay! - who.prev!) / who.prev!) * 100;
@@ -1118,6 +1196,11 @@ export function StrataGraph({
     </div>
   ) : null;
 
+  // Magnified: the columns in view (their middles on the plot).
+  const magCols = layout?.view === 'magnify'
+    ? Array.from({ length: COLS + 1 }, (_, b) => b).filter((b) => { const x = (b + 0.5) * layout.colW - layout.ox; return x > 0 && x < plotW; })
+    : [];
+
   const panel = (
     <div
       ref={panelRef}
@@ -1132,8 +1215,6 @@ export function StrataGraph({
         {full && search && <div className="hero-dist-search">{search}</div>}
         <div className="strata-toolbar-left">{chip}{followChip}</div>
         <div className="strata-toolbar-right">
-          <SegmentedToggle ariaLabel="View" className="strata-view" value={view} onChange={(v) => switchView(v as 'hist' | 'floors')}
-            options={[{ id: 'hist', label: 'Histogram' }, { id: 'floors', label: 'Floors' }]} />
           {motion && (phone ? (
             <ActionIcon variant="default" size="md" aria-label="Drop the squares again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
               <IconArrowBarToDown size={ICON.control} />
@@ -1148,12 +1229,32 @@ export function StrataGraph({
       </div>
 
       {/* Above the plot (3a): each type in the legend's order with its people in the snapshot shown; a click shows it alone. */}
-      {cats && (
+      {(
         <div className="hero-dist-legend strata-legend" data-solo={solo ?? undefined}>
-          <Text span size="xs" c="dimmed" className="hero-dist-legend-lead">
-            Coloured by highest-paid appointment · {canHover ? 'click' : 'tap'} to isolate
-          </Text>
-          {cats.map((c) => (
+          {/* The views (3a): histogram or floors, and the histogram magnified. */}
+          <div className="strata-view-controls">
+            <SegmentedToggle ariaLabel="View" className="strata-view" value={view === 'floors' ? 'floors' : 'hist'} onChange={(v) => switchView(v as StrataView)}
+              options={[{ id: 'hist', label: 'Histogram' }, { id: 'floors', label: 'Floors' }]} />
+            {/* Magnify (3a): in at the median, or out again — filled while magnified, the way out, as full page's is. */}
+            {phone ? (
+              <ActionIcon variant={view === 'magnify' ? 'filled' : 'default'} color="accent" size="md" className="strata-magnify"
+                aria-label={view === 'magnify' ? 'Full view' : 'Magnify'} onClick={() => (view === 'magnify' ? switchView('hist') : magnifyAt(median ?? 0))}>
+                {view === 'magnify' ? <IconZoomOut size={ICON.control} /> : <IconZoomIn size={ICON.control} />}
+              </ActionIcon>
+            ) : (
+              <Button variant={view === 'magnify' ? 'filled' : 'default'} color="accent" size="compact-sm" className="strata-magnify"
+                leftSection={view === 'magnify' ? <IconZoomOut size={ICON.compact} /> : <IconZoomIn size={ICON.compact} />}
+                onClick={() => (view === 'magnify' ? switchView('hist') : magnifyAt(median ?? 0))}>
+                {view === 'magnify' ? 'Full view' : 'Magnify'}
+              </Button>
+            )}
+          </div>
+          {cats && (
+            <Text span size="xs" c="dimmed" className="hero-dist-legend-lead" title={`${canHover ? 'Click' : 'Tap'} a type to show it alone`}>
+              By highest-paid appointment
+            </Text>
+          )}
+          {cats?.map((c) => (
             <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
               aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
               <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
@@ -1167,7 +1268,7 @@ export function StrataGraph({
       <div
         ref={plotRef}
         className="hero-dist-main strata-plot"
-        style={{ position: 'relative', height: H, cursor: lensAt && canHover ? 'none' : overPile || overFold ? 'pointer' : undefined }}
+        style={{ position: 'relative', height: H, cursor: layout?.view === 'magnify' ? (panning ? 'grabbing' : 'grab') : lensAt && canHover ? 'none' : overPile || overFold ? 'pointer' : undefined }}
         data-lens={lensAt ? 'on' : 'off'}
         data-who={whoIs == null ? 'off' : whoIs === 'loading' ? 'loading' : 'ready'}
         data-filter={group?.name ?? (solo != null ? strata.names[solo] : undefined)}
@@ -1185,11 +1286,12 @@ export function StrataGraph({
         onPointerMove={onMove} onPointerLeave={onLeave} onPointerDown={onDown} onPointerUp={onUp} onPointerCancel={onCancel}
         tabIndex={0} role="slider" aria-orientation="horizontal" aria-label="Pay distribution" aria-describedby={summaryId}
         aria-valuemin={0} aria-valuemax={tail ? tail.top : COLS * COL_DOLLARS}
-        aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : layout?.floors ? floorPay(lensFloor ?? floorOf(median ?? 0)) : (lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS)) * COL_DOLLARS} aria-valuetext={readText}
+        aria-valuenow={tail ? Math.round(((lensFrom ?? lensAt)?.x ?? 0) / tail.scale) : layout?.view === 'magnify' ? magLeft : layout?.floors ? floorPay(lensFloor ?? floorOf(median ?? 0)) : (lensCol ?? Math.floor((median ?? 0) / COL_DOLLARS)) * COL_DOLLARS} aria-valuetext={readText}
         onKeyDown={onKey}
         onFocus={(e) => {
           if (lensAt || !e.currentTarget.matches(':focus-visible')) return;
           if (tail) { keyTail(tailRankRef.current ?? 0); return; }
+          if (layout?.view === 'magnify') return;
           const at = keyAt(layout?.floors ? floorOf(median ?? 0) : Math.floor((median ?? 0) / COL_DOLLARS));
           setLensAt(at);
           setPointer(at);
@@ -1244,6 +1346,44 @@ export function StrataGraph({
                 {p.text}{p.change && <span className="strata-pin-change" data-up={p.change.up || undefined} data-down={!p.change.up || undefined}> {p.change.text}</span>}
               </div>
             ))}
+            {/* Magnified (3a): the whole distribution in a strip over the plot, the window outlined on it — a press or a
+                drag there moves the window — and each column in view counted over its bar. */}
+            {layout.view === 'magnify' && (() => {
+              const bw = plotW / (COLS + 1), counts = [...strata.colCount, strata.pileKind.length];
+              const winX = (magLeft / COL_DOLLARS) * bw, winW = MAG_COLS * bw;
+              const jump = (e: ReactPointerEvent<HTMLDivElement>) => {
+                const b = e.currentTarget.getBoundingClientRect();
+                panTo(((e.clientX - b.left) / bw) * COL_DOLLARS - (MAG_COLS * COL_DOLLARS) / 2);
+              };
+              return (
+                <div className="strata-strip" aria-hidden style={{ height: STRIP_BAND - 6 }}
+                  onPointerDown={(e) => { e.stopPropagation(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ } jump(e); }}
+                  onPointerMove={(e) => { e.stopPropagation(); if (e.currentTarget.hasPointerCapture?.(e.pointerId)) jump(e); }}
+                  onPointerUp={(e) => e.stopPropagation()}>
+                  <span className="strata-strip-label" style={{ left: Math.min(plotW - 96, Math.max(0, winX)) }}>{magWindowText}</span>
+                  <svg width={plotW} height={STRIP.bars + 4} style={{ position: 'absolute', left: 0, top: STRIP.label }}>
+                    {counts.map((n, b) => {
+                      const h = Math.max(1, (n / Math.max(1, layout.peak)) * (STRIP.bars - 2));
+                      const inWin = (b + 1) * bw > winX + 1 && b * bw < winX + winW - 1;
+                      return <rect key={b} className="strata-strip-bar" data-in={inWin || undefined} x={b * bw + 1} y={STRIP.bars + 1 - h} width={Math.max(1, bw - 2)} height={h} />;
+                    })}
+                    <rect className="strata-strip-window" x={winX + 0.5} y={0.5} width={Math.max(1, winW - 1)} height={STRIP.bars + 3} rx={2} />
+                  </svg>
+                  {[0, 50_000, 100_000, 150_000, 200_000].map((v) => (
+                    <span key={v} className="strata-strip-tick" style={{ left: (v / COL_DOLLARS) * bw, top: STRIP.label + STRIP.bars + 5, transform: v ? undefined : 'none' }}>{v ? fmtK(v) : '$0'}</span>
+                  ))}
+                  <span className="strata-strip-tick" style={{ left: (COLS + 0.5) * bw, top: STRIP.label + STRIP.bars + 5 }}>{fmtK(cap ?? 250_000)}+</span>
+                </div>
+              );
+            })()}
+            {layout.view === 'magnify' && magCols.map((b) => {
+              const n = b === COLS ? strata.pileKind.length : strata.colCount[b];
+              return (
+                <span key={b} className="strata-mag-count" data-col={b} style={{ left: (b + 0.5) * layout.colW - layout.ox, top: Math.max(STRIP_BAND - 4, layout.base - colHeight(n, layout.grid) - 18) }}>
+                  {num(n)}
+                </span>
+              );
+            })}
             {/* Each floor's band at its left, the median's named; its people at its right. */}
             {floorsRef.current?.floorX && (
               <div className="strata-floors-only strata-floor-labels" aria-hidden>
@@ -1333,7 +1473,7 @@ export function StrataGraph({
                     <Button size="compact-xs" variant="default" onClick={() => pick && openAt(who, pick)}>Open</Button>
                   </div>
                 ) : (
-                  <div className="strata-card-foot">{follow?.key === who.key ? 'Click to stop following' : 'Click to follow through time'}</div>
+                  <div className="strata-card-foot">{follow?.key === who.key ? 'Click to stop following' : layout?.view === 'hist' && !tail && !foundPick ? 'Click to magnify here' : 'Click to follow through time'}</div>
                 )}
               </>
             ) : (
@@ -1349,19 +1489,25 @@ export function StrataGraph({
           <div className="strata-ruler strata-hist-only" aria-hidden style={{ width: plotW }}>
             {!tail && median != null && <span className="strata-median-mark" style={{ left: payX(layout, median) }} />}
           </div>
-          <div className="hero-dist-axis strata-axis strata-hist-only" style={{ position: 'relative', width: plotW }}>
-            {ticks.map((v) => (
-              <span key={v} className="hero-dist-tick" style={{ left: xOf(v) }}>{fmtTail(v)}</span>
+          <div className="hero-dist-axis strata-axis" style={{ position: 'relative', width: plotW }}>
+            {layout.view !== 'magnify' && ticks.map((v) => (
+              <span key={v} className="hero-dist-tick strata-hist-only" style={{ left: xOf(v) }}>{v ? fmtTail(v) : '$0'}</span>
             ))}
-            {(layout.pileW > 0 || tail) && (canUnroll ? (
-              <button type="button" className="hero-dist-pile-label strata-pile-toggle" aria-expanded={!!tail} onClick={tail ? fold : unroll}
+            {/* Magnified: each column in view, named. */}
+            {layout.view === 'magnify' && magCols.map((b) => (
+              <span key={b} className="hero-dist-tick strata-mag-tick" data-col={b} style={{ left: (b + 0.5) * layout.colW - layout.ox }}>
+                {b === COLS ? `${fmtK(cap ?? 250_000)}+` : `$${(b * COL_DOLLARS) / 1000}–${((b + 1) * COL_DOLLARS) / 1000}k`}
+              </span>
+            ))}
+            {layout.view === 'hist' && (layout.pileW > 0 || tail) && (canUnroll ? (
+              <button type="button" className="hero-dist-pile-label strata-pile-toggle strata-hist-only" aria-expanded={!!tail} onClick={tail ? fold : unroll}
                 aria-label={tail
                   ? `Fold the ${num(over)} people at ${fmtK(cap ?? 250_000)} or more back into a pile`
                   : `${num(over)} people at ${fmtK(cap ?? 250_000)} or more: show each at their own pay`}>
                 {pileLabel}
               </button>
             ) : (
-              <span className="hero-dist-pile-label">{pileLabel}</span>
+              <span className="hero-dist-pile-label strata-hist-only">{pileLabel}</span>
             ))}
           </div>
         </>

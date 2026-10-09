@@ -78,7 +78,8 @@ test('Floors lays everyone out in $10k bands from the bottom up, each sorted by 
   expect(rows.map((r) => r.count)).toEqual(floors.map((sq) => num(sq.length)));
   expect(rows.map((r, f) => (r.median ? f : -1)).filter((f) => f >= 0)).toEqual([floorOf(HOME_STATS.p50)]);
   // The histogram's own labels are gone, the pile's way in with them; nothing is past the plot.
-  await expect(page.locator('.strata-axis')).toBeHidden();
+  await expect(page.locator('.strata-axis .hero-dist-tick').first()).toBeHidden();
+  await expect(page.locator('.strata-pile-toggle')).toBeHidden();
   await expect(page.locator('.strata-pin').first()).toBeHidden();
   const box = (await plot(page).boundingBox())!;
   const labels = await page.locator('.strata-floor-label').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { t: r.top, b: r.bottom }; }));
@@ -123,7 +124,7 @@ test('switching views moves everyone over about 2.2 s, into the floors from the 
   await expect(plot(page)).toHaveAttribute('data-view', 'hist');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   expect(await hook(page, 'squarePlaces', 'main')).toEqual(before);
-  await expect(page.locator('.strata-axis')).toBeVisible();
+  await expect(page.locator('.strata-axis .hero-dist-tick').first()).toBeVisible();
   await expect(page.locator('.strata-floor-labels')).toBeHidden();
 });
 
