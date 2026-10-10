@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Popover, Slider, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconAdjustmentsHorizontal, IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
-import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
+import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
+import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, useEntranceOnce, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { snapStats, stepKinds, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
-import { prefersReducedMotion } from '../../lib/motion';
+import { MOTION, prefersReducedMotion } from '../../lib/motion';
 import { fmtK } from '../../lib/chartStyle';
 import { num, usd, vsCampus } from '../../lib/format';
 import { useReveal } from '../PersonReveal';
@@ -243,6 +243,8 @@ export function StrataGraph({
   // Where the last step set off from: back to an earlier snapshot is a cross-fade.
   const [stepFrom, setStepFrom] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
   // How fast (3a): Slow and Medium stage each step — its people move, a countdown holds them, they re-sort — and
   // Fast goes straight through, a snapshot every quarter second. Read by a step as it is made (refs), so a change
   // of speed never restarts the one in flight.
@@ -471,13 +473,29 @@ export function StrataGraph({
       }
       mid = { mx, my, px, py };
     }
+    // Fast (3a §10): one flow — each person on a curve through where they were a snapshot before and where they will
+    // be next, while playing on.
+    let flow: Step['flow'] = null;
+    if (paceRef.current === 'fast' && queueRef.current == null && !fade) {
+      const placesAt = (s: number): Places | null => {
+        const st = s >= 0 && s <= lastSnap ? strataAt(s) : null;
+        if (!st) return null;
+        const L = layoutOf(st), x = new Float64Array(N).fill(NaN), y = new Float64Array(N).fill(NaN);
+        st.mainId.forEach((id, i) => { x[id] = L.mx[i]; y[id] = L.my[i]; });
+        st.pileId.forEach((id, j) => { x[id] = L.px[j]; y[id] = L.py[j]; });
+        const pick = (ids: Int32Array, P: Float64Array) => Float64Array.from(ids, (id) => P[id]);
+        return { mx: pick(B.mainId, x), my: pick(B.mainId, y), px: pick(B.pileId, x), py: pick(B.pileId, y) };
+      };
+      const on = playingRef.current && !replaying && stepFrom != null && at === stepFrom + 1;
+      flow = { pm: on ? placesAt(stepFrom! - 1) : null, p2: on ? placesAt(at! + 1) : null };
+    }
     return {
       to: L1, fade, from: { mx: fm.fx, my: fm.fy, px: fp.fx, py: fp.fy }, mid, kind: { main: k.main, pile: k.pile }, rank,
-      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) }, plan, mode: md, counts: k.counts,
+      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) }, plan, mode: md, counts: k.counts, flow,
     };
     // `shownRef` is the layout drawn before this one, and the pace, mode and catch-up are read as the step is made:
     // none a dependency.
-  }, [layout, tl, tStrata, at, stepFrom, again, strataAt, layoutOf]);
+  }, [layout, tl, tStrata, at, stepFrom, again, strataAt, layoutOf, lastSnap]);
   useEffect(() => { if (layout && strata) shownRef.current = { layout, strata }; }, [layout, strata]);
   // Go to a snapshot. The first time, the field is first drawn from the latest's people where it stands (no
   // one moves: the same people in the same columns), and the step taken from there.
@@ -549,6 +567,62 @@ export function StrataGraph({
     setStepFrom(at);
     setAt(at + 1);
   }, [queue, at, landed, moving]);
+  // The track's fill (3a §10): to the snapshot shown, over each step's own motion — steady through Fast's flow,
+  // eased for a staged move, the cross-fade's length back.
+  const fillRef = useRef<HTMLDivElement>(null);
+  const fillWas = useRef<number | null>(null);
+  const fillAt = at ?? lastSnap;
+  useLayoutEffect(() => {
+    const el = fillRef.current;
+    if (!el || lastSnap < 1) return;
+    const to = fillAt / lastSnap, from = fillWas.current;
+    fillWas.current = to;
+    // Fast's play draws it frame by frame, below.
+    if (step?.flow && playingRef.current && !prefersReducedMotion()) return;
+    el.style.transform = `scaleX(${to})`;
+    if (from == null || from === to || !step || prefersReducedMotion()) return;
+    el.getAnimations().forEach((a) => a.cancel());
+    fillAnim.current = el.animate([{ transform: `scaleX(${from})` }, { transform: `scaleX(${to})` }],
+      { duration: step.fade ? FADE_MS : step.plan.mv, easing: step.flow ? 'linear' : MOTION.ease });
+    // Only a new snapshot moves it; the step is the one that brought it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillAt, lastSnap]);
+  // On the field's own clock: a flow step's runs on from the last one's end, a little before it was drawn here.
+  const fillAnim = useRef<Animation | null>(null);
+  useEffect(() => {
+    const a = fillAnim.current;
+    if (phase?.phase === 'move' && step?.flow) flowClock.current = { from: (atRef.current ?? lastSnap) - 1, start: phase.start, ms: phase.end - phase.start };
+    if (phase?.phase !== 'move' || !a || a.playState !== 'running') return;
+    a.currentTime = Math.max(0, performance.now() - phase.start);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+  // Playing Fast, the fill runs at the flow's own steady pace, frame by frame from the step's clock — on past its
+  // end, as the next step's clock starts where the last one's ends, never past the snapshot after.
+  const flowClock = useRef<{ from: number; start: number; ms: number } | null>(null);
+  useEffect(() => {
+    const el = fillRef.current;
+    if (!el || !playing || pace !== 'fast' || lastSnap < 1 || prefersReducedMotion()) return;
+    let id = 0;
+    const go = () => {
+      const f = flowClock.current;
+      if (f) {
+        const cap = Math.min(lastSnap, (atRef.current ?? lastSnap) + 1);
+        el.style.transform = `scaleX(${Math.min(cap, Math.max(0, f.from + (performance.now() - f.start) / f.ms)) / lastSnap})`;
+      }
+      id = requestAnimationFrame(go);
+    };
+    id = requestAnimationFrame(go);
+    return () => {
+      cancelAnimationFrame(id);
+      // Stopped part way through a step: the rest of the way with it.
+      const f = flowClock.current;
+      flowClock.current = null;
+      const was = new DOMMatrix(getComputedStyle(el).transform).a, to = (atRef.current ?? lastSnap) / lastSnap;
+      el.style.transform = `scaleX(${to})`;
+      const left = f ? f.start + f.ms - performance.now() : 0;
+      if (left > 0 && was !== to) el.animate([{ transform: `scaleX(${was})` }, { transform: `scaleX(${to})` }], { duration: left, easing: 'linear' });
+    };
+  }, [playing, pace, lastSnap]);
   // What a raises-and-cuts step's colours mean, in the legend: while it moves and holds, and all through Fast's play.
   const changeShown = mode === 'change' && !!step?.counts && !step.fade && (phase?.phase === 'move' || phase?.phase === 'hold' || (pace === 'fast' && playing));
   const changePace = (p: Pace) => { setPace(p); setSkipHold((k) => k + 1); };
@@ -1404,7 +1478,7 @@ export function StrataGraph({
           {/* While a raises-and-cuts step moves and holds (and all through Fast's play), what its colours mean, counted. */}
           {changeShown && step?.counts && (
             <div className="strata-change-legend" data-step-counts>
-              {stepFrom != null && snaps[stepFrom] && <Text span size="xs" className="strata-legend-meta">since {bareLabel(snaps[stepFrom].label)}</Text>}
+              {stepFrom != null && snaps[stepFrom] && <Text span size="xs" className="strata-legend-meta strata-change-since">since {bareLabel(snaps[stepFrom].label)}</Text>}
               {([['up', step.counts.up, 'moved up'], ['down', step.counts.down, 'moved down'], ['new', step.counts.joined, 'joined'], ['left', step.counts.left, 'left']] as const).map(([k, v, label]) => (
                 <span key={k} className="hero-dist-legend-item strata-change-item" data-change={k}>
                   <span className="hero-dist-swatch strata-change-swatch" aria-hidden data-change={k} />
@@ -1682,7 +1756,7 @@ export function StrataGraph({
         <div className="strata-timeline" data-timeline={tl ? 'ready' : timeline.data === 'loading' ? 'loading' : timeline.data === 'error' ? 'error' : 'off'}
           data-snap={at != null ? snaps[at].id : snaps[lastSnap].id} data-playing={playing || undefined}
           data-step={step?.counts ? `${step.counts.up}:${step.counts.down}:${step.counts.joined}:${step.counts.left}` : undefined}
-          data-pace={pace} data-mode={mode} data-phase={phase?.phase}>
+          data-pace={pace} data-mode={mode} data-phase={phase?.phase} data-phase-at={phase ? Math.round(phase.start) : undefined}>
           <Button size="compact-sm" radius="xl" color="accent" className="strata-play"
             leftSection={playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
             loading={!!goal && !tl && timeline.data === 'loading'} onClick={onPlay}>
@@ -1737,6 +1811,8 @@ export function StrataGraph({
                     onClick={() => { setPlaying(false); setPaused(false); goTo(i); }} />
                 );
               })}
+              {/* After the dots, so a dot's index is its snapshot's; drawn under them. */}
+              <div ref={fillRef} className="strata-track-fill" aria-hidden />
             </div>
             <span className="strata-track-end">{bareLabel(snaps[lastSnap].label)}</span>
           </div>

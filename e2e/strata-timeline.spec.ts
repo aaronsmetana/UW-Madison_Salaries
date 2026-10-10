@@ -40,6 +40,12 @@ async function home(page: Page) {
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
 /** To snapshot `i` by its dot, and on until the squares are at rest there. */
+/** Played on to snapshot `i` or past it. Watched every frame: at Fast a snapshot shows for a quarter second, which
+ *  an assertion's polling (backing off to a second apart) can miss altogether. */
+const reached = (page: Page, i: number, timeout = 60_000) => page.waitForFunction(
+  ([ids, i]) => ids.indexOf((document.querySelector('.strata-timeline') as HTMLElement | null)?.dataset.snap ?? '') >= i,
+  [SNAPS.map((s) => s.id), i] as const, { timeout },
+);
 /** The speed, and how a step shows. */
 async function pace(page: Page, p: 'Slow' | 'Medium' | 'Fast') {
   await page.getByRole('radiogroup', { name: 'Speed' }).getByText(p, { exact: true }).click();
@@ -254,7 +260,7 @@ test('Pause holds the snapshot and Resume goes on; under reduced motion each ste
   const page = await browser.newPage();
   await home(page);
   await page.locator('.strata-play').click();
-  await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[2].id, { timeout: 60_000 });
+  await reached(page, 2);
   await page.locator('.strata-play').click();
   await expect(page.locator('.strata-play')).toHaveText('Resume');
   const held = await bar(page).getAttribute('data-snap');
@@ -267,11 +273,14 @@ test('Pause holds the snapshot and Resume goes on; under reduced motion each ste
   const ctx = await browser.newContext({ reducedMotion: 'reduce' });
   const still = await ctx.newPage();
   await home(still);
+  await logSteps(still);
   await still.locator('.strata-play').click();
-  // Started (the bar shows the latest before as well as after), then through to the end.
-  await expect(bar(still)).toHaveAttribute('data-snap', SNAPS[0].id, { timeout: 60_000 });
-  await expect(bar(still)).toHaveAttribute('data-snap', SNAPS[LAST].id, { timeout: 30_000 });
-  await expect(bar(still)).not.toHaveAttribute('data-playing', /./, { timeout: 30_000 });
+  // Started from the first (the bar shows the latest before as well as after), then through to the end.
+  await expect(bar(still)).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
+  await expect(bar(still)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+  await expect(bar(still)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+  const shown = (await readLog(still)).filter(([e]) => e.startsWith('snap ')).map(([e]) => e.slice(5));
+  expect(shown.slice(shown.indexOf(SNAPS[0].id)), 'not every snapshot from the first').toEqual(SNAPS.map((sn) => sn.id));
   expect(await still.evaluate(() => performance.getEntriesByName('strata-frame').length), 'squares moved under reduced motion').toBe(0);
   await ctx.close();
 });
@@ -423,6 +432,102 @@ test.describe('speed, mode and settings', () => {
     await expect(page.locator('.strata-change-legend')).toHaveCount(0);
   });
 
+  test('Fast plays as one flow: each step’s clock runs on from the last one’s end, the track fills at one steady pace, and the counts hold still', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 0);
+    await page.evaluate(() => {
+      const w = window as unknown as { starts: number[]; fills: number[]; boxes: Record<string, number[]> };
+      w.starts = [];
+      w.fills = [];
+      w.boxes = {};
+      const bar = document.querySelector('.strata-timeline') as HTMLElement, fill = document.querySelector('.strata-track-fill') as HTMLElement;
+      new MutationObserver(() => {
+        if (bar.dataset.phase !== 'move') return;
+        w.starts.push(Number(bar.dataset.phaseAt));
+        // Where each count stands, as each step's come in.
+        for (const el of document.querySelectorAll<HTMLElement>('.strata-change-item')) (w.boxes[el.dataset.change!] ??= []).push(Math.round(el.getBoundingClientRect().x * 2) / 2);
+      }).observe(bar, { attributes: true, attributeFilter: ['data-phase-at'] });
+      const frame = () => {
+        if (bar.dataset.playing) w.fills.push(new DOMMatrix(getComputedStyle(fill).transform).a);
+        if (w.starts.length < 10 || bar.dataset.playing) requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    const { starts, fills, boxes } = await page.evaluate(() => {
+      const w = window as unknown as { starts: number[]; fills: number[]; boxes: Record<string, number[]> };
+      return { starts: w.starts, fills: w.fills, boxes: w.boxes };
+    });
+    // t0 += duration: each step's clock starts where the last one's ended, 250 ms on, not when it was drawn.
+    const gaps = starts.slice(1).map((t, k) => t - starts[k]);
+    expect(gaps.length).toBe(LAST - 1);
+    expect(gaps.filter((g) => Math.abs(g - 250) <= 2).length, `steps ${gaps.join(', ')} ms apart`).toBeGreaterThanOrEqual(gaps.length - 1);
+    // The fill never goes back, and never stops while it plays: it moves every frame.
+    const steps = fills.slice(1).map((f, k) => f - fills[k]);
+    expect(Math.min(...steps), 'the fill went back').toBeGreaterThanOrEqual(-1e-6);
+    const mid = steps.slice(5, -5), stalled = mid.filter((d) => d < 1e-6).length;
+    expect(mid.length).toBeGreaterThan(60);
+    expect(stalled, `${stalled} of ${mid.length} frames with the fill standing still`).toBeLessThanOrEqual(2);
+    // The counts change in place: each stands where it stood at every step.
+    for (const k of ['up', 'down', 'new', 'left']) expect(new Set(boxes[k]), `the ${k} count moved: ${boxes[k]}`).toEqual(new Set([boxes[k][0]]));
+  });
+
+  test('Fast’s movers go straight, in the up and down inks raising and cutting, in their types’ by employment type', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 7);
+    const ink = (v: string) => page.evaluate((v) => { const s = document.createElement('span'); document.body.appendChild(s); s.style.color = `var(${v})`; const c = getComputedStyle(s).color; s.remove(); return c; }, v);
+    const up = parseColor(await ink('--strata-up'));
+    // Every frame of a step: the most pixels in the up ink, and the highest ink, against where the columns stand at
+    // rest either side (the flow never arcs or overshoots).
+    const midStep = async (go: () => Promise<unknown>) => {
+      await page.evaluate((up) => {
+        const w = window as unknown as { seen: { n: number; top: number; frames: number; done: boolean } };
+        const c = document.querySelector('.strata-base') as HTMLCanvasElement, f = document.querySelector('.strata-field') as HTMLElement;
+        w.seen = { n: 0, top: c.height, frames: 0, done: false };
+        let began = false;
+        const tick = () => {
+          const moving = f.dataset.settled === 'false';
+          if (moving) {
+            began = true;
+            const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+            let n = 0, top = c.height;
+            for (let i = 0; i < d.length; i += 4) {
+              if (!d[i + 3]) continue;
+              if (top === c.height) top = Math.floor((i >> 2) / c.width);
+              if (d[i + 3] === 255 && Math.hypot(d[i] - up[0], d[i + 1] - up[1], d[i + 2] - up[2]) < 3) n++;
+            }
+            w.seen.n = Math.max(w.seen.n, n);
+            w.seen.top = Math.min(w.seen.top, top);
+            w.seen.frames++;
+          }
+          if (began && !moving) w.seen.done = true;
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }, up);
+      await go();
+      await page.waitForFunction(() => (window as unknown as { seen: { done: boolean } }).seen.done, null, { timeout: 10_000 });
+      return page.evaluate(() => (window as unknown as { seen: { n: number; top: number; frames: number } }).seen);
+    };
+    const topAtRest = () => page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i]) return Math.floor((i >> 2) / c.width);
+      return c.height;
+    });
+    const before = await topAtRest();
+    const change = await midStep(() => dot(page, 8).click());
+    const after = await topAtRest();
+    expect(change.frames, 'frames of the step seen').toBeGreaterThan(4);
+    expect(change.n, 'no mover in the up ink on the way').toBeGreaterThan(100);
+    expect(change.top, 'a square above both snapshots’ tallest columns').toBeGreaterThanOrEqual(Math.min(before, after));
+    // The same step again by employment type: no one in the up ink.
+    const type = await midStep(() => mode(page, 'Employment type'));
+    expect(type.n, 'squares in the up ink by employment type').toBe(0);
+  });
+
   test('Medium stages a raises-and-cuts step — 1.5 s moving, a 1 s countdown, 0.9 s re-sorting — and Play rests 0.7 s before the next', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
@@ -541,8 +646,6 @@ test.describe('jumps along the track', () => {
     new MutationObserver(() => w.log.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
   });
   const read = (page: Page) => page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
-  const now = (page: Page) => field(page).evaluate((el) => (el as unknown as { squareNow: (f: string) => number[] }).squareNow('main'));
-  const rest = (page: Page) => field(page).evaluate((el) => (el as unknown as { squarePlaces: (f: string) => number[] }).squarePlaces('main'));
 
   test('several snapshots on, a quick step through each between', async ({ page }) => {
     test.setTimeout(120_000);
@@ -570,15 +673,32 @@ test.describe('jumps along the track', () => {
     await home(page);
     await goTo(page, 6);
     await log(page);
+    // Every frame from the click: how opaque the picture before is, and whether any square is off its resting place.
+    // Watched frame by frame, not read once: on a slow runner an assertion's polling can see the snapshot change
+    // only after the 0.8 s cross-fade is over.
+    await page.evaluate(() => {
+      const w = window as unknown as { fades: number[]; off: number };
+      w.fades = [];
+      w.off = 0;
+      const c = document.querySelector('.strata-fade') as HTMLElement, bar = document.querySelector('.strata-timeline') as HTMLElement;
+      const f = document.querySelector('.strata-field') as HTMLElement & { squareNow: (f: string) => number[]; squarePlaces: (f: string) => number[] };
+      const start = bar.dataset.snap;
+      const tick = () => {
+        if (bar.dataset.snap !== start) {
+          w.fades.push(Number(getComputedStyle(c).opacity));
+          if (w.fades.length % 10 === 1) { const a = f.squareNow('main'), b = f.squarePlaces('main'); if (a.some((v, i) => v !== b[i])) w.off++; }
+        }
+        if (w.fades.length < 90) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await dot(page, 2).click();
     await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[2].id, { timeout: 60_000 });
-    // Straight there: where the squares are drawn is where they rest, while the picture before fades out over them.
-    await page.waitForTimeout(250);
-    expect(await now(page), 'a square on its way').toEqual(await rest(page));
-    const fade = await page.locator('.strata-fade').evaluate((c) => Number(getComputedStyle(c).opacity));
-    expect(fade, 'the picture before is not fading out').toBeGreaterThan(0.05);
-    expect(fade).toBeLessThan(0.95);
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const { fades, off } = await page.evaluate(() => { const w = window as unknown as { fades: number[]; off: number }; return { fades: w.fades, off: w.off }; });
+    // Straight there: where the squares are drawn is where they rest, while the picture before fades out over them.
+    expect(off, 'frames with a square on its way').toBe(0);
+    expect(fades.filter((o) => o > 0.05 && o < 0.95).length, `the picture before is not fading out: ${fades.slice(0, 12).map((o) => o.toFixed(2))}`).toBeGreaterThan(5);
     const l = await read(page);
     expect(l.filter(([e]) => e.startsWith('snap ')).map(([e]) => e.slice(5)), 'snapshots between were shown').toEqual([SNAPS[2].id]);
     const took = l.filter(([e]) => e === 'settled true').pop()![1] - l.find(([e]) => e === 'settled false')![1];
@@ -592,7 +712,7 @@ test.describe('jumps along the track', () => {
     await home(page);
     await goTo(page, 1);
     await page.locator('.strata-play').click();
-    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[2].id, { timeout: 10_000 });
+    await reached(page, 2, 10_000);
     // A page long enough to leave the plot behind (the landing page itself is barely taller than the window).
     await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '3000px'; document.body.appendChild(d); window.scrollTo(0, document.body.scrollHeight); });
     await expect.poll(() => plot(page).evaluate((e) => e.getBoundingClientRect().bottom)).toBeLessThan(0);

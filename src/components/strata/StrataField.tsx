@@ -3,7 +3,7 @@ import {
   COLS, COL_DOLLARS, DOWN, DROP_MS, LEFT, FADE_MS, DROP_ROW_MS, DROP_WAVE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, NEW, TYPE_FADE, UP,
   VIEW_HOP, VIEW_JITTER, VIEW_MOVE, VIEW_MS, VIEW_WAVE, ZOOM_JITTER, ZOOM_MOVE, ZOOM_MS, moveTiming, sortTiming, type PacePlan, type StepMode,
   FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, floorOf, floorsGrid, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
-  stableKey, type Grid, type Px, type Stack, type Strata,
+  hermite, monoTangent, stableKey, type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
 import { parseRgb } from '../../lib/inkMix';
 import { followText, type StepCounts } from '../../lib/timeline';
@@ -314,7 +314,13 @@ export interface Step {
   fade?: boolean;
   /** How many moved up, down, joined and left: the legend's, while the step shows them. */
   counts?: StepCounts;
+  /** Fast (3a §10): one flow, everyone on a curve through their places snapshot after snapshot — leaving with the
+   *  tangent from where they were a snapshot before (`pm`, while playing on from the step before), arriving with
+   *  the one to where they will be next (`p2`, while playing on); NaN where they were not or will not be. */
+  flow?: { pm: Places | null; p2: Places | null } | null;
 }
+/** Each square's place, by field. */
+export interface Places { mx: Float64Array; my: Float64Array; px: Float64Array; py: Float64Array }
 
 /** A place in a layout's lattice: column (or floor) `g`, `slot` squares up it from the bottom left. */
 export function slotPlace(L: StrataLayout, g: number, slot: number): { x: number; y: number } {
@@ -340,6 +346,8 @@ const withAlpha = (c: number, a: number) => ((c & 0xffffff) | (Math.round(255 * 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 /** Under this long, a step's people all move together (Fast, and the quick catch-up steps): no wave, no arcs. */
 const TOGETHER_MS = 400;
+/** A flow step that sets off within this long of the last one's end runs on from it. */
+const FLOW_CHAIN_MS = 250;
 
 /** A timeline step in flight (3a): its clock and each square's own timing — set off at `dl`, for `du`, as shares of
  *  the move; arcing `arc` px; re-sorted from `sdl` — and each frame's scale and colour (packed, with alpha) per
@@ -361,6 +369,8 @@ interface Stage {
   /** Held for the countdown, nothing moves: drawn once, until something else asks (`redraw`). */
   still: boolean;
   redraw: boolean;
+  /** A flow step set off as the one before landed: it leaves with that one's speed. */
+  chained: boolean;
 }
 
 export const StrataField = forwardRef<StrataFieldHandle, {
@@ -420,6 +430,8 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     stage?: Stage;
   } | null>(null);
   const raf = useRef(0);
+  // When Fast's last flow step ended (its clock's end), for the next to run on from.
+  const flowEnd = useRef(-Infinity);
   const inks = useRef<Inks | null>(null);
   const [scheme, setScheme] = useState(0);
   const lens = useRef({ x: 0, y: 0, r: 0 });
@@ -771,6 +783,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const L = layout, mid = S.mid;
     const { mx, my, px, py } = cur.current;
     let tn = 0;
+    if (S.flow) return flowFrame(st, el);
     const field = (K: Uint8Array, kinds: Uint8Array, FX: Float64Array, FY: Float64Array, MX: Float64Array | null, MY: Float64Array | null,
       TX: Float64Array, TY: Float64Array, dl: Float32Array, du: Float32Array, arc: Float32Array, sdl: Float32Array,
       OX: Float64Array, OY: Float64Array, SC: Float32Array, CO: Uint32Array) => {
@@ -848,6 +861,52 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
     return done;
   };
+  // A flow step's frame (3a §10): everyone along their Hermite curve at a steady clock — no wave, no hold, no
+  // re-sort — who joined growing in, who left shrinking out where they stood; raising and cutting, the movers in
+  // the up and down inks and who joined in amber over their types, else everyone in their type's.
+  const flowFrame = (st: Stage, el: number): boolean => {
+    const S = st.step, pl = pal.current!, F = S.flow!, change = S.mode === 'change';
+    const t = clamp01(el / S.plan.mv), L = layout;
+    const { mx, my, px, py } = cur.current;
+    const pm = st.chained ? F.pm : null, p2 = F.p2;
+    const field = (K: Uint8Array, kinds: Uint8Array, FX: Float64Array, FY: Float64Array, TX: Float64Array, TY: Float64Array,
+      AX: Float64Array | undefined, AY: Float64Array | undefined, BX: Float64Array | undefined, BY: Float64Array | undefined,
+      OX: Float64Array, OY: Float64Array, SC: Float32Array, CO: Uint32Array) => {
+      for (let i = 0; i < K.length; i++) {
+        const k = K[i], T = pl.toType[kinds[i]] ?? pl.toType[0];
+        if (k === NEW) {
+          OX[i] = TX[i];
+          OY[i] = TY[i];
+          SC[i] = Math.max(0.05, t);
+          CO[i] = withAlpha(change ? pl.toNew[BLEND] : T[BLEND], t / 0.3);
+          continue;
+        }
+        const x0 = FX[i], x1 = TX[i], y0 = FY[i], y1 = TY[i];
+        OX[i] = hermite(x0, x1, AX ? monoTangent(AX[i], x0, x1) : 0, BX ? monoTangent(x0, x1, BX[i]) : 0, t);
+        OY[i] = hermite(y0, y1, AY ? monoTangent(AY[i], y0, y1) : 0, BY ? monoTangent(y0, y1, BY[i]) : 0, t);
+        SC[i] = 1;
+        CO[i] = change && k === UP ? pl.toUp[BLEND] : change && k === DOWN ? pl.toDown[BLEND] : T[BLEND];
+      }
+    };
+    field(S.kind.main, strata.kind, S.from.mx, S.from.my, L.mx, L.my, pm?.mx, pm?.my, p2?.mx, p2?.my, mx, my, st.scM, st.colM);
+    field(S.kind.pile, strata.pileKind, S.from.px, S.from.py, L.px, L.py, pm?.px, pm?.py, p2?.px, p2?.py, px, py, st.scP, st.colP);
+    const gh = S.ghosts;
+    if (gh) for (let g = 0; g < st.gx.length; g++) {
+      st.gy[g] = gh.y[g];
+      st.gsc[g] = Math.max(0.05, 1 - t);
+      st.gcol[g] = withAlpha(change ? pl.N : (pl.toType[gh.kind[g]] ?? pl.toType[0])[BLEND], 1 - t);
+    }
+    st.tn = 0;
+    st.still = false;
+    const done = el >= S.plan.mv, end = st.start + S.plan.mv;
+    const ph = done ? null : 'move';
+    if (ph !== st.phase || (ph && Math.abs(end - st.phaseEnd) > 1)) {
+      st.phase = ph;
+      st.phaseEnd = end;
+      props.current.onPhase?.(ph ? { phase: ph, start: st.start, end } : null);
+    }
+    return done;
+  };
   const setMoving = (on: boolean) => {
     if (movingRef.current === on) return;
     movingRef.current = on;
@@ -870,6 +929,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       }
       if (done) {
         const L = layout;
+        if (mv.stage.step.flow) flowEnd.current = mv.stage.start + mv.stage.step.plan.mv;
         cur.current = { mx: L.mx.slice(), my: L.my.slice(), px: L.px.slice(), py: L.py.slice() };
         move.current = null;
         drawBase();
@@ -1036,13 +1096,16 @@ export const StrataField = forwardRef<StrataFieldHandle, {
         scM: new Float32Array(n).fill(1), colM: new Uint32Array(n), scP: new Float32Array(m).fill(1), colP: new Uint32Array(m),
         gx: ghosts ? ghosts.x.slice() : new Float64Array(0), gy: ghosts ? ghosts.y.slice() : new Float64Array(0), gsc: new Float32Array(gn), gcol: new Uint32Array(gn),
         tx: new Float64Array(2 * (n + m)), ty: new Float64Array(2 * (n + m)), tsc: new Float32Array(2 * (n + m)), tcol: new Uint32Array(2 * (n + m)), tn: 0,
-        phase: null, phaseEnd: 0, still: false, redraw: false,
+        phase: null, phaseEnd: 0, still: false, redraw: false, chained: false,
       };
+      // Fast's flow (3a §10): on from the step before as it lands, its clock running on from that one's end (t0 +=
+      // duration), so the motion never stops between snapshots.
+      if (step.flow && now - flowEnd.current < FLOW_CHAIN_MS) { stage.start = flowEnd.current; stage.chained = true; }
       // A step cut short by the next: its phase is over.
       if (move.current?.stage?.phase) props.current.onPhase?.(null);
       // For the label of the person followed, counting their pay along: where they set off and how long they take.
       move.current = {
-        start: now, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py,
+        start: stage.start, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py,
         wait: Float64Array.from(tM.dl, (d) => d * plan.mv), pwait: Float64Array.from(tP.dl, (d) => d * plan.mv), ms: plan.mv * (together ? 1 : 0.4), land: false, stage,
       };
       stageFrame(now);

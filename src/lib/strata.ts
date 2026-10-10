@@ -423,6 +423,24 @@ export const sortTiming = (k: number, m: number, h: number) => ({ dl: (0.5 * k) 
 /** In the first part of a staged move everyone who stays fades from their type's colour to the neutral one. */
 export const TYPE_FADE = 0.18;
 
+/**
+ * Fast's flow (3a §10): each square on one smooth curve through its places in snapshot after snapshot, a step a
+ * unit of time. The tangent at `b` (between `a` before and `c` after) is monotone — zero where the path turns back
+ * or either neighbour is unknown (NaN), and never more than three times the shorter side — so a cubic Hermite
+ * piece never overshoots the places it joins (Fritsch–Carlson).
+ */
+export function monoTangent(a: number, b: number, c: number): number {
+  const d0 = b - a, d1 = c - b;
+  if (!(d0 * d1 > 0)) return 0;
+  const m = (d0 + d1) / 2, l = 3 * Math.min(Math.abs(d0), Math.abs(d1));
+  return m > l ? l : m < -l ? -l : m;
+}
+/** The Hermite cubic from `x0` to `x1` at `t` (0–1), leaving and arriving at the tangents `m0` and `m1`. */
+export function hermite(x0: number, x1: number, m0: number, m1: number, t: number): number {
+  const t2 = t * t, t3 = t2 * t, h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h11 = t3 - t2;
+  return h00 * x0 + h10 * m0 + (1 - h00) * x1 + h11 * m1;
+}
+
 export const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 /** A fall that speeds up as it drops, then a hop of 4.5% of the fall as it lands. */
 export function landEase(p: number): number {

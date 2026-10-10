@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, landEase, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, landEase, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, hermite, monoTangent, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -251,6 +251,39 @@ describe('sortTiming', () => {
     expect(sortTiming(0, 10, 0).dl).toBe(0);
     expect(sortTiming(9, 10, 0).dl).toBeGreaterThan(sortTiming(1, 10, 0).dl);
     for (const k of [0, 5, 10]) expect(sortTiming(k, 10, 0.99).dl + sortTiming(k, 10, 0.99).du).toBeLessThanOrEqual(1 + 1e-9);
+  });
+});
+
+describe('monoTangent and hermite (Fast’s flow)', () => {
+  it('meets each place exactly, at either end of its step', () => {
+    expect(hermite(10, 30, 7, -3, 0)).toBe(10);
+    expect(hermite(10, 30, 7, -3, 1)).toBeCloseTo(30, 12);
+  });
+  it('is flat where the path turns back or a neighbour is unknown, so a square slows into a turn', () => {
+    expect(monoTangent(0, 10, 5)).toBe(0);
+    expect(monoTangent(10, 10, 20)).toBe(0);
+    expect(monoTangent(NaN, 10, 20)).toBe(0);
+    expect(monoTangent(0, 10, NaN)).toBe(0);
+  });
+  it('never overshoots: on a path that keeps one way, every point of every step lies between its two places', () => {
+    const paths = [[0, 1, 100, 101], [0, 100, 101, 300], [500, 20, 19, 0], [0, 0.5, 200, 200.5, 1000]];
+    for (const P of paths) for (let s = 0; s + 1 < P.length; s++) {
+      const m0 = monoTangent(P[s - 1] ?? NaN, P[s], P[s + 1]), m1 = monoTangent(P[s], P[s + 1], P[s + 2] ?? NaN);
+      const lo = Math.min(P[s], P[s + 1]), hi = Math.max(P[s], P[s + 1]);
+      for (let t = 0; t <= 1; t += 0.01) {
+        const v = hermite(P[s], P[s + 1], m0, m1, t);
+        expect(v, `step ${s} of [${P}] at ${t.toFixed(2)}`).toBeGreaterThanOrEqual(lo - 1e-9);
+        expect(v, `step ${s} of [${P}] at ${t.toFixed(2)}`).toBeLessThanOrEqual(hi + 1e-9);
+      }
+    }
+  });
+  it('runs on from one step into the next at the same speed: one tangent ends the first and starts the second', () => {
+    const P = [0, 40, 100], m = monoTangent(P[0], P[1], P[2]), h = 1e-6;
+    const end = (hermite(P[0], P[1], 0, m, 1) - hermite(P[0], P[1], 0, m, 1 - h)) / h;
+    const start = (hermite(P[1], P[2], m, 0, h) - hermite(P[1], P[2], m, 0, 0)) / h;
+    expect(m).toBeGreaterThan(0);
+    expect(end).toBeCloseTo(m, 3);
+    expect(start).toBeCloseTo(m, 3);
   });
 });
 

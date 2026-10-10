@@ -2527,7 +2527,12 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 }
 .strata-track-dots::before { content: ''; position: absolute; left: 6px; right: 6px; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--hairline-strong); }
 .strata-track-dot {
-  position: relative; width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; flex: none;
+  position: relative; z-index: var(--z-content); width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; flex: none;
+}
+/* How far along the track the snapshot shown is: the rail filled to it, moved with each step's own motion. */
+.strata-track-fill {
+  position: absolute; left: 12px; right: 12px; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px;
+  background: var(--mantine-color-accent-6); transform-origin: left center; pointer-events: none;
 }
 .strata-track-dot::after {
   content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; transform: translate(-50%, -50%); border-radius: 50%;
@@ -2546,7 +2551,9 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 /* While a raises-and-cuts step shows them (3a): what its colours mean, counted, where the types are listed. */
 .strata-change-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 .strata-change-item { cursor: default; }
-.strata-change-n { font-variant-numeric: tabular-nums; }
+/* Counted afresh at every step of Fast's play: each figure in a box of its own width, so nothing beside it moves. */
+.strata-change-n { font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
+.strata-change-since { min-width: 8.5em; text-align: right; }
 .strata-change-swatch[data-change='up'] { background: var(--strata-up); }
 .strata-change-swatch[data-change='down'] { background: var(--strata-down); }
 .strata-change-swatch[data-change='new'] { background: var(--strata-new); }
