@@ -318,6 +318,8 @@ export interface Step {
    *  tangent from where they were a snapshot before (`pm`, while playing on from the step before), arriving with
    *  the one to where they will be next (`p2`, while playing on); NaN where they were not or will not be. */
   flow?: { pm: Places | null; p2: Places | null } | null;
+  /** A catch-up step, one of several on at once. */
+  quick?: boolean;
 }
 /** Each square's place, by field. */
 export interface Places { mx: Float64Array; my: Float64Array; px: Float64Array; py: Float64Array }

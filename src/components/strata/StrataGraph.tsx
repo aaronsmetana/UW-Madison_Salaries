@@ -13,6 +13,8 @@ import { fmtK } from '../../lib/chartStyle';
 import { num, usd, vsCampus } from '../../lib/format';
 import { useReveal } from '../PersonReveal';
 import { SegmentedToggle } from '../SegmentedToggle';
+import { TimelineChip } from './TimelineChip';
+import type { ChipInput } from '../../lib/timelineChip';
 import { Eyebrow } from '../Eyebrow';
 import type { ShownPerson } from '../SearchBox';
 import type { Emphasis } from '../../lib/homePeople';
@@ -263,6 +265,10 @@ export function StrataGraph({
   // The step's phase, from the field: moving, held, re-sorting.
   const [phase, setPhase] = useState<StepPhase | null>(null);
   const [moving, setMoving] = useState(false);
+  // Play's rest before the next snapshot, for the status chip.
+  const [rest, setRest] = useState<{ start: number; end: number; next: string } | null>(null);
+  // Everyone on the way to another view, for the status chip.
+  const [switching, setSwitching] = useState(false);
   // The snapshot last landed in, when, and the pause its pace then asked for: Play and each catch-up step go on
   // from there. A layout simply there again (a resize, a filter) is no new landing.
   const [landed, setLanded] = useState<{ at: number | null; t: number; re: number } | null>(null);
@@ -404,6 +410,13 @@ export function StrataGraph({
   );
   const layout = useMemo(() => (strata && plotW > 0 ? layoutOf(strata) : null), [strata, plotW, layoutOf]);
   const tail = layout?.tail ?? null;
+  // A change of view: everyone on the way to their place in the other (the status chip says so until they land).
+  const viewWas = useRef<StrataView | null>(null);
+  useEffect(() => {
+    const v = layout?.view ?? null;
+    if (viewWas.current && v && v !== viewWas.current && !prefersReducedMotion()) setSwitching(true);
+    viewWas.current = v;
+  }, [layout?.view]);
   // The floors last laid out, kept while they fade out on the way back to the histogram.
   const floorsRef = useRef<Pick<StrataLayout, 'floors' | 'floorX'> | null>(null);
   if (layout?.floors) floorsRef.current = { floors: layout.floors, floorX: layout.floorX };
@@ -417,7 +430,11 @@ export function StrataGraph({
   // A change of mode plays the last step again in the new one (`again`).
   const shownRef = useRef<{ layout: StrataLayout; strata: Strata } | null>(null);
   const [again, setAgain] = useState<{ at: number; layout: StrataLayout } | null>(null);
+  // A jump of several snapshots on: the last of them, while the quick steps between are taken (read by the step as
+  // it is made, in this render).
+  const [queue, setQueue] = useState<number | null>(null);
   const queueRef = useRef<number | null>(null);
+  queueRef.current = queue;
   const step = useMemo<Step | null>(() => {
     const replaying = !!again && at != null && at > 0 && again.at === at && again.layout === layout;
     let was = shownRef.current;
@@ -447,7 +464,8 @@ export function StrataGraph({
     const fade = !replaying && stepFrom != null && at != null && at < stepFrom;
     const md = modeRef.current, full = pacePlan(paceRef.current, md, countdownRef.current);
     // A catch-up step (a jump of several on): quickly, straight there.
-    const plan = queueRef.current != null ? { mv: Math.max(FAST_MS, Math.round(full.mv * CATCH_UP)), cd: 0, so: 0, re: 0, staged: false } : full;
+    const quick = queueRef.current != null;
+    const plan = quick ? { mv: Math.max(FAST_MS, Math.round(full.mv * CATCH_UP)), cd: 0, so: 0, re: 0, staged: false } : full;
     // Each square's group — its column (the pile after the last), or its floor — and how many stand in each.
     const group = new Int16Array(n + m), size = new Int32Array(Math.max(COLS, FLOORS) + 1);
     for (let i = 0; i < n; i++) size[(group[i] = floors ? floorOf(B.mainPay[i]) : B.col[i])]++;
@@ -491,7 +509,7 @@ export function StrataGraph({
     }
     return {
       to: L1, fade, from: { mx: fm.fx, my: fm.fy, px: fp.fx, py: fp.fy }, mid, kind: { main: k.main, pile: k.pile }, rank,
-      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) }, plan, mode: md, counts: k.counts, flow,
+      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) }, plan, mode: md, counts: k.counts, flow, quick,
     };
     // `shownRef` is the layout drawn before this one, and the pace, mode and catch-up are read as the step is made:
     // none a dependency.
@@ -501,8 +519,6 @@ export function StrataGraph({
   // one moves: the same people in the same columns), and the step taken from there.
   // A jump of several snapshots on (3a): each step between, quickly (CATCH_UP of a step's time), one after another
   // as each lands; back, a cross-fade straight there.
-  const [queue, setQueue] = useState<number | null>(null);
-  queueRef.current = queue;
   const goTo = useCallback((to: number, play = false) => {
     if (!timeline || to < 0 || to > lastSnap) return;
     if (!tl) { timeline.onWant(); setGoal({ to, play }); return; }
@@ -530,8 +546,11 @@ export function StrataGraph({
     const re = pacePlan(pace, mode, countdown).re, restart = restartRef.current ? PLAY_RESTART_MS : 0;
     const wait = Math.max(0, Math.min(landed.t + Math.max(landed.re, restart) - performance.now(), Math.max(re, restart)));
     const t = window.setTimeout(() => { restartRef.current = false; setStepFrom(at); setAt(at + 1); }, wait);
-    return () => window.clearTimeout(t);
-  }, [playing, at, goal, lastSnap, queue, onScreen, moving, landed, pace, mode, countdown]);
+    // The status chip counts the rest down.
+    if (wait > 0) { const t0 = performance.now(); setRest({ start: t0, end: t0 + wait, next: bareLabel(snaps[at + 1].label) }); }
+    return () => { window.clearTimeout(t); setRest(null); };
+  }, [playing, at, goal, lastSnap, queue, onScreen, moving, landed, pace, mode, countdown, snaps]);
+  const playLabel = playing ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : snaps.length > 1 ? `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}` : 'Play';
   const onPlay = () => {
     if (playing) { setPlaying(false); setPaused(true); return; }
     setPaused(false);
@@ -557,6 +576,7 @@ export function StrataGraph({
   atRef.current = at;
   const onMoving = useCallback((m: boolean) => setMoving(m), []);
   const onLanded = useCallback((moved: boolean) => {
+    setSwitching(false);
     const a = atRef.current;
     setLanded((l) => (!moved && l?.at === a ? l : { at: a, t: performance.now(), re: pacePlan(paceRef.current, modeRef.current, countdownRef.current).re }));
   }, []);
@@ -623,6 +643,21 @@ export function StrataGraph({
       if (left > 0 && was !== to) el.animate([{ transform: `scaleX(${was})` }, { transform: `scaleX(${to})` }], { duration: left, easing: 'linear' });
     };
   }, [playing, pace, lastSnap]);
+  // The status chip (3a §11): what the graph is doing, from the step, its phase, Play's rest and the pace.
+  const fadeStart = useMemo(() => (step?.fade ? performance.now() : 0), [step]);
+  const fadeInfo = useMemo(
+    () => (step?.fade && moving && at != null && snaps[at] ? { to: bareLabel(snaps[at].label), start: fadeStart, end: fadeStart + FADE_MS } : null),
+    [step, moving, at, snaps, fadeStart],
+  );
+  const chipInput: Omit<ChipInput, 'now'> | null = snaps.length > 1 ? {
+    playing, paused, fast: pace === 'fast', fastMs: FAST_MS, phase,
+    step: step && stepFrom != null && at != null && snaps[stepFrom] && snaps[at] ? { from: bareLabel(snaps[stepFrom].label), to: bareLabel(snaps[at].label), quick: !!step.quick } : null,
+    fade: fadeInfo, switching, rest, sortBy: byType ? 'type, then salary' : 'salary',
+    plan: pacePlan(pace, mode, countdown), stepsLeft: lastSnap - (at ?? lastSnap), last: bareLabel(snaps[lastSnap].label),
+    progress: { from: Math.max(0, (at ?? lastSnap) - 1) / lastSnap, to: (at ?? lastSnap) / lastSnap },
+  } : null;
+  // On a phone the chip takes Play's row while something is under way, Play down to its icon; at rest, Play's words.
+  const chipActive = !!chipInput && (playing || phase != null || rest != null || fadeInfo != null || switching);
   // What a raises-and-cuts step's colours mean, in the legend: while it moves and holds, and all through Fast's play.
   const changeShown = mode === 'change' && !!step?.counts && !step.fade && (phase?.phase === 'move' || phase?.phase === 'hold' || (pace === 'fast' && playing));
   const changePace = (p: Pace) => { setPace(p); setSkipHold((k) => k + 1); };
@@ -1757,11 +1792,20 @@ export function StrataGraph({
           data-snap={at != null ? snaps[at].id : snaps[lastSnap].id} data-playing={playing || undefined}
           data-step={step?.counts ? `${step.counts.up}:${step.counts.down}:${step.counts.joined}:${step.counts.left}` : undefined}
           data-pace={pace} data-mode={mode} data-phase={phase?.phase} data-phase-at={phase ? Math.round(phase.start) : undefined}>
-          <Button size="compact-sm" radius="xl" color="accent" className="strata-play"
-            leftSection={playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
-            loading={!!goal && !tl && timeline.data === 'loading'} onClick={onPlay}>
-            {playing ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}`}
-          </Button>
+          <div className="strata-tl-controls">
+          {phone && chipActive ? (
+            <ActionIcon size={28} radius="xl" color="accent" variant="filled" className="strata-play" onClick={onPlay} aria-label={playLabel}
+              loading={!!goal && !tl && timeline.data === 'loading'}>
+              {playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
+            </ActionIcon>
+          ) : (
+            <Button size="compact-sm" radius="xl" color="accent" className="strata-play"
+              leftSection={playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
+              loading={!!goal && !tl && timeline.data === 'loading'} onClick={onPlay}>
+              {playLabel}
+            </Button>
+          )}
+          {phone && chipActive && chipInput && <TimelineChip input={chipInput} compact />}
           {/* The speed and how a step shows; on a phone, with the settings, so the row stays two lines over the plot. */}
           {!phone && <SegmentedToggle ariaLabel="Speed" className="strata-speed" value={pace} onChange={(v) => changePace(v as Pace)} options={PACES} />}
           {!phone && <SegmentedToggle ariaLabel="Show each step by" className="strata-mode" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} />}
@@ -1790,6 +1834,8 @@ export function StrataGraph({
               </Stack>
             </Popover.Dropdown>
           </Popover>
+          </div>
+          <div className="strata-tl-progress">
           <div className="strata-track">
             <span className="strata-track-end">{bareLabel(snaps[0].label)}</span>
             <div className="strata-track-dots" role="radiogroup" aria-label="Snapshot"
@@ -1815,6 +1861,8 @@ export function StrataGraph({
               <div ref={fillRef} className="strata-track-fill" aria-hidden />
             </div>
             <span className="strata-track-end">{bareLabel(snaps[lastSnap].label)}</span>
+          </div>
+          {!phone && chipInput && <TimelineChip input={chipInput} />}
           </div>
           {/* The snapshot, its people and median are the toolbar's count and the median's pin; said here only to a
               screen reader, as the step lands (not at every step of Play). */}

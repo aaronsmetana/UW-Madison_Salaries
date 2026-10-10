@@ -468,7 +468,8 @@ test.describe('speed, mode and settings', () => {
     const steps = fills.slice(1).map((f, k) => f - fills[k]);
     expect(Math.min(...steps), 'the fill went back').toBeGreaterThanOrEqual(-1e-6);
     const mid = steps.slice(5, -5), stalled = mid.filter((d) => d < 1e-6).length;
-    expect(mid.length).toBeGreaterThan(60);
+    // Enough frames to judge by — not 60 a second: a CI runner draws about 23.
+    expect(mid.length, 'frames of the play seen').toBeGreaterThan(20);
     expect(stalled, `${stalled} of ${mid.length} frames with the fill standing still`).toBeLessThanOrEqual(2);
     // The counts change in place: each stands where it stood at every step.
     for (const k of ['up', 'down', 'new', 'left']) expect(new Set(boxes[k]), `the ${k} count moved: ${boxes[k]}`).toEqual(new Set([boxes[k][0]]));
@@ -629,6 +630,121 @@ test.describe('speed, mode and settings', () => {
     expect(ph.map(([p]) => p)).toEqual(['move', 'hold', 'sort']);
     expect(ph[1][1]).toBeGreaterThan(900);
     expect(ph[1][1]).toBeLessThan(1300);
+  });
+});
+
+/**
+ * The status chip (3a §11): what the graph is doing — moving people, the countdown in whole seconds inside a ring
+ * that unwinds, re-sorting, Play's rest before the next snapshot, Fast's play, a step back, a jump ahead, a change
+ * of view — and, while it plays, when the timeline ends. Every label it shows is logged as it changes (some last a
+ * quarter second).
+ */
+test.describe('the status chip', () => {
+  const chipLog = (page: Page) => page.evaluate(() => {
+    const w = window as unknown as { chip: [string, string, number][] };
+    w.chip = [];
+    const bar = document.querySelector('.strata-timeline') as HTMLElement;
+    const read = () => {
+      const label = bar.querySelector('.strata-status-label')?.textContent ?? '', count = bar.querySelector('.strata-status-count')?.textContent ?? '';
+      const last = w.chip[w.chip.length - 1];
+      if (!last || last[0] !== label || last[1] !== count) w.chip.push([label, count, performance.now()]);
+    };
+    read();
+    new MutationObserver(read).observe(bar, { subtree: true, childList: true, characterData: true });
+  });
+  const chipSeen = (page: Page) => page.evaluate(() => (window as unknown as { chip: [string, string, number][] }).chip);
+  /** Each label as it came, once a run. */
+  const runs = (seen: [string, string, number][]) => seen.map(([l]) => l).filter((l, k, all) => k === 0 || l !== all[k - 1]);
+  const label = (page: Page) => page.locator('.strata-status-label');
+
+  test('names each phase of a staged step, and counts the countdown down in whole seconds as its ring unwinds', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 7);
+    await pace(page, 'Slow');
+    await expect(label(page)).toHaveText('Sorted by salary');
+    await chipLog(page);
+    await dot(page, 8).click();
+    await expect(bar(page)).toHaveAttribute('data-phase', 'hold', { timeout: 10_000 });
+    // The ring unwinds through the countdown.
+    const ring = () => page.locator('.strata-status-ring').evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue('--ring')));
+    const r0 = await ring();
+    await page.waitForTimeout(600);
+    expect(await ring(), 'the ring did not unwind').toBeLessThan(r0 - 30);
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 15_000 });
+    const seen = await chipSeen(page);
+    const labels = runs(seen);
+    expect(labels).toEqual([
+      'Sorted by salary', `Moving people · ${SNAPS[7].label} → ${SNAPS[8].label}`, 'Sorting by salary in', 'Sorting by salary…', 'Sorted by salary',
+    ]);
+    expect(seen.filter(([l]) => l === 'Sorting by salary in').map(([, c]) => c), 'the countdown’s seconds').toEqual(['3', '2', '1']);
+  });
+
+  test('while it plays, counts the rest to the next snapshot and says when the timeline ends; at Fast, how many a second', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 6);
+    await pace(page, 'Medium');
+    await chipLog(page);
+    await page.locator('.strata-play').click();
+    // The rest lasts 0.7 s: caught the frame it shows, not by polling.
+    const resting = await page.waitForFunction((next) => {
+      const l = document.querySelector('.strata-status-label')?.textContent;
+      return l === `Next: ${next} in` ? { count: document.querySelector('.strata-status-count')?.textContent, eta: document.querySelector('.strata-status-eta')?.textContent } : null;
+    }, SNAPS[8].label, { timeout: 15_000 }).then((h) => h.jsonValue());
+    expect(resting!.count).toBe('1');
+    // Then the step to it, three to go after it at Medium's 4.1 s each: about 12 to 16 s in all.
+    expect(resting!.eta).toMatch(/^Timeline ends \(Sep 2026\) in 0:\d\d$/);
+    const eta = page.locator('.strata-status-eta');
+    const secs = async () => Number((await eta.textContent())!.match(/0:(\d\d)$/)![1]);
+    const s0 = Number(resting!.eta!.match(/0:(\d\d)$/)![1]);
+    expect(s0).toBeGreaterThanOrEqual(10);
+    expect(s0).toBeLessThanOrEqual(17);
+    await page.waitForTimeout(1_500);
+    expect(await secs(), 'the time left did not go down').toBeLessThan(s0);
+    await page.locator('.strata-play').click();
+    await expect(eta).toHaveCount(0);
+    await expect(label(page)).toHaveText('Paused · sorted by salary', { timeout: 15_000 });
+    // Fast.
+    await pace(page, 'Fast');
+    await page.locator('.strata-play').click();
+    await expect(label(page)).toHaveText('Playing · 4 snapshots a second');
+  });
+
+  test('says when it rewinds to an earlier snapshot, skips ahead through several, and switches view', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 6);
+    await chipLog(page);
+    await goTo(page, 2);
+    await goTo(page, 5);
+    await page.getByRole('radiogroup', { name: 'View' }).getByText('Floors').click();
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const labels = runs(await chipSeen(page));
+    expect(labels).toContain(`Rewinding to ${SNAPS[2].label.replace(/ \(.*\)$/, '')}`);
+    expect(labels).toContain(`Skipping ahead · ${SNAPS[2].label.replace(/ \(.*\)$/, '')} → ${SNAPS[3].label}`);
+    expect(labels).toContain('Switching view');
+    expect(labels[labels.length - 1]).toBe('Sorted by salary');
+  });
+
+  test('on a phone, takes Play’s row while it plays — Play down to its icon — and the row never changes height', async ({ browser }) => {
+    test.setTimeout(120_000);
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage();
+    await home(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await bar(page).scrollIntoViewIfNeeded();
+    await expect(page.locator('.strata-status')).toHaveCount(0);
+    const h0 = (await bar(page).boundingBox())!.height;
+    await page.locator('.strata-play').click();
+    await expect(page.locator('.strata-status')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.strata-play')).toHaveAttribute('aria-label', 'Pause');
+    expect((await bar(page).boundingBox())!.height, 'the row grew').toBeCloseTo(h0, 0);
+    await expect(page.locator('.strata-status-eta'), 'no room for when it ends on a phone').toHaveCount(0);
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    await expect(page.locator('.strata-status')).toHaveCount(0);
+    expect((await bar(page).boundingBox())!.height).toBeCloseTo(h0, 0);
+    await ctx.close();
   });
 });
 
