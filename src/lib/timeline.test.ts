@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BIG_STEP, CODED, bigMoves, buildTimeline, followText, quantileCont, snapStats, strataFromPeople, timelineSql, type SnapPeople } from './timeline';
-import { stableKey } from './strata';
+import { CODED, buildTimeline, stepKinds, followText, quantileCont, snapStats, strataFromPeople, timelineSql, type SnapPeople } from './timeline';
+import { DOWN, NEW, STAY, UP, stableKey } from './strata';
 
 const NAMES = ['Academic Staff', 'University Staff', 'Faculty'];
 const snap = (rows: [id: number, pay: number, kind: number][]): SnapPeople => ({
@@ -64,11 +64,21 @@ describe('quantileCont and snapStats', () => {
   });
 });
 
-describe('bigMoves', () => {
-  it('names those whose pay moved 8% or more either way between two snapshots, and no one new or gone', () => {
-    const a = snap([[1, 100_000, 0], [2, 100_000, 0], [3, 100_000, 0], [4, 100_000, 0]]);
-    const b = snap([[1, 100_000 * BIG_STEP, 0], [2, 107_000, 0], [3, 100_000 / BIG_STEP, 0], [5, 90_000, 0]]);
-    expect([...bigMoves(a, b, 6)]).toEqual([0, 1, 0, -1, 0, 0]);
+describe('stepKinds', () => {
+  it('says who stayed in their $5k column, moved up or down one, or joined, and counts who left', () => {
+    const a = strataFromPeople(snap([[1, 100_000, 0], [2, 100_000, 0], [3, 100_000, 0], [4, 100_000, 0], [6, 300_000, 2]]), NAMES, 250_000);
+    // 1 up a column, 2 a raise inside its column, 3 down a column, 4 gone, 5 new, 6 in the pile still, 7 up into it.
+    const b = strataFromPeople(snap([[1, 106_000, 0], [2, 104_000, 0], [3, 99_000, 0], [5, 90_000, 1], [6, 320_000, 2], [7, 260_000, 0]]), NAMES, 250_000);
+    const k = stepKinds(a, b, 8, false);
+    const of = (id: number) => { const i = b.mainId.indexOf(id); return i >= 0 ? k.main[i] : k.pile[b.pileId.indexOf(id)]; };
+    expect([of(1), of(2), of(3), of(5), of(6), of(7)]).toEqual([UP, STAY, DOWN, NEW, STAY, NEW]);
+    expect(k.counts).toEqual({ up: 1, down: 1, joined: 2, left: 1 });
+  });
+  it('in the floors goes by floor: a raise across a $5k column inside one $10k floor stays', () => {
+    const a = strataFromPeople(snap([[1, 101_000, 0]]), NAMES, 250_000);
+    const b = strataFromPeople(snap([[1, 106_000, 0]]), NAMES, 250_000);
+    expect(stepKinds(a, b, 2, false).main[0]).toBe(UP);
+    expect(stepKinds(a, b, 2, true).main[0]).toBe(STAY);
   });
 });
 

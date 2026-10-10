@@ -161,6 +161,11 @@
   --found-on: #ffffff;
   /* Joined since the snapshot before (3a's amber), as words: 5.9:1 on white. */
   --text-new: #8a5a00;
+  /* A timeline step's squares, raises and cuts (3a): up, down, joined, and the neutral everyone else turns. */
+  --strata-up: #14915c;
+  --strata-down: #da4636;
+  --strata-new: #c98410;
+  --strata-neutral: #b7bfc4;
   --guide-strong: var(--mantine-color-gray-6);
   /* The middle 50% of a group (p25-p75), one look everywhere: a neutral wash — teal means "this
      person" — bounded by two edges a reader can see (3.32:1). The wash it replaces was the accent at
@@ -469,6 +474,10 @@ body {
   --found-cover: #34d06c;
   --found-on: #04260f;
   --text-new: #f2c14e;
+  --strata-up: #5bd69a;
+  --strata-down: #ff7a6b;
+  --strata-new: #f2c14e;
+  --strata-neutral: #41707b;
   --guide-strong: var(--mantine-color-gray-6);
   --band-fill: rgba(222, 226, 230, 0.1);
   --band-edge: var(--mantine-color-gray-6);
@@ -2510,7 +2519,7 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
   display: flex; align-items: center; gap: 14px; margin-top: 6px; padding: 4px 12px 4px 4px; min-height: 38px; box-sizing: border-box;
   border-radius: var(--mantine-radius-lg); background: var(--surface-sunken); border: 1px solid var(--hairline-soft);
 }
-.strata-play, .strata-speed { flex: none; }
+.strata-play, .strata-speed, .strata-mode, .strata-settings { flex: none; }
 .strata-track { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .strata-track-end { flex: none; font-size: var(--mantine-font-size-xs); color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .strata-track-dots {
@@ -2527,15 +2536,21 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-track-dot[data-state='past']::after { background: var(--mantine-color-accent-3); box-shadow: none; }
 .strata-track-dot[data-state='now']::after { width: 14px; height: 14px; background: var(--mantine-color-accent-6); box-shadow: 0 0 0 2px var(--surface); }
 .strata-track-dot:focus-visible { outline: 2px solid var(--mantine-color-accent-6); outline-offset: 0; border-radius: 50%; }
-.strata-timeline-readout { flex: none; font-size: var(--mantine-font-size-xs); line-height: 1.45; text-align: right; font-variant-numeric: tabular-nums; }
-.strata-movers { color: var(--mantine-color-dimmed); }
-.strata-movers [data-up] { color: var(--text-pos); font-weight: 600; }
-.strata-movers [data-down] { color: var(--text-neg); font-weight: 600; }
-@media screen and (max-width: 48em) {
+/* Where Play, the speed, the mode and the settings leave the track too little room, it takes a line of its own. */
+@media screen and (max-width: 75em) {
   .strata-timeline { flex-wrap: wrap; row-gap: 6px; }
   .strata-track { order: 3; flex-basis: 100%; }
-  .strata-timeline-readout { flex: 1 1 0; min-width: 0; }
+  .strata-settings { margin-left: auto; }
 }
+.strata-settings-panel .seg-toggle { width: 100%; }
+/* While a raises-and-cuts step shows them (3a): what its colours mean, counted, where the types are listed. */
+.strata-change-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.strata-change-item { cursor: default; }
+.strata-change-n { font-variant-numeric: tabular-nums; }
+.strata-change-swatch[data-change='up'] { background: var(--strata-up); }
+.strata-change-swatch[data-change='down'] { background: var(--strata-down); }
+.strata-change-swatch[data-change='new'] { background: var(--strata-new); }
+.strata-change-swatch[data-change='left'] { background: transparent; box-shadow: inset 0 0 0 1px var(--guide-strong); }
 /* On a phone the dots fill the line; the readout names the snapshot shown. */
 @media screen and (max-width: 30em) {
   .strata-track-end { display: none; }

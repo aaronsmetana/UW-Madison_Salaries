@@ -1,4 +1,4 @@
-import { COLS, COL_DOLLARS, stableKey, typeRanks, type Strata } from './strata';
+import { COLS, COL_DOLLARS, DOWN, FLOORS, NEW, STAY, UP, floorOf, stableKey, typeRanks, type Strata } from './strata';
 import { ACTUAL_PAY } from './queries';
 import { sqlStr } from './duckdb';
 
@@ -20,8 +20,6 @@ export const CATEGORY_SPELLINGS: Readonly<Record<string, string>> = {
 /** Before Apr 2024 University Staff and trainees appear only as codes (CP, CL, CJ, ET2–ET4) that no public
  *  source defines and whose raises differ, so they are one kind of their own, never merged on a guess. */
 export const CODED = 'Coded only (CP, CL, CJ, ET)';
-/** A step's mover: pay up or down by this ratio or more between neighbouring snapshots. */
-export const BIG_STEP = 1.08;
 
 /** One snapshot's people: each one's number, pay and kind (an index into the timeline's `names`). */
 export interface SnapPeople {
@@ -155,21 +153,32 @@ export function snapStats(p: SnapPeople, kinds: number, cap: number): SnapStats 
   };
 }
 
+/** How many did what in a step (3a): moved up a column (or floor), down one, joined, and left. */
+export interface StepCounts { up: number; down: number; joined: number; left: number }
+
 /**
- * Who moved pay by `BIG_STEP` or more between neighbouring snapshots `a` and `b`, by person number: +1 up,
- * −1 down, 0 not (or not in both).
+ * A step's people (3a): what each square of `b` does coming from `a` — STAY in its group, UP or DOWN to another,
+ * or NEW (not in `a`) — by group: its $5k column (the pile after the last), or in the floors its floor. With the
+ * counts, and who LEFT (in `a`, not `b`).
  */
-export function bigMoves(a: SnapPeople, b: SnapPeople, people: number): Int8Array {
-  const was = new Float64Array(people);
-  for (let r = 0; r < a.id.length; r++) was[a.id[r]] = a.pay[r];
-  const out = new Int8Array(people);
-  for (let r = 0; r < b.id.length; r++) {
-    const before = was[b.id[r]], now = b.pay[r];
-    if (!(before > 0)) continue;
-    if (now >= before * BIG_STEP) out[b.id[r]] = 1;
-    else if (now * BIG_STEP <= before) out[b.id[r]] = -1;
-  }
-  return out;
+export function stepKinds(a: TimelineStrata, b: TimelineStrata, people: number, floors: boolean): { main: Uint8Array; pile: Uint8Array; counts: StepCounts } {
+  const was = new Int16Array(people).fill(-1);
+  const groupOf = (pay: number, pile: boolean) => (floors ? (pile ? FLOORS - 1 : floorOf(pay)) : pile ? COLS : colOf(pay));
+  a.mainId.forEach((id, i) => { was[id] = groupOf(a.mainPay[i], false); });
+  a.pileId.forEach((id) => { was[id] = groupOf(0, true); });
+  const counts: StepCounts = { up: 0, down: 0, joined: 0, left: 0 };
+  const seen = new Uint8Array(people);
+  const kinds = (ids: Int32Array, pile: boolean, pay: Float64Array | null) => Uint8Array.from(ids, (id, i) => {
+    seen[id] = 1;
+    const g = groupOf(pay ? pay[i] : 0, pile), w = was[id];
+    if (w < 0) { counts.joined++; return NEW; }
+    if (g > w) { counts.up++; return UP; }
+    if (g < w) { counts.down++; return DOWN; }
+    return STAY;
+  });
+  const main = kinds(b.mainId, false, b.mainPay), pile = kinds(b.pileId, true, null);
+  for (let id = 0; id < people; id++) if (was[id] >= 0 && !seen[id]) counts.left++;
+  return { main, pile, counts };
 }
 
 /** The followed person's label: their pay, counting from `from` as `e` goes 0 → 1; arrived, with the change. */

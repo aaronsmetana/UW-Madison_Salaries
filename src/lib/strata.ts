@@ -117,8 +117,9 @@ export interface Stack {
  * Who stands where in each column: by salary from the baseline up, the lowest paid at the bottom left — ties
  * (the counts know a pay only to its $100) by type, then by a fixed key. A filter never moves anyone: it lights
  * its people where they stand. Without pays (a pile whose pays the counts do not carry), by type, then key.
+ * `byType` (3a's sort-order setting): by type first, then salary, so each column stands in clean bands of colour.
  */
-export function stackColumns(col: ArrayLike<number>, pay: ArrayLike<number> | null, kind: ArrayLike<number>, key: ArrayLike<number>, rank: ArrayLike<number>, cols: number): Stack {
+export function stackColumns(col: ArrayLike<number>, pay: ArrayLike<number> | null, kind: ArrayLike<number>, key: ArrayLike<number>, rank: ArrayLike<number>, cols: number, byType = false): Stack {
   const n = col.length;
   const start = new Int32Array(cols + 1);
   for (let i = 0; i < n; i++) start[col[i] + 1]++;
@@ -126,7 +127,9 @@ export function stackColumns(col: ArrayLike<number>, pay: ArrayLike<number> | nu
   const fill = start.slice(0, cols);
   const order = new Int32Array(n);
   for (let i = 0; i < n; i++) order[fill[col[i]]++] = i;
-  const cmp = (a: number, b: number) => (pay ? pay[a] - pay[b] : 0) || rank[kind[a]] - rank[kind[b]] || key[a] - key[b] || a - b;
+  const cmp = byType
+    ? (a: number, b: number) => rank[kind[a]] - rank[kind[b]] || (pay ? pay[a] - pay[b] : 0) || key[a] - key[b] || a - b
+    : (a: number, b: number) => (pay ? pay[a] - pay[b] : 0) || rank[kind[a]] - rank[kind[b]] || key[a] - key[b] || a - b;
   const slot = new Uint16Array(n);
   for (let c = 0; c < cols; c++) {
     const part = order.subarray(start[c], start[c + 1]);
@@ -362,31 +365,63 @@ export const DROP_MS = 350;
 export const DROP_WAVE_MS = 210;
 export const DROP_ROW_MS = 0.55;
 
-/** A timeline step (3a §8), at 40% of the pace it first had: while playing a snapshot every 1.5 s (StrataGraph
- *  PLAY_MS), and each step's motion over within 1.2 s, so every snapshot is seen at rest before the next.
- *  A square is STEP_MS on its way, set off left to right over STEP_WAVE_MS; the big movers, which arc, over
- *  STEP_ARC_WAVE_MS, so they launch together. */
-export const STEP_MS = 950;
-export const STEP_WAVE_MS = 225;
-export const STEP_ARC_WAVE_MS = 112.5;
-/** A step in stages, so who goes and who comes are seen apart: who left fades out where they stood in the first
- *  STEP_OUT of a square's time, who stayed moves through all of it, and who joined fades in where they stand
- *  after STEP_IN. */
-export const STEP_OUT = 0.6;
-export const STEP_IN = 0.4;
-/** When a square sets off in a step and how long it takes, by what it is doing; `x` is where it is across a plot
- *  `W` wide. Every one is done by STEP_WAVE_MS + STEP_MS — over `speed` (the timeline's 1×, 2× or 4×). */
-export function stepTiming(role: 'stay' | 'arc' | 'join' | 'leave', x: number, W: number, speed = 1): { wait: number; ms: number } {
-  const across = W > 0 ? Math.min(1, Math.max(0, x / W)) : 0;
-  const at = (wait: number, ms: number) => ({ wait: wait / speed, ms: ms / speed });
-  if (role === 'arc') return at(across * STEP_ARC_WAVE_MS, STEP_MS);
-  const wait = across * STEP_WAVE_MS;
-  if (role === 'leave') return at(wait, STEP_MS * STEP_OUT);
-  if (role === 'join') return at(wait + STEP_MS * STEP_IN, STEP_MS * (1 - STEP_IN));
-  return at(wait, STEP_MS);
+/**
+ * A timeline step (3a §8): what each square does between two snapshots — stays in its column (or floor), moves up
+ * or down to another, joins, or leaves.
+ */
+export const STAY = 1, UP = 2, DOWN = 3, NEW = 4, LEFT = 5;
+/** The speeds (3a §9), and the two ways a step is shown: raises and cuts (staged, in change colours), or by type. */
+export type Pace = 'slow' | 'medium' | 'fast';
+export type StepMode = 'change' | 'type';
+/** A step's phases, ms: the move, the countdown that holds it, the re-sort, and the pause before the next; staged
+ *  (raises and cuts at Slow or Medium) or straight from one sorted place to the next. */
+export interface PacePlan { mv: number; cd: number; so: number; re: number; staged: boolean }
+const PACES = {
+  medium: { mv: 1500, cd: 1000, so: 900, re: 700, tmv: 1700, tre: 900 },
+  slow: { mv: 2600, so: 1700, re: 1600, tmv: 2600, tre: 1600 },
+} as const;
+/** Fast: a snapshot every quarter second, straight between sorted places, no pauses. */
+export const FAST_MS = 250;
+/** Slow's countdown, seconds, unless the reader sets another. */
+export const COUNTDOWN_S = 3;
+export function pacePlan(pace: Pace, mode: StepMode, countdown = COUNTDOWN_S): PacePlan {
+  if (pace === 'fast') return { mv: FAST_MS, cd: 0, so: 0, re: 0, staged: false };
+  const p = PACES[pace];
+  if (mode === 'type') return { mv: p.tmv, cd: 0, so: 0, re: p.tre, staged: false };
+  return { mv: p.mv, cd: pace === 'slow' ? countdown * 1000 : PACES.medium.cd, so: p.so, re: p.re, staged: true };
 }
-/** A big mover's arc: rising this far over its path, at most `ARC_MAX` px. */
-export const arcHeight = (dx: number) => Math.min(110, 24 + Math.abs(dx) * 0.5);
+/** Each square's own part of a step's move, as shares of it (3a): when it sets off — a left-to-right wave by its
+ *  place across `w` (0–1), and a little at random `h` (0–1) — how long it takes, and, moving up or down `dx` px
+ *  across, how high it arcs. Every one is done by the end. */
+export function moveTiming(kind: number, w: number, h: number, dx = 0): { dl: number; du: number; arc: number } {
+  if (kind === UP || kind === DOWN) return { dl: 0.03 + 0.42 * w + 0.07 * h, du: 0.3 + 0.12 * Math.min(1, Math.abs(dx) / 260), arc: Math.min(110, 10 + 0.3 * Math.abs(dx)) };
+  if (kind === NEW) return { dl: 0.25 + 0.35 * w + 0.06 * h, du: 0.3, arc: 0 };
+  if (kind === LEFT) return { dl: 0.42 * w + 0.05 * h, du: 0.22, arc: 0 };
+  return { dl: 0.1 + 0.42 * w + 0.05 * h, du: 0.28, arc: 0 };
+}
+/**
+ * A staged step's held picture (3a): each square's slot in its group (column, or floor) while the countdown holds
+ * — who stayed at the bottom in their old order (`prev`, their slot before), then who came: cuts, raises, then new
+ * hires, each by key. So who stayed keeps their seat, give or take the gaps of those who went, and who arrived
+ * stands out on top until the re-sort.
+ */
+export function stagedSlots(group: ArrayLike<number>, kind: ArrayLike<number>, prev: ArrayLike<number>, key: ArrayLike<number>): Uint16Array {
+  const n = group.length, at = [0, 0, 2, 1, 3, 4]; // by kind: STAY, then DOWN, UP, NEW
+  const order = Int32Array.from({ length: n }, (_, i) => i).sort((a, b) =>
+    group[a] - group[b] || at[kind[a]] - at[kind[b]] || (kind[a] === STAY ? prev[a] - prev[b] : key[a] - key[b]) || a - b);
+  const slot = new Uint16Array(n);
+  let g = -1, k = 0;
+  for (const i of order) {
+    if (group[i] !== g) { g = group[i]; k = 0; }
+    slot[i] = k++;
+  }
+  return slot;
+}
+/** The re-sort (3a): each column's people into salary order from the bottom row up — `k`th of `m` — a little at
+ *  random, as shares of it. */
+export const sortTiming = (k: number, m: number, h: number) => ({ dl: (0.5 * k) / Math.max(1, m) + 0.08 * h, du: 0.42 });
+/** In the first part of a staged move everyone who stays fades from their type's colour to the neutral one. */
+export const TYPE_FADE = 0.18;
 
 export const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
 /** A fall that speeds up as it drops, then a hop of 4.5% of the fall as it lands. */

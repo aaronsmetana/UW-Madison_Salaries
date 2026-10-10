@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, landEase, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -212,31 +212,56 @@ describe('snapReach', () => {
   });
 });
 
-describe('stepTiming', () => {
-  const W = 1000;
-  const end = (t: { wait: number; ms: number }) => t.wait + t.ms;
-  it('fades who left out before anyone who joined is in, and starts the joiners once the rest are on their way', () => {
-    for (const x of [0, 500, 1000]) {
-      expect(end(stepTiming('leave', x, W))).toBeLessThan(end(stepTiming('join', x, W)));
-      expect(stepTiming('join', x, W).wait).toBeGreaterThan(stepTiming('stay', x, W).wait + STEP_MS * 0.3);
+describe('pacePlan', () => {
+  it('stages raises and cuts at Slow and Medium — move, countdown, re-sort, pause — with Slow’s countdown the reader’s', () => {
+    expect(pacePlan('slow', 'change')).toEqual({ mv: 2600, cd: 3000, so: 1700, re: 1600, staged: true });
+    expect(pacePlan('slow', 'change', 5).cd).toBe(5000);
+    expect(pacePlan('medium', 'change')).toEqual({ mv: 1500, cd: 1000, so: 900, re: 700, staged: true });
+  });
+  it('moves straight between sorted places by employment type, and at Fast in either mode without a pause', () => {
+    expect(pacePlan('slow', 'type')).toEqual({ mv: 2600, cd: 0, so: 0, re: 1600, staged: false });
+    expect(pacePlan('medium', 'type')).toEqual({ mv: 1700, cd: 0, so: 0, re: 900, staged: false });
+    for (const md of ['change', 'type'] as const) expect(pacePlan('fast', md)).toEqual({ mv: FAST_MS, cd: 0, so: 0, re: 0, staged: false });
+    expect(FAST_MS).toBe(250);
+  });
+});
+
+describe('moveTiming', () => {
+  const end = (t: { dl: number; du: number }) => t.dl + t.du;
+  it('has every square of a step at rest by the move’s end, wherever it stands and however far it goes', () => {
+    for (const k of [STAY, UP, DOWN, NEW, LEFT]) for (const w of [0, 0.5, 1]) for (const h of [0, 0.99]) for (const dx of [0, 100, 1000]) {
+      expect(end(moveTiming(k, w, h, dx))).toBeLessThanOrEqual(1 + 1e-9);
     }
   });
-  it('has every square at rest by the wave and a square’s time, inside a playing step’s 1.5 s, with a beat to spare', () => {
-    for (const role of ['stay', 'arc', 'join', 'leave'] as const) for (const x of [0, 400, 1000, 1200]) {
-      expect(end(stepTiming(role, x, W))).toBeLessThanOrEqual(STEP_WAVE_MS + STEP_MS + 1e-9);
-    }
-    expect(STEP_WAVE_MS + STEP_MS).toBeLessThanOrEqual(1500 - 200);
+  it('sets off left to right, the movers first, those who joined once the rest are on their way, and who left soonest out', () => {
+    expect(moveTiming(UP, 1, 0).dl).toBeGreaterThan(moveTiming(UP, 0, 0).dl);
+    expect(moveTiming(NEW, 0, 0).dl).toBeGreaterThan(moveTiming(STAY, 0, 0).dl + 0.1);
+    for (const w of [0, 1]) expect(end(moveTiming(LEFT, w, 0.99))).toBeLessThan(end(moveTiming(NEW, w, 0)));
   });
-  it('runs at half the pace the timeline first had (450 ms a square, a 130 ms sweep)', () => {
-    expect(STEP_MS).toBeGreaterThanOrEqual(1.5 * 450);
+  it('arcs a mover higher the farther it goes, up to 110px, and takes it a little longer', () => {
+    expect(moveTiming(UP, 0, 0, 40).arc).toBeLessThan(moveTiming(UP, 0, 0, 300).arc);
+    expect(moveTiming(DOWN, 0, 0, -5000).arc).toBe(110);
+    expect(moveTiming(UP, 0, 0, 260).du).toBeGreaterThan(moveTiming(UP, 0, 0, 0).du);
+    expect(moveTiming(STAY, 0, 0, 300).arc).toBe(0);
   });
-  it('at 2× and 4× sets every square off and lands it that much sooner, still at rest before the next step', () => {
-    for (const speed of [2, 4]) for (const role of ['stay', 'arc', 'join', 'leave'] as const) for (const x of [0, 400, 1000]) {
-      const one = stepTiming(role, x, W), fast = stepTiming(role, x, W, speed);
-      expect(fast.wait).toBeCloseTo(one.wait / speed, 9);
-      expect(fast.ms).toBeCloseTo(one.ms / speed, 9);
-      expect(end(fast)).toBeLessThanOrEqual(1500 / speed - 200 / speed);
-    }
+});
+
+describe('sortTiming', () => {
+  it('ripples up each column from the bottom, every square sorted by the re-sort’s end', () => {
+    expect(sortTiming(0, 10, 0).dl).toBe(0);
+    expect(sortTiming(9, 10, 0).dl).toBeGreaterThan(sortTiming(1, 10, 0).dl);
+    for (const k of [0, 5, 10]) expect(sortTiming(k, 10, 0.99).dl + sortTiming(k, 10, 0.99).du).toBeLessThanOrEqual(1 + 1e-9);
+  });
+});
+
+describe('stagedSlots', () => {
+  it('keeps who stayed at the bottom of their column in their old order, then stacks cuts, raises and new hires on top', () => {
+    // Column 0: two who stayed (old slots 5 and 2), a raise, a new hire, a cut. Column 1: one who stayed.
+    const group = [0, 0, 0, 0, 0, 1], kind = [STAY, STAY, UP, NEW, DOWN, STAY], prev = [5, 2, 0, 0, 0, 7], key = [1, 2, 3, 4, 5, 6];
+    expect([...stagedSlots(group, kind, prev, key)]).toEqual([1, 0, 3, 4, 2, 0]);
+  });
+  it('orders each arriving kind by key', () => {
+    expect([...stagedSlots([0, 0, 0], [UP, UP, UP], [0, 0, 0], [30, 10, 20])]).toEqual([2, 0, 1]);
   });
 });
 

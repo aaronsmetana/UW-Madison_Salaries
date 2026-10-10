@@ -2,17 +2,19 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { oracle, PAY, usd } from './oracle';
-import { HOME_STATS } from './homeDots';
+import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS } from './pace';
 import { parseColor } from './color';
 
 /**
- * The landing graph's timeline (mockup 3a §8, lib/timeline): under the plot, Play and a track of the
- * snapshots. Each snapshot is drawn from its own people, as the landing counts a person — total pay over paid
- * appointments, in the category of their highest-paid one — with its own headcount, median, quartiles, pile
- * and types; a step from one to the next carries each person from where they were, fades in who joined and
- * fades out who left, each in their own place, and between neighbours names who moved pay by 8% or more. Every figure here is restated from
- * the data in SQL, not taken from the page's code.
+ * The landing graph's timeline (mockup 3a §8, lib/timeline): under the plot, Play, the speed (Slow, Medium,
+ * Fast), how a step shows (raises and cuts, or employment type), its settings, and a track of the snapshots. Each
+ * snapshot is drawn from its own people, as the landing counts a person — total pay over paid appointments, in the
+ * category of their highest-paid one — with its own headcount, median, quartiles, pile and types; a step from one
+ * to the next carries each person from where they were, fades in who joined and fades out who left, each in their
+ * own place. Raising and cutting, it counts who moved up a $5k column, down one, joined and left, and at Slow and
+ * Medium stages it: the move, a countdown that holds it, the re-sort. Every figure here is restated from the data
+ * in SQL, not taken from the page's code.
  */
 
 const SUMMARY = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/summary.json', import.meta.url)), 'utf8')) as { snapshots: { id: string; label: string }[] };
@@ -38,6 +40,32 @@ async function home(page: Page) {
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
 /** To snapshot `i` by its dot, and on until the squares are at rest there. */
+/** The speed, and how a step shows. */
+async function pace(page: Page, p: 'Slow' | 'Medium' | 'Fast') {
+  await page.getByRole('radiogroup', { name: 'Speed' }).getByText(p, { exact: true }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Speed' }).getByRole('radio', { name: p })).toBeChecked();
+}
+async function mode(page: Page, m: 'Raises & cuts' | 'Employment type') {
+  await page.getByRole('radiogroup', { name: 'Show each step by' }).getByText(m, { exact: true }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Show each step by' }).getByRole('radio', { name: m })).toBeChecked();
+}
+/** From now on, each change of the bar's snapshot and phase and of the field's rest, with when. */
+const logSteps = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { log: [string, number][] | undefined };
+  // Watched once a page; again, the log starts over.
+  if (w.log) { w.log = []; return; }
+  w.log = [];
+  const bar = document.querySelector('.strata-timeline') as HTMLElement, f = document.querySelector('.strata-field') as HTMLElement;
+  new MutationObserver(() => w.log!.push([`snap ${bar.dataset.snap}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+  new MutationObserver(() => w.log!.push([`phase ${bar.dataset.phase ?? ''}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-phase'] });
+  new MutationObserver(() => w.log!.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
+});
+const readLog = (page: Page) => page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
+/** How long each phase of the log's first step lasted, ms, in order. */
+function phases(log: [string, number][]) {
+  const ph = log.filter(([e]) => e.startsWith('phase '));
+  return ph.slice(0, -1).map(([e, t], k) => [e.slice(6), Math.round(ph[k + 1][1] - t)] as const);
+}
 async function goTo(page: Page, i: number) {
   await dot(page, i).click();
   await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[i].id, { timeout: 60_000 });
@@ -107,38 +135,52 @@ test('each snapshot shows its own people: headcount, median and quartiles, the p
   }
 });
 
-test('a step between neighbours carries each person over, fades in who joined, fades out who left, and names who moved pay by 8% or more', async ({ page }) => {
+test('raising and cutting, a step counts who moved up a $5k column, down one, joined and left — in the legend and drawn in their inks while it holds — then back to the types', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);
   const [a, b] = [7, 8];
-  const was = new Map((await peopleIn(SNAPS[a].id)).map((p) => [p.k, p.pay]));
+  // Each person's group: their $5k column, the pile past the cap after the last.
+  const group = (pay: number) => (pay >= CAP ? CAP / 5000 : Math.min(CAP / 5000 - 1, Math.floor(pay / 5000)));
+  const was = new Map((await peopleIn(SNAPS[a].id)).map((p) => [p.k, group(p.pay)]));
   const now = await peopleIn(SNAPS[b].id);
+  const keys = new Set(now.map((p) => p.k));
+  const up = now.filter((p) => was.has(p.k) && group(p.pay) > was.get(p.k)!).length;
+  const down = now.filter((p) => was.has(p.k) && group(p.pay) < was.get(p.k)!).length;
   const joined = now.filter((p) => !was.has(p.k)).length;
-  const left = [...was.keys()].filter((k) => !now.some((p) => p.k === k)).length;
-  const up = now.filter((p) => (was.get(p.k) ?? 0) > 0 && p.pay >= was.get(p.k)! * 1.08).length;
-  const down = now.filter((p) => (was.get(p.k) ?? 0) > 0 && p.pay * 1.08 <= was.get(p.k)!).length;
+  const left = [...was.keys()].filter((k) => !keys.has(k)).length;
+  expect(up && down && joined && left, 'a step with no one to count proves nothing').toBeTruthy();
   await goTo(page, a);
-  await goTo(page, b);
-  await expect(bar(page)).toHaveAttribute('data-step', `${joined}:${left}`);
-  await expect(bar(page)).toHaveAttribute('data-movers', String(up + down));
-  await expect(page.locator('.strata-movers')).toHaveText(`${num(up + down)} people changed pay by 8%+ this step · green up, red down`);
-  // Drawn in the up and down inks, on top: both are on the canvas.
+  await pace(page, 'Slow');
+  await dot(page, b).click();
+  await expect(bar(page)).toHaveAttribute('data-phase', 'hold', { timeout: 10_000 });
+  await expect(bar(page)).toHaveAttribute('data-step', `${up}:${down}:${joined}:${left}`);
+  const legend = page.locator('.strata-change-legend');
+  await expect(legend).toContainText(`since ${SNAPS[a].label.replace(/ \(.*\)$/, '')}`);
+  for (const [k, v, label] of [['up', up, 'moved up'], ['down', down, 'moved down'], ['new', joined, 'joined'], ['left', left, 'left']] as const) {
+    await expect(legend.locator(`.strata-change-item[data-change="${k}"]`)).toHaveText(`${num(v)}${label}`);
+  }
+  await expect(page.locator('.strata-legend-item')).toHaveCount(0);
+  // Held, each mover stands in its own ink: so many squares at least in each.
   const ink = (v: string) => page.evaluate((v) => { const s = document.createElement('span'); document.body.appendChild(s); s.style.color = `var(${v})`; const c = getComputedStyle(s).color; s.remove(); return c; }, v);
-  const [pos, neg] = [parseColor(await ink('--text-pos')), parseColor(await ink('--text-neg'))];
-  const counts = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement, a) => {
+  const inks = await Promise.all(['--strata-up', '--strata-down', '--strata-new'].map(async (v) => parseColor(await ink(v))));
+  const counts = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement, inks) => {
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-    let u = 0, n = 0;
+    const n = inks.map(() => 0);
     for (let i = 0; i < d.length; i += 4) {
-      if (Math.hypot(d[i] - a.pos[0], d[i + 1] - a.pos[1], d[i + 2] - a.pos[2]) < 4) u++;
-      else if (Math.hypot(d[i] - a.neg[0], d[i + 1] - a.neg[1], d[i + 2] - a.neg[2]) < 4) n++;
+      if (d[i + 3] !== 255) continue;
+      const k = inks.findIndex((a) => Math.hypot(d[i] - a[0], d[i + 1] - a[1], d[i + 2] - a[2]) < 3);
+      if (k >= 0) n[k]++;
     }
-    return { u, n };
-  }, { pos, neg });
-  expect(counts.u, 'no square in the up ink').toBeGreaterThan(up);
-  expect(counts.n, 'no square in the down ink').toBeGreaterThan(down);
-  // Not neighbours: no one is named as a mover.
-  await goTo(page, 2);
-  await expect(page.locator('.strata-movers')).toHaveCount(0);
+    return n;
+  }, inks);
+  expect(counts, 'pixels in the up, down and joined inks').toEqual([expect.any(Number), expect.any(Number), expect.any(Number)]);
+  expect(counts[0], 'too few squares in the up ink').toBeGreaterThanOrEqual(up);
+  expect(counts[1], 'too few squares in the down ink').toBeGreaterThanOrEqual(down);
+  expect(counts[2], 'too few squares in the joined ink').toBeGreaterThanOrEqual(joined);
+  // Re-sorted and at rest: the types again.
+  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 15_000 });
+  await expect(legend).toHaveCount(0);
+  await expect(page.locator('.strata-legend-item')).not.toHaveCount(0);
 });
 
 test('a step fades out who left where they stood and fades in who joined where they stand: nothing drops in or lifts out', async ({ page }) => {
@@ -153,6 +195,10 @@ test('a step fades out who left where they stood and fades in who joined where t
     return y;
   };
   const before = await top();
+  // By employment type (raises and cuts leave fading trails behind the movers, on purpose), at Medium.
+  await mode(page, 'Employment type');
+  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+  await pace(page, 'Medium');
   // Every frame of a step on to the next snapshot: how high any part-way faded ink reaches (the big movers arc high
   // on purpose, drawn whole), and how many pixels are part-way faded, by how far into the step. (Back is a
   // cross-fade, with nothing in flight: the jumps' own test.)
@@ -186,7 +232,7 @@ test('a step fades out who left where they stood and fades in who joined where t
   const highest = Math.floor(Math.min(before, await top()) * k) - 1;
   expect(frames.length, 'no frames of the step seen').toBeGreaterThan(10);
   expect(frames.filter((f) => f.top < highest).map((f) => `${Math.round(f.t)} ms: faded ink at ${f.top}px`).slice(0, 3), `a square fading above the tallest column (${highest}px), on its way in or out`).toEqual([]);
-  // Who left fade in the first part of the step, before any joiner has begun; who joined in the last, after.
+  // Who left fade in the first part of the step's 1.7 s, before any joiner has begun; who joined in the last, after.
   expect(frames.some((f) => f.t < 300 && f.part > 0), 'who left did not fade out').toBe(true);
   expect(frames.some((f) => f.t > 900 && f.part > 0), 'who joined did not fade in').toBe(true);
   expect(frames[frames.length - 1].part, 'part-faded squares left once the step was over').toBe(0);
@@ -231,9 +277,12 @@ test('Pause holds the snapshot and Resume goes on; under reduced motion each ste
 });
 
 test('a step moves in frames inside the frame budget, at CI’s pace', async ({ page }) => {
+  test.setTimeout(90_000);
   await atCiPace(page);
   await home(page);
   await goTo(page, 7);
+  // Staged (Medium): the move, with its arcs and trails, and the re-sort.
+  await pace(page, 'Medium');
   await page.evaluate(() => performance.clearMeasures('strata-frame'));
   await goTo(page, 8);
   const frames = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
@@ -340,79 +389,141 @@ test.describe('one scale for every snapshot, and the pace', () => {
     }
   });
 
-  test('the speed is a radio group of 1×, 2× and 4×: at 4× Play shows a snapshot every 375 ms, each step’s motion as much faster', async ({ page }) => {
+});
+
+/**
+ * The speed, the mode and the settings (3a): Fast, the default, a snapshot every quarter second straight through;
+ * Medium and Slow stage each raises-and-cuts step — move, countdown, re-sort — and rest before the next, as
+ * lib/strata `pacePlan` times them; by employment type no countdown or re-sort; a change of speed while held goes on
+ * to the re-sort; a change of mode plays the last step again; the settings sort each column by type then salary,
+ * and set Slow's countdown.
+ */
+test.describe('speed, mode and settings', () => {
+  test('the speed is a radio group of Slow, Medium and Fast, Fast first: Play goes a snapshot every quarter second, never held', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
-    const speed = page.getByRole('radiogroup', { name: 'Playback speed' });
+    const speed = page.getByRole('radiogroup', { name: 'Speed' });
     await expect(speed.getByRole('radio')).toHaveCount(3);
-    await expect(speed.getByRole('radio', { name: '1×' })).toBeChecked();
-    // In from the first snapshot at 1× (the timeline loads), then 4× from there.
+    await expect(speed.getByRole('radio', { name: 'Fast' })).toBeChecked();
     await goTo(page, 0);
-    await speed.getByText('4×').click();
-    await expect(speed.getByRole('radio', { name: '4×' })).toBeChecked();
-    await page.evaluate(() => {
-      const log: [string, number][] = [];
-      (window as unknown as { log: typeof log }).log = log;
-      const bar = document.querySelector('.strata-timeline') as HTMLElement, f = document.querySelector('.strata-field') as HTMLElement;
-      new MutationObserver(() => log.push([`snap ${bar.dataset.snap}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
-      new MutationObserver(() => log.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
-    });
-    const t0 = await page.evaluate(() => performance.now());
+    await logSteps(page);
     await page.locator('.strata-play').click();
+    // While it plays, the legend counts each step's changes.
+    await expect(page.locator('.strata-change-legend')).toBeVisible({ timeout: 5_000 });
     await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
     await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
-    const log = await page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
-    const steps = log.flatMap(([e, t], k) => (e.startsWith('snap ') ? [{ t, k }] : []));
+    const log = await readLog(page);
+    const steps = log.filter(([e]) => e.startsWith('snap ')).map(([, t]) => t);
     expect(steps.length).toBe(LAST);
-    const gaps = [steps[0].t - t0], rests: number[] = [], moves: number[] = [];
-    for (let s = 1; s < steps.length; s++) {
-      gaps.push(steps[s].t - steps[s - 1].t);
-      const settled = log.slice(steps[s - 1].k, steps[s].k).filter(([e]) => e === 'settled true').pop();
-      rests.push(settled ? steps[s].t - settled[1] : -1);
-      if (settled) moves.push(settled[1] - steps[s - 1].t);
-    }
-    for (const g of gaps) expect(g, `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(360);
-    gaps.sort((a, b) => a - b);
-    expect(gaps[gaps.length >> 1], `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeLessThan(600);
-    // Each step's motion a quarter of 1×'s too (a step there moves for 1.1 s and more), so each lands before the next.
-    moves.sort((a, b) => a - b);
-    expect(moves.length, `rests ${rests.map(Math.round).join(', ')} ms: steps began before the last had landed`).toBeGreaterThanOrEqual((LAST - 1) / 2);
-    expect(moves[moves.length >> 1], `steps moving for ${moves.map(Math.round).join(', ')} ms`).toBeLessThan(450);
+    const gaps = steps.slice(1).map((t, k) => t - steps[k]).sort((x, y) => x - y);
+    expect(gaps[gaps.length >> 1], `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(240);
+    expect(gaps[gaps.length >> 1], `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeLessThan(500);
+    expect(log.filter(([e]) => e === 'phase hold' || e === 'phase sort'), 'Fast held or re-sorted a step').toEqual([]);
+    // At rest, the types again.
+    await expect(page.locator('.strata-change-legend')).toHaveCount(0);
   });
 
-  test('Play shows a snapshot every 1.5 s, each step’s motion over a second and more, and each at rest before the next', async ({ page }) => {
+  test('Medium stages a raises-and-cuts step — 1.5 s moving, a 1 s countdown, 0.9 s re-sorting — and Play rests 0.7 s before the next', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
-    await page.evaluate(() => {
-      const log: [string, number][] = [];
-      (window as unknown as { log: typeof log }).log = log;
-      const bar = document.querySelector('.strata-timeline') as HTMLElement, f = document.querySelector('.strata-field') as HTMLElement;
-      new MutationObserver(() => log.push([`snap ${bar.dataset.snap}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
-      new MutationObserver(() => log.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
-    });
+    await goTo(page, 3);
+    await pace(page, 'Medium');
+    await logSteps(page);
     await page.locator('.strata-play').click();
-    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[0].id, { timeout: 60_000 });
-    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
-    const log = await page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
-    // From the first snapshot on, one step after another.
-    const first = log.findIndex(([e]) => e === `snap ${SNAPS[0].id}`);
-    const steps = log.slice(first).flatMap(([e, t], k) => (e.startsWith('snap ') ? [{ t, k: first + k }] : []));
-    expect(steps.length).toBe(SNAPS.length);
-    const gaps: number[] = [], rests: number[] = [], moves: number[] = [];
-    for (let s = 1; s < steps.length; s++) {
-      gaps.push(steps[s].t - steps[s - 1].t);
-      // When the field came to rest in between, and how long it stayed so.
-      const between = log.slice(steps[s - 1].k, steps[s].k);
-      const settled = between.filter(([e]) => e === 'settled true').pop();
-      rests.push(settled ? steps[s].t - settled[1] : -1);
-      if (settled) moves.push(settled[1] - steps[s - 1].t);
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[5].id, { timeout: 30_000 });
+    await page.locator('.strata-play').click();
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const log = await readLog(page);
+    const ph = phases(log);
+    expect(ph.slice(0, 3).map(([p]) => p)).toEqual(['move', 'hold', 'sort']);
+    const [mv, cd, so] = ph.slice(0, 3).map(([, ms]) => ms);
+    expect(mv).toBeGreaterThan(1400); expect(mv).toBeLessThan(1700);
+    expect(cd).toBeGreaterThan(900); expect(cd).toBeLessThan(1200);
+    expect(so).toBeGreaterThan(800); expect(so).toBeLessThan(1100);
+    // Landed (the phase over), then the rest, then the next snapshot.
+    const end = log.find(([e]) => e === 'phase ')![1], next = log.filter(([e]) => e.startsWith('snap '))[1][1];
+    expect(next - end, 'the rest between steps').toBeGreaterThan(600);
+    expect(next - end).toBeLessThan(1100);
+  });
+
+  test('by employment type a step moves straight to its sorted places — no countdown, no re-sort — and a change of mode plays the last step again', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 6);
+    await pace(page, 'Medium');
+    await logSteps(page);
+    await mode(page, 'Employment type');
+    await expect(bar(page)).toHaveAttribute('data-mode', 'type');
+    // The step into this snapshot again, now by type: the squares move, the snapshot stays.
+    await expect(field(page)).toHaveAttribute('data-settled', 'false', { timeout: 2_000 });
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    let log = await readLog(page);
+    expect(log.filter(([e]) => e.startsWith('snap ')), 'the snapshot changed').toEqual([]);
+    expect(phases(log).map(([p, ms]) => `${p} ${ms > 1550 && ms < 1950 ? '1.7 s' : `${ms} ms`}`)).toEqual(['move 1.7 s']);
+    await expect(page.locator('.strata-change-legend'), 'by type, the legend counts no changes').toHaveCount(0);
+    await logSteps(page);
+    await goTo(page, 7);
+    log = await readLog(page);
+    expect(phases(log).map(([p]) => p)).toEqual(['move']);
+  });
+
+  test('a change of speed while a step is held goes straight on to the re-sort', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 5);
+    await pace(page, 'Slow');
+    await logSteps(page);
+    await dot(page, 6).click();
+    await expect(bar(page)).toHaveAttribute('data-phase', 'hold', { timeout: 10_000 });
+    const held = await page.evaluate(() => performance.now());
+    await page.getByRole('radiogroup', { name: 'Speed' }).getByText('Medium', { exact: true }).click();
+    await expect(bar(page)).toHaveAttribute('data-phase', 'sort', { timeout: 1_000 });
+    expect(await page.evaluate(() => performance.now()) - held, 'the countdown ran on').toBeLessThan(1_500);
+  });
+
+  test('the settings: Slow’s countdown, 1 to 8 seconds; and each column by type, then salary', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    const settings = page.getByRole('button', { name: 'Timeline settings' });
+    await settings.click();
+    const cd = page.getByRole('slider', { name: 'Slow’s countdown, seconds' });
+    await expect(cd).toHaveAttribute('aria-valuenow', '3');
+    await cd.focus();
+    await page.keyboard.press('Home');
+    await expect(cd).toHaveAttribute('aria-valuenow', '1');
+    // Each column by type, then salary: up every column the types in the legend's order, each by pay.
+    await page.getByRole('radiogroup', { name: 'Sort each column by' }).getByText('Type, then salary').click();
+    await page.keyboard.press('Escape');
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const at = await spots(), rows = await people();
+    const order = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'];
+    const slot = await field(page).evaluate((el) => (el as unknown as { squareSlots: (f: string) => number[] }).squareSlots('main'));
+    const cols = new Map<number, { slot: number; rank: number; pay: number }[]>();
+    for (const p of rows) {
+      const s = at.get(p.person_key);
+      if (s?.field !== 'main') continue;
+      const c = Math.floor(p.pay / 5000);
+      cols.set(c, [...(cols.get(c) ?? []), { slot: slot[s.index], rank: order.indexOf(p.cat), pay: Math.floor(p.pay / 100) }]);
     }
-    for (const g of gaps) expect(g, `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThanOrEqual(1450);
-    moves.sort((a, b) => a - b);
-    expect(moves[moves.length >> 1], `steps moving for ${moves.map(Math.round).join(', ')} ms`).toBeGreaterThanOrEqual(1100);
-    expect(Math.min(...rests), `rests ${rests.map(Math.round).join(', ')} ms: a step began before the last had landed`).toBeGreaterThan(0);
-    rests.sort((a, b) => a - b);
-    expect(rests[rests.length >> 1], 'each snapshot is barely seen at rest').toBeGreaterThanOrEqual(150);
+    let checked = 0;
+    for (const [c, list] of cols) {
+      list.sort((x, y) => x.slot - y.slot);
+      for (let k = 1; k < list.length; k++) {
+        const [x, y] = [list[k - 1], list[k]];
+        expect(x.rank < y.rank || (x.rank === y.rank && x.pay <= y.pay), `column ${c}: slot ${k} out of order`).toBe(true);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(10_000);
+    // And Slow's countdown, as set: a second.
+    await goTo(page, 7);
+    await pace(page, 'Slow');
+    await logSteps(page);
+    await goTo(page, 8);
+    const ph = phases(await readLog(page));
+    expect(ph.map(([p]) => p)).toEqual(['move', 'hold', 'sort']);
+    expect(ph[1][1]).toBeGreaterThan(900);
+    expect(ph[1][1]).toBeLessThan(1300);
   });
 });
 
