@@ -299,6 +299,57 @@ test('a step moves in frames inside the frame budget, at CI’s pace', async ({ 
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
 });
 
+// Fast never stops between snapshots (3a §10): the next step is taken in the frame the last one ends in, so every
+// animation frame while it plays draws the squares moving — none stands still at a snapshot.
+test('Fast’s play draws the squares moving in every frame, never standing still between snapshots', async ({ page }) => {
+  test.setTimeout(120_000);
+  await home(page);
+  await goTo(page, 0);
+  await page.evaluate(() => {
+    const w = window as unknown as { frames: [number, number][]; snaps: number[] };
+    w.frames = [];
+    w.snaps = [];
+    const bar = document.querySelector('.strata-timeline') as HTMLElement;
+    new MutationObserver(() => w.snaps.push(performance.now())).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+    const f = (t: number) => {
+      w.frames.push([t, performance.getEntriesByName('strata-frame').length]);
+      if (bar.dataset.playing || w.frames.length < 5) requestAnimationFrame(f);
+    };
+    requestAnimationFrame(f);
+  });
+  await page.locator('.strata-play').click();
+  await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+  const { frames, snaps } = await page.evaluate(() => {
+    const w = window as unknown as { frames: [number, number][]; snaps: number[] };
+    return { frames: w.frames, snaps: w.snaps };
+  });
+  expect(snaps.length).toBe(LAST);
+  // From the first snapshot change to the last: each frame, at least one moving frame drawn since the one before.
+  const still = frames.filter(([t, k], i) => i > 0 && t > snaps[0] && t < snaps[snaps.length - 1] && k === frames[i - 1][1]);
+  expect(frames.filter(([t]) => t > snaps[0] && t < snaps[snaps.length - 1]).length, 'frames of the play seen').toBeGreaterThan(20);
+  expect(still.length, `frames standing still at ${still.map(([t]) => Math.round(t - snaps[0])).join(', ')} ms`).toBe(0);
+});
+
+// Fast's flow at sixty frames a second (3a §13): each moving frame inside the budget at CI's pace, on a 1x screen
+// and a 2x one (four times the pixels to write).
+for (const dpr of [1, 2]) {
+  test(`Fast’s flow draws each frame inside the frame budget at CI’s pace, at ${dpr}x`, async ({ browser }) => {
+    test.setTimeout(120_000);
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: dpr });
+    const page = await ctx.newPage();
+    await atCiPace(page);
+    await home(page);
+    await goTo(page, 0);
+    await page.evaluate(() => performance.clearMeasures('strata-frame'));
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    const frames = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
+    expect(frames.length, 'the flow never moved').toBeGreaterThan(10);
+    expect(frames[Math.floor(frames.length / 2)], `median of ${frames.length} frames`).toBeLessThan(FRAME_MS);
+    await ctx.close();
+  });
+}
+
 test('in an older snapshot the loupe names someone with that snapshot’s title and pay, and its change since the one before', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);

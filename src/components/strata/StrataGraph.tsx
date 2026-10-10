@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Popover, Slider, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconAdjustmentsHorizontal, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
-import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
+import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, seatedSlots, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, useIntroOnce, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { snapStats, stepKinds, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
@@ -107,6 +107,8 @@ function CardSpark({ series, now, first, last }: { series: readonly (number | nu
   );
 }
 
+/** The loupe's rim stays this far inside the plot, CSS px (its shadow may reach past). */
+const LENS_MARGIN = 4;
 /** The intro's title, magnified at the median, this long before it zooms out to everyone (3a §12). */
 const INTRO_TITLE_MS = 2800;
 /** Play, starting over from the first snapshot, rests at least this long there before going on. */
@@ -413,7 +415,17 @@ export function StrataGraph({
     (s: Strata) => layoutStrata(s, { W: plotW, H, top: view === 'magnify' ? STRIP_BAND : PIN_BAND + 4, dpr, phone, peak: scalePeak, view, magLeft, byType }, unrolled && canUnroll && view === 'hist'),
     [plotW, H, dpr, phone, unrolled, canUnroll, scalePeak, view, magLeft, byType],
   );
-  const layout = useMemo(() => (strata && plotW > 0 ? layoutOf(strata) : null), [strata, plotW, layoutOf]);
+  // Each snapshot laid out once for the plot as it is: the step onto it, Fast's next step built ahead, and the places
+  // a flow's curves pass through all share it.
+  // A fresh cache whenever what a layout depends on changes (`layoutOf` is that): never one laid out for another plot.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const layoutCache = useMemo(() => new WeakMap<Strata, StrataLayout>(), [layoutOf]);
+  const layoutFor = useCallback((s: Strata) => {
+    let L = layoutCache.get(s);
+    if (!L) layoutCache.set(s, (L = layoutOf(s)));
+    return L;
+  }, [layoutCache, layoutOf]);
+  const layout = useMemo(() => (strata && plotW > 0 ? layoutFor(strata) : null), [strata, plotW, layoutFor]);
   const tail = layout?.tail ?? null;
   // A change of view: everyone on the way to their place in the other (the status chip says so until they land).
   const viewWas = useRef<StrataView | null>(null);
@@ -440,12 +452,12 @@ export function StrataGraph({
   const [queue, setQueue] = useState<number | null>(null);
   const queueRef = useRef<number | null>(null);
   queueRef.current = queue;
-  const step = useMemo<Step | null>(() => {
-    const replaying = !!again && at != null && at > 0 && again.at === at && again.layout === layout;
-    let was = shownRef.current;
-    if (replaying && layout) { const s0 = strataAt(at! - 1); was = s0 ? { strata: s0, layout: layoutOf(s0) } : null; }
-    if (!layout || !was || !tl || !tStrata || was.strata === tStrata || !('mainId' in was.strata)) return null;
-    const A = was.strata as TimelineStrata, L0 = was.layout, B = tStrata, L1 = layout;
+  // A step from `was` (the snapshot shown before, as laid out) onto snapshot `at` (`B`, laid out `L1`), from snapshot
+  // `stepFrom`; `replaying`, the last one again in another mode.
+  const makeStep = useCallback((was: { strata: Strata; layout: StrataLayout } | null, B: TimelineStrata | null, L1: StrataLayout | null,
+    at: number | null, stepFrom: number | null, replaying: boolean): Step | null => {
+    if (!L1 || !was || !tl || !B || was.strata === B || !('mainId' in was.strata)) return null;
+    const A = was.strata as TimelineStrata, L0 = was.layout;
     const N = tl.keys.length, n = B.mainId.length, m = B.pileId.length;
     const ox = new Float64Array(N).fill(NaN), oy = new Float64Array(N), prev = new Int32Array(N);
     A.mainId.forEach((id, i) => { ox[id] = L0.mx[i]; oy[id] = L0.my[i]; prev[id] = L0.main.slot[i]; });
@@ -488,7 +500,8 @@ export function StrataGraph({
       B.pileId.forEach((id, j) => { P[n + j] = prev[id]; });
       key.set(B.key);
       key.set(B.pileKey, n);
-      const slots = stagedSlots(group, K, P, key);
+      // Columns: who stayed in their old order underneath. The floors: who stayed in their very seats.
+      const slots = floors ? seatedSlots(group, K, P, key, L1.grid.per) : stagedSlots(group, K, P, key);
       const mx = new Float64Array(n), my = new Float64Array(n), px = new Float64Array(m), py = new Float64Array(m);
       for (let i = 0; i < n + m; i++) {
         const pt = slotPlace(L1, group[i], slots[i]);
@@ -503,7 +516,7 @@ export function StrataGraph({
       const placesAt = (s: number): Places | null => {
         const st = s >= 0 && s <= lastSnap ? strataAt(s) : null;
         if (!st) return null;
-        const L = layoutOf(st), x = new Float64Array(N).fill(NaN), y = new Float64Array(N).fill(NaN);
+        const L = layoutFor(st), x = new Float64Array(N).fill(NaN), y = new Float64Array(N).fill(NaN);
         st.mainId.forEach((id, i) => { x[id] = L.mx[i]; y[id] = L.my[i]; });
         st.pileId.forEach((id, j) => { x[id] = L.px[j]; y[id] = L.py[j]; });
         const pick = (ids: Int32Array, P: Float64Array) => Float64Array.from(ids, (id) => P[id]);
@@ -516,10 +529,48 @@ export function StrataGraph({
       to: L1, fade, from: { mx: fm.fx, my: fm.fy, px: fp.fx, py: fp.fy }, mid, kind: { main: k.main, pile: k.pile }, rank,
       ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) }, plan, mode: md, counts: k.counts, flow, quick,
     };
-    // `shownRef` is the layout drawn before this one, and the pace, mode and catch-up are read as the step is made:
-    // none a dependency.
-  }, [layout, tl, tStrata, at, stepFrom, again, strataAt, layoutOf, lastSnap]);
+    // The pace, mode, catch-up and play are read as the step is made: none a dependency.
+  }, [tl, strataAt, layoutFor, lastSnap]);
+  // Fast's next step, built ahead while this one plays (3a §10): on landing, the next is taken in the same frame.
+  const nextRef = useRef<{ at: number; layout: StrataLayout; step: Step } | null>(null);
+  const step = useMemo<Step | null>(() => {
+    const replaying = !!again && at != null && at > 0 && again.at === at && again.layout === layout;
+    const nx = nextRef.current;
+    if (!replaying && nx && nx.at === at && nx.layout === layout && stepFrom === at - 1) return nx.step;
+    let was = shownRef.current;
+    if (replaying && layout) { const s0 = strataAt(at! - 1); was = s0 ? { strata: s0, layout: layoutFor(s0) } : null; }
+    return makeStep(was, tStrata, layout, at, stepFrom, replaying);
+    // `shownRef` is the layout drawn before this one, and `nextRef` the step built ahead: read, not dependencies.
+  }, [layout, tStrata, at, stepFrom, again, strataAt, layoutFor, makeStep]);
+
   useEffect(() => { if (layout && strata) shownRef.current = { layout, strata }; }, [layout, strata]);
+  // A replay is for the snapshot it was asked in: gone once another is shown.
+  useEffect(() => { setAgain(null); }, [at]);
+  // Playing Fast, the next step built while this one runs — in a moment the page is idle, well inside its quarter
+  // second — for `onLanded` to take on in the same frame.
+  useEffect(() => {
+    nextRef.current = null;
+    if (!playing || pace !== 'fast' || queue != null || at == null || at >= lastSnap || !layout || !tStrata || !tl) return;
+    const build = () => {
+      const B = strataAt(at + 1);
+      if (!B) return;
+      const L1 = layoutFor(B), st = makeStep({ strata: tStrata, layout }, B, L1, at + 1, at, false);
+      if (st) nextRef.current = { at: at + 1, layout: L1, step: st };
+    };
+    const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) { const id = w.requestIdleCallback(build, { timeout: 120 }); return () => w.cancelIdleCallback?.(id); }
+    const id = window.setTimeout(build, 0);
+    return () => window.clearTimeout(id);
+  }, [playing, pace, queue, at, lastSnap, layout, tStrata, tl, strataAt, layoutFor, makeStep]);
+  // On landing, Fast's next step at once — rendered synchronously, inside the frame the last one ended in, so the
+  // next frame drawn is already on its way (3a §10: no frame between snapshots). Without one built, Play's own
+  // timing takes over.
+  const advanceRef = useRef(() => {});
+  advanceRef.current = () => {
+    const nx = nextRef.current;
+    if (!nx || !playing || pace !== 'fast' || queue != null || at == null || nx.at !== at + 1 || nx.layout !== layoutFor(strataAt(at + 1)!)) return;
+    flushSync(() => { setStepFrom(at); setAt(at + 1); });
+  };
   // Go to a snapshot. The first time, the field is first drawn from the latest's people where it stands (no
   // one moves: the same people in the same columns), and the step taken from there.
   // A jump of several snapshots on (3a): each step between, quickly (CATCH_UP of a step's time), one after another
@@ -585,6 +636,7 @@ export function StrataGraph({
     if (moved && introRef.current === 'zoom') introPlayRef.current();
     const a = atRef.current;
     setLanded((l) => (!moved && l?.at === a ? l : { at: a, t: performance.now(), re: pacePlan(paceRef.current, modeRef.current, countdownRef.current).re }));
+    if (moved) advanceRef.current();
   }, []);
   useEffect(() => {
     if (queue == null || at == null) return;
@@ -739,7 +791,10 @@ export function StrataGraph({
   const wantWhoRef = useRef(onWantWho);
   wantWhoRef.current = onWantWho;
   useEffect(() => { if (lensAt) wantWhoRef.current?.(); }, [lensAt]);
-  const lensCol = lensAt && layout && !tail && layout.view === 'hist' ? Math.max(0, Math.min(COLS - 1, Math.floor(lensAt.x / layout.colW))) : null;
+  // The point the loupe magnifies: under the pointer, wherever the loupe itself is drawn (kept inside the plot,
+  // lifted above a finger).
+  const aim = lensFrom ?? lensAt;
+  const lensCol = aim && layout && !tail && layout.view === 'hist' ? Math.max(0, Math.min(COLS - 1, Math.floor(aim.x / layout.colW))) : null;
   // In the floors, the floor under the lens: the one whose band (and half the gap round it) holds its height.
   const floorAt = (y: number) => {
     const fl = layout?.floors;
@@ -748,7 +803,7 @@ export function StrataGraph({
     fl.forEach((f, k) => { const dd = y > f.base ? y - f.base : y < f.base - f.h ? f.base - f.h - y : 0; if (dd < d) { d = dd; best = k; } });
     return best;
   };
-  const lensFloor = lensAt ? floorAt(lensAt.y) : null;
+  const lensFloor = aim ? floorAt(aim.y) : null;
   // The pile is a button: over it, no lens but a word on what a click does; unrolled, the squeezed graph is the
   // way to fold it back. Where the pointer is over either, for that word.
   const [overPile, setOverPile] = useState(false);
@@ -966,6 +1021,16 @@ export function StrataGraph({
     return true;
   };
   const putAway = () => { setLensAt(null); setPointer(null); setLensFrom(null); };
+  // The loupe whole inside the plot (3a §13), above its baseline: at an edge it stops short, still magnifying the
+  // point it was asked to (`from`, or where it was wanted) at its centre — which is then the pointer it reads the
+  // square under. Magnified, there is no loupe: the point is the pointer's own.
+  const showLens = (at: { x: number; y: number }, from: { x: number; y: number } | null = null) => {
+    const r = R + LENS_MARGIN, bottom = (layout?.base ?? H) - r;
+    const inside = layout?.view === 'magnify' ? at : { x: Math.max(r, Math.min(plotW - r, at.x)), y: Math.max(r, Math.min(bottom, at.y)) };
+    setLensAt(inside);
+    setLensFrom(from ?? (inside.x !== at.x || inside.y !== at.y ? at : null));
+    setPointer(inside);
+  };
   // Unroll the pile, or fold it back: whatever the lens showed is put away while everyone moves.
   const unroll = () => {
     if (!canUnroll) return;
@@ -1091,16 +1156,11 @@ export function StrataGraph({
       setOverPile(pile);
       setOverFold(squeezed ? at : null);
       if (pile || squeezed) { putAway(); return; }
-      setLensAt(at);
-      setLensFrom(null);
-      setPointer(at);
+      showLens(at);
       return;
     }
     if (heldRef.current) {
-      const lifted = { x: at.x, y: at.y - (R + HOLD_LIFT) };
-      setLensAt(lifted);
-      setLensFrom(at);
-      setPointer(lifted);
+      showLens({ x: at.x, y: at.y - (R + HOLD_LIFT) }, at);
       return;
     }
     const hold = holdRef.current;
@@ -1121,10 +1181,7 @@ export function StrataGraph({
       timer: window.setTimeout(() => {
         holdRef.current = null;
         heldRef.current = true;
-        const lifted = { x: at.x, y: at.y - (R + HOLD_LIFT) };
-        setLensAt(lifted);
-        setLensFrom(at);
-        setPointer(lifted);
+        showLens({ x: at.x, y: at.y - (R + HOLD_LIFT) }, at);
         setPinned(false);
         navigator.vibrate?.(8);
       }, HOLD_MS),
@@ -1172,10 +1229,7 @@ export function StrataGraph({
       // A tap on the histogram magnifies where it is (3a) — on a search's mark it brings their card up, as a held finger
       // brings the lens up anywhere.
       if (layout?.view === 'hist' && !tail && !markNear(at)) { magnifyAt(payAt(at.x)); return; }
-      const lifted = { x: at.x, y: Math.max(R, at.y - (R + HOLD_LIFT)) };
-      setLensAt(lifted);
-      setLensFrom(at);
-      setPointer(lifted);
+      showLens({ x: at.x, y: at.y - (R + HOLD_LIFT) }, at);
       setPinned(true);
     }
   };
@@ -1236,9 +1290,7 @@ export function StrataGraph({
     const j = tailOrder[k];
     const sq = { x: layout.px[j] + layout.grid.sqW / 2, y: layout.py[j] + layout.grid.sq / 2 };
     const lifted = { x: sq.x, y: Math.max(PIN_BAND + R / 2, Math.min(sq.y, layout.base - R - 6)) };
-    setLensAt(lifted);
-    setLensFrom(lifted.y === sq.y ? null : sq);
-    setPointer(lifted);
+    showLens(lifted, lifted.y === sq.y ? null : sq);
   };
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!layout) return;
@@ -1288,9 +1340,7 @@ export function StrataGraph({
     }
     e.preventDefault();
     const at = keyAt(next);
-    setLensAt(at);
-    setLensFrom(null);
-    setPointer(at);
+    if (at) showLens(at); else { setLensAt(null); setPointer(null); }
   };
 
   // ── Full page ──
@@ -1619,8 +1669,7 @@ export function StrataGraph({
           if (tail) { keyTail(tailRankRef.current ?? 0); return; }
           if (layout?.view === 'magnify') return;
           const at = keyAt(layout?.floors ? floorOf(median ?? 0) : Math.floor((median ?? 0) / COL_DOLLARS));
-          setLensAt(at);
-          setPointer(at);
+          if (at) showLens(at); else { setLensAt(null); setPointer(null); }
         }}
         onBlur={() => { if (!pinned && !canHover) return; if (!pinned) { setLensAt(null); setPointer(null); } }}
       >

@@ -390,6 +390,40 @@ test('the lens follows a mouse with the cursor put away, magnifies what is under
   await expect(plot(page)).toHaveAttribute('data-lens', 'off');
 });
 
+test('the loupe stays whole inside the plot at its edges (3a §13), still magnifying and reading the point under the pointer', async ({ page }) => {
+  await home(page);
+  const box = (await plot(page).boundingBox())!;
+  // LENS_R.wide, and the margin its rim keeps.
+  const r = 76 + 4;
+  // The glass along an edge of the lens's canvas — its two outermost columns or rows — opaque enough to be the glass
+  // or its rim, not the shadow under it.
+  const glassAt = (edge: 'left' | 'top') => page.locator('.strata-lens').evaluate((c: HTMLCanvasElement, edge) => {
+    const ctx = c.getContext('2d')!;
+    const d = (edge === 'left' ? ctx.getImageData(0, 0, 2, c.height) : ctx.getImageData(0, 0, c.width, 2)).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] >= 160) n++;
+    return n;
+  }, edge);
+  const drawn = () => page.locator('.strata-lens').evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] >= 160) n++;
+    return n;
+  });
+  // At the left edge, low over the first column: the loupe stops short, and reads that column.
+  await page.mouse.move(box.x + 30, box.y + box.height * 0.9);
+  await page.mouse.move(box.x + 2, box.y + box.height * 0.9, { steps: 4 });
+  await expect(plot(page)).toHaveAttribute('data-lens-at', new RegExp(`^${r},`));
+  await expect(plot(page)).toHaveAttribute('aria-valuenow', '0');
+  await expect.poll(drawn, { message: 'no loupe drawn' }).toBeGreaterThan(1000);
+  await expect.poll(() => glassAt('left'), { message: 'the loupe runs off the left edge' }).toBe(0);
+  // At the top, over the middle.
+  await page.mouse.move(box.x + box.width * 0.3, box.y + 30);
+  await page.mouse.move(box.x + box.width * 0.3, box.y + 2, { steps: 4 });
+  await expect(plot(page)).toHaveAttribute('data-lens-at', new RegExp(`,${r}$`));
+  await expect.poll(() => glassAt('top'), { message: 'the loupe runs off the top' }).toBe(0);
+});
+
 test('hovering moves no square: only the lens redraws', async ({ page }) => {
   await home(page);
   const before = await placesOf(page, 'main');

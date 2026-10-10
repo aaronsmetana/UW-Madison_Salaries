@@ -27,6 +27,20 @@ const PICK_MIN = 7;
 /** Under a filter, a lit square is drawn at least this many device pixels each way. */
 const LIT_MIN = 3;
 
+/** A square's device pixels, worked out afresh for each square drawn: one, kept, rather than one a square. */
+const BOX: Px = { X: 0, Y: 0, w: 0, h: 0 };
+/** Each frame's cost goes on the page's performance timeline for the frame-budget guards; past this many of a
+ *  name, the oldest go, so a long play never piles them up. */
+const MEASURES_KEPT = 4000;
+const measured = new Map<string, number>();
+function measure(name: string, start: number) {
+  try {
+    performance.measure(name, { start, end: performance.now() });
+    const k = (measured.get(name) ?? 0) + 1;
+    if (k > MEASURES_KEPT) { performance.clearMeasures(name); measured.set(name, 0); } else measured.set(name, k);
+  } catch { /* unsupported */ }
+}
+
 /** Unrolled, how far inside the right edge the top salary stands, CSS px. */
 const TOP_INSET = 8;
 
@@ -440,6 +454,13 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   props.current = { lensAt, lensFrom, pointer, lensR, onPick, onMoving, onLanded, onPhase };
   const movingRef = useRef(false);
   const px32 = useRef<{ img: ImageData; buf: Uint32Array } | null>(null);
+  // The loupe's squares, frame to frame: each one's ink and place, grown when the field outgrows them.
+  const lensBuf = useRef({
+    k: new Uint8Array(0), x: new Float32Array(0), y: new Float32Array(0),
+    grow(size: number) { this.k = new Uint8Array(size); this.x = new Float32Array(size); this.y = new Float32Array(size); },
+  });
+  // Each ink, packed, for a step's frames under a filter: filled in place each frame.
+  const litBuf = useRef(new Uint32Array(0));
 
   // Each square's ink: its kind's, the search's, or the faded one. Painted in that order, so a filter's
   // people lie over the faded ones they have left.
@@ -501,7 +522,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     // The faded first, then each kind, then the search's own, then a step's movers on top of all.
     const order = tint.order;
     const least = (k: number) => (dim && k !== tint.C ? LIT_MIN : 1);
-    const box: Px = { X: 0, Y: 0, w: 0, h: 0 };
+    const box = BOX;
     // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a
     // square of one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
     const put = (x: number, y: number, c: number, least: number, sc = 1) => {
@@ -523,7 +544,10 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       // A timeline step (3a): who left, fading; then who stayed, who joined, the movers' trails, and the movers on
       // top. Under a filter its own keep their ink and the rest the faded one, wherever the step has them.
       for (let g = 0; g < st.gx.length; g++) if (st.gcol[g] >>> 24) put(st.gx[g], st.gy[g], st.gcol[g], 1, st.gsc[g]);
-      const K = st.step.kind, lit = order.map((_, k) => packed(ink(k)));
+      const K = st.step.kind;
+      if (litBuf.current.length !== order.length) litBuf.current = new Uint32Array(order.length);
+      const lit = litBuf.current;
+      for (let k = 0; k < order.length; k++) lit[k] = packed(ink(k));
       const paint = (pass: (k: number) => boolean) => {
         for (let i = 0; i < n; i++) {
           if (!pass(K.main[i])) continue;
@@ -675,47 +699,49 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     // where it overlaps; in the floors, whoever is within its square.
     const cw = layout.colW * (tail ? tail.squeeze : 1);
     const c0 = Math.max(0, Math.floor((sx - reachField) / cw) - 1), c1 = Math.min(COLS - 1, Math.ceil((sx + reachField) / cw) + 1);
-    const lists: { field: Field; idx: number[] }[] = [{ field: 'main', idx: [] }, { field: 'pile', idx: [] }];
-    if (layout.view === 'floors') {
-      for (let i = 0; i < n; i++) if (Math.abs(mx[i] - sx) <= reachField && Math.abs(my[i] - sy) <= reachField) lists[0].idx.push(i);
-      for (let j = 0; j < m; j++) if (Math.abs(px[j] - sx) <= reachField && Math.abs(py[j] - sy) <= reachField) lists[1].idx.push(j);
-    } else {
-      for (let c = c0; c <= c1; c++) for (let q = layout.main.start[c]; q < layout.main.start[c + 1]; q++) lists[0].idx.push(layout.main.order[q]);
-      if (m && (tail || sx + reachField >= layout.pileLeft)) for (let j = 0; j < m; j++) lists[1].idx.push(j);
-    }
     // Who it can name: the graph's people, or the tail's once the pile is unrolled (the pile itself is the way
     // to unroll it, and the squeezed graph the way to fold it back); with a filter on, only its own — the faded
     // ones are the rest, not who is being read.
     const nameable = (field: Field, k: number) => (layout.view === 'floors' || (field === 'pile') === !!tail) && !(dim && k === tint.C);
     // The pointer's place in the field: what the loupe shows under it.
     const qx = ptr ? sx + (ptr.x - cx) / z : 0, qy = ptr ? sy + (ptr.y - cy) / z : 0;
-    let near: { field: Field; index: number; x: number; y: number; d: number } | null = null;
-    let followed: { x: number; y: number } | null = null;
-    let nameableHere = 0;
-    const draws: { k: number; x: number; y: number }[] = [];
+    // Each square it shows, by ink, into buffers kept from frame to frame (3a §13: nothing made new per square
+    // per frame); the nearest it can name, as plain numbers.
     const w = grid.sqW * z, h = grid.sq * z;
-    for (const { field, idx } of lists) {
-      const X = field === 'main' ? mx : px, Y = field === 'main' ? my : py, T = field === 'main' ? tint.main : tint.pile;
-      for (const i of idx) {
-        const x = cx + (X[i] - sx) * z, y = cy + (Y[i] - sy) * z;
-        if (x + w < cx - R || x > cx + R || y + h < cy - R || y > cy + R) continue;
-        draws.push({ k: T[i], x, y });
-        if (follow && follow.field === field && follow.index === i) followed = { x: x + w / 2, y: y + h / 2 };
-        if (ptr && nameable(field, T[i])) {
-          nameableHere++;
-          const d = Math.hypot(X[i] + hw - qx, Y[i] + hh - qy);
-          if (!near || d < near.d) near = { field, index: i, x: x + w / 2, y: y + h / 2, d };
-        }
+    const B = lensBuf.current;
+    if (B.k.length < n + m) B.grow(n + m);
+    let count = 0, nearField: Field | null = null, nearIndex = -1, nearX = 0, nearY = 0, nearD = Infinity, fx = NaN, fy = NaN, nameableHere = 0;
+    const consider = (field: Field, i: number) => {
+      const X = field === 'main' ? mx : px, Y = field === 'main' ? my : py, k = (field === 'main' ? tint.main : tint.pile)[i];
+      const x = cx + (X[i] - sx) * z, y = cy + (Y[i] - sy) * z;
+      if (x + w < cx - R || x > cx + R || y + h < cy - R || y > cy + R) return;
+      B.k[count] = k;
+      B.x[count] = x;
+      B.y[count] = y;
+      count++;
+      if (follow && follow.field === field && follow.index === i) { fx = x + w / 2; fy = y + h / 2; }
+      if (ptr && nameable(field, k)) {
+        nameableHere++;
+        const d = Math.hypot(X[i] + hw - qx, Y[i] + hh - qy);
+        if (d < nearD) { nearD = d; nearField = field; nearIndex = i; nearX = x + w / 2; nearY = y + h / 2; }
       }
+    };
+    if (layout.view === 'floors') {
+      for (let i = 0; i < n; i++) if (Math.abs(mx[i] - sx) <= reachField && Math.abs(my[i] - sy) <= reachField) consider('main', i);
+      for (let j = 0; j < m; j++) if (Math.abs(px[j] - sx) <= reachField && Math.abs(py[j] - sy) <= reachField) consider('pile', j);
+    } else {
+      for (let c = c0; c <= c1; c++) for (let q = layout.main.start[c]; q < layout.main.start[c + 1]; q++) consider('main', layout.main.order[q]);
+      if (m && (tail || sx + reachField >= layout.pileLeft)) for (let j = 0; j < m; j++) consider('pile', j);
     }
     // Named: the nearest within a reach that widens as the people the loupe could name thin out (lib/strata
     // `snapReach`) — the one under the pointer where they crowd, across the loupe where a filter leaves a few.
     const reach = snapReach(nameableHere, R / z, Math.max(grid.sq, grid.sqW) / 2 + 0.75);
-    const best: LensHit | null = near && near.d <= reach ? { field: near.field, index: near.index, x: near.x, y: near.y, s: Math.max(h, PICK_MIN) } : null;
+    const best: LensHit | null = nearField && nearD <= reach ? { field: nearField, index: nearIndex, x: nearX, y: nearY, s: Math.max(h, PICK_MIN) } : null;
+    const followed = Number.isNaN(fx) ? null : { x: fx, y: fy };
     for (const k of tint.order) {
       ctx.fillStyle = ink(k);
       ctx.beginPath();
-      for (const d of draws) if (d.k === k) ctx.rect(d.x, d.y, w, h);
+      for (let d = 0; d < count; d++) if (B.k[d] === k) ctx.rect(B.x[d], B.y[d], w, h);
       ctx.fill();
     }
     ctx.restore();
@@ -925,7 +951,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       const done = stageFrame(now);
       if (!mv.stage.still) {
         drawBase();
-        try { performance.measure('strata-frame', { start: t0, end: performance.now() }); } catch { /* unsupported */ }
+        measure('strata-frame', t0);
       }
       if (done) {
         const L = layout;
@@ -951,7 +977,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       for (let j = 0; j < m; j++) { go(mv.fromPx, layout.px, px, mv.pwait, j, 0, undefined, mv.msP); go(mv.fromPy, layout.py, py, mv.pwait, j, 1, mv.arcP, mv.msP); }
       drawBase();
       // Each moving frame's cost, for the frame-budget guards (diagnostic only).
-      try { performance.measure('strata-frame', { start: t0, end: performance.now() }); } catch { /* unsupported */ }
+      measure('strata-frame', t0);
       if (done) { move.current = null; setMoving(false); props.current.onLanded?.(true); } else again = true;
     }
     const want = props.current.lensAt;
@@ -968,7 +994,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     if (L.r !== tr) again = true;
     const t1 = performance.now();
     const hit = move.current ? null : drawLens();
-    if (L.r > 0.5) try { performance.measure('lens-frame', { start: t1, end: performance.now() }); } catch { /* unsupported */ }
+    if (L.r > 0.5) measure('lens-frame', t1);
     const id = hit ? `${hit.field}:${hit.index}` : '';
     if (id !== picked.current) { picked.current = id; props.current.onPick?.(hit); }
     if (again) raf.current = requestAnimationFrame(frame);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, hermite, monoTangent, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, seatedSlots, hermite, monoTangent, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -251,6 +251,24 @@ describe('sortTiming', () => {
     expect(sortTiming(0, 10, 0).dl).toBe(0);
     expect(sortTiming(9, 10, 0).dl).toBeGreaterThan(sortTiming(1, 10, 0).dl);
     for (const k of [0, 5, 10]) expect(sortTiming(k, 10, 0.99).dl + sortTiming(k, 10, 0.99).du).toBeLessThanOrEqual(1 + 1e-9);
+  });
+});
+
+describe('seatedSlots (the floors)', () => {
+  it('keeps each stayer in their seat, fills a seat left empty with a stayer from above it, and stacks who came on top', () => {
+    // One floor, three a row. Stayers were in seats 0, 1, 2 and 4 (3 was left by someone who went); a raise and a
+    // new hire came.
+    const group = [0, 0, 0, 0, 0, 0], kind = [STAY, STAY, STAY, STAY, UP, NEW], prev = [0, 1, 2, 4, 0, 0], key = [1, 2, 3, 4, 5, 6];
+    expect([...seatedSlots(group, kind, prev, key, 3)]).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+  it('fills each empty seat with the stayer nearest to it along a row', () => {
+    // Stayers in 0, 2, 4 and 5: 0 and 2 keep theirs; 4 (second along its row) takes 1, 5 (third) takes 3.
+    const group = [0, 0, 0, 0], kind = [STAY, STAY, STAY, STAY], prev = [0, 2, 4, 5], key = [1, 2, 3, 4];
+    expect([...seatedSlots(group, kind, prev, key, 3)]).toEqual([0, 2, 3, 1]);
+  });
+  it('orders who came as the columns do: cuts, raises, new hires, each by key; each floor apart', () => {
+    const group = [1, 1, 1, 2, 2], kind = [NEW, UP, DOWN, STAY, NEW], prev = [0, 0, 0, 7, 0], key = [1, 2, 3, 4, 5];
+    expect([...seatedSlots(group, kind, prev, key, 4)]).toEqual([2, 1, 0, 0, 1]);
   });
 });
 

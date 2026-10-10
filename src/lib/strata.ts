@@ -412,6 +412,29 @@ export function stagedSlots(group: ArrayLike<number>, kind: ArrayLike<number>, p
   }
   return slot;
 }
+/**
+ * The floors' held picture (3a §8: "in Floors, arrivals take the top rows of each floor and stayers keep their
+ * seats"): in each floor whoever stayed keeps their seat (`prev`) if it is still inside the floor's count of who
+ * stayed; those above it take the seats left empty below, each the nearest in place along a row of `per`; then
+ * who came — cuts, raises, new hires, each by key — on top.
+ */
+export function seatedSlots(group: ArrayLike<number>, kind: ArrayLike<number>, prev: ArrayLike<number>, key: ArrayLike<number>, per: number): Uint16Array {
+  const n = group.length, slot = new Uint16Array(n), byGroup = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) { let g = byGroup.get(group[i]); if (!g) byGroup.set(group[i], (g = [])); g.push(i); }
+  const at = [0, 0, 2, 1, 3, 4]; // by kind: STAY, then DOWN, UP, NEW
+  for (const members of byGroup.values()) {
+    const stay = members.filter((i) => kind[i] === STAY), ns = stay.length, taken = new Uint8Array(ns), moved: number[] = [];
+    for (const i of stay) { if (prev[i] < ns && !taken[prev[i]]) { slot[i] = prev[i]; taken[prev[i]] = 1; } else moved.push(i); }
+    const holes: number[] = [];
+    for (let k = 0; k < ns; k++) if (!taken[k]) holes.push(k);
+    holes.sort((a, b) => (a % per) - (b % per) || a - b);
+    moved.sort((a, b) => (prev[a] % per) - (prev[b] % per) || prev[a] - prev[b] || a - b);
+    moved.forEach((i, q) => { slot[i] = holes[q]; });
+    const came = members.filter((i) => kind[i] !== STAY).sort((a, b) => at[kind[a]] - at[kind[b]] || key[a] - key[b] || a - b);
+    came.forEach((i, q) => { slot[i] = ns + q; });
+  }
+  return slot;
+}
 /** The re-sort (3a): each column's people into salary order from the bottom row up — `k`th of `m` — a little at
  *  random, as shares of it. */
 export const sortTiming = (k: number, m: number, h: number) => ({ dl: (0.5 * k) / Math.max(1, m) + 0.08 * h, du: 0.42 });
