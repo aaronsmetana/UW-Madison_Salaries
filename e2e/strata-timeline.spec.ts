@@ -144,7 +144,7 @@ test('a step between neighbours carries each person over, fades in who joined, f
 test('a step fades out who left where they stood and fades in who joined where they stand: nothing drops in or lifts out', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);
-  await goTo(page, 7);
+  await goTo(page, 6);
   // How high the squares stand at rest, CSS px from the top.
   const top = async () => {
     const pts = await field(page).evaluate((el) => ['main', 'pile'].flatMap((f) => (el as HTMLElement & { squarePlaces: (f: string) => number[] }).squarePlaces(f)));
@@ -153,8 +153,9 @@ test('a step fades out who left where they stood and fades in who joined where t
     return y;
   };
   const before = await top();
-  // Every frame of a step to a snapshot that is not a neighbour (so no one arcs): how high any ink reaches, and
-  // how many pixels are part-way faded, by how far into the step.
+  // Every frame of a step on to the next snapshot: how high any part-way faded ink reaches (the big movers arc high
+  // on purpose, drawn whole), and how many pixels are part-way faded, by how far into the step. (Back is a
+  // cross-fade, with nothing in flight: the jumps' own test.)
   await page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => {
     const w = window as unknown as { frames: { t: number; top: number; part: number }[]; t0: number | null; stop: boolean };
     w.frames = [];
@@ -169,8 +170,8 @@ test('a step fades out who left where they stood and fades in who joined where t
         const d = ctx.getImageData(0, 0, c.width, c.height).data;
         let top = c.height, part = 0;
         for (let i = 3; i < d.length; i += 4) {
-          if (!d[i]) continue;
-          if (d[i] < 255) part++;
+          if (!d[i] || d[i] === 255) continue;
+          part++;
           if (top === c.height) top = Math.floor((i >> 2) / c.width);
         }
         w.frames.push({ t: performance.now() - w.t0, top, part });
@@ -179,12 +180,12 @@ test('a step fades out who left where they stood and fades in who joined where t
     };
     requestAnimationFrame(frame);
   });
-  await goTo(page, 2);
+  await goTo(page, 7);
   const frames = await page.evaluate(() => { const w = window as unknown as { frames: { t: number; top: number; part: number }[]; stop: boolean }; w.stop = true; return w.frames; });
   const k = await page.locator('.strata-base').evaluate((c: HTMLCanvasElement) => c.width / c.getBoundingClientRect().width);
   const highest = Math.floor(Math.min(before, await top()) * k) - 1;
   expect(frames.length, 'no frames of the step seen').toBeGreaterThan(10);
-  expect(frames.filter((f) => f.top < highest).map((f) => `${Math.round(f.t)} ms: ink at ${f.top}px`).slice(0, 3), `a square above the tallest column (${highest}px), on its way in or out`).toEqual([]);
+  expect(frames.filter((f) => f.top < highest).map((f) => `${Math.round(f.t)} ms: faded ink at ${f.top}px`).slice(0, 3), `a square fading above the tallest column (${highest}px), on its way in or out`).toEqual([]);
   // Who left fade in the first part of the step, before any joiner has begun; who joined in the last, after.
   expect(frames.some((f) => f.t < 300 && f.part > 0), 'who left did not fade out').toBe(true);
   expect(frames.some((f) => f.t > 900 && f.part > 0), 'who joined did not fade in').toBe(true);
@@ -412,5 +413,84 @@ test.describe('one scale for every snapshot, and the pace', () => {
     expect(Math.min(...rests), `rests ${rests.map(Math.round).join(', ')} ms: a step began before the last had landed`).toBeGreaterThan(0);
     rests.sort((a, b) => a - b);
     expect(rests[rests.length >> 1], 'each snapshot is barely seen at rest').toBeGreaterThanOrEqual(150);
+  });
+});
+
+/**
+ * The track's jumps (3a §7): several snapshots on, a quick step through each between — at 40% of a step's time —
+ * and back, a cross-fade straight there with no one moving; Play at the last snapshot starts again from the first
+ * the same way; and out of sight, playing holds where it is.
+ */
+test.describe('jumps along the track', () => {
+  const log = (page: Page) => page.evaluate(() => {
+    const w = window as unknown as { log: [string, number][] };
+    w.log = [];
+    const bar = document.querySelector('.strata-timeline') as HTMLElement, f = document.querySelector('.strata-field') as HTMLElement;
+    new MutationObserver(() => w.log.push([`snap ${bar.dataset.snap}`, performance.now()])).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+    new MutationObserver(() => w.log.push([`settled ${f.dataset.settled}`, performance.now()])).observe(f, { attributes: true, attributeFilter: ['data-settled'] });
+  });
+  const read = (page: Page) => page.evaluate(() => (window as unknown as { log: [string, number][] }).log);
+  const now = (page: Page) => field(page).evaluate((el) => (el as unknown as { squareNow: (f: string) => number[] }).squareNow('main'));
+  const rest = (page: Page) => field(page).evaluate((el) => (el as unknown as { squarePlaces: (f: string) => number[] }).squarePlaces('main'));
+
+  test('several snapshots on, a quick step through each between', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 2);
+    await log(page);
+    await dot(page, 6).click();
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[6].id, { timeout: 60_000 });
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const l = await read(page);
+    // Every snapshot between, in order, each landed before the next.
+    expect(l.filter(([e]) => e.startsWith('snap ')).map(([e]) => e.slice(5))).toEqual([3, 4, 5, 6].map((k) => SNAPS[k].id));
+    const steps = l.flatMap(([e, t], k) => (e.startsWith('snap ') ? [{ t, k }] : []));
+    for (let s = 1; s < steps.length; s++) {
+      const between = l.slice(steps[s - 1].k, steps[s].k).map(([e]) => e);
+      expect(between, `the step to ${SNAPS[3 + s].label} went before the last had landed`).toContain('settled true');
+    }
+    // Each quick: a step's own time is 1,175 ms; at 40%, about 470.
+    const took = (steps[steps.length - 1].t - steps[0].t) / (steps.length - 1);
+    expect(took, 'each catch-up step took').toBeLessThan(800);
+  });
+
+  test('back, a cross-fade straight there: no one moves on the way', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 6);
+    await log(page);
+    await dot(page, 2).click();
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[2].id, { timeout: 60_000 });
+    // Straight there: where the squares are drawn is where they rest, while the picture before fades out over them.
+    await page.waitForTimeout(250);
+    expect(await now(page), 'a square on its way').toEqual(await rest(page));
+    const fade = await page.locator('.strata-fade').evaluate((c) => Number(getComputedStyle(c).opacity));
+    expect(fade, 'the picture before is not fading out').toBeGreaterThan(0.05);
+    expect(fade).toBeLessThan(0.95);
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const l = await read(page);
+    expect(l.filter(([e]) => e.startsWith('snap ')).map(([e]) => e.slice(5)), 'snapshots between were shown').toEqual([SNAPS[2].id]);
+    const took = l.filter(([e]) => e === 'settled true').pop()![1] - l.find(([e]) => e === 'settled false')![1];
+    expect(took, 'the cross-fade took').toBeGreaterThan(600);
+    expect(took).toBeLessThan(1500);
+    await expect.poll(() => page.locator('.strata-fade').evaluate((c) => Number(getComputedStyle(c).opacity))).toBe(0);
+  });
+
+  test('out of sight, playing holds where it is, and goes on when it is back', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await goTo(page, 1);
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[2].id, { timeout: 10_000 });
+    // A page long enough to leave the plot behind (the landing page itself is barely taller than the window).
+    await page.evaluate(() => { const d = document.createElement('div'); d.style.height = '3000px'; document.body.appendChild(d); window.scrollTo(0, document.body.scrollHeight); });
+    await expect.poll(() => plot(page).evaluate((e) => e.getBoundingClientRect().bottom)).toBeLessThan(0);
+    await page.waitForTimeout(300);
+    const held = await bar(page).getAttribute('data-snap');
+    await page.waitForTimeout(3_500);
+    await expect(bar(page)).toHaveAttribute('data-snap', held!);
+    await expect(bar(page)).toHaveAttribute('data-playing', 'true');
+    await plot(page).scrollIntoViewIfNeeded();
+    await expect(bar(page)).not.toHaveAttribute('data-snap', held!, { timeout: 5_000 });
   });
 });

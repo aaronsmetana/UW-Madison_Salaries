@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
-import { COLS, COL_DOLLARS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, arcHeight, colHeight, floorLabel, floorOf, floorPay, magLeftFor, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
+import { CATCH_UP, COLS, COL_DOLLARS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, arcHeight, colHeight, floorLabel, floorOf, floorPay, magLeftFor, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
@@ -313,6 +313,8 @@ export function StrataGraph({
   // The plot's width, measured; its height grows with it.
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotW, setPlotW] = useState(0);
+  // Whether the plot is in sight (3a): out of it, playing holds and every motion stops where it is.
+  const [onScreen, setOnScreen] = useState(true);
   useLayoutEffect(() => {
     const el = plotRef.current;
     if (!el) return;
@@ -323,6 +325,17 @@ export function StrataGraph({
     return () => ro.disconnect();
   });
   const [full, setFull] = useState(false);
+  // Watched whichever element the plot is now (it is drawn once there is something to draw, and again full page).
+  const seenRef = useRef<{ el: HTMLElement; io: IntersectionObserver } | null>(null);
+  useEffect(() => {
+    const el = plotRef.current;
+    if (!el || seenRef.current?.el === el || typeof IntersectionObserver === 'undefined') return;
+    seenRef.current?.io.disconnect();
+    const io = new IntersectionObserver(([e]) => setOnScreen(e.isIntersecting));
+    io.observe(el);
+    seenRef.current = { el, io };
+  });
+  useEffect(() => () => seenRef.current?.io.disconnect(), []);
   const [fullH, setFullH] = useState(0);
   const [pageH, setPageH] = useState(0);
   const baseH = phone ? PLOT_H.phone : Math.round(Math.min(PLOT_H.most, Math.max(PLOT_H.wide, plotW * PLOT_ASPECT)));
@@ -411,22 +424,27 @@ export function StrataGraph({
     A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); } });
     return {
       to: L1,
+      // Back to an earlier snapshot, a cross-fade (3a).
+      fade: stepFrom != null && at != null && at < stepFrom,
       from: { mx: mm.fx, my: mm.fy, px: pp.fx, py: pp.fy },
       arc: moves || followId != null ? { main: mm.arc, pile: pp.arc } : null,
       joined: { main: mm.join, pile: pp.join },
       ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) },
     };
     // `shownRef` is the layout drawn before this one: read, not a dependency.
-  }, [layout, tl, tStrata, moves, followId]);
+  }, [layout, tl, tStrata, moves, followId, at, stepFrom]);
   useEffect(() => { if (layout && strata) shownRef.current = { layout, strata }; }, [layout, strata]);
   // Go to a snapshot. The first time, the field is first drawn from the latest's people where it stands (no
   // one moves: the same people in the same columns), and the step taken from there.
+  // A jump of several snapshots on (3a): each step between, quickly (CATCH_UP of a step's time), one after another
+  // as each lands; back, a cross-fade straight there.
+  const [queue, setQueue] = useState<number | null>(null);
   const goTo = useCallback((to: number, play = false) => {
     if (!timeline || to < 0 || to > lastSnap) return;
     if (!tl) { timeline.onWant(); setGoal({ to, play }); return; }
     if (at == null) { setAt(lastSnap); setGoal({ to, play }); return; }
     setStepFrom(at);
-    setAt(to);
+    if (to > at + 1 && !prefersReducedMotion()) { setQueue(to); setAt(at + 1); } else { setQueue(null); setAt(to); }
     if (play) setPlaying(true);
   }, [timeline, tl, at, lastSnap]);
   // The timeline in, or the field drawn from the latest's people: on to the snapshot asked for.
@@ -438,14 +456,15 @@ export function StrataGraph({
     if (goal.to !== at) { setStepFrom(at); setAt(goal.to); }
     if (goal.play) setPlaying(true);
   }, [goal, tl, at, lastSnap, tStrata, layout]);
-  // Play: a step every PLAY_MS (longer after starting over from the first) over the speed, to the latest, then stop.
+  // Play: a step every PLAY_MS (longer after starting over from the first) over the speed, to the latest, then stop
+  // — held while the plot is out of sight.
   useEffect(() => {
-    if (!playing || at == null || goal) return;
+    if (!playing || at == null || goal || queue != null || !onScreen) return;
     if (at >= lastSnap) { setPlaying(false); return; }
     const wait = (restartRef.current ? PLAY_RESTART_MS : PLAY_MS) / speed;
     const t = window.setTimeout(() => { restartRef.current = false; setStepFrom(at); setAt(at + 1); }, wait);
     return () => window.clearTimeout(t);
-  }, [playing, at, goal, lastSnap, speed]);
+  }, [playing, at, goal, lastSnap, speed, queue, onScreen]);
   const onPlay = () => {
     if (playing) { setPlaying(false); setPaused(true); return; }
     setPaused(false);
@@ -468,6 +487,18 @@ export function StrataGraph({
   const fieldRef = useRef<StrataFieldHandle>(null);
   useEffect(() => { if (layout) droppedRef.current = true; }, [layout]);
   const [moving, setMoving] = useState(false);
+  // Each catch-up step goes once the one before has landed: the snapshot it landed in.
+  const [landedAt, setLandedAt] = useState<number | null>(null);
+  const atRef = useRef(at);
+  atRef.current = at;
+  const onMoving = useCallback((m: boolean) => { setMoving(m); if (!m) setLandedAt(atRef.current); }, []);
+  useEffect(() => {
+    if (queue == null || at == null) return;
+    if (at >= queue) { setQueue(null); return; }
+    if (landedAt !== at) return;
+    setStepFrom(at);
+    setAt(at + 1);
+  }, [queue, at, landedAt]);
   const [replay, setReplay] = useState(0);
 
   // What a filter lights: how many, their median, against campus — the group's own, a type's, or both.
@@ -1366,8 +1397,8 @@ export function StrataGraph({
             <StrataField
               ref={fieldRef} className="hero-dots strata-field" strata={strata} layout={layout} kindInks={kindInks}
               dim={dim} matchSearch={!!lit} marks={marks} big={big} entrance={entrance && !droppedRef.current} replay={replay}
-              lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={setMoving} hues={hues} step={step}
-              speed={speed} follow={followProp}
+              lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={onMoving} hues={hues} step={step}
+              speed={queue != null ? speed / CATCH_UP : speed} hold={!onScreen} follow={followProp}
             />
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (

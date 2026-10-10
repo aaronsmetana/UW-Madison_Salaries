@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, STEP_MS, VIEW_HOP, VIEW_JITTER,
+  COLS, COL_DOLLARS, DROP_MS, FADE_MS, DROP_ROW_MS, DROP_WAVE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, STEP_MS, VIEW_HOP, VIEW_JITTER,
   VIEW_MOVE, VIEW_MS, VIEW_WAVE, ZOOM_JITTER, ZOOM_MOVE, ZOOM_MS, stepTiming,
   FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, floorOf, floorsGrid, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
@@ -300,6 +300,8 @@ export interface Step {
   /** Who joined this step (1), fading in where they stand once the rest are on their way. */
   joined: { main: Uint8Array; pile: Uint8Array };
   ghosts: { x: Float64Array; y: Float64Array; kind: Uint8Array } | null;
+  /** Back to an earlier snapshot (3a): the field cross-fades to it, no one moving. */
+  fade?: boolean;
 }
 
 export const StrataField = forwardRef<StrataFieldHandle, {
@@ -331,12 +333,16 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   /** How to arrive at `layout`, when it is a timeline step's, and how fast: the timeline's 1×, 2× or 4×. */
   step?: Step | null;
   speed?: number;
+  /** Hold every motion where it is (the plot scrolled out of sight), and go on from there when let go. */
+  hold?: boolean;
   follow?: Follow | null;
   className?: string;
-}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, speed = 1, follow = null, className }, ref) {
+}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, hues = null, step = null, speed = 1, hold = false, follow = null, className }, ref) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const lensRef = useRef<HTMLCanvasElement>(null);
+  // The picture a cross-fade leaves, fading out over the new one.
+  const fadeRef = useRef<HTMLCanvasElement>(null);
   const { W, H, dpr, grid } = layout;
   const n = strata.col.length, m = strata.pileKind.length;
 
@@ -741,11 +747,11 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   const tickRef = useRef(tick);
   tickRef.current = tick;
   const frame = (t: number) => tickRef.current(t);
-  const kick = () => { if (!raf.current) raf.current = requestAnimationFrame(frame); };
+  const kick = () => { if (!raf.current && heldAt.current == null) raf.current = requestAnimationFrame(frame); };
 
   // Sized for the plot at the device's density.
   useLayoutEffect(() => {
-    for (const cv of [baseRef.current, lensRef.current]) {
+    for (const cv of [baseRef.current, lensRef.current, fadeRef.current]) {
       if (!cv) continue;
       cv.width = Math.round(W * dpr);
       cv.height = Math.round(H * dpr);
@@ -801,6 +807,22 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       }
       cur.current = { mx: layout.mx.slice(), my: fromMy.slice(), px: layout.px.slice(), py: fromPy.slice() };
       move.current = { start: now, fromMx: layout.mx.slice(), fromMy, fromPx: layout.px.slice(), fromPy, wait, pwait, ms: DROP_MS, land: true };
+    } else if (stepped && step?.fade && baseRef.current && fadeRef.current) {
+      // Back to an earlier snapshot (3a): the picture as it was fades out over the new one, no one moving.
+      const was = fadeRef.current, base = baseRef.current, fctx = was.getContext('2d');
+      fctx?.setTransform(1, 0, 0, 1, 0, 0);
+      fctx?.clearRect(0, 0, was.width, was.height);
+      fctx?.drawImage(base, 0, 0);
+      cur.current = { mx: layout.mx.slice(), my: layout.my.slice(), px: layout.px.slice(), py: layout.py.slice() };
+      move.current = null;
+      drawBase();
+      setMoving(true);
+      const opts = { duration: FADE_MS, easing: 'ease-in-out', fill: 'both' as const };
+      was.animate([{ opacity: 1 }, { opacity: 0 }], opts);
+      const a = base.animate([{ opacity: 0 }, { opacity: 1 }], opts);
+      a.onfinish = () => { fctx?.clearRect(0, 0, was.width, was.height); setMoving(false); };
+      kick();
+      return;
     } else if (stepped && step) {
       // A timeline step: from each person's place before, the big movers launching together, who left fading
       // out first and who joined fading in last (lib/strata `stepTiming`).
@@ -864,6 +886,17 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { kick(); }, [lensKey, pointerKey, fromKey, lensR]);
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  // Held (out of sight): the frames stop; let go, a move in flight goes on from where it was.
+  const heldAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (hold) { heldAt.current = performance.now(); cancelAnimationFrame(raf.current); raf.current = 0; return; }
+    if (heldAt.current == null) return;
+    const mv = move.current;
+    if (mv) mv.start += performance.now() - heldAt.current;
+    heldAt.current = null;
+    kick();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hold]);
 
   // For a test to read who is lit and where everyone stands, without 44,000 numbers in the markup: a print of
   // each field's lit squares (how many, and the sum and sum of squares of their indices), and functions on the
@@ -914,6 +947,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       aria-hidden
       style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, pointerEvents: 'none' }}>
       <canvas ref={baseRef} className="strata-base" style={{ position: 'absolute', inset: 0, width: W, height: H }} />
+      <canvas ref={fadeRef} className="strata-fade" style={{ position: 'absolute', inset: 0, width: W, height: H, pointerEvents: 'none' }} />
       {/* Over the pins and their lines, which are drawn after the field: the glass lies on everything it shows. */}
       <canvas ref={lensRef} className="strata-lens" style={{ position: 'absolute', inset: 0, width: W, height: H, zIndex: Z.content }} />
     </div>

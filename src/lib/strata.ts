@@ -344,6 +344,10 @@ export const VIEW_WAVE = 0.42;
 export const VIEW_JITTER = 0.1;
 export const VIEW_MOVE = 0.46;
 export const VIEW_HOP = 30;
+/** Back to an earlier snapshot (3a): a cross-fade, this long. */
+export const FADE_MS = 800;
+/** A jump of several snapshots on (3a): each step between, quickly — at this share of a step's time. */
+export const CATCH_UP = 0.4;
 /** Into the magnified view and out (3a): about 1.3 s, every square together but for a little at random. */
 export const ZOOM_MS = 1300;
 export const ZOOM_JITTER = 0.04;
