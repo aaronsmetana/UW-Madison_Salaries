@@ -4,14 +4,13 @@ import { ActionIcon, Button, CloseButton, FocusTrap, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks';
 import { IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import { COLS, COL_DOLLARS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, arcHeight, colHeight, floorLabel, floorOf, floorPay, magLeftFor, placePins, shareAt, standingIn, strataFromCounts, within, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
+import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, useEntranceOnce, type Dim, type Follow, type LensHit, type Spot, type Step, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { bigMoves, snapStats, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
 import { prefersReducedMotion } from '../../lib/motion';
 import { fmtK } from '../../lib/chartStyle';
 import { num, usd, vsCampus } from '../../lib/format';
-import { poolPercentile } from '../../lib/queries';
 import { useReveal } from '../PersonReveal';
 import { SegmentedToggle } from '../SegmentedToggle';
 import type { ShownPerson } from '../SearchBox';
@@ -59,8 +58,8 @@ const PANEL_RADIUS = 16;
 const HOLD_MS = 450;
 const HOLD_LIFT = 28;
 /** The person card's width, CSS px. */
-const CARD_W = 272;
-const CARD_H = 150;
+const CARD_W = 290;
+const CARD_H = 200;
 /** A search's people named on the graph: the label's line, its padding, its widest, its type size. */
 const FOUND_LABEL = { h: 19, pad: 16, maxW: 180, font: 12 } as const;
 /** Unrolled, the readout counts the people this far either side of the pay under the lens. */
@@ -74,11 +73,37 @@ export interface GraphTimeline {
   snaps: readonly { id: string; label: string }[];
   data: Timeline | 'loading' | 'error' | null;
   onWant: () => void;
-  names: { snap: number; who: ReadonlyMap<string, { name: string; title: string | null; school: string | null }> } | null;
+  names: { snap: number; who: ReadonlyMap<string, { name: string; title: string | null; school: string | null; department?: string | null }> } | null;
   onWantNames: (snap: number) => void;
 }
 /** A snapshot's label without its note: "Nov 2021 (Pre-TTC)" is "Nov 2021" at the track's end. */
 const bareLabel = (l: string) => l.replace(/\s*\(.*\)\s*$/, '');
+/** A person's pay across the snapshots (3a): an accent line through each one they were paid in, a gap where they
+ *  were not, the snapshot shown its larger point; the first and last snapshots named under it. */
+function CardSpark({ series, now, first, last }: { series: readonly (number | null)[]; now: number; first: string; last: string }) {
+  const w = CARD_W - 28, h = 28, pad = 4;
+  const vals = series.filter((v): v is number => v != null && v > 0);
+  if (!vals.length) return null;
+  const lo = Math.min(...vals), hi = Math.max(...vals), n = series.length;
+  const x = (k: number) => pad + ((w - 2 * pad) * k) / Math.max(1, n - 1);
+  const y = (v: number) => (hi === lo ? h / 2 : h - pad - ((h - 2 * pad) * (v - lo)) / (hi - lo));
+  let d = '';
+  let pen = false;
+  series.forEach((v, k) => { if (v == null || v <= 0) { pen = false; return; } d += `${pen ? 'L' : 'M'}${x(k).toFixed(1)} ${y(v).toFixed(1)}`; pen = true; });
+  return (
+    <div className="strata-card-spark" data-points={vals.length}>
+      <svg width={w} height={h} aria-hidden>
+        <path d={d} className="strata-card-spark-line" />
+        {series.map((v, k) => (v != null && v > 0 ? (
+          <rect key={k} className="strata-card-spark-dot" data-now={k === now || undefined}
+            x={x(k) - (k === now ? 3.5 : 1.75)} y={y(v) - (k === now ? 3.5 : 1.75)} width={k === now ? 7 : 3.5} height={k === now ? 7 : 3.5} />
+        ) : null))}
+      </svg>
+      <div className="strata-card-spark-ends"><span>{first}</span><span>{last}</span></div>
+    </div>
+  );
+}
+
 /** Play waits this long between steps, and longer after starting over from the first. */
 const PLAY_MS = 1500;
 const PLAY_RESTART_MS = 2000;
@@ -91,6 +116,7 @@ export interface DotWho {
   name: string;
   title: string | null;
   school: string | null;
+  department?: string | null;
   pay: number | null;
   /** Their pay in the snapshot before: null if they were not in it, undefined where that is not known. */
   prev?: number | null;
@@ -485,7 +511,7 @@ export function StrataGraph({
       if (!key || !n) return null;
       const pay = field === 'main' ? tStrata.mainPay[index] : tStrata.pilePay![index];
       return {
-        key, name: n.name, title: n.title, school: n.school, pay,
+        key, name: n.name, title: n.title, school: n.school, department: n.department ?? null, pay,
         prev: prevPay ? (prevPay[id] > 0 ? prevPay[id] : null) : undefined, prevLabel: at > 0 ? snaps[at - 1].label : undefined,
         ...standingIn(desc, pay), total: desc.length,
       };
@@ -694,6 +720,34 @@ export function StrataGraph({
   const foundPick = pick ? found.find((f) => f.spot.field === pick.field && f.spot.index === pick.index) ?? null : null;
   const who: DotWho | null = (pick && typeof whoIs === 'function' ? whoIs(pick.field, pick.index) : null)
     ?? (foundPick ? { key: foundPick.person_key, name: foundPick.name, title: foundPick.title, school: foundPick.school, pay: foundPick.pay } : null);
+
+  // The person's pay in every snapshot (3a's sparkline), once the timeline is in: their number's row in each.
+  const curSnap = at ?? lastSnap;
+  const whoKey = who?.key ?? null;
+  const series = useMemo(() => {
+    const id = whoKey != null && keyId ? keyId.get(whoKey) : undefined;
+    if (!tl || id == null) return null;
+    return tl.at.map((p) => {
+      let lo = 0, hi = p.id.length - 1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (p.id[mid] < id) lo = mid + 1; else if (p.id[mid] > id) hi = mid - 1; else return p.pay[mid]; }
+      return null;
+    });
+  }, [tl, keyId, whoKey]);
+  // How their pay moved since the snapshot before (3a): by how much, or that they joined, or no change.
+  const moved = (() => {
+    if (!who || who.pay == null) return null;
+    const prevLabel = curSnap > 0 ? bareLabel(snaps[curSnap - 1]?.label ?? '') : '';
+    if (series && curSnap === 0) return { text: 'First snapshot', tone: 'flat' };
+    const prev = series ? series[curSnap - 1] : who.prev;
+    if (prev === undefined || !prevLabel) return null;
+    if (prev == null) return { text: `Joined since ${prevLabel}`, tone: 'new' };
+    const d = who.pay - prev;
+    if (Math.abs(d) < 1) return { text: `No change since ${prevLabel}`, tone: 'flat' };
+    return { text: `${d > 0 ? '+' : '−'}${usd(Math.abs(d))} since ${prevLabel}`, tone: d > 0 ? 'up' : 'down' };
+  })();
+  // The card's history wants the timeline: asked for the first time the loupe is up.
+  const wantTimeline = timeline?.onWant;
+  useEffect(() => { if (lensAt && !tl) wantTimeline?.(); }, [lensAt, tl, wantTimeline]);
 
   // ── Pointer, finger and keyboard ──
   const local = (e: { clientX: number; clientY: number }) => {
@@ -992,6 +1046,15 @@ export function StrataGraph({
   const scrimRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  // The card's own height, as drawn (a long title wraps, the history comes in later): kept inside the plot by it.
+  const [cardH, setCardH] = useState(CARD_H);
+  useLayoutEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setCardH((h) => (Math.abs(h - el.offsetHeight) < 1 ? h : el.offsetHeight)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
   const growFromRef = useRef<DOMRect | null>(null);
   const closingRef = useRef(false);
   const refocusRef = useRef(false);
@@ -1139,13 +1202,18 @@ export function StrataGraph({
   const readoutW = readout ? Math.ceil(measureText(readout, 12) * 1.08 + 20) : 0;
   const lensY = lensAt?.y ?? 0;
   const pillTop = lensAt ? (lensY - R - 34 >= 0 ? lensY - R - 34 : lensY + R + 8) : 0;
-  const cardSide = lensAt && lensAt.x + R + 12 + CARD_W <= plotW ? 'right' : 'left';
-  const cardLeft = lensAt ? (cardSide === 'right' ? lensAt.x + R + 12 : Math.max(0, lensAt.x - R - 12 - CARD_W)) : 0;
+  // Beside the loupe — or magnified, where there is none, beside the ringed square.
+  const cardAt = layout?.view === 'magnify' && pick ? { x: pick.x, gap: pick.s / 2 + 16 } : lensAt ? { x: lensAt.x, gap: R + 12 } : null;
+  const cardSide = cardAt && cardAt.x + cardAt.gap + CARD_W <= plotW ? 'right' : 'left';
+  const cardLeft = cardAt ? (cardSide === 'right' ? cardAt.x + cardAt.gap : Math.max(0, cardAt.x - cardAt.gap - CARD_W)) : 0;
   // Level with the square under the pointer, and clear of the readout where the two would cross.
-  const pillLeft = lensAt ? Math.max(0, Math.min(plotW - readoutW, lensAt.x - readoutW / 2)) : 0;
+  // Over the loupe — and, with a card beside it, slid clear of the card's side where there is room.
+  const pillCentred = lensAt ? Math.max(0, Math.min(plotW - readoutW, lensAt.x - readoutW / 2)) : 0;
+  const pillClear = cardSide === 'right' ? Math.min(pillCentred, cardLeft - 8 - readoutW) : Math.max(pillCentred, cardLeft + CARD_W + 8);
+  const pillLeft = lensAt && pick && pillClear >= 0 && pillClear <= plotW - readoutW ? pillClear : pillCentred;
   const crossesPill = lensAt && cardLeft < pillLeft + readoutW && pillLeft < cardLeft + CARD_W;
   const cardTop = pick
-    ? Math.max(crossesPill && pillTop < lensY ? pillTop + 32 : 0, Math.min(H - CARD_H, pick.y - CARD_H / 2))
+    ? Math.max(0, Math.min(H - cardH, Math.max(crossesPill && pillTop < lensY ? pillTop + 32 : 0, pick.y - cardH / 2)))
     : 0;
   // The magnified window's name: to the pile's column, the pile's own.
   const magHi = magLeft + MAG_COLS * COL_DOLLARS;
@@ -1153,12 +1221,6 @@ export function StrataGraph({
   const readText = layout?.view === 'magnify'
     ? `${magWindowText} magnified · the arrow keys move it, Escape zooms out`
     : readout ?? 'Move along the pay distribution with the arrow keys';
-  const change = who && who.pay != null && who.prev !== undefined
-    ? who.prev == null ? { text: 'New this snapshot', up: true } : who.prev > 0 ? (() => {
-      const pct = ((who.pay! - who.prev!) / who.prev!) * 100;
-      return { text: `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}% since ${who.prevLabel ?? 'last'}`, up: pct >= 0 };
-    })() : null
-    : null;
   const pickKind = pick ? (pick.field === 'main' ? strata.kind[pick.index] : strata.pileKind[pick.index]) : null;
   // What the graph shows, said in words, and its columns in $10k bands with each type's people.
   const bandKinds = strata.names.map((_, k) => k).filter((k) => (cats ?? []).some((c) => c.kind === k && c.n > 0));
@@ -1276,6 +1338,7 @@ export function StrataGraph({
         data-group-median={filterStats?.median ?? undefined}
         data-tail={tail ? 'on' : 'off'}
         data-view={layout?.view ?? view}
+        data-zoom={layout && layout.view !== 'magnify' ? (layout.view === 'floors' ? LOUPE_ZOOM.floors : LOUPE_ZOOM.hist) : undefined}
         data-over-pile={overPile || undefined}
         data-pick={pick ? `${pick.field}:${pick.index}` : undefined}
         data-pick-size={pick ? pick.s.toFixed(2) : undefined}
@@ -1452,19 +1515,18 @@ export function StrataGraph({
               <>
                 <div className="strata-card-name">{who.name}</div>
                 {who.title && <div className="strata-card-title">{who.title}</div>}
-                <div className="strata-card-pay">
-                  <span>{who.pay != null ? usd(who.pay) : '—'}</span>
-                  {change && <span className="strata-card-change" data-up={change.up || undefined}>{change.text}</span>}
-                </div>
-                <div className="strata-card-meta">
-                  {pickKind != null && <span className="strata-swatch" style={{ background: kindInks[pickKind] }} />}
-                  <span>{pickKind != null ? strata.names[pickKind] : ''}</span>
-                </div>
-                {who.rank != null && who.below != null && who.total != null && who.total > 1 && (
-                  <div className="strata-card-rank">
-                    Paid more than {poolPercentile(who.below, who.total)}% · #{num(who.rank)} of {num(who.total)}
+                {(who.department || who.school) && <div className="strata-card-dept">{who.department || who.school}</div>}
+                {pickKind != null && (
+                  <div className="strata-card-meta">
+                    <span className="strata-swatch" style={{ background: kindInks[pickKind] }} />
+                    <span>{strata.names[pickKind]}</span>
                   </div>
                 )}
+                <div className="strata-card-pay">
+                  <span>{who.pay != null ? usd(who.pay) : '—'}</span>
+                  {moved && <span className="strata-card-change" data-tone={moved.tone}>{moved.text}</span>}
+                </div>
+                {series && <CardSpark series={series} now={curSnap} first={bareLabel(snaps[0].label)} last={bareLabel(snaps[lastSnap].label)} />}
                 {pinned ? (
                   <div className="strata-card-actions">
                     <Button size="compact-xs" variant={follow?.key === who.key ? 'default' : 'filled'} onClick={() => pick && toggleFollow(who, pick)}>

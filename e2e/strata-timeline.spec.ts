@@ -240,7 +240,7 @@ test('a step moves in frames inside the frame budget, at CI’s pace', async ({ 
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
 });
 
-test('in an older snapshot the lens names someone with that snapshot’s title and pay, its change since the one before, and their rank then', async ({ page }) => {
+test('in an older snapshot the loupe names someone with that snapshot’s title and pay, and its change since the one before', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);
   const i = 4;
@@ -263,11 +263,13 @@ test('in an older snapshot the lens names someone with that snapshot’s title a
   );
   await expect(card.locator('.strata-card-title')).toHaveText(named.title);
   await expect(card.locator('.strata-card-pay > span').first()).toHaveText(usd(me.pay));
-  const change = prev.pay == null || !(prev.pay > 0) ? 'New this snapshot'
-    : `${me.pay >= prev.pay ? '+' : '−'}${Math.abs(((me.pay - prev.pay) / prev.pay) * 100).toFixed(1)}% since ${SNAPS[i - 1].label}`;
+  const before = SNAPS[i - 1].label.replace(/\s*\(.*\)\s*$/, '');
+  const d = prev.pay == null || !(prev.pay > 0) ? null : me.pay - prev.pay;
+  const change = d == null ? `Joined since ${before}` : Math.abs(d) < 1 ? `No change since ${before}` : `${d > 0 ? '+' : '−'}${usd(Math.abs(d))} since ${before}`;
   await expect(card.locator('.strata-card-change')).toHaveText(change);
-  const rank = 1 + who.filter((p) => p.pay > me.pay).length;
-  await expect(card.locator('.strata-card-rank')).toContainText(`#${num(rank)} of ${num(who.length)}`);
+  // The snapshot shown is the marked point of their history.
+  await expect(card.locator('.strata-card-spark-dot[data-now]')).toHaveCount(1);
+  expect(who.length).toBeGreaterThan(0);
 });
 
 test('a group is its people: in another snapshot they are lit wherever they stand then, and counted there', async ({ page }) => {

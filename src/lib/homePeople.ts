@@ -34,6 +34,7 @@ export interface HomeName {
   ln: string;
   title: string | null;
   school: string | null;
+  department: string | null;
 }
 
 /**
@@ -45,8 +46,8 @@ export interface HomeName {
  * there is not (Home `WHO_EARLY_MS`). It is 22k rows, so it is never in front of what a reader does next.
  */
 export function homeNamesSql(snapshot: string): string {
-  return `SELECT person_key, first_name AS fn, last_name AS ln, title, school FROM (
-      SELECT person_key, first_name, last_name, title, school,
+  return `SELECT person_key, first_name AS fn, last_name AS ln, title, school, department FROM (
+      SELECT person_key, first_name, last_name, title, school, department,
              row_number() OVER (PARTITION BY person_key ORDER BY ${ACTUAL_PAY} DESC, coalesce(employee_category, 'Other'), title, school) AS k
       FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0)
     WHERE k = 1`;

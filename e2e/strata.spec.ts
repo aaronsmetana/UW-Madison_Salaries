@@ -163,15 +163,15 @@ async function pointAt(page: Page, fx: number, fy: number) {
   return { x, y };
 }
 
-test('the lens names the square under the pointer: who, their title, pay and its change, their type, standing and rank', async ({ page }) => {
+test('the loupe names the square under it (3a): who, their title, department and type, their pay and how it moved, and their pay in every snapshot', async ({ page }) => {
   await home(page);
   await pointAt(page, 0.3, 0.85);
   const [f, i] = (await plot(page).getAttribute('data-pick'))!.split(':') as [Field, string];
-  const { main, pile, rows } = await byIndex();
+  const { main, pile } = await byIndex();
   const who = (f === 'main' ? main : pile)[Number(i)];
   // Their name and title: the appointment their square is coloured by — the highest-paid.
-  const [n] = await oracle<{ fn: string; ln: string; title: string }>(
-    `SELECT first_name fn, last_name ln, title FROM (SELECT first_name, last_name, title,
+  const [n] = await oracle<{ fn: string; ln: string; title: string; department: string | null; school: string | null }>(
+    `SELECT first_name fn, last_name ln, title, department, school FROM (SELECT first_name, last_name, title, department, school,
        row_number() OVER (ORDER BY ${PAY} DESC, coalesce(employee_category, 'Other'), title, school) k
        FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}') WHERE k = 1`,
   );
@@ -182,21 +182,49 @@ test('the lens names the square under the pointer: who, their title, pay and its
   const [prev] = await oracle<{ pay: number | null }>(
     `SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${prevId}' AND salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}'`,
   );
-  const rank = 1 + rows.filter((p) => p.pay > who.pay).length;
-  // Their standing as the app states one (lib/stats percentile): the share of the others paid less — the person
-  // is not counted against themself, and those paid the same are not below them.
-  const pct = Math.min(100, Math.round((rows.filter((p) => p.pay < who.pay).length / (rows.length - 1)) * 100));
   const card = page.locator('.strata-card');
   await expect(card).toHaveAttribute('data-who', who.key);
   await expect(card.locator('.strata-card-name')).toHaveText(new RegExp(`^${n.fn}\\s+${n.ln}$`, 'i'));
   await expect(card.locator('.strata-card-title')).toHaveText(n.title);
-  await expect(card.locator('.strata-card-pay > span').first()).toHaveText(`$${Math.round(who.pay).toLocaleString('en-US')}`);
-  const change = prev.pay == null || !(prev.pay > 0)
-    ? 'New this snapshot'
-    : `${who.pay >= prev.pay ? '+' : '−'}${Math.abs(((who.pay - prev.pay) / prev.pay) * 100).toFixed(1)}% since ${prevLabel}`;
-  await expect(card.locator('.strata-card-change')).toHaveText(change);
+  await expect(card.locator('.strata-card-dept')).toHaveText((n.department || n.school)!);
   await expect(card.locator('.strata-card-meta')).toHaveText(who.cat);
-  await expect(card.locator('.strata-card-rank')).toHaveText(`Paid more than ${pct}% · #${num(rank)} of ${num(rows.length)}`);
+  await expect(card.locator('.strata-card-pay > span').first()).toHaveText(`$${Math.round(who.pay).toLocaleString('en-US')}`);
+  // How it moved, in dollars: joined, no change, or up or down by so much.
+  const usd = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`;
+  const d = prev.pay == null || !(prev.pay > 0) ? null : who.pay - prev.pay;
+  const change = d == null ? `Joined since ${prevLabel}` : Math.abs(d) < 1 ? `No change since ${prevLabel}` : `${d > 0 ? '+' : '−'}${usd(Math.abs(d))} since ${prevLabel}`;
+  await expect(card.locator('.strata-card-change')).toHaveText(change);
+  await expect(card.locator('.strata-card-change')).toHaveAttribute('data-tone', d == null ? 'new' : Math.abs(d) < 1 ? 'flat' : d > 0 ? 'up' : 'down');
+  // Their pay in every snapshot they were paid in, the one shown marked; the first and last snapshots named.
+  const [{ n: paidIn }] = await oracle<{ n: number }>(
+    `SELECT count(*) n FROM (SELECT snapshot_id FROM $SAL WHERE salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}' GROUP BY 1 HAVING sum(${PAY}) > 0)`,
+  );
+  await expect(card.locator('.strata-card-spark')).toHaveAttribute('data-points', String(paidIn), { timeout: 60_000 });
+  await expect(card.locator('.strata-card-spark-dot[data-now]')).toHaveCount(1);
+  await expect(card.locator('.strata-card-spark-ends')).toHaveText(/^Nov 2021Sep 2026$/);
+  // The card inside the plot (3a), and clear of the readout over the loupe.
+  const cb = (await card.boundingBox())!, pb = (await plot(page).boundingBox())!, rb = (await page.locator('.strata-readout').boundingBox())!;
+  expect(cb.y).toBeGreaterThanOrEqual(pb.y - 0.5);
+  expect(cb.y + cb.height, 'the card runs past the plot').toBeLessThanOrEqual(pb.y + pb.height + 0.5);
+  expect(cb.x + cb.width).toBeLessThanOrEqual(pb.x + pb.width + 0.5);
+  const apart = rb.x + rb.width <= cb.x || cb.x + cb.width <= rb.x || rb.y + rb.height <= cb.y || cb.y + cb.height <= rb.y;
+  expect(apart, 'the readout lies under the card').toBe(true);
+});
+
+test('the loupe magnifies 4× over the histogram and 2.5× over the floors, the square it names that much larger', async ({ page }) => {
+  await home(page);
+  for (const [view, zoom] of [['Histogram', 4], ['Floors', 2.5]] as const) {
+    if (view === 'Floors') {
+      await page.getByRole('radiogroup', { name: 'View' }).getByText('Floors').click();
+      await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    }
+    await expect(plot(page)).toHaveAttribute('data-zoom', String(zoom));
+    await pointAt(page, 0.3, 0.85);
+    const sq = Number(await field(page).getAttribute('data-sq'));
+    const size = Number(await plot(page).getAttribute('data-pick-size'));
+    expect(size, `${view}: the square named is drawn ${size}px against the field's ${sq}px`).toBeCloseTo(Math.max(7, zoom * sq), 1);
+    await page.mouse.move(1, 1);
+  }
 });
 
 /**
@@ -260,13 +288,12 @@ test('the lens follows a mouse with the cursor put away, magnifies what is under
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.93);
   await expect(plot(page)).toHaveAttribute('data-lens', 'on');
   await expect(plot(page)).toHaveCSS('cursor', 'none');
-  // Magnified: the square under the pointer is drawn several times the field's own size (about six at the
-  // lens's centre).
+  // Magnified: the square under the pointer is drawn several times the field's own size (4× in the loupe).
   await expect(plot(page)).toHaveAttribute('data-pick', /^main:\d+$/);
   // A square's size is its side; where a 1x screen draws solid bars of single-pixel columns, the mean of its sides.
   const sq = (Number(await field(page).getAttribute('data-sq')) + Number(await field(page).getAttribute('data-sq-w'))) / 2;
   const size = Number(await plot(page).getAttribute('data-pick-size'));
-  expect(size, `the square under the lens is drawn ${size}px against the field's ${sq}px`).toBeGreaterThan(4 * sq);
+  expect(size, `the square under the lens is drawn ${size}px against the field's ${sq}px`).toBeGreaterThanOrEqual(3.9 * sq);
   await page.mouse.move(box.x + box.width * 0.4, box.y - 60);
   await expect(plot(page)).toHaveAttribute('data-lens', 'off');
 });
@@ -433,11 +460,12 @@ test('the lens names no one in the empty sky, and reaches across itself for the 
   await box.fill(lone!.name);
   await expect(field(page)).toHaveAttribute('data-lit', `1:${i}:${i * i}`, { timeout: 60_000 });
   await page.waitForTimeout(400);
-  // Pointed about 40px up and to the left of their square: inside the lens, well off them. (Typing scrolled
-  // the box into view: the plot is measured again.)
+  // Pointed about 14px up and to the left of their square: inside the loupe, which shows 76 / 4 = 19px of the field
+  // each way, and well off them — several squares away. (Typing scrolled the box into view: the plot is measured
+  // again.)
   const pts = await placesOf(page, 'main');
   const nb = (await plot(page).boundingBox())!;
-  const x = nb.x + pts[2 * i] - 28, y = nb.y + pts[2 * i + 1] - 28;
+  const x = nb.x + pts[2 * i] - 10, y = nb.y + pts[2 * i + 1] - 10;
   await page.mouse.move(x - 20, y);
   await page.mouse.move(x, y, { steps: 4 });
   await expect(plot(page)).toHaveAttribute('data-pick', `main:${i}`, { timeout: 5_000 });

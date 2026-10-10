@@ -2,7 +2,7 @@
  * The landing graph (mockup 3a): one square per person, in $5k columns from $0 to $250k and a last column for
  * everyone paid more, each column's people sorted by salary from the baseline up — the lowest paid at the
  * bottom left — and coloured by employment type. Everything here is a pure function of the counts and the
- * plot's size — who sits where, the grid's measures, the lens's fisheye, the pins' rows, the motions' timing —
+ * plot's size — who sits where, the grid's measures, the pins' rows, the motions' timing —
  * so the canvas (components/strata/StrataField) only draws what these say.
  *
  * People are indexed exactly as `dotSpots` (lib/homePeople) indexes them: under the cap, $100 bucket by
@@ -282,23 +282,6 @@ export function tailColumns(pays: ArrayLike<number>, scale: number, pitch: numbe
 export function snapReach(n: number, R: number, least: number): number {
   if (n <= 0) return 0;
   return Math.min(R, Math.max(least, 2.5 * R * Math.sqrt(Math.PI / n)));
-}
-
-/**
- * The lens (3a §5): a Sarkar–Brown fisheye of distortion `d` over radius `R`. A point `dx, dy` from the
- * centre moves out to `g·R` along the same line, `g = (d+1)u / (du+1)` for `u = r/R`, and is drawn
- * `scale = (d+1) / (du+1)²` times its size — about six times at the centre, crowding into a ring at the rim.
- * Null outside the lens.
- */
-export function fisheye(dx: number, dy: number, R: number, d = 5): { x: number; y: number; scale: number } | null {
-  const r = Math.hypot(dx, dy);
-  if (r >= R) return null;
-  const u = r / R;
-  const k = d * u + 1;
-  if (r === 0) return { x: 0, y: 0, scale: d + 1 };
-  const g = ((d + 1) * u) / k;
-  const f = (g * R) / r;
-  return { x: dx * f, y: dy * f, scale: (d + 1) / (k * k) };
 }
 
 /** People within ±`radius` columns of `c`. */

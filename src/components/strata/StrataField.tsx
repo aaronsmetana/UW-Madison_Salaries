@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, u
 import {
   COLS, COL_DOLLARS, DROP_MS, DROP_ROW_MS, DROP_WAVE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, STEP_MS, VIEW_HOP, VIEW_JITTER,
   VIEW_MOVE, VIEW_MS, VIEW_WAVE, ZOOM_JITTER, ZOOM_MOVE, ZOOM_MS, stepTiming,
-  FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, fisheye, floorOf, floorsGrid, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
+  FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, floorOf, floorsGrid, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
 import { parseRgb } from '../../lib/inkMix';
@@ -20,11 +20,8 @@ import { Z } from '../../lib/layers';
 export const LENS_R = { phone: 56, wide: 76 };
 const LENS_FOLLOW = 0.34;
 const LENS_GROW = 0.28;
-/** Under the lens, by how much it is magnified: drawn in full, then fainter toward the rim. */
-const RIM_ALPHA: readonly (readonly [number, number])[] = [[0, 1], [1, 0.7], [2, 0.4]];
-/** The lens's magnification at its centre (lib/strata `fisheye`, d = 5): the pointer's place in the field is
- *  its offset from the centre over this. */
-const LENS_MAG = 6;
+/** The loupe's magnification (3a): over the histogram, and over the floors. */
+export const LOUPE_ZOOM = { hist: 4, floors: 2.5 };
 /** A square the lens names is drawn at least this big, CSS px, however near the rim it sits. */
 const PICK_MIN = 7;
 /** Under a filter, a lit square is drawn at least this many device pixels each way. */
@@ -258,7 +255,7 @@ function packed(css: string): number {
 
 /** The inks the field draws in, read from the page's tokens in the scheme it is showing. */
 interface Inks {
-  kinds: string[]; dim: string; match: string; up: string; down: string; ink: string; card: string; lensBg: string; lensRim: string; lensShadow: string;
+  kinds: string[]; dim: string; match: string; up: string; down: string; ink: string; mute: string; card: string; lensBg: string; lensRim: string; lensShadow: string;
   inverseBg: string; inverseInk: string; inverseEdge: string; font: string;
 }
 function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
@@ -268,6 +265,7 @@ function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
   const read = (v: string) => { probe.style.color = v; return canvasColor(getComputedStyle(probe).color); };
   const out = {
     kinds: kinds.map(read), dim: read('var(--strata-dim)'), match: read('var(--strata-match)'), up: read('var(--text-pos)'), down: read('var(--text-neg)'), ink: read('var(--mantine-color-text)'),
+    mute: read('var(--mantine-color-dimmed)'),
     card: read('var(--surface)'), lensBg: read('var(--lens-bg)'), lensRim: read('var(--lens-rim)'), lensShadow: read('var(--lens-shadow)'),
     inverseBg: read('var(--inverse-bg)'), inverseInk: read('var(--inverse-ink)'), inverseEdge: read('var(--inverse-edge)'),
     font: getComputedStyle(el).fontFamily,
@@ -584,113 +582,103 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.clip();
     const { mx, my, px, py } = cur.current;
-    const hw = grid.sqW / 2, hh = grid.sq / 2, s = (grid.sq + grid.sqW) / 2;
+    const hw = grid.sqW / 2, hh = grid.sq / 2;
     const ptr = props.current.pointer;
     const tail = layout.tail;
-    // Who could be under the lens: the columns within its reach (squeezed, while the pile is unrolled), and
-    // the pile where it overlaps.
+    // A plain loupe (3a): what is under it, LOUPE_ZOOM times as large — 4× over the histogram, 2.5× over the floors.
+    const z = layout.view === 'floors' ? LOUPE_ZOOM.floors : LOUPE_ZOOM.hist;
+    const reachField = R / z + Math.max(grid.sq, grid.sqW);
+    // Who could be under it: the columns within its reach (squeezed, while the pile is unrolled), and the pile
+    // where it overlaps; in the floors, whoever is within its square.
     const cw = layout.colW * (tail ? tail.squeeze : 1);
-    const c0 = Math.max(0, Math.floor((sx - R) / cw) - 1), c1 = Math.min(COLS - 1, Math.ceil((sx + R) / cw) + 1);
+    const c0 = Math.max(0, Math.floor((sx - reachField) / cw) - 1), c1 = Math.min(COLS - 1, Math.ceil((sx + reachField) / cw) + 1);
     const lists: { field: Field; idx: number[] }[] = [{ field: 'main', idx: [] }, { field: 'pile', idx: [] }];
     if (layout.view === 'floors') {
-      // Floors have no columns: whoever is within the lens's square.
-      for (let i = 0; i < n; i++) if (Math.abs(mx[i] - sx) <= R + 2 && Math.abs(my[i] - sy) <= R + 2) lists[0].idx.push(i);
-      for (let j = 0; j < m; j++) if (Math.abs(px[j] - sx) <= R + 2 && Math.abs(py[j] - sy) <= R + 2) lists[1].idx.push(j);
+      for (let i = 0; i < n; i++) if (Math.abs(mx[i] - sx) <= reachField && Math.abs(my[i] - sy) <= reachField) lists[0].idx.push(i);
+      for (let j = 0; j < m; j++) if (Math.abs(px[j] - sx) <= reachField && Math.abs(py[j] - sy) <= reachField) lists[1].idx.push(j);
     } else {
       for (let c = c0; c <= c1; c++) for (let q = layout.main.start[c]; q < layout.main.start[c + 1]; q++) lists[0].idx.push(layout.main.order[q]);
-      if (m && (tail || sx + R >= layout.pileLeft)) for (let j = 0; j < m; j++) lists[1].idx.push(j);
+      if (m && (tail || sx + reachField >= layout.pileLeft)) for (let j = 0; j < m; j++) lists[1].idx.push(j);
     }
     // Who it can name: the graph's people, or the tail's once the pile is unrolled (the pile itself is the way
     // to unroll it, and the squeezed graph the way to fold it back); with a filter on, only its own — the faded
     // ones are the rest, not who is being read.
     const nameable = (field: Field, k: number) => (layout.view === 'floors' || (field === 'pile') === !!tail) && !(dim && k === tint.C);
-    // The pointer's place in the field: what the lens shows under it, magnified about six times at its centre.
-    const qx = ptr ? sx + (ptr.x - cx) / LENS_MAG : 0, qy = ptr ? sy + (ptr.y - cy) / LENS_MAG : 0;
-    let near: { field: Field; index: number; x: number; y: number; z: number; d: number } | null = null;
-    let followed: { x: number; y: number; z: number } | null = null;
+    // The pointer's place in the field: what the loupe shows under it.
+    const qx = ptr ? sx + (ptr.x - cx) / z : 0, qy = ptr ? sy + (ptr.y - cy) / z : 0;
+    let near: { field: Field; index: number; x: number; y: number; d: number } | null = null;
+    let followed: { x: number; y: number } | null = null;
     let nameableHere = 0;
-    // `a`: how strongly it is drawn — full where the lens magnifies, fainter in the crowded ring at its rim,
-    // where whole columns are squeezed into lines and at full ink read as spokes rather than people.
-    const draws: { k: number; x: number; y: number; z: number; a: number }[] = [];
+    const draws: { k: number; x: number; y: number }[] = [];
+    const w = grid.sqW * z, h = grid.sq * z;
     for (const { field, idx } of lists) {
       const X = field === 'main' ? mx : px, Y = field === 'main' ? my : py, T = field === 'main' ? tint.main : tint.pile;
       for (const i of idx) {
-        const ox = X[i] + hw, oy = Y[i] + hh;
-        const f = fisheye(ox - sx, oy - sy, R);
-        if (!f) continue;
-        const z = Math.max(0.7, s * f.scale * 0.92);
-        const x = cx + f.x, y = cy + f.y;
-        draws.push({ k: T[i], x, y, z, a: f.scale >= 0.7 ? 0 : f.scale >= 0.35 ? 1 : 2 });
-        if (follow && follow.field === field && follow.index === i) followed = { x, y, z };
+        const x = cx + (X[i] - sx) * z, y = cy + (Y[i] - sy) * z;
+        if (x + w < cx - R || x > cx + R || y + h < cy - R || y > cy + R) continue;
+        draws.push({ k: T[i], x, y });
+        if (follow && follow.field === field && follow.index === i) followed = { x: x + w / 2, y: y + h / 2 };
         if (ptr && nameable(field, T[i])) {
           nameableHere++;
-          const d = Math.hypot(ox - qx, oy - qy);
-          if (!near || d < near.d) near = { field, index: i, x, y, z, d };
+          const d = Math.hypot(X[i] + hw - qx, Y[i] + hh - qy);
+          if (!near || d < near.d) near = { field, index: i, x: x + w / 2, y: y + h / 2, d };
         }
       }
     }
-    // Named: the nearest within a reach that widens as the people the lens could name thin out (lib/strata
-    // `snapReach`) — the one under the pointer where they crowd, across the lens where a filter leaves a few.
-    const reach = snapReach(nameableHere, R, Math.max(grid.sq, grid.sqW) / 2 + 0.75);
-    const best: LensHit | null = near && near.d <= reach ? { field: near.field, index: near.index, x: near.x, y: near.y, s: Math.max(near.z, PICK_MIN) } : null;
+    // Named: the nearest within a reach that widens as the people the loupe could name thin out (lib/strata
+    // `snapReach`) — the one under the pointer where they crowd, across the loupe where a filter leaves a few.
+    const reach = snapReach(nameableHere, R / z, Math.max(grid.sq, grid.sqW) / 2 + 0.75);
+    const best: LensHit | null = near && near.d <= reach ? { field: near.field, index: near.index, x: near.x, y: near.y, s: Math.max(h, PICK_MIN) } : null;
     for (const k of tint.order) {
       ctx.fillStyle = ink(k);
-      for (const [a, alpha] of RIM_ALPHA) {
-        ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        for (const d of draws) {
-          if (d.k !== k || d.a !== a) continue;
-          if (d.z > 4) ctx.roundRect(d.x - d.z / 2, d.y - d.z / 2, d.z, d.z, d.z * 0.22);
-          else ctx.rect(d.x - d.z / 2, d.y - d.z / 2, d.z, d.z);
-        }
-        ctx.fill();
-      }
+      ctx.beginPath();
+      for (const d of draws) if (d.k === k) ctx.rect(d.x, d.y, w, h);
+      ctx.fill();
     }
-    ctx.globalAlpha = 1;
     ctx.restore();
-    // The glass: a highlight up and to the left, and a rim.
-    const g = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.45, 0, cx - R * 0.35, cy - R * 0.45, R * 0.9);
-    g.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-    g.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = g;
+    // The rim.
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = t.lensRim;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = t.lensRim;
     ctx.stroke();
-    // The person followed, outlined where the lens shows them.
+    // The person followed, outlined where the loupe shows them.
     if (followed) {
-      const h = Math.max(followed.z, 4) / 2 + 1.5;
+      const o = Math.max(h, 4) / 2 + 1.5;
       ctx.lineWidth = 1.25;
       ctx.strokeStyle = t.ink;
-      ctx.strokeRect(followed.x - h, followed.y - h, 2 * h, 2 * h);
+      ctx.strokeRect(followed.x - o, followed.y - o, 2 * o, 2 * o);
     }
-    // The square it names, ringed — drawn up to a size that reads wherever in the lens it is, and whole over
-    // the glass's edge; reached for from across the lens, a faint line from the centre says which it is.
+    // The square it names, outlined — reached for from across the loupe, a faint line from the centre says which.
     if (best) {
-      const k = (best.field === 'main' ? tint.main : tint.pile)[best.index];
       const far = Math.hypot(best.x - cx, best.y - cy);
-      const h = best.s / 2 + 2.5;
+      const o = best.s / 2 + 3;
       if (far > R * 0.3) {
         ctx.globalAlpha = 0.5;
         ctx.lineWidth = 1;
         ctx.strokeStyle = t.ink;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.lineTo(best.x - ((best.x - cx) / far) * (h + 1), best.y - ((best.y - cy) / far) * (h + 1));
+        ctx.lineTo(best.x - ((best.x - cx) / far) * (o + 1), best.y - ((best.y - cy) / far) * (o + 1));
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
-      ctx.fillStyle = ink(k);
-      ctx.beginPath();
-      ctx.roundRect(best.x - best.s / 2, best.y - best.s / 2, best.s, best.s, best.s * 0.22);
-      ctx.fill();
-      ctx.lineWidth = 1.5;
+      if (best.s > h) {
+        ctx.fillStyle = ink((best.field === 'main' ? tint.main : tint.pile)[best.index]);
+        ctx.fillRect(best.x - best.s / 2, best.y - best.s / 2, best.s, best.s);
+      }
+      ctx.lineWidth = 2;
       ctx.strokeStyle = t.ink;
-      ctx.strokeRect(best.x - h, best.y - h, 2 * h, 2 * h);
+      ctx.strokeRect(best.x - o, best.y - o, 2 * o, 2 * o);
     }
     ctx.restore();
+    // How much it magnifies, under its rim — or, where the plot ends first, by it at its lower right.
+    ctx.font = `500 11px ${t.font}`;
+    ctx.fillStyle = t.mute;
+    ctx.textBaseline = 'alphabetic';
+    const below = cy + R + 14;
+    if (below <= H - 2) { ctx.textAlign = 'center'; ctx.fillText(`${z}×`, cx, below); }
+    else { ctx.textAlign = 'left'; ctx.fillText(`${z}×`, Math.min(W - 24, cx + R * 0.72 + 6), Math.min(H - 4, cy + R * 0.72 + 10)); }
     return best;
   };
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, fisheye, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, landEase, placePins, shareAt, snapReach, squareAt, standingIn, stepTiming, STEP_MS, STEP_WAVE_MS, squarePixels, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -246,21 +246,6 @@ describe('standingIn', () => {
     expect(standingIn(desc, 90)).toEqual({ rank: 1, below: 4 });
     expect(standingIn(desc, 80)).toEqual({ rank: 2, below: 2 });
     expect(standingIn(desc, 60)).toEqual({ rank: 5, below: 0 });
-  });
-});
-
-describe('fisheye', () => {
-  it('magnifies six times at the centre and leaves the rim where it was', () => {
-    expect(fisheye(0, 0, 76)!.scale).toBe(6);
-    const rim = fisheye(75.9, 0, 76)!;
-    expect(rim.x).toBeCloseTo(75.9, 0);
-    expect(rim.scale).toBeLessThan(0.3);
-    expect(fisheye(80, 0, 76)).toBeNull();
-  });
-  it('pushes points outward along their own line', () => {
-    const m = fisheye(10, 10, 76)!;
-    expect(m.x).toBeGreaterThan(10);
-    expect(m.x).toBeCloseTo(m.y, 6);
   });
 });
 

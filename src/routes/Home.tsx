@@ -230,7 +230,7 @@ export default function Home() {
       if (!key || !n) return null;
       const pay = pays.get(key) ?? null;
       return {
-        key, name: fullName(n.fn, n.ln), title: n.title, school: n.school, pay,
+        key, name: fullName(n.fn, n.ln), title: n.title, school: n.school, department: n.department, pay,
         prev: prev ? (prev.get(key) ?? null) : undefined, prevLabel: prevSnapshot?.label,
         ...(pay != null ? standingIn(desc, Number(pay)) : {}), total: desc.length,
       };
@@ -252,7 +252,7 @@ export default function Home() {
       data: !wantTimeline ? null : tlData ?? (tlFailed ? 'error' : 'loading'),
       onWant: () => setWantTimeline(true),
       names: namesAt != null && snapNames
-        ? { snap: namesAt, who: new Map(snapNames.map((n) => [n.person_key, { name: fullName(n.fn, n.ln), title: n.title, school: n.school }])) }
+        ? { snap: namesAt, who: new Map(snapNames.map((n) => [n.person_key, { name: fullName(n.fn, n.ln), title: n.title, school: n.school, department: n.department }])) }
         : null,
       onWantNames: setNamesAt,
     };
