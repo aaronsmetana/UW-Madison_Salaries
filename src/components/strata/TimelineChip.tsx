@@ -9,15 +9,17 @@ import { MOTION, prefersReducedMotion } from '../../lib/motion';
  * is not drawn again for it; the ring turns by a registered `--ring` angle, animated, never redrawn by React.
  */
 export function TimelineChip({ input, compact = false }: { input: Omit<ChipInput, 'now'>; compact?: boolean }) {
-  const [now, setNow] = useState(() => performance.now());
-  const live = input.playing || input.phase != null || input.rest != null || input.fade != null || input.switching;
+  // Ticks only to be drawn again: what it says is worked out from the clock as it is drawn, never from the last
+  // tick, which could be a quarter second old as a phase begins (a 3 s countdown read "4").
+  const [, setNow] = useState(() => performance.now());
+  const live = input.playing || input.phase != null || input.rest != null || input.fade != null || input.switching || input.intro;
   useEffect(() => {
     setNow(performance.now());
     if (!live) return;
     const id = window.setInterval(() => setNow(performance.now()), 250);
     return () => window.clearInterval(id);
   }, [live, input.phase, input.rest, input.fade]);
-  const st = chipState({ ...input, now });
+  const st = chipState({ ...input, now: performance.now() });
 
   const ringRef = useRef<HTMLSpanElement>(null);
   const { from, to, start, end, linear } = st.ring;

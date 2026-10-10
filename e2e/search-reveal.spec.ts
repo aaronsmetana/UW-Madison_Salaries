@@ -385,10 +385,10 @@ test('the person the list has active is drawn bigger, and wears the filled name'
  */
 test('the search goes full page with the graph: one box, the query kept, the dots still named', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  // Not `home`, which tells the field its entrance has already played. A visitor's first sight of the
-  // page is the dots falling, and the panel going full page lays them out and drops them again — which
-  // is the only time the places a name could be hung on are moving. Skip that and there is nothing here
-  // to get wrong: the field re-lays out between two frames and every reading is the settled one.
+  // Not `home`, which tells the field its intro has already played. A visitor's first sight of the page is
+  // the intro, which typing in the box skips — the field going from magnified to everyone, its places moving
+  // while a name could be hung on them. Skip the intro here and there is nothing to get wrong: the field
+  // re-lays out between two frames and every reading is the settled one.
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
   // A name more people share than the graph names (six): the page's box and the full page's list the same

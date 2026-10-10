@@ -5,6 +5,12 @@ import { parseColor, flatten, contrast } from './color';
 // DuckDB-WASM needs a moment to boot on a cold page load; give assertions room via expect's
 // built-in polling rather than fixed sleeps.
 
+// Every test here reads the landing page at rest. A first visit this session plays its intro (3a §12) — magnified,
+// then the timeline — which has its own tests (strata.spec): here the intro has already been seen.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
+});
+
 test('home renders KPI figures', async ({ page }) => {
   await page.goto('./');
   await expect(page.getByText(/\$[\d,]+/).first()).toBeVisible({ timeout: 60_000 });
@@ -180,7 +186,9 @@ test('canonical URL and social title follow the route', async ({ page }) => {
  * Booting DuckDB costs ~13.8 MB over the wire (7.5 MB wasm + 6.0 MB Parquet + ~250 KB worker/JS),
  * so the pages that serve from precomputed JSON must not pay for it. Home has `home-stats.json`
  * (1 KB) and gates all eight of its queries behind `needsSql`, and the 404 route renders no data at
- * all. That optimisation existed once before and was silently defeated by `DataErrorBanner` calling
+ * all. The one exception is home's intro (3a §12), which plays the timeline on a first visit and loads it
+ * as the page opens — once a session: these are visits after (the file's beforeEach; strata.spec's intro tests
+ * load it). That optimisation existed once before and was silently defeated by `DataErrorBanner` calling
  * the enabled form of `useDbReady` from the shell, on every route — exactly the kind of regression a
  * comment cannot prevent and this test can.
  *

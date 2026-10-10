@@ -2621,6 +2621,20 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-view-controls { display: flex; align-items: center; gap: 8px; margin-right: auto; }
 /* Where the row would wrap, the types' lead goes first (its hint is its title). */
 .strata-legend { container-type: inline-size; }
+/* The types and, while a step shows them, its change counts: in one cell, both laid out, one seen — the row is as
+   tall whichever shows, so a step never moves the plot under it. */
+.strata-legend-body { display: grid; min-width: 0; }
+.strata-legend-body > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 14px; }
+.strata-legend-body > :not([data-on]) { visibility: hidden; }
+@media screen and (max-width: 30em) { .strata-legend-body > * { justify-content: flex-start; } }
+/* The intro's title over the magnified plot (3a §12), on a card so it reads over the squares; out as it zooms out. */
+.strata-intro-title {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: var(--z-local); pointer-events: none; white-space: nowrap;
+  padding: 6px 14px; border-radius: var(--mantine-radius-xl); background: var(--surface); box-shadow: 0 0 0 1px var(--hairline-soft);
+  font-size: var(--mantine-font-size-lg); font-weight: 600; color: var(--mantine-color-text);
+  opacity: 0; transition: opacity var(--dur-slow) var(--ease);
+}
+.strata-intro-title[data-on] { opacity: 1; }
 @container (max-width: 1340px) { .strata-legend .hero-dist-legend-lead { display: none; } }
 @media screen and (max-width: 30em) { .strata-legend .hero-dist-legend-lead { display: none; } }
 button.strata-legend-item[aria-pressed='true'] { background: var(--tint-accent); box-shadow: inset 0 0 0 1px var(--mantine-color-accent-6); }

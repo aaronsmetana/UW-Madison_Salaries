@@ -23,7 +23,7 @@ const OVER = categories.reduce((t, c) => t + c.over, 0);
 /** A column's width. */
 const COL = 5000;
 /** The snapshots, oldest first, each with its median. */
-const SUMMARY = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/summary.json', import.meta.url)), 'utf8')) as { snapshots: { label: string; median: number }[] };
+const SUMMARY = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/summary.json', import.meta.url)), 'utf8')) as { snapshots: { id: string; label: string; median: number }[] };
 const num = (n: number) => n.toLocaleString('en-US');
 const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
 
@@ -37,9 +37,9 @@ const placesOf = (page: Page, f: Field) =>
 const slotsOf = (page: Page, f: Field) =>
   field(page).evaluate((el, f) => (el as HTMLElement & { squareSlots: (f: string) => number[] }).squareSlots(f), f);
 
-/** The landing page with its squares at rest; the drop already seen this session unless asked for. */
-async function home(page: Page, { drop = false } = {}) {
-  if (!drop) await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
+/** The landing page at rest: the intro already seen this session (its own tests open the page afresh). */
+async function home(page: Page) {
+  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }
@@ -121,30 +121,122 @@ test('each column stands its own people from the baseline up, a few a row, sorte
   await again.close();
 });
 
-test('with reduced motion the squares are simply there; otherwise the drop stays inside the frame budget and lands every one', async ({ browser }) => {
-  const still = await browser.newContext({ reducedMotion: 'reduce' });
-  const p1 = await still.newPage();
-  await home(p1, { drop: true });
-  expect(await p1.evaluate(() => performance.getEntriesByName('strata-frame').length), 'frames were animated').toBe(0);
-  await expect(p1.locator('.hero-dist-drop'), '"Drop again" under reduced motion').toHaveCount(0);
-  const rest = await placesOf(p1, 'main');
-  await still.close();
+/**
+ * The intro (3a §12), once a session: the page opens magnified at the median with "Each square is one person", out
+ * to everyone after about 2.8 s, then the timeline — loaded as the page opens — played once from the first snapshot
+ * to the latest, where it stops. Any interaction skips it; Reduce Motion never plays it.
+ */
+test.describe('the intro', () => {
+  const SNAPS = SUMMARY.snapshots, LAST = SNAPS.length - 1;
+  // The magnified window centred on the median's $5k column (StrataGraph `magLeftFor`).
+  const medianLeft = Math.max(0, (Math.floor(HOME_STATS.p50 / COL) + 0.5) * COL - 3 * COL);
+  const title = (page: Page) => page.locator('.strata-intro-title');
+  const snapsSeen = (page: Page) => page.evaluate(() => {
+    const w = window as unknown as { snaps: string[] };
+    w.snaps = [];
+    const bar = document.querySelector('.strata-timeline') as HTMLElement;
+    new MutationObserver(() => { if (w.snaps[w.snaps.length - 1] !== bar.dataset.snap) w.snaps.push(bar.dataset.snap!); }).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+  });
 
-  const moving = await browser.newContext({ reducedMotion: 'no-preference' });
-  const p2 = await moving.newPage();
-  await atCiPace(p2);
-  await home(p2, { drop: true });
-  const frames = await p2.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
-  expect(frames.length, 'the drop played').toBeGreaterThan(5);
-  expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
-  expect(await placesOf(p2, 'main'), 'the squares landed somewhere else').toEqual(rest);
-  // "Drop again" plays it once more, and they land where they were.
-  const before = frames.length;
-  await p2.locator('.hero-dist-drop').click();
-  await expect(field(p2)).toHaveAttribute('data-settled', 'false');
-  await expect(field(p2)).toHaveAttribute('data-settled', 'true', { timeout: 5_000 });
-  expect(await p2.evaluate(() => performance.getEntriesByName('strata-frame').length)).toBeGreaterThan(before + 5);
-  await moving.close();
+  test('opens magnified at the median with "Each square is one person", zooms out to everyone, plays the timeline once to the latest, and stops; once a session', async ({ page }) => {
+    test.setTimeout(120_000);
+    const heavy: string[] = [], booting: string[] = [];
+    page.on('request', (r) => {
+      if (/\.parquet(\?|$)/.test(r.url())) heavy.push(r.url());
+      if (/\.(wasm|parquet)(\?|$)/.test(r.url())) booting.push(r.url());
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('./');
+    await expect(plot(page)).toHaveAttribute('data-view', 'magnify');
+    await expect(plot(page)).toHaveAttribute('aria-valuenow', String(medianLeft));
+    await expect(title(page)).toHaveText('Each square is one person');
+    await expect(page.locator('.strata-status-label')).toHaveText('Each square is one person');
+    await snapsSeen(page);
+    // Held a while — the timeline already on its way, to be ready when it plays — then out to everyone.
+    await page.waitForTimeout(800);
+    await expect(plot(page)).toHaveAttribute('data-view', 'magnify');
+    expect(booting.length, 'nothing of the timeline loading while the title holds').toBeGreaterThan(0);
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist', { timeout: 5_000 });
+    await expect(title(page)).toHaveCount(0, { timeout: 5_000 });
+    // Then the timeline, loaded as the page opened, once through: from the first snapshot to the latest, then still.
+    await expect(page.locator('.strata-timeline')).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
+    await expect(page.locator('.strata-timeline')).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    await expect(page.locator('.strata-timeline')).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    const seen = await page.evaluate(() => (window as unknown as { snaps: string[] }).snaps);
+    expect(seen.slice(seen.indexOf(SNAPS[0].id)), 'not every snapshot from the first').toEqual(SNAPS.map((sn) => sn.id));
+    expect(heavy.length, 'the timeline never loaded').toBeGreaterThan(0);
+    await page.waitForTimeout(1_500);
+    await expect(page.locator('.strata-timeline')).not.toHaveAttribute('data-playing', /./);
+    expect(await page.evaluate(() => sessionStorage.getItem('strata-entrance'))).toBe('1');
+    // Again this session: simply there, nothing loaded.
+    heavy.length = 0;
+    await page.reload();
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist');
+    await expect(title(page)).toHaveCount(0);
+    await page.waitForTimeout(3_500);
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist');
+    expect(heavy, 'loaded the timeline on a later visit').toEqual([]);
+  });
+
+  test('any interaction skips it: at once to everyone, at the latest, still', async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('./');
+    await expect(title(page)).toBeVisible();
+    // Whether it ever plays from here.
+    await page.evaluate(() => {
+      const w = window as unknown as { played: boolean };
+      w.played = false;
+      const bar = document.querySelector('.strata-timeline') as HTMLElement;
+      new MutationObserver(() => { if (bar.dataset.playing) w.played = true; }).observe(bar, { attributes: true, attributeFilter: ['data-playing'] });
+    });
+    await page.keyboard.press('Shift');
+    // At once — well before the title's own 2.8 s are up.
+    await expect(title(page)).toHaveCount(0, { timeout: 1_000 });
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist', { timeout: 1_000 });
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    await page.waitForTimeout(8_000);
+    expect(await page.evaluate(() => (window as unknown as { played: boolean }).played), 'it played on after the key').toBe(false);
+    await expect(page.locator('.strata-timeline')).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    // Skipped while it plays: Play stops and the latest comes back.
+    const second = await page.context().newPage();
+    await second.setViewportSize({ width: 1440, height: 900 });
+    await second.goto('./');
+    await expect(second.locator('.strata-timeline')).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
+    await second.mouse.click(5, 5);
+    await expect(second.locator('.strata-timeline')).not.toHaveAttribute('data-playing', /./);
+    await expect(second.locator('.strata-timeline')).toHaveAttribute('data-snap', SNAPS[LAST].id, { timeout: 15_000 });
+    await second.close();
+  });
+
+  test('under reduced motion it never plays: the page opens on everyone, and loads nothing more', async ({ browser }) => {
+    const ctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+    const heavy: string[] = [];
+    page.on('request', (r) => { if (/\.parquet(\?|$)/.test(r.url())) heavy.push(r.url()); });
+    await page.goto('./');
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist');
+    await expect(title(page)).toHaveCount(0);
+    await page.waitForTimeout(4_000);
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist');
+    expect(await page.evaluate(() => performance.getEntriesByName('strata-frame').length), 'squares moved under reduced motion').toBe(0);
+    expect(heavy).toEqual([]);
+    await ctx.close();
+  });
+
+  test('zooms out inside the frame budget, at CI’s pace', async ({ page }) => {
+    test.setTimeout(90_000);
+    await atCiPace(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('./');
+    await expect(plot(page)).toHaveAttribute('data-view', 'hist', { timeout: 10_000 });
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const frames = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
+    expect(frames.length, 'the zoom never moved').toBeGreaterThan(5);
+    expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
+  });
 });
 
 /** The lens on a square: the pointer over the plot at a share of its width and height, held still until the

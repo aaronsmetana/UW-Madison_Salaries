@@ -21,6 +21,8 @@ export interface ChipInput {
   fade: { to: string; start: number; end: number } | null;
   /** Everyone on the way to another view. */
   switching: boolean;
+  /** The intro's title, and its way out to everyone (3a §12). */
+  intro: boolean;
   /** Play's rest before the next snapshot. */
   rest: { start: number; end: number; next: string } | null;
   /** 'salary', or 'type, then salary'. */
@@ -53,7 +55,8 @@ const clock = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); re
 export function chipState(c: ChipInput): ChipState {
   const { now, phase, step, rest, fade } = c;
   let label: string, count = '', ring: Ring = still(0);
-  if (fade && now < fade.end) {
+  if (c.intro) label = 'Each square is one person';
+  else if (fade && now < fade.end) {
     label = `Rewinding to ${fade.to}`;
     ring = { from: 0, to: 1, start: fade.start, end: fade.end, linear: false };
   } else if (c.switching) label = 'Switching view';

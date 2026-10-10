@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, landEase, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, hermite, monoTangent, stackColumns, strataFromCounts, strataGrid,
+  BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, hermite, monoTangent, stackColumns, strataFromCounts, strataGrid,
   tailColumns, typeRanks, within,
 } from './strata';
 
@@ -330,11 +330,3 @@ describe('placePins', () => {
   });
 });
 
-describe('landEase', () => {
-  it('falls, overshoots by a hop, and lands', () => {
-    expect(landEase(0)).toBe(0);
-    expect(landEase(0.8)).toBeCloseTo(1);
-    expect(landEase(0.9)).toBeCloseTo(1 - 0.045);
-    expect(landEase(1)).toBe(1);
-  });
-});

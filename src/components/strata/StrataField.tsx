@@ -1,8 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  COLS, COL_DOLLARS, DOWN, DROP_MS, LEFT, FADE_MS, DROP_ROW_MS, DROP_WAVE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, NEW, TYPE_FADE, UP,
+  COLS, COL_DOLLARS, DOWN, LEFT, FADE_MS, MAG_COLS, MAG_GUTTER, MAG_MAX_PITCH_D, MOVE_MS, MOVE_WAVE_MS, NEW, TYPE_FADE, UP,
   VIEW_HOP, VIEW_JITTER, VIEW_MOVE, VIEW_MS, VIEW_WAVE, ZOOM_JITTER, ZOOM_MOVE, ZOOM_MS, moveTiming, sortTiming, type PacePlan, type StepMode,
-  FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, floorOf, floorsGrid, landEase, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
+  FLOORS, FLOOR_GAP, colHeight, colX, easeInOut, floorOf, floorsGrid, snap, snapReach, squareAt, squarePixels, stackColumns, strataGrid, tailColumns,
   hermite, monoTangent, stableKey, type Grid, type Px, type Stack, type Strata,
 } from '../../lib/strata';
 import { parseRgb } from '../../lib/inkMix';
@@ -12,8 +12,8 @@ import { Z } from '../../lib/layers';
 
 /**
  * The landing graph's people as strata (mockup 3a, lib/strata): a square each on one canvas, and the lens
- * on a second over it. The squares are redrawn only while they move — the drop, the pile unrolling — and
- * the lens only while it follows the pointer; at rest nothing runs.
+ * on a second over it. The squares are redrawn only while they move — a timeline step, a change of view, the
+ * pile unrolling — and the lens only while it follows the pointer; at rest nothing runs.
  */
 
 /** The lens's radius at full size, CSS px, and how far it moves toward the pointer each frame. */
@@ -34,8 +34,9 @@ const TOP_INSET = 8;
 const SEEN_KEY = 'strata-entrance';
 const readSession = () => { try { return sessionStorage.getItem(SEEN_KEY) === '1'; } catch { return true; } };
 const writeSession = () => { try { sessionStorage.setItem(SEEN_KEY, '1'); } catch { /* private mode */ } };
-/** Whether the page plays the drop as it opens: once a session, never under reduced motion or in a hidden tab. */
-export function useEntranceOnce(): boolean {
+/** Whether the page plays the intro as it opens (3a §12): once a session, never under reduced motion or in a hidden
+ *  tab. */
+export function useIntroOnce(): boolean {
   const [play] = useState(() => !readSession() && !prefersReducedMotion() && !(typeof document !== 'undefined' && document.hidden));
   useEffect(() => { if (play) writeSession(); }, [play]);
   return play;
@@ -385,9 +386,6 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   matchSearch: boolean;
   marks: { main: readonly number[]; pile: readonly number[] };
   big: Spot | null;
-  entrance: boolean;
-  /** Bumped to drop everyone again. */
-  replay: number;
   /** Where the lens is wanted, in the field's px (null: put it away), and the pointer, which picks the square. */
   lensAt: { x: number; y: number } | null;
   /** What it magnifies, when that is not where it is drawn: under a finger, with the lens above it. The
@@ -412,7 +410,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   hold?: boolean;
   follow?: Follow | null;
   className?: string;
-}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, entrance, replay, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, onLanded, onPhase, skipHold = 0, step = null, hold = false, follow = null, className }, ref) {
+}>(function StrataField({ strata, layout, kindInks, dim, matchSearch, marks, big, lensAt, lensFrom = null, pointer, lensR, onPick, onMoving, onLanded, onPhase, skipHold = 0, step = null, hold = false, follow = null, className }, ref) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const lensRef = useRef<HTMLCanvasElement>(null);
@@ -424,7 +422,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   // Positions now, and the move in flight: where each square set off from, how long it waits, and the ease.
   const cur = useRef({ mx: new Float64Array(0), my: new Float64Array(0), px: new Float64Array(0), py: new Float64Array(0) });
   const move = useRef<{
-    start: number; fromMx: Float64Array; fromMy: Float64Array; fromPx: Float64Array; fromPy: Float64Array; wait: Float64Array; pwait: Float64Array; ms: number; land: boolean;
+    start: number; fromMx: Float64Array; fromMy: Float64Array; fromPx: Float64Array; fromPy: Float64Array; wait: Float64Array; pwait: Float64Array; ms: number;
     /** A change of view's own time for each square, where it is not `ms`, and its hop. */
     msM?: Float64Array; msP?: Float64Array;
     arcM?: Float32Array; arcP?: Float32Array;
@@ -511,7 +509,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       if (sc !== 1) { const w2 = Math.max(1, Math.round(w * sc)), h2 = Math.max(1, Math.round(h * sc)); X += (w - w2) >> 1; Y += (h - h2) >> 1; w = w2; h = h2; }
       if (w < least) { X -= (least - w) >> 1; w = least; }
       if (h < least) { Y -= (least - h) >> 1; h = least; }
-      // Clipped to the canvas, not clamped to it: a square above the plot (one dropping in) is not drawn at
+      // Clipped to the canvas, not clamped to it: a square above the plot (one arcing high) is not drawn at
       // all, rather than along its top edge.
       if (X < 0) { w += X; X = 0; }
       if (Y < 0) { h += Y; Y = 0; }
@@ -578,7 +576,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       if (st) {
         const u = f.field === 'main' ? st.duM[f.index] : st.duP[f.index], d = f.field === 'main' ? st.dlM[f.index] : st.dlP[f.index];
         e = easeInOut(clamp01(((performance.now() - st.start) / st.step.plan.mv - d) / u));
-      } else if (mv && !mv.land) {
+      } else if (mv) {
         const wait = f.field === 'main' ? mv.wait[f.index] : mv.pwait[f.index];
         e = easeInOut(Math.min(1, Math.max(0, (performance.now() - mv.start - wait) / mv.ms)));
       }
@@ -945,7 +943,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       const go = (from: Float64Array, to: Float64Array, out: Float64Array, wait: Float64Array, i: number, axis: 0 | 1, arc?: Float32Array, ms?: Float64Array) => {
         const p = Math.min(1, Math.max(0, (now - mv.start - wait[i]) / (ms ? ms[i] : mv.ms)));
         if (p < 1) done = false;
-        const e = mv.land ? (axis === 1 ? landEase(p) : 1) : easeInOut(p);
+        const e = easeInOut(p);
         // A big mover rises over its path as it goes: highest halfway, back down as it lands.
         out[i] = from[i] + (to[i] - from[i]) * e - (axis === 1 && arc ? arc[i] * 4 * e * (1 - e) : 0);
       };
@@ -992,11 +990,9 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
   }, [W, H, dpr]);
 
-  // A new layout: every square moves from where it is to its new place — dropped in, the first time, where
-  // the page plays it; after, the pile unrolling or folding back, or the plot resized. Under reduced motion,
-  // or with nothing drawn yet, it is simply there.
-  const first = useRef(true);
-  const lastReplay = useRef(replay);
+  // A new layout: every square moves from where it is to its new place — a timeline step, a change of view, the
+  // pile unrolling or folding back, the plot resized. Under reduced motion, or with nothing drawn yet, it is simply
+  // there.
   // A field of other people (another snapshot) arrives by its step, or not at all: it is simply there.
   const lastStrata = useRef(strata);
   // The view laid out last: a change of view is everyone moving to their place in the other.
@@ -1010,21 +1006,18 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   useLayoutEffect(() => {
     const newStep = !!step && step !== lastStep.current;
     lastStep.current = step;
-    if (layout === lastLayout.current && replay === lastReplay.current && !newStep) return;
+    if (layout === lastLayout.current && !newStep) return;
     lastLayout.current = layout;
     const was = cur.current;
     const fresh = was.mx.length !== n || was.px.length !== m || lastStrata.current !== strata;
-    const drop = (first.current && entrance) || replay !== lastReplay.current;
-    const stepped = !!step && step.to === layout && !drop && shown.current;
+    const stepped = !!step && step.to === layout && shown.current;
     const prevView = lastView.current;
-    const morphing = layout.view !== prevView && !drop && !stepped;
+    const morphing = layout.view !== prevView && !stepped;
     lastView.current = layout.view;
     // Panned along the magnified axis (or resized there): simply there, as a page scrolls.
-    const panned = !morphing && !drop && !stepped && layout.view === 'magnify' && prevView === 'magnify';
-    first.current = false;
-    lastReplay.current = replay;
+    const panned = !morphing && !stepped && layout.view === 'magnify' && prevView === 'magnify';
     lastStrata.current = strata;
-    if (prefersReducedMotion() || ((fresh || !shown.current) && !drop && !stepped) || panned) {
+    if (prefersReducedMotion() || ((fresh || !shown.current) && !stepped) || panned) {
       cur.current = { mx: layout.mx.slice(), my: layout.my.slice(), px: layout.px.slice(), py: layout.py.slice() };
       if (move.current?.stage?.phase) props.current.onPhase?.(null);
       move.current = null;
@@ -1035,22 +1028,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       return;
     }
     const now = performance.now();
-    if (drop) {
-      // From 10–150px above the plot, a column's floor first, left to right across it.
-      let seed = 0x2545f491 ^ replay;
-      const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
-      const fromMy = new Float64Array(n), fromPy = new Float64Array(m), wait = new Float64Array(n), pwait = new Float64Array(m);
-      for (let i = 0; i < n; i++) {
-        fromMy[i] = -10 - rand() * 140;
-        wait[i] = (layout.mx[i] / W) * DROP_WAVE_MS + layout.main.slot[i] / grid.per * DROP_ROW_MS;
-      }
-      for (let j = 0; j < m; j++) {
-        fromPy[j] = -10 - rand() * 140;
-        pwait[j] = (layout.px[j] / W) * DROP_WAVE_MS + layout.pile.slot[j] / grid.per * DROP_ROW_MS;
-      }
-      cur.current = { mx: layout.mx.slice(), my: fromMy.slice(), px: layout.px.slice(), py: fromPy.slice() };
-      move.current = { start: now, fromMx: layout.mx.slice(), fromMy, fromPx: layout.px.slice(), fromPy, wait, pwait, ms: DROP_MS, land: true };
-    } else if (stepped && step?.fade && baseRef.current && fadeRef.current) {
+    if (stepped && step?.fade && baseRef.current && fadeRef.current) {
       // Back to an earlier snapshot (3a): the picture as it was fades out over the new one, no one moving.
       const was = fadeRef.current, base = baseRef.current, fctx = was.getContext('2d');
       fctx?.setTransform(1, 0, 0, 1, 0, 0);
@@ -1108,7 +1086,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       // For the label of the person followed, counting their pay along: where they set off and how long they take.
       move.current = {
         start: stage.start, fromMx: from.mx, fromMy: from.my, fromPx: from.px, fromPy: from.py,
-        wait: Float64Array.from(tM.dl, (d) => d * plan.mv), pwait: Float64Array.from(tP.dl, (d) => d * plan.mv), ms: plan.mv * (together ? 1 : 0.4), land: false, stage,
+        wait: Float64Array.from(tM.dl, (d) => d * plan.mv), pwait: Float64Array.from(tP.dl, (d) => d * plan.mv), ms: plan.mv * (together ? 1 : 0.4), stage,
       };
       stageFrame(now);
     } else if (morphing) {
@@ -1131,19 +1109,19 @@ export const StrataField = forwardRef<StrataFieldHandle, {
         pwait[j] = setOff(layout.px[j], layout.py[j], strata.pileKey[j]);
         if (!zoom) arcP[j] = VIEW_HOP * frac(strata.pileKey[j], 10);
       }
-      move.current = { start: now, fromMx: was.mx.slice(), fromMy: was.my.slice(), fromPx: was.px.slice(), fromPy: was.py.slice(), wait, pwait, ms: moving, msM, msP, land: false, arcM, arcP };
+      move.current = { start: now, fromMx: was.mx.slice(), fromMy: was.my.slice(), fromPx: was.px.slice(), fromPy: was.py.slice(), wait, pwait, ms: moving, msM, msP, arcM, arcP };
     } else {
       const wait = new Float64Array(n), pwait = new Float64Array(m);
       for (let i = 0; i < n; i++) wait[i] = (layout.mx[i] / W) * MOVE_WAVE_MS;
       for (let j = 0; j < m; j++) pwait[j] = (layout.px[j] / W) * MOVE_WAVE_MS;
-      move.current = { start: now, fromMx: was.mx.slice(), fromMy: was.my.slice(), fromPx: was.px.slice(), fromPy: was.py.slice(), wait, pwait, ms: MOVE_MS, land: false };
+      move.current = { start: now, fromMx: was.mx.slice(), fromMy: was.my.slice(), fromPx: was.px.slice(), fromPy: was.py.slice(), wait, pwait, ms: MOVE_MS };
     }
     setMoving(true);
     drawBase();
     kick();
     // A step's own change (the last one again, in another mode) is a move too, onto the same layout.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, replay, step]);
+  }, [layout, step]);
 
   // A change of ink or marks with the squares at rest: one redraw.
   useLayoutEffect(() => {

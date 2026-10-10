@@ -2,9 +2,9 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Popover, Slider, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconAdjustmentsHorizontal, IconArrowBarToDown, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, useEntranceOnce, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
+import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, useIntroOnce, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { snapStats, stepKinds, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
@@ -107,6 +107,8 @@ function CardSpark({ series, now, first, last }: { series: readonly (number | nu
   );
 }
 
+/** The intro's title, magnified at the median, this long before it zooms out to everyone (3a §12). */
+const INTRO_TITLE_MS = 2800;
 /** Play, starting over from the first snapshot, rests at least this long there before going on. */
 const PLAY_RESTART_MS = 700;
 /** Play's speeds (3a): Fast, a snapshot every quarter second; Medium and Slow stage each step. */
@@ -221,10 +223,13 @@ export function StrataGraph({
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
-  const motion = !prefersReducedMotion();
-  // The drop plays once, as the page opens: going full page draws the field afresh, and it is simply there.
-  const entrance = useEntranceOnce();
-  const droppedRef = useRef(false);
+  // The intro (3a §12), once a session as the page opens: magnified at the median with "Each square is one person",
+  // out to everyone, then the timeline played once to the latest. Any interaction skips it; Reduce Motion never
+  // plays it.
+  const introOnce = useIntroOnce();
+  const [intro, setIntro] = useState<'title' | 'zoom' | 'play' | null>(() => (introOnce ? 'title' : null));
+  const introRef = useRef(intro);
+  introRef.current = intro;
   const reveal = useReveal();
   const [dpr] = useState(() => Math.min(2, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1));
   const summaryId = useId();
@@ -402,8 +407,8 @@ export function StrataGraph({
   useEffect(() => { if (!canUnroll) setUnrolled(false); }, [canUnroll]);
   // The histogram; the floors (3a), everyone in $10k bands stacked from the bottom up; or the histogram magnified,
   // a $30k window of it (`magLeft`, in dollars) six columns to the plot.
-  const [view, setView] = useState<StrataView>('hist');
-  const [magLeft, setMagLeft] = useState(0);
+  const [view, setView] = useState<StrataView>(() => (introOnce ? 'magnify' : 'hist'));
+  const [magLeft, setMagLeft] = useState(() => (introOnce && medianBase != null ? magLeftFor(medianBase) : 0));
   const layoutOf = useCallback(
     (s: Strata) => layoutStrata(s, { W: plotW, H, top: view === 'magnify' ? STRIP_BAND : PIN_BAND + 4, dpr, phone, peak: scalePeak, view, magLeft, byType }, unrolled && canUnroll && view === 'hist'),
     [plotW, H, dpr, phone, unrolled, canUnroll, scalePeak, view, magLeft, byType],
@@ -571,12 +576,13 @@ export function StrataGraph({
     return { ...followSpot, name: follow.name, pay, from };
   }, [follow, followSpot, tStrata, tl, at, stepFrom, followId]);
   const fieldRef = useRef<StrataFieldHandle>(null);
-  useEffect(() => { if (layout) droppedRef.current = true; }, [layout]);
   const atRef = useRef(at);
   atRef.current = at;
   const onMoving = useCallback((m: boolean) => setMoving(m), []);
   const onLanded = useCallback((moved: boolean) => {
     setSwitching(false);
+    // The intro out to everyone: now the timeline, from the first snapshot to the latest, once.
+    if (moved && introRef.current === 'zoom') introPlayRef.current();
     const a = atRef.current;
     setLanded((l) => (!moved && l?.at === a ? l : { at: a, t: performance.now(), re: pacePlan(paceRef.current, modeRef.current, countdownRef.current).re }));
   }, []);
@@ -652,12 +658,12 @@ export function StrataGraph({
   const chipInput: Omit<ChipInput, 'now'> | null = snaps.length > 1 ? {
     playing, paused, fast: pace === 'fast', fastMs: FAST_MS, phase,
     step: step && stepFrom != null && at != null && snaps[stepFrom] && snaps[at] ? { from: bareLabel(snaps[stepFrom].label), to: bareLabel(snaps[at].label), quick: !!step.quick } : null,
-    fade: fadeInfo, switching, rest, sortBy: byType ? 'type, then salary' : 'salary',
+    fade: fadeInfo, switching, rest, sortBy: byType ? 'type, then salary' : 'salary', intro: intro === 'title' || intro === 'zoom',
     plan: pacePlan(pace, mode, countdown), stepsLeft: lastSnap - (at ?? lastSnap), last: bareLabel(snaps[lastSnap].label),
     progress: { from: Math.max(0, (at ?? lastSnap) - 1) / lastSnap, to: (at ?? lastSnap) / lastSnap },
   } : null;
   // On a phone the chip takes Play's row while something is under way, Play down to its icon; at rest, Play's words.
-  const chipActive = !!chipInput && (playing || phase != null || rest != null || fadeInfo != null || switching);
+  const chipActive = !!chipInput && (playing || phase != null || rest != null || fadeInfo != null || switching || intro != null);
   // What a raises-and-cuts step's colours mean, in the legend: while it moves and holds, and all through Fast's play.
   const changeShown = mode === 'change' && !!step?.counts && !step.fade && (phase?.phase === 'move' || phase?.phase === 'hold' || (pace === 'fast' && playing));
   const changePace = (p: Pace) => { setPace(p); setSkipHold((k) => k + 1); };
@@ -667,7 +673,6 @@ export function StrataGraph({
     modeRef.current = md;
     if (layout && at != null && at > 0 && tl) { setStepFrom(at - 1); setAgain({ at, layout }); }
   };
-  const [replay, setReplay] = useState(0);
 
   // What a filter lights: how many, their median, against campus — the group's own, a type's, or both.
   const filterStats = useMemo(() => {
@@ -989,6 +994,55 @@ export function StrataGraph({
   // Magnify (3a): the window centred on a pay's column, and in.
   const magnifyAt = (pay: number) => { setMagLeft(magLeftFor(pay)); switchView('magnify'); };
   const panTo = (left: number) => setMagLeft(Math.max(0, Math.min(MAG_LEFT_MAX, left)));
+
+  // ── The intro (3a §12) ──
+  // The timeline's people load as it opens, to be ready by the time it plays — once the page knows its snapshots
+  // (the summary, a moment after the graph is drawn).
+  const wantRef = useRef(timeline?.onWant);
+  wantRef.current = timeline?.onWant;
+  const hasTimeline = timeline != null;
+  useEffect(() => { if (introRef.current && hasTimeline) wantRef.current?.(); }, [hasTimeline]);
+  // Centred on the median once it is known.
+  useEffect(() => { if (introRef.current === 'title' && medianBase != null) setMagLeft(magLeftFor(medianBase)); }, [medianBase]);
+  const switchViewRef = useRef(switchView);
+  switchViewRef.current = switchView;
+  // The title for INTRO_TITLE_MS, then out to everyone (and, landed there, `onLanded` plays the timeline).
+  useEffect(() => {
+    if (intro !== 'title') return;
+    const t = window.setTimeout(() => { setIntro('zoom'); switchViewRef.current('hist'); }, INTRO_TITLE_MS);
+    return () => window.clearTimeout(t);
+  }, [intro]);
+  const introPlayRef = useRef(() => {});
+  introPlayRef.current = () => { setIntro('play'); restartRef.current = true; goTo(0, true); };
+  // Played through (Play stops at the latest): done.
+  const introPlayed = useRef(false);
+  useEffect(() => {
+    if (intro !== 'play') return;
+    if (playing) introPlayed.current = true;
+    else if (introPlayed.current && goal == null) setIntro(null);
+  }, [intro, playing, goal]);
+  // Any interaction skips it: to everyone, at the latest, still.
+  const skipIntroRef = useRef(() => {});
+  skipIntroRef.current = () => {
+    const was = introRef.current;
+    if (!was) return;
+    setIntro(null);
+    if (was === 'title') switchView('hist');
+    if (was === 'play') {
+      setPlaying(false);
+      if (goal) setGoal(null);
+      else if (at != null && at !== lastSnap) goTo(lastSnap);
+    }
+  };
+  const introOn = intro != null;
+  useEffect(() => {
+    if (!introOn) return;
+    const skip = () => skipIntroRef.current();
+    // A key, a press, a wheel, a touch — or text put in a field another way (pasted, filled).
+    const kinds = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'] as const;
+    for (const k of kinds) window.addEventListener(k, skip, { capture: true, passive: true });
+    return () => { for (const k of kinds) window.removeEventListener(k, skip, { capture: true }); };
+  }, [introOn]);
   const foldRef = useRef(fold);
   foldRef.current = fold;
   // Escape folds it back — before anything else Escape does (full page's own, say).
@@ -1476,15 +1530,6 @@ export function StrataGraph({
         {full && search && <div className="hero-dist-search">{search}</div>}
         <div className="strata-toolbar-left">{chip}{followChip}</div>
         <div className="strata-toolbar-right">
-          {motion && (phone ? (
-            <ActionIcon variant="default" size="md" aria-label="Drop the squares again" className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
-              <IconArrowBarToDown size={ICON.control} />
-            </ActionIcon>
-          ) : (
-            <Button variant="default" size="compact-sm" leftSection={<IconArrowBarToDown size={ICON.compact} />} className="hero-dist-drop" onClick={() => setReplay((r) => r + 1)}>
-              Drop again
-            </Button>
-          ))}
           {fullToggle}
         </div>
       </div>
@@ -1510,32 +1555,38 @@ export function StrataGraph({
               </Button>
             )}
           </div>
-          {/* While a raises-and-cuts step moves and holds (and all through Fast's play), what its colours mean, counted. */}
-          {changeShown && step?.counts && (
-            <div className="strata-change-legend" data-step-counts>
-              {stepFrom != null && snaps[stepFrom] && <Text span size="xs" className="strata-legend-meta strata-change-since">since {bareLabel(snaps[stepFrom].label)}</Text>}
-              {([['up', step.counts.up, 'moved up'], ['down', step.counts.down, 'moved down'], ['new', step.counts.joined, 'joined'], ['left', step.counts.left, 'left']] as const).map(([k, v, label]) => (
-                <span key={k} className="hero-dist-legend-item strata-change-item" data-change={k}>
-                  <span className="hero-dist-swatch strata-change-swatch" aria-hidden data-change={k} />
-                  <Text span size="xs" fw={600} className="strata-change-n">{num(v)}</Text>
-                  <Text span size="xs">{label}</Text>
-                </span>
-              ))}
-            </div>
-          )}
-          {!changeShown && cats && (
-            <Text span size="xs" c="dimmed" className="hero-dist-legend-lead" title={`${canHover ? 'Click' : 'Tap'} a type to show it alone`}>
-              By highest-paid appointment
-            </Text>
-          )}
-          {!changeShown && cats?.map((c) => (
-            <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
-              aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
-              <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
-              <Text span size="xs" fw={600}>{c.name}</Text>
-              <Text span size="xs" className="strata-legend-meta">{num(c.n)}</Text>
-            </button>
-          ))}
+          {/* The types, or — while a raises-and-cuts step moves and holds, and all through Fast's play — what its colours
+              mean, counted: one in the other's place, both laid out, so the row is as tall whichever shows and the plot
+              never moves under it. */}
+          <div className="strata-legend-body">
+            {step?.counts && (
+              <div className="strata-change-legend" data-step-counts data-on={changeShown || undefined} aria-hidden={!changeShown || undefined}>
+                {stepFrom != null && snaps[stepFrom] && <Text span size="xs" className="strata-legend-meta strata-change-since">since {bareLabel(snaps[stepFrom].label)}</Text>}
+                {([['up', step.counts.up, 'moved up'], ['down', step.counts.down, 'moved down'], ['new', step.counts.joined, 'joined'], ['left', step.counts.left, 'left']] as const).map(([k, v, label]) => (
+                  <span key={k} className="hero-dist-legend-item strata-change-item" data-change={k}>
+                    <span className="hero-dist-swatch strata-change-swatch" aria-hidden data-change={k} />
+                    <Text span size="xs" fw={600} className="strata-change-n">{num(v)}</Text>
+                    <Text span size="xs">{label}</Text>
+                  </span>
+                ))}
+              </div>
+            )}
+            {cats && (
+              <div className="strata-legend-types" data-on={!changeShown || undefined} aria-hidden={changeShown || undefined}>
+                <Text span size="xs" c="dimmed" className="hero-dist-legend-lead" title={`${canHover ? 'Click' : 'Tap'} a type to show it alone`}>
+                  By highest-paid appointment
+                </Text>
+                {cats?.map((c) => (
+                  <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
+                    aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
+                    <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
+                    <Text span size="xs" fw={600}>{c.name}</Text>
+                    <Text span size="xs" className="strata-legend-meta">{num(c.n)}</Text>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1577,10 +1628,14 @@ export function StrataGraph({
           <>
             <StrataField
               ref={fieldRef} className="hero-dots strata-field" strata={strata} layout={layout} kindInks={kindInks}
-              dim={dim} matchSearch={!!lit} marks={marks} big={big} entrance={entrance && !droppedRef.current} replay={replay}
+              dim={dim} matchSearch={!!lit} marks={marks} big={big}
               lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={onMoving} onLanded={onLanded} onPhase={setPhase}
               step={step} skipHold={skipHold} hold={!onScreen} follow={followProp}
             />
+            {/* The intro's title (3a §12): on while it holds, fading as it zooms out to everyone. */}
+            {(intro === 'title' || intro === 'zoom') && (
+              <div className="strata-intro-title" data-on={intro === 'title' || undefined} aria-hidden style={{ top: STRIP_BAND + 16 }}>Each square is one person</div>
+            )}
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (
                 <line key={p.key} className={`strata-pin-line strata-pin-${p.key} strata-hist-only`} x1={p.x} x2={p.x} y1={p.y1} y2={p.y2}

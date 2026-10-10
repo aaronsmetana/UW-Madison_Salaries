@@ -359,11 +359,6 @@ export const ZOOM_MOVE = 0.92;
  *  off left to right over MOVE_WAVE_MS. */
 export const MOVE_MS = 425;
 export const MOVE_WAVE_MS = 130;
-/** The drop (3a §10): each square from 10–150px above the plot, set off left to right over DROP_WAVE_MS
- *  and a row's worth later each row up, so the floor lands first. */
-export const DROP_MS = 350;
-export const DROP_WAVE_MS = 210;
-export const DROP_ROW_MS = 0.55;
 
 /**
  * A timeline step (3a §8): what each square does between two snapshots — stays in its column (or floor), moves up
@@ -442,9 +437,3 @@ export function hermite(x0: number, x1: number, m0: number, m1: number, t: numbe
 }
 
 export const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
-/** A fall that speeds up as it drops, then a hop of 4.5% of the fall as it lands. */
-export function landEase(p: number): number {
-  if (p <= 0) return 0;
-  if (p >= 1) return 1;
-  return p < 0.8 ? (p / 0.8) ** 2 : 1 - 0.045 * Math.sin((Math.PI * (p - 0.8)) / 0.2);
-}
