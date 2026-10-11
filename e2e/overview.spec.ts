@@ -104,7 +104,7 @@ test('the strip card leads with its finding and keeps how-to-read behind its foo
   await open(page, AARON);
   const card = stripCard(page);
   const finding = card.locator('.peer-finding');
-  await expect(finding).toHaveText(/^Aaron is paid more than \d+% of the \d+ others titled System Engineer IV \(IT040\), and \$[\d,]+ (below|above) the median\.$/);
+  await expect(finding).toHaveText(/^Aaron’s full-time rate is higher than \d+% of the \d+ others titled System Engineer IV \(IT040\), and \$[\d,]+ (below|above) the median\.$/);
   await expect(finding).toBeVisible();
   expect(await finding.evaluate((f) => {
     const strip = document.querySelector('.peer-strip')!;
@@ -309,7 +309,7 @@ test('the tenure strip states the verdict and four figures that agree, and the c
   const money = (t: string) => Number(t.match(/\$([\d,]+)/)![1].replace(/,/g, ''));
   const [expected, actual] = [money(cells[1]), money(cells[2])];
   expect(cells[1]).toMatch(/^Expected at [\d.]+ yrs\s+\$[\d,]+$/);
-  expect(cells[2]).toMatch(/^Actual\s+\$[\d,]+$/);
+  expect(cells[2]).toMatch(/^Full-time rate\s+\$[\d,]+$/);
   // The sign of the dollars, not of the share in brackets after them.
   const diff = money(cells[3]) * (/^Difference\s+−/.test(cells[3]) ? -1 : 1);
   expect(Math.abs(diff - (actual - expected)), cells[3]).toBeLessThanOrEqual(1);

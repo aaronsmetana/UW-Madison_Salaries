@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, latestSnapshot, PAY } from './oracle';
+import { oracle, latestSnapshot, PAY, RATE } from './oracle';
 import { parseColor, flatten, contrast } from './color';
 
 /**
@@ -84,7 +84,7 @@ for (const scheme of ['light', 'dark'] as const) {
 async function belowTheCurve(): Promise<string> {
   const snap = await latestSnapshot();
   const [p] = await oracle<{ pk: string }>(
-    `WITH pp AS (SELECT person_key, any_value(job_code) job, sum(${PAY}) FILTER (WHERE salary > 0) pay,
+    `WITH pp AS (SELECT person_key, any_value(job_code) job, ${RATE} pay,
                         date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 t
                  FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key HAVING count(*) = 1),
           fit AS (SELECT job, regr_slope(pay, t) b, regr_intercept(pay, t) a FROM pp WHERE pay > 0 AND t IS NOT NULL
@@ -207,7 +207,7 @@ test('every table header shares one style, chart data tables included', async ({
   const open = page.getByRole('button', { name: "Table of this chart's data" }).first();
   await expect(open).toBeVisible({ timeout: 60_000 });
   await open.click();
-  await expect(page.getByRole('button', { name: 'Sort by Salary' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Sort by Full-time rate' })).toBeVisible({ timeout: 60_000 });
   const styles = await page.evaluate(() =>
     [...document.querySelectorAll('table')]
       .filter((t) => {

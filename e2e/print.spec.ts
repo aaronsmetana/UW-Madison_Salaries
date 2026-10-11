@@ -114,7 +114,7 @@ test('a page that declares a print region still prints only that region', async 
 const AARON = encodeURIComponent('aaronsmetana|2014-10-15');
 const SMPH = encodeURIComponent('School of Medicine and Public Health');
 for (const [name, path, says] of [
-  ['a person', `./person/${AARON}`, ['tab', 'Sort by Salary']],
+  ['a person', `./person/${AARON}`, ['tab', 'Sort by Full-time rate']],
   ['a person, pay & standing', `./person/${AARON}?tab=pay`, ['tab']],
   ['a title', './paycheck?code=IT040', ['Sort by Salary', 'measure']],
   ['Divisions', './explore', ['tab', 'measure']],

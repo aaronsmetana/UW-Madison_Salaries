@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, latestSnapshot, usd } from './oracle';
+import { oracle, RATE, latestSnapshot, usd } from './oracle';
 
 /**
  * A title's pay window (src/lib/payWindow.ts) on the person page: where the middle 90% of everyone with
@@ -9,15 +9,15 @@ import { oracle, PAY, latestSnapshot, usd } from './oracle';
  * written here and the rule restated here.
  */
 
-// Research Associate: 653 people, $495 to $133,676, half of them between $60k and $65k.
+// Research Associate: 654 people at full-time rates of $37,430 to $90,508, half of them between $61k and $67k.
 const KENDALL = 'kendallbarrett|2017-05-28';
 /** Someone whose one paid appointment in the latest snapshot is `jobCode`, so their page is that title's,
- *  paid `order` first ('pay' lowest, else by key). Fixtures named outright went stale with a release. */
+ *  `order` first ('pay' the lowest full-time rate, else by key). Fixtures named outright went stale with a release. */
 async function soleHolder(jobCode: string, order: 'pay' | 'key' = 'key') {
   const snap = await latestSnapshot();
   const [r] = await oracle<{ person_key: string }>(
     `SELECT person_key FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY person_key
-     HAVING count(*) = 1 AND any_value(job_code) = '${jobCode}' ORDER BY ${order === 'pay' ? `any_value(${PAY}), ` : ''}person_key LIMIT 1`,
+     HAVING count(*) = 1 AND any_value(job_code) = '${jobCode}' ORDER BY ${order === 'pay' ? 'any_value(salary), ' : ''}person_key LIMIT 1`,
   );
   return r.person_key;
 }
@@ -27,23 +27,20 @@ async function soleHolder(jobCode: string, order: 'pay' | 'key' = 'key') {
 async function wholeTitle() {
   const snap = await latestSnapshot();
   const [r] = await oracle<{ code: string }>(
-    `WITH pp AS (SELECT person_key, job_code, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1, 2),
+    `WITH pp AS (SELECT person_key, job_code, ${RATE} pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1, 2),
           t AS (SELECT job_code code, count(*) n, quantile_cont(pay, 0.05) p5, quantile_cont(pay, 0.95) p95, min(pay) lo, max(pay) hi FROM pp WHERE pay > 0 GROUP BY 1)
      SELECT code FROM t WHERE n >= 40 AND p95 - p5 >= 0.5 * (hi - lo) ORDER BY n DESC, code LIMIT 1`,
   );
   return r.code;
 }
 
-/** Each person holding `jobCode` in the latest snapshot at their pay in it (several appointments in the
- *  title summed), their school, and whether a hire date is recorded. */
+/** Each person holding `jobCode` in the latest snapshot at their full-time rate in it, their school, and
+ *  whether a hire date is recorded. */
 async function holders(jobCode: string) {
   const snap = await latestSnapshot();
   return oracle<{ person_key: string; pay: number; school: string | null; hired: boolean }>(
     `SELECT person_key, pay, school, hired FROM (
-       SELECT person_key,
-              CASE WHEN count(*) FILTER (WHERE salary > 0) > 1 THEN sum(${PAY}) FILTER (WHERE salary > 0)
-                   ELSE any_value(${PAY}) FILTER (WHERE salary > 0) END pay,
-              any_value(school) school, any_value(date_of_hire) IS NOT NULL hired
+       SELECT person_key, ${RATE} pay, any_value(school) school, any_value(date_of_hire) IS NOT NULL hired
        FROM $SAL WHERE snapshot_id = '${snap}' AND job_code = '${jobCode}' GROUP BY person_key)
      WHERE pay > 0`,
   );
@@ -174,7 +171,7 @@ test('a pile lists its people in the table below, and shows everyone again', asy
   await high.click();
   await expect(high).toHaveAttribute('aria-pressed', 'true');
   const card = page.locator('.peer-table-card');
-  await expect(card.locator('.peer-pile-filter')).toContainText(`Showing the ${above.length} people paid over ${k(w.hi)}`);
+  await expect(card.locator('.peer-pile-filter')).toContainText(`Showing the ${above.length} people with a full-time rate over ${k(w.hi)}`);
   const rows = card.locator('tbody tr');
   await expect(rows).toHaveCount(above.length);
   const pays = (await rows.evaluateAll((trs) => trs.map((tr) => {

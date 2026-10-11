@@ -509,7 +509,7 @@ test.describe('Phones — the figure sits beside the name', () => {
   test('Peers: the salary is on screen', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.goto(`./person/${encodeURIComponent(AARON)}`);
-    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Salary' }) }), /^Salary$/i);
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Full-time rate' }) }), /^Full-time rate$/i);
   });
 
   test("A title's people: the salary is on screen", async ({ page }) => {

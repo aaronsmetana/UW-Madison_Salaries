@@ -31,7 +31,7 @@ import { useSql, useGrades, useSummary, usePersonAlias } from '../lib/hooks';
 import { latestHire, latestMain, latestRows, otherAppts, apptTerms } from '../lib/personQuery';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
-import { personPay, actualPay, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
+import { personPay, TITLE_RATE, actualPay, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
@@ -373,8 +373,7 @@ export default function Person() {
     ['person-title-med', key],
     `WITH me AS (SELECT snapshot_id, ${mainOf('job_code')} job FROM salaries
         WHERE person_key = ${sqlStr(key)} GROUP BY snapshot_id),
-      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('fte')} pay,
-          sum(s.salary) FILTER (WHERE s.salary > 0) rate
+      pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('fte')} pay, ${TITLE_RATE} rate
         FROM salaries s JOIN me ON s.snapshot_id = me.snapshot_id AND s.job_code = me.job
         GROUP BY s.snapshot_id, s.person_key)
      SELECT snapshot_id, median(pay) med, median(rate) med_rate FROM pp WHERE pay > 0 GROUP BY snapshot_id`,
@@ -612,15 +611,16 @@ export default function Person() {
       .map((x) => ({ ...x, pct: poolPercentile(x.below, x.n)! }));
   }, [standingRows, poolLabels]);
 
-  // Same-title peers = everyone sharing this person's job_code at the latest snapshot.
+  // Same-title peers = everyone sharing this person's job_code at the latest snapshot, each at their full-time
+  // rate in it (queries `TITLE_RATE`), so a part-time appointment is not read as underpaid.
   const jobCode = latest?.job_code ?? null;
   const { data: peerStatsRows } = useSql<PeerStats>(
     ['peer-stats', jobCode ?? '', lastSnap],
-    `WITH pp AS (SELECT person_key, ${personPay('fte')} pay, sum(salary) FILTER (WHERE salary > 0) rate FROM salaries
+    `WITH pp AS (SELECT person_key, ${TITLE_RATE} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
             quantile_cont(pay, 0.75) p75, max(pay) hi,
-            median(rate) med_rate, quantile_cont(rate, 0.75) p75_rate FROM pp WHERE pay > 0`,
+            median(pay) med_rate, quantile_cont(pay, 0.75) p75_rate FROM pp WHERE pay > 0`,
     !!lastSnap && !!jobCode
   );
   const peer = peerStatsRows?.[0];
@@ -630,7 +630,7 @@ export default function Person() {
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(school) school, any_value(department) department,
         date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 AS tenure,
-        ${personPay('fte')} pay
+        ${TITLE_RATE} pay
         FROM salaries WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     !!lastSnap && !!jobCode
@@ -674,16 +674,15 @@ export default function Person() {
     const i = cohortList.findIndex((p) => p.person_key === key);
     return i >= 0 ? i + 1 : null;
   }, [cohortList, key]);
-  // The subject's pay AS A MEMBER OF THIS COHORT, which is not always their pay overall: 355 people in
-  // the latest snapshot hold more than one appointment, and `lastSalary` sums them. Comparing a summed
-  // figure against a cohort of single-appointment figures inflated their standing — a Crowd Control
-  // Officer who is also a Police Officer read as "paid more than 101% of people with this title",
-  // because he was being measured with both jobs against peers measured with one.
+  // The subject AS A MEMBER OF THIS COHORT: their full-time rate in the title, as everyone else in it is
+  // measured, which is not their actual pay. A part-time appointment's actual pay is a fraction of its rate,
+  // and `lastSalary` sums every appointment: measured that way a Crowd Control Officer who is also a Police
+  // Officer read as "paid more than 101% of people with this title".
   const cohortSelfPay = useMemo(
     () => cohortList.find((p) => p.person_key === key)?.pay ?? lastSalary,
     [cohortList, key, lastSalary],
   );
-  const splitAppointment = cohortSelfPay != null && lastSalary != null && Math.round(cohortSelfPay) !== Math.round(lastSalary);
+  const ratePlotted = cohortSelfPay != null && lastSalary != null && Math.round(cohortSelfPay) !== Math.round(lastSalary);
   const cohortPct = cohortSelfPay != null && cohortSelfPay > 0 && cohortPays.length > 1 ? percentile(cohortSelfPay, cohortPays) : null;
   /** What both overview charts write beside this person's mark: "Aaron · $116,491". */
   const selfLabel = latest?.first_name?.trim() || 'This person';
@@ -978,10 +977,10 @@ export default function Person() {
                 {partTime && <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>}
               </StatCell>
 
-              {/* Where the pay sits among everyone with the title (or, with "Same school", among those in the
-                  person's school): the share paid less, the spread it sits in, and the rank. The sentence sat in
+              {/* Where the full-time rate sits among everyone with the title (or, with "Same school", among those in
+                  the person's school): the share on a lower rate, the spread it sits in, and the rank. The sentence sat in
                   the chart's card; the chart now shows it, and this says it. */}
-              <StatCell label="Paid more than">
+              <StatCell label="Full-time rate above">
                 {cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo && cohortPct != null ? (
                   <>
                     <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
@@ -993,7 +992,7 @@ export default function Person() {
                     <SpreadMark
                       lo={cohortStats.lo} p25={cohortStats.p25} med={cohortStats.med} p75={cohortStats.p75} hi={cohortStats.hi}
                       value={cohortSelfPay ?? lastSalary ?? cohortStats.med}
-                      label={`${usd(cohortSelfPay ?? lastSalary)} in a spread from ${usd(cohortStats.lo)} to ${usd(cohortStats.hi)}, median ${usd(cohortStats.med)}`}
+                      label={`A full-time rate of ${usd(cohortSelfPay ?? lastSalary)} in a spread from ${usd(cohortStats.lo)} to ${usd(cohortStats.hi)}, median ${usd(cohortStats.med)}`}
                     />
                     {cohortRank != null && (
                       <Text size="xs" c="dimmed" mt={6}>Rank {cohortRank} of {num(cohortList.length)} · median {fmtK(cohortStats.med)}</Text>
@@ -1005,7 +1004,7 @@ export default function Person() {
                     {peer && peer.n === 1
                       ? `The only ${latest?.title ?? 'person with this title'} at UW.`
                       : cohortStats && cohortStats.n >= 2 && cohortStats.hi === cohortStats.lo
-                        ? `Everyone with this title is paid ${usd(cohortStats.lo)}.`
+                        ? `Everyone with this title has a full-time rate of ${usd(cohortStats.lo)}.`
                         : '—'}
                   </Text>
                 )}
@@ -1095,7 +1094,7 @@ export default function Person() {
                       const d = cohortSelfPay - cohortStats.med;
                       return (
                         <span className="peer-finding">
-                          {selfLabel} is paid more than <b>{Math.round(cohortPct)}%</b> of the {num(cohortStats.n - 1)} others titled {titleLink} ({jobCode}){where},
+                          {selfLabel}&rsquo;s full-time rate is higher than <b>{Math.round(cohortPct)}%</b> of the {num(cohortStats.n - 1)} others titled {titleLink} ({jobCode}){where},
                           {Math.abs(d) < 0.5 ? <> and <b>at</b> the median.</> : <> and <b>{usd(Math.abs(d))} {d < 0 ? 'below' : 'above'}</b> the median.</>}
                         </span>
                       );
@@ -1137,10 +1136,9 @@ export default function Person() {
                       onPoint={setPointed}
                       onOpen={(k) => nav(`/person/${encodeURIComponent(k)}`)}
                     />
-                    {splitAppointment && (
-                      <Text size="xs" c="dimmed" mt={4}>
-                        Marked at {usd(cohortSelfPay!)} — this person&rsquo;s pay in this title. Their
-                        total across every appointment is {usd(lastSalary!)}.
+                    {ratePlotted && (
+                      <Text size="xs" c="dimmed" mt={4} className="peer-rate-note">
+                        Marked at {usd(cohortSelfPay!)}, {selfLabel}&rsquo;s full-time rate in this title. Their actual pay is {usd(lastSalary!)}.
                       </Text>
                     )}
                   </>
@@ -1160,13 +1158,13 @@ export default function Person() {
                     it is drawing instead. */}
                 <CardTitle
                   sub={<>
-                    Where {selfLabel} sits against what tenure alone predicts for {latest?.title}
+                    Where {selfLabel}&rsquo;s full-time rate sits against what tenure alone predicts for {latest?.title}
                     {cohort === 'school' ? ` within ${latest?.school}` : ' across UW'}.
                   </>}
                 >
                   Pay vs. tenure
                 </CardTitle>
-                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} pointed={pointed} onPoint={setPointed} />
+                <TenurePayScatter points={scatterPoints} self={selfScatter} titleLabel={latest?.title ?? 'this title'} zoom={payWin} label={selfLabel} measure="Full-time rate" pointed={pointed} onPoint={setPointed} />
               </Card>
             )}
 
@@ -1174,7 +1172,7 @@ export default function Person() {
               <Card withBorder padding="lg" ref={peerCardRef} className="peer-table-card">
                 <CardTitle
                   sub={<>
-                    Ranked by salary{cohort === 'school' ? `, in ${latest?.school}` : ''}.
+                    Ranked by full-time rate{cohort === 'school' ? `, in ${latest?.school}` : ''}.
                     {cohortRank != null && <> {selfLabel} ranks <b>#{cohortRank} of {num(cohortList.length)}</b>.</>}
                   </>}
                   right={
@@ -1194,7 +1192,7 @@ export default function Person() {
                 {pileShown !== 0 && payWin && (
                   <Group gap="xs" mb="xs" className="peer-pile-filter">
                     <Text size="sm">
-                      Showing the {num(sortedCohort.length)} {sortedCohort.length === 1 ? 'person' : 'people'} paid {pileShown < 0 ? `under ${fmtK(payWin.lo)}` : `over ${fmtK(payWin.hi)}`}
+                      Showing the {num(sortedCohort.length)} {sortedCohort.length === 1 ? 'person' : 'people'} with a full-time rate {pileShown < 0 ? `under ${fmtK(payWin.lo)}` : `over ${fmtK(payWin.hi)}`}
                     </Text>
                     <Button variant="subtle" size="compact-xs" onClick={() => setPileShown(0)}>Show everyone</Button>
                   </Group>
@@ -1206,7 +1204,7 @@ export default function Person() {
                       <SortableTh sortKey="name" label="Name" sort={peerSort} onSort={setPeerSort} />
                       <SortableTh sortKey="school" label="School · department" srLabel="school" fold sort={peerSort} onSort={setPeerSort} />
                       <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
-                      <SortableTh sortKey="salary" label="Salary" sort={peerSort} onSort={setPeerSort} align="right" />
+                      <SortableTh sortKey="salary" label="Full-time rate" sort={peerSort} onSort={setPeerSort} align="right" />
                       <Table.Th ta="right" data-fold className="peer-vs">vs. {selfLabel}</Table.Th>
                       <Table.Th w={132} className="tray-col" />
                     </Table.Tr>
@@ -1317,7 +1315,7 @@ export default function Person() {
       {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
       {(standingPools.length > 0 || (!standingRows && poolLabels.length > 0)) && (
         <Card withBorder padding="lg">
-          <CardTitle sub="Where this pay ranks in each pool this person belongs to, in the latest snapshot.">
+          <CardTitle sub="Where this person's actual pay ranks in each pool they belong to, in the latest snapshot.">
             Standing
           </CardTitle>
           <Stack gap="sm">

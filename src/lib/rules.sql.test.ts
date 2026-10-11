@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, type MainFields } from './queries';
+import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, TITLE_RATE, type MainFields } from './queries';
 import { raiseStepsSql } from './raises';
 
 /**
@@ -238,6 +238,40 @@ describe('MAIN_KEY', () => {
       }));
       expect(got).toEqual(WANT);
     }
+  });
+});
+
+describe('TITLE_RATE', () => {
+  // Each person holds job code T; each is one way of reading someone in a title at the wrong figure.
+  const T: Row[] = [
+    // Half time: the rate, not the half of it they are paid.
+    r('t', '2026-09-01', 'half', 'T', 80000, { fte: 0.5 }),
+    // Two appointments in the title at different rates: the rate between, weighted by FTE, never the sum.
+    r('t', '2026-09-01', 'two', 'T', 60000, { fte: 0.75 }),
+    r('t', '2026-09-01', 'two', 'T', 100000, { fte: 0.25 }),
+    // Over full time in one title: still the rate.
+    r('t', '2026-09-01', 'over', 'T', 70000, { fte: 0.6 }),
+    r('t', '2026-09-01', 'over', 'T', 70000, { fte: 0.6 }),
+    // Hourly only: the higher rate, not the sum of two full-time years.
+    r('t', '2026-09-01', 'hourly', 'T', 40000, { fte: 0 }),
+    r('t', '2026-09-01', 'hourly', 'T', 50000, { fte: 0 }),
+    // A salaried and an hourly appointment in the title: the salaried rate.
+    r('t', '2026-09-01', 'mixed', 'T', 60000, { fte: 0.5 }),
+    r('t', '2026-09-01', 'mixed', 'T', 90000, { fte: 0 }),
+    // Unpaid beside paid: the unpaid row adds no FTE.
+    r('t', '2026-09-01', 'unpaid', 'T', 0, { fte: 1 }),
+    r('t', '2026-09-01', 'unpaid', 'T', 50000, { fte: 0.5 }),
+    // Unpaid only: no rate.
+    r('t', '2026-09-01', 'none', 'T', 0, { fte: 1 }),
+  ];
+  it('reads each person in a title at their full-time rate in it', async () => {
+    const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
+    await all(`CREATE TABLE titled AS SELECT * FROM salaries WHERE FALSE`);
+    await all(`INSERT INTO titled VALUES ${T.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n')}`);
+    const rows = await all<{ person_key: string; rate: number | null }>(`SELECT person_key, ${TITLE_RATE} rate FROM titled GROUP BY person_key`);
+    expect(Object.fromEntries(rows.map((x) => [x.person_key, x.rate]))).toEqual({
+      half: 80000, two: 70000, over: 70000, hourly: 50000, mixed: 60000, unpaid: 50000, none: null,
+    });
   });
 });
 

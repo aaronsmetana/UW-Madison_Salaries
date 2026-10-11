@@ -358,6 +358,7 @@ export function TenurePayScatter({
   zoom = null,
   label = 'This person',
   legend = true,
+  measure = 'Pay',
   pointed,
   onPoint,
 }: {
@@ -369,6 +370,9 @@ export function TenurePayScatter({
   label?: string;
   /** The key to the dots' colours and the line, over the chart. */
   legend?: boolean;
+  /** What the pay axis measures, named on the axis, the data table and the subject's figure in the strip
+   *  (where plain pay reads "Actual" beside "Expected"): the person page plots full-time rates. */
+  measure?: string;
   /** The person pointed at anywhere on the page (the strip, this chart, the table): their dot takes the ring
    *  and the readout here too. Leave both out and the chart answers its own pointer alone. */
   pointed?: string | null;
@@ -520,7 +524,7 @@ export function TenurePayScatter({
               <span className="tenure-cell-value">{usd(fit.expected)}</span>
             </div>
             <div className="tenure-cell">
-              <span className="tenure-cell-label">Actual</span>
+              <span className="tenure-cell-label">{measure === 'Pay' ? 'Actual' : measure}</span>
               <span className="tenure-cell-value">{usd(self.pay)}</span>
             </div>
             <div className="tenure-cell">
@@ -586,7 +590,7 @@ export function TenurePayScatter({
           <YAxis
             type="number"
             dataKey="pay"
-            name="Pay"
+            name={measure}
             width={56}
             tick={AXIS_TICK}
             tickFormatter={fmtK}
@@ -662,7 +666,7 @@ export function TenurePayScatter({
           scatter is not a 15-decimal measurement; the CSV keeps the raw value. */}
       <ChartData
         caption={`Pay vs. tenure — ${titleLabel}`}
-        columns={['Name', 'Tenure (yrs)', 'Pay']}
+        columns={['Name', 'Tenure (yrs)', measure]}
         rows={[...points]
           .sort((a, b) => b.pay - a.pay)
           .map((p) => [p.isSelf ? `${p.name} (this person)` : p.name, Number(p.tenure.toFixed(1)), p.pay])}

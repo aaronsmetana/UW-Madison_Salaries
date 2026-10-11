@@ -143,7 +143,7 @@ export function PeerStrip({
   domain,
   label = 'This person',
   fullName,
-  caption = 'Salary distribution',
+  caption = 'Full-time rates with this title',
   zoom = null,
   onPile,
   pileShown = 0,
@@ -401,7 +401,7 @@ export function PeerStrip({
   const summaryTable = (
     <ChartData
       caption={caption}
-      columns={['Statistic', 'Salary']}
+      columns={['Statistic', 'Full-time rate']}
       rows={[
         ['Lowest', min],
         ['25th percentile', p25],

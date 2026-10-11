@@ -164,6 +164,26 @@ export function personPay(metric: Metric): string {
             ELSE any_value(${salaryExpr(metric)}) FILTER (WHERE salary > 0) END`;
 }
 
+const SALARIED = 'salary > 0 AND fte > 0';
+
+/**
+ * A person's full-time rate in one title, within a `GROUP BY person_key` over one job code: what the
+ * person page's Overview compares people with the same title by. Their salaried appointments in the
+ * code, rate weighted by FTE (their actual pay over their FTE: two half-time appointments at different
+ * rates read as the rate in between, and an FTE over 1 is not counted twice); with only hourly ones, the
+ * higher annualized rate.
+ *
+ * It compared actual pay, which plotted a half-time appointment at half its rate: 2,331 people and
+ * titles in Sep 2026 sat below their peers for working part time. The trend's "Full-time rate" median
+ * summed the rates instead, so two appointments in one title counted as twice the rate (118 people).
+ * Actual pay stays in the Actual pay figure and every total. Pages with a Pay measure control (Reports,
+ * the one-person report, Raises, PayCheck) keep comparing what the reader chose, and the Pay &
+ * standing tab's pools are actual pay.
+ */
+export const TITLE_RATE = `CASE WHEN sum(fte) FILTER (WHERE ${SALARIED}) > 0
+  THEN sum(salary * fte) FILTER (WHERE ${SALARIED}) / sum(fte) FILTER (WHERE ${SALARIED})
+  ELSE max(salary) FILTER (WHERE salary > 0) END`;
+
 /**
  * The appointment a person's pay band is read against: their main appointment (`MAIN_KEY`) — its grade,
  * its schedule, and its full-time rate, all from that one row. When the main appointment carries no grade

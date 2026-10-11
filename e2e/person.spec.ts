@@ -115,9 +115,13 @@ for (const { name, width, height } of [
  *
  * The roughness scale is `lib/distribution.ts`'s own, from tuning the landing page's kernel: mean
  * |second difference| over mean height, where raw $1k buckets score 0.579 and "read as static", $5k
- * scores 0.003 and is "a featureless lognormal blob", and the shipped kernel lands at 0.059. This
- * chart measures 0.033 with 12 humps, so the band below is wide enough not to be brittle and narrow
- * enough that either failure mode falls outside it.
+ * scores 0.003 and is "a featureless lognormal blob", and the shipped kernel lands at 0.059. It is read
+ * every 4px along the curve, as the landing page's buckets are drawn, not at each vertex: a second
+ * difference shrinks with the square of the spacing, so read per vertex the score fell fourfold when
+ * `niceStep` halved the bins. The Professors' full-time rates moved the window's ends enough to do that,
+ * and the same curve scored 0.0035 instead of 0.011. Read every 4px, the shipped kernel scores 0.011 to
+ * 0.021 from 880px to 1199px, and one 2.5 times as wide 0.0017 to 0.0029, so the band below is wide
+ * enough not to be brittle and narrow enough that either failure mode falls outside it.
  */
 test('the peer density ribbon is drawn at pixel resolution', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -132,24 +136,32 @@ test('the peer density ribbon is drawn at pixel resolution', async ({ page }) =>
 
     const d = line.getAttribute('d') ?? '';
     const nums = (d.match(/-?\d+\.?\d*/g) ?? []).map(Number);
+    const xs = nums.filter((_, i) => i % 2 === 0);
     const ys = nums.filter((_, i) => i % 2 === 1);
     const base = Math.max(...ys);
     const heights = ys.map((y) => base - y);
     const peak = Math.max(...heights);
-    const meanH = heights.reduce((a, b) => a + b, 0) / heights.length;
 
-    let secondDiff = 0;
     let humps = 0;
     for (let i = 1; i < heights.length - 1; i++) {
-      secondDiff += Math.abs(heights[i - 1] - 2 * heights[i] + heights[i + 1]);
       if (heights[i] > heights[i - 1] && heights[i] >= heights[i + 1] && heights[i] > peak * 0.1) humps++;
     }
+    // The curve read every 4px, whatever its vertices' spacing.
+    const at: number[] = [];
+    for (let x = xs[0], j = 0; x <= xs[xs.length - 1]; x += 4) {
+      while (j < xs.length - 2 && xs[j + 1] < x) j++;
+      const f = Math.min(1, Math.max(0, (x - xs[j]) / ((xs[j + 1] - xs[j]) || 1)));
+      at.push(heights[j] + (heights[j + 1] - heights[j]) * f);
+    }
+    const meanH = at.reduce((a, b) => a + b, 0) / at.length;
+    let secondDiff = 0;
+    for (let i = 1; i < at.length - 1; i++) secondDiff += Math.abs(at[i - 1] - 2 * at[i] + at[i + 1]);
 
     return {
       mode: 'ribbon' as const,
       vertices: ys.length,
       pxPerSegment: svg.getBoundingClientRect().width / Math.max(1, ys.length - 1),
-      roughness: meanH > 0 ? secondDiff / (heights.length - 2) / meanH : 0,
+      roughness: meanH > 0 ? secondDiff / (at.length - 2) / meanH : 0,
       humps,
     };
   });

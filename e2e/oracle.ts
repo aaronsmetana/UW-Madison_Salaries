@@ -39,6 +39,14 @@ export const PAY = 'coalesce(nullif(salary_fte_adjusted, 0), salary * coalesce(n
 export const MAIN = `{p: coalesce(salary, 0) > 0, f: coalesce(fte, 0), a: coalesce(${PAY}, 0), c: coalesce(job_code, ''),
   t: coalesce(title, ''), s: coalesce(school, ''), d: coalesce(department, ''), g: coalesce(employee_category, '')}`;
 
+/**
+ * A person's full-time rate in one title, in a `GROUP BY person_key` over one job code: what the person page
+ * compares everyone with the title by. The rates of their salaried appointments in it, weighted by FTE; with
+ * none, the higher hourly rate (annualized). Stated independently of src/lib/queries.ts.
+ */
+export const RATE = `coalesce(sum(salary * fte) FILTER (WHERE salary > 0 AND fte > 0) / nullif(sum(fte) FILTER (WHERE salary > 0 AND fte > 0), 0),
+  max(salary) FILTER (WHERE salary > 0))`;
+
 /** One column of the main appointment, in a `GROUP BY person_key`; a struct, so a NULL is that row's NULL. */
 export const main = (col: string) => `arg_max({v: ${col}}, ${MAIN}).v`;
 
