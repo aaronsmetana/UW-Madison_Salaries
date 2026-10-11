@@ -7,9 +7,9 @@ import {
   makePersonKey, snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median,
   latestGradeBands, harmonizeHourly, isAnnualizedRate, prepareSheet, HOURS_PER_YEAR, FTE_PLACEHOLDER,
   mapDepartment, departmentChanges, structureChange, releasedWith, divisionReorganizations,
-  MAIN_KEY_SQL, ACTUAL_PAY_SQL,
+  MAIN_KEY_SQL, ACTUAL_PAY_SQL, PERSON_PAY_SQL, PERSON_EARNINGS_SQL, personActualPay,
 } from './lib/normalize.mjs';
-import { MAIN_KEY, ACTUAL_PAY } from '../src/lib/queries.ts';
+import { MAIN_KEY, ACTUAL_PAY, personPay, personEarnings } from '../src/lib/queries.ts';
 
 // The build and the app pick a person's main appointment (and count their pay) by the same text, or the
 // landing page's dots, built here, and the names the app puts on them, picked there, part ways.
@@ -17,6 +17,16 @@ describe('the SQL twins', () => {
   it('state the main appointment and actual pay exactly as src/lib/queries.ts does', () => {
     expect(MAIN_KEY_SQL).toBe(MAIN_KEY);
     expect(ACTUAL_PAY_SQL).toBe(ACTUAL_PAY);
+    expect(PERSON_PAY_SQL).toBe(personPay('fte'));
+    expect(PERSON_EARNINGS_SQL).toBe(personEarnings('full'));
+  });
+  it('count one person\'s rows as personPay does', () => {
+    const row = (salary, fte) => ({ salary, fte, salary_fte_adjusted: null });
+    expect(personActualPay([row(135024, 1), row(89440, 0)])).toBe(135024);
+    expect(personActualPay([row(60000, 0.5), row(80000, 0.5)])).toBe(70000);
+    expect(personActualPay([row(40000, 0), row(50000, 0)])).toBe(50000);
+    expect(personActualPay([row(0, 1), row(41600, 0)])).toBe(41600);
+    expect(personActualPay([row(0, 1)])).toBe(0);
   });
 });
 

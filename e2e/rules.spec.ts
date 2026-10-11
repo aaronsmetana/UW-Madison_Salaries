@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, latestSnapshot, PAY, usd } from './oracle';
+import { oracle, latestSnapshot, usd, PERSON_PAY } from './oracle';
 import { raisesCte } from './raiseOracle';
 
 /**
@@ -48,7 +48,7 @@ test.describe('R8 — pay figures describe people', () => {
   test('the landing median is the median person, not the median appointment', async ({ page }) => {
     const snap = await latestSnapshot();
     const [o] = await oracle<{ med: number }>(
-      `SELECT median(pay) med FROM (SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key) WHERE pay > 0`
+      `SELECT median(pay) med FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key) WHERE pay > 0`
     );
     await page.goto('./');
     // In the figures under the search: the heading says what the page shows now, not the median.
@@ -60,7 +60,7 @@ test.describe('R8 — pay figures describe people', () => {
     const snap = await latestSnapshot();
     const school = 'School of Veterinary Medicine';
     const [o] = await oracle<{ med: number }>(
-      `SELECT median(pay) med FROM (SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL
+      `SELECT median(pay) med FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL
          WHERE snapshot_id = '${snap}' AND school = '${school}' GROUP BY person_key) WHERE pay > 0`
     );
     await page.goto('./explore');
@@ -76,7 +76,7 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
   // the factor it took out; the figure as reported is never drawn.
   test('a 9-month history gives the change across Sep 2025 like for like, never as reported', async ({ page }) => {
     const people = await oracle<{ pk: string; a: number; b: number }>(
-      `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(comp_basis) basis, any_value(fte) fte, sum(${PAY}) pay
+      `WITH one AS (SELECT snapshot_id, person_key, any_value(job_code) job, any_value(comp_basis) basis, any_value(fte) fte, ${PERSON_PAY} pay
                     FROM $SAL WHERE salary > 0 GROUP BY snapshot_id, person_key HAVING count(*) = 1)
        SELECT pk, a, b FROM (
          SELECT a.person_key pk, a.pay a, b.pay b, row_number() OVER (ORDER BY a.person_key) k FROM one a JOIN one b USING (person_key)
@@ -220,7 +220,7 @@ test.describe('R4 — the brief says one thing about tenure', () => {
   test('below the curve: the scatter and the evidence agree', async ({ page }) => {
     const snap = await latestSnapshot();
     const [p] = await oracle<{ fn: string; ln: string }>(
-      `WITH pp AS (SELECT person_key, any_value(job_code) job, sum(${PAY}) FILTER (WHERE salary > 0) pay,
+      `WITH pp AS (SELECT person_key, any_value(job_code) job, ${PERSON_PAY} pay,
                           date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 t
                    FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key HAVING count(*) = 1),
             fit AS (SELECT job, regr_slope(pay, t) b, regr_intercept(pay, t) a FROM pp WHERE pay > 0 AND t IS NOT NULL
@@ -304,7 +304,7 @@ test.describe('R5 — standing is one query, per person, the department inside i
     const snap = await latestSnapshot();
     const [o] = await oracle<{ dept: number; grade: number }>(
       `SELECT count(*) FILTER (WHERE in_dept) dept, count(*) FILTER (WHERE in_grade) grade FROM (
-         SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay,
+         SELECT person_key, ${PERSON_PAY} pay,
                 bool_or(school = '${SMPH}' AND department = 'Administration') in_dept,
                 bool_or(grade_number = 27 AND grade_basis = 'annual_12mo') in_grade
          FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key) WHERE pay > 0`
@@ -349,7 +349,7 @@ test.describe('R5 — standing is one query, per person, the department inside i
     const snap = await latestSnapshot();
     const [p] = await oracle<{ pk: string; school: string; n_tie: number; n: number }>(
       `WITH pp AS (SELECT person_key, any_value(school) school, count(*) FILTER (WHERE salary > 0) k,
-                          round(sum(${PAY}) FILTER (WHERE salary > 0)) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1),
+                          round(${PERSON_PAY}) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1),
             sizes AS (SELECT school, count(*) n FROM pp WHERE pay > 0 GROUP BY school),
             t AS (SELECT school, pay, count(*) n_tie, min(person_key) FILTER (WHERE person_key IN ${UNIQUE_NAME}) pk
                   FROM pp WHERE k = 1 AND pay > 0 GROUP BY 1, 2)
@@ -447,7 +447,7 @@ test.describe('The person page reports the reporting change and trims what repea
   test("a 9-month member's growth card says how much of it is the reporting change", async ({ page }) => {
     const pk = await nineMonthPerson();
     const [o] = await oracle<{ p0: number; p1: number }>(
-      `WITH p AS (SELECT snapshot_date d, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE person_key = '${pk}' GROUP BY snapshot_id, snapshot_date)
+      `WITH p AS (SELECT snapshot_date d, ${PERSON_PAY} pay FROM $SAL WHERE person_key = '${pk}' GROUP BY snapshot_id, snapshot_date)
        SELECT arg_min(pay, d) p0, arg_max(pay, d) p1 FROM p`
     );
     const without = ((o.p1 / o.p0) / (11 / 9) - 1) * 100;

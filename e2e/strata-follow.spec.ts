@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { oracle, PAY, usd } from './oracle';
+import { oracle, usd, PERSON_PAY } from './oracle';
 
 /**
  * Following a person on the landing graph (mockup 3a §9): a click on someone's square — magnified, in the floors,
@@ -39,7 +39,7 @@ async function lensOn(page: Page, x: number, y: number) {
 }
 const click = async (page: Page) => { await page.mouse.down(); await page.mouse.up(); };
 const payIn = async (key: string, snap: string) =>
-  (await oracle<{ pay: number | null }>(`SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 AND person_key = '${key.replace(/'/g, "''")}'`))[0].pay;
+  (await oracle<{ pay: number | null }>(`SELECT ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 AND person_key = '${key.replace(/'/g, "''")}'`))[0].pay;
 
 test('magnified, a click on a square follows its person — mark, label with their pay, a chip — and a click on them again stops', async ({ page }) => {
   await home(page);
@@ -77,7 +77,7 @@ test('through the timeline the label goes with them: a step from a neighbour cou
   // name no one else's contains, so a search marks them alone.
   const [p] = await oracle<{ k: string; nm: string }>(
     `WITH n AS (SELECT DISTINCT person_key, lower(first_name || ' ' || last_name) nm FROM $SAL),
-     pay AS (SELECT snapshot_id s, person_key, sum(${PAY}) pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING sum(${PAY}) > 0)
+     pay AS (SELECT snapshot_id s, person_key, ${PERSON_PAY} pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING ${PERSON_PAY} > 0)
      SELECT n.person_key k, n.nm FROM n
      JOIN pay a ON a.person_key = n.person_key AND a.s = '${SNAPS[LAST].id}'
      JOIN pay b ON b.person_key = n.person_key AND b.s = '${SNAPS[LAST - 1].id}'

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { oracle, latestSnapshot, rangesSql, GRADED, PAY } from './oracle';
+import { oracle, latestSnapshot, rangesSql, GRADED, PERSON_PAY } from './oracle';
 
 /**
  * A pay band is a range of full-time rates, and is read against the full-time rate of the appointment that
@@ -25,7 +25,7 @@ async function misread(where: string): Promise<Case[]> {
          count(*) FILTER (WHERE salary > 0) n,
          count(DISTINCT school) FILTER (WHERE salary > 0) schools, count(DISTINCT department) FILTER (WHERE salary > 0) depts,
          any_value(school) FILTER (WHERE salary > 0) school, any_value(department) FILTER (WHERE salary > 0) department,
-         sum(${PAY}) FILTER (WHERE salary > 0) pay, ${GRADED} gr
+         ${PERSON_PAY} pay, ${GRADED} gr
        FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key
      ),
      -- A name no one else has ever carried, so a search or a table row can only be them.

@@ -159,6 +159,28 @@ export const MAIN_KEY_SQL = `{paid: COALESCE(salary, 0) > 0, fte: COALESCE(fte, 
 export const mainOfSql = (col) => `arg_max({v: ${col}}, ${MAIN_KEY_SQL}).v`;
 
 /**
+ * A person's actual pay, in a `GROUP BY person_key` query: their salaried appointments' actual pay, else the
+ * best-paid hourly rate. The Node twins of `personPay('fte')` and `personEarnings('full')` in
+ * src/lib/queries.ts, which carry the full explanation (a test holds them to the same text); and
+ * `personActualPay` for one person's rows.
+ */
+export const PERSON_PAY_SQL = `CASE WHEN count(*) FILTER (WHERE salary > 0 AND fte > 0) > 1
+            THEN sum(${ACTUAL_PAY_SQL}) FILTER (WHERE salary > 0 AND fte > 0)
+          WHEN count(*) FILTER (WHERE salary > 0 AND fte > 0) = 1
+            THEN any_value(${ACTUAL_PAY_SQL}) FILTER (WHERE salary > 0 AND fte > 0)
+          ELSE max(${ACTUAL_PAY_SQL}) FILTER (WHERE salary > 0) END`;
+export const PERSON_EARNINGS_SQL = `CASE WHEN count(*) FILTER (WHERE salary > 0 AND fte > 0) > 0
+            THEN sum(salary * ${FTE_MULT_SQL}) FILTER (WHERE salary > 0 AND fte > 0)
+          ELSE max(salary * ${FTE_MULT_SQL}) FILTER (WHERE salary > 0) END`;
+export function personActualPay(rows) {
+  const paid = rows.filter((r) => r.salary > 0);
+  const salaried = paid.filter((r) => r.fte > 0);
+  return salaried.length
+    ? salaried.reduce((s, r) => s + actualPay(r), 0)
+    : paid.reduce((m, r) => Math.max(m, actualPay(r)), 0);
+}
+
+/**
  * The hours in the full-time year every hourly figure in this source is annualized over. Measured on
  * the workbooks that name their hourly rows: 5,143 of 5,144 in Sep 2025 land on a whole-cent rate at
  * 2,080 hours, against 12 at 2,088 and 1,287 at 2,000.

@@ -151,20 +151,62 @@ export function earningsExpr(metric: Metric): string {
   }
 }
 
+/** An appointment with a recorded FTE: salaried. An hourly one records none (`fte = 0` after the ETL). */
+const SALARIED = 'salary > 0 AND fte > 0';
+
 /**
  * A person's pay within a `GROUP BY person_key` group — use in place of `sum(salaryExpr)`.
- * One appointment → the metric's value as-is (e.g. full annual rate); multiple concurrent
- * appointments → FTE-blended actual earnings, so split roles aren't double-counted.
+ * One salaried appointment → the metric's value as-is (e.g. full annual rate); several → their
+ * FTE-blended actual earnings, so split roles aren't double-counted. Hourly appointments count only
+ * when there is no salaried one, and then the main one (the best-paid) alone.
+ *
+ * An hourly appointment's figure is its rate over a full-time year: the source records no hours. Held
+ * beside a salaried job it is not a second salary, and summed in it was one: Brett Van Ess directs
+ * Threat Intervention Services full time ($135,024) and works crowd control at $43 an hour, and read as
+ * paid $224,464, up 149% since 2022. 65 people in Sep 2026 hold both, $5.2m between them in hourly rates
+ * read as pay. Someone holding only hourly jobs is paid at one rate, not at the sum of several full-time
+ * years (68 people). The person page names the jobs left out (lib/personQuery `apptTerms`).
  */
 export function personPay(metric: Metric): string {
-  // Only count real (positive-salary) appointments: one → the metric value; several concurrent →
-  // FTE-blended actual earnings. Guarding on salary>0 avoids a $0 placeholder row triggering a blend.
-  return `CASE WHEN count(*) FILTER (WHERE salary > 0) > 1
-            THEN sum(${earningsExpr(metric)}) FILTER (WHERE salary > 0)
-            ELSE any_value(${salaryExpr(metric)}) FILTER (WHERE salary > 0) END`;
+  return `CASE WHEN count(*) FILTER (WHERE ${SALARIED}) > 1
+            THEN sum(${earningsExpr(metric)}) FILTER (WHERE ${SALARIED})
+          WHEN count(*) FILTER (WHERE ${SALARIED}) = 1
+            THEN any_value(${salaryExpr(metric)}) FILTER (WHERE ${SALARIED})
+          ELSE max(${salaryExpr(metric)}) FILTER (WHERE salary > 0) END`;
 }
 
-const SALARIED = 'salary > 0 AND fte > 0';
+/**
+ * A person's earnings within a `GROUP BY person_key` group, for a payroll: what `personPay` counts, as
+ * earnings (rate × FTE) under every measure. A payroll is the sum of this over its people, so it is
+ * the sum of the pay the pages show for them.
+ */
+export function personEarnings(metric: Metric): string {
+  return `CASE WHEN count(*) FILTER (WHERE ${SALARIED}) > 0
+            THEN sum(${earningsExpr(metric)}) FILTER (WHERE ${SALARIED})
+          ELSE max(${earningsExpr(metric)}) FILTER (WHERE salary > 0) END`;
+}
+
+/** Rows already fetched for one person and snapshot, which `personPay` counts: the salaried ones, else the
+ *  best-paid hourly one. */
+export function countedAppts<T extends { salary: number | null; salary_fte_adjusted: number | null; fte: number | null }>(rows: readonly T[]): T[] {
+  const paid = rows.filter((r) => (r.salary ?? 0) > 0);
+  const salaried = paid.filter((r) => (r.fte ?? 0) > 0);
+  if (salaried.length) return salaried;
+  const best = paid.reduce<T | undefined>((b, r) => (!b || actualPay(r) > actualPay(b) ? r : b), undefined);
+  return best ? [best] : [];
+}
+
+/** `personPay('fte')` for rows already fetched: the actual pay of the appointments it counts. */
+export const personActualPay = (rows: Parameters<typeof countedAppts>[0]): number =>
+  countedAppts(rows).reduce((s, r) => s + actualPay(r), 0);
+
+/** The full-time rate of what `personPay` counts, for rows already fetched: the salaried rates weighted
+ *  by FTE (actual pay over FTE), else the hourly rate. As `TITLE_RATE`, over every title. */
+export function personRate(rows: Parameters<typeof countedAppts>[0]): number {
+  const c = countedAppts(rows);
+  const fte = c.reduce((s, r) => s + (r.fte ?? 0), 0);
+  return fte > 0 ? c.reduce((s, r) => s + (r.salary ?? 0) * (r.fte ?? 0), 0) / fte : c[0]?.salary ?? 0;
+}
 
 /**
  * A person's full-time rate in one title, within a `GROUP BY person_key` over one job code: what the

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY } from './oracle';
+import { oracle, PERSON_PAY } from './oracle';
 import { raisesCte } from './raiseOracle';
 import { parseColor, flatten, contrast } from './color';
 
@@ -59,7 +59,7 @@ test('the typical line starts after the TTC relabel and ends where every step at
   // You, and someone in every snapshot whose FIRST step was far from that step's median — for you
   // the two coincide (+2.0% on a +2.0% step), so only the second can tell where the line starts.
   const [other] = await oracle<{ pk: string }>(
-    `WITH s AS (SELECT person_key, snapshot_id, sum(${PAY}) pay, count(*) k, lower(any_value(comp_basis)) b FROM $SAL GROUP BY 1, 2),
+    `WITH s AS (SELECT person_key, snapshot_id, ${PERSON_PAY} pay, count(*) k, lower(any_value(comp_basis)) b FROM $SAL GROUP BY 1, 2),
           f AS (SELECT person_key FROM s WHERE snapshot_id NOT LIKE '%-pre' GROUP BY 1 HAVING count(*) = ${CANONICAL} AND max(k) = 1)
      SELECT a.person_key pk FROM s a JOIN s b USING (person_key)
      WHERE a.snapshot_id = '2021-11-post' AND b.snapshot_id = '2022-03' AND a.pay > 0
@@ -69,7 +69,7 @@ test('the typical line starts after the TTC relabel and ends where every step at
      ORDER BY pk LIMIT 1`
   );
   for (const pk of [AARON, other.pk]) {
-    const [start] = await oracle<{ pay: number }>(`SELECT sum(${PAY}) pay FROM $SAL WHERE person_key = '${pk}' AND snapshot_id = '2021-11-post'`);
+    const [start] = await oracle<{ pay: number }>(`SELECT ${PERSON_PAY} pay FROM $SAL WHERE person_key = '${pk}' AND snapshot_id = '2021-11-post'`);
     const typical = meds.reduce((t, m) => t * (1 + m.med), start.pay);
     await page.goto(`./person/${encodeURIComponent(pk)}?tab=trends`);
     const card = page.locator('.gap-breakdown');

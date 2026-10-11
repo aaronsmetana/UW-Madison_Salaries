@@ -51,9 +51,11 @@ export function otherAppts<T extends MainFields>(rows: readonly T[]): T[] {
   return rows.filter((r) => r !== m).sort((a, b) => compareMain(b, a));
 }
 
-/** What sets an appointment apart beside its title: "hourly, $43.00/hr", "50% FTE" or "unpaid". */
-export function apptTerms(r: { salary: number | null; fte: number | null }): string {
+/** What sets an appointment apart beside its title: "hourly, $43.00/hr", "50% FTE" or "unpaid" — and, for an
+ *  hourly job actual pay leaves out (queries `countedAppts`: one held beside a salaried job, or beside a
+ *  better-paid hourly one), that it does and why. */
+export function apptTerms(r: { salary: number | null; fte: number | null }, counted = true): string {
   if (!(r.salary && r.salary > 0)) return 'unpaid';
-  if (!r.fte) return `hourly, ${hourly(r.salary)}`;
+  if (!r.fte) return `hourly, ${hourly(r.salary)}${counted ? '' : '; hours not reported, not in actual pay'}`;
   return `${Math.round(r.fte * 100)}% FTE`;
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
-import { oracle, PAY, main } from './oracle';
+import { oracle, main, PERSON_PAY } from './oracle';
 
 /**
  * Who the landing graph's dots are, restated from the page's own drawing rather than from its code, and the
@@ -20,9 +20,9 @@ export const HOME_STATS = JSON.parse(readFileSync(fileURLToPath(new URL('../publ
 /** Everyone paid in the graph's snapshot as the landing page counts them: total actual pay over paid
  *  appointments, in the category of their main appointment. */
 export const people = () => oracle<{ person_key: string; pay: number; cat: string; fn: string; ln: string }>(
-  `SELECT person_key, sum(${PAY}) pay, coalesce(${main('employee_category')}, 'Other') cat, any_value(first_name) fn, any_value(last_name) ln
+  `SELECT person_key, ${PERSON_PAY} pay, coalesce(${main('employee_category')}, 'Other') cat, any_value(first_name) fn, any_value(last_name) ln
    FROM $SAL WHERE snapshot_id = '${HOME_STATS.snapshot_id}' AND salary > 0
-   GROUP BY person_key HAVING sum(${PAY}) > 0`,
+   GROUP BY person_key HAVING ${PERSON_PAY} > 0`,
 );
 
 /**

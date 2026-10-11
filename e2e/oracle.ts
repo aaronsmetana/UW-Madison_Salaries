@@ -31,6 +31,14 @@ export function oracle<T = Record<string, unknown>>(sql: string): Promise<T[]> {
 export const PAY = 'coalesce(nullif(salary_fte_adjusted, 0), salary * coalesce(nullif(fte, 0), 1))';
 
 /**
+ * A person's actual pay, in a `GROUP BY person_key` (or over one person's rows): their salaried
+ * appointments' actual pay, summed; with none, the highest hourly rate alone. An hourly job beside a
+ * salaried one is not pay: its figure is a rate over a full-time year, the hours never reported. Stated
+ * independently of src/lib/queries.ts.
+ */
+export const PERSON_PAY = `coalesce(sum(${PAY}) FILTER (WHERE salary > 0 AND fte > 0), max(${PAY}) FILTER (WHERE salary > 0))`;
+
+/**
  * A person's main appointment, as a sort key to take the largest of: paid before unpaid, then the larger
  * FTE (none recorded, as on every hourly job, counts as 0), then the larger actual pay, then the job code,
  * title, school, department and category, the one that sorts last winning. Every row differs somewhere,

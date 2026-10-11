@@ -44,4 +44,8 @@ describe('apptTerms', () => {
     expect(apptTerms({ salary: 60000, fte: 0.5 })).toBe('50% FTE');
     expect(apptTerms({ salary: 0, fte: 1 })).toBe('unpaid');
   });
+  it('says of an hourly job actual pay leaves out that it does', () => {
+    expect(apptTerms({ salary: 89440, fte: 0 }, false)).toBe('hourly, $43.00/hr; hours not reported, not in actual pay');
+    expect(apptTerms({ salary: 60000, fte: 0.5 }, false)).toBe('50% FTE');
+  });
 });

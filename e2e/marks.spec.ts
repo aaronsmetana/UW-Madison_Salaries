@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, latestSnapshot, PAY, RATE } from './oracle';
+import { oracle, latestSnapshot, RATE, PERSON_PAY } from './oracle';
 import { parseColor, flatten, contrast } from './color';
 
 /**
@@ -191,7 +191,7 @@ test('the tenure callout is never a warning, even when the verdict is "below"', 
 
 test('a pay cut draws a down arrow, and a rise an up one', async ({ page }) => {
   const [p] = await oracle<{ pk: string }>(
-    `WITH s AS (SELECT person_key, snapshot_id, min(snapshot_date) d, sum(${PAY}) pay, count(*) k FROM $SAL GROUP BY 1, 2),
+    `WITH s AS (SELECT person_key, snapshot_id, min(snapshot_date) d, ${PERSON_PAY} pay, count(*) k FROM $SAL GROUP BY 1, 2),
           f AS (SELECT person_key, arg_min(pay, d) p0, arg_max(pay, d) p1, max(k) k FROM s GROUP BY 1 HAVING count(*) >= 3)
      SELECT person_key pk FROM f WHERE k = 1 AND p0 > 0 AND p1 < 0.8 * p0 AND person_key IN ${UNIQUE_NAME}
      ORDER BY person_key LIMIT 1`

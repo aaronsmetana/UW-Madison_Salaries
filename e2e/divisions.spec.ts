@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, usd, latestSnapshot } from './oracle';
+import { oracle, usd, latestSnapshot, PERSON_PAY } from './oracle';
 import { parseColor, flatten, contrast } from './color';
 
 /**
@@ -136,7 +136,7 @@ test('Top earners: setting Athletics aside refills the list, and part-time pay s
   const snap = await latestSnapshot();
   const ranked = await oracle<{ pk: string; rate: number; n: number; fte: number; pay: number }>(
     `SELECT person_key pk, sum(salary) FILTER (WHERE salary > 0) rate, count(*) FILTER (WHERE salary > 0) n,
-        sum(fte) FILTER (WHERE salary > 0) fte, sum(${PAY}) FILTER (WHERE salary > 0) pay
+        sum(fte) FILTER (WHERE salary > 0) fte, ${PERSON_PAY} pay
      FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1 HAVING pay > 0 ORDER BY pay DESC LIMIT 100`
   );
   const partTime = ranked.find((r) => r.n === 1 && r.fte < 0.995 && r.rate > r.pay);

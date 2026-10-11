@@ -25,7 +25,7 @@ import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { salaryExpr, earningsExpr, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
+import { salaryExpr, personEarnings, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
 import { usd, num, fullName, spanLabel } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
@@ -117,9 +117,9 @@ export default function School() {
 
   const { data: scoreRows, isLoading } = useSql<Score>(
     ['school-score', name, snap ?? '', metric, fk],
-    `WITH pe AS (${peopleSql({ metric, where: base })})
+    `WITH pe AS (${peopleSql({ metric, where: base, extra: `${personEarnings(metric)} earn` })})
      SELECT (SELECT ${paidHeadcount(metric)} FROM salaries WHERE ${base}) headcount,
-        (SELECT sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) FROM salaries WHERE ${base}) total_payroll,
+        sum(earn) total_payroll,
         median(pay) FILTER (WHERE pay > 0) med,
         avg(pay) FILTER (WHERE pay > 0) mean,
         quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
@@ -198,7 +198,7 @@ export default function School() {
 
   const { data: depts } = useSql<{ department: string; headcount: number; med: number | null; payroll: number | null }>(
     ['school-depts-full', name, snap ?? '', metric, fk],
-    `WITH pe AS (${peopleSql({ metric, where: `${base} AND department IS NOT NULL`, by: ['department'], extra: `sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) earn` })})
+    `WITH pe AS (${peopleSql({ metric, where: `${base} AND department IS NOT NULL`, by: ['department'], extra: `${personEarnings(metric)} earn` })})
      SELECT department, count(*) FILTER (WHERE pay > 0) headcount,
         median(pay) FILTER (WHERE pay > 0) med,
         sum(earn) payroll

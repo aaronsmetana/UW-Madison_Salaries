@@ -1,5 +1,5 @@
 import { COLS, COL_DOLLARS, DOWN, FLOORS, NEW, STAY, UP, floorOf, stableKey, typeRanks, type Strata } from './strata';
-import { ACTUAL_PAY, mainOf } from './queries';
+import { personPay, mainOf } from './queries';
 import { sqlStr } from './duckdb';
 
 /**
@@ -37,9 +37,9 @@ export interface Timeline {
 }
 
 const peopleCte = (snapshots: readonly string[]) => `p AS (
-    SELECT snapshot_id, person_key, sum(${ACTUAL_PAY}) AS pay, coalesce(${mainOf('employee_category')}, 'Other') AS cat
+    SELECT snapshot_id, person_key, ${personPay('fte')} AS pay, coalesce(${mainOf('employee_category')}, 'Other') AS cat
     FROM salaries WHERE salary > 0 AND snapshot_id IN (${snapshots.map(sqlStr).join(', ')})
-    GROUP BY snapshot_id, person_key HAVING sum(${ACTUAL_PAY}) > 0),
+    GROUP BY snapshot_id, person_key HAVING ${personPay('fte')} > 0),
   k AS (SELECT person_key, CAST(row_number() OVER (ORDER BY person_key) - 1 AS INTEGER) AS id FROM (SELECT DISTINCT person_key FROM p))`;
 
 /** Everyone in every snapshot: `snap` (the snapshot's place in `snapshots`), `id`, `pay` and `kind` (its place

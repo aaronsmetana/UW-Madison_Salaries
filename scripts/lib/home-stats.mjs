@@ -1,6 +1,6 @@
 import zlib from 'node:zlib';
 import duckdb from 'duckdb';
-import { FTE_MULT_SQL, ACTUAL_PAY_SQL, mainOfSql } from './normalize.mjs';
+import { PERSON_PAY_SQL, PERSON_EARNINGS_SQL, mainOfSql } from './normalize.mjs';
 
 /** What home-stats.json may weigh gzipped. The landing page fetches it on every visit, before anything
  *  else can draw; the per-category counts behind the "By category" dots are most of it. */
@@ -34,22 +34,18 @@ const COL_W = 5000;
  *  from these counts before anything is plotted. The counts shipped here stay raw. */
 const BIN_W = 1000;
 
-/** The measure the landing page describes, matching `earningsExpr('fte')` in src/lib/queries.ts and
- *  the manifest's own `salary_median` (build-data.mjs) — i.e. "Actual pay", the app's default metric.
- *  It has to be the same expression the headline median is computed from: the bins used the raw
- *  full-time rate while the median came from FTE-adjusted pay, so the landing chart was drawing its
- *  median marker ~$5k off, on a curve built from a different quantity. */
-const PAY = ACTUAL_PAY_SQL;
-
 /**
- * One row per person with their summed actual pay — the population the landing figures describe.
- * The bins, quartiles and headline median used to count appointment rows (22,383) under a caption
- * about 22,009 employees; a person with two appointments was two points on the curve, at two partial
- * salaries. This is `peopleSql` in src/lib/queries.ts for the 'fte' metric, where both of personPay's
- * branches reduce to the sum of actual pay over paid appointments.
+ * One row per person with their actual pay — the population the landing figures describe, in "Actual
+ * pay", the app's default measure, as the manifest's `salary_median_people` (build-data.mjs) is. It has
+ * to be the measure the headline median is computed from: the bins used the raw full-time rate while the
+ * median came from FTE-adjusted pay, so the landing chart drew its median marker ~$5k off its own curve.
+ * The bins, quartiles and headline median used to count appointment rows (22,383) under a caption about
+ * 22,009 employees; a person with two appointments was two points on the curve, at two partial salaries.
+ * This is `peopleSql` in src/lib/queries.ts for the 'fte' metric: their salaried appointments' actual
+ * pay, else the best-paid hourly rate (`PERSON_PAY_SQL`).
  */
 const people = (src, snap) =>
-  `(SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)`;
+  `(SELECT person_key, ${PERSON_PAY_SQL} AS pay FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)`;
 
 /**
  * The same people, each with one staff category: the category of their main appointment (`mainOfSql`,
@@ -58,7 +54,7 @@ const people = (src, snap) =>
  * fact is taken over this too, so the legend beside the dots and the fact can never disagree.
  */
 const peopleByCategory = (src, snap) =>
-  `(SELECT person_key, sum(${PAY}) AS pay, coalesce(${mainOfSql('employee_category')}, 'Other') AS cat
+  `(SELECT person_key, ${PERSON_PAY_SQL} AS pay, coalesce(${mainOfSql('employee_category')}, 'Other') AS cat
     FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0
     GROUP BY person_key)`;
 
@@ -75,8 +71,10 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
     const toNum = (v) => (v == null ? null : Number(v));
 
     (async () => {
+      // The sum of everyone's pay, as earned: a salaried person's hourly jobs left out (`PERSON_EARNINGS_SQL`).
       const [payrollRow] = await run(
-        `SELECT sum(salary * ${FTE_MULT_SQL}) AS total FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0`
+        `SELECT sum(e) AS total FROM (SELECT person_key, ${PERSON_EARNINGS_SQL} AS e FROM ${src}
+         WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY person_key)`
       );
       const [dimsRow] = await run(
         `SELECT count(DISTINCT school) AS schools, count(DISTINCT job_code) AS titles,
@@ -123,7 +121,7 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       const [peakRow] = await run(
         `SELECT max(n) AS peak FROM (
            SELECT snapshot_id, least(floor(pay / ${COL_W}), ${BIN_CAP / COL_W}) AS b, count(*) AS n
-           FROM (SELECT snapshot_id, person_key, sum(${PAY}) AS pay FROM ${src} WHERE salary > 0 GROUP BY snapshot_id, person_key)
+           FROM (SELECT snapshot_id, person_key, ${PERSON_PAY_SQL} AS pay FROM ${src} WHERE salary > 0 GROUP BY snapshot_id, person_key)
            WHERE pay > 0 GROUP BY snapshot_id, b)`
       );
       const [overflowRow] = await run(
@@ -146,14 +144,14 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
       );
       const [factRow] = await run(
         `WITH p AS (
-            SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay,
+            SELECT person_key, ${PERSON_PAY_SQL} AS pay,
                    any_value(date_of_hire) AS doh, any_value(snapshot_date) AS sd
             FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)
          SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) AS p90,
                 median(date_diff('day', CAST(doh AS DATE), CAST(sd AS DATE)) / 365.25) FILTER (WHERE doh IS NOT NULL) AS tenure
          FROM p`
       );
-      // The three largest categories and their medians, each person once, at their total actual pay, in
+      // The three largest categories and their medians, each person once, at their actual pay, in
       // the category of their main appointment — the rule the "By category" dots use.
       const byCat = catRows.filter((c) => c.cat !== 'Other').slice(0, 3);
 

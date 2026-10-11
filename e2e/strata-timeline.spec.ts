@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { oracle, PAY, main, usd } from './oracle';
+import { oracle, PAY, main, usd, PERSON_PAY } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS, clearFrames, frameCount, frameTimes } from './pace';
 import { parseColor } from './color';
@@ -81,8 +81,8 @@ async function goTo(page: Page, i: number) {
 /** Everyone in snapshot `id`: their pay, and their kind as the graph names it. */
 async function peopleIn(id: string) {
   const rows = await oracle<{ k: string; pay: number; cat: string }>(
-    `SELECT person_key k, sum(${PAY}) pay, coalesce(${main('employee_category')}, 'Other') cat FROM $SAL
-     WHERE snapshot_id = '${id}' AND salary > 0 GROUP BY person_key HAVING sum(${PAY}) > 0`,
+    `SELECT person_key k, ${PERSON_PAY} pay, coalesce(${main('employee_category')}, 'Other') cat FROM $SAL
+     WHERE snapshot_id = '${id}' AND salary > 0 GROUP BY person_key HAVING ${PERSON_PAY} > 0`,
   );
   return rows.map((r) => { const c = FOLD[r.cat] ?? r.cat; return { ...r, kind: NAMED.includes(c) ? c : CODED }; });
 }
@@ -366,7 +366,7 @@ test('in an older snapshot the loupe names someone with that snapshot’s title 
   const key = (await card.getAttribute('data-who'))!;
   const who = await peopleIn(SNAPS[i].id);
   const me = who.find((p) => p.k === key)!;
-  const [prev] = await oracle<{ pay: number | null }>(`SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${SNAPS[i - 1].id}' AND salary > 0 AND person_key = '${key.replace(/'/g, "''")}'`);
+  const [prev] = await oracle<{ pay: number | null }>(`SELECT ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${SNAPS[i - 1].id}' AND salary > 0 AND person_key = '${key.replace(/'/g, "''")}'`);
   const [named] = await oracle<{ title: string }>(
     `SELECT title FROM (SELECT title, row_number() OVER (ORDER BY ${PAY} DESC, coalesce(employee_category, 'Other'), title, school) k
        FROM $SAL WHERE snapshot_id = '${SNAPS[i].id}' AND salary > 0 AND person_key = '${key.replace(/'/g, "''")}') WHERE k = 1`,
@@ -501,7 +501,7 @@ test.describe('one scale for every snapshot, and the pace', () => {
   test('every snapshot draws a person the same height, to the scale of the tallest $5k column in any, which it fills', async ({ page }) => {
     test.setTimeout(120_000);
     const cols = await oracle<{ s: string; b: number; n: number }>(
-      `WITH p AS (SELECT snapshot_id s, person_key, sum(${PAY}) pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING sum(${PAY}) > 0)
+      `WITH p AS (SELECT snapshot_id s, person_key, ${PERSON_PAY} pay FROM $SAL WHERE salary > 0 GROUP BY 1, 2 HAVING ${PERSON_PAY} > 0)
        SELECT s, least(floor(pay / 5000), ${CAP / 5000}) b, count(*) n FROM p GROUP BY 1, 2`,
     );
     const peakOf = (id: string) => Math.max(...cols.filter((c) => c.s === id).map((c) => c.n));

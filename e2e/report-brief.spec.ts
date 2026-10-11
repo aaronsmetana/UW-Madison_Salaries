@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { oracle, latestSnapshot, PAY } from './oracle';
+import { oracle, latestSnapshot, PERSON_PAY } from './oracle';
 
 /**
  * The reports' words (section 4): footnotes as a printed page has them, sentences built from the cohort's name
@@ -138,7 +138,7 @@ test('a raise case asks for one thing, chosen second, each choice with its dolla
   const snap = await latestSnapshot();
   // Two others with Aaron's job code: one paid more, whom the case can ask to match, and one paid less, whom it cannot.
   const others = await oracle<{ k: string; nm: string; pay: number; more: boolean }>(
-    `WITH p AS (SELECT person_key k, any_value(first_name || ' ' || last_name) nm, sum(${PAY}) pay FROM $SAL
+    `WITH p AS (SELECT person_key k, any_value(first_name || ' ' || last_name) nm, ${PERSON_PAY} pay FROM $SAL
        WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY 1)
      SELECT k, nm, pay, pay > (SELECT pay FROM p WHERE k = '${AARON}') more FROM p
      WHERE k <> '${AARON}' AND k IN (SELECT person_key FROM $SAL WHERE snapshot_id = '${snap}'
@@ -302,7 +302,7 @@ test('a person to match: the closest first, the two side by side, what tenure ex
   // Someone with Aaron's job code paid more, and how many snapshots both were paid in.
   const [peer] = await oracle<{ k: string; nm: string; pay: number; shared: number }>(
     // A snapshot published in two versions (before and after the title change) is one date, one row.
-    `WITH p AS (SELECT person_key k, snapshot_id s, any_value(snapshot_date) d, any_value(first_name || ' ' || last_name) nm, sum(${PAY}) pay
+    `WITH p AS (SELECT person_key k, snapshot_id s, any_value(snapshot_date) d, any_value(first_name || ' ' || last_name) nm, ${PERSON_PAY} pay
          FROM $SAL WHERE salary > 0 GROUP BY 1, 2),
        me AS (SELECT * FROM p WHERE k = '${AARON}')
      SELECT p.k, p.nm, p.pay, (SELECT count(DISTINCT q.d) FROM p q JOIN me USING (s) WHERE q.k = p.k) shared FROM p
@@ -426,7 +426,7 @@ test('the points a reviewer may raise: off until asked for, then each one a figu
   const snap = await latestSnapshot();
   // Same-title peers with more UW tenure than Aaron who are paid less.
   const [{ n: seniorLess }] = await oracle<{ n: number }>(
-    `WITH p AS (SELECT person_key k, sum(${PAY}) pay, any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) t
+    `WITH p AS (SELECT person_key k, ${PERSON_PAY} pay, any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) t
        FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0
          AND job_code = (SELECT any_value(job_code) FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}') GROUP BY 1),
        me AS (SELECT * FROM p WHERE k = '${AARON}')
@@ -486,7 +486,7 @@ test('the factor menu lists every factor by its kind, and a new one is added, de
 
 test('private to the requester: what to ask if the ask is refused, and a reviewer’s questions answered from the brief’s own figures', async ({ browser }) => {
   const snap = await latestSnapshot();
-  const [{ pay }] = await oracle<{ pay: number }>(`SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}' AND salary > 0`);
+  const [{ pay }] = await oracle<{ pay: number }>(`SELECT ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${AARON}' AND salary > 0`);
   const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
   await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
   const page = await ctx.newPage();

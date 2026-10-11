@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, usd, latestSnapshot, searchOrder, searchCounts } from './oracle';
+import { oracle, usd, latestSnapshot, searchOrder, searchCounts, PERSON_PAY } from './oracle';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -28,7 +28,7 @@ async function largest(col: 'job_code' | 'school', words: string[]) {
   const snap = await latestSnapshot();
   const like = words.map((w) => `lower(${col === 'job_code' ? 'title' : 'school'}) LIKE '%${w}%'`).join(' AND ');
   return oracle<{ k: string; n: number; med: number }>(
-    `WITH pe AS (SELECT ${col} k, person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL
+    `WITH pe AS (SELECT ${col} k, person_key, ${PERSON_PAY} pay FROM $SAL
                  WHERE snapshot_id = '${snap}' AND ${col} IS NOT NULL AND ${like} GROUP BY 1, 2)
      SELECT k, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY k ORDER BY n DESC, k`
   );
@@ -152,8 +152,8 @@ test('people alone in a wide list take two columns, and the list scrolls at the 
 
 test("a person's row carries their pay path and their pay now, and the pay is in its name", async ({ page }) => {
   const snaps = await oracle<{ pay: number }>(
-    `SELECT sum(${PAY}) FILTER (WHERE salary > 0) pay, min(snapshot_date) d FROM $SAL WHERE person_key = '${AARON}'
-     GROUP BY snapshot_id HAVING sum(${PAY}) FILTER (WHERE salary > 0) > 0 ORDER BY d, snapshot_id DESC`
+    `SELECT ${PERSON_PAY} pay, min(snapshot_date) d FROM $SAL WHERE person_key = '${AARON}'
+     GROUP BY snapshot_id HAVING ${PERSON_PAY} > 0 ORDER BY d, snapshot_id DESC`
   );
   await homeSearch(page, 'smetana');
   const row = page.getByRole('option', { name: /Aaron Smetana/ });

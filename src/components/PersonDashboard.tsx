@@ -7,7 +7,7 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
 import { latestHire, latestMain } from '../lib/personQuery';
-import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf, countedAppts } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, mainSwapped } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
@@ -127,9 +127,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : id.endsWith('-post') ? 1 : 0);
     return [...by.values()]
       .map((g) => {
-        const appts = g.rows.length;
-        // Single appointment → metric value; multiple concurrent → FTE-blended actual earnings.
-        const salary = appts > 1 ? g.rows.reduce((s, r) => s + (r.earn ?? 0), 0) : (g.rows[0].pay ?? 0);
+        // What the pay counts (queries `personPay`): one appointment → the metric's value; several → their
+        // earnings summed. A salaried person's hourly jobs are left out, and an hourly-only person is at one rate.
+        const counted = countedAppts(g.rows.map(asAppt));
+        const appts = counted.length;
+        const salary = appts > 1 ? counted.reduce((s, r) => s + (r.earn ?? 0), 0) : (counted[0]?.pay ?? 0);
         const primary = mainRow(g.rows.map(asAppt))!;
         const codes = g.rows.map((r) => r.job_code);
         return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, codes, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };

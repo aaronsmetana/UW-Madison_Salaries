@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { oracle, PAY } from './oracle';
+import { oracle, PERSON_PAY } from './oracle';
 import { HOME_STATS, places, spots } from './homeDots';
 
 /**
@@ -17,7 +17,7 @@ const SNAP = HOME_STATS.snapshot_id;
 function covered(f: { code?: string; school?: string }) {
   const cond = f.code ? `job_code = '${f.code}'` : `school = '${f.school!.replace(/'/g, "''")}'`;
   return oracle<{ person_key: string; pay: number }>(
-    `WITH p AS (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY person_key)
+    `WITH p AS (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY person_key)
      SELECT person_key, pay FROM p WHERE pay > 0 AND person_key IN
        (SELECT person_key FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND ${cond})`,
   );

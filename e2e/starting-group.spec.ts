@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { oracle, PAY } from './oracle';
+import { oracle, PERSON_PAY } from './oracle';
 import { parseColor, flatten, contrast } from './color';
 
 /**
@@ -26,7 +26,7 @@ test('the starting group is everyone in your first title then, followed to now',
   const f = await firstTitle(AARON);
   const rows = await oracle<{ snapshot_id: string; n: number; below: number }>(
     `WITH g AS (SELECT DISTINCT person_key FROM $SAL WHERE snapshot_id = '${f.snap}' AND job_code = '${f.job}'),
-          pp AS (SELECT s.snapshot_id, min(s.snapshot_date) d, s.person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay
+          pp AS (SELECT s.snapshot_id, min(s.snapshot_date) d, s.person_key, ${PERSON_PAY} pay
                  FROM $SAL s JOIN g USING (person_key) GROUP BY 1, 3),
           me AS (SELECT snapshot_id, pay mine FROM pp WHERE person_key = '${AARON}')
      SELECT snapshot_id, count(*) FILTER (WHERE pay > 0) n, count(*) FILTER (WHERE pay > 0 AND pay < mine) below, any_value(d) d

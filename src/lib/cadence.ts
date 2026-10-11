@@ -1,7 +1,7 @@
 import { reportingChange } from './queries';
 import { titleChange } from './payHistory';
 
-/** One of a person's snapshots, in date order: pay summed across what they held, and their primary title. */
+/** One of a person's snapshots, in date order: their pay (queries `personPay`), and their primary title. */
 export interface CadencePoint {
   id: string;
   date: string;

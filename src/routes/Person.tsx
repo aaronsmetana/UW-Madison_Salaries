@@ -31,7 +31,7 @@ import { useSql, useGrades, useSummary, usePersonAlias } from '../lib/hooks';
 import { latestHire, latestMain, latestRows, otherAppts, apptTerms } from '../lib/personQuery';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
-import { personPay, TITLE_RATE, actualPay, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
+import { personPay, TITLE_RATE, countedAppts, personActualPay, personRate, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
@@ -306,6 +306,8 @@ export default function Person() {
   const latest = useMemo(() => latestMain(rows), [rows]);
   // Their other appointments then, named under the title.
   const also = useMemo(() => otherAppts(latestRows(rows)), [rows]);
+  // Which of them actual pay counts (queries `personPay`): the line says of the rest that it leaves them out.
+  const counts = useMemo(() => new Set(countedAppts(latestRows(rows))), [rows]);
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
   useDocTitle(latest ? name : 'People');
   // "People / System Engineer IV / Aaron Smetana": the landing (where a person is found), their title's page,
@@ -328,8 +330,9 @@ export default function Person() {
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
 
   // Salary trend: one point per snapshot. `salary` (the plotted line) is ACTUAL pay — the reported
-  // FTE-adjusted figure (Σ salary_fte_adjusted, falling back to rate × FTE), summed across concurrent
-  // appointments. We also carry the full-time `rate` (Σ salary) and total `fte` for the breakdown.
+  // FTE-adjusted figure (salary_fte_adjusted, falling back to rate × FTE), summed across the appointments
+  // it counts (queries `personPay`: a salaried person's hourly jobs are left out, and someone holding only
+  // hourly jobs is at one rate). We also carry their full-time `rate` and total `fte` for the breakdown.
   const trend = useMemo(() => {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const ttcSuffix = (id: string) => (id.endsWith('-pre') ? ' (Pre-TTC)' : id.endsWith('-post') ? ' (Post-TTC)' : '');
@@ -348,13 +351,14 @@ export default function Person() {
     }
     return [...by.values()]
       .map((g) => {
-        const appts = g.rows.length;
-        const paid = g.rows.reduce((s, r) => s + actualPay(r), 0);
-        const rate = g.rows.reduce((s, r) => s + (r.salary ?? 0), 0);
+        const counted = countedAppts(g.rows);
+        const appts = counted.length;
+        const paid = personActualPay(g.rows);
+        const rate = personRate(g.rows);
         // null, not 0, when no appointment records a percentage — every row here is hourly. Summed
         // as a number it reported "Appointment: 0% FTE" in the trend tooltip, which says the person
         // does not work; the honest answer is that the source does not say.
-        const fte = g.rows.some((r) => r.fte) ? g.rows.reduce((s, r) => s + (r.fte ?? 1), 0) : null;
+        const fte = counted.some((r) => r.fte) ? counted.reduce((s, r) => s + (r.fte ?? 0), 0) : null;
         // The main appointment (queries `MAIN_KEY`) names the snapshot; `codes` are every job held, so a
         // swap between two of them is not drawn as a title change (payHistory `mainSwapped`).
         const primary = mainRow(g.rows)!;
@@ -877,7 +881,7 @@ export default function Person() {
                   {a.job_code ? (
                     <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(a.job_code)}`} inherit>{a.title ?? a.job_code}</Anchor>
                   ) : (a.title ?? 'another appointment')}
-                  {` (${apptTerms(a)})`}
+                  {` (${apptTerms(a, counts.has(a))})`}
                 </Fragment>
               ))}
               {also.length > 2 && `; and ${also.length - 2} more, in History`}

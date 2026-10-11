@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { frameCount } from './pace';
 import AxeBuilder from '@axe-core/playwright';
-import { oracle, PAY } from './oracle';
+import { oracle, PERSON_PAY } from './oracle';
 import { HOME_STATS, spots, plotShape, barOverPlot, places, people } from './homeDots';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -72,7 +72,7 @@ function covered(f: { code?: string; school?: string; name?: string }) {
     f.name ? `contains(lower(first_name || ' ' || last_name), '${f.name.toLowerCase().replace(/'/g, "''")}')` : null,
   ].filter(Boolean).join(' AND ');
   return oracle<{ person_key: string; pay: number }>(
-    `WITH p AS (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY person_key)
+    `WITH p AS (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 GROUP BY person_key)
      SELECT person_key, pay FROM p WHERE pay > 0 AND person_key IN
        (SELECT person_key FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND ${cond})`,
   );

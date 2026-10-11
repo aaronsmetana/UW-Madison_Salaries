@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { IconChevronRight, IconAlertTriangle } from '@tabler/icons-react';
 import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { ACTUAL_PAY, mainOf } from '../lib/queries';
+import { personPay, mainOf } from '../lib/queries';
 import { fullName, usd, num } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { CardTitle } from './CardTitle';
@@ -60,9 +60,9 @@ function IdentityPreview({ personKey, title, name }: { personKey: string; title:
 /** The "Possible duplicate identities" review section: shared names that resolve to several person_keys,
  *  classified by how likely they are a real matching error, expandable to the people behind each name. */
 export function DuplicateIdentities({ snap }: { snap?: string }) {
-  // `ACTUAL_PAY` goes in unqualified: `dupnames` carries only the two name columns, so its `salary`,
-  // `fte` and `salary_fte_adjusted` resolve to `s` unambiguously. This query used to spell the
-  // expression out by hand — with `COALESCE(s.fte, 1)`, missing the zero-FTE guard entirely.
+  // `personPay` and `mainOf` go in unqualified: `dupnames` carries only the two name columns, so the
+  // columns they read resolve to `s` unambiguously. This query used to spell the pay out by hand — with
+  // `COALESCE(s.fte, 1)`, missing the zero-FTE guard entirely.
   const { data: rows } = useSql<IdRow>(
     ['dup-identities', snap ?? ''],
     `WITH dupnames AS (
@@ -71,9 +71,9 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
         GROUP BY first_name, last_name HAVING count(DISTINCT person_key) > 1
      )
      SELECT s.person_key, any_value(s.first_name) fn, any_value(s.last_name) ln,
-        arg_max(s.title, s.salary) title, arg_max(s.school, s.salary) school,
-        arg_max(s.department, s.salary) department, any_value(s.date_of_hire) hire,
-        sum(${ACTUAL_PAY}) FILTER (WHERE s.salary > 0) pay
+        ${mainOf('title')} title, ${mainOf('school')} school,
+        ${mainOf('department')} department, any_value(s.date_of_hire) hire,
+        ${personPay('fte')} pay
      FROM salaries s JOIN dupnames d ON s.first_name = d.first_name AND s.last_name = d.last_name
      WHERE s.snapshot_id = ${sqlStr(snap ?? '')} GROUP BY s.person_key ORDER BY ln, fn`,
     !!snap

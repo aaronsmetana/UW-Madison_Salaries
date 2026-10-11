@@ -5,7 +5,7 @@ import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useTimeline } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { ACTUAL_PAY, FTE_MULT, mainOf } from '../lib/queries';
+import { personPay, personEarnings, mainOf } from '../lib/queries';
 import { usd, usdCompact, num, fullName } from '../lib/format';
 import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotPeople, topSchoolsForSql, topTitlesInSql, type HomeName, type HomePerson } from '../lib/homePeople';
@@ -382,13 +382,15 @@ export default function Home() {
 
   const { data: payrollRows } = useSql<{ total: number | null }>(
     ['home-payroll', snap ?? ''],
-    `SELECT sum(salary * ${FTE_MULT}) total FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0`,
+    // The sum of everyone's pay, as home-stats.json's is: a salaried person's hourly jobs left out (queries `personPay`).
+    `SELECT sum(e) total FROM (SELECT person_key, ${personEarnings('full')} e FROM salaries
+       WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 GROUP BY person_key)`,
     needsSql
   );
   const payroll = artifactUsable ? homeStats.payroll_total : (payrollRows?.[0]?.total ?? null);
 
   // Per person, on actual pay (`people` below) — the same population home-stats.json is built from.
-  const people = `(SELECT person_key, sum(${ACTUAL_PAY}) FILTER (WHERE salary > 0) AS pay
+  const people = `(SELECT person_key, ${personPay('fte')} AS pay
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} GROUP BY person_key)`;
   const { data: dimRows } = useSql<{ schools: number; titles: number; lo: number | null; hi: number | null }>(
     ['home-dims', snap ?? ''],
@@ -408,7 +410,7 @@ export default function Home() {
   // Distribution sparkline + rotating facts (lightweight aggregates over the latest snapshot).
   const { data: binRows } = useSql<{ bucket: number; n: number }>(
     ['home-bins', snap ?? ''],
-    // $1k buckets, matching the precomputed artifact — and over ACTUAL_PAY, not the raw rate. The
+    // $1k buckets, matching the precomputed artifact — and over actual pay, not the raw rate. The
     // build script fixed that mismatch on its side and left this one: the fallback was binning the
     // full-time rate while the median marker drawn on top of it came from FTE-adjusted pay, so a
     // visitor pinned to an older snapshot got a marker sitting off its own curve.
@@ -435,7 +437,7 @@ export default function Home() {
   const { data: factStats } = useSql<{ p90: number | null; tenure: number | null }>(
     ['home-facts', snap ?? ''],
     `WITH p AS (
-        SELECT person_key, sum(${ACTUAL_PAY}) FILTER (WHERE salary > 0) AS pay,
+        SELECT person_key, ${personPay('fte')} AS pay,
                any_value(date_of_hire) AS doh, any_value(snapshot_date) AS sd
         FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} GROUP BY person_key)
      SELECT quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) p90,
@@ -449,7 +451,7 @@ export default function Home() {
     ['home-bycat', snap ?? ''],
     // Each person once, at their total pay, in the category of their main appointment — the rule
     // home-stats.json uses (scripts/lib/home-stats.mjs), so the fact reads the same either way.
-    `WITH p AS (SELECT person_key, sum(${ACTUAL_PAY}) pay, ${mainOf('employee_category')} cat FROM salaries
+    `WITH p AS (SELECT person_key, ${personPay('fte')} pay, ${mainOf('employee_category')} cat FROM salaries
                 WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 GROUP BY person_key)
      SELECT cat, median(pay) FILTER (WHERE pay > 0) med, count(*) FILTER (WHERE pay > 0) n
      FROM p WHERE cat IS NOT NULL GROUP BY cat ORDER BY n DESC, cat LIMIT 3`,

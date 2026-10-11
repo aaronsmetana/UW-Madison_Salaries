@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
-import { oracle, PAY, GRADED, usd, latestSnapshot } from './oracle';
+import { oracle, GRADED, usd, latestSnapshot, PERSON_PAY } from './oracle';
 
 /**
  * Saying what the newest release brought: the landing page's line, the Data page's account of it and of
@@ -137,7 +137,7 @@ test.describe('the newest release, said', () => {
     const snap = await latestSnapshot();
     expect(snap).toBe(latest.id);
     const [people] = await oracle<{ n: number; med: number }>(
-      `SELECT count(*) n, median(pay) med FROM (SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1) WHERE pay > 0`,
+      `SELECT count(*) n, median(pay) med FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY 1) WHERE pay > 0`,
     );
     await page.goto('./data');
     const card = page.locator('#whats-new');

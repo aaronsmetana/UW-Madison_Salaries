@@ -17,7 +17,7 @@ import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, earningsExpr, personPay, peopleSql, continuingRaisesSql } from '../lib/queries';
+import { salaryExpr, personEarnings, personPay, peopleSql, continuingRaisesSql } from '../lib/queries';
 import { usd, num, pct, spanLabel, fmtYears } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
@@ -163,7 +163,7 @@ export default function Compare() {
 
   const { data: sdata, isFetching: sLoading } = useSql<SRow>(
     ['cmp-schools', schoolNames, snap ?? '', metric],
-    `WITH pe AS (${peopleSql({ metric, where: `snapshot_id = ${sqlStr(snap ?? '')} AND school IN (${schoolNames})`, by: ['school'], extra: `sum(${earningsExpr(metric)}) FILTER (WHERE ${expr} > 0) earn` })})
+    `WITH pe AS (${peopleSql({ metric, where: `snapshot_id = ${sqlStr(snap ?? '')} AND school IN (${schoolNames})`, by: ['school'], extra: `${personEarnings(metric)} earn` })})
      SELECT school, count(*) FILTER (WHERE pay > 0) headcount,
         sum(earn) payroll,
         median(pay) FILTER (WHERE pay > 0) med,

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, usd, searchCounts } from './oracle';
+import { oracle, usd, searchCounts, PERSON_PAY } from './oracle';
 import { HOME_STATS, people, places, spots } from './homeDots';
 import { parseColor } from './color';
 
@@ -17,7 +17,7 @@ import { parseColor } from './color';
 async function lone(over: boolean) {
   const [r] = await oracle<{ person_key: string; full_name: string; pay: number }>(
     `WITH names AS (SELECT person_key, lower(any_value(first_name) || ' ' || any_value(last_name)) nm FROM $SAL GROUP BY person_key),
-          now AS (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${HOME_STATS.snapshot_id}' AND salary > 0 GROUP BY person_key),
+          now AS (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${HOME_STATS.snapshot_id}' AND salary > 0 GROUP BY person_key),
           alone AS (SELECT n.person_key, n.nm FROM names n WHERE length(n.nm) > 9 AND n.nm NOT LIKE '%''%'
                      AND (SELECT count(*) FROM names o WHERE o.nm LIKE '%' || n.nm || '%') = 1)
      SELECT a.person_key, a.nm AS full_name, now.pay FROM alone a JOIN now USING (person_key)

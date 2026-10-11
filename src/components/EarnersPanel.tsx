@@ -25,6 +25,7 @@ interface EarnerRow {
   school: string | null; department: string | null; fte: number | null; pay: number;
   /** The full-time rate (salary before FTE), shown for a single part-time appointment. */
   rate: number | null;
+  /** Salaried appointments: an hourly job held beside them is not in the pay (queries `personPay`). */
   appts: number;
 }
 
@@ -62,7 +63,7 @@ export function EarnersPanel() {
         ${mainOf('title')} title, ${mainOf('job_code')} job_code,
         ${mainOf('school')} school, ${mainOf('department')} department,
         sum(fte) FILTER (WHERE salary > 0) fte, ${personPay(metric)} pay,
-        sum(salary) FILTER (WHERE salary > 0) rate, count(*) FILTER (WHERE salary > 0) appts
+        sum(salary) FILTER (WHERE salary > 0 AND fte > 0) rate, count(*) FILTER (WHERE salary > 0 AND fte > 0) appts
      FROM salaries WHERE ${where} AND ${expr} > 0
      GROUP BY person_key ${excludeSql} ORDER BY pay DESC LIMIT ${limit}`,
     !!snap

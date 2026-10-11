@@ -1,5 +1,5 @@
 import { sqlStr, sqlLikeContains } from './duckdb';
-import { ACTUAL_PAY, MAIN_KEY, mainOf } from './queries';
+import { personPay, MAIN_KEY, mainOf } from './queries';
 
 /**
  * Who the landing page's dots are. The page draws one anonymous dot per person from `home-stats.json`'s
@@ -21,7 +21,7 @@ export interface HomePerson {
  * for person, or a mark lands on someone else's dot; an e2e oracle rebuilds the shipped counts from this.
  */
 export function homePeopleSql(snapshot: string): string {
-  return `SELECT person_key, sum(${ACTUAL_PAY}) AS pay, coalesce(${mainOf('employee_category')}, 'Other') AS cat
+  return `SELECT person_key, ${personPay('fte')} AS pay, coalesce(${mainOf('employee_category')}, 'Other') AS cat
     FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0
     GROUP BY person_key`;
 }

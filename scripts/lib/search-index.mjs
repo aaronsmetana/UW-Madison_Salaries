@@ -1,6 +1,6 @@
 import zlib from 'node:zlib';
 import duckdb from 'duckdb';
-import { ACTUAL_PAY_SQL } from './normalize.mjs';
+import { PERSON_PAY_SQL } from './normalize.mjs';
 
 /**
  * Gzipped bytes the search index may cost. The landing page autofocuses its search, so the index
@@ -10,11 +10,10 @@ export const SEARCH_INDEX_BUDGET = 30 * 1024;
 
 /**
  * One row per person per group, at their pay in that group — `peopleSql` in src/lib/queries.ts for
- * the 'fte' metric, where both of personPay's branches reduce to the sum of actual pay over paid
- * appointments.
+ * the 'fte' metric (`PERSON_PAY_SQL`).
  */
 const people = (src, snap, col) =>
-  `SELECT ${col}, person_key, min(title) title, sum(${ACTUAL_PAY_SQL}) FILTER (WHERE salary > 0) pay
+  `SELECT ${col}, person_key, min(title) title, ${PERSON_PAY_SQL} pay
    FROM ${src} WHERE snapshot_id = '${snap}' AND ${col} IS NOT NULL GROUP BY ${col}, person_key`;
 
 /**

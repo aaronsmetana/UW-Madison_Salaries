@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, MAIN, latestSnapshot } from './oracle';
+import { oracle, MAIN, latestSnapshot, PERSON_PAY } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS, frameCount, frameTimes } from './pace';
 import { parseColor, flatten, contrast } from './color';
@@ -68,7 +68,7 @@ test('the landing page draws one square for each person, under the cap and in th
   expect((await placesOf(page, 'pile')).length / 2).toBe(OVER);
   // Everyone paid is a square: the counts are everyone in the snapshot with pay.
   const [r] = await oracle<{ n: number }>(
-    `SELECT count(*) n FROM (SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL WHERE snapshot_id = '${SNAP}' GROUP BY person_key) WHERE pay > 0`,
+    `SELECT count(*) n FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${SNAP}' GROUP BY person_key) WHERE pay > 0`,
   );
   expect(UNDER + OVER).toBe(r.n);
   expect(requests.filter((u) => /\.parquet|duckdb/i.test(u)), 'the landing page fetched the database').toEqual([]);
@@ -272,7 +272,7 @@ test('the loupe names the square under it (3a): who, their title, department and
   // Named as the site names a snapshot: "Mar 2026".
   const prevLabel = new Date(`${prevId}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
   const [prev] = await oracle<{ pay: number | null }>(
-    `SELECT sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${prevId}' AND salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}'`,
+    `SELECT ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${prevId}' AND salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}'`,
   );
   const card = page.locator('.strata-card');
   await expect(card).toHaveAttribute('data-who', who.key);
@@ -289,7 +289,7 @@ test('the loupe names the square under it (3a): who, their title, department and
   await expect(card.locator('.strata-card-change')).toHaveAttribute('data-tone', d == null ? 'new' : Math.abs(d) < 1 ? 'flat' : d > 0 ? 'up' : 'down');
   // Their pay in every snapshot they were paid in, the one shown marked; the first and last snapshots named.
   const [{ n: paidIn }] = await oracle<{ n: number }>(
-    `SELECT count(*) n FROM (SELECT snapshot_id FROM $SAL WHERE salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}' GROUP BY 1 HAVING sum(${PAY}) > 0)`,
+    `SELECT count(*) n FROM (SELECT snapshot_id FROM $SAL WHERE salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}' GROUP BY 1 HAVING ${PERSON_PAY} > 0)`,
   );
   await expect(card.locator('.strata-card-spark')).toHaveAttribute('data-points', String(paidIn), { timeout: 60_000 });
   await expect(card.locator('.strata-card-spark-dot[data-now]')).toHaveCount(1);
@@ -772,7 +772,7 @@ for (const scheme of ['light', 'dark'] as const) {
 test('the tallest column stands at least 70% of the plot, at 1x as at 2x', async ({ browser }) => {
   const snap = await latestSnapshot();
   const [{ peak }] = await oracle<{ peak: number }>(
-    `SELECT max(n) peak FROM (SELECT floor(pay / ${COL}) b, count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL
+    `SELECT max(n) peak FROM (SELECT floor(pay / ${COL}) b, count(*) n FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL
        WHERE snapshot_id = '${snap}' AND salary > 0 GROUP BY 1) WHERE pay > 0 AND pay < 250000 GROUP BY 1)`,
   );
   const share: number[] = [];

@@ -404,7 +404,7 @@ export default function DataHealth() {
           <Text size="sm">A number can be wrong or misleading for many reasons. For example:</Text>
           <Box className="disc-grid">
             <DItem lead="Part-time staff">the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</DItem>
-            <DItem lead="Multiple appointments">a person's pay is blended across roles, so a split or joint appointment may not read as you'd expect.</DItem>
+            <DItem lead="Multiple appointments">a person is named by their main appointment and paid the sum of their salaried ones; an hourly job held beside them is listed, not added, because its hours aren't reported.</DItem>
             <DItem lead="Bonuses & deferred pay">coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</DItem>
             <DItem lead="Changes between snapshots">raises, promotions, leaves, or appointment changes that happen between two reports aren't captured, so true earnings can be higher or lower than any single number shown.</DItem>
             <DItem lead="Gross, not take-home">amounts are gross annualized figures and exclude benefits, taxes, and retirement.</DItem>
@@ -461,9 +461,17 @@ export default function DataHealth() {
             <DefCard icon={<IconStack2 size={ICON.control} />} title="Base pay">Base salary as reported; may exclude supplemental or overload pay.</DefCard>
           </SimpleGrid>
           <Text size="sm">
-            A person holding <b>more than one paid appointment</b> is combined by summing each appointment's
-            actual (rate × FTE) earnings, so split roles aren't double-counted. Unpaid $0 affiliate
-            appointments are excluded from headcount, medians, and totals.
+            A person holding <b>more than one paid appointment</b> is named, placed and compared by their
+            <b> main appointment</b>: the one with the highest FTE (an hourly job, with no FTE, comes after any
+            salaried one). Their pay is the sum of their salaried appointments' actual (rate × FTE) earnings, so
+            split roles aren't double-counted. An hourly job held beside a salaried one is left out of it: its
+            figure is a rate over a full-time year, and the hours worked aren't reported. Someone holding only
+            hourly jobs is counted at the best-paid one's rate. Unpaid $0 affiliate appointments are excluded
+            from headcount, medians, and totals.
+          </Text>
+          <Text size="sm">
+            On a person's page, everyone with the same title is compared at their <b>full-time rate</b> in it, so
+            a part-time appointment isn't read as underpaid; their actual pay is given beside it.
           </Text>
         </Stack>
       </Card>

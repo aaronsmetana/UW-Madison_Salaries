@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { oracle, PAY, searchOrder, searchCounts } from './oracle';
+import { oracle, searchOrder, searchCounts, PERSON_PAY } from './oracle';
 import { HOME_STATS, plotShape, barOverPlot } from './homeDots';
 
 /**
@@ -60,7 +60,7 @@ test('typing lists up to fifty people under the box, in the search’s order, ea
   // The first six marked, who have a dot: the ones paid in the graph's snapshot. The rest are lit, not named.
   const shownKeys = want.slice(0, NAMED);
   const [dotted] = await oracle<{ n: number }>(
-    `SELECT count(*) n FROM (SELECT person_key, sum(${PAY}) pay FROM $SAL WHERE snapshot_id = '${HOME_STATS.snapshot_id}' AND salary > 0
+    `SELECT count(*) n FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${HOME_STATS.snapshot_id}' AND salary > 0
        AND person_key IN (${shownKeys.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ')}) GROUP BY person_key) WHERE pay > 0`,
   );
   expect(dotted.n, 'none of the six has a dot to mark').toBeGreaterThan(0);

@@ -23,8 +23,10 @@ async function appts(key: string): Promise<Appt[]> {
   );
 }
 
-/** How the line under the title says an appointment: an hourly one by its rate, a salaried one by its FTE. */
-const terms = (a: Appt) => (a.fte ? `${Math.round(a.fte * 100)}% FTE` : `hourly, $${(a.salary / 2080).toFixed(2)}/hr`);
+/** How the line under the title says an appointment: an hourly one by its rate, a salaried one by its FTE. An
+ *  hourly job there is never in the person's actual pay: beside a salaried main job, or a better-paid hourly one. */
+const terms = (a: Appt) =>
+  (a.fte ? `${Math.round(a.fte * 100)}% FTE` : `hourly, $${(a.salary / 2080).toFixed(2)}/hr; hours not reported, not in actual pay`);
 
 async function openPerson(page: Page, key: string) {
   await page.goto(`./person/${encodeURIComponent(key)}`);

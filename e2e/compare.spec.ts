@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, latestSnapshot } from './oracle';
+import { oracle, PAY, latestSnapshot, PERSON_PAY } from './oracle';
 
 const AARON = 'aaronsmetana|2014-10-15';
 
@@ -104,7 +104,7 @@ test('the gap chart says "behind" and "top earner", and shades only a person sho
 test("the cadence table counts raises by the site's rules and measures stagnation in months", async ({ page }) => {
   // Aaron's pay by snapshot, from the parquet: the steps, and the longest run of months over which it did not rise.
   const snaps = await oracle<{ id: string; d: string; pay: number }>(
-    `SELECT snapshot_id id, CAST(min(snapshot_date) AS VARCHAR) d, sum(${PAY}) FILTER (WHERE salary > 0) pay FROM $SAL
+    `SELECT snapshot_id id, CAST(min(snapshot_date) AS VARCHAR) d, ${PERSON_PAY} pay FROM $SAL
      WHERE person_key = '${AARON}' AND snapshot_id NOT LIKE '%-pre' GROUP BY 1 ORDER BY d`
   );
   const months = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000 / 30.4375);

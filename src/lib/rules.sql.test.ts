@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, TITLE_RATE, type MainFields } from './queries';
+import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, TITLE_RATE, personPay, personEarnings, personActualPay, personRate, type MainFields } from './queries';
 import { raiseStepsSql } from './raises';
 
 /**
@@ -237,6 +237,62 @@ describe('MAIN_KEY', () => {
         return [k, [m?.job_code, m?.department]];
       }));
       expect(got).toEqual(WANT);
+    }
+  });
+});
+
+describe('personPay', () => {
+  // Each person is one way of counting someone's pay wrong.
+  const P: Row[] = [
+    // A full-time director who also works crowd control by the hour: the directorship, not both.
+    r('p', '2026-09-01', 'brett', 'CP052', 135024),
+    r('p', '2026-09-01', 'brett', 'TE007', 89440, { fte: 0 }),
+    // Two half-time appointments: both, as earned.
+    r('p', '2026-09-01', 'halves', 'J1', 60000, { fte: 0.5 }),
+    r('p', '2026-09-01', 'halves', 'J2', 80000, { fte: 0.5 }),
+    // Two half-time appointments and an hourly job: the two, not the third.
+    r('p', '2026-09-01', 'halvesHourly', 'J1', 60000, { fte: 0.5 }),
+    r('p', '2026-09-01', 'halvesHourly', 'J2', 80000, { fte: 0.5 }),
+    r('p', '2026-09-01', 'halvesHourly', 'H1', 40000, { fte: 0 }),
+    // One half-time appointment: as earned, and its rate under the full-time measure.
+    r('p', '2026-09-01', 'half', 'J1', 80000, { fte: 0.5 }),
+    // Only hourly jobs: the best-paid one's rate, not two full-time years.
+    r('p', '2026-09-01', 'hourly', 'H1', 40000, { fte: 0 }),
+    r('p', '2026-09-01', 'hourly', 'H2', 50000, { fte: 0 }),
+    // An unpaid appointment with an FTE beside an hourly job: the hourly job.
+    r('p', '2026-09-01', 'unpaid', 'J1', 0),
+    r('p', '2026-09-01', 'unpaid', 'H1', 41600, { fte: 0 }),
+    // The source's own FTE-adjusted figure stands, as everywhere.
+    r('p', '2026-09-01', 'adjusted', 'J1', 100000, { fte: 0.5, salary_fte_adjusted: 50001 }),
+  ];
+  const WANT = {
+    brett: { fte: 135024, full: 135024, earn: 135024, rate: 135024 },
+    halves: { fte: 70000, full: 70000, earn: 70000, rate: 70000 },
+    halvesHourly: { fte: 70000, full: 70000, earn: 70000, rate: 70000 },
+    half: { fte: 40000, full: 80000, earn: 40000, rate: 80000 },
+    hourly: { fte: 50000, full: 50000, earn: 50000, rate: 50000 },
+    unpaid: { fte: 41600, full: 41600, earn: 41600, rate: 41600 },
+    adjusted: { fte: 50001, full: 100000, earn: 50000, rate: 100000 },
+  };
+  const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
+
+  it('counts a salaried person by their salaried jobs, and someone hourly by one rate', async () => {
+    await all(`CREATE TABLE paid AS SELECT * FROM salaries WHERE FALSE`);
+    await all(`INSERT INTO paid VALUES ${P.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n')}`);
+    const rows = await all<{ person_key: string; fte: number; ft: number; earn: number }>(
+      `SELECT person_key, ${personPay('fte')} fte, ${personPay('full')} ft, ${personEarnings('full')} earn FROM paid GROUP BY person_key`
+    );
+    const want = Object.fromEntries(Object.entries(WANT).map(([k, w]) => [k, { fte: w.fte, full: w.full, earn: w.earn }]));
+    expect(Object.fromEntries(rows.map((x) => [x.person_key, { fte: x.fte, full: x.ft, earn: x.earn }]))).toEqual(want);
+  });
+
+  it('counts the same client-side, in either row order, with the full-time rate of what it counts', () => {
+    for (const order of [P, [...P].reverse()]) {
+      const got = Object.fromEntries(Object.keys(WANT).map((k) => {
+        const rows = order.filter((x) => x.person_key === k) as unknown as (MainFields & Row)[];
+        return [k, { fte: personActualPay(rows), rate: personRate(rows) }];
+      }));
+      expect(got).toEqual(Object.fromEntries(Object.entries(WANT).map(([k, w]) => [k, { fte: w.fte, rate: w.rate }])));
     }
   });
 });

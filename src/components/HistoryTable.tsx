@@ -5,7 +5,7 @@ import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
-import { actualPay, sameBasisAcross, reportingChange, likeForLike, likeForLikeNote, type ReportingChange } from '../lib/queries';
+import { actualPay, countedAppts, sameBasisAcross, reportingChange, likeForLike, likeForLikeNote, type ReportingChange } from '../lib/queries';
 import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 import { useSummary } from '../lib/hooks';
@@ -143,6 +143,14 @@ export function HistoryTable({ rows, comparisons, csvName }: {
     const m = new Map<string, number>();
     for (const r of rows) m.set(r.snapshot_id, (m.get(r.snapshot_id) ?? 0) + 1);
     return m;
+  }, [rows]);
+
+  // The rows a snapshot's actual pay counts (queries `personPay`): a salaried person's hourly jobs, and an
+  // hourly-only person's lesser-paid ones, are listed at their own rate but left out of it.
+  const counted = useMemo(() => {
+    const by = new Map<string, HistoryRow[]>();
+    for (const r of rows) by.set(r.snapshot_id, [...(by.get(r.snapshot_id) ?? []), r]);
+    return new Set([...by.values()].flatMap((g) => countedAppts(g)));
   }, [rows]);
 
   // History rows ordered chronologically, with pre-TTC above post-TTC for the shared-date pair, and
@@ -442,6 +450,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                 <Table.Td ta="right">
                   {usd(actual)}
                   {!onePay && Math.round(r.salary ?? 0) !== Math.round(actual) && <Text className="print-under" size="xs" c="dimmed">rate {usd(r.salary)}</Text>}
+                  {(r.salary ?? 0) > 0 && !counted.has(r) && <Text className="print-under not-in-pay" size="xs" c="dimmed">not in actual pay</Text>}
                 </Table.Td>
                 <Table.Td ta="right">
                   <RaiseCell raise={raise} note={rateNote} reporting={reporting} compare={compare}>

@@ -222,7 +222,8 @@ describe('computeHomeStats pay_counts.categories: one category per person', () =
       // A tie in FTE and pay goes to the job code that sorts last (the key's last word), never the row order.
       { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'tie', salary: 50000, fte: 1 },
       { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'tie', salary: 50000, fte: 1 },
-      // A salaried job and an hourly one on a higher annualized rate: the salaried job's category.
+      // A salaried job and an hourly one on a higher annualized rate: the salaried job's category, and its pay
+      // alone — the hourly job's rate is not a second salary.
       { ...base, job_code: 'J3', employee_category: 'Student', person_key: 'hr', salary: 90000, fte: 0 },
       { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'hr', salary: 50000, fte: 1 },
       { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 's1', salary: 40000, fte: 1 },
@@ -248,11 +249,12 @@ describe('computeHomeStats pay_counts.categories: one category per person', () =
     expect(cat('Faculty').over).toBe(1);
   });
 
-  it("puts each person's total pay in their category's median", () => {
-    // Staff: s1 at 40,000, s2 at 45,000, hr at 140,000, two at 160,000. Faculty: tie at 100,000, top at 300,000.
-    expect(cat('Staff').median).toBe(92500);
+  it("puts each person's pay in their category's median", () => {
+    // Staff: s1 at 40,000, s2 at 45,000, hr at 50,000 (not 140,000), two at 160,000. Faculty: tie at 100,000,
+    // top at 300,000.
+    expect(cat('Staff').median).toBe(47500);
     expect(cat('Faculty').median).toBe(200000);
-    expect(c.category_medians[0]).toEqual({ category: 'Staff', median: 92500 });
+    expect(c.category_medians[0]).toEqual({ category: 'Staff', median: 47500 });
   });
 });
 

@@ -20,7 +20,7 @@ import XLSX from 'xlsx';
 import duckdb from 'duckdb';
 import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
-  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, latestGradeBands,
+  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, personActualPay, latestGradeBands,
   prepareSheet, mapDepartment, departmentChanges, DEPT_RENAME_SHARE, DEPT_RENAME_MIN, structureChange, releasedWith,
   divisionReorganizations,
 } from './lib/normalize.mjs';
@@ -271,10 +271,10 @@ async function main() {
       const hourly = prepareSheet(res.rows, personOf);
 
       const salaries = [];
-      // Actual pay summed per person — the population the app's medians describe (see peopleSql in
-      // src/lib/queries.ts). `salaries` stays per appointment row: it feeds the data-health page,
-      // which reports on the source's rows.
-      const payByPerson = new Map();
+      // Each person's appointments, for their actual pay (`personActualPay`, the rule peopleSql in
+      // src/lib/queries.ts counts by) — the population the app's medians describe. `salaries` stays per
+      // appointment row: it feeds the data-health page, which reports on the source's rows.
+      const rowsByPerson = new Map();
       const people = new Set();
       const paidPeople = new Set(); // people with ≥1 positive-salary appointment = the employee headcount
       let zeroNull = 0;
@@ -288,7 +288,7 @@ async function main() {
         else {
           salaries.push(actualPay(row));
           paidPeople.add(pkey);
-          payByPerson.set(pkey, (payByPerson.get(pkey) ?? 0) + actualPay(row));
+          rowsByPerson.set(pkey, [...(rowsByPerson.get(pkey) ?? []), row]);
         }
         people.add(pkey);
         allRows.push({
@@ -307,7 +307,7 @@ async function main() {
       }
 
       const med = median(salaries);
-      const medPeople = median([...payByPerson.values()].filter((v) => v > 0));
+      const medPeople = median([...rowsByPerson.values()].map(personActualPay).filter((v) => v > 0));
       const min = salaries.length ? Math.min(...salaries) : null;
       const max = salaries.length ? Math.max(...salaries) : null;
       if (max != null && max > 5_000_000) messages.push(`max salary ${max} looks implausible`);

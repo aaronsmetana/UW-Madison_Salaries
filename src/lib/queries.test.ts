@@ -15,11 +15,13 @@ describe('salary expressions', () => {
     expect(earningsExpr('fte')).not.toMatch(/\)\s*\*\s*COALESCE\(NULLIF\(fte/); // not double-prorated
   });
 
-  it('personPay blends only across >1 positive-salary appointment', () => {
+  // What it counts is held by rules.sql.test.ts, person by person; this holds the shape.
+  it('personPay blends only across >1 salaried appointment, and falls back to one hourly rate', () => {
     const p = personPay('full');
-    expect(p).toContain('count(*) FILTER (WHERE salary > 0) > 1');
-    expect(p).toContain(`sum(salary * ${FTE_MULT}) FILTER (WHERE salary > 0)`);
-    expect(p).toContain('any_value(salary) FILTER (WHERE salary > 0)');
+    expect(p).toContain('count(*) FILTER (WHERE salary > 0 AND fte > 0) > 1');
+    expect(p).toContain(`sum(salary * ${FTE_MULT}) FILTER (WHERE salary > 0 AND fte > 0)`);
+    expect(p).toContain('any_value(salary) FILTER (WHERE salary > 0 AND fte > 0)');
+    expect(p).toContain('ELSE max(salary) FILTER (WHERE salary > 0) END');
   });
 
   // Regression guard. `fte = 0` marks an hourly appointment with no recorded appointment percentage,
