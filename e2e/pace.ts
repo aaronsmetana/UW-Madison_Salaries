@@ -31,3 +31,22 @@ export async function atCiPace(page: Page) {
  * tail.spec, which then failed the next deploy on 8.7 — the same fault, found one push later.
  */
 export const FRAME_MS = process.env.CI ? 12 : 8;
+
+/** The landing field's frame log (StrataField `measure`): each moving frame's work, ms — `strata`, the squares; `lens`,
+ *  the loupe — kept in a ring on the page rather than as performance entries, which made something every frame. */
+type FrameWin = { __strataFrames?: Record<'strata' | 'lens', { n: number; d: Float64Array }> };
+/** How many frames of a kind since the page opened (or `clearFrames`). */
+export const frameCount = (page: Page, kind: 'strata' | 'lens' = 'strata') =>
+  page.evaluate((k) => (window as unknown as FrameWin).__strataFrames?.[k].n ?? 0, kind);
+/** Their times, ms, sorted: those since frame `from` (the last 4,096 at most). */
+export const frameTimes = (page: Page, kind: 'strata' | 'lens' = 'strata', from = 0) =>
+  page.evaluate(([k, from]) => {
+    const f = (window as unknown as FrameWin).__strataFrames?.[k];
+    if (!f) return [];
+    const out: number[] = [];
+    for (let i = Math.max(from, f.n - f.d.length); i < f.n; i++) out.push(f.d[i % f.d.length]);
+    return out.sort((a, b) => a - b);
+  }, [kind, from] as const);
+/** Counting afresh from here. */
+export const clearFrames = (page: Page, kind: 'strata' | 'lens' = 'strata') =>
+  page.evaluate((k) => { const f = (window as unknown as FrameWin).__strataFrames?.[k]; if (f) f.n = 0; }, kind);

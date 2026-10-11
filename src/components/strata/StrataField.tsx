@@ -29,17 +29,19 @@ const LIT_MIN = 3;
 
 /** A square's device pixels, worked out afresh for each square drawn: one, kept, rather than one a square. */
 const BOX: Px = { X: 0, Y: 0, w: 0, h: 0 };
-/** Each frame's cost goes on the page's performance timeline for the frame-budget guards; past this many of a
- *  name, the oldest go, so a long play never piles them up. */
-const MEASURES_KEPT = 4000;
-const measured = new Map<string, number>();
-function measure(name: string, start: number) {
-  try {
-    performance.measure(name, { start, end: performance.now() });
-    const k = (measured.get(name) ?? 0) + 1;
-    if (k > MEASURES_KEPT) { performance.clearMeasures(name); measured.set(name, 0); } else measured.set(name, k);
-  } catch { /* unsupported */ }
+/** Each moving frame's work, ms, for the frame-budget guards: written into a ring kept from the start (3a §13:
+ *  nothing made per frame), the last FRAME_LOG of each kind, and how many in all (`n`), on `window.__strataFrames`. */
+const FRAME_LOG = 4096;
+interface FrameLog { n: number; d: Float64Array }
+const frameLog: Record<'strata' | 'lens', FrameLog> = { strata: { n: 0, d: new Float64Array(FRAME_LOG) }, lens: { n: 0, d: new Float64Array(FRAME_LOG) } };
+if (typeof window !== 'undefined') (window as unknown as { __strataFrames?: typeof frameLog }).__strataFrames = frameLog;
+function measure(kind: 'strata' | 'lens', start: number) {
+  const f = frameLog[kind];
+  f.d[f.n % FRAME_LOG] = performance.now() - start;
+  f.n++;
 }
+/** The loupe's magnification, said under it. */
+const LOUPE_LABEL = { hist: `${LOUPE_ZOOM.hist}×`, floors: `${LOUPE_ZOOM.floors}×` };
 
 /** Unrolled, how far inside the right edge the top salary stands, CSS px. */
 const TOP_INSET = 8;
@@ -274,6 +276,8 @@ function packed(css: string): number {
 interface Inks {
   kinds: string[]; dim: string; match: string; up: string; down: string; joined: string; neutral: string; ink: string; mute: string; card: string; lensBg: string; lensRim: string; lensShadow: string;
   inverseBg: string; inverseInk: string; inverseEdge: string; font: string;
+  /** The follow label's and the loupe's lettering, made once a scheme rather than each frame. */
+  labelFont: string; lensFont: string;
 }
 function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
   const probe = document.createElement('span');
@@ -286,8 +290,10 @@ function readInks(el: HTMLElement, kinds: readonly string[]): Inks {
     mute: read('var(--mantine-color-dimmed)'),
     card: read('var(--surface)'), lensBg: read('var(--lens-bg)'), lensRim: read('var(--lens-rim)'), lensShadow: read('var(--lens-shadow)'),
     inverseBg: read('var(--inverse-bg)'), inverseInk: read('var(--inverse-ink)'), inverseEdge: read('var(--inverse-edge)'),
-    font: getComputedStyle(el).fontFamily,
+    font: getComputedStyle(el).fontFamily, labelFont: '', lensFont: '',
   };
+  out.labelFont = `600 12px ${out.font}`;
+  out.lensFont = `500 11px ${out.font}`;
   probe.remove();
   return out;
 }
@@ -361,6 +367,8 @@ const backOut = (p: number) => (p <= 0 ? 0 : p >= 1 ? 1 : 1 + 2.4 * (p - 1) ** 3
 /** A packed colour at alpha `a`: written, not blended, so the canvas shows it that faint over whatever is under. */
 const withAlpha = (c: number, a: number) => ((c & 0xffffff) | (Math.round(255 * Math.min(1, Math.max(0, a))) << 24)) >>> 0;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+/** A step's colours, packed: the neutral, each type to it, and it to up, down and joined (`shades`). */
+interface Pal { N: number; toType: Uint32Array[]; toUp: Uint32Array; toDown: Uint32Array; toNew: Uint32Array }
 /** Under this long, a step's people all move together (Fast, and the quick catch-up steps): no wave, no arcs. */
 const TOGETHER_MS = 400;
 /** A flow step that sets off within this long of the last one's end runs on from it. */
@@ -449,7 +457,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   const inks = useRef<Inks | null>(null);
   const [scheme, setScheme] = useState(0);
   const lens = useRef({ x: 0, y: 0, r: 0 });
-  const picked = useRef<string>('');
+  const picked = useRef({ f: 0, i: -1 });
   const props = useRef({ lensAt, lensFrom, pointer, lensR, onPick, onMoving, onLanded, onPhase });
   props.current = { lensAt, lensFrom, pointer, lensR, onPick, onMoving, onLanded, onPhase };
   const movingRef = useRef(false);
@@ -459,8 +467,9 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     k: new Uint8Array(0), x: new Float32Array(0), y: new Float32Array(0),
     grow(size: number) { this.k = new Uint8Array(size); this.x = new Float32Array(size); this.y = new Float32Array(size); },
   });
-  // Each ink, packed, for a step's frames under a filter: filled in place each frame.
+  // Each ink, packed, filled in place each frame; and one colour worked out for one square (a step's, under a filter).
   const litBuf = useRef(new Uint32Array(0));
+  const oneBuf = useRef(new Uint32Array(1));
 
   // Each square's ink: its kind's, the search's, or the faded one. Painted in that order, so a filter's
   // people lie over the faded ones they have left.
@@ -492,7 +501,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     return () => obs.disconnect();
   }, []);
   // A step's colours (3a), packed: each type to the neutral, and the neutral to up, down and joined.
-  const pal = useRef<{ N: number; toType: Uint32Array[]; toUp: Uint32Array; toDown: Uint32Array; toNew: Uint32Array } | null>(null);
+  const pal = useRef<Pal | null>(null);
   useLayoutEffect(() => {
     if (!wrapRef.current) return;
     const t = (inks.current = readInks(wrapRef.current, kindInks)), N = packed(t.neutral);
@@ -502,6 +511,62 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   const ink = (k: number) => {
     const t = inks.current!;
     return k < tint.C ? t.kinds[k] : k === tint.C ? t.dim : t.match;
+  };
+  // The drawing's pieces (3a §13: nothing made new in a frame): made once a render, reading the frame's canvas
+  // and buffer from `dc`.
+  const dc = useRef<{ buf: Uint32Array; cw: number; ch: number }>({ buf: new Uint32Array(0), cw: 0, ch: 0 });
+  // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a square of
+  // one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
+  const leastOf = (k: number) => (dim && k !== tint.C ? LIT_MIN : 1);
+  // One square, its place `XS[i], YS[i]`, colour `C[ci]` and scale `S[si]` (or 1) read here: a call passes arrays and
+  // small whole numbers only, which an engine never boxes — a place's fractions and a packed colour (past the small
+  // integers) passed as numbers, twenty thousand times a frame, each made a heap number.
+  const putSq = (XS: Float64Array, YS: Float64Array, i: number, C: Uint32Array, ci: number, least: number, S: Float32Array | null, si: number) => {
+    const { buf, cw, ch } = dc.current;
+    const c = C[ci], sc = S ? S[si] : 1;
+    squarePixels(XS[i], YS[i], grid, dpr, BOX);
+    let X = BOX.X, Y = BOX.Y, w = BOX.w, h = BOX.h;
+    if (sc !== 1) { const w2 = Math.max(1, Math.round(w * sc)), h2 = Math.max(1, Math.round(h * sc)); X += (w - w2) >> 1; Y += (h - h2) >> 1; w = w2; h = h2; }
+    if (w < least) { X -= (least - w) >> 1; w = least; }
+    if (h < least) { Y -= (least - h) >> 1; h = least; }
+    // Clipped to the canvas, not clamped to it: a square above the plot (one arcing high) is not drawn at all,
+    // rather than along its top edge.
+    if (X < 0) { w += X; X = 0; }
+    if (Y < 0) { h += Y; Y = 0; }
+    w = Math.min(w, cw - X);
+    h = Math.min(h, ch - Y);
+    if (w <= 0 || h <= 0) return;
+    for (let r = 0; r < h; r++) { const o = (Y + r) * cw + X; for (let q = 0; q < w; q++) buf[o + q] = c; }
+  };
+  // A step's squares in one of its passes: 0 who stayed (and left), 1 who joined, 2 who moved up or down.
+  const paintPass = (st: Stage, lit: Uint32Array, pass: 0 | 1 | 2) => {
+    const K = st.step.kind, { mx, my, px, py } = cur.current;
+    const one = oneBuf.current;
+    for (let i = 0; i < K.main.length; i++) {
+      const k = K.main[i];
+      if (pass === 0 ? k === UP || k === DOWN || k === NEW : pass === 1 ? k !== NEW : k !== UP && k !== DOWN) continue;
+      if (!(st.colM[i] >>> 24)) continue;
+      if (dim) { one[0] = withAlpha(lit[tint.main[i]], (st.colM[i] >>> 24) / 255); putSq(mx, my, i, one, 0, leastOf(tint.main[i]), st.scM, i); }
+      else putSq(mx, my, i, st.colM, i, 1, st.scM, i);
+    }
+    for (let j = 0; j < K.pile.length; j++) {
+      const k = K.pile[j];
+      if (pass === 0 ? k === UP || k === DOWN || k === NEW : pass === 1 ? k !== NEW : k !== UP && k !== DOWN) continue;
+      if (!(st.colP[j] >>> 24)) continue;
+      if (dim) { one[0] = withAlpha(lit[tint.pile[j]], (st.colP[j] >>> 24) / 255); putSq(px, py, j, one, 0, leastOf(tint.pile[j]), st.scP, j); }
+      else putSq(px, py, j, st.colP, j, 1, st.scP, j);
+    }
+  };
+  // The search's people: a white square ringed in ink, with their type's colour at its heart.
+  const drawMark = (ctx: CanvasRenderingContext2D, t: Inks, x: number, y: number, kind: number, size: number) => {
+    const cx = markAt(x + grid.sqW / 2, dpr), cy = markAt(y + grid.sq / 2, dpr), h = size / 2;
+    ctx.fillStyle = t.card;
+    ctx.fillRect(cx - h, cy - h, size, size);
+    ctx.lineWidth = 1.75;
+    ctx.strokeStyle = t.ink;
+    ctx.strokeRect(cx - h, cy - h, size, size);
+    ctx.fillStyle = t.kinds[kind] ?? t.ink;
+    ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
   };
   const drawBase = () => {
     const cv = baseRef.current, t = inks.current;
@@ -519,80 +584,52 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
     const { img, buf } = px32.current;
     buf.fill(0);
-    // The faded first, then each kind, then the search's own, then a step's movers on top of all.
-    const order = tint.order;
-    const least = (k: number) => (dim && k !== tint.C ? LIT_MIN : 1);
-    const box = BOX;
-    // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a
-    // square of one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
-    const put = (x: number, y: number, c: number, least: number, sc = 1) => {
-      let { X, Y, w, h } = squarePixels(x, y, grid, dpr, box);
-      if (sc !== 1) { const w2 = Math.max(1, Math.round(w * sc)), h2 = Math.max(1, Math.round(h * sc)); X += (w - w2) >> 1; Y += (h - h2) >> 1; w = w2; h = h2; }
-      if (w < least) { X -= (least - w) >> 1; w = least; }
-      if (h < least) { Y -= (least - h) >> 1; h = least; }
-      // Clipped to the canvas, not clamped to it: a square above the plot (one arcing high) is not drawn at
-      // all, rather than along its top edge.
-      if (X < 0) { w += X; X = 0; }
-      if (Y < 0) { h += Y; Y = 0; }
-      w = Math.min(w, cw - X);
-      h = Math.min(h, ch - Y);
-      if (w <= 0 || h <= 0) return;
-      for (let r = 0; r < h; r++) { const o = (Y + r) * cw + X; for (let q = 0; q < w; q++) buf[o + q] = c; }
-    };
+    const D = dc.current;
+    D.buf = buf;
+    D.cw = cw;
+    D.ch = ch;
     const mv = move.current, st = mv?.stage;
     if (st) {
       // A timeline step (3a): who left, fading; then who stayed, who joined, the movers' trails, and the movers on
       // top. Under a filter its own keep their ink and the rest the faded one, wherever the step has them.
-      for (let g = 0; g < st.gx.length; g++) if (st.gcol[g] >>> 24) put(st.gx[g], st.gy[g], st.gcol[g], 1, st.gsc[g]);
-      const K = st.step.kind;
+      for (let g = 0; g < st.gx.length; g++) if (st.gcol[g] >>> 24) putSq(st.gx, st.gy, g, st.gcol, g, 1, st.gsc, g);
+      const order = tint.order;
       if (litBuf.current.length !== order.length) litBuf.current = new Uint32Array(order.length);
       const lit = litBuf.current;
       for (let k = 0; k < order.length; k++) lit[k] = packed(ink(k));
-      const paint = (pass: (k: number) => boolean) => {
-        for (let i = 0; i < n; i++) {
-          if (!pass(K.main[i])) continue;
-          const c = dim ? withAlpha(lit[tint.main[i]], (st.colM[i] >>> 24) / 255) : st.colM[i];
-          if (c >>> 24) put(mx[i], my[i], c, least(tint.main[i]), st.scM[i]);
-        }
-        for (let j = 0; j < m; j++) {
-          if (!pass(K.pile[j])) continue;
-          const c = dim ? withAlpha(lit[tint.pile[j]], (st.colP[j] >>> 24) / 255) : st.colP[j];
-          if (c >>> 24) put(px[j], py[j], c, least(tint.pile[j]), st.scP[j]);
-        }
-      };
-      paint((k) => k !== UP && k !== DOWN && k !== NEW);
-      paint((k) => k === NEW);
-      for (let q = 0; q < st.tn; q++) put(st.tx[q], st.ty[q], st.tcol[q], 1, st.tsc[q]);
-      paint((k) => k === UP || k === DOWN);
+      paintPass(st, lit, 0);
+      paintPass(st, lit, 1);
+      for (let q = 0; q < st.tn; q++) putSq(st.tx, st.ty, q, st.tcol, q, 1, st.tsc, q);
+      paintPass(st, lit, 2);
     } else {
-      for (const k of order) {
-        const c = packed(ink(k)), l = least(k);
+      // The faded first, then each kind, then the search's own.
+      const order = tint.order;
+      if (litBuf.current.length !== order.length) litBuf.current = new Uint32Array(order.length);
+      const lit = litBuf.current;
+      for (let k = 0; k < order.length; k++) lit[k] = packed(ink(k));
+      for (let o = 0; o < order.length; o++) {
+        const k = order[o], l = leastOf(k);
         const a = tint.mainBy[k], b = tint.pileBy[k];
-        for (let q = 0; q < a.length; q++) put(mx[a[q]], my[a[q]], c, l);
-        for (let q = 0; q < b.length; q++) put(px[b[q]], py[b[q]], c, l);
+        for (let q = 0; q < a.length; q++) putSq(mx, my, a[q], lit, k, l, null, 0);
+        for (let q = 0; q < b.length; q++) putSq(px, py, b[q], lit, k, l, null, 0);
       }
     }
     ctx.putImageData(img, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // The search's people: a white square ringed in ink, with their type's colour at its heart.
-    const mark = (x: number, y: number, kind: number, size: number) => {
-      const cx = markAt(x + grid.sqW / 2, dpr), cy = markAt(y + grid.sq / 2, dpr), h = size / 2;
-      ctx.fillStyle = t.card;
-      ctx.fillRect(cx - h, cy - h, size, size);
-      ctx.lineWidth = 1.75;
-      ctx.strokeStyle = t.ink;
-      ctx.strokeRect(cx - h, cy - h, size, size);
-      ctx.fillStyle = t.kinds[kind] ?? t.ink;
-      ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
-    };
-    for (const i of marks.main) if (i < n) mark(mx[i], my[i], strata.kind[i], big?.field === 'main' && big.index === i ? 13 : 9);
-    for (const j of marks.pile) if (j < m) mark(px[j], py[j], strata.pileKind[j], big?.field === 'pile' && big.index === j ? 13 : 9);
+    for (let q = 0; q < marks.main.length; q++) {
+      const i = marks.main[q];
+      if (i < n) drawMark(ctx, t, mx[i], my[i], strata.kind[i], big?.field === 'main' && big.index === i ? 13 : 9);
+    }
+    for (let q = 0; q < marks.pile.length; q++) {
+      const j = marks.pile[q];
+      if (j < m) drawMark(ctx, t, px[j], py[j], strata.pileKind[j], big?.field === 'pile' && big.index === j ? 13 : 9);
+    }
     // The person followed: their mark, a leader and their label, on top of everything.
     const f = follow;
     if (f && f.index < (f.field === 'main' ? n : m)) {
       const X = f.field === 'main' ? mx : px, Y = f.field === 'main' ? my : py;
       const x0 = X[f.index], y0 = Y[f.index];
-      mark(x0, y0, f.field === 'main' ? strata.kind[f.index] : strata.pileKind[f.index], 11);
+      drawMark(ctx, t, x0, y0, f.field === 'main' ? strata.kind[f.index] : strata.pileKind[f.index], 11);
       const cx = x0 + grid.sqW / 2, cy = y0 + grid.sq / 2;
       // How far along their own move they are: the pay counts with them.
       const mv = move.current, st = mv?.stage;
@@ -605,7 +642,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
         e = easeInOut(Math.min(1, Math.max(0, (performance.now() - mv.start - wait) / mv.ms)));
       }
       const text = followText(f, e);
-      ctx.font = `600 12px ${t.font}`;
+      ctx.font = t.labelFont;
       const w = Math.ceil(ctx.measureText(text).width) + 16, h = 22;
       let lx = cx + 12, ly = cy - h - 14;
       if (lx + w > W - 2) lx = cx - 12 - w;
@@ -628,19 +665,45 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
   };
 
+  // The loupe's square named this frame, and the frame's terms its squares are seen by: kept from frame to frame,
+  // filled in each (3a §13). The pick passed on is a copy (`tick`).
+  const lensHit = useRef<LensHit>({ field: 'main', index: 0, x: 0, y: 0, s: 0 });
+  const ls = useRef({
+    cx: 0, cy: 0, sx: 0, sy: 0, z: 1, w: 0, h: 0, R: 0, hw: 0, hh: 0, qx: 0, qy: 0, ptr: false, nameMain: true, namePile: false,
+    count: 0, nearPile: false, nearIndex: -1, nearX: 0, nearY: 0, nearD: Infinity, fx: NaN, fy: NaN, nameableHere: 0,
+  });
   // Magnified: who stands at a point, by the lattice (columns from the axis, rows from the baseline) — a faded square,
-  // under a filter, is no one to name.
-  const squareUnder = (x: number, y: number): Spot | null => {
+  // under a filter, is no one to name. Into `lensHit`; false where no one is.
+  const squareUnder = (x: number, y: number): boolean => {
     const L = layout, g = grid, wx = x + L.ox, c = Math.floor(wx / L.colW);
-    if (c < 0 || c > COLS) return null;
+    if (c < 0 || c > COLS) return false;
     const col = Math.floor((wx - colX(c, L.colW, g, dpr)) / g.pitch), row = Math.floor((L.base - y) / g.rowPitch);
-    if (col < 0 || col >= g.per || row < 0) return null;
+    if (col < 0 || col >= g.per || row < 0) return false;
     const slot = row * g.per + col;
     const st = c === COLS ? L.pile : L.main, k = c === COLS ? 0 : c;
-    if (slot >= st.start[k + 1] - st.start[k]) return null;
-    const index = st.order[st.start[k] + slot], field: Field = c === COLS ? 'pile' : 'main';
-    if (dim && (field === 'main' ? tint.main : tint.pile)[index] === tint.C) return null;
-    return { field, index };
+    if (slot >= st.start[k + 1] - st.start[k]) return false;
+    const index = st.order[st.start[k] + slot], pile = c === COLS;
+    if (dim && (pile ? tint.pile : tint.main)[index] === tint.C) return false;
+    lensHit.current.field = pile ? 'pile' : 'main';
+    lensHit.current.index = index;
+    return true;
+  };
+  // One square as the loupe sees it: drawn where it falls inside the glass, and the nearest it can name kept.
+  const lensSee = (pile: boolean, i: number) => {
+    const S = ls.current, B = lensBuf.current, { mx, my, px, py } = cur.current;
+    const X = pile ? px : mx, Y = pile ? py : my, k = (pile ? tint.pile : tint.main)[i];
+    const x = S.cx + (X[i] - S.sx) * S.z, y = S.cy + (Y[i] - S.sy) * S.z;
+    if (x + S.w < S.cx - S.R || x > S.cx + S.R || y + S.h < S.cy - S.R || y > S.cy + S.R) return;
+    B.k[S.count] = k;
+    B.x[S.count] = x;
+    B.y[S.count] = y;
+    S.count++;
+    if (follow && (follow.field === 'pile') === pile && follow.index === i) { S.fx = x + S.w / 2; S.fy = y + S.h / 2; }
+    if (S.ptr && (pile ? S.namePile : S.nameMain) && !(dim && k === tint.C)) {
+      S.nameableHere++;
+      const d = Math.hypot(X[i] + S.hw - S.qx, Y[i] + S.hh - S.qy);
+      if (d < S.nearD) { S.nearD = d; S.nearPile = pile; S.nearIndex = i; S.nearX = x + S.w / 2; S.nearY = y + S.h / 2; }
+    }
   };
   const drawLens = (): LensHit | null => {
     const cv = lensRef.current, t = inks.current;
@@ -649,20 +712,23 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     if (!ctx) return null;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
+    const hit = lensHit.current;
     // Magnified, no glass: the square under the pointer is ringed where it stands (3a).
     if (layout.view === 'magnify') {
       const ptr = props.current.pointer;
-      const hit = ptr && props.current.lensAt ? squareUnder(ptr.x, ptr.y) : null;
-      if (!hit) return null;
-      const { mx, my, px, py } = cur.current;
-      const x = (hit.field === 'main' ? mx : px)[hit.index] + grid.sqW / 2, y = (hit.field === 'main' ? my : py)[hit.index] + grid.sq / 2;
+      if (!ptr || !props.current.lensAt || !squareUnder(ptr.x, ptr.y)) return null;
+      const { mx, my, px, py } = cur.current, pile = hit.field === 'pile';
+      const x = (pile ? px : mx)[hit.index] + grid.sqW / 2, y = (pile ? py : my)[hit.index] + grid.sq / 2;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = t.ink;
       ctx.beginPath();
       ctx.arc(x, y, grid.sq / 2 + 3, 0, Math.PI * 2);
       ctx.stroke();
-      return { ...hit, x, y, s: Math.max(grid.sq, PICK_MIN) };
+      hit.x = x;
+      hit.y = y;
+      hit.s = Math.max(grid.sq, PICK_MIN);
+      return hit;
     }
     const { x: cx, y: cy, r: R } = lens.current;
     if (R < 0.5) return null;
@@ -688,60 +754,52 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.clip();
-    const { mx, my, px, py } = cur.current;
-    const hw = grid.sqW / 2, hh = grid.sq / 2;
+    const { mx, my } = cur.current;
     const ptr = props.current.pointer;
-    const tail = layout.tail;
+    const tail = layout.tail, floors = layout.view === 'floors';
     // A plain loupe (3a): what is under it, LOUPE_ZOOM times as large — 4× over the histogram, 2.5× over the floors.
-    const z = layout.view === 'floors' ? LOUPE_ZOOM.floors : LOUPE_ZOOM.hist;
+    const z = floors ? LOUPE_ZOOM.floors : LOUPE_ZOOM.hist;
     const reachField = R / z + Math.max(grid.sq, grid.sqW);
     // Who could be under it: the columns within its reach (squeezed, while the pile is unrolled), and the pile
     // where it overlaps; in the floors, whoever is within its square.
     const cw = layout.colW * (tail ? tail.squeeze : 1);
     const c0 = Math.max(0, Math.floor((sx - reachField) / cw) - 1), c1 = Math.min(COLS - 1, Math.ceil((sx + reachField) / cw) + 1);
-    // Who it can name: the graph's people, or the tail's once the pile is unrolled (the pile itself is the way
-    // to unroll it, and the squeezed graph the way to fold it back); with a filter on, only its own — the faded
-    // ones are the rest, not who is being read.
-    const nameable = (field: Field, k: number) => (layout.view === 'floors' || (field === 'pile') === !!tail) && !(dim && k === tint.C);
-    // The pointer's place in the field: what the loupe shows under it.
-    const qx = ptr ? sx + (ptr.x - cx) / z : 0, qy = ptr ? sy + (ptr.y - cy) / z : 0;
-    // Each square it shows, by ink, into buffers kept from frame to frame (3a §13: nothing made new per square
-    // per frame); the nearest it can name, as plain numbers.
-    const w = grid.sqW * z, h = grid.sq * z;
+    // Each square it shows, by ink, into buffers kept from frame to frame; the nearest it can name — the graph's
+    // people, or the tail's once the pile is unrolled (the pile itself is the way to unroll it, and the squeezed
+    // graph the way to fold it back), with a filter on only its own — as plain numbers.
     const B = lensBuf.current;
     if (B.k.length < n + m) B.grow(n + m);
-    let count = 0, nearField: Field | null = null, nearIndex = -1, nearX = 0, nearY = 0, nearD = Infinity, fx = NaN, fy = NaN, nameableHere = 0;
-    const consider = (field: Field, i: number) => {
-      const X = field === 'main' ? mx : px, Y = field === 'main' ? my : py, k = (field === 'main' ? tint.main : tint.pile)[i];
-      const x = cx + (X[i] - sx) * z, y = cy + (Y[i] - sy) * z;
-      if (x + w < cx - R || x > cx + R || y + h < cy - R || y > cy + R) return;
-      B.k[count] = k;
-      B.x[count] = x;
-      B.y[count] = y;
-      count++;
-      if (follow && follow.field === field && follow.index === i) { fx = x + w / 2; fy = y + h / 2; }
-      if (ptr && nameable(field, k)) {
-        nameableHere++;
-        const d = Math.hypot(X[i] + hw - qx, Y[i] + hh - qy);
-        if (d < nearD) { nearD = d; nearField = field; nearIndex = i; nearX = x + w / 2; nearY = y + h / 2; }
-      }
-    };
-    if (layout.view === 'floors') {
-      for (let i = 0; i < n; i++) if (Math.abs(mx[i] - sx) <= reachField && Math.abs(my[i] - sy) <= reachField) consider('main', i);
-      for (let j = 0; j < m; j++) if (Math.abs(px[j] - sx) <= reachField && Math.abs(py[j] - sy) <= reachField) consider('pile', j);
+    const S = ls.current, w = grid.sqW * z, h = grid.sq * z;
+    S.cx = cx; S.cy = cy; S.sx = sx; S.sy = sy; S.z = z; S.w = w; S.h = h; S.R = R; S.hw = grid.sqW / 2; S.hh = grid.sq / 2;
+    // The pointer's place in the field: what the loupe shows under it.
+    S.ptr = !!ptr; S.qx = ptr ? sx + (ptr.x - cx) / z : 0; S.qy = ptr ? sy + (ptr.y - cy) / z : 0;
+    S.nameMain = floors || !tail; S.namePile = floors || !!tail;
+    S.count = 0; S.nearPile = false; S.nearIndex = -1; S.nearD = Infinity; S.fx = NaN; S.fy = NaN; S.nameableHere = 0;
+    if (floors) {
+      const { px, py } = cur.current;
+      for (let i = 0; i < n; i++) if (Math.abs(mx[i] - sx) <= reachField && Math.abs(my[i] - sy) <= reachField) lensSee(false, i);
+      for (let j = 0; j < m; j++) if (Math.abs(px[j] - sx) <= reachField && Math.abs(py[j] - sy) <= reachField) lensSee(true, j);
     } else {
-      for (let c = c0; c <= c1; c++) for (let q = layout.main.start[c]; q < layout.main.start[c + 1]; q++) consider('main', layout.main.order[q]);
-      if (m && (tail || sx + reachField >= layout.pileLeft)) for (let j = 0; j < m; j++) consider('pile', j);
+      for (let c = c0; c <= c1; c++) for (let q = layout.main.start[c]; q < layout.main.start[c + 1]; q++) lensSee(false, layout.main.order[q]);
+      if (m && (tail || sx + reachField >= layout.pileLeft)) for (let j = 0; j < m; j++) lensSee(true, j);
     }
     // Named: the nearest within a reach that widens as the people the loupe could name thin out (lib/strata
     // `snapReach`) — the one under the pointer where they crowd, across the loupe where a filter leaves a few.
-    const reach = snapReach(nameableHere, R / z, Math.max(grid.sq, grid.sqW) / 2 + 0.75);
-    const best: LensHit | null = nearField && nearD <= reach ? { field: nearField, index: nearIndex, x: nearX, y: nearY, s: Math.max(h, PICK_MIN) } : null;
-    const followed = Number.isNaN(fx) ? null : { x: fx, y: fy };
-    for (const k of tint.order) {
+    const reach = snapReach(S.nameableHere, R / z, Math.max(grid.sq, grid.sqW) / 2 + 0.75);
+    const named = S.nearIndex >= 0 && S.nearD <= reach;
+    if (named) {
+      hit.field = S.nearPile ? 'pile' : 'main';
+      hit.index = S.nearIndex;
+      hit.x = S.nearX;
+      hit.y = S.nearY;
+      hit.s = Math.max(h, PICK_MIN);
+    }
+    const order = tint.order;
+    for (let o = 0; o < order.length; o++) {
+      const k = order[o];
       ctx.fillStyle = ink(k);
       ctx.beginPath();
-      for (let d = 0; d < count; d++) if (B.k[d] === k) ctx.rect(B.x[d], B.y[d], w, h);
+      for (let d = 0; d < S.count; d++) if (B.k[d] === k) ctx.rect(B.x[d], B.y[d], w, h);
       ctx.fill();
     }
     ctx.restore();
@@ -752,45 +810,107 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.stroke();
     // The person followed, outlined where the loupe shows them.
-    if (followed) {
+    if (!Number.isNaN(S.fx)) {
       const o = Math.max(h, 4) / 2 + 1.5;
       ctx.lineWidth = 1.25;
       ctx.strokeStyle = t.ink;
-      ctx.strokeRect(followed.x - o, followed.y - o, 2 * o, 2 * o);
+      ctx.strokeRect(S.fx - o, S.fy - o, 2 * o, 2 * o);
     }
     // The square it names, outlined — reached for from across the loupe, a faint line from the centre says which.
-    if (best) {
-      const far = Math.hypot(best.x - cx, best.y - cy);
-      const o = best.s / 2 + 3;
+    if (named) {
+      const far = Math.hypot(hit.x - cx, hit.y - cy);
+      const o = hit.s / 2 + 3;
       if (far > R * 0.3) {
         ctx.globalAlpha = 0.5;
         ctx.lineWidth = 1;
         ctx.strokeStyle = t.ink;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.lineTo(best.x - ((best.x - cx) / far) * (o + 1), best.y - ((best.y - cy) / far) * (o + 1));
+        ctx.lineTo(hit.x - ((hit.x - cx) / far) * (o + 1), hit.y - ((hit.y - cy) / far) * (o + 1));
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
-      if (best.s > h) {
-        ctx.fillStyle = ink((best.field === 'main' ? tint.main : tint.pile)[best.index]);
-        ctx.fillRect(best.x - best.s / 2, best.y - best.s / 2, best.s, best.s);
+      if (hit.s > h) {
+        ctx.fillStyle = ink((hit.field === 'main' ? tint.main : tint.pile)[hit.index]);
+        ctx.fillRect(hit.x - hit.s / 2, hit.y - hit.s / 2, hit.s, hit.s);
       }
       ctx.lineWidth = 2;
       ctx.strokeStyle = t.ink;
-      ctx.strokeRect(best.x - o, best.y - o, 2 * o, 2 * o);
+      ctx.strokeRect(hit.x - o, hit.y - o, 2 * o, 2 * o);
     }
     ctx.restore();
     // How much it magnifies, under its rim — or, where the plot ends first, by it at its lower right.
-    ctx.font = `500 11px ${t.font}`;
+    ctx.font = t.lensFont;
     ctx.fillStyle = t.mute;
     ctx.textBaseline = 'alphabetic';
-    const below = cy + R + 14;
-    if (below <= H - 2) { ctx.textAlign = 'center'; ctx.fillText(`${z}×`, cx, below); }
-    else { ctx.textAlign = 'left'; ctx.fillText(`${z}×`, Math.min(W - 24, cx + R * 0.72 + 6), Math.min(H - 4, cy + R * 0.72 + 10)); }
-    return best;
+    const label = floors ? LOUPE_LABEL.floors : LOUPE_LABEL.hist, below = cy + R + 14;
+    if (below <= H - 2) { ctx.textAlign = 'center'; ctx.fillText(label, cx, below); }
+    else { ctx.textAlign = 'left'; ctx.fillText(label, Math.min(W - 24, cx + R * 0.72 + 6), Math.min(H - 4, cy + R * 0.72 + 10)); }
+    return named ? hit : null;
   };
 
+  // One frame's terms, kept from frame to frame and read by the step's own functions below — made once a render,
+  // not each frame (3a §13).
+  const fsRef = useRef({ change: false, staged: false, sorting: false, holding: false, mt: 0, sp: 0, fp: 0, t: 0, tn: 0 });
+  // A staged or straight step's squares in one field: place, size and colour at the frame's time.
+  const stageField = (st: Stage, pl: Pal, K: Uint8Array, kinds: Uint8Array, FX: Float64Array, FY: Float64Array, MX: Float64Array | null, MY: Float64Array | null,
+    TX: Float64Array, TY: Float64Array, dl: Float32Array, du: Float32Array, arc: Float32Array, sdl: Float32Array,
+    OX: Float64Array, OY: Float64Array, SC: Float32Array, CO: Uint32Array) => {
+    const fs = fsRef.current, { change, staged, sorting, holding, mt, sp, fp } = fs;
+    let tn = fs.tn;
+    for (let i = 0; i < K.length; i++) {
+      const k = K[i], T = pl.toType[kinds[i]] ?? pl.toType[0];
+      const toX = MX ? MX[i] : TX[i], toY = MY ? MY[i] : TY[i];
+      const C = k === UP ? pl.toUp : k === DOWN ? pl.toDown : k === NEW ? pl.toNew : null;
+      let x: number, y: number, sc = 1, c: number;
+      if (sorting && MX && MY) {
+        // Into salary order, the column rippling up from the bottom; the change colour through the neutral back to
+        // the type's.
+        const q = clamp01((sp - sdl[i]) / 0.42), e = easeInOut(q);
+        x = MX[i] + (TX[i] - MX[i]) * e;
+        y = MY[i] + (TY[i] - MY[i]) * e;
+        c = q < 0.5 ? (C ? C[shade(1 - 2 * q)] : pl.N) : T[shade(2 * q - 1)];
+      } else if (holding) {
+        x = toX;
+        y = toY;
+        c = C ? C[BLEND] : pl.N;
+      } else {
+        const p = clamp01((mt - dl[i]) / du[i]), e = easeInOut(p);
+        if (k === NEW) {
+          x = toX;
+          y = toY;
+          sc = Math.max(0.05, backOut(p));
+        } else {
+          x = FX[i] + (toX - FX[i]) * e;
+          y = FY[i] + (toY - FY[i]) * e - arc[i] * 4 * e * (1 - e);
+        }
+        if (!change) c = T[BLEND];
+        else if (!staged) c = C ? C[BLEND] : T[BLEND];
+        else {
+          c = k === NEW ? pl.toNew[BLEND] : C && p > 0 ? C[shade(0.35 + p / 0.15)] : T[shade(fp)];
+          if (C && k !== NEW) {
+            // A mover pops as it lands, and trails two fading squares on its way (3a).
+            if (p >= 1) { const a = mt - dl[i] - du[i]; if (a < 0.07) sc = 1 + 0.8 * Math.sin((Math.PI * a) / 0.07); }
+            else if (p > 0) for (let q = 1; q <= 2; q++) {
+              const e2 = easeInOut(clamp01((mt - 0.022 * q - dl[i]) / du[i]));
+              st.tx[tn] = FX[i] + (toX - FX[i]) * e2;
+              st.ty[tn] = FY[i] + (toY - FY[i]) * e2 - arc[i] * 4 * e2 * (1 - e2);
+              st.tsc[tn] = q === 1 ? 0.9 : 0.78;
+              st.tcol[tn] = withAlpha(C[BLEND], q === 1 ? 0.5 : 0.24);
+              tn++;
+            }
+          }
+        }
+        // Who joined comes in: growing, and fading up.
+        if (k === NEW) c = withAlpha(c, p / 0.3);
+      }
+      OX[i] = x;
+      OY[i] = y;
+      SC[i] = sc;
+      CO[i] = c;
+    }
+    fs.tn = tn;
+  };
   // A step's frame (3a): each square's place, size and colour at `now`, by phase — the move (to its staged place,
   // or straight to its sorted one), the countdown that holds it there, the re-sort into salary order — and who left,
   // fading. True once it is over.
@@ -804,69 +924,15 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     st.still = holding && st.phase === 'hold' && !st.redraw && Math.abs(st.phaseEnd - (st.start + holdEnd)) <= 1;
     if (st.still) return false;
     st.redraw = false;
+    if (S.flow) return flowFrame(st, el);
     // Who stays fades from their type's colour to the neutral over the move's first part (raises and cuts).
     const fp = 1 - clamp01(mt / TYPE_FADE);
     const L = layout, mid = S.mid;
     const { mx, my, px, py } = cur.current;
-    let tn = 0;
-    if (S.flow) return flowFrame(st, el);
-    const field = (K: Uint8Array, kinds: Uint8Array, FX: Float64Array, FY: Float64Array, MX: Float64Array | null, MY: Float64Array | null,
-      TX: Float64Array, TY: Float64Array, dl: Float32Array, du: Float32Array, arc: Float32Array, sdl: Float32Array,
-      OX: Float64Array, OY: Float64Array, SC: Float32Array, CO: Uint32Array) => {
-      for (let i = 0; i < K.length; i++) {
-        const k = K[i], T = pl.toType[kinds[i]] ?? pl.toType[0];
-        const toX = MX ? MX[i] : TX[i], toY = MY ? MY[i] : TY[i];
-        const C = k === UP ? pl.toUp : k === DOWN ? pl.toDown : k === NEW ? pl.toNew : null;
-        let x: number, y: number, sc = 1, c: number;
-        if (sorting && MX && MY) {
-          // Into salary order, the column rippling up from the bottom; the change colour through the neutral back to
-          // the type's.
-          const q = clamp01((sp - sdl[i]) / 0.42), e = easeInOut(q);
-          x = MX[i] + (TX[i] - MX[i]) * e;
-          y = MY[i] + (TY[i] - MY[i]) * e;
-          c = q < 0.5 ? (C ? C[shade(1 - 2 * q)] : pl.N) : T[shade(2 * q - 1)];
-        } else if (holding) {
-          x = toX;
-          y = toY;
-          c = C ? C[BLEND] : pl.N;
-        } else {
-          const p = clamp01((mt - dl[i]) / du[i]), e = easeInOut(p);
-          if (k === NEW) {
-            x = toX;
-            y = toY;
-            sc = Math.max(0.05, backOut(p));
-          } else {
-            x = FX[i] + (toX - FX[i]) * e;
-            y = FY[i] + (toY - FY[i]) * e - arc[i] * 4 * e * (1 - e);
-          }
-          if (!change) c = T[BLEND];
-          else if (!staged) c = C ? C[BLEND] : T[BLEND];
-          else {
-            c = k === NEW ? pl.toNew[BLEND] : C && p > 0 ? C[shade(0.35 + p / 0.15)] : T[shade(fp)];
-            if (C && k !== NEW) {
-              // A mover pops as it lands, and trails two fading squares on its way (3a).
-              if (p >= 1) { const a = mt - dl[i] - du[i]; if (a < 0.07) sc = 1 + 0.8 * Math.sin((Math.PI * a) / 0.07); }
-              else if (p > 0) for (let q = 1; q <= 2; q++) {
-                const e2 = easeInOut(clamp01((mt - 0.022 * q - dl[i]) / du[i]));
-                st.tx[tn] = FX[i] + (toX - FX[i]) * e2;
-                st.ty[tn] = FY[i] + (toY - FY[i]) * e2 - arc[i] * 4 * e2 * (1 - e2);
-                st.tsc[tn] = q === 1 ? 0.9 : 0.78;
-                st.tcol[tn] = withAlpha(C[BLEND], q === 1 ? 0.5 : 0.24);
-                tn++;
-              }
-            }
-          }
-          // Who joined comes in: growing, and fading up.
-          if (k === NEW) c = withAlpha(c, p / 0.3);
-        }
-        OX[i] = x;
-        OY[i] = y;
-        SC[i] = sc;
-        CO[i] = c;
-      }
-    };
-    field(S.kind.main, strata.kind, S.from.mx, S.from.my, mid?.mx ?? null, mid?.my ?? null, L.mx, L.my, st.dlM, st.duM, st.arcM, st.sdlM, mx, my, st.scM, st.colM);
-    field(S.kind.pile, strata.pileKind, S.from.px, S.from.py, mid?.px ?? null, mid?.py ?? null, L.px, L.py, st.dlP, st.duP, st.arcP, st.sdlP, px, py, st.scP, st.colP);
+    const fs = fsRef.current;
+    fs.change = change; fs.staged = staged; fs.sorting = sorting; fs.holding = holding; fs.mt = mt; fs.sp = sp; fs.fp = fp; fs.tn = 0;
+    stageField(st, pl, S.kind.main, strata.kind, S.from.mx, S.from.my, mid ? mid.mx : null, mid ? mid.my : null, L.mx, L.my, st.dlM, st.duM, st.arcM, st.sdlM, mx, my, st.scM, st.colM);
+    stageField(st, pl, S.kind.pile, strata.pileKind, S.from.px, S.from.py, mid ? mid.px : null, mid ? mid.py : null, L.px, L.py, st.dlP, st.duP, st.arcP, st.sdlP, px, py, st.scP, st.colP);
     // Who left: fading where they stood, a little smaller, a little lower (in the neutral, raising and cutting).
     const gh = S.ghosts;
     if (gh) for (let g = 0; g < st.gx.length; g++) {
@@ -876,7 +942,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       st.gsc[g] = 1 - 0.5 * p;
       st.gcol[g] = withAlpha(change ? (staged && p <= 0 ? base[shade(fp)] : pl.N) : base[BLEND], 1 - p);
     }
-    st.tn = tn;
+    st.tn = fs.tn;
     const done = staged ? el >= holdEnd + P.so : el >= P.mv;
     const ph = done ? null : sorting ? 'sort' : holding ? 'hold' : 'move';
     const end = st.start + (ph === 'move' ? P.mv : ph === 'hold' ? holdEnd : holdEnd + P.so);
@@ -887,6 +953,27 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
     return done;
   };
+  // A flow step's squares in one field (3a §10): along each one's Hermite curve at the frame's time `t`.
+  const flowField = (pl: Pal, K: Uint8Array, kinds: Uint8Array, FX: Float64Array, FY: Float64Array, TX: Float64Array, TY: Float64Array,
+    AX: Float64Array | null, AY: Float64Array | null, BX: Float64Array | null, BY: Float64Array | null,
+    OX: Float64Array, OY: Float64Array, SC: Float32Array, CO: Uint32Array) => {
+    const { t, change } = fsRef.current;
+    for (let i = 0; i < K.length; i++) {
+      const k = K[i], T = pl.toType[kinds[i]] ?? pl.toType[0];
+      if (k === NEW) {
+        OX[i] = TX[i];
+        OY[i] = TY[i];
+        SC[i] = Math.max(0.05, t);
+        CO[i] = withAlpha(change ? pl.toNew[BLEND] : T[BLEND], t / 0.3);
+        continue;
+      }
+      const x0 = FX[i], x1 = TX[i], y0 = FY[i], y1 = TY[i];
+      OX[i] = hermite(x0, x1, AX ? monoTangent(AX[i], x0, x1) : 0, BX ? monoTangent(x0, x1, BX[i]) : 0, t);
+      OY[i] = hermite(y0, y1, AY ? monoTangent(AY[i], y0, y1) : 0, BY ? monoTangent(y0, y1, BY[i]) : 0, t);
+      SC[i] = 1;
+      CO[i] = change && k === UP ? pl.toUp[BLEND] : change && k === DOWN ? pl.toDown[BLEND] : T[BLEND];
+    }
+  };
   // A flow step's frame (3a §10): everyone along their Hermite curve at a steady clock — no wave, no hold, no
   // re-sort — who joined growing in, who left shrinking out where they stood; raising and cutting, the movers in
   // the up and down inks and who joined in amber over their types, else everyone in their type's.
@@ -895,27 +982,11 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const t = clamp01(el / S.plan.mv), L = layout;
     const { mx, my, px, py } = cur.current;
     const pm = st.chained ? F.pm : null, p2 = F.p2;
-    const field = (K: Uint8Array, kinds: Uint8Array, FX: Float64Array, FY: Float64Array, TX: Float64Array, TY: Float64Array,
-      AX: Float64Array | undefined, AY: Float64Array | undefined, BX: Float64Array | undefined, BY: Float64Array | undefined,
-      OX: Float64Array, OY: Float64Array, SC: Float32Array, CO: Uint32Array) => {
-      for (let i = 0; i < K.length; i++) {
-        const k = K[i], T = pl.toType[kinds[i]] ?? pl.toType[0];
-        if (k === NEW) {
-          OX[i] = TX[i];
-          OY[i] = TY[i];
-          SC[i] = Math.max(0.05, t);
-          CO[i] = withAlpha(change ? pl.toNew[BLEND] : T[BLEND], t / 0.3);
-          continue;
-        }
-        const x0 = FX[i], x1 = TX[i], y0 = FY[i], y1 = TY[i];
-        OX[i] = hermite(x0, x1, AX ? monoTangent(AX[i], x0, x1) : 0, BX ? monoTangent(x0, x1, BX[i]) : 0, t);
-        OY[i] = hermite(y0, y1, AY ? monoTangent(AY[i], y0, y1) : 0, BY ? monoTangent(y0, y1, BY[i]) : 0, t);
-        SC[i] = 1;
-        CO[i] = change && k === UP ? pl.toUp[BLEND] : change && k === DOWN ? pl.toDown[BLEND] : T[BLEND];
-      }
-    };
-    field(S.kind.main, strata.kind, S.from.mx, S.from.my, L.mx, L.my, pm?.mx, pm?.my, p2?.mx, p2?.my, mx, my, st.scM, st.colM);
-    field(S.kind.pile, strata.pileKind, S.from.px, S.from.py, L.px, L.py, pm?.px, pm?.py, p2?.px, p2?.py, px, py, st.scP, st.colP);
+    const fs = fsRef.current;
+    fs.t = t;
+    fs.change = change;
+    flowField(pl, S.kind.main, strata.kind, S.from.mx, S.from.my, L.mx, L.my, pm ? pm.mx : null, pm ? pm.my : null, p2 ? p2.mx : null, p2 ? p2.my : null, mx, my, st.scM, st.colM);
+    flowField(pl, S.kind.pile, strata.pileKind, S.from.px, S.from.py, L.px, L.py, pm ? pm.px : null, pm ? pm.py : null, p2 ? p2.px : null, p2 ? p2.py : null, px, py, st.scP, st.colP);
     const gh = S.ghosts;
     if (gh) for (let g = 0; g < st.gx.length; g++) {
       st.gy[g] = gh.y[g];
@@ -951,7 +1022,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       const done = stageFrame(now);
       if (!mv.stage.still) {
         drawBase();
-        measure('strata-frame', t0);
+        measure('strata', t0);
       }
       if (done) {
         const L = layout;
@@ -965,19 +1036,25 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     } else if (mv) {
       const t0 = performance.now();
       const { mx, my, px, py } = cur.current;
+      const el = now - mv.start, L = layout;
       let done = true;
-      const go = (from: Float64Array, to: Float64Array, out: Float64Array, wait: Float64Array, i: number, axis: 0 | 1, arc?: Float32Array, ms?: Float64Array) => {
-        const p = Math.min(1, Math.max(0, (now - mv.start - wait[i]) / (ms ? ms[i] : mv.ms)));
+      // Each square from where it set off to its place, after its wait, eased; one hopping rises over its path as it
+      // goes, highest halfway, back down as it lands.
+      for (let i = 0; i < n; i++) {
+        const p = clamp01((el - mv.wait[i]) / (mv.msM ? mv.msM[i] : mv.ms)), e = easeInOut(p);
         if (p < 1) done = false;
-        const e = easeInOut(p);
-        // A big mover rises over its path as it goes: highest halfway, back down as it lands.
-        out[i] = from[i] + (to[i] - from[i]) * e - (axis === 1 && arc ? arc[i] * 4 * e * (1 - e) : 0);
-      };
-      for (let i = 0; i < n; i++) { go(mv.fromMx, layout.mx, mx, mv.wait, i, 0, undefined, mv.msM); go(mv.fromMy, layout.my, my, mv.wait, i, 1, mv.arcM, mv.msM); }
-      for (let j = 0; j < m; j++) { go(mv.fromPx, layout.px, px, mv.pwait, j, 0, undefined, mv.msP); go(mv.fromPy, layout.py, py, mv.pwait, j, 1, mv.arcP, mv.msP); }
+        mx[i] = mv.fromMx[i] + (L.mx[i] - mv.fromMx[i]) * e;
+        my[i] = mv.fromMy[i] + (L.my[i] - mv.fromMy[i]) * e - (mv.arcM ? mv.arcM[i] * 4 * e * (1 - e) : 0);
+      }
+      for (let j = 0; j < m; j++) {
+        const p = clamp01((el - mv.pwait[j]) / (mv.msP ? mv.msP[j] : mv.ms)), e = easeInOut(p);
+        if (p < 1) done = false;
+        px[j] = mv.fromPx[j] + (L.px[j] - mv.fromPx[j]) * e;
+        py[j] = mv.fromPy[j] + (L.py[j] - mv.fromPy[j]) * e - (mv.arcP ? mv.arcP[j] * 4 * e * (1 - e) : 0);
+      }
       drawBase();
       // Each moving frame's cost, for the frame-budget guards (diagnostic only).
-      measure('strata-frame', t0);
+      measure('strata', t0);
       if (done) { move.current = null; setMoving(false); props.current.onLanded?.(true); } else again = true;
     }
     const want = props.current.lensAt;
@@ -994,9 +1071,10 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     if (L.r !== tr) again = true;
     const t1 = performance.now();
     const hit = move.current ? null : drawLens();
-    if (L.r > 0.5) measure('lens-frame', t1);
-    const id = hit ? `${hit.field}:${hit.index}` : '';
-    if (id !== picked.current) { picked.current = id; props.current.onPick?.(hit); }
+    if (L.r > 0.5) measure('lens', t1);
+    // Told only when the square named changes — then a copy, the loupe's own being drawn into again next frame.
+    const pf = hit ? (hit.field === 'main' ? 1 : 2) : 0, pi = hit ? hit.index : -1;
+    if (pf !== picked.current.f || pi !== picked.current.i) { picked.current.f = pf; picked.current.i = pi; props.current.onPick?.(hit ? { ...hit } : null); }
     if (again) raf.current = requestAnimationFrame(frame);
   };
   // Every frame runs the latest render's `tick`, which reads that render's layout, inks and marks: a frame

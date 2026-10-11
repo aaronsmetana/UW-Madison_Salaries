@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { oracle, PAY, usd } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
-import { atCiPace, FRAME_MS } from './pace';
+import { atCiPace, FRAME_MS, clearFrames, frameCount, frameTimes } from './pace';
 import { parseColor } from './color';
 
 /**
@@ -281,7 +281,7 @@ test('Pause holds the snapshot and Resume goes on; under reduced motion each ste
   await expect(bar(still)).toHaveAttribute('data-snap', SNAPS[LAST].id);
   const shown = (await readLog(still)).filter(([e]) => e.startsWith('snap ')).map(([e]) => e.slice(5));
   expect(shown.slice(shown.indexOf(SNAPS[0].id)), 'not every snapshot from the first').toEqual(SNAPS.map((sn) => sn.id));
-  expect(await still.evaluate(() => performance.getEntriesByName('strata-frame').length), 'squares moved under reduced motion').toBe(0);
+  expect(await frameCount(still), 'squares moved under reduced motion').toBe(0);
   await ctx.close();
 });
 
@@ -292,9 +292,9 @@ test('a step moves in frames inside the frame budget, at CI’s pace', async ({ 
   await goTo(page, 7);
   // Staged (Medium): the move, with its arcs and trails, and the re-sort.
   await pace(page, 'Medium');
-  await page.evaluate(() => performance.clearMeasures('strata-frame'));
+  await clearFrames(page);
   await goTo(page, 8);
-  const frames = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
+  const frames = await frameTimes(page);
   expect(frames.length, 'the step never moved').toBeGreaterThan(5);
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
 });
@@ -312,7 +312,7 @@ test('Fast’s play draws the squares moving in every frame, never standing stil
     const bar = document.querySelector('.strata-timeline') as HTMLElement;
     new MutationObserver(() => w.snaps.push(performance.now())).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
     const f = (t: number) => {
-      w.frames.push([t, performance.getEntriesByName('strata-frame').length]);
+      w.frames.push([t, (window as unknown as { __strataFrames: { strata: { n: number } } }).__strataFrames.strata.n]);
       if (bar.dataset.playing || w.frames.length < 5) requestAnimationFrame(f);
     };
     requestAnimationFrame(f);
@@ -340,10 +340,10 @@ for (const dpr of [1, 2]) {
     await atCiPace(page);
     await home(page);
     await goTo(page, 0);
-    await page.evaluate(() => performance.clearMeasures('strata-frame'));
+    await clearFrames(page);
     await page.locator('.strata-play').click();
     await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
-    const frames = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
+    const frames = await frameTimes(page);
     expect(frames.length, 'the flow never moved').toBeGreaterThan(10);
     expect(frames[Math.floor(frames.length / 2)], `median of ${frames.length} frames`).toBeLessThan(FRAME_MS);
     await ctx.close();
@@ -396,6 +396,86 @@ test('a group is its people: in another snapshot they are lit wherever they stan
   const then = (await peopleIn(SNAPS[6].id)).filter((p) => keys.has(p.k));
   await expect(plot(page)).toHaveAttribute('data-group-count', String(then.length));
   await expect(field(page)).toHaveAttribute('data-lit', new RegExp(`^${then.filter((p) => p.pay < CAP).length}:`));
+});
+
+/**
+ * Under each tick (3a): its snapshot ("Nov 21") where the track gives each tick room; else the year where each year
+ * begins ("2021", narrower "’21"). The snapshot shown in the ink, and no two labels touching.
+ */
+test.describe('the track’s labels', () => {
+  const MON = (l: string) => l.replace(/\s*\(.*\)$/, '').replace(/^(\w{3})\w* (\d{2})(\d{2})$/, '$1 $3');
+  const shown = (page: Page) => page.locator('.strata-track-dot').evaluateAll((els) => els.map((b) => {
+    const span = [...b.querySelectorAll('.strata-tick-label > span')].find((s) => getComputedStyle(s).display !== 'none' && s.textContent);
+    const r = span?.getBoundingClientRect();
+    return { text: span?.textContent ?? '', left: r?.left ?? 0, right: r?.right ?? 0, weight: span ? getComputedStyle(span).fontWeight : '' };
+  }));
+  const apart = (labels: { text: string; left: number; right: number }[]) => {
+    const on = labels.filter((l) => l.text);
+    return Math.min(...on.slice(1).map((l, k) => l.left - on[k].right));
+  };
+  // Each snapshot's first of its year, by index.
+  const firsts = SNAPS.map((sn, i) => i === 0 || SNAPS[i - 1].label.match(/\d{4}/)![0] !== sn.label.match(/\d{4}/)![0]);
+
+  test('wide, every tick its snapshot; the one shown in the ink', async ({ page }) => {
+    await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await page.goto('./');
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+    const labels = await shown(page);
+    // A snapshot taken twice in a month is told apart by its own words.
+    expect(labels.map((l) => l.text)).toEqual(SNAPS.map((sn, i) => (i > 0 && MON(SNAPS[i - 1].label) === MON(sn.label) ? sn.label.match(/\(([^)]*)\)/)![1].replace(/^(Pre|Post)-/, '') : MON(sn.label))));
+    expect(apart(labels), 'two labels touching').toBeGreaterThanOrEqual(4);
+    expect(Number(labels[LAST].weight)).toBeGreaterThan(Number(labels[0].weight));
+  });
+
+  for (const { width, form } of [{ width: 1440, form: 'year' }, { width: 390, form: 'yy' }] as const) {
+    test(`at ${width}px, the year where each begins (${form === 'year' ? '2021' : '’21'}), none touching`, async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 }, ...(width < 500 ? { hasTouch: true, isMobile: true } : {}) });
+      const page = await ctx.newPage();
+      await home(page);
+      await page.setViewportSize({ width, height: 900 });
+      const labels = await shown(page);
+      expect(labels.map((l) => l.text)).toEqual(SNAPS.map((sn, i) => {
+        if (!firsts[i]) return '';
+        const y = sn.label.match(/\d{4}/)![0];
+        return form === 'year' ? y : `’${y.slice(2)}`;
+      }));
+      expect(apart(labels), 'two labels touching').toBeGreaterThanOrEqual(4);
+      await ctx.close();
+    });
+  }
+});
+
+/**
+ * The hint under the graph (3a): what it shows and how to use it — by view, while the pile is unrolled and through
+ * the intro's title — said for a mouse or a finger; one line on a wide screen.
+ */
+test('the hint under the graph says what each view shows and how to use it, for a mouse or a finger', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const page = await browser.newPage();
+  await home(page);
+  const hint = page.locator('.strata-hint');
+  await expect(hint).toHaveText('Sorted by salary within each $5k column. Point to look closer; click to magnify.');
+  const lineH = parseFloat(await hint.evaluate((e) => getComputedStyle(e).lineHeight));
+  expect((await hint.boundingBox())!.height, 'more than one line').toBeLessThan(lineH * 1.5);
+  await page.getByRole('radiogroup', { name: 'View' }).getByText('Floors').click();
+  await expect(hint).toHaveText('Each floor is a $10k band, sorted by salary from the bottom row up. Point to look closer.');
+  await page.getByRole('radiogroup', { name: 'View' }).getByText('Histogram').click();
+  await page.locator('.strata-magnify').click();
+  await expect(hint).toHaveText('A $30k window, magnified. Drag to pan; point at anyone to see who they are.');
+  await page.locator('.strata-magnify').click();
+  await expect(plot(page)).toHaveAttribute('data-view', 'hist');
+  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+  await page.locator('.strata-pile-toggle').click();
+  await expect(hint).toHaveText(/ people at \$250k or more, each at their own pay\. Click the graph or press Esc to fold them back\.$/);
+  await page.close();
+  // A finger, and the intro's title.
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const phone = await ctx.newPage();
+  await phone.goto('./');
+  await expect(phone.locator('.strata-hint')).toHaveText('Each square is one person, colored by employment type.');
+  await expect(phone.locator('.strata-hint')).toHaveText('Sorted by salary within each $5k column. Hold a finger still to look closer; tap to magnify.', { timeout: 60_000 });
+  await ctx.close();
 });
 
 test('the track is a radio group: arrows step between snapshots, Home and End go to the ends', async ({ page }) => {

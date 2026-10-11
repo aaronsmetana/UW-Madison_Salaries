@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { oracle, PAY, latestSnapshot } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
-import { atCiPace, FRAME_MS } from './pace';
+import { atCiPace, FRAME_MS, frameCount, frameTimes } from './pace';
 import { parseColor, flatten, contrast } from './color';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -221,7 +221,7 @@ test.describe('the intro', () => {
     await expect(title(page)).toHaveCount(0);
     await page.waitForTimeout(4_000);
     await expect(plot(page)).toHaveAttribute('data-view', 'hist');
-    expect(await page.evaluate(() => performance.getEntriesByName('strata-frame').length), 'squares moved under reduced motion').toBe(0);
+    expect(await frameCount(page), 'squares moved under reduced motion').toBe(0);
     expect(heavy).toEqual([]);
     await ctx.close();
   });
@@ -233,7 +233,7 @@ test.describe('the intro', () => {
     await page.goto('./');
     await expect(plot(page)).toHaveAttribute('data-view', 'hist', { timeout: 10_000 });
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-    const frames = await page.evaluate(() => performance.getEntriesByName('strata-frame').map((e) => e.duration).sort((a, b) => a - b));
+    const frames = await frameTimes(page);
     expect(frames.length, 'the zoom never moved').toBeGreaterThan(5);
     expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
   });
@@ -427,14 +427,14 @@ test('the loupe stays whole inside the plot at its edges (3a §13), still magnif
 test('hovering moves no square: only the lens redraws', async ({ page }) => {
   await home(page);
   const before = await placesOf(page, 'main');
-  const frames = () => page.evaluate(() => performance.getEntriesByName('strata-frame').length);
+  const frames = () => frameCount(page);
   const f0 = await frames();
   const box = (await plot(page).boundingBox())!;
   for (let k = 0; k <= 20; k++) await page.mouse.move(box.x + box.width * (0.1 + k * 0.04), box.y + box.height * 0.7);
   await page.waitForTimeout(300);
   expect(await frames(), 'the squares moved while pointing').toBe(f0);
   expect(await placesOf(page, 'main')).toEqual(before);
-  expect(await page.evaluate(() => performance.getEntriesByName('lens-frame').length), 'the lens never drew').toBeGreaterThan(5);
+  expect(await frameCount(page, 'lens'), 'the lens never drew').toBeGreaterThan(5);
 });
 
 test('the lens redraws inside the frame budget', async ({ page }) => {
@@ -442,7 +442,7 @@ test('the lens redraws inside the frame budget', async ({ page }) => {
   await home(page);
   const box = (await plot(page).boundingBox())!;
   for (let k = 0; k <= 30; k++) { await page.mouse.move(box.x + box.width * (0.2 + k * 0.01), box.y + box.height * 0.75); await page.waitForTimeout(16); }
-  const frames = await page.evaluate(() => performance.getEntriesByName('lens-frame').map((e) => e.duration).sort((a, b) => a - b));
+  const frames = await frameTimes(page, 'lens');
   expect(frames.length).toBeGreaterThan(10);
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
 });
@@ -476,7 +476,7 @@ test('isolating a type lights its people where they stand, moves no one, and the
   await home(page);
   const { main, pile } = await byIndex();
   const before = await placesOf(page, 'main');
-  const frames = () => page.evaluate(() => performance.getEntriesByName('strata-frame').length);
+  const frames = () => frameCount(page);
   const f0 = await frames();
   await page.getByRole('button', { name: /^Faculty/ }).click();
   const print = (list: { cat: string }[]) => { let n = 0, s = 0, q = 0; list.forEach((p, i) => { if (p.cat === 'Faculty') { n++; s += i; q += i * i; } }); return `${n}:${s}:${q}`; };

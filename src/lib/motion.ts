@@ -59,8 +59,12 @@ export function stagger(i: number): number {
 }
 
 /** Synchronous read of the OS "reduce motion" preference (safe in SSR / before hydration). */
+// One query, kept: its `matches` follows the setting live, and an animation frame asking each time made a new one.
+let reduceQuery: MediaQueryList | null | undefined;
 export function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (typeof window === 'undefined') return false;
+  if (reduceQuery === undefined) reduceQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  return !!reduceQuery?.matches;
 }
 
 /**

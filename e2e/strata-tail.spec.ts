@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { HOME_STATS, people, spots } from './homeDots';
-import { atCiPace, FRAME_MS } from './pace';
+import { atCiPace, FRAME_MS, frameCount, frameTimes } from './pace';
 
 /**
  * The pile past the landing graph's cap (components/strata): a button, not a crowd to read — over it no lens,
@@ -186,11 +186,11 @@ test('unrolling moves in frames inside the frame budget, and not at all under re
     const page = await ctx.newPage();
     if (!reduce) await atCiPace(page);
     await home(page);
-    const f0 = await page.evaluate(() => performance.getEntriesByName('strata-frame').length);
+    const f0 = await frameCount(page);
     await toggle(page).click();
     await expect(plot(page)).toHaveAttribute('data-tail', 'on');
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 5_000 });
-    const frames = await page.evaluate((f0) => performance.getEntriesByName('strata-frame').slice(f0).map((e) => e.duration).sort((a, b) => a - b), f0);
+    const frames = await frameTimes(page, 'strata', f0);
     await ctx.close();
     return frames;
   };

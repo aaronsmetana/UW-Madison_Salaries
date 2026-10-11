@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { frameCount } from './pace';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PAY } from './oracle';
 import { HOME_STATS, spots, plotShape, barOverPlot, places, people } from './homeDots';
@@ -273,7 +274,7 @@ test('a filter lights its group where they stand, moving no one, and taking it o
     await expect(field).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   };
   const was = await laidOut(page);
-  const frames = () => page.evaluate(() => performance.getEntriesByName('strata-frame').length);
+  const frames = () => frameCount(page);
   const f0 = await frames();
   for (const [label, on, f] of [
     ['Research Associate', () => put(page, 'research assoc', `t:${ra}`), { code: ra }],

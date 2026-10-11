@@ -474,9 +474,15 @@ export function StrataGraph({
       return { fx, fy };
     };
     const fm = from(B.mainId, L1.mx, L1.my), fp = from(B.pileId, L1.px, L1.py);
-    const gx: number[] = [], gy: number[] = [], gk: number[] = [];
-    A.mainId.forEach((id, i) => { if (!stays[id]) { gx.push(L0.mx[i]); gy.push(L0.my[i]); gk.push(A.kind[i]); } });
-    A.pileId.forEach((id, j) => { if (!stays[id]) { gx.push(L0.px[j]); gy.push(L0.py[j]); gk.push(A.pileKind[j]); } });
+    // Who left, where they stood: counted, then written straight into their arrays (built four times a second at
+    // Fast, so in loops — a mapping function or a list of numbers boxed each place it held).
+    let left = 0;
+    for (let i = 0; i < A.mainId.length; i++) if (!stays[A.mainId[i]]) left++;
+    for (let j = 0; j < A.pileId.length; j++) if (!stays[A.pileId[j]]) left++;
+    const gx = new Float64Array(left), gy = new Float64Array(left), gk = new Uint8Array(left);
+    let g = 0;
+    for (let i = 0; i < A.mainId.length; i++) if (!stays[A.mainId[i]]) { gx[g] = L0.mx[i]; gy[g] = L0.my[i]; gk[g++] = A.kind[i]; }
+    for (let j = 0; j < A.pileId.length; j++) if (!stays[A.pileId[j]]) { gx[g] = L0.px[j]; gy[g] = L0.py[j]; gk[g++] = A.pileKind[j]; }
     // Back to an earlier snapshot, a cross-fade (3a).
     const fade = !replaying && stepFrom != null && at != null && at < stepFrom;
     const md = modeRef.current, full = pacePlan(paceRef.current, md, countdownRef.current);
@@ -487,10 +493,9 @@ export function StrataGraph({
     const group = new Int16Array(n + m), size = new Int32Array(Math.max(COLS, FLOORS) + 1);
     for (let i = 0; i < n; i++) size[(group[i] = floors ? floorOf(B.mainPay[i]) : B.col[i])]++;
     for (let j = 0; j < m; j++) size[(group[n + j] = floors ? FLOORS - 1 : COLS)]++;
-    const rank = {
-      main: Float32Array.from(L1.main.slot, (sl, i) => sl / Math.max(1, size[group[i]])),
-      pile: Float32Array.from(L1.pile.slot, (sl, j) => sl / Math.max(1, size[group[n + j]])),
-    };
+    const rank = { main: new Float32Array(n), pile: new Float32Array(m) };
+    for (let i = 0; i < n; i++) rank.main[i] = L1.main.slot[i] / Math.max(1, size[group[i]]);
+    for (let j = 0; j < m; j++) rank.pile[j] = L1.pile.slot[j] / Math.max(1, size[group[n + j]]);
     let mid: Step['mid'] = null;
     if (plan.staged && !fade && !L1.tail) {
       const K = new Uint8Array(n + m), P = new Int32Array(n + m), key = new Uint32Array(n + m);
@@ -519,7 +524,7 @@ export function StrataGraph({
         const L = layoutFor(st), x = new Float64Array(N).fill(NaN), y = new Float64Array(N).fill(NaN);
         st.mainId.forEach((id, i) => { x[id] = L.mx[i]; y[id] = L.my[i]; });
         st.pileId.forEach((id, j) => { x[id] = L.px[j]; y[id] = L.py[j]; });
-        const pick = (ids: Int32Array, P: Float64Array) => Float64Array.from(ids, (id) => P[id]);
+        const pick = (ids: Int32Array, P: Float64Array) => { const out = new Float64Array(ids.length); for (let i = 0; i < ids.length; i++) out[i] = P[ids[i]]; return out; };
         return { mx: pick(B.mainId, x), my: pick(B.mainId, y), px: pick(B.pileId, x), py: pick(B.pileId, y) };
       };
       const on = playingRef.current && !replaying && stepFrom != null && at === stepFrom + 1;
@@ -527,7 +532,7 @@ export function StrataGraph({
     }
     return {
       to: L1, fade, from: { mx: fm.fx, my: fm.fy, px: fp.fx, py: fp.fy }, mid, kind: { main: k.main, pile: k.pile }, rank,
-      ghosts: { x: Float64Array.from(gx), y: Float64Array.from(gy), kind: Uint8Array.from(gk) }, plan, mode: md, counts: k.counts, flow, quick,
+      ghosts: { x: gx, y: gy, kind: gk }, plan, mode: md, counts: k.counts, flow, quick,
     };
     // The pace, mode, catch-up and play are read as the step is made: none a dependency.
   }, [tl, strataAt, layoutFor, lastSnap]);
@@ -606,6 +611,15 @@ export function StrataGraph({
     if (wait > 0) { const t0 = performance.now(); setRest({ start: t0, end: t0 + wait, next: bareLabel(snaps[at + 1].label) }); }
     return () => { window.clearTimeout(t); setRest(null); };
   }, [playing, at, goal, lastSnap, queue, onScreen, moving, landed, pace, mode, countdown, snaps]);
+  // The track's tick labels: "Nov 21", a snapshot taken twice in a month told apart by its own words ("TTC"); and the
+  // year ("2021", "’21") under the first snapshot of each.
+  const tickLabels = useMemo(() => snaps.map((sn, i) => {
+    const bare = bareLabel(sn.label), m = bare.match(/^(\w{3})\w* (\d{4})$/), yr = m ? m[2] : '';
+    const prev = i > 0 ? bareLabel(snaps[i - 1].label) : null, own = sn.label.match(/\(([^)]*?)\)/)?.[1] ?? '';
+    const full = m ? (prev === bare && own ? own.replace(/^(Pre|Post)-/, '') : `${m[1]} ${yr.slice(2)}`) : bare;
+    const firstOfYear = !!yr && (i === 0 || !bareLabel(snaps[i - 1].label).endsWith(yr));
+    return { full, year: firstOfYear ? yr : '', yy: firstOfYear ? `’${yr.slice(2)}` : '' };
+  }), [snaps]);
   const playLabel = playing ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : snaps.length > 1 ? `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}` : 'Play';
   const onPlay = () => {
     if (playing) { setPlaying(false); setPaused(true); return; }
@@ -943,6 +957,16 @@ export function StrataGraph({
   // or more.
   const topShare = (n: number) => { const p = (n / Math.max(1, total)) * 100; return p >= 0.1 ? `${p.toFixed(1)}%` : 'under 0.1%'; };
   const pileWord = `${num(over)} at ${fmtK(cap ?? 250_000)} or more · the top ${topShare(over)} · ${canHover ? 'click' : 'tap'} to see each at their own pay`;
+  // A line under the graph (3a): what it shows and how to use it, by view — said for a mouse or a finger.
+  const hint = intro === 'title' || intro === 'zoom'
+    ? 'Each square is one person, colored by employment type.'
+    : tail
+      ? `${num(over)} people at ${fmtK(cap ?? 250_000)} or more, each at their own pay. ${canHover ? 'Click the graph or press Esc' : 'Tap the graph'} to fold them back.`
+      : (layout?.view ?? view) === 'magnify'
+        ? `A $30k window, magnified. Drag to pan; ${canHover ? 'point at' : 'tap'} anyone to see who they are.`
+        : (layout?.view ?? view) === 'floors'
+          ? `Each floor is a $10k band, sorted by salary from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
+          : `Sorted by salary within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
   const readout = useMemo(() => {
     // Magnified there is no glass to read: the columns are labelled under the plot, and counted over each.
     if (!strata || !layout || !lensAt || layout.view === 'magnify') return null;
@@ -1578,7 +1602,12 @@ export function StrataGraph({
     >
       <div className="hero-dist-controls strata-toolbar">
         {full && search && <div className="hero-dist-search">{search}</div>}
-        <div className="strata-toolbar-left">{chip}{followChip}</div>
+        <div className="strata-toolbar-left">
+          {chip}{followChip}
+          {/* How to read and use what is shown (3a's hint), by view, for a mouse or a finger: in the room the toolbar
+              leaves, so it costs the page no height. */}
+          <Text size="xs" className="strata-hint" data-view={layout?.view ?? view}>{hint}</Text>
+        </div>
         <div className="strata-toolbar-right">
           {fullToggle}
         </div>
@@ -1814,10 +1843,7 @@ export function StrataGraph({
         {tail && !moving && (
           <div className="strata-tail-note" aria-live="polite">
             <Text size={phone ? 'xs' : 'sm'} fw={700}>The top salary, {usd(tail.top)}, is {Math.round(tail.top / (cap ?? 250_000))}× the {fmtK(cap ?? 250_000)} edge of the graph</Text>
-            {/* A phone keeps the one line: the label under the axis says how to fold them back. */}
-            {!phone && (
-              <Text size="xs" c="dimmed">{num(over)} people at {fmtK(cap ?? 250_000)} or more, each at their own pay · {canHover ? 'click' : 'tap'} the graph or press Esc to fold them back</Text>
-            )}
+            {/* How to fold them back is the hint's, under the graph. */}
           </div>
         )}
         {lensAt && pick && !moving && (
@@ -1941,7 +1967,6 @@ export function StrataGraph({
           </div>
           <div className="strata-tl-progress">
           <div className="strata-track">
-            <span className="strata-track-end">{bareLabel(snaps[0].label)}</span>
             <div className="strata-track-dots" role="radiogroup" aria-label="Snapshot"
               onKeyDown={(e) => {
                 const now = at ?? lastSnap;
@@ -1958,13 +1983,19 @@ export function StrataGraph({
                 return (
                   <button key={sn.id} type="button" role="radio" aria-checked={here} aria-label={sn.label} tabIndex={here ? 0 : -1}
                     className="strata-track-dot" data-state={here ? 'now' : i < (at ?? lastSnap) ? 'past' : 'next'}
-                    onClick={() => { setPlaying(false); setPaused(false); goTo(i); }} />
+                    onClick={() => { setPlaying(false); setPaused(false); goTo(i); }}>
+                    {/* Under each tick (3a): its snapshot where the track has room, else the year where each year begins. */}
+                    <span className="strata-tick-label" aria-hidden>
+                      <span className="strata-tick-full">{tickLabels[i].full}</span>
+                      <span className="strata-tick-year">{tickLabels[i].year}</span>
+                      <span className="strata-tick-yy">{tickLabels[i].yy}</span>
+                    </span>
+                  </button>
                 );
               })}
               {/* After the dots, so a dot's index is its snapshot's; drawn under them. */}
               <div ref={fillRef} className="strata-track-fill" aria-hidden />
             </div>
-            <span className="strata-track-end">{bareLabel(snaps[lastSnap].label)}</span>
           </div>
           {!phone && chipInput && <TimelineChip input={chipInput} />}
           </div>

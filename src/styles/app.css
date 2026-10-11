@@ -2523,7 +2523,6 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
    track and chip take the next; where the track is short, its ends' names go (the chip and the toolbar say where). */
 .strata-tl-controls { display: flex; align-items: center; gap: 14px; flex: none; }
 .strata-tl-progress { display: flex; align-items: center; gap: 14px; flex: 1 1 600px; min-width: 0; container-type: inline-size; }
-@container (max-width: 720px) { .strata-track-end { display: none; } }
 .strata-play, .strata-speed, .strata-mode, .strata-settings { flex: none; }
 /* The status chip (3a §11): a ring with the seconds left inside, what is happening, and when the timeline ends. */
 @property --ring { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
@@ -2547,8 +2546,27 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-status[data-compact] { flex: 1 1 auto; width: auto; height: 28px; min-width: 0; gap: 8px; padding: 0; border: 0; background: none; }
 .strata-status[data-compact] .strata-status-ring { width: 24px; height: 24px; }
 .strata-status[data-compact] .strata-status-count { background: var(--surface-sunken); }
-.strata-track { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
-.strata-track-end { flex: none; font-size: var(--mantine-font-size-xs); color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.strata-track { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; container-type: inline-size; }
+/* Under each tick (3a), on a line kept below the dots: its snapshot ("Nov 21") where the track gives each tick room,
+   else the year where each year begins ("2021", narrower "’21"); the snapshot shown in the ink. */
+.strata-track-dots { margin-bottom: 13px; }
+.strata-tick-label {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+  font-size: var(--mantine-font-size-xxs); line-height: 13px; color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+.strata-track-dot[data-state='now'] .strata-tick-label { color: var(--mantine-color-text); font-weight: 600; }
+.strata-tick-full, .strata-tick-year, .strata-tick-yy { display: none; }
+@container (min-width: 560px) { .strata-tick-full { display: inline; } }
+@container (min-width: 360px) and (max-width: 559.98px) { .strata-tick-year { display: inline; } }
+@container (max-width: 359.98px) { .strata-tick-yy { display: inline; } }
+/* The hint (3a): after the count in the toolbar, one line, cut short with an ellipsis where the room runs out. On a
+   phone, under the count, two lines at most; left out of full page, whose plot has the room. */
+.strata-hint { flex: 1 1 0; min-width: 0; margin: 0 0 0 14px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media screen and (max-width: 30em) {
+  .strata .strata-toolbar-left { flex-wrap: wrap; height: auto; row-gap: 2px; }
+  .strata-hint { flex-basis: 100%; margin: 0; white-space: normal; min-height: calc(2 * 1.55em); }
+  .strata.hero-dist-full .strata-hint { display: none; }
+}
 .strata-track-dots {
   position: relative; flex: 1 1 auto; display: flex; align-items: center; justify-content: space-between; height: 24px;
 }
@@ -2586,7 +2604,6 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-change-swatch[data-change='left'] { background: transparent; box-shadow: inset 0 0 0 1px var(--guide-strong); }
 /* On a phone the dots fill the line; the readout names the snapshot shown. */
 @media screen and (max-width: 30em) {
-  .strata-track-end { display: none; }
 }
 
 /* The lens's readout over it, and the card for the square under the pointer beside it. */
