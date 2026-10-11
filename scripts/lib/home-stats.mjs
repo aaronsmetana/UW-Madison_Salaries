@@ -1,6 +1,6 @@
 import zlib from 'node:zlib';
 import duckdb from 'duckdb';
-import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
+import { FTE_MULT_SQL, ACTUAL_PAY_SQL, mainOfSql } from './normalize.mjs';
 
 /** What home-stats.json may weigh gzipped. The landing page fetches it on every visit, before anything
  *  else can draw; the per-category counts behind the "By category" dots are most of it. */
@@ -52,15 +52,14 @@ const people = (src, snap) =>
   `(SELECT person_key, sum(${PAY}) FILTER (WHERE salary > 0) AS pay FROM ${src} WHERE snapshot_id = '${snap}' GROUP BY person_key)`;
 
 /**
- * The same people, each with one staff category: the category of their highest-paid appointment,
- * ties to the category's name. A dot on the landing page is a person at their total pay, so it can
- * wear one colour only — and 83 people hold appointments in two categories. The "Median pay by group"
+ * The same people, each with one staff category: the category of their main appointment (`mainOfSql`,
+ * the highest FTE). A dot on the landing page is a person at their total pay, so it can wear one colour
+ * only — and 83 people hold appointments in two categories. The "Median pay by group"
  * fact is taken over this too, so the legend beside the dots and the fact can never disagree.
  */
 const peopleByCategory = (src, snap) =>
-  `(SELECT person_key, sum(rp) AS pay, first(cat ORDER BY rp DESC, cat) AS cat
-    FROM (SELECT person_key, coalesce(employee_category, 'Other') AS cat, ${PAY} AS rp
-          FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0)
+  `(SELECT person_key, sum(${PAY}) AS pay, coalesce(${mainOfSql('employee_category')}, 'Other') AS cat
+    FROM ${src} WHERE snapshot_id = '${snap}' AND salary > 0
     GROUP BY person_key)`;
 
 // Mirrors the six useSql queries in src/routes/Home.tsx so the landing page can render from a
@@ -155,7 +154,7 @@ export function computeHomeStats(parquetPath, latestSnapshotId) {
          FROM p`
       );
       // The three largest categories and their medians, each person once, at their total actual pay, in
-      // the category of their highest-paid appointment — the rule the "By category" dots use.
+      // the category of their main appointment — the rule the "By category" dots use.
       const byCat = catRows.filter((c) => c.cat !== 'Other').slice(0, 3);
 
       con.close();

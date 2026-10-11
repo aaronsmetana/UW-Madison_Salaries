@@ -5,7 +5,7 @@ import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useTimeline } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { ACTUAL_PAY, FTE_MULT } from '../lib/queries';
+import { ACTUAL_PAY, FTE_MULT, mainOf } from '../lib/queries';
 import { usd, usdCompact, num, fullName } from '../lib/format';
 import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotPeople, topSchoolsForSql, topTitlesInSql, type HomeName, type HomePerson } from '../lib/homePeople';
@@ -447,11 +447,10 @@ export default function Home() {
   const tenure = artifactUsable ? homeStats.median_tenure_years : (factStats?.[0]?.tenure ?? null);
   const { data: byCat } = useSql<{ cat: string; med: number }>(
     ['home-bycat', snap ?? ''],
-    // Each person once, at their total pay, in the category of their highest-paid appointment — the
-    // rule home-stats.json uses (scripts/lib/home-stats.mjs), so the fact reads the same either way.
-    `WITH r AS (SELECT person_key, employee_category cat, ${ACTUAL_PAY} rp FROM salaries
-                WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0),
-          p AS (SELECT person_key, sum(rp) pay, first(cat ORDER BY rp DESC, cat) cat FROM r GROUP BY person_key)
+    // Each person once, at their total pay, in the category of their main appointment — the rule
+    // home-stats.json uses (scripts/lib/home-stats.mjs), so the fact reads the same either way.
+    `WITH p AS (SELECT person_key, sum(${ACTUAL_PAY}) pay, ${mainOf('employee_category')} cat FROM salaries
+                WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 GROUP BY person_key)
      SELECT cat, median(pay) FILTER (WHERE pay > 0) med, count(*) FILTER (WHERE pay > 0) n
      FROM p WHERE cat IS NOT NULL GROUP BY cat ORDER BY n DESC, cat LIMIT 3`,
     needsSql

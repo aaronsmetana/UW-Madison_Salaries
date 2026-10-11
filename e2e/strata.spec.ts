@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { oracle, PAY, latestSnapshot } from './oracle';
+import { oracle, PAY, MAIN, latestSnapshot } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS, frameCount, frameTimes } from './pace';
 import { parseColor, flatten, contrast } from './color';
@@ -261,10 +261,10 @@ test('the loupe names the square under it (3a): who, their title, department and
   const [f, i] = (await plot(page).getAttribute('data-pick'))!.split(':') as [Field, string];
   const { main, pile } = await byIndex();
   const who = (f === 'main' ? main : pile)[Number(i)];
-  // Their name and title: the appointment their square is coloured by — the highest-paid.
+  // Their name and title: the appointment their square is coloured by — their main one.
   const [n] = await oracle<{ fn: string; ln: string; title: string; department: string | null; school: string | null }>(
     `SELECT first_name fn, last_name ln, title, department, school FROM (SELECT first_name, last_name, title, department, school,
-       row_number() OVER (ORDER BY ${PAY} DESC, coalesce(employee_category, 'Other'), title, school) k
+       row_number() OVER (ORDER BY ${MAIN} DESC) k
        FROM $SAL WHERE snapshot_id = '${SNAP}' AND salary > 0 AND person_key = '${who.key.replace(/'/g, "''")}') WHERE k = 1`,
   );
   const snaps = await oracle<{ id: string }>(`SELECT DISTINCT snapshot_id id FROM $SAL ORDER BY id`);

@@ -1,4 +1,6 @@
 import { sqlStr } from './duckdb';
+import { compareMain, mainRow, type MainFields } from './queries';
+import { hourly } from './format';
 
 /**
  * The query a person's page waits on before it draws anything: every appointment row they have, oldest
@@ -22,4 +24,36 @@ export const personRowsKey = (key: string) => ['sql', 'person', key, personRowsS
 export function latestHire(rows: readonly { date_of_hire: string | null }[]): string | null {
   for (let i = rows.length - 1; i >= 0; i--) if (rows[i].date_of_hire) return rows[i].date_of_hire;
   return null;
+}
+
+/**
+ * A person's rows in their latest snapshot, and the main appointment among them (queries `mainRow`): the job
+ * their page names them by. The pre- and post-TTC twins share a date; the post-TTC one is the later. Rows
+ * in any order.
+ */
+export function latestRows<T extends { snapshot_id: string; snapshot_date: string }>(rows: readonly T[]): T[] {
+  let last: T | undefined;
+  for (const r of rows) {
+    if (!last || String(r.snapshot_date) > String(last.snapshot_date)
+      || (String(r.snapshot_date) === String(last.snapshot_date) && last.snapshot_id.endsWith('-pre') && !r.snapshot_id.endsWith('-pre'))) last = r;
+  }
+  return last ? rows.filter((r) => r.snapshot_id === last!.snapshot_id) : [];
+}
+
+/** The main appointment of a person's latest snapshot. */
+export function latestMain<T extends MainFields & { snapshot_id: string; snapshot_date: string }>(rows: readonly T[]): T | undefined {
+  return mainRow(latestRows(rows));
+}
+
+/** One snapshot's appointments other than the main one, the next most main first. */
+export function otherAppts<T extends MainFields>(rows: readonly T[]): T[] {
+  const m = mainRow(rows);
+  return rows.filter((r) => r !== m).sort((a, b) => compareMain(b, a));
+}
+
+/** What sets an appointment apart beside its title: "hourly, $43.00/hr", "50% FTE" or "unpaid". */
+export function apptTerms(r: { salary: number | null; fte: number | null }): string {
+  if (!(r.salary && r.salary > 0)) return 'unpaid';
+  if (!r.fte) return `hourly, ${hourly(r.salary)}`;
+  return `${Math.round(r.fte * 100)}% FTE`;
 }

@@ -10,7 +10,7 @@ import { payBandNote, olderSnapshotNote } from '../components/PayBandNote';
 import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
-import { salaryExpr, personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols } from '../lib/queries';
+import { personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols, mainOf } from '../lib/queries';
 import { useTray } from '../state/tray';
 import { decodeSel, encodeSel } from '../lib/share';
 import { CopyLinkButton } from '../components/CopyLinkButton';
@@ -63,7 +63,6 @@ function ExportBar({ joined, children }: { joined: boolean; children: ReactNode 
 export default function Reports() {
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
-  const expr = salaryExpr(metric);
   const { data: summary } = useSummary();
   const { items } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
@@ -106,8 +105,8 @@ export default function Reports() {
   const personIds = caseIds.map(sqlStr).join(',');
   const { data: caseRows } = useSql<PersonRow>(
     ['rpt-case', personIds, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
-        any_value(school) school, ${personPay(metric)} pay,
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${mainOf('title')} title,
+        ${mainOf('school')} school, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${personIds}) GROUP BY person_key`,
     caseIds.length > 0 && !!snap
@@ -188,13 +187,13 @@ export default function Reports() {
 
   const { data: subjRows } = useSql<Subject>(
     ['rpt-subj', subjectKey, snap ?? '', metric],
-    // The grade, its schedule and the rate the band is read against all come from the graded appointment
-    // (GRADED_APPT); the metric decides the pay every other figure uses.
+    // The subject's title, code, grade and the rate the band is read against all come from their main
+    // appointment (queries `MAIN_KEY`, `GRADED_APPT`); the metric decides the pay every other figure uses.
     `SELECT * EXCLUDE (graded), ${gradedCols()} FROM (
-       SELECT ${personPay(metric)} pay, arg_max(title, ${expr}) title, arg_max(job_code, ${expr}) job_code,
+       SELECT ${personPay(metric)} pay, ${mainOf('title')} title, ${mainOf('job_code')} job_code,
           ${GRADED_APPT} graded,
-          arg_max(flsa_status, ${expr}) flsa_status, arg_max(comp_basis, ${expr}) comp_basis,
-          any_value(school) school, min(date_of_hire) date_of_hire
+          ${mainOf('flsa_status')} flsa_status, ${mainOf('comp_basis')} comp_basis,
+          ${mainOf('school')} school, min(date_of_hire) date_of_hire
        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key = ${sqlStr(subjectKey ?? '')})`,
     cmpReady
   );
@@ -310,8 +309,8 @@ export default function Reports() {
   const superviseeIds = config.supervisees.map((k) => sqlStr(k)).join(',');
   const { data: superviseeRows } = useSql<PersonRow>(
     ['rpt-supervisees', superviseeIds, snap ?? '', metric],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, arg_max(title, ${expr}) title,
-        any_value(school) school, ${personPay(metric)} pay,
+    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, ${mainOf('title')} title,
+        ${mainOf('school')} school, ${personPay(metric)} pay,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
      FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND person_key IN (${superviseeIds})
      GROUP BY person_key`,

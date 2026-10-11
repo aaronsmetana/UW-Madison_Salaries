@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { IconChevronRight, IconAlertTriangle } from '@tabler/icons-react';
 import { useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { ACTUAL_PAY } from '../lib/queries';
+import { ACTUAL_PAY, mainOf } from '../lib/queries';
 import { fullName, usd, num } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { CardTitle } from './CardTitle';
@@ -25,7 +25,7 @@ function IdentityPreview({ personKey, title, name }: { personKey: string; title:
   const [opened, setOpened] = useState(false);
   const { data } = useSql<{ label: string; title: string | null; school: string | null }>(
     ['dup-preview', personKey],
-    `SELECT any_value(snapshot_label) AS "label", arg_max(title, salary) title, arg_max(school, salary) school
+    `SELECT any_value(snapshot_label) AS "label", ${mainOf('title')} title, ${mainOf('school')} school
      FROM salaries WHERE person_key = ${sqlStr(personKey)} GROUP BY snapshot_id ORDER BY any_value(snapshot_date)`,
     opened
   );

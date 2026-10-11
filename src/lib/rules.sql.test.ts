@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt } from './queries';
+import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, type MainFields } from './queries';
 import { raiseStepsSql } from './raises';
 
 /**
@@ -10,11 +10,12 @@ import { raiseStepsSql } from './raises';
 
 type Row = Record<string, string | number | null>;
 
-const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'school', 'department', 'job_code', 'grade_number', 'grade_basis', 'salary', 'salary_fte_adjusted', 'fte', 'comp_basis'] as const;
+const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'school', 'department', 'job_code', 'grade_number', 'grade_basis', 'salary', 'salary_fte_adjusted', 'fte', 'comp_basis', 'title', 'employee_category'] as const;
 
 const r = (snap: string, date: string, person: string, job: string | null, salary: number, extra: Partial<Row> = {}): Row => ({
   snapshot_id: snap, snapshot_date: date, person_key: person, school: 'A', department: 'D1', job_code: job,
-  grade_number: 20, grade_basis: 'annual_12mo', salary, salary_fte_adjusted: null, fte: 1, comp_basis: 'Annual', ...extra,
+  grade_number: 20, grade_basis: 'annual_12mo', salary, salary_fte_adjusted: null, fte: 1, comp_basis: 'Annual',
+  title: job == null ? null : `Title ${job}`, employee_category: 'University Staff', ...extra,
 });
 
 // Three canonical steps: the TTC twins (pre and post share a date), then s1 → s2 → s3.
@@ -63,7 +64,7 @@ beforeAll(async () => {
   const values = ROWS.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n');
   await all(`CREATE TABLE salaries (snapshot_id VARCHAR, snapshot_date DATE, person_key VARCHAR, school VARCHAR,
     department VARCHAR, job_code VARCHAR, grade_number INTEGER, grade_basis VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE,
-    fte DOUBLE, comp_basis VARCHAR)`);
+    fte DOUBLE, comp_basis VARCHAR, title VARCHAR, employee_category VARCHAR)`);
   await all(`INSERT INTO salaries VALUES ${values}`);
 });
 afterAll(() => db.close());
@@ -182,21 +183,82 @@ describe('scopeWhere', () => {
   });
 });
 
+describe('MAIN_KEY', () => {
+  // Each person is one way of naming someone by the wrong job.
+  const M: Row[] = [
+    // A director who also works hourly crowd control: the salaried job, though the hourly one's annualized
+    // rate is what an hourly job would pay over a full-time year.
+    r('m', '2026-09-01', 'director', 'CP052', 135024),
+    r('m', '2026-09-01', 'director', 'TE007', 89440, { fte: 0, grade_number: null }),
+    // Two half-time appointments: the one that pays more.
+    r('m', '2026-09-01', 'halves', 'J1', 60000, { fte: 0.5 }),
+    r('m', '2026-09-01', 'halves', 'J2', 80000, { fte: 0.5 }),
+    // A bigger appointment on a smaller rate: the bigger appointment.
+    r('m', '2026-09-01', 'bigger', 'J1', 50000, { fte: 0.6 }),
+    r('m', '2026-09-01', 'bigger', 'J2', 100000, { fte: 0.4 }),
+    // Equal in FTE and pay: the job code decides, never the row order.
+    r('m', '2026-09-01', 'same', 'J1', 80000, { fte: 0.5, department: 'D2' }),
+    r('m', '2026-09-01', 'same', 'J2', 80000, { fte: 0.5, department: 'D3' }),
+    // Only hourly jobs: the higher rate.
+    r('m', '2026-09-01', 'hourly', 'H1', 40000, { fte: 0 }),
+    r('m', '2026-09-01', 'hourly', 'H2', 50000, { fte: 0 }),
+    // The main appointment records no department: none, not the side job's.
+    r('m', '2026-09-01', 'nodept', 'J1', 70000, { department: null }),
+    r('m', '2026-09-01', 'nodept', 'J2', 30000, { fte: 0.5, department: 'D2' }),
+    // An unpaid row with a full FTE: a paid one comes first.
+    r('m', '2026-09-01', 'unpaid', 'J1', 0),
+    r('m', '2026-09-01', 'unpaid', 'J2', 40000, { fte: 0.2 }),
+    // Nothing paid: still named, by the same order.
+    r('m', '2026-09-01', 'none', 'J1', 0, { fte: 0.5 }),
+    r('m', '2026-09-01', 'none', 'J2', 0, { fte: 1 }),
+  ];
+  const WANT = {
+    director: ['CP052', 'D1'], halves: ['J2', 'D1'], bigger: ['J1', 'D1'], same: ['J2', 'D3'], hourly: ['H2', 'D1'],
+    nodept: ['J1', null], unpaid: ['J2', 'D1'], none: ['J2', 'D1'],
+  };
+
+  it('names each person by their highest-FTE paid appointment, every column from that one row', async () => {
+    const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
+    await all(`CREATE TABLE mains AS SELECT * FROM salaries WHERE FALSE`);
+    for (const order of [M, [...M].reverse()]) {
+      await all(`DELETE FROM mains`);
+      await all(`INSERT INTO mains VALUES ${order.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n')}`);
+      const rows = await all<{ person_key: string; code: string; dept: string | null }>(
+        `SELECT person_key, ${mainOf('job_code')} code, ${mainOf('department')} dept FROM mains GROUP BY person_key`
+      );
+      expect(Object.fromEntries(rows.map((x) => [x.person_key, [x.code, x.dept]]))).toEqual(WANT);
+    }
+  });
+
+  it('picks the same row client-side, in either row order', () => {
+    for (const order of [M, [...M].reverse()]) {
+      const got = Object.fromEntries(Object.keys(WANT).map((k) => {
+        const m = mainRow(order.filter((x) => x.person_key === k) as unknown as (MainFields & Row)[]);
+        return [k, [m?.job_code, m?.department]];
+      }));
+      expect(got).toEqual(WANT);
+    }
+  });
+});
+
 describe('GRADED_APPT', () => {
   // Each person is one way of getting the band's pay wrong.
   const G: Row[] = [
     // Half-time: the band is compared with the full-time rate, not the pay it earns.
     r('g', '2026-01-01', 'half', 'J1', 60000, { grade_number: 15, fte: 0.5 }),
-    // Two graded appointments: the one that pays most carries the grade, not their combined earnings.
+    // Two graded appointments: the main one (the higher FTE) carries the band, though the other pays more.
     r('g', '2026-01-01', 'two', 'J1', 50000, { grade_number: 15, fte: 0.6 }),
-    r('g', '2026-01-01', 'two', 'J2', 80000, { grade_number: 20, grade_basis: 'hourly', fte: 0.3 }),
-    // The best-paid appointment has no grade: the graded one is read, however small.
+    r('g', '2026-01-01', 'two', 'J2', 100000, { grade_number: 25, fte: 0.4 }),
+    // A salaried job and an hourly one on a higher annualized rate: the salaried job.
+    r('g', '2026-01-01', 'hourly', 'J1', 50000, { grade_number: 15 }),
+    r('g', '2026-01-01', 'hourly', 'H1', 90000, { grade_number: 20, grade_basis: 'hourly', fte: 0 }),
+    // The main appointment has no grade: no band, not one borrowed from a side job.
     r('g', '2026-01-01', 'ungraded', 'J3', 100000, { grade_number: null, grade_basis: null }),
     r('g', '2026-01-01', 'ungraded', 'J1', 40000, { grade_number: 17, fte: 0.2 }),
-    // The top appointment records no schedule: grade and schedule still come from the same row.
+    // The main appointment records no schedule: grade and schedule still come from the same row.
     r('g', '2026-01-01', 'nobasis', 'J1', 90000, { grade_number: 22, grade_basis: null }),
     r('g', '2026-01-01', 'nobasis', 'J2', 30000, { grade_number: 16, fte: 0.5 }),
-    // Equal pay: the higher rate wins, whatever order the rows come in.
+    // Equal pay: the higher FTE wins, whatever order the rows come in.
     r('g', '2026-01-01', 'tie', 'J1', 40000, { grade_number: 18, fte: 1 }),
     r('g', '2026-01-01', 'tie', 'J2', 80000, { grade_number: 25, fte: 0.5 }),
     // Unpaid, graded: nothing to place.
@@ -207,13 +269,14 @@ describe('GRADED_APPT', () => {
   const WANT = {
     half: { grade: 15, basis: 'annual_12mo', rate: 60000, comp: 'Annual' },
     two: { grade: 15, basis: 'annual_12mo', rate: 50000, comp: 'Annual' },
-    ungraded: { grade: 17, basis: 'annual_12mo', rate: 40000, comp: 'Annual' },
+    hourly: { grade: 15, basis: 'annual_12mo', rate: 50000, comp: 'Annual' },
+    ungraded: null,
     nobasis: { grade: 22, basis: null, rate: 90000, comp: 'Annual' },
-    tie: { grade: 25, basis: 'annual_12mo', rate: 80000, comp: 'Annual' },
+    tie: { grade: 18, basis: 'annual_12mo', rate: 40000, comp: 'Annual' },
     unpaid: null,
   };
 
-  it('reads each band against the full-time rate of the appointment that carries the grade', async () => {
+  it('reads each band against the full-time rate of the main appointment, or not at all', async () => {
     const lit = (v: string | number | null) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
     await all(`CREATE TABLE graded AS SELECT * FROM salaries WHERE FALSE`);
     await all(`INSERT INTO graded VALUES ${G.map((row) => `(${COLS.map((c) => lit(row[c] ?? null)).join(', ')})`).join(',\n')}`);
@@ -232,7 +295,7 @@ describe('GRADED_APPT', () => {
           gradedAppt(order.filter((x) => x.person_key === k).map((x) => ({
             salary: x.salary as number, salary_fte_adjusted: x.salary_fte_adjusted as number | null, fte: x.fte as number | null,
             grade_number: x.grade_number as number | null, grade_basis: x.grade_basis as string | null,
-            comp_basis: x.comp_basis as string | null,
+            comp_basis: x.comp_basis as string | null, job_code: x.job_code as string | null,
           }))),
         ])
       );

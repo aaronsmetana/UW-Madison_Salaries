@@ -1652,8 +1652,9 @@ export function StrataGraph({
             )}
             {cats && (
               <div className="strata-legend-types" data-on={!changeShown || undefined} aria-hidden={changeShown || undefined}>
-                <Text span size="xs" c="dimmed" className="hero-dist-legend-lead" title={`${canHover ? 'Click' : 'Tap'} a type to show it alone`}>
-                  By highest-paid appointment
+                <Text span size="xs" c="dimmed" className="hero-dist-legend-lead"
+                  title={`Someone with several jobs is coloured by their main one, the highest FTE. ${canHover ? 'Click' : 'Tap'} a type to show it alone`}>
+                  By main appointment
                 </Text>
                 {cats?.map((c) => (
                   <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}

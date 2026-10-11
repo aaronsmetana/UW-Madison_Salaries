@@ -7,7 +7,18 @@ import {
   makePersonKey, snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median,
   latestGradeBands, harmonizeHourly, isAnnualizedRate, prepareSheet, HOURS_PER_YEAR, FTE_PLACEHOLDER,
   mapDepartment, departmentChanges, structureChange, releasedWith, divisionReorganizations,
+  MAIN_KEY_SQL, ACTUAL_PAY_SQL,
 } from './lib/normalize.mjs';
+import { MAIN_KEY, ACTUAL_PAY } from '../src/lib/queries.ts';
+
+// The build and the app pick a person's main appointment (and count their pay) by the same text, or the
+// landing page's dots, built here, and the names the app puts on them, picked there, part ways.
+describe('the SQL twins', () => {
+  it('state the main appointment and actual pay exactly as src/lib/queries.ts does', () => {
+    expect(MAIN_KEY_SQL).toBe(MAIN_KEY);
+    expect(ACTUAL_PAY_SQL).toBe(ACTUAL_PAY);
+  });
+});
 
 describe('dates', () => {
   it('converts Excel serials (44713 → 2022-06-01)', () => {

@@ -113,7 +113,7 @@ export interface HomeStats {
     lo100: number;
     counts: number[];
     /** The same people by staff category, largest first: each person once, in the category of their
-     *  highest-paid appointment. `counts` sum to the parent's bin by bin; `over` counts those at or
+     *  main appointment (the highest FTE). `counts` sum to the parent's bin by bin; `over` counts those at or
      *  above the cap; `n` and `median` cover everyone paid in the category. */
     categories?: { name: string; n: number; median: number; over: number; counts: number[];
       /** The pays of the people at or above the cap, by pay then person — the pile's own order, so its

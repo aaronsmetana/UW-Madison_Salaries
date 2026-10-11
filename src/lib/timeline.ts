@@ -1,10 +1,10 @@
 import { COLS, COL_DOLLARS, DOWN, FLOORS, NEW, STAY, UP, floorOf, stableKey, typeRanks, type Strata } from './strata';
-import { ACTUAL_PAY } from './queries';
+import { ACTUAL_PAY, mainOf } from './queries';
 import { sqlStr } from './duckdb';
 
 /**
  * The landing graph through time (mockup 3a §8): everyone paid in every snapshot, as the landing page counts
- * a person — their total pay over their paid appointments, in the category of their highest-paid one
+ * a person — their total pay over their paid appointments, in the category of their main one
  * (lib/homePeople `homePeopleSql`, for each snapshot at once). Each person has one number across all of
  * them, so a step from one snapshot to the next can move each square from where they were to where they are,
  * drop in who joined and lift out who left. Loaded once, the first time a reader asks for the timeline: the
@@ -37,10 +37,9 @@ export interface Timeline {
 }
 
 const peopleCte = (snapshots: readonly string[]) => `p AS (
-    SELECT snapshot_id, person_key, sum(rp) AS pay, first(cat ORDER BY rp DESC, cat) AS cat
-    FROM (SELECT snapshot_id, person_key, coalesce(employee_category, 'Other') AS cat, ${ACTUAL_PAY} AS rp
-          FROM salaries WHERE salary > 0 AND snapshot_id IN (${snapshots.map(sqlStr).join(', ')}))
-    GROUP BY snapshot_id, person_key HAVING sum(rp) > 0),
+    SELECT snapshot_id, person_key, sum(${ACTUAL_PAY}) AS pay, coalesce(${mainOf('employee_category')}, 'Other') AS cat
+    FROM salaries WHERE salary > 0 AND snapshot_id IN (${snapshots.map(sqlStr).join(', ')})
+    GROUP BY snapshot_id, person_key HAVING sum(${ACTUAL_PAY}) > 0),
   k AS (SELECT person_key, CAST(row_number() OVER (ORDER BY person_key) - 1 AS INTEGER) AS id FROM (SELECT DISTINCT person_key FROM p))`;
 
 /** Everyone in every snapshot: `snap` (the snapshot's place in `snapshots`), `id`, `pay` and `kind` (its place

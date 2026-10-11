@@ -5,7 +5,7 @@ import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { useNavigate } from 'react-router-dom';
 import { useSql, useSummary, useSearchIndex } from '../lib/hooks';
 import { sqlStr, sqlLikeContains } from '../lib/duckdb';
-import { personPay } from '../lib/queries';
+import { personPay, latestMainOf } from '../lib/queries';
 import { fullName, usd, num } from '../lib/format';
 import { fmtK } from '../lib/chartStyle';
 import { snapX, reportingBreaks } from '../lib/snapTime';
@@ -300,13 +300,14 @@ export function SearchBox({
          SELECT person_key,
             arg_max(first_name, snapshot_date) AS fn,
             arg_max(last_name, snapshot_date)  AS ln,
-            arg_max(school, snapshot_date)     AS school,
-            arg_max(title, snapshot_date)      AS title,
+            ${latestMainOf('school')} AS school,
+            ${latestMainOf('title')} AS title,
             arg_max(hire_year, snapshot_date)  AS hire_year,
             arg_max(per_snap, snapshot_date)   AS latest_appts,
             max(snapshot_date)                 AS last_date
          FROM (
-           SELECT person_key, first_name, last_name, school, title, hire_year, snapshot_date,
+           SELECT person_key, first_name, last_name, school, title, hire_year, snapshot_date, snapshot_id,
+                  salary, salary_fte_adjusted, fte, job_code, department, employee_category,
                   count(*) OVER (PARTITION BY person_key, snapshot_id) per_snap
            FROM salaries
            WHERE lower(first_name || ' ' || last_name) LIKE ${sqlLikeContains(q)} ESCAPE '\\'
@@ -347,8 +348,8 @@ export function SearchBox({
            SELECT person_key,
               arg_max(first_name, snapshot_date) AS fn,
               arg_max(last_name, snapshot_date)  AS ln,
-              arg_max(school, snapshot_date)     AS school,
-              arg_max(title, snapshot_date)      AS title,
+              ${latestMainOf('school')} AS school,
+              ${latestMainOf('title')} AS title,
               arg_max(hire_year, snapshot_date)  AS hire_year,
               max(snapshot_date)                 AS last_date
            FROM salaries

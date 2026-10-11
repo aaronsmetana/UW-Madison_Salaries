@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { oracle, PAY, usd } from './oracle';
+import { oracle, PAY, main, usd } from './oracle';
 import { HOME_STATS, people, spots } from './homeDots';
 import { atCiPace, FRAME_MS, clearFrames, frameCount, frameTimes } from './pace';
 import { parseColor } from './color';
@@ -10,7 +10,7 @@ import { parseColor } from './color';
  * The landing graph's timeline (mockup 3a §8, lib/timeline): under the plot, Play, the speed (Slow, Medium,
  * Fast), how a step shows (raises and cuts, or employment type), its settings, and a track of the snapshots. Each
  * snapshot is drawn from its own people, as the landing counts a person — total pay over paid appointments, in the
- * category of their highest-paid one — with its own headcount, median, quartiles, pile and types; a step from one
+ * category of their main one — with its own headcount, median, quartiles, pile and types; a step from one
  * to the next carries each person from where they were, fades in who joined and fades out who left, each in their
  * own place. Raising and cutting, it counts who moved up a $5k column, down one, joined and left, and at Slow and
  * Medium stages it: the move, a countdown that holds it, the re-sort. Every figure here is restated from the data
@@ -81,8 +81,8 @@ async function goTo(page: Page, i: number) {
 /** Everyone in snapshot `id`: their pay, and their kind as the graph names it. */
 async function peopleIn(id: string) {
   const rows = await oracle<{ k: string; pay: number; cat: string }>(
-    `WITH r AS (SELECT person_key, coalesce(employee_category, 'Other') ct, ${PAY} rp FROM $SAL WHERE snapshot_id = '${id}' AND salary > 0)
-     SELECT person_key k, sum(rp) pay, first(ct ORDER BY rp DESC, ct) cat FROM r GROUP BY person_key HAVING sum(rp) > 0`,
+    `SELECT person_key k, sum(${PAY}) pay, coalesce(${main('employee_category')}, 'Other') cat FROM $SAL
+     WHERE snapshot_id = '${id}' AND salary > 0 GROUP BY person_key HAVING sum(${PAY}) > 0`,
   );
   return rows.map((r) => { const c = FOLD[r.cat] ?? r.cat; return { ...r, kind: NAMED.includes(c) ? c : CODED }; });
 }

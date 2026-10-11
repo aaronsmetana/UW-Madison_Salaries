@@ -7,7 +7,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, peopleSql } from '../lib/queries';
+import { personPay, peopleSql, mainOf } from '../lib/queries';
 import { usd, num, fullName, fmtYears } from '../lib/format';
 import type { Metric } from '../state/controls';
 import { useTray } from '../state/tray';
@@ -67,7 +67,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const { data: statRows, isLoading } = useSql<StatsRow>(
     ['ts-stats', jobCode, snap, school ?? '', metric],
-    `WITH pp AS (SELECT person_key, arg_max(title, salary) title, ${personPay(metric)} pay FROM salaries WHERE ${base} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${mainOf('title')} title, ${personPay(metric)} pay FROM salaries WHERE ${base} GROUP BY person_key)
      SELECT any_value(title) title, count(*) FILTER (WHERE pay > 0) n,
         median(pay) FILTER (WHERE pay > 0) med, quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
         quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75, min(pay) FILTER (WHERE pay > 0) lo,

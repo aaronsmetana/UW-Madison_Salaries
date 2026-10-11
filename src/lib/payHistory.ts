@@ -570,6 +570,19 @@ export function sameTitleText(a: string | null | undefined, b: string | null | u
 }
 
 /**
+ * Whether a person's main appointment (queries `MAIN_KEY`) moved from one job to another between two snapshots
+ * only because two jobs they held in both swapped places — their FTEs crossed. No job was taken up or left, so a
+ * history does not mark it as a title change; the title median still breaks there, since it is another title's.
+ * `codes` are every job code the person held in that snapshot. 59 such steps in all the data (Oct 2026).
+ */
+export function mainSwapped(
+  a: { job_code: string | null; codes?: readonly (string | null)[] },
+  b: { job_code: string | null; codes?: readonly (string | null)[] },
+): boolean {
+  return a.job_code !== b.job_code && !!a.codes && !!b.codes && b.codes.includes(a.job_code) && a.codes.includes(b.job_code);
+}
+
+/**
  * Title eras along a history, one number per row: a new era at each change of job code — except
  * across the TTC relabel (the pre-TTC snapshot and the one after it) when the title is only re-spelled.
  * The relabel reissued every code, so a 9-month professor's history drew two eras, both "Associate

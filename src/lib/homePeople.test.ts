@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, medianOf, spotPeople, topSchoolsForSql, topTitlesInSql, type HomePerson, type PayCounts } from './homePeople';
+import { MAIN_KEY } from './queries';
 import { peopleFromCounts } from './dotLayout';
 
 const CAP = 250000;
@@ -189,12 +190,13 @@ describe('spotPeople', () => {
 });
 
 describe('homeNamesSql', () => {
-  it('reads the rows the dots are counted from, one per person: their highest-paid appointment, tied as the dots tie', () => {
+  it('reads the rows the dots are counted from, one per person: their main appointment, the one the dot is coloured by', () => {
     const sql = homeNamesSql('2026-03');
     expect(sql).toContain("snapshot_id = '2026-03'");
     expect(sql).toContain('salary > 0');
-    // Pay first, then the category the dot takes on a tie (homePeopleSql's `ORDER BY rp DESC, cat`).
-    expect(sql).toMatch(/PARTITION BY person_key ORDER BY .+ DESC, coalesce\(employee_category, 'Other'\)/);
+    // The order homePeopleSql's `mainOf` takes the category by, highest first.
+    expect(sql).toContain(`PARTITION BY person_key ORDER BY ${MAIN_KEY} DESC`);
+    expect(homePeopleSql('2026-03')).toContain(MAIN_KEY);
     expect(sql).toMatch(/WHERE k = 1/);
   });
 });

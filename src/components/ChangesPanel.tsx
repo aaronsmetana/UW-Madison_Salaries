@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, whereAll, filterKey, continuingRaisesSql, reportingFactorSql } from '../lib/queries';
+import { personPay, whereAll, filterKey, continuingRaisesSql, reportingFactorSql, mainOf } from '../lib/queries';
 import { usd, usdCompact, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
@@ -124,11 +124,11 @@ export function ChangesPanel() {
 
   // Restrict both sides to people with a paid appointment so unpaid $0 affiliates don't read as
   // joiners/leavers (a $0-only person has NULL personPay and is dropped by the HAVING).
-  const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
-                                 arg_max(comp_basis, salary) basis
+  const cte = `WITH a AS (SELECT person_key, ${personPay(metric)} pay, ${mainOf('job_code')} job, ${mainOf('title')} title, ${mainOf('school')} school,
+                                 ${mainOf('comp_basis')} basis
                           FROM salaries WHERE snapshot_id = ${A} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0),
-                    b AS (SELECT person_key, ${personPay(metric)} pay, arg_max(job_code, salary) job, arg_max(title, salary) title, arg_max(school, salary) school,
-                                 arg_max(comp_basis, salary) basis, any_value(first_name) fn, any_value(last_name) ln
+                    b AS (SELECT person_key, ${personPay(metric)} pay, ${mainOf('job_code')} job, ${mainOf('title')} title, ${mainOf('school')} school,
+                                 ${mainOf('comp_basis')} basis, any_value(first_name) fn, any_value(last_name) ln
                           FROM salaries WHERE snapshot_id = ${B} AND ${localWhere} GROUP BY person_key HAVING ${personPay(metric)} > 0)`;
 
   // Every raise figure on this panel — the median, the distribution, the biggest raises and cuts, the

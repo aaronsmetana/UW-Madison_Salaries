@@ -64,6 +64,69 @@ export function actualPay(r: { salary: number | null; salary_fte_adjusted: numbe
   return (r.salary_fte_adjusted || null) ?? (r.salary ?? 0) * (r.fte || 1);
 }
 
+/**
+ * Which of a person's appointments is their main one, the job a page names them by and compares them in:
+ * the paid appointment with the highest FTE. An hourly appointment records no percentage (`fte = 0`
+ * after the ETL's `harmonizeHourly`), so it comes after every salaried one. Ties go to the higher actual
+ * pay, then to the row's own columns, so two rows that are not the same row never tie and the pick never
+ * depends on the order they were read in.
+ *
+ * The app used to choose five ways. The person page named the last row fetched, the salary trend the
+ * highest FTE, most lists the highest rate, the pay band the best-paid graded appointment, and search any
+ * row of the latest snapshot. A Threat Intervention Services Director who also works hourly crowd control
+ * was named by the crowd-control job on his own page, and by the directorship on the trend's median line.
+ *
+ * A struct, compared field by field; read it with `mainOf`. The same order is `mainRow` below, and
+ * `MAIN_KEY_SQL` in scripts/lib/normalize.mjs.
+ */
+export const MAIN_KEY = `{paid: COALESCE(salary, 0) > 0, fte: COALESCE(fte, 0), pay: COALESCE(${ACTUAL_PAY}, 0),
+  code: COALESCE(job_code, ''), title: COALESCE(title, ''), school: COALESCE(school, ''),
+  department: COALESCE(department, ''), category: COALESCE(employee_category, '')}`;
+
+/**
+ * One column of a person's main appointment (`MAIN_KEY`), in a `GROUP BY person_key` query, e.g.
+ * `${mainOf('title')} title`. Wrapped in a struct because `arg_max` skips the rows where its own argument
+ * is NULL: `arg_max(department, …)` would hand back another appointment's department when the main
+ * one's is missing. Every `mainOf` in a query lands on the same row, since the key orders every row.
+ */
+export const mainOf = (col: string) => `arg_max({v: ${col}}, ${MAIN_KEY}).v`;
+
+/**
+ * `mainOf` over every snapshot a person is in: their main appointment in the latest one, which is what a
+ * list of people names someone by. The Nov 2021 twins share a date; the post-TTC one is the later.
+ */
+export const latestMainOf = (col: string) =>
+  `arg_max({v: ${col}}, {d: snapshot_date, post: NOT ends_with(snapshot_id, '-pre'), m: ${MAIN_KEY}}).v`;
+
+/** The columns `mainRow` reads. */
+export interface MainFields {
+  salary: number | null; salary_fte_adjusted: number | null; fte: number | null;
+  job_code?: string | null; title?: string | null; school?: string | null; department?: string | null;
+  employee_category?: string | null;
+}
+
+/** `MAIN_KEY`'s order as a comparator: above zero when `a` is the more main of the two. */
+export const compareMain = (a: MainFields, b: MainFields): number => {
+  const paid = Number((a.salary ?? 0) > 0) - Number((b.salary ?? 0) > 0);
+  if (paid) return paid;
+  const fte = (a.fte ?? 0) - (b.fte ?? 0);
+  if (fte) return fte;
+  const pay = actualPay(a) - actualPay(b);
+  if (pay) return pay;
+  for (const k of ['job_code', 'title', 'school', 'department', 'employee_category'] as const) {
+    const x = a[k] ?? '', y = b[k] ?? '';
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+};
+
+/** `MAIN_KEY` for rows already fetched (one person, one snapshot): their main appointment. */
+export function mainRow<T extends MainFields>(rows: readonly T[]): T | undefined {
+  let best: T | undefined;
+  for (const r of rows) if (!best || compareMain(r, best) > 0) best = r;
+  return best;
+}
+
 /** SQL expression for the selected salary metric (per appointment; full annual rate for full/base). */
 export function salaryExpr(metric: Metric): string {
   switch (metric) {
@@ -102,8 +165,11 @@ export function personPay(metric: Metric): string {
 }
 
 /**
- * The appointment a person's pay band is read against: of their paid appointments that carry a grade,
- * the one that pays them most — its grade, its schedule, and its full-time rate, all from that one row.
+ * The appointment a person's pay band is read against: their main appointment (`MAIN_KEY`) — its grade,
+ * its schedule, and its full-time rate, all from that one row. When the main appointment carries no grade
+ * there is no band, rather than one borrowed from a smaller job: a band read off a side appointment
+ * described a job the page did not name. Until Oct 2026 this took the best-paid graded appointment, which
+ * placed 30 to 80 people a snapshot by a job other than their main one.
  *
  * A band is a range of full-time rates. Screening and Reports compared it with the person's pay under
  * the metric: actual pay, scaled by the appointment percentage and summed across appointments. A
@@ -114,14 +180,14 @@ export function personPay(metric: Metric): string {
  * last. Every band now reads this.
  *
  * One `arg_max` over a struct, so the three come from the same row: separate `arg_max` calls each skip
- * the rows where their own column is NULL, and could each land on a different appointment. Ties go to
- * the higher rate, then the higher grade, so the pick never depends on row order.
+ * the rows where their own column is NULL, and could each land on a different appointment.
  *
  * Its `comp_basis` comes along: it says which units that snapshot reported the rate in (lib/bands `bandFor`).
  *
- * Use as a column in a `GROUP BY person_key` query, then read it with `gradedCols` one level up.
+ * Use as a column in a `GROUP BY person_key` query, then read it with `gradedCols` one level up; its
+ * `grade` is NULL when the main appointment has none.
  */
-export const GRADED_APPT = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, {pay: ${ACTUAL_PAY}, rate: salary, grade: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
+export const GRADED_APPT = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, ${MAIN_KEY}) FILTER (WHERE salary > 0)`;
 
 /** `GRADED_APPT`'s fields as plain columns: `grade_number`, `grade_basis`, `band_rate` and `band_comp`. */
 export const gradedCols = (col = 'graded') =>
@@ -129,20 +195,11 @@ export const gradedCols = (col = 'graded') =>
 
 /** `GRADED_APPT` for rows already fetched — the person pages read one snapshot's rows client-side. */
 export function gradedAppt(
-  rows: readonly {
-    salary: number | null; salary_fte_adjusted: number | null; fte: number | null;
-    grade_number: number | null; grade_basis: string | null; comp_basis?: string | null;
-  }[]
+  rows: readonly (MainFields & { grade_number: number | null; grade_basis: string | null; comp_basis?: string | null })[]
 ): { grade: number; basis: string | null; rate: number; comp: string | null } | null {
-  let best: { grade: number; basis: string | null; rate: number; comp: string | null; pay: number } | null = null;
-  for (const r of rows) {
-    if (!(r.salary && r.salary > 0) || r.grade_number == null) continue;
-    const pay = actualPay(r);
-    if (!best || pay > best.pay || (pay === best.pay && (r.salary > best.rate || (r.salary === best.rate && r.grade_number > best.grade)))) {
-      best = { grade: r.grade_number, basis: r.grade_basis, rate: r.salary, comp: r.comp_basis ?? null, pay };
-    }
-  }
-  return best && { grade: best.grade, basis: best.basis, rate: best.rate, comp: best.comp };
+  const m = mainRow(rows);
+  if (!m || !(m.salary && m.salary > 0) || m.grade_number == null) return null;
+  return { grade: m.grade_number, basis: m.grade_basis, rate: m.salary, comp: m.comp_basis ?? null };
 }
 
 /**

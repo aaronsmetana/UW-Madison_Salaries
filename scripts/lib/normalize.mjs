@@ -147,6 +147,18 @@ export const ACTUAL_PAY_SQL = `COALESCE(${FTE_ADJUSTED_SQL}, salary * ${FTE_MULT
 export const actualPay = (row) => (row.salary_fte_adjusted || null) ?? row.salary * fteMult(row.fte);
 
 /**
+ * A person's main appointment: the paid one with the highest FTE, hourly (FTE 0) last, ties to the
+ * higher actual pay and then the row's own columns. The Node twin of `MAIN_KEY` in src/lib/queries.ts,
+ * which carries the full explanation; a test holds the two to the same text.
+ */
+export const MAIN_KEY_SQL = `{paid: COALESCE(salary, 0) > 0, fte: COALESCE(fte, 0), pay: COALESCE(${ACTUAL_PAY_SQL}, 0),
+  code: COALESCE(job_code, ''), title: COALESCE(title, ''), school: COALESCE(school, ''),
+  department: COALESCE(department, ''), category: COALESCE(employee_category, '')}`;
+
+/** One column of the main appointment, in a `GROUP BY person_key` query (`mainOf` in src/lib/queries.ts). */
+export const mainOfSql = (col) => `arg_max({v: ${col}}, ${MAIN_KEY_SQL}).v`;
+
+/**
  * The hours in the full-time year every hourly figure in this source is annualized over. Measured on
  * the workbooks that name their hourly rows: 5,143 of 5,144 in Sep 2025 land on a whole-cent rate at
  * 2,080 hours, against 12 at 2,088 and 1,287 at 2,000.

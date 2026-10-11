@@ -5,7 +5,7 @@ import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
-import { salaryExpr, personPay, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, personPay, snapWhere, whereAll, filterKey, mainOf } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
 import { useTray } from '../state/tray';
 import { TrayButton } from './TrayButton';
@@ -47,7 +47,7 @@ export function EarnersPanel() {
   // Divisions set aside. Nothing by default, so the list stays neutral; applied in SQL before the
   // LIMIT, so what remains still fills the list.
   const [exclude, setExclude] = useState<string[]>([]);
-  const excludeSql = exclude.length ? `HAVING arg_max(school, salary) NOT IN (${exclude.map(sqlStr).join(', ')})` : '';
+  const excludeSql = exclude.length ? `HAVING ${mainOf('school')} NOT IN (${exclude.map(sqlStr).join(', ')})` : '';
   const { data: schoolOpts } = useSql<{ school: string }>(
     ['earners-schools', snap ?? '', scope.kind, scopeVal, fk],
     `SELECT DISTINCT school FROM salaries WHERE ${where} AND school IS NOT NULL ORDER BY school`,
@@ -59,8 +59,8 @@ export function EarnersPanel() {
   const { data: earnersRaw } = useSql<EarnerRow>(
     ['top-earners', snap ?? '', scope.kind, scopeVal, metric, fk, limit, exclude.join('|')],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
-        arg_max(title, salary) title, arg_max(job_code, salary) job_code,
-        arg_max(school, salary) school, arg_max(department, salary) department,
+        ${mainOf('title')} title, ${mainOf('job_code')} job_code,
+        ${mainOf('school')} school, ${mainOf('department')} department,
         sum(fte) FILTER (WHERE salary > 0) fte, ${personPay(metric)} pay,
         sum(salary) FILTER (WHERE salary > 0) rate, count(*) FILTER (WHERE salary > 0) appts
      FROM salaries WHERE ${where} AND ${expr} > 0
@@ -77,7 +77,7 @@ export function EarnersPanel() {
     ['earners-prevrank', prevSnap?.id ?? '', scope.kind, scopeVal, metric, fk, exclude.join('|')],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
         WHERE ${snapWhere(prevSnap?.id ?? '')} AND ${whereAll(scope, filters)} GROUP BY person_key
-        HAVING ${personPay(metric)} > 0${exclude.length ? ` AND arg_max(school, salary) NOT IN (${exclude.map(sqlStr).join(', ')})` : ''})
+        HAVING ${personPay(metric)} > 0${exclude.length ? ` AND ${mainOf('school')} NOT IN (${exclude.map(sqlStr).join(', ')})` : ''})
      SELECT person_key, rnk FROM (SELECT person_key, row_number() OVER (ORDER BY pay DESC) rnk FROM pp) WHERE rnk <= 2000`,
     !!snap && !!prevSnap
   );

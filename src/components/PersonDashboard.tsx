@@ -6,10 +6,10 @@ import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
-import { latestHire } from '../lib/personQuery';
-import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt } from '../lib/queries';
+import { latestHire, latestMain } from '../lib/personQuery';
+import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
-import { titleEras } from '../lib/payHistory';
+import { titleEras, mainSwapped } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from './GapBreakdown';
@@ -50,7 +50,10 @@ interface Row {
   date_of_hire: string | null;
   grade_number: number | null;
   grade_basis: string | null;
+  employee_category: string | null;
 }
+/** A row as queries' `mainRow` reads one: the source's rate is `rate_raw` here, beside the report's own measure. */
+const asAppt = (r: Row) => ({ ...r, salary: r.rate_raw });
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
 
 /** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
@@ -89,7 +92,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const { data, isLoading, error } = useSql<Row>(
     ['dash-person', personKey, metric],
     `SELECT first_name, last_name, snapshot_id, snapshot_label, snapshot_date, school, department,
-            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, salary_fte_adjusted, comp_basis, fte, date_of_hire, grade_number, grade_basis
+            title, job_code, ${expr} AS pay, ${earningsExpr(metric)} AS earn, salary AS rate_raw, salary_fte_adjusted, comp_basis, fte, date_of_hire, grade_number, grade_basis, employee_category
      FROM salaries WHERE person_key = ${sqlStr(personKey)} ORDER BY snapshot_date`,
     !!personKey
   );
@@ -98,7 +101,8 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   const { data: summary } = useSummary();
 
   const rows = useMemo(() => data ?? [], [data]);
-  const latest = rows[rows.length - 1];
+  // Their main appointment in their latest snapshot (queries `MAIN_KEY`), as /person names them.
+  const latest = useMemo(() => latestMain(rows.map(asAppt)), [rows]);
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || personKey;
 
   const campusLatest = summary?.snapshots[summary.snapshots.length - 1] ?? null;
@@ -126,19 +130,17 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         const appts = g.rows.length;
         // Single appointment → metric value; multiple concurrent → FTE-blended actual earnings.
         const salary = appts > 1 ? g.rows.reduce((s, r) => s + (r.earn ?? 0), 0) : (g.rows[0].pay ?? 0);
-        const primary = g.rows.reduce((best, r) => {
-          const bf = best.fte ?? 0, rf = r.fte ?? 0;
-          return rf > bf || (rf === bf && (r.pay ?? 0) > (best.pay ?? 0)) ? r : best;
-        }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
+        const primary = mainRow(g.rows.map(asAppt))!;
+        const codes = g.rows.map((r) => r.job_code);
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, codes, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
 
   const { data: titleMedRows } = useSql<{ snapshot_id: string; med: number | null }>(
     ['dash-title-med', personKey, metric],
-    `WITH me AS (SELECT snapshot_id, arg_max(job_code, salary) job FROM salaries
-        WHERE person_key = ${sqlStr(personKey)} AND job_code IS NOT NULL GROUP BY snapshot_id),
+    `WITH me AS (SELECT snapshot_id, ${mainOf('job_code')} job FROM salaries
+        WHERE person_key = ${sqlStr(personKey)} GROUP BY snapshot_id),
       pp AS (SELECT s.snapshot_id, s.person_key, ${personPay(metric)} pay
         FROM salaries s JOIN me ON s.snapshot_id = me.snapshot_id AND s.job_code = me.job
         GROUP BY s.snapshot_id, s.person_key)
@@ -202,9 +204,9 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return hasPreTTC ? `Title before TTC: ${firstTitle}; now ${lastTitle}.` : null;
   }, [trend]);
 
-  // As on /person: the band is read against the appointment that carries the grade, at its full-time rate.
+  // As on /person: the band is read against the main appointment's grade, at its full-time rate.
   const graded = useMemo(
-    () => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id).map((r) => ({ ...r, salary: r.rate_raw }))),
+    () => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id).map(asAppt)),
     [rows, latest]
   );
   const band = useMemo(() => (graded ? bandFor(grades, graded.grade, graded.basis, graded.comp) : null), [graded, grades]);
@@ -315,7 +317,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             ))}
             {breakMarks.length > 0 && <Customized component={<BreakLabels edge="bottom" marks={breakMarks.map((b) => ({ at: b.x, texts: b.texts }))} />} />}
             {trendData.map((t, i) =>
-              i > 0 && trendEras[i] !== trendEras[i - 1] && t.salary != null ? (
+              i > 0 && trendEras[i] !== trendEras[i - 1] && !mainSwapped(trendData[i - 1], t) && t.salary != null ? (
                 <ReferenceDot key={`tc-${t.id}`} x={snapX(t.date, t.id)} y={t.salary} r={6} fill="var(--mantine-color-accent-7)" stroke="var(--mantine-color-body)" strokeWidth={2} />
               ) : null
             )}

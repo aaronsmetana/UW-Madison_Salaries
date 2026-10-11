@@ -7,6 +7,16 @@ export function usd(n: number | null | undefined): string {
   });
 }
 
+/** The hours in the full-time year every hourly figure in the source is annualized over (scripts/lib/normalize
+ *  `HOURS_PER_YEAR`): an hourly appointment's `salary` is its rate times this. */
+export const HOURS_PER_YEAR = 2080;
+
+/** An hourly appointment's rate, from its annualized figure, to the cent: "$43.00/hr". */
+export function hourly(annual: number | null | undefined): string {
+  if (annual == null || !Number.isFinite(Number(annual))) return '—';
+  return `$${(Number(annual) / HOURS_PER_YEAR).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr`;
+}
+
 /** Abbreviated currency for large headline figures (e.g. 1_967_752_095 → "$1.97B"). */
 export function usdCompact(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';

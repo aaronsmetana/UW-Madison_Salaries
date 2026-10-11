@@ -1,5 +1,5 @@
 import { sqlStr, sqlLikeContains } from './duckdb';
-import { ACTUAL_PAY } from './queries';
+import { ACTUAL_PAY, MAIN_KEY, mainOf } from './queries';
 
 /**
  * Who the landing page's dots are. The page draws one anonymous dot per person from `home-stats.json`'s
@@ -8,7 +8,7 @@ import { ACTUAL_PAY } from './queries';
  */
 
 /** A person as the landing page counts them: their total actual pay over their paid appointments, in the
- *  category of their highest-paid appointment. */
+ *  category of their main appointment (queries `MAIN_KEY`). */
 export interface HomePerson {
   person_key: string;
   pay: number | null;
@@ -21,9 +21,8 @@ export interface HomePerson {
  * for person, or a mark lands on someone else's dot; an e2e oracle rebuilds the shipped counts from this.
  */
 export function homePeopleSql(snapshot: string): string {
-  return `SELECT person_key, sum(rp) AS pay, first(cat ORDER BY rp DESC, cat) AS cat
-    FROM (SELECT person_key, coalesce(employee_category, 'Other') AS cat, ${ACTUAL_PAY} AS rp
-          FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0)
+  return `SELECT person_key, sum(${ACTUAL_PAY}) AS pay, coalesce(${mainOf('employee_category')}, 'Other') AS cat
+    FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0
     GROUP BY person_key`;
 }
 
@@ -39,7 +38,7 @@ export interface HomeName {
 
 /**
  * Everyone's name in `snapshot`, with the title and school of the appointment their dot is coloured by:
- * their highest-paid, ties broken as `homePeopleSql` breaks them. The same rows it counts, so everyone who
+ * their main one (queries `MAIN_KEY`), as `homePeopleSql` picks it. The same rows it counts, so everyone who
  * has a dot has a name here. Its own query rather than more columns on that one, which runs whenever the
  * page's search marks someone and inside every filter's (`filterPeopleSql`): this is asked for only by the
  * full page, where dots are named — as it opens where there is a pointer, and on the first hold where
@@ -48,7 +47,7 @@ export interface HomeName {
 export function homeNamesSql(snapshot: string): string {
   return `SELECT person_key, first_name AS fn, last_name AS ln, title, school, department FROM (
       SELECT person_key, first_name, last_name, title, school, department,
-             row_number() OVER (PARTITION BY person_key ORDER BY ${ACTUAL_PAY} DESC, coalesce(employee_category, 'Other'), title, school) AS k
+             row_number() OVER (PARTITION BY person_key ORDER BY ${MAIN_KEY} DESC) AS k
       FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0)
     WHERE k = 1`;
 }

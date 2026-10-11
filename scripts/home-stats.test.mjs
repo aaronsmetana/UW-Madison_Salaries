@@ -35,7 +35,9 @@ async function writeParquet(dir, rows) {
     const db = new duckdb.Database(':memory:');
     const con = db.connect();
     const esc = (p) => p.replace(/'/g, "''");
-    con.run(`CREATE TABLE t AS SELECT * FROM read_json_auto('${esc(ndjson)}', format='newline_delimited');`, (err) => {
+    // The real file always has a department; the fixtures here leave it out unless a test is about it.
+    con.run(`CREATE TABLE t AS SELECT * FROM read_json_auto('${esc(ndjson)}', format='newline_delimited');
+             ALTER TABLE t ADD COLUMN IF NOT EXISTS department VARCHAR;`, (err) => {
       if (err) return reject(err);
       con.run(`COPY t TO '${esc(out)}' (FORMAT PARQUET);`, (err2) => (err2 ? reject(err2) : db.close(resolve)));
     });
@@ -45,19 +47,7 @@ async function writeParquet(dir, rows) {
 
 beforeAll(async () => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-test-'));
-  const ndjson = path.join(tmpDir, 'rows.ndjson');
-  parquetPath = path.join(tmpDir, 'salaries.parquet');
-  fs.writeFileSync(ndjson, ROWS.map((r) => JSON.stringify(r)).join('\n'));
-
-  await new Promise((resolve, reject) => {
-    const db = new duckdb.Database(':memory:');
-    const con = db.connect();
-    const esc = (p) => p.replace(/'/g, "''");
-    con.run(`CREATE TABLE t AS SELECT * FROM read_json_auto('${esc(ndjson)}', format='newline_delimited');`, (err) => {
-      if (err) return reject(err);
-      con.run(`COPY t TO '${esc(parquetPath)}' (FORMAT PARQUET);`, (err2) => (err2 ? reject(err2) : db.close(resolve)));
-    });
-  });
+  parquetPath = await writeParquet(tmpDir, ROWS);
 
   stats = await computeHomeStats(parquetPath, 'snap-1');
 });
@@ -195,7 +185,7 @@ describe('computeHomeStats pay_counts: one count per $100, the dots the landing 
 });
 
 // The "By category" dots: each person is one dot, so they wear one category — the one of their
-// highest-paid appointment — and the categories' counts are the dots' counts, bin by bin.
+// main appointment — and the categories' counts are the dots' counts, bin by bin.
 // The graph's one scale: the tallest $5k column in ANY snapshot, not only the latest, each person once, and everyone
 // at the cap or above a column of their own.
 describe('computeHomeStats column_peak: the most people in one $5k column in any snapshot', () => {
@@ -226,12 +216,15 @@ describe('computeHomeStats pay_counts.categories: one category per person', () =
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'home-stats-cat-'));
     const base = { snapshot_id: 's', school: 'A', title: 'T', salary_fte_adjusted: null, date_of_hire: '2020-01-01', snapshot_date: '2026-01-01' };
     c = await computeHomeStats(await writeParquet(dir, [
-      // Two categories: the lower-paid appointment first, so "the first row's category" is wrong.
+      // Two categories: the full-time appointment, though the half-time one pays more, and comes second.
       { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'two', salary: 60000, fte: 1, salary_fte_adjusted: 60000 },
       { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'two', salary: 200000, fte: 0.5 },
-      // A tie between two categories goes to the name that sorts first.
-      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'tie', salary: 50000, fte: 1 },
+      // A tie in FTE and pay goes to the job code that sorts last (the key's last word), never the row order.
       { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'tie', salary: 50000, fte: 1 },
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'tie', salary: 50000, fte: 1 },
+      // A salaried job and an hourly one on a higher annualized rate: the salaried job's category.
+      { ...base, job_code: 'J3', employee_category: 'Student', person_key: 'hr', salary: 90000, fte: 0 },
+      { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 'hr', salary: 50000, fte: 1 },
       { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 's1', salary: 40000, fte: 1 },
       { ...base, job_code: 'J1', employee_category: 'Staff', person_key: 's2', salary: 45000, fte: 1 },
       { ...base, job_code: 'J2', employee_category: 'Faculty', person_key: 'top', salary: 300000, fte: 1 },
@@ -240,11 +233,11 @@ describe('computeHomeStats pay_counts.categories: one category per person', () =
   });
   const cat = (name) => c.pay_counts.categories.find((x) => x.name === name);
 
-  it("counts a person once, in their highest-paid appointment's category, ties to the name", () => {
-    // two: Faculty (100,000 of their 160,000); tie: Faculty; s1, s2: Staff; top: Faculty, above the cap.
-    expect(cat('Faculty').n).toBe(3);
-    expect(cat('Staff').n).toBe(2);
-    expect(c.pay_counts.categories.map((x) => x.name)).toEqual(['Faculty', 'Staff']);
+  it("counts a person once, in their main appointment's category", () => {
+    // two, hr, s1, s2: Staff; tie: Faculty (J2); top: Faculty, above the cap. No one is a Student.
+    expect(cat('Staff').n).toBe(4);
+    expect(cat('Faculty').n).toBe(2);
+    expect(c.pay_counts.categories.map((x) => x.name)).toEqual(['Staff', 'Faculty']);
   });
 
   it("sums, bin by bin, to the dots' counts, and above the cap to the overflow", () => {
@@ -256,9 +249,10 @@ describe('computeHomeStats pay_counts.categories: one category per person', () =
   });
 
   it("puts each person's total pay in their category's median", () => {
-    // Faculty: two at 160,000, tie at 100,000, top at 300,000.
-    expect(cat('Faculty').median).toBe(160000);
-    expect(c.category_medians[0]).toEqual({ category: 'Faculty', median: 160000 });
+    // Staff: s1 at 40,000, s2 at 45,000, hr at 140,000, two at 160,000. Faculty: tie at 100,000, top at 300,000.
+    expect(cat('Staff').median).toBe(92500);
+    expect(cat('Faculty').median).toBe(200000);
+    expect(c.category_medians[0]).toEqual({ category: 'Staff', median: 92500 });
   });
 });
 

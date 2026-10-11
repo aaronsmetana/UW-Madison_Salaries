@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
 import {
   Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton,
@@ -10,7 +10,7 @@ import {
 import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
-import { titleEras, sameTitleText } from '../lib/payHistory';
+import { titleEras, sameTitleText, mainSwapped } from '../lib/payHistory';
 import { moneyTicks } from '../lib/rangeScale';
 import { BreakLabels } from '../components/chart/BreakLabel';
 import { packLabelRows, measureText } from '../lib/labelLayout';
@@ -28,10 +28,10 @@ import { PersonDashboard } from '../components/PersonDashboard';
 import { PayMeasure } from '../components/PayMeasure';
 import { useControls } from '../state/controls';
 import { useSql, useGrades, useSummary, usePersonAlias } from '../lib/hooks';
-import { latestHire } from '../lib/personQuery';
+import { latestHire, latestMain, latestRows, otherAppts, apptTerms } from '../lib/personQuery';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
-import { personPay, actualPay, gradedAppt, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
+import { personPay, actualPay, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
@@ -301,7 +301,11 @@ export default function Person() {
   const rows = useMemo(() => data ?? [], [data]);
   // An address from before a person split in two was joined back leads to them as they are now.
   const alias = usePersonAlias(key, !!data && !data.length);
-  const latest = rows[rows.length - 1];
+  // The job the page names them by and compares them in: their main appointment in their latest snapshot
+  // (queries `MAIN_KEY`, the highest FTE). It was the last row fetched, which within a snapshot is any of them.
+  const latest = useMemo(() => latestMain(rows), [rows]);
+  // Their other appointments then, named under the title.
+  const also = useMemo(() => otherAppts(latestRows(rows)), [rows]);
   const name = (latest ? fullName(latest.first_name, latest.last_name) : '') || key;
   useDocTitle(latest ? name : 'People');
   // "People / System Engineer IV / Aaron Smetana": the landing (where a person is found), their title's page,
@@ -351,12 +355,11 @@ export default function Person() {
         // as a number it reported "Appointment: 0% FTE" in the trend tooltip, which says the person
         // does not work; the honest answer is that the source does not say.
         const fte = g.rows.some((r) => r.fte) ? g.rows.reduce((s, r) => s + (r.fte ?? 1), 0) : null;
-        // primary appointment = highest FTE (tie-break highest salary) — drives the displayed title
-        const primary = g.rows.reduce((best, r) => {
-          const bf = best.fte ?? 0, rf = r.fte ?? 0;
-          return rf > bf || (rf === bf && (r.salary ?? 0) > (best.salary ?? 0)) ? r : best;
-        }, g.rows[0]);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
+        // The main appointment (queries `MAIN_KEY`) names the snapshot; `codes` are every job held, so a
+        // swap between two of them is not drawn as a title change (payHistory `mainSwapped`).
+        const primary = mainRow(g.rows)!;
+        const codes = g.rows.map((r) => r.job_code);
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary: paid, rate, fte, title: primary.title, job_code: primary.job_code, codes, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -368,8 +371,8 @@ export default function Person() {
   // Median pay for the title the person held at each snapshot (market context for the trend).
   const { data: titleMedRows } = useSql<{ snapshot_id: string; med: number | null; med_rate: number | null }>(
     ['person-title-med', key],
-    `WITH me AS (SELECT snapshot_id, arg_max(job_code, salary) job FROM salaries
-        WHERE person_key = ${sqlStr(key)} AND job_code IS NOT NULL GROUP BY snapshot_id),
+    `WITH me AS (SELECT snapshot_id, ${mainOf('job_code')} job FROM salaries
+        WHERE person_key = ${sqlStr(key)} GROUP BY snapshot_id),
       pp AS (SELECT s.snapshot_id, s.person_key, ${personPay('fte')} pay,
           sum(s.salary) FILTER (WHERE s.salary > 0) rate
         FROM salaries s JOIN me ON s.snapshot_id = me.snapshot_id AND s.job_code = me.job
@@ -409,7 +412,7 @@ export default function Person() {
   // Distinct title eras (for disconnected median segments) and the points where the title changes.
   const eras = useMemo(() => [...new Set(trendData.map((t) => t.era))], [trendData]);
   const titleChanges = useMemo(
-    () => trendData.map((t, idx) => ({ ...t, idx })).filter((t, i) => i > 0 && t.era !== trendData[i - 1].era),
+    () => trendData.map((t, idx) => ({ ...t, idx })).filter((t, i) => i > 0 && t.era !== trendData[i - 1].era && !mainSwapped(trendData[i - 1], t)),
     [trendData],
   );
   // Plot rows, on the date axis (snapTime): x is the snapshot's own date, so the same-day TTC relabel
@@ -562,9 +565,8 @@ export default function Person() {
     return at;
   }, [trend, latest, rows]);
 
-  // The band is read against the appointment that carries the grade, at its full-time rate (queries
-  // `gradedAppt`). `lastRate` sums every appointment's rate, and the last row fetched is whichever came
-  // last: for someone holding two, neither is the band's.
+  // The band is read against the main appointment's grade, at its full-time rate (queries `gradedAppt`):
+  // `lastRate` sums every appointment's rate, which for someone holding two is neither job's.
   const graded = useMemo(() => gradedAppt(rows.filter((r) => r.snapshot_id === latest?.snapshot_id)), [rows, latest]);
   const bandRate = graded?.rate ?? null;
   // The grade's range, or its minimum when HR publishes only that (lib/bands) — in the units the person's
@@ -865,6 +867,23 @@ export default function Person() {
             )}
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
+          {/* The other jobs they hold now: the title above is their main one (the highest FTE). Two named, the
+              rest counted; the History tab lists every one. */}
+          {also.length > 0 && (
+            <Text size="xs" c="dimmed" mt={4} className="person-also" data-n={also.length}>
+              Also:{' '}
+              {also.slice(0, 2).map((a, i) => (
+                <Fragment key={i}>
+                  {i > 0 && '; '}
+                  {a.job_code ? (
+                    <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(a.job_code)}`} inherit>{a.title ?? a.job_code}</Anchor>
+                  ) : (a.title ?? 'another appointment')}
+                  {` (${apptTerms(a)})`}
+                </Fragment>
+              ))}
+              {also.length > 2 && `; and ${also.length - 2} more, in History`}
+            </Text>
+          )}
           {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
           <ToolLinks
             links={[

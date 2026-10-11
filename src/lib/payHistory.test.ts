@@ -4,6 +4,7 @@ import {
   laneSlot, type ApptFields, type Raise,
   titleEras,
   sameTitleText,
+  mainSwapped,
 } from './payHistory';
 
 /**
@@ -719,5 +720,23 @@ describe('sameTitleText', () => {
     expect(sameTitleText('ASSOCIATE  PROFESSOR ', 'Associate Professor')).toBe(true);
     expect(sameTitleText('Associate Professor', 'Assistant Professor')).toBe(false);
     expect(sameTitleText(null, 'Associate Professor')).toBe(false);
+  });
+});
+
+describe('mainSwapped', () => {
+  const at = (job_code: string, codes: string[]) => ({ job_code, codes });
+  it('is a swap when both jobs were held on both sides and only their order changed', () => {
+    expect(mainSwapped(at('J1', ['J1', 'J2']), at('J2', ['J2', 'J1']))).toBe(true);
+  });
+  it('is a title change when a job was taken up or left', () => {
+    // Took up J2 and made it the main one.
+    expect(mainSwapped(at('J1', ['J1']), at('J2', ['J1', 'J2']))).toBe(false);
+    // Left J1.
+    expect(mainSwapped(at('J1', ['J1', 'J2']), at('J2', ['J2']))).toBe(false);
+    // Nothing changed.
+    expect(mainSwapped(at('J1', ['J1', 'J2']), at('J1', ['J1', 'J2']))).toBe(false);
+  });
+  it('needs both sides\' jobs to say', () => {
+    expect(mainSwapped({ job_code: 'J1' }, at('J2', ['J1', 'J2']))).toBe(false);
   });
 });

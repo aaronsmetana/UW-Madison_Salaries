@@ -30,6 +30,18 @@ export function oracle<T = Record<string, unknown>>(sql: string): Promise<T[]> {
  *  zero means "not recorded" in both columns. Stated independently of src/lib/queries.ts. */
 export const PAY = 'coalesce(nullif(salary_fte_adjusted, 0), salary * coalesce(nullif(fte, 0), 1))';
 
+/**
+ * A person's main appointment, as a sort key to take the largest of: paid before unpaid, then the larger
+ * FTE (none recorded, as on every hourly job, counts as 0), then the larger actual pay, then the job code,
+ * title, school, department and category, the one that sorts last winning. Every row differs somewhere,
+ * so the pick never rests on the order rows are read in. Stated independently of src/lib/queries.ts.
+ */
+export const MAIN = `{p: coalesce(salary, 0) > 0, f: coalesce(fte, 0), a: coalesce(${PAY}, 0), c: coalesce(job_code, ''),
+  t: coalesce(title, ''), s: coalesce(school, ''), d: coalesce(department, ''), g: coalesce(employee_category, '')}`;
+
+/** One column of the main appointment, in a `GROUP BY person_key`; a struct, so a NULL is that row's NULL. */
+export const main = (col: string) => `arg_max({v: ${col}}, ${MAIN}).v`;
+
 /** The latest snapshot id in the data. */
 export async function latestSnapshot(): Promise<string> {
   const [r] = await oracle<{ id: string }>('SELECT snapshot_id id FROM $SAL ORDER BY snapshot_date DESC, snapshot_id DESC LIMIT 1');
@@ -52,12 +64,12 @@ export function rangesSql(): string {
 }
 
 /**
- * Of a person's paid appointments that carry a grade, the one that pays them most — its grade, schedule,
- * full-time rate and `comp_basis` (which says the units the rate was reported in), from that one row; ties
- * to the higher rate. A pay band is a range of full-time rates, so this is what one is read against. Use in
- * a `GROUP BY person_key`.
+ * A person's main appointment (`MAIN`) as a pay band reads it — its grade (NULL when it has none: no band),
+ * schedule, full-time rate and `comp_basis` (which says the units the rate was reported in), from that one
+ * row. A pay band is a range of full-time rates, so this is what one is read against. Use in a
+ * `GROUP BY person_key`.
  */
-export const GRADED = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, {p: ${PAY}, r: salary, g: grade_number}) FILTER (WHERE salary > 0 AND grade_number IS NOT NULL)`;
+export const GRADED = `arg_max({grade: grade_number, basis: grade_basis, rate: salary, comp: comp_basis}, ${MAIN}) FILTER (WHERE salary > 0)`;
 
 /**
  * Who the search box finds for `q` (two letters or more): everyone whose name, in any snapshot, contains

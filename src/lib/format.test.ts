@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -126,5 +126,13 @@ describe('fmtGrade', () => {
     expect(fmtGrade(80, 'annual_9mo')).toBe('80 (9-month)');
     expect(fmtGrade(15, 'hourly')).toBe('15 (hourly)');
     expect(fmtGrade(null)).toBe('—');
+  });
+});
+
+describe('hourly', () => {
+  it('reads an annualized hourly figure back as its rate, to the cent', () => {
+    expect(hourly(89440)).toBe('$43.00/hr');
+    expect(hourly(34320)).toBe('$16.50/hr');
+    expect(hourly(null)).toBe('—');
   });
 });
