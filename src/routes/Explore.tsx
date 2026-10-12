@@ -141,9 +141,10 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
           return (
             <>
               <Tooltip withArrow multiline w={280} events={{ hover: true, focus: true, touch: true }} label={why}>
+                {/* 24px tall: a finger's target, as every one on a phone is (polish.spec). */}
                 <Text size="xs" c="dimmed" className="growth-lfl" tabIndex={0} role="button" aria-describedby={lflId}
-                  style={{ borderBottom: '1px dotted currentColor', whiteSpace: 'nowrap' }}>
-                  like for like
+                  style={{ display: 'inline-flex', alignItems: 'center', minHeight: 24, whiteSpace: 'nowrap', cursor: 'help' }}>
+                  <span style={{ borderBottom: '1px dotted currentColor' }}>like for like</span>
                 </Text>
               </Tooltip>
               <Portal><span id={lflId} hidden>{why}</span></Portal>
