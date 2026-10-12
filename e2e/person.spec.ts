@@ -887,8 +887,8 @@ test("the person's table: nine round them, a filter, Show all, and each row agai
     // To the dollar: each figure on the row is rounded for display.
     expect(Math.abs(vs - (pay - self)), `row ${i}: vs. is not their pay less Aaron's`).toBeLessThanOrEqual(1);
   }
-  // Same school: the dot, never a tint.
-  const school = await rows.evaluateAll((trs) => trs.filter((tr) => tr.querySelector('.same-school-dot')).map((tr) => ({
+  // Same school: a "Same school" tag, never a tint.
+  const school = await rows.evaluateAll((trs) => trs.filter((tr) => tr.querySelector('.same-school-tag')).map((tr) => ({
     text: tr.querySelector('.peer-school')!.textContent, bg: getComputedStyle(tr.querySelector('td')!).backgroundColor,
   })));
   expect(school.length).toBeGreaterThan(0);

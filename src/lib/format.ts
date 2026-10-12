@@ -178,3 +178,24 @@ export function vsCampus(group: number | null | undefined, campus: number | null
   if (Math.abs(pct) <= 1) return 'about the campus median';
   return pct < 0 ? `${-pct}% below campus` : `${pct}% above campus`;
 }
+
+/** The source's pre-TTC abbreviations, spelled out. Only words the old titles used, each checked against a title
+ *  that wrote it out in full ("SR INFORM PROC CONSLT" is the Senior Information Processing Consultant). */
+const LEGACY_WORDS: Record<string, string> = {
+  ADMIN: 'Administrative', ADV: 'Advisor', ANAL: 'Analyst', ASSOC: 'Associate', ASST: 'Assistant', CLIN: 'Clinical',
+  CONSLT: 'Consultant', CONSULT: 'Consultant', CORD: 'Coordinator', COORD: 'Coordinator', DEV: 'Development', DIR: 'Director',
+  EMER: 'Emeritus', ENGR: 'Engineer', INFORM: 'Information', INSTR: 'Instructor', MGR: 'Manager', PRG: 'Program',
+  PRGM: 'Program', PROC: 'Processing', PROCESS: 'Processing', PROF: 'Professor', PROG: 'Program', SERV: 'Services',
+  SPEC: 'Specialist', SR: 'Senior', STU: 'Student', SUPV: 'Supervisor', SVC: 'Service', SVCS: 'Services', TECH: 'Technician',
+  UNIV: 'University',
+};
+/** Kept as written: acronyms and roman numerals. */
+const LEGACY_KEEP = new Set(['CHS', 'LTE', 'UW', 'IT', 'HR', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
+
+/** A pre-TTC title as a reader would write it (P5): "INFORM PROCESS CONSLT" → "Information Processing Consultant".
+ *  Only an all-capitals title is rewritten; one the source already cased is left alone. */
+export function legacyTitle(raw: string | null | undefined): string {
+  const t = (raw ?? '').trim();
+  if (!t || t !== t.toUpperCase() || !/[A-Z]/.test(t)) return t;
+  return t.replace(/[A-Z]+/g, (w) => LEGACY_WORDS[w] ?? (LEGACY_KEEP.has(w) ? w : w[0] + w.slice(1).toLowerCase()));
+}

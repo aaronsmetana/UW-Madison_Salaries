@@ -176,7 +176,8 @@ test('a pile lists its people in the table below, and shows everyone again', asy
   await expect(rows).toHaveCount(above.length);
   const pays = (await rows.evaluateAll((trs) => trs.map((tr) => {
     const cells = [...tr.querySelectorAll('td')];
-    const money = cells.map((c) => c.textContent ?? '').filter((t) => /^\$[\d,]+$/.test(t.trim()));
+    // The text a reader sees: a phone's folded lines ("+$2,954 vs. Alena" under the pay) are not on a desktop row.
+    const money = cells.map((c) => (c as HTMLElement).innerText ?? '').filter((t) => /^\$[\d,]+$/.test(t.trim()));
     return Number((money[money.length - 1] ?? '').replace(/[$,]/g, ''));
   })));
   expect(pays.every((p) => p > w.hi), `a listed pay is not over the window: ${pays.join(', ')}`).toBe(true);

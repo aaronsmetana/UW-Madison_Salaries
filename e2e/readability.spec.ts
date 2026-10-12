@@ -55,6 +55,10 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.goto(`./person/${encodeURIComponent(AARON)}`);
       const strip = page.locator('dl.fact-strip');
       const cells = page.locator('.fact-strip .fact-cell');
+      // On a phone the strip is folded under "Details" (P1): open it to read it.
+      await expect(strip).toBeAttached({ timeout: 60_000 });
+      const details = page.locator('details.fact-details');
+      if (await details.count()) await details.locator('summary').click();
       await expect(cells.first()).toBeVisible({ timeout: 60_000 });
       expect(await cells.count(), 'the strip shows too few facts to be checking anything').toBeGreaterThanOrEqual(5);
       await expect(cells.first()).toContainText('Job code');

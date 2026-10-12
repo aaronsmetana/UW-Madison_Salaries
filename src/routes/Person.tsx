@@ -23,7 +23,7 @@ import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../li
 import { ttcRank } from '../lib/snapshotOrder';
 import { areaGradDef } from '../components/chartDefs';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { IconAlertTriangle, IconArrowRight, IconArrowsDiff, IconFilter, IconPrinter } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconChevronDown, IconFilter, IconPrinter } from '@tabler/icons-react';
 import { PersonDashboard } from '../components/PersonDashboard';
 import { PayMeasure } from '../components/PayMeasure';
 import { useControls } from '../state/controls';
@@ -35,7 +35,7 @@ import { personPay, TITLE_RATE, countedAppts, personActualPay, personRate, grade
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
-import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears, hourly } from '../lib/format';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears, hourly, legacyTitle } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, MIN_GROUP } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
@@ -568,16 +568,15 @@ export default function Person() {
   // One-line career summary under the header. Only surface a prior title when it's a genuine *pre-TTC* title
   // (the person's earliest record is the pre-TTC snapshot and the title differs from now) — we can't assume the
   // hire-era title otherwise. The current title is the line above's first words, so it is not said again here.
-  const careerLine = useMemo(() => {
+  // The title they held before the TTC relabel, when it differs from today's: the header's one line of history.
+  // "At UW since" was said here and again in the Tenure figure (P4); the old title was printed in the source's
+  // capitals (P5).
+  const preTtcTitle = useMemo(() => {
     const firstTitle = trend[0]?.title;
     const latestTitle = latest?.title;
-    if (!latestTitle || trend.length === 0) return null;
-    const hireYear = latestHire(rows)?.slice(0, 4) ?? null;
-    const at = hireYear ? `At UW since ${hireYear}` : null;
-    const hasPreTTC = !!trend[0]?.id?.endsWith('-pre') && !!firstTitle && !sameTitleText(firstTitle, latestTitle);
-    if (hasPreTTC) return `${at ? `${at} · ` : ''}Title before TTC: ${firstTitle}`;
-    return at;
-  }, [trend, latest, rows]);
+    if (!latestTitle || !firstTitle || !trend[0]?.id?.endsWith('-pre') || sameTitleText(firstTitle, latestTitle)) return null;
+    return legacyTitle(firstTitle);
+  }, [trend, latest]);
 
   // The band is read against the main appointment's grade, at its full-time rate (queries `gradedAppt`):
   // `lastRate` sums every appointment's rate, which for someone holding two is neither job's.
@@ -896,6 +895,21 @@ export default function Person() {
             )}
             {latest?.department ? ` · ${latest.department}` : ''}
           </Text>
+          {/* The answer, in the header (P1): what they are paid and where that sits among their title. On a phone
+              the first dollar figure was ~650px down, under the actions and a seven-field strip. */}
+          {lastSalary != null && lastSalary > 0 && (
+            <Text className="person-answer" mt={6}>
+              <Text span fw={700}>{usd(lastSalary)}</Text>
+              {` ${hourlyOnly ? 'annualized hourly rate' : 'actual pay'}${latest?.snapshot_label ? `, ${latest.snapshot_label}` : ''}`}
+              {cohortPct != null && cohortStats && latest?.title && (
+                <>
+                  {` · ${partTime ? 'full-time rate above' : 'paid more than'} `}
+                  <Text span fw={700}>{Math.round(cohortPct)}%</Text>
+                  {` of others titled ${latest.title}${cohort === 'school' ? ' in the school' : ''}`}
+                </>
+              )}
+            </Text>
+          )}
           {/* The other jobs they hold now: the title above is their main one (the highest FTE). Two named, the
               rest counted; the History tab lists every one. */}
           {also.length > 0 && (
@@ -913,17 +927,24 @@ export default function Person() {
               {also.length > 2 && `; and ${also.length - 2} more, in History`}
             </Text>
           )}
-          {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
-          <ToolLinks
-            links={[
-              { label: 'Raise case', to: `/raise-case?type=comparison&subject=${encodeURIComponent(key)}` },
-            ]}
-          />
+          {preTtcTitle && (
+            <Text size="xs" c="var(--text-faint)" mt={4} className="pre-ttc-title">
+              Title before <Anchor component={Link} to="/data#ttc" inherit>TTC</Anchor>: {preTtcTitle}
+            </Text>
+          )}
         </div>
-        <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
+        {/* The page's actions in one group (P2, P3): the raise case, and one compare control — add this person,
+            or open its menu to compare them with someone named. They were "Compare with…" and "+ Add to compare"
+            side by side with nothing to tell them apart, and the raise case a link under the title. */}
+        <Group gap="sm" wrap="wrap" style={{ flexShrink: 0, maxWidth: '100%' }}>
+          <ToolLinks asButtons links={[{ label: 'Build raise case', to: `/raise-case?type=comparison&subject=${encodeURIComponent(key)}` }]} />
+          <Button.Group>
+          <CompareSetButton item={{ type: 'person', id: key, label: name }} />
           <Popover width={320} position="bottom-end" shadow="md" withArrow trapFocus>
             <Popover.Target>
-              <Button variant="default" leftSection={<IconArrowsDiff size={ICON.control} />}>Compare with…</Button>
+              <Button variant={has(key) ? 'light' : 'filled'} px={10} aria-label="Compare with a specific person…" className="compare-with">
+                <IconChevronDown size={ICON.control} />
+              </Button>
             </Popover.Target>
             <Popover.Dropdown>
               <SearchBox
@@ -939,7 +960,7 @@ export default function Person() {
               />
             </Popover.Dropdown>
           </Popover>
-          <CompareSetButton item={{ type: 'person', id: key, label: name }} />
+          </Button.Group>
         </Group>
       </Group>
       {/* Source columns the page otherwise hides, in one divided strip (null ones left out): what identifies the
@@ -1007,6 +1028,10 @@ export default function Person() {
                   </Text>
                 )}
                 {partTime && <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>}
+                {/* At 100% the two measures are one figure, and the next cell ranks the full-time rate: said here (P8). */}
+                {!partTime && !hourlyOnly && lastFte != null && Math.abs(lastFte - 1) <= 0.005 && (
+                  <Text size="xs" c="dimmed" mt={2} className="pay-is-rate">= the full-time rate, at 100% FTE</Text>
+                )}
                 {hourlyOnly && lastSalary != null && (
                   <Text size="xs" c="dimmed" mt={2} className="hourly-rate">{hourly(lastSalary)} × 2,080 hours · hours worked are not in the records</Text>
                 )}
@@ -1015,22 +1040,21 @@ export default function Person() {
               {/* Where the full-time rate sits among everyone with the title (or, with "Same school", among those in
                   the person's school): the share on a lower rate, the spread it sits in, and the rank. The sentence sat in
                   the chart's card; the chart now shows it, and this says it. */}
-              <StatCell label="Full-time rate above">
+              {/* "Standing in title" (P7): it read "Full-time rate above · 33% of the 46 others with this title". */}
+              <StatCell label="Standing in title">
                 {spread && cohortStats && cohortPct != null ? (
                   <>
-                    <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
-                      <Text fw={700} style={{ fontSize: 24, lineHeight: 1.15 }}>{Math.round(cohortPct)}%</Text>
-                      <Text size="xs" c="dimmed">
-                        of the {num(cohortStats.n - 1)} {cohort === 'school' ? 'others with this title in the school' : 'others with this title'}
-                      </Text>
-                    </Group>
+                    <Text size="sm" mt={6} className="standing-share" style={{ lineHeight: 1.15 }}>
+                      Paid more than <Text span fw={700} style={{ fontSize: 24 }}>{Math.round(cohortPct)}%</Text>
+                      {' '}of {num(cohortStats.n - 1)} {cohort === 'school' ? 'peers in the school' : 'peers'}
+                    </Text>
                     <SpreadMark
                       lo={cohortStats.lo} p25={cohortStats.p25} med={cohortStats.med} p75={cohortStats.p75} hi={cohortStats.hi}
                       value={cohortSelfPay ?? lastSalary ?? cohortStats.med}
                       label={`A full-time rate of ${usd(cohortSelfPay ?? lastSalary)} in a spread from ${usd(cohortStats.lo)} to ${usd(cohortStats.hi)}, median ${usd(cohortStats.med)}`}
                     />
                     {cohortRank != null && (
-                      <Text size="xs" c="dimmed" mt={6}>Rank {cohortRank} of {num(cohortList.length)} · median {fmtK(cohortStats.med)}</Text>
+                      <Text size="xs" c="dimmed" mt={6}>Rank {cohortRank} of {num(cohortList.length)} · by full-time rate · median {fmtK(cohortStats.med)}</Text>
                     )}
                   </>
                 ) : fewOthers ? (
@@ -1067,13 +1091,28 @@ export default function Person() {
                     change (a 9-month member's pay grew ×11/9 in Sep 2025 without a dollar more) both bars leave
                     its factor out, so they stand on the same footing; the note under them says so. */}
                 {growthLfl != null && typicalGrowth != null && (() => {
-                  const mine = growthLfl;
                   const typical = (1 + typicalGrowth) / reporting.factor - 1;
+                  // Like against like (P6): where a title changed in the span, the raises alone are set against
+                  // typical raises, and what the title change added is said beside them. The whole set against
+                  // raises only had a +17% move to a new title reading as a raise twice the usual.
+                  const split = raiseCtx.growthSplit;
+                  const retitled = split && !fteMoved && split.titleSteps.length > 0 && Math.abs(split.titles) >= 0.0005 ? split : null;
+                  const mine = retitled ? retitled.raises : growthLfl;
                   return (
-                    <GrowthBars rows={[
-                      { name: selfLabel, value: mine, self: true, text: sgnPct(mine) },
-                      { name: 'Typical raises', value: typical, text: sgnPct(typical) },
-                    ]} />
+                    <>
+                      <GrowthBars rows={[
+                        { name: retitled ? `${selfLabel}, raises` : selfLabel, value: mine, self: true, text: sgnPct(mine) },
+                        { name: 'Typical raises', value: typical, text: sgnPct(typical) },
+                      ]} />
+                      {/* What "typical" means (P6), in a line short enough for a phone's cell: the cell is a button,
+                          so a glossary term inside it would be a control within a control. */}
+                      <Text size="xs" c="dimmed" mt={4} className="growth-typical">Typical: campus median, same title and FTE</Text>
+                      {retitled && (
+                        <Text size="xs" c="dimmed" mt={2} className="growth-titles">
+                          and {sgnPct(retitled.titles)} from {retitled.titleSteps.length === 1 ? `the title change in ${retitled.titleSteps[0]}` : `${retitled.titleSteps.length} title changes`}
+                        </Text>
+                      )}
+                    </>
                   );
                 })()}
                 {oldestLabel && (
@@ -1310,13 +1349,22 @@ export default function Person() {
                           </Table.Td>
                           <Table.Td data-fold title={sameSchool ? `Same school as ${name}` : undefined}>
                             <div className="peer-school">
-                              {sameSchool && <span className="same-school-dot" aria-label="Same school" role="img" />}
                               <Text span size="sm" lineClamp={1}>{p.school ?? '—'}</Text>
+                              {/* Said in words (P14): it was an 8px dot keyed in a footnote under the table. */}
+                              {sameSchool && <span className="cat-tag same-school-tag">Same school</span>}
                             </div>
                             {p.department && <Text size="xs" c="var(--text-faint)" lineClamp={1} className="peer-dept">{p.department}</Text>}
                           </Table.Td>
                           <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
-                          <Table.Td ta="right" fw={isYou ? 700 : 600}>{usd(p.pay)}</Table.Td>
+                          <Table.Td ta="right" fw={isYou ? 700 : 600}>
+                            {usd(p.pay)}
+                            {/* On a phone, where the "vs." column folds away, the difference under the pay (P13). */}
+                            {vs != null && (
+                              <Text className="fold-under peer-vs-under" size="xs" c="dimmed" fw={400}>
+                                {`${vs > 0 ? '+' : vs < 0 ? '−' : ''}${usd(Math.abs(vs))} vs. ${selfLabel}`}
+                              </Text>
+                            )}
+                          </Table.Td>
                           <Table.Td ta="right" data-fold c="dimmed" className="peer-vs">
                             {vs == null ? '—' : `${vs > 0 ? '+' : vs < 0 ? '−' : ''}${usd(Math.abs(vs))}`}
                           </Table.Td>
@@ -1341,14 +1389,8 @@ export default function Person() {
                 {peerQuery && filteredPeers.length === 0 && (
                   <Text size="sm" c="dimmed" mt="sm">No one with this title matches “{peerFilter.trim()}”.</Text>
                 )}
-                {/* The table's foot: what the same-school dot means, and how much of the list is showing. */}
-                <Group justify="space-between" mt="sm" gap="xs" className="peer-foot">
-                  {cohort === 'all' && latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) ? (
-                    <Group gap={6} wrap="nowrap">
-                      <span className="same-school-dot" aria-hidden />
-                      <Text size="xs" c="dimmed">Same school as {selfLabel} ({latest.school})</Text>
-                    </Group>
-                  ) : <span />}
+                {/* The table's foot: how much of the list is showing. */}
+                <Group justify="flex-end" mt="sm" gap="xs" className="peer-foot">
                   {!pileShown && sortedCohort.length > 2 * AROUND + 1 && (
                     <Group gap={6} wrap="nowrap">
                       <Text size="xs" c="dimmed">

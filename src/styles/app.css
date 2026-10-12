@@ -1104,10 +1104,9 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
   text-transform: uppercase;
   vertical-align: 1px;
 }
-/* A same-school person: an 8px dot of the same-school teal before their school (and in the table's key),
-   where their row was a green tint with a green rail. */
-.same-school-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--mark-peer-same-school); }
+/* A same-school person in a person's table: their school, then a "Same school" tag (P14). */
 .peer-school { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.peer-school .cat-tag { margin-left: 0; flex: none; }
 
 /* ── Person history: one lane per concurrent appointment ──────────────────────────────────────────
    The table used to mark concurrent lines with an orange "1 of 2" badge, which is a sentence you have
@@ -1922,6 +1921,19 @@ button:active,
   background-color: var(--surface-sunken);
   color: var(--mantine-color-dimmed);
 }
+
+/* The appointment's fields, folded under "Details" on a phone (FactStrip, P1). */
+.fact-details > summary {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 24px; cursor: pointer; list-style: none;
+  font-size: var(--mantine-font-size-sm); font-weight: 600; color: var(--mantine-color-dimmed);
+}
+.fact-details > summary::-webkit-details-marker { display: none; }
+.fact-details > summary::before {
+  content: ''; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--dur-fast) var(--ease);
+}
+.fact-details[open] > summary::before { transform: rotate(45deg); }
+.fact-details[open] > summary { margin-bottom: var(--mantine-spacing-xs); }
 
 /* A card's method, folded (MethodNote, G22): a quiet link-sized summary with a turning chevron, its body the
    card's small print. The summary is a finger-sized target (24px), as every control here is. */

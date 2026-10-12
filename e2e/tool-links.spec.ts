@@ -13,15 +13,16 @@ const links = (page: import('@playwright/test').Page) => page.getByRole('navigat
 test('a person links to their report and to a raise case with them as its subject', async ({ page }) => {
   await page.goto(`./person/${encodeURIComponent(KEY)}`);
   const name = (await page.getByRole('heading', { level: 1 }).innerText()).trim();
-  // Their report is a tab of their own page, beside the others; a raise case is a tool of its own.
-  await expect(links(page).getByRole('link')).toHaveText(['Raise case →']);
+  // Their report is a tab of their own page, beside the others; a raise case is a tool of its own, a button among
+  // the page's actions (P3).
+  await expect(links(page).getByRole('link')).toHaveText(['Build raise case']);
   // The report asks for its own figures only once it is opened: the page's other tabs do not carry it hidden.
   await expect(page.locator('.print-area')).toHaveCount(0);
   await page.getByRole('tab', { name: 'Report' }).click();
   await expect(page).toHaveURL(/tab=report/);
   await expect(page.locator('.print-area')).toContainText(name, { timeout: 60_000 });
   // The links are the page's own, under its name on every tab.
-  await links(page).getByRole('link', { name: 'Raise case →' }).click();
+  await links(page).getByRole('link', { name: 'Build raise case' }).click();
   await expect(page).toHaveURL(/\/raise-case\?.*type=comparison/);
   // The case is for them, as its subject; the compare set is left as it was.
   expect(await page.evaluate(() => localStorage.getItem('uwsal.tray.v1') ?? '[]')).toBe('[]');
@@ -44,12 +45,12 @@ test('a title links to its raises', async ({ page }) => {
 test('a division links to its raises and to its screening, which runs', async ({ page }) => {
   const school = 'School of Education';
   await page.goto(`./school/${encodeURIComponent(school)}`);
-  await expect(links(page).getByRole('link')).toHaveText(['Raises in this division →', 'Screen this division →']);
-  await links(page).getByRole('link', { name: 'Raises in this division →' }).click();
+  await expect(links(page).getByRole('link')).toHaveText(['Raises in this division', 'Screen this division']);
+  await links(page).getByRole('link', { name: 'Raises in this division' }).click();
   await expect(page).toHaveURL(/\/raises\?sch=School\+of\+Education|\/raises\?sch=School%20of%20Education/);
   await expect(page.getByRole('textbox', { name: 'School / division' })).toHaveValue(school);
   await page.goBack();
-  await links(page).getByRole('link', { name: 'Screen this division →' }).click();
+  await links(page).getByRole('link', { name: 'Screen this division' }).click();
   await expect(page).toHaveURL(/\/screening\?sch=School/);
   await expect(page.getByRole('textbox', { name: 'School / division' })).toHaveValue(school);
   // Run, not a start screen: the screen's table of people is up.

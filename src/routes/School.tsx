@@ -271,14 +271,18 @@ export default function School() {
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <Title order={1}>{name}</Title>
+        </div>
+        {/* The page's actions in one group, the tools that take this division among them (P3, as on a person). */}
+        <Group gap="sm" wrap="wrap" style={{ flexShrink: 0, maxWidth: '100%' }}>
           <ToolLinks
+            asButtons
             links={[
               { label: 'Raises in this division', to: `/raises?sch=${encodeURIComponent(name)}` },
               { label: 'Screen this division', to: `/screening?sch=${encodeURIComponent(name)}&run=1` },
             ]}
           />
-        </div>
-        <CompareSetButton item={{ type: 'school', id: name, label: name }} />
+          <CompareSetButton item={{ type: 'school', id: name, label: name }} />
+        </Group>
       </Group>
 
       <Tabs value={tab} onChange={(v) => { markTabSwitch(); setTab(v); }}>

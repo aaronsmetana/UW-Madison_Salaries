@@ -77,7 +77,7 @@ test('two appointments in one title count once, at the rate between them, and th
   await expect(rateCell(table.locator('tr.row-this'))).toHaveText(usd(p.rate), { timeout: 60_000 });
   expect(usd(p.rate)).not.toBe(usd(p.sum));
   // The page of the list that is showing, each row at its rank's rate.
-  const shown = await table.locator('tbody tr').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('td')].map((td) => td.textContent ?? '')));
+  const shown = await table.locator('tbody tr').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('td')].map((td) => (td as HTMLElement).innerText ?? '')));
   expect(shown.length).toBeGreaterThan(1);
   expect(shown.map((c) => c[4])).toEqual(shown.map((c) => usd(all[Number(c[0]) - 1].rate)));
 });

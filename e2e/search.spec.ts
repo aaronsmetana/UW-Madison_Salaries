@@ -192,7 +192,7 @@ test('pickers that take only a person show people alone, with no groups', async 
   await expect(page.locator('[role="option"]:not([data-kind="person"]):not([data-kind="more"])')).toHaveCount(0);
 
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
-  await page.getByRole('button', { name: 'Compare with…' }).click();
+  await page.getByRole('button', { name: 'Compare with a specific person…' }).click();
   const compare = page.getByPlaceholder('Search a person to compare…');
   await compare.fill('smith');
   await expect(page.getByRole('option').first()).toBeVisible({ timeout: 60_000 });

@@ -72,6 +72,10 @@ export interface RaiseContext {
   typical: Map<string, number>;
   /** Where the gap between actual and typical came from, and the two end points. */
   breakdown: { actual: number; typical: number; shares: (GapShare & { label: string })[] } | null;
+  /** The person's growth over the same steps, split by what each step was (P6): their raises, kept in the same
+   *  title, against the steps where the title changed. Like for like across a reporting change. Compounded, so
+   *  (1 + raises) × (1 + titles) is the whole. `titleSteps` names the snapshots a title changed at. */
+  growthSplit: { raises: number; titles: number; titleSteps: string[] } | null;
   ready: boolean;
 }
 
@@ -111,6 +115,8 @@ export function useRaiseContext(personKey: string, trend: readonly TrendPointLik
     const typical = new Map<string, number>();
     const path: PathStep[] = [];
     const labels = new Map<string, string>();
+    let raised = 1, retitled = 1;
+    const retitledAt: string[] = [];
     if (campus.length && canon.length) {
       let t = canon[0].salary;
       typical.set(canon[0].id, t);
@@ -133,6 +139,9 @@ export function useRaiseContext(personKey: string, trend: readonly TrendPointLik
           ).move
           : 'raise';
         labels.set(cur.id, `${cur.label} · ${move}`);
+        const ratio = cur.salary / prev.salary / rep;
+        if (move === 'raise') raised *= ratio;
+        else { retitled *= ratio; retitledAt.push(cur.label); }
         const change = reportingChange(prev.basis, cur.basis);
         if (change) labels.set(`reporting:${cur.id}`, `${cur.label} · ${change.note}, in both lines`);
       }
@@ -142,6 +151,7 @@ export function useRaiseContext(personKey: string, trend: readonly TrendPointLik
       ...b,
       shares: b.shares.map((s) => ({ ...s, label: (s.kind === 'reporting' ? labels.get(`reporting:${s.toId}`) : labels.get(s.toId)) ?? s.toId })),
     };
-    return { comparisons, typical, breakdown, ready: !!steps && !!own };
+    const growthSplit = path.length ? { raises: raised - 1, titles: retitled - 1, titleSteps: retitledAt } : null;
+    return { comparisons, typical, breakdown, growthSplit, ready: !!steps && !!own };
   }, [steps, own, titleSteps, trend, metric]);
 }

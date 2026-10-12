@@ -1,3 +1,4 @@
+import { useMediaQuery } from '@mantine/hooks';
 import type { ReactNode } from 'react';
 import { Eyebrow } from './Eyebrow';
 
@@ -20,8 +21,10 @@ export interface Fact {
  */
 export function FactStrip({ facts, label }: { facts: Fact[]; label: string }) {
   const shown = facts.filter((f) => f.value != null && f.value !== '');
+  // On a phone, folded under "Details" (P1): seven fields stood between a person's name and their pay.
+  const phone = useMediaQuery('(max-width: 36em)');
   if (!shown.length) return null;
-  return (
+  const strip = (
     <dl className="fact-strip" aria-label={label}>
       {shown.map((f, i) => (
         <div className="fact-cell" key={i}>
@@ -31,4 +34,10 @@ export function FactStrip({ facts, label }: { facts: Fact[]; label: string }) {
       ))}
     </dl>
   );
+  return phone ? (
+    <details className="fact-details">
+      <summary>Details</summary>
+      {strip}
+    </details>
+  ) : strip;
 }

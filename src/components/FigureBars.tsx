@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { fmtK } from '../lib/chartStyle';
 
 /**
@@ -36,12 +37,12 @@ export function SpreadMark({ lo, p25, med, p75, hi, value, label }: {
  * the mockup's "typical as a share of the person's" breaks the moment typical raises outran the person, or
  * either went down. The signed figure beside each says the direction; the bars say the size.
  */
-export function GrowthBars({ rows }: { rows: { name: string; value: number; self?: boolean; text: string }[] }) {
+export function GrowthBars({ rows }: { rows: { name: ReactNode; value: number; self?: boolean; text: string }[] }) {
   const most = Math.max(...rows.map((r) => Math.abs(r.value)), 1e-9);
   return (
     <div className="growth-bars">
-      {rows.map((r) => (
-        <div className="growth-bar-row" key={r.name} data-self={r.self || undefined}>
+      {rows.map((r, i) => (
+        <div className="growth-bar-row" key={i} data-self={r.self || undefined}>
           <span className="growth-bar-name">{r.name}</span>
           <span className="growth-bar-track" aria-hidden>
             <span className="growth-bar-fill" style={{ width: `${(Math.abs(r.value) / most) * 100}%` }} />

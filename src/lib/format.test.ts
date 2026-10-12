@@ -1,6 +1,6 @@
 import { fmtK, fmtCount } from './chartStyle';
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly, usdShort } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly, usdShort, legacyTitle } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -152,5 +152,20 @@ describe('one way to write a figure (G9, G10)', () => {
     expect(usdShort(51892390)).toBe('$51.9M');
     expect(usdShort(-131213816)).toBe('−$131M');
     expect(usdShort(950)).toBe('$950');
+  });
+});
+
+describe('legacyTitle', () => {
+  it('spells out the pre-TTC abbreviations and cases the rest', () => {
+    expect(legacyTitle('INFORM PROCESS CONSLT')).toBe('Information Processing Consultant');
+    expect(legacyTitle('SR INFORM PROC CONSLT')).toBe('Senior Information Processing Consultant');
+    expect(legacyTitle('CLINICAL ADJUNCT ASST PROF')).toBe('Clinical Adjunct Assistant Professor');
+    expect(legacyTitle('ASST PROFESSOR (CHS)')).toBe('Assistant Professor (CHS)');
+    expect(legacyTitle('HONORARY ASSOC/FELLOW')).toBe('Honorary Associate/Fellow');
+    expect(legacyTitle('PROF CONSULT-LTE')).toBe('Professor Consultant-LTE');
+  });
+  it('leaves a title the source already cased', () => {
+    expect(legacyTitle('System Engineer IV')).toBe('System Engineer IV');
+    expect(legacyTitle(null)).toBe('');
   });
 });

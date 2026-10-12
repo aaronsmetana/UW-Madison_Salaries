@@ -461,8 +461,17 @@ test.describe('The person page reports the reporting change and trims what repea
     const note = page.locator('[data-reporting-note]');
     await expect(note).toBeVisible({ timeout: 60_000 });
     await expect(note).toContainText(`Like for like: ${sgn(asReported)} as reported, with the Sep 2025 change`);
-    await expect(page.locator('.growth-bar-row[data-self] .growth-bar-value')).toHaveText(lfl);
     await expect(page.locator('.person-figures [data-trend]')).toHaveText(lfl);
+    // Their bar is their raises (P6); with a title change in the span, what it added is said beside them, and the
+    // two compound to the whole.
+    const self = page.locator('.growth-bar-row[data-self] .growth-bar-value');
+    const titles = page.locator('.growth-titles');
+    if (await titles.count()) {
+      const pct = async (l: import('@playwright/test').Locator) => Number((await l.innerText()).match(/([−+]?)([\d.]+)%/)!.slice(1).join('').replace('−', '-')) / 100;
+      expect(Math.abs((1 + await pct(self)) * (1 + await pct(titles)) - (1 + without / 100))).toBeLessThan(0.002);
+    } else {
+      await expect(self).toHaveText(lfl);
+    }
   });
 
   test('one pay column when the rate is the pay on every row, and the school once', async ({ page }) => {
