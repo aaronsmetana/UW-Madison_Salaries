@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, Switch, ThemeIcon, Select, ScrollArea, VisuallyHidden } from '@mantine/core';
-import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconStack2, IconArrowUp, IconReload } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconArrowUp, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { num, usd } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
@@ -453,12 +453,11 @@ export default function DataHealth() {
             appointment percentage, where 0.5 is half-time. Hourly appointments report no FTE at all; they are
             counted at their full listed rate rather than as zero. The 2021 and 2022 reports list some hourly
             pay as the hourly rate itself; those rates are annualized at 2,080 hours, the way every later
-            report states them. The "Pay" control switches between three views:
+            report states them. The "Pay" control switches between two views:
           </Text>
-          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
             <DefCard icon={<IconCash size={ICON.control} />} title="Actual pay">Rate × FTE (or the full rate, for hourly staff with no FTE on file) — closest to what the person was actually paid.</DefCard>
             <DefCard icon={<IconClock size={ICON.control} />} title="Full-time rate">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</DefCard>
-            <DefCard icon={<IconStack2 size={ICON.control} />} title="Base pay">Base salary as reported; may exclude supplemental or overload pay.</DefCard>
           </SimpleGrid>
           <Text size="sm">
             A person holding <b>more than one paid appointment</b> is named, placed and compared by their

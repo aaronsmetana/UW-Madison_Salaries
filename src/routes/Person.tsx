@@ -590,14 +590,19 @@ export default function Person() {
   // Where this pay stands in each pool the person belongs to (standingSql — the one query the printed
   // report uses too): per person, the department inside its school, a grade on its own schedule.
   const mine = lastSalary ?? 0;
+  // Within the title, their full-time rate in it, as the Overview compares them (queries `TITLE_RATE`).
+  const titleRate = useMemo(
+    () => (latest?.job_code ? personRate(latestRows(rows).filter((r) => r.job_code === latest.job_code)) || null : null),
+    [rows, latest],
+  );
   const { data: standingRows } = useSql<{
     n_all: number; b_all: number; n_div: number; b_div: number; n_dept: number; b_dept: number;
     n_grade: number; b_grade: number; n_title: number; b_title: number;
   }>(
-    ['standing', key, lastSnap, mine],
+    ['standing', key, lastSnap, mine, titleRate ?? 0],
     standingSql({
       snapshotId: lastSnap, pay: mine, metric: 'fte', school: latest?.school, department: latest?.department,
-      grade: latest?.grade_number, gradeBasis: latest?.grade_basis, jobCode: latest?.job_code,
+      grade: latest?.grade_number, gradeBasis: latest?.grade_basis, jobCode: latest?.job_code, titleRate,
     }),
     !!latest && lastSalary != null && lastSalary > 0
   );
@@ -1365,7 +1370,7 @@ export default function Person() {
       {/* 4a — Standing: a percentile bar per pool, so all five comparisons read at a glance. */}
       {(standingPools.length > 0 || (!standingRows && poolLabels.length > 0)) && (
         <Card withBorder padding="lg">
-          <CardTitle sub="Where this person's actual pay ranks in each pool they belong to, in the latest snapshot.">
+          <CardTitle sub="Where this person's actual pay ranks in each pool they belong to, in the latest snapshot; within their title, their full-time rate, as the Overview compares it.">
             Standing
           </CardTitle>
           <Stack gap="sm">

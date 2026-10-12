@@ -58,7 +58,7 @@ beforeAll(async () => {
 afterAll(() => db.close());
 
 describe('raise-steps.json and continuingRaisesSql', () => {
-  for (const metric of ['fte', 'full', 'base']) {
+  for (const metric of ['fte', 'full']) {
     it(`agree on every step's count and median (${metric})`, async () => {
       const shape = (rows) => rows.map((x) => [x.from_id, x.to_id, x.n, Math.round(x.med * 1e9) / 1e9]);
       const build = await all(raiseStepsQuery('salaries', metric));

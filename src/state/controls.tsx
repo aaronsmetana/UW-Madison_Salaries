@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 export type Scope =
   | { kind: 'all' }
@@ -13,7 +13,23 @@ export type Scope =
    */
   | { kind: 'department'; value: string; school: string | null };
 
-export type Metric = 'full' | 'fte' | 'base';
+/**
+ * The pay measure. "Base pay" was a third: the source fills `base_pay` in one snapshot of eleven (Sep 2025),
+ * and everywhere else it silently fell back to the full-time rate, so it mostly showed the rate under another
+ * name and its trends mixed the two. An old link that names it opens on the page's default.
+ */
+export type Metric = 'full' | 'fte';
+
+/**
+ * The measure a page opens on when its address names none. A comparison within one title is made at the
+ * full-time rate, as the person page makes it, so a part-time appointment is not read as low pay: the Titles
+ * page, and Divisions' Titles tab. Everywhere else, actual pay. The control switches either way.
+ */
+export function defaultMetric(pathname: string, params: URLSearchParams): Metric {
+  if (pathname.endsWith('/paycheck')) return 'full';
+  if (pathname.endsWith('/explore') && params.get('tab') === 'titles') return 'full';
+  return 'fte';
+}
 
 /** facet field (canonical column) -> selected values */
 export type Filters = Record<string, string[]>;
@@ -45,7 +61,8 @@ function parseFilters(raw: string | null): Filters {
 /** Controls live in the URL query string → every view is shareable/bookmarkable. */
 export function ControlsProvider({ children }: { children: ReactNode }) {
   const [params, setParams] = useSearchParams();
-  const key = params.toString();
+  const { pathname } = useLocation();
+  const key = `${pathname}?${params.toString()}`;
 
   const value = useMemo<ControlsState>(() => {
     // `dept` wins when present, and takes `school` with it: `?school=A&dept=B` is department B OF
@@ -58,7 +75,9 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
       : school
         ? { kind: 'school', value: school }
         : { kind: 'all' };
-    const metric = (params.get('metric') as Metric) || 'fte';
+    const fallback = defaultMetric(pathname, params);
+    const asked = params.get('metric');
+    const metric: Metric = asked === 'full' || asked === 'fte' ? asked : fallback;
     const activeSnapshot = params.get('snap');
     const filters = parseFilters(params.get('filt'));
 
@@ -87,7 +106,7 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
             p.set('dept', s.value);
           }
         }),
-      setMetric: (m) => update((p) => (m === 'fte' ? p.delete('metric') : p.set('metric', m))),
+      setMetric: (m) => update((p) => (m === fallback ? p.delete('metric') : p.set('metric', m))),
       setActiveSnapshot: (id) => update((p) => (id ? p.set('snap', id) : p.delete('snap'))),
       setFilter: (field, values) =>
         update((p) => {
@@ -114,7 +133,6 @@ export function useControls(): ControlsState {
 export const METRIC_LABEL: Record<Metric, string> = {
   full: 'Full-time rate',
   fte: 'Actual pay',
-  base: 'Base pay',
 };
 
 /**

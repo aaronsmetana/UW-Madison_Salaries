@@ -254,6 +254,10 @@ describe('personPay', () => {
     r('p', '2026-09-01', 'halvesHourly', 'J1', 60000, { fte: 0.5 }),
     r('p', '2026-09-01', 'halvesHourly', 'J2', 80000, { fte: 0.5 }),
     r('p', '2026-09-01', 'halvesHourly', 'H1', 40000, { fte: 0 }),
+    // A half-time and a quarter-time appointment: as earned, and under the full-time measure their rate, not
+    // the sum of their earnings ($52,500, neither job's rate).
+    r('p', '2026-09-01', 'threeQ', 'J1', 60000, { fte: 0.5 }),
+    r('p', '2026-09-01', 'threeQ', 'J2', 90000, { fte: 0.25 }),
     // One half-time appointment: as earned, and its rate under the full-time measure.
     r('p', '2026-09-01', 'half', 'J1', 80000, { fte: 0.5 }),
     // Only hourly jobs: the best-paid one's rate, not two full-time years.
@@ -269,6 +273,7 @@ describe('personPay', () => {
     brett: { fte: 135024, full: 135024, earn: 135024, rate: 135024 },
     halves: { fte: 70000, full: 70000, earn: 70000, rate: 70000 },
     halvesHourly: { fte: 70000, full: 70000, earn: 70000, rate: 70000 },
+    threeQ: { fte: 52500, full: 70000, earn: 52500, rate: 70000 },
     half: { fte: 40000, full: 80000, earn: 40000, rate: 80000 },
     hourly: { fte: 50000, full: 50000, earn: 50000, rate: 50000 },
     unpaid: { fte: 41600, full: 41600, earn: 41600, rate: 41600 },

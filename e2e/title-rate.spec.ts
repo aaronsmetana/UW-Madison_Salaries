@@ -81,3 +81,39 @@ test('two appointments in one title count once, at the rate between them, and th
   expect(shown.length).toBeGreaterThan(1);
   expect(shown.map((c) => c[4])).toEqual(shown.map((c) => usd(all[Number(c[0]) - 1].rate)));
 });
+
+test("Pay & standing's title row and the Report tab compare within the title at the full-time rate too", async ({ page }) => {
+  const p = await partTimer();
+  const snap = await latestSnapshot();
+  const rates = await oracle<{ pk: string; rate: number }>(
+    `SELECT person_key pk, ${RATE} rate FROM $SAL WHERE snapshot_id = '${snap}' AND job_code = '${p.code}' GROUP BY 1 HAVING ${RATE} > 0`,
+  );
+  const rank = rates.filter((r) => r.rate > p.rate).length + 1;
+  const [{ title }] = await oracle<{ title: string }>(`SELECT any_value(title) title FROM $SAL WHERE snapshot_id = '${snap}' AND person_key = '${p.pk}' AND job_code = '${p.code}'`);
+  await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=pay`);
+  // The Overview's share, the same pool on the same measure.
+  await expect(page.locator('.chart-plot', { hasText: title }).first()).toContainText(`more than ${p.pct}%`, { timeout: 60_000 });
+  await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=report`);
+  await expect(page.locator('.print-area')).toContainText(`ranks #${rank} of ${rates.length} by full-time rate`, { timeout: 60_000 });
+});
+
+test('Screening ranks at the full-time rate and gives a part-timer\'s FTE beside it', async ({ page }) => {
+  const snap = await latestSnapshot();
+  const school = 'School of Pharmacy';
+  const part = await oracle<{ nm: string; rate: number; fte: number }>(
+    `SELECT trim(any_value(first_name)) || ' ' || trim(any_value(last_name)) nm, ${RATE} rate, sum(fte) FILTER (WHERE salary > 0) fte
+     FROM $SAL WHERE snapshot_id = '${snap}' AND school = '${school}' GROUP BY person_key
+     HAVING ${RATE} > 0 AND sum(fte) FILTER (WHERE salary > 0) > 0 AND abs(sum(fte) FILTER (WHERE salary > 0) - 1) > 0.005`,
+  );
+  expect(part.length, 'part-timers in the school').toBeGreaterThan(0);
+  await page.goto(`./screening?run=1&sch=${encodeURIComponent(school)}`);
+  await expect(page.getByRole('button', { name: 'Sort by Full-time rate' })).toBeVisible({ timeout: 60_000 });
+  const rows = page.locator('tbody tr', { has: page.locator('.screen-fte') });
+  await expect(rows.first()).toBeVisible({ timeout: 60_000 });
+  const cells = await rows.evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent?.trim() ?? '')));
+  for (const c of cells) {
+    const who = part.filter((x) => x.nm.toLowerCase() === c[0].toLowerCase());
+    expect(who.length, c[0]).toBeGreaterThan(0);
+    expect(who.some((w) => c[4] === `${usd(w.rate)}FTE ${w.fte.toFixed(2)}`), `${c[0]}: ${c[4]}`).toBe(true);
+  }
+});

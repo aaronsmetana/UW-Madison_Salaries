@@ -15,7 +15,7 @@ import { FTE_MULT_SQL, ACTUAL_PAY_SQL } from './normalize.mjs';
  * runs both over one fixture and requires the same answer, so the two cannot drift apart unnoticed.
  */
 
-const METRIC_SQL = { fte: ACTUAL_PAY_SQL, full: 'salary', base: 'COALESCE(base_pay, salary)' };
+const METRIC_SQL = { fte: ACTUAL_PAY_SQL, full: 'salary' };
 /** Mirrors BASIS_CLASSES in src/lib/queries.ts. */
 const BASIS_CLASSES = [['annual', '12 month'], ['academic', '9 month']];
 /** Mirrors REPORTING_CHANGES in src/lib/queries.ts (earlier → later, and the factor taken out across it). */
@@ -74,7 +74,7 @@ const all = (db, sql) =>
     db.all(sql, (err, rows) => (err ? reject(err) : resolve(rows.map(numbers))));
   });
 
-/** raise-steps.json: { hist_step, metrics: { fte|full|base: [{ from_id, to_id, from_date, to_date, n, med, p90, hist: [[k, c], …] }] } } */
+/** raise-steps.json: { hist_step, metrics: { fte|full: [{ from_id, to_id, from_date, to_date, n, med, p90, hist: [[k, c], …] }] } } */
 export async function computeRaiseSteps(parquetPath) {
   const db = new duckdb.Database(':memory:');
   const src = `read_parquet('${parquetPath.replace(/'/g, "''")}')`;

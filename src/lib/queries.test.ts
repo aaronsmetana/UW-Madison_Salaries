@@ -5,22 +5,25 @@ describe('salary expressions', () => {
   it('salaryExpr returns the per-appointment rate for each metric', () => {
     expect(salaryExpr('full')).toBe('salary');
     expect(salaryExpr('fte')).toContain('salary_fte_adjusted');
-    expect(salaryExpr('base')).toContain('base_pay');
   });
 
-  it('earningsExpr prorates full/base by FTE; fte metric is already prorated', () => {
+  it('earningsExpr prorates the full-time rate by FTE; fte metric is already prorated', () => {
     expect(earningsExpr('full')).toBe(`salary * ${FTE_MULT}`);
-    expect(earningsExpr('base')).toContain(`* ${FTE_MULT}`);
     expect(earningsExpr('fte')).toContain('salary_fte_adjusted');
     expect(earningsExpr('fte')).not.toMatch(/\)\s*\*\s*COALESCE\(NULLIF\(fte/); // not double-prorated
   });
 
   // What it counts is held by rules.sql.test.ts, person by person; this holds the shape.
-  it('personPay blends only across >1 salaried appointment, and falls back to one hourly rate', () => {
-    const p = personPay('full');
+  it('personPay sums actual pay across salaried appointments only, and falls back to one hourly rate', () => {
+    const p = personPay('fte');
     expect(p).toContain('count(*) FILTER (WHERE salary > 0 AND fte > 0) > 1');
-    expect(p).toContain(`sum(salary * ${FTE_MULT}) FILTER (WHERE salary > 0 AND fte > 0)`);
-    expect(p).toContain('any_value(salary) FILTER (WHERE salary > 0 AND fte > 0)');
+    expect(p).toContain('FILTER (WHERE salary > 0 AND fte > 0)');
+    expect(p).toMatch(/ELSE max\(.*\) FILTER \(WHERE salary > 0\) END$/);
+  });
+
+  it("personPay's full-time rate is the FTE-weighted rate, not a sum", () => {
+    const p = personPay('full');
+    expect(p).toContain('sum(salary * fte) FILTER (WHERE salary > 0 AND fte > 0) / sum(fte) FILTER (WHERE salary > 0 AND fte > 0)');
     expect(p).toContain('ELSE max(salary) FILTER (WHERE salary > 0) END');
   });
 
@@ -30,7 +33,7 @@ describe('salary expressions', () => {
   // FTE-adjusted median, headcount, and Screening run. Assert on the shape rather than the exact
   // string so a rewrite of the expression still has to keep zero out of the multiplier.
   it('treats fte = 0 as unknown, never as a zero multiplier', () => {
-    for (const expr of [FTE_MULT, earningsExpr('full'), earningsExpr('base'), earningsExpr('fte'), salaryExpr('fte')]) {
+    for (const expr of [FTE_MULT, earningsExpr('full'), earningsExpr('fte'), salaryExpr('fte')]) {
       expect(expr).toContain('NULLIF(fte, 0)');
       expect(expr).not.toMatch(/COALESCE\(fte,\s*1\)/);
     }

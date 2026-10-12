@@ -27,7 +27,7 @@ const TENURE_EXPR = `date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_
 
 interface SubjectRow {
   person_key: string; fn: string | null; ln: string | null; title: string | null; job_code: string | null;
-  school: string | null; department: string | null; pay: number; tenure: number | null;
+  school: string | null; department: string | null; pay: number; fte: number | null; tenure: number | null;
   grade_number: number | null; grade_basis: string | null; band_rate: number | null; band_comp: string | null;
   comp_basis: string | null; flsa_status: string | null;
 }
@@ -122,7 +122,7 @@ export default function Screening() {
          any_value(job_code) job_code, any_value(school) school, any_value(department) department,
          ${GRADED_APPT} graded,
          any_value(comp_basis) comp_basis, any_value(flsa_status) flsa_status,
-         ${personPay('fte')} pay, any_value(${TENURE_EXPR}) tenure
+         ${personPay('full')} pay, nullif(sum(fte) FILTER (WHERE salary > 0), 0) fte, any_value(${TENURE_EXPR}) tenure
        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${scopeWhere}
        GROUP BY person_key
      )
@@ -139,7 +139,7 @@ export default function Screening() {
     ['screen-cohort', snap ?? '', jobCodesIn],
     `WITH pp AS (
        SELECT person_key, any_value(job_code) job_code, any_value(comp_basis) comp_basis,
-         ${personPay('fte')} pay, any_value(${TENURE_EXPR}) tenure
+         ${personPay('full')} pay, any_value(${TENURE_EXPR}) tenure
        FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code IN (${jobCodesIn})
        GROUP BY person_key
      )
@@ -159,7 +159,7 @@ export default function Screening() {
          ${belowOnly ? `AND person_key IN (${subjectKeysIn || 'NULL'})` : ''}
      ),
      pp AS (
-       SELECT s.person_key, s.snapshot_id, any_value(s.snapshot_date) snapshot_date, ${personPay('fte')} pay
+       SELECT s.person_key, s.snapshot_id, any_value(s.snapshot_date) snapshot_date, ${personPay('full')} pay
        FROM salaries s JOIN scoped USING (person_key)
        GROUP BY s.person_key, s.snapshot_id
      )
@@ -169,6 +169,9 @@ export default function Screening() {
 
   const loading = loadingSubjects || loadingCohort || loadingHist;
 
+  // Each person at their full-time rate, as every same-title comparison is made: on actual pay a small
+  // appointment read as low pay ($3,850 for a Researcher II beside "Moderate · 65"). Their FTE is said beside it.
+  const fteOf = useMemo(() => new Map((subjects ?? []).map((s) => [s.person_key, s.fte])), [subjects]);
   const results = useMemo<ScreeningResult[]>(() => {
     if (!runParams || !subjects) return [];
     return computeScreeningResults({
@@ -218,7 +221,8 @@ export default function Screening() {
         school: r.school ?? '',
         department: r.department ?? '',
         tenure_years: r.tenure != null ? r.tenure.toFixed(1) : '',
-        pay: Math.round(r.pay),
+        rate: Math.round(r.pay),
+        fte: fteOf.get(r.key) ?? '',
         cohort_n: r.cohortN,
         percentile: r.percentile ?? '',
         gap_to_median: r.gapToMed != null ? Math.round(r.gapToMed) : '',
@@ -355,7 +359,7 @@ export default function Screening() {
                   <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
                   <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
                   <SortableTh sortKey="tenure" label="Tenure" sort={sort} onSort={setSort} align="right" />
-                  <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
+                  <SortableTh sortKey="pay" label="Full-time rate" sort={sort} onSort={setSort} align="right" />
                   <Table.Th>Flags</Table.Th>
                   <SortableTh sortKey="score" label="Case strength" sort={sort} onSort={setSort} align="right" />
                   <Table.Th w={140}><VisuallyHidden>Report</VisuallyHidden></Table.Th>
@@ -368,7 +372,13 @@ export default function Screening() {
                     <Table.Td>{r.title ?? '—'}</Table.Td>
                     <Table.Td>{r.school ?? '—'}</Table.Td>
                     <Table.Td ta="right">{r.tenure != null ? fmtYears(r.tenure) : '—'}</Table.Td>
-                    <Table.Td ta="right">{usd(r.pay)}</Table.Td>
+                    <Table.Td ta="right">
+                      {usd(r.pay)}
+                      {(() => {
+                        const f = fteOf.get(r.key);
+                        return f != null && Math.abs(f - 1) > 0.005 ? <Text size="xs" c="orange" className="screen-fte">FTE {f.toFixed(2)}</Text> : null;
+                      })()}
+                    </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="wrap">
                         {r.tooFewPeers && <Badge size="sm" variant="light" color="gray">Too few peers</Badge>}

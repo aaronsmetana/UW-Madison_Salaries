@@ -129,36 +129,33 @@ export function mainRow<T extends MainFields>(rows: readonly T[]): T | undefined
 
 /** SQL expression for the selected salary metric (per appointment; full annual rate for full/base). */
 export function salaryExpr(metric: Metric): string {
-  switch (metric) {
-    case 'fte':
-      return ACTUAL_PAY;
-    case 'base':
-      return 'COALESCE(base_pay, salary)';
-    default:
-      return 'salary';
-  }
+  return metric === 'fte' ? ACTUAL_PAY : 'salary';
 }
 
 /** Per-appointment ACTUAL earnings (rate × FTE) for the metric — used to blend concurrent roles. */
 export function earningsExpr(metric: Metric): string {
-  switch (metric) {
-    case 'fte':
-      return ACTUAL_PAY;
-    case 'base':
-      return `COALESCE(base_pay, salary) * ${FTE_MULT}`;
-    default:
-      return `salary * ${FTE_MULT}`;
-  }
+  return metric === 'fte' ? ACTUAL_PAY : `salary * ${FTE_MULT}`;
 }
 
 /** An appointment with a recorded FTE: salaried. An hourly one records none (`fte = 0` after the ETL). */
 const SALARIED = 'salary > 0 AND fte > 0';
 
 /**
- * A person's pay within a `GROUP BY person_key` group — use in place of `sum(salaryExpr)`.
- * One salaried appointment → the metric's value as-is (e.g. full annual rate); several → their
- * FTE-blended actual earnings, so split roles aren't double-counted. Hourly appointments count only
- * when there is no salaried one, and then the main one (the best-paid) alone.
+ * A person's full-time rate within a `GROUP BY person_key` group: their salaried appointments' rates
+ * weighted by FTE (their actual pay over their FTE), else the best-paid hourly rate. The "Full-time rate"
+ * measure, and within one title `TITLE_RATE`. It summed earnings for someone with several appointments
+ * (two half-time jobs at $60k and $90k read as $75k only because their FTEs made 1; at 0.5 and 0.25 they read
+ * $52,500, neither job's rate) — under a measure named for a rate.
+ */
+const FULL_TIME_RATE = `CASE WHEN sum(fte) FILTER (WHERE ${SALARIED}) > 0
+  THEN sum(salary * fte) FILTER (WHERE ${SALARIED}) / sum(fte) FILTER (WHERE ${SALARIED})
+  ELSE max(salary) FILTER (WHERE salary > 0) END`;
+
+/**
+ * A person's pay within a `GROUP BY person_key` group — use in place of `sum(salaryExpr)`. Actual pay:
+ * one salaried appointment's, or several summed, so split roles aren't double-counted. The full-time rate:
+ * their rate (`FULL_TIME_RATE`). Hourly appointments count only when there is no salaried one, and then
+ * the main one (the best-paid) alone.
  *
  * An hourly appointment's figure is its rate over a full-time year: the source records no hours. Held
  * beside a salaried job it is not a second salary, and summed in it was one: Brett Van Ess directs
@@ -168,6 +165,7 @@ const SALARIED = 'salary > 0 AND fte > 0';
  * years (68 people). The person page names the jobs left out (lib/personQuery `apptTerms`).
  */
 export function personPay(metric: Metric): string {
+  if (metric === 'full') return FULL_TIME_RATE;
   return `CASE WHEN count(*) FILTER (WHERE ${SALARIED}) > 1
             THEN sum(${earningsExpr(metric)}) FILTER (WHERE ${SALARIED})
           WHEN count(*) FILTER (WHERE ${SALARIED}) = 1
@@ -222,9 +220,7 @@ export function personRate(rows: Parameters<typeof countedAppts>[0]): number {
  * the one-person report, Raises, PayCheck) keep comparing what the reader chose, and the Pay &
  * standing tab's pools are actual pay.
  */
-export const TITLE_RATE = `CASE WHEN sum(fte) FILTER (WHERE ${SALARIED}) > 0
-  THEN sum(salary * fte) FILTER (WHERE ${SALARIED}) / sum(fte) FILTER (WHERE ${SALARIED})
-  ELSE max(salary) FILTER (WHERE salary > 0) END`;
+export const TITLE_RATE = FULL_TIME_RATE;
 
 /**
  * The appointment a person's pay band is read against: their main appointment (`MAIN_KEY`) — its grade,
@@ -413,7 +409,7 @@ export const PRIOR_FOOTING = (() => {
   const f = REPORTING_CHANGES.map((c) =>
     `(CASE WHEN CAST(snapshot_date AS DATE) >= DATE '${c.since}-01' AND lower(trim(comp_basis)) = ${sqlStr(c.to)} THEN ${1 / c.factor} ELSE 1.0 END)`,
   ).join(' * ');
-  return `(SELECT * EXCLUDE (f_) REPLACE (salary * f_ AS salary, salary_fte_adjusted * f_ AS salary_fte_adjusted, base_pay * f_ AS base_pay)
+  return `(SELECT * EXCLUDE (f_) REPLACE (salary * f_ AS salary, salary_fte_adjusted * f_ AS salary_fte_adjusted)
     FROM (SELECT *, ${f} f_ FROM salaries))`;
 })();
 
@@ -549,8 +545,16 @@ export function continuingRaisesSql(o: { metric: Metric; where?: string; pair?: 
 export function standingSql(o: {
   snapshotId: string; pay: number; metric: Metric;
   school?: string | null; department?: string | null; grade?: number | null; gradeBasis?: string | null; jobCode?: string | null;
+  /** The person's full-time rate in their title: given, the title's pool compares everyone at their rate in it
+   *  (`TITLE_RATE`), as every same-title comparison does, rather than at `pay`. */
+  titleRate?: number | null;
 }): string {
   const lit = (v: string | null | undefined) => sqlStr(v ?? '');
+  const inCode = `salary > 0 AND job_code = ${lit(o.jobCode)}`;
+  const titleRate = `CASE WHEN sum(fte) FILTER (WHERE ${inCode} AND fte > 0) > 0
+        THEN sum(salary * fte) FILTER (WHERE ${inCode} AND fte > 0) / sum(fte) FILTER (WHERE ${inCode} AND fte > 0)
+        ELSE max(salary) FILTER (WHERE ${inCode}) END`;
+  const byRate = o.titleRate != null && o.titleRate > 0;
   // Membership is "holds an appointment in the pool" (bool_or), not whichever row `any_value` picked:
   // a person split across two schools belongs to both, at their one pay.
   return `WITH pp AS (SELECT person_key, ${personPay(o.metric)} pay,
@@ -559,7 +563,7 @@ export function standingSql(o: {
         -- A grade number is only a grade on its own schedule: grade 18 is hourly, 12-month and 9-month
         -- pay at once, and an hourly rate annualized is not the same quantity as a salary.
         bool_or(grade_number = ${o.grade ?? -1} AND grade_basis IS NOT DISTINCT FROM ${o.gradeBasis == null ? 'NULL' : lit(o.gradeBasis)}) in_grade,
-        bool_or(job_code = ${lit(o.jobCode)}) in_title
+        bool_or(job_code = ${lit(o.jobCode)}) in_title, ${titleRate} title_rate
       FROM salaries WHERE snapshot_id = ${sqlStr(o.snapshotId)} GROUP BY person_key)
      SELECT
        count(*) FILTER (WHERE pay > 0) n_all,
@@ -570,8 +574,9 @@ export function standingSql(o: {
        count(*) FILTER (WHERE pay > 0 AND in_dept AND pay < ${o.pay}) b_dept,
        count(*) FILTER (WHERE pay > 0 AND in_grade) n_grade,
        count(*) FILTER (WHERE pay > 0 AND in_grade AND pay < ${o.pay}) b_grade,
-       count(*) FILTER (WHERE pay > 0 AND in_title) n_title,
-       count(*) FILTER (WHERE pay > 0 AND in_title AND pay < ${o.pay}) b_title
+       ${byRate
+         ? `count(*) FILTER (WHERE title_rate > 0) n_title, count(*) FILTER (WHERE title_rate > 0 AND title_rate < ${o.titleRate}) b_title`
+         : `count(*) FILTER (WHERE pay > 0 AND in_title) n_title, count(*) FILTER (WHERE pay > 0 AND in_title AND pay < ${o.pay}) b_title`}
      FROM pp`;
 }
 

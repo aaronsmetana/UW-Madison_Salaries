@@ -104,7 +104,7 @@ export function useRelease(): Release | null {
  * The newest step's most common raise, from raise-steps.json (0.1% bins, continuing staff, `metric`):
  * a pay-plan step shows as one bin holding most people. `share` of `n` got exactly `raise`.
  */
-export function useLatestStep(metric: 'fte' | 'full' | 'base' = 'fte') {
+export function useLatestStep(metric: 'fte' | 'full' = 'fte') {
   const { data } = useRaiseSteps();
   const steps = data?.metrics[metric] ?? [];
   const st = steps[steps.length - 1];

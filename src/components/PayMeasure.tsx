@@ -9,7 +9,6 @@ import { ICON } from '../lib/ui';
 const METRIC_HELP: Record<Metric, string> = {
   full: 'The listed annual salary (full-time-equivalent rate). For part-time staff this is more than they actually earned.',
   fte: "Annual salary scaled to the person's FTE — closest to what they were actually paid.",
-  base: 'Base salary as reported (may exclude supplemental or overload pay).',
 };
 
 /**

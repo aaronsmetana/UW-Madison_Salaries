@@ -88,7 +88,7 @@ export interface RaiseStepStats {
 }
 export interface RaiseSteps {
   hist_step: number;
-  metrics: Record<'fte' | 'full' | 'base', RaiseStepStats[]>;
+  metrics: Record<'fte' | 'full', RaiseStepStats[]>;
 }
 
 export interface HomeStats {

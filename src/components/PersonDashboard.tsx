@@ -7,7 +7,7 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
 import { latestHire, latestMain } from '../lib/personQuery';
-import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf, countedAppts } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf, countedAppts, TITLE_RATE } from '../lib/queries';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, mainSwapped } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
@@ -23,7 +23,7 @@ import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { SalaryHistogram } from './SalaryHistogram';
 import { ChartData } from './ChartData';
 import { PercentileNote } from './PercentileNote';
-import { percentile } from '../lib/stats';
+import { percentile, MIN_GROUP } from '../lib/stats';
 import { CardTitle } from './CardTitle';
 import { HistoryTable } from './HistoryTable';
 import { StatCard, StatRow } from './StatCard';
@@ -231,9 +231,12 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   }, [standingRows, latest]);
 
   const jobCode = latest?.job_code ?? null;
+  // Within the title, everyone at their full-time rate in it (queries `TITLE_RATE`), whatever the page's measure:
+  // a same-title comparison made on actual pay read a part-time appointment as underpaid. The person page's
+  // Overview compares the same way.
   const { data: peerStatsRows } = useSql<PeerStats>(
-    ['dash-peer-stats', jobCode ?? '', lastSnap, metric],
-    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
+    ['dash-peer-stats', jobCode ?? '', lastSnap],
+    `WITH pp AS (SELECT person_key, ${TITLE_RATE} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
      SELECT count(*) n, min(pay) lo, quantile_cont(pay, 0.25) p25, median(pay) med,
             quantile_cont(pay, 0.75) p75, max(pay) hi FROM pp WHERE pay > 0`,
@@ -241,24 +244,26 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   );
   const peer = peerStatsRows?.[0];
 
-  const { data: peerPayRows } = useSql<{ pay: number }>(
-    ['dash-peer-pays', jobCode ?? '', lastSnap, metric],
-    `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
+  const { data: peerPayRows } = useSql<{ person_key: string; pay: number }>(
+    ['dash-peer-pays', jobCode ?? '', lastSnap],
+    `WITH pp AS (SELECT person_key, ${TITLE_RATE} pay FROM salaries
         WHERE snapshot_id = ${sqlStr(lastSnap)} AND job_code = ${sqlStr(jobCode ?? '')} GROUP BY person_key)
-     SELECT pay FROM pp WHERE pay > 0`,
+     SELECT person_key, pay FROM pp WHERE pay > 0`,
     !!lastSnap && !!jobCode
   );
   const peerPays = useMemo(() => (peerPayRows ?? []).map((r) => r.pay), [peerPayRows]);
+  /** The subject's own full-time rate in the title, as everyone else in it is measured. */
+  const selfRate = useMemo(() => peerPayRows?.find((r) => r.person_key === personKey)?.pay ?? null, [peerPayRows, personKey]);
   // `percentile()` (lib/stats.ts), not a local formula: this page and /person show the same person
-  // against the same pool, so they must not disagree about where they sit.
+  // against the same pool, so they must not disagree about where they sit. None below MIN_GROUP.
   const peerPct = useMemo(
-    () => (peerPays.length > 1 && lastSalary != null && lastSalary > 0 ? percentile(lastSalary, peerPays) : null),
-    [peerPays, lastSalary]
+    () => (peerPays.length >= MIN_GROUP && selfRate != null && selfRate > 0 ? percentile(selfRate, peerPays) : null),
+    [peerPays, selfRate]
   );
   const peerRank = useMemo(() => {
-    if (!peerPays.length || lastSalary == null) return null;
-    return peerPays.filter((p) => p > lastSalary).length + 1;
-  }, [peerPays, lastSalary]);
+    if (peerPays.length < MIN_GROUP || selfRate == null) return null;
+    return peerPays.filter((p) => p > selfRate).length + 1;
+  }, [peerPays, selfRate]);
 
   if (isLoading) return <LoadingState label="Loading report…" />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
@@ -369,28 +374,28 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Card>
       )}
 
-      {peer && peer.n > 1 && lastSalary != null && jobCode &&
+      {peer && peer.n > 1 && selfRate != null && jobCode &&
         peer.lo != null && peer.p25 != null && peer.med != null && peer.p75 != null && peer.hi != null && (
         <Card withBorder padding="lg">
           <CardTitle
-            right={peerRank != null && <Text size="sm" c="dimmed">ranks <b>#{peerRank}</b> of {num(peer.n)} by salary</Text>}
+            right={peerRank != null && <Text size="sm" c="dimmed">ranks <b>#{peerRank}</b> of {num(peer.n)} by full-time rate</Text>}
           >
             How {name} compares to others with the title {latest?.title}
           </CardTitle>
-          <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={lastSalary} values={peerPays} />
+          <PeerRangeBar min={peer.lo} p25={peer.p25} median={peer.med} p75={peer.p75} max={peer.hi} value={selfRate} values={peerPays} />
           <PercentileNote pct={peerPct} pool="people with this title" mt="sm" />
           {standing?.uw != null && (
             <Text size="sm" data-standing="campus">
-              Across all of UW–Madison, more than <b>{standing.uw}%</b>
+              By {METRIC_LABEL[metric].toLowerCase()}, across all of UW–Madison, more than <b>{standing.uw}%</b>
               {standing.sch != null && <>; within {latest?.school}, more than <b>{standing.sch}%</b></>}.
             </Text>
           )}
           <Text size="xs" c="dimmed" mt={4} mb="md">
-            Among {num(peer.n)} people with job code {jobCode} in the latest snapshot.
+            Among {num(peer.n)} people with job code {jobCode} in the latest snapshot, each at their full-time rate in it.
           </Text>
           <SalaryHistogram
             values={peerPays}
-            markerValue={lastSalary}
+            markerValue={selfRate}
             markerLabel="this person"
             tooFewText={`Only ${num(peer.n)} ${peer.n === 1 ? 'person has' : 'people have'} this title — too few to chart a distribution.`}
           />
