@@ -188,7 +188,8 @@ test('pickers that take only a person show people alone, with no groups', async 
   // Give the index time to have answered, had this box asked for it.
   await page.waitForTimeout(1000);
   await expect(page.locator('[role="listbox"] [role="group"]')).toHaveCount(0);
-  await expect(page.locator('[role="option"]:not([data-kind="person"])')).toHaveCount(0);
+  // People, and the row that lists the rest of them.
+  await expect(page.locator('[role="option"]:not([data-kind="person"]):not([data-kind="more"])')).toHaveCount(0);
 
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
   await page.getByRole('button', { name: 'Compare with…' }).click();
@@ -197,7 +198,7 @@ test('pickers that take only a person show people alone, with no groups', async 
   await expect(page.getByRole('option').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1000);
   await expect(page.locator('[role="listbox"] [role="group"]')).toHaveCount(0);
-  await expect(page.locator('[role="option"]:not([data-kind="person"])')).toHaveCount(0);
+  await expect(page.locator('[role="option"]:not([data-kind="person"]):not([data-kind="more"])')).toHaveCount(0);
 });
 
 test('Enter pressed before people have loaded opens the person once they do', async ({ page }) => {

@@ -20,6 +20,8 @@ const BELOW_ROOM = 320;
 /** The bar's list is at least this wide, px, even under a narrower box: a person's row holds a name, a pay,
  *  and their title and school under them. */
 const BAR_LIST_MIN_W = 384;
+/** The most people a people-only list shows once asked for all of them. */
+const ALL_PEOPLE = 500;
 
 /** One matched person in one snapshot — the people query returns a row per person per snapshot. */
 interface HitRow {
@@ -84,7 +86,9 @@ export interface ShownPerson {
 type Item =
   | { kind: 'person'; key: string; hit: PersonHit }
   | { kind: 'title'; key: string; hit: TitleHit }
-  | { kind: 'division'; key: string; hit: DivisionHit };
+  | { kind: 'division'; key: string; hit: DivisionHit }
+  /** The last row of a people-only list that stops short of everyone who matched: picked, it lists them all. */
+  | { kind: 'more'; key: string; n: number };
 
 /**
  * The matched people with their pay in every snapshot. `hits` must return one row per person with an
@@ -264,7 +268,11 @@ export function SearchBox({
   // from one to the other is the same question, answered at once from what the first was told: the people
   // it marked on the graph carry straight over.
   const inGroup = peopleInGroup;
-  const peopleLimit = grouped ? inGroup + 1 : 25;
+  // A people-only list stops at 25 until the reader asks for all of them (the "Show all" row), then at
+  // ALL_PEOPLE: 233 Smiths have held a UW job, and the list used to stop at the 25th without a word.
+  const [allPeople, setAllPeople] = useState(false);
+  useEffect(() => setAllPeople(false), [q]);
+  const peopleLimit = grouped ? inGroup + 1 : allPeople ? ALL_PEOPLE : 25;
 
   // Fetched on first focus — on the landing page that is the page load, since its box is autofocused. A
   // bar is on screen from the moment it mounts, so it does not wait to be focused.
@@ -377,6 +385,8 @@ export function SearchBox({
   const peopleHere = !usingFuzzy && rows?.length ? Number(rows[0].here ?? 0) : null;
   const peopleShown = grouped ? people.slice(0, inGroup) : people;
   const morePeople = grouped && people.length > inGroup;
+  // In a people-only list, those it leaves out are offered as one more row.
+  const unlisted = !grouped && peopleTotal != null && peopleTotal > peopleShown.length ? peopleTotal : null;
 
   // Keyboard navigation for the autocomplete (combobox semantics): one flat list across the groups,
   // in the order they are drawn.
@@ -392,10 +402,11 @@ export function SearchBox({
           : { kind: 'division', key: `d:${s.hit.school}`, hit: s.hit }))
       : [
         ...peopleShown.map((hit): Item => ({ kind: 'person', key: `p:${hit.person_key}`, hit })),
+        ...(unlisted != null ? [{ kind: 'more', key: 'more', n: unlisted } as Item] : []),
         ...titles.map((hit): Item => ({ kind: 'title', key: `t:${hit.code}`, hit })),
         ...divisions.map((hit): Item => ({ kind: 'division', key: `d:${hit.school}`, hit })),
       ],
-    [showStarters, bar, starters, peopleShown, titles, divisions]
+    [showStarters, bar, starters, peopleShown, unlisted, titles, divisions]
   );
   // The bar's list lies over the graph, so it is open only while the box is in use: typed into and focused,
   // and not holding a query it was handed and has not been turned to. It goes the moment the reader turns
@@ -552,6 +563,10 @@ export function SearchBox({
   }, [titles]);
 
   const select = (it: Item) => {
+    if (it.kind === 'more') {
+      setAllPeople(true);
+      return;
+    }
     if (it.kind === 'person') {
       const h = it.hit;
       if (onPick) {
@@ -579,7 +594,7 @@ export function SearchBox({
   };
 
   const showOnGraph = (it: Item) => {
-    if (!onShowOnGraph || it.kind === 'person') return;
+    if (!onShowOnGraph || it.kind === 'person' || it.kind === 'more') return;
     onShowOnGraph(it.kind === 'title' ? { kind: 'title', hit: it.hit } : { kind: 'division', hit: it.hit });
     setTerm('');
   };
@@ -617,7 +632,7 @@ export function SearchBox({
       return;
     }
     if (!opened) return;
-    if (e.key === 'Enter' && e.shiftKey && onShowOnGraph && items[active] && items[active].kind !== 'person') {
+    if (e.key === 'Enter' && e.shiftKey && onShowOnGraph && items[active] && items[active].kind !== 'person' && items[active].kind !== 'more') {
       e.preventDefault();
       showOnGraph(items[active]);
       return;
@@ -840,6 +855,13 @@ export function SearchBox({
             </Text>
           )}
           {peopleShown.map((h, i) => personRow(h, i, compact))}
+          {/* What the list leaves out, said, and one row away: it used to stop at the 25th without a word. */}
+          {unlisted != null && (
+            <UnstyledButton key="more" {...optionProps(nPeople, items[nPeople])} className="search-more">
+              <Text fz={t.subFont} fw={600} c="accent">Show all {num(unlisted)} people</Text>
+              <Text fz={t.subFont} c="dimmed">{num(nPeople)} of {num(unlisted)} shown · keep typing to narrow them</Text>
+            </UnstyledButton>
+          )}
         </Stack>
       ) : null}
     </>
@@ -909,6 +931,8 @@ export function SearchBox({
           </UnstyledButton>
         );
       }
+      // The bar is never people-only, so it has no "Show all" row.
+      if (it.kind === 'more') return null;
       return (
         <UnstyledButton key={it.key} {...props}>
           <IconBuilding size={ICON.compact} aria-hidden className="search-chip-icon" />

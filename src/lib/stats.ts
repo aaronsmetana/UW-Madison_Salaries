@@ -54,6 +54,14 @@ export function leastSquares(points: { x: number; y: number }[]): { slope: numbe
   return { slope, intercept: yBar - slope * xBar };
 }
 
+/**
+ * Fewer people than this and a group gets no percentile, quartiles, spread or rank: its figures are listed
+ * instead. With two people in a title the person page drew a "middle 50%" of $76k–$81k and said one was
+ * "higher than 0% of the 1 others"; the title page gave a median for schools of one. One rule wherever a
+ * group is summed up.
+ */
+export const MIN_GROUP = 5;
+
 /** Fewer same-title peers with a recorded tenure than this and there is no trend to fit — a line
  *  through seven points says more about those seven people than about the title. The comparison
  *  brief already required this many; the person page drew a line and a verdict from two. */

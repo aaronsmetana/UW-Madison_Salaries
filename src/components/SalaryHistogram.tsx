@@ -387,16 +387,6 @@ export function SalaryHistogram({
             <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tickFormatter={fmtK} tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} />
             <Tooltip content={<BarsHistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
-            {guides.map((g, i) => (
-              <ReferenceLine
-                key={`q-${i}`}
-                x={g.value}
-                stroke={GUIDE_SOFT.stroke}
-                strokeDasharray={GUIDE_SOFT.dasharray}
-                strokeWidth={g.isMedian ? 1.5 : 1}
-                label={g.isMedian ? { value: 'median', position: 'top', fontSize: CHART_FONT, fill: 'var(--mantine-color-dimmed)' } : undefined}
-              />
-            ))}
             <Bar
               {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="n"
@@ -417,6 +407,19 @@ export function SalaryHistogram({
                 );
               })}
             </Bar>
+            {/* After the bars, so it paints over them (Recharts draws in child order), and only the median: drawn
+                first, the p25 and median guides went under the tallest bar, and the one dashed line left in sight,
+                p75's, sat beside the label "median". */}
+            {med != null && (
+              <ReferenceLine
+                x={med}
+                stroke={GUIDE_SOFT.stroke}
+                strokeDasharray={GUIDE_SOFT.dasharray}
+                strokeWidth={1.5}
+                className="hist-median"
+                label={{ value: 'median', position: 'top', fontSize: CHART_FONT, fill: 'var(--mantine-color-dimmed)' }}
+              />
+            )}
           </BarChart>
         </ResponsiveContainer>
         {markerFraction != null && (

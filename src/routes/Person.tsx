@@ -35,7 +35,7 @@ import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
 import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
 import { usePref } from '../lib/prefs';
-import { percentile } from '../lib/stats';
+import { percentile, MIN_GROUP } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
 import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -609,7 +609,7 @@ export default function Person() {
     const count = { all: [r.n_all, r.b_all], div: [r.n_div, r.b_div], dept: [r.n_dept, r.b_dept], grade: [r.n_grade, r.b_grade], title: [r.n_title, r.b_title] } as const;
     return poolLabels
       .map((x) => ({ label: x.label, n: count[x.key as keyof typeof count][0], below: count[x.key as keyof typeof count][1] }))
-      .filter((x) => x.n >= 2)
+      .filter((x) => x.n >= MIN_GROUP)
       .map((x) => ({ ...x, pct: poolPercentile(x.below, x.n)! }));
   }, [standingRows, poolLabels]);
 
@@ -686,6 +686,14 @@ export default function Person() {
   );
   const ratePlotted = cohortSelfPay != null && lastSalary != null && Math.round(cohortSelfPay) !== Math.round(lastSalary);
   const cohortPct = cohortSelfPay != null && cohortSelfPay > 0 && cohortPays.length > 1 ? percentile(cohortSelfPay, cohortPays) : null;
+  // Too few to summarize (stats `MIN_GROUP`): no share, spread or rank, but the others' rates themselves.
+  const spread = !!cohortStats && cohortStats.n >= MIN_GROUP && cohortStats.hi > cohortStats.lo;
+  const fewOthers = useMemo(
+    () => (cohortStats && cohortStats.n >= 2 && cohortStats.n < MIN_GROUP
+      ? cohortList.filter((p) => p.person_key !== key).sort((a, b) => b.pay - a.pay)
+      : null),
+    [cohortStats, cohortList, key],
+  );
   /** What both overview charts write beside this person's mark: "Aaron · $116,491". */
   const selfLabel = latest?.first_name?.trim() || 'This person';
 
@@ -983,7 +991,7 @@ export default function Person() {
                   the person's school): the share on a lower rate, the spread it sits in, and the rank. The sentence sat in
                   the chart's card; the chart now shows it, and this says it. */}
               <StatCell label="Full-time rate above">
-                {cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo && cohortPct != null ? (
+                {spread && cohortStats && cohortPct != null ? (
                   <>
                     <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                       <Text fw={700} style={{ fontSize: 24, lineHeight: 1.15 }}>{Math.round(cohortPct)}%</Text>
@@ -1000,6 +1008,12 @@ export default function Person() {
                       <Text size="xs" c="dimmed" mt={6}>Rank {cohortRank} of {num(cohortList.length)} · median {fmtK(cohortStats.med)}</Text>
                     )}
                   </>
+                ) : fewOthers ? (
+                  // Too few for a share: the others' rates, said outright.
+                  <Text size="sm" mt={6} className="few-others">
+                    {fewOthers.length === 1 ? 'The one other with this title: ' : `The ${fewOthers.length} others with this title: `}
+                    {fewOthers.map((o) => usd(o.pay)).join(', ')}.
+                  </Text>
                 ) : (
                   // A title of one, or one where everyone is paid the same: there is no share to state.
                   <Text size="sm" c="dimmed" mt={6}>
@@ -1085,14 +1099,14 @@ export default function Person() {
                     already reading about it; a "Go to title page" button under the footnotes was one more
                     row on the card. */}
                 <CardTitle
-                  mb={cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo ? 'xs' : 'md'}
+                  mb={spread ? 'xs' : 'md'}
                   sub={(() => {
                     const titleLink = <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor>;
                     const where = cohort === 'school' ? <> in {latest?.school}</> : null;
                     // The finding, in one sentence, before the chart that shows it: the share of the others paid
                     // less (the subject is not counted among them) and how far from the median. With no spread
                     // there is no share to state, and it says who the chart is of instead.
-                    if (cohortStats && cohortStats.n >= 2 && cohortStats.hi > cohortStats.lo && cohortPct != null && cohortSelfPay != null) {
+                    if (spread && cohortStats && cohortPct != null && cohortSelfPay != null) {
                       const d = cohortSelfPay - cohortStats.med;
                       return (
                         <span className="peer-finding">
@@ -1118,7 +1132,21 @@ export default function Person() {
                 >
                   Among people with this title
                 </CardTitle>
-                {cohortStats && cohortStats.n >= 2 ? (
+                {fewOthers ? (
+                  // Fewer than MIN_GROUP: no strip with a middle 50%, but each of them at their rate.
+                  <Stack gap={4} className="few-list">
+                    {[...fewOthers, ...(cohortSelfPay != null ? [{ person_key: key, fn: latest?.first_name ?? null, ln: latest?.last_name ?? null, pay: cohortSelfPay }] : [])]
+                      .sort((a, b) => b.pay - a.pay)
+                      .map((p) => (
+                        <Group key={p.person_key} justify="space-between" wrap="nowrap" maw={420}>
+                          {p.person_key === key
+                            ? <Text size="sm" fw={700}>{fullName(p.fn, p.ln) || name}</Text>
+                            : <Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} size="sm">{fullName(p.fn, p.ln) || '—'}</Anchor>}
+                          <Text size="sm" fw={p.person_key === key ? 700 : 500}>{usd(p.pay)}</Text>
+                        </Group>
+                      ))}
+                  </Stack>
+                ) : cohortStats && cohortStats.n >= 2 ? (
                   <>
                     <PeerStrip
                       min={cohortStats.lo}
@@ -1175,7 +1203,7 @@ export default function Person() {
                 <CardTitle
                   sub={<>
                     Ranked by full-time rate{cohort === 'school' ? `, in ${latest?.school}` : ''}.
-                    {cohortRank != null && <> {selfLabel} ranks <b>#{cohortRank} of {num(cohortList.length)}</b>.</>}
+                    {cohortRank != null && cohortList.length >= MIN_GROUP && <> {selfLabel} ranks <b>#{cohortRank} of {num(cohortList.length)}</b>.</>}
                   </>}
                   right={
                     <TextInput
@@ -1327,7 +1355,7 @@ export default function Person() {
               ))
               : poolLabels.map((p) => <PercentileBar key={p.label} label={p.label} />)}
           </Stack>
-          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The centre line is the pool's median; green is above it. Pools of one person are left out.</Text>
+          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The centre line is the pool's median; green is above it. Pools of fewer than {MIN_GROUP} people are left out.</Text>
         </Card>
       )}
 

@@ -22,6 +22,10 @@ import { SalaryHistogram } from './SalaryHistogram';
 import { StatCard, StatRow } from './StatCard';
 import { ICON } from '../lib/ui';
 import { PercentileNote } from './PercentileNote';
+import { MiniRange } from './MiniRange';
+import { rangeScale } from '../lib/rangeScale';
+import { MIN_GROUP } from '../lib/stats';
+import { fmtK } from '../lib/chartStyle';
 
 
 /** The loading distribution card's chart block: the histogram (284px) and its footer of controls, so the
@@ -38,7 +42,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
 interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
 type PeopleSortKey = 'name' | 'school' | 'tenure' | 'salary';
-interface SchoolRow { school: string; n: number; med: number | null }
+interface SchoolRow { school: string; n: number; med: number | null; lo: number | null; p25: number | null; p75: number | null; hi: number | null }
 interface PctRow { scope: string; pct: number; n: number }
 
 /**
@@ -98,10 +102,14 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   const { data: bySchool } = useSql<SchoolRow>(
     ['ts-school', jobCode, snap, metric],
     `WITH pe AS (${peopleSql({ metric, where: `${titleBase} AND school IS NOT NULL`, by: ['school'] })})
-     SELECT school, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med
+     SELECT school, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med,
+            min(pay) FILTER (WHERE pay > 0) lo, quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
+            quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75, max(pay) FILTER (WHERE pay > 0) hi
      FROM pe GROUP BY school ORDER BY n DESC`,
     enabled
   );
+  // One scale for every school's spread, as the Schools table draws its own.
+  const schoolScale = useMemo(() => rangeScale((bySchool ?? []).filter((r) => r.n >= MIN_GROUP).map((r) => r.p75)), [bySchool]);
 
   const { data: pct } = useSql<PctRow>(
     ['ts-pct', jobCode, snap, school ?? '', pinSalary ?? 0, metric],
@@ -348,18 +356,20 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       </Card>
 
       <Card withBorder padding="lg">
-        <CardTitle sub="What this title pays in each school: the market inside UW.">Pay by school</CardTitle>
-        <Table>
+        <CardTitle sub={`What this title pays in each school: the market inside UW. A school with fewer than ${MIN_GROUP} people in it is greyed, with no spread.`}>Pay by school</CardTitle>
+        <Table className="pay-by-school">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>School</Table.Th>
               <Table.Th ta="right">People</Table.Th>
               <Table.Th ta="right">Median</Table.Th>
+              <Table.Th ta="right" data-fold w={216}>Middle 50% · {schoolScale.lo === 0 ? '$0' : fmtK(schoolScale.lo)}–{fmtK(schoolScale.hi)}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {(bySchool ?? []).map((r) => (
-              <Table.Tr key={r.school} style={{ background: school === r.school ? 'var(--mantine-color-accent-light)' : undefined }}>
+              <Table.Tr key={r.school} data-few={r.n < MIN_GROUP || undefined} c={r.n < MIN_GROUP ? 'dimmed' : undefined}
+                style={{ background: school === r.school ? 'var(--mantine-color-accent-light)' : undefined }}>
                 <Table.Td>
                   <Group gap={6} wrap="nowrap">
                     <Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor>
@@ -368,6 +378,11 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                 </Table.Td>
                 <Table.Td ta="right">{num(r.n)}</Table.Td>
                 <Table.Td ta="right">{usd(r.med)}</Table.Td>
+                <Table.Td ta="right" data-fold>
+                  {r.n >= MIN_GROUP && r.lo != null && r.p25 != null && r.med != null && r.p75 != null && r.hi != null
+                    ? <MiniRange scale={schoolScale} lo={r.lo} p25={r.p25} med={r.med} p75={r.p75} hi={r.hi} />
+                    : <Text span size="xs" c="dimmed">too few to say</Text>}
+                </Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>

@@ -64,7 +64,7 @@ function DeptRows({ where, school, metric, colSpan }: {
             </Anchor>
             <Text className="fold-under" size="xs" c="dimmed">{num(d.headcount)} people</Text>
           </Table.Td>
-          <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} /></Table.Td>
+          <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} color="var(--bar)" /></Table.Td>
           <Table.Td ta="right"><Text size="sm" c="dimmed">{usd(d.med)}</Text></Table.Td>
           <Table.Td data-fold />
           <Table.Td />
@@ -118,14 +118,12 @@ export function SchoolsPanel() {
   const page = useShowAll(view, `${q}|${sort.key}|${sort.dir}`);
 
   const maxHc = useMemo(() => Math.max(1, ...(schools ?? []).map((s) => s.headcount)), [schools]);
-  const medExtent = useMemo(() => {
-    const meds = (schools ?? []).map((s) => s.med).filter((v): v is number => v != null);
-    return meds.length ? { min: Math.min(...meds), max: Math.max(...meds) } : { min: 0, max: 1 };
-  }, [schools]);
+  const maxMed = useMemo(() => Math.max(1, ...(schools ?? []).map((s) => s.med ?? 0)), [schools]);
   const scale = useMemo(() => rangeScale((schools ?? []).map((s) => s.p75)), [schools]);
   const open = (school: string) => nav(`/school/${encodeURIComponent(school)}`);
-  const medFrac = (m: number | null) =>
-    m == null ? 0 : medExtent.max === medExtent.min ? 1 : (m - medExtent.min) / (medExtent.max - medExtent.min);
+  // From zero, as a bar's length must be: scaled from the lowest median to the highest, Veterinary Medicine's
+  // $63,088 was a sliver beside Information Technology's $107,720, a 1.7× gap drawn as about 7×.
+  const medFrac = (m: number | null) => (m == null ? 0 : m / maxMed);
 
   const exportCsv = () =>
     downloadCSV(
@@ -213,11 +211,11 @@ export function SchoolsPanel() {
                     </Table.Td>
                     <Table.Td ta="right" data-fold>
                       {num(s.headcount)}
-                      <MiniBar frac={s.headcount / maxHc} />
+                      <MiniBar frac={s.headcount / maxHc} color="var(--bar)" />
                     </Table.Td>
                     <Table.Td ta="right">
                       {usd(s.med)}
-                      <MiniBar frac={medFrac(s.med)} color="var(--mantine-color-pos-5)" />
+                      <MiniBar frac={medFrac(s.med)} color="var(--bar)" />
                     </Table.Td>
                     <Table.Td ta="right" data-fold>
                       {canPlot ? (

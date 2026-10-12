@@ -74,7 +74,9 @@ test('the hire-year cohorts count each person once, in the year their latest rec
               FROM hired LEFT JOIN latest l USING (person_key) WHERE y BETWEEN 1990 AND 2026 GROUP BY 1),
      every AS (SELECT s.hire_year y, count(DISTINCT s.person_key) total, count(DISTINCT s.person_key) FILTER (WHERE l.person_key IS NOT NULL) still
                FROM $SAL s LEFT JOIN latest l USING (person_key) WHERE s.hire_year BETWEEN 1990 AND 2026 GROUP BY 1)
-     SELECT o.y, round(100.0 * o.still / o.total) ret, round(100.0 * e.still / e.total) twice FROM once o JOIN every e USING (y) ORDER BY y`,
+     SELECT o.y, round(100.0 * o.still / o.total) ret, round(100.0 * e.still / e.total) twice FROM once o JOIN every e USING (y)
+     -- The years the chart opens on: those hired after the first snapshot's year, each seen from hire.
+     WHERE o.y > (SELECT year(min(snapshot_date)) FROM $SAL) ORDER BY y`,
   );
   expect(want.filter((w) => w.ret !== w.twice).length, 'counting twice reads the same, so this proves nothing').toBeGreaterThan(0);
   await page.goto('./explore?tab=cohorts');

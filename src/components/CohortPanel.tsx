@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Stack, Card, Text, Skeleton } from '@mantine/core';
+import { Stack, Card, Text, Skeleton, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Cell, Line, XAxis, YAxis, Tooltip, CartesianGrid, Customized,
-  ReferenceArea, ReferenceLine,
+  ReferenceLine,
 } from 'recharts';
 import { BreakLabels } from './chart/BreakLabel';
 import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, TIP_LABEL_STYLE, fmtSnapTick, chartKeys } from '../lib/chartStyle';
@@ -16,7 +16,6 @@ import { StatCard, StatRow } from './StatCard';
 import { ChartSkeleton } from './Loading';
 import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
-import { SvgPill } from './chart/pills';
 import { TipSurface } from './chart/ChartTooltip';
 import { MarkerLegend } from './markers';
 import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
@@ -28,7 +27,7 @@ import { monthsBetween } from '../lib/cadence';
 function RetentionTip({ active, payload, label }: {
   active?: boolean;
   label?: string;
-  payload?: { payload: { retention: number; stayed: number; left: number; total: number } }[];
+  payload?: { payload: { retention: number; stayed: number; left: number; total: number; of: string } }[];
 }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -36,7 +35,7 @@ function RetentionTip({ active, payload, label }: {
     <TipSurface>
       <Text size="sm" fw={600}>Hired {label}</Text>
       <Text size="sm">Retention: {d.retention}%</Text>
-      <Text size="xs" c="dimmed">{num(d.stayed)} stayed · {num(d.left)} left · {num(d.total)} hired</Text>
+      <Text size="xs" c="dimmed">{num(d.stayed)} stayed · {num(d.left)} left · of {num(d.total)} {d.of}</Text>
     </TipSurface>
   );
 }
@@ -54,14 +53,6 @@ const retColor = (r: number) => {
   return RETENTION_RAMP[idx];
 };
 
-/** A ReferenceArea label: resolves Recharts' injected viewBox to a point near the area's top-center,
- *  then renders it as a legible pill via the shared SvgPill. */
-function AreaPillLabel({ viewBox, text }: { viewBox?: { x?: number; y?: number; width?: number }; text: string }) {
-  if (!viewBox || viewBox.x == null || viewBox.y == null) return null;
-  const cx = viewBox.x + (viewBox.width ?? 0) / 2;
-  const cy = viewBox.y + 12;
-  return <SvgPill x={cx} y={cy} text={text} fontWeight={500} />;
-}
 
 /** The panel's three figures, named once for the loaded row and its placeholder. */
 const FIGURES = ['Median tenure · current staff', 'Hired in the last 5 years', 'Snapshots span'] as const;
@@ -75,19 +66,29 @@ export function CohortPanel() {
   const where = whereAll(scope, filters);
   const scopeVal = scope.kind === 'school' ? scope.value : '';
   const [sortMode, setSortMode] = useState<'year' | 'retention'>('year');
+  // Which cohorts: those seen from the day they were hired, or those already here when the data begins. Only
+  // people employed at the first snapshot are known, so an earlier hire year counts its survivors alone, and
+  // drawn beside the later ones as "the share of each hire year still here" it read as retention.
+  const [cohort, setCohort] = useState<'hired' | 'here'>('hired');
+  const first = summary?.snapshots.find((s) => !s.id.endsWith('-pre'));
+  const firstYear = first ? Number(first.date.slice(0, 4)) : 2021;
+  const firstMonth = first ? new Date(`${first.date}T00:00:00`).toLocaleString('en-US', { month: 'short', year: 'numeric' }) : 'Nov 2021';
   const [hoveredYear, setHoveredYear] = useState<number | null>(null);
   const [hoveredFlow, setHoveredFlow] = useState<number | null>(null);
   // The turnover chart's width: its tooltip may be no wider than the plot, which Recharts keeps it inside.
   const [turnRef, turnW] = useWidth<HTMLDivElement>();
 
-  const { data, isFetching } = useSql<{ hire_year: number; total: number; still_here: number }>(
-    ['cohort', scope.kind, scopeVal, latest?.id ?? '', filterKey(filters)],
+  const { data, isFetching } = useSql<{ hire_year: number; total: number; still_here: number; first_n: number; first_still: number }>(
+    ['cohort', scope.kind, scopeVal, latest?.id ?? '', first?.id ?? '', filterKey(filters)],
     // Each person once, in the year their latest record says they were hired: someone a changed hire date
     // had split in two (scripts/lib/identity) carries both years on their rows.
     `WITH latest AS (SELECT DISTINCT person_key FROM salaries WHERE snapshot_id = ${sqlStr(latest?.id ?? '')} AND ${where}),
+     first AS (SELECT DISTINCT person_key FROM salaries WHERE snapshot_id = ${sqlStr(first?.id ?? '')} AND ${where}),
      hired AS (SELECT person_key, arg_max(hire_year, snapshot_date) hire_year FROM salaries WHERE hire_year IS NOT NULL AND ${where} GROUP BY person_key)
-     SELECT h.hire_year hire_year, count(*) total, count(*) FILTER (WHERE l.person_key IS NOT NULL) still_here
-     FROM hired h LEFT JOIN latest l ON h.person_key = l.person_key
+     SELECT h.hire_year hire_year, count(*) total, count(*) FILTER (WHERE l.person_key IS NOT NULL) still_here,
+            count(*) FILTER (WHERE f.person_key IS NOT NULL) first_n,
+            count(*) FILTER (WHERE f.person_key IS NOT NULL AND l.person_key IS NOT NULL) first_still
+     FROM hired h LEFT JOIN latest l ON h.person_key = l.person_key LEFT JOIN first f ON h.person_key = f.person_key
      WHERE h.hire_year BETWEEN 1990 AND 2026
      GROUP BY h.hire_year ORDER BY h.hire_year`,
     !!latest
@@ -133,12 +134,18 @@ export function CohortPanel() {
   );
 
   const chart = useMemo(() => {
-    const rows = (data ?? []).map((r) => {
-      const retention = r.total ? Math.max(0, Math.min(100, Math.round((100 * r.still_here) / r.total))) : 0;
-      return { year: String(r.hire_year), retention, lost: 100 - retention, stayed: r.still_here, left: r.total - r.still_here, total: r.total };
+    // Hired after the first snapshot's year: every one of them seen from the start. Hired by then: those
+    // here at the first snapshot, of whom the share here at the latest.
+    const rows = (data ?? []).flatMap((r) => {
+      const seen = cohort === 'hired' ? r.hire_year > firstYear : r.hire_year <= firstYear;
+      const total = cohort === 'hired' ? r.total : r.first_n;
+      const stayed = cohort === 'hired' ? r.still_here : r.first_still;
+      if (!seen || !total) return [];
+      const retention = Math.max(0, Math.min(100, Math.round((100 * stayed) / total)));
+      return [{ year: String(r.hire_year), retention, lost: 100 - retention, stayed, left: total - stayed, total, of: cohort === 'hired' ? 'hired' : `here in ${firstMonth}` }];
     });
     return sortMode === 'retention' ? [...rows].sort((a, b) => b.retention - a.retention) : rows;
-  }, [data, sortMode]);
+  }, [data, sortMode, cohort, firstYear, firstMonth]);
 
   // Steps run 4 to 14 months, so "left" is also given as a share of the staff at the start of the step,
   // per month — the one figure that compares across them.
@@ -178,12 +185,20 @@ export function CohortPanel() {
       <Card withBorder padding="lg">
         <CardTitle
           right={
-            <SegmentedToggle
-              size="xs" value={sortMode} onChange={(v) => setSortMode(v as 'year' | 'retention')}
-              options={[{ id: 'year', label: 'By year' }, { id: 'retention', label: 'By retention' }]}
-            />
+            <Group gap="xs">
+              <SegmentedToggle
+                size="xs" value={cohort} onChange={(v) => setCohort(v as 'hired' | 'here')}
+                options={[{ id: 'hired', label: `Hired since ${firstYear + 1}` }, { id: 'here', label: `Here in ${firstMonth}` }]}
+              />
+              <SegmentedToggle
+                size="xs" value={sortMode} onChange={(v) => setSortMode(v as 'year' | 'retention')}
+                options={[{ id: 'year', label: 'By year' }, { id: 'retention', label: 'By retention' }]}
+              />
+            </Group>
           }
-          sub="The share of each hire year still here."
+          sub={cohort === 'hired'
+            ? `Of each year's hires since ${firstYear + 1}, the share still here in ${latest?.label ?? 'the latest snapshot'}.`
+            : `Of those here in ${firstMonth}, by the year they were hired, the share still here in ${latest?.label ?? 'the latest snapshot'}. Who left before ${firstMonth} is not in the data.`}
         >
           Retention by hire year
         </CardTitle>
@@ -195,11 +210,6 @@ export function CohortPanel() {
             <XAxis dataKey="year" tick={AXIS_TICK} interval="preserveStartEnd" minTickGap={8} />
             <YAxis width={48} tick={AXIS_TICK} unit="%" domain={[0, 100]} />
             <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
-            {/* Pre-2021 cohorts are left-censored: we only see those who survived to the first snapshot. */}
-            {sortMode === 'year' && (
-              <ReferenceArea x1="1990" x2="2021" fill="var(--mantine-color-default-border)" fillOpacity={0.35}
-                label={<AreaPillLabel text="pre-2021 hires: survivors only" />} />
-            )}
             <Bar
               {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="retention"
@@ -247,8 +257,9 @@ export function CohortPanel() {
           period={latest?.label ? `as of ${latest.label}` : undefined}
           about={<>
             Each bar is one hire-year cohort: green = share still present in the latest snapshot ({latest?.label}),
-            grey = share since gone. Snapshots begin in 2021, so the shaded pre-2021 cohorts reflect only survivors
-            already employed by then; the most recent cohorts are also immature (little time to attrit yet).
+            grey = share since gone. The data begins in {firstMonth}, so only people hired after it are seen from the
+            start; "Here in {firstMonth}" follows those already employed then, by hire year. The most recent cohorts
+            have had little time to leave.
           </>}
         />
       </Card>
