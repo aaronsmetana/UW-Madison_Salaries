@@ -293,7 +293,7 @@ export function ChangesPanel() {
     ];
   }, [d]);
   // A waterfall step's colour: what added to payroll up, what took from it down (the app's one direction
-  // pair, blue and orange), and the net a total, in the guide grey — its sign is in its label.
+  // pair, green and deep red), and the net a total, in the guide grey — its sign is in its label.
   const wfColor = (kind: string) =>
     kind === 'net' ? 'var(--guide-strong)' : kind === 'up' ? 'var(--mark-up)' : 'var(--mark-down)';
 

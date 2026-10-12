@@ -194,7 +194,7 @@ function TitleChangeLabel({
 
 /** One horizontal percentile bar for the "Standing" small-multiples: label + rank on the left, a track
  *  with a neutral fill to p%, the pool median's tick, and a marker coloured by its side of the median (up
- *  blue above, down orange below), and the percentile on the right. The fill was green above the median
+ *  green above, down red below), and the percentile on the right. The fill was green above the median
  *  and grey below, so a below-median pool looked switched off (P15). The fill + marker sweep in
  *  left→right on mount (staggered by `delay`). */
 function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?: number; below?: number; pct?: number; delay?: number }) {
@@ -1436,7 +1436,7 @@ export default function Person() {
               ))
               : poolLabels.map((p) => <PercentileBar key={p.label} label={p.label} />)}
           </Stack>
-          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The marker is blue above the pool's median and orange below it. Pools of fewer than {MIN_GROUP} people are left out.</Text>
+          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The marker is green above the pool's median and red below it. Pools of fewer than {MIN_GROUP} people are left out.</Text>
         </Card>
       )}
 

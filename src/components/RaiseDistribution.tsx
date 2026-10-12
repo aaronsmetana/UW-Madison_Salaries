@@ -145,8 +145,8 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
         period={period}
         about={<>
           1% bins of raises as this site prints them, to a tenth of a percent: "+3%" is a raise above 2.0% up to 3.0%,
-          and "0%" is pay that did not move. Changes past −10% or +20% are gathered at the ends. Blue = raise,
-          orange = cut, grey = no change{marker ? `; the dashed line marks the ${marker.name}` : ''}.
+          and "0%" is pay that did not move. Changes past −10% or +20% are gathered at the ends. Green = raise,
+          red = cut, grey = no change{marker ? `; the dashed line marks the ${marker.name}` : ''}.
         </>}
       />
     </Card>

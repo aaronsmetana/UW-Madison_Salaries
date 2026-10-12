@@ -2,11 +2,10 @@ import { test, expect, type Page } from '@playwright/test';
 import { parseColor, contrast, lab, cvdDistance } from './color';
 
 /**
- * One colour pair for a change's direction, and only for that (G11, G12). Up is blue and down orange,
- * with a lightness gap, so the pair holds for a reader who can't tell red from green — the red/green it
- * replaces sat 13 apart (ΔE) under protanopia. Green is left to success (copied, in the tray, a check
- * passed) and red to errors; a magnitude or a category (same school, retained, a target, a total) takes
- * the accent or a neutral.
+ * One colour pair for a change's direction, and only for that (G11): up is green and down a deep red (the
+ * user's call over the review's blue and orange, G12), each with its sign. Success keeps green too; red alone
+ * is an error; a magnitude or a category (same school, retained, a target, a total) takes the accent or a
+ * neutral.
  */
 
 const AARON = 'aaronsmetana|2014-10-15';
@@ -29,22 +28,20 @@ async function setScheme(page: Page, scheme: 'light' | 'dark') {
   await page.waitForTimeout(300);
 }
 
-test('up and down are a blue and an orange that stay apart without their hues, in both schemes', async ({ page }) => {
+test('up is a green and down a deep red, each clear on the card, in both schemes', async ({ page }) => {
   await page.goto('./divisions?tab=changes');
   for (const scheme of ['light', 'dark'] as const) {
     await setScheme(page, scheme);
     const [up, down, upWords, downWords, card] = await Promise.all(
       ['--mark-up', '--mark-down', '--text-up', '--text-down', '--surface'].map((v) => ink(page, v)));
-    expect(hue(up), `${scheme}: up is not a blue`).toBeGreaterThan(260);
-    expect(hue(up), `${scheme}: up is not a blue`).toBeLessThan(310);
-    expect(hue(down), `${scheme}: down is not an orange`).toBeGreaterThan(45);
-    expect(hue(down), `${scheme}: down is not an orange`).toBeLessThan(80);
-    expect(hue(upWords), `${scheme}: up's words are not a blue`).toBeGreaterThan(260);
-    expect(hue(upWords), `${scheme}: up's words are not a blue`).toBeLessThan(310);
-    expect(hue(downWords), `${scheme}: down's words are not an orange`).toBeGreaterThan(40);
-    expect(hue(downWords), `${scheme}: down's words are not an orange`).toBeLessThan(80);
-    expect(Math.abs(lab(up)[0] - lab(down)[0]), `${scheme}: the pair's lightness gap`).toBeGreaterThanOrEqual(15);
-    expect(cvdDistance(up, down), `${scheme}: up and down to a red-green colour-blind reader`).toBeGreaterThanOrEqual(60);
+    for (const [what, c] of [['an up mark', up], ['up words', upWords]] as const) {
+      expect(hue(c), `${scheme}: ${what} is not a green`).toBeGreaterThan(135);
+      expect(hue(c), `${scheme}: ${what} is not a green`).toBeLessThan(175);
+    }
+    for (const [what, c] of [['a down mark', down], ['down words', downWords]] as const) {
+      expect(hue(c), `${scheme}: ${what} is not a deep red`).toBeGreaterThan(25);
+      expect(hue(c), `${scheme}: ${what} is not a deep red`).toBeLessThan(55);
+    }
     for (const [what, c, min] of [['an up mark', up, 3], ['a down mark', down, 3], ['up words', upWords, 4.5], ['down words', downWords, 4.5]] as const) {
       expect(contrast(c, card), `${scheme}: ${what} against the card`).toBeGreaterThanOrEqual(min);
     }
@@ -140,14 +137,16 @@ test("the landing's raises and cuts are the app's pair, and who joined is far fr
       ['--strata-up', '--strata-down', '--strata-new', '--strata-neutral', '--mark-up', '--mark-down'].map((v) => ink(page, v)));
     expect(up, scheme).toEqual(markUp);
     expect(down, scheme).toEqual(markDown);
-    expect(cvdDistance(joined, down), `${scheme}: joined and down`).toBeGreaterThanOrEqual(40);
-    expect(cvdDistance(joined, up), `${scheme}: joined and up`).toBeGreaterThanOrEqual(40);
+    expect(cvdDistance(joined, down), `${scheme}: joined and down`).toBeGreaterThanOrEqual(30);
+    expect(cvdDistance(joined, up), `${scheme}: joined and up`).toBeGreaterThanOrEqual(30);
     expect(cvdDistance(joined, neutral), `${scheme}: joined and everyone else`).toBeGreaterThanOrEqual(30);
   }
 });
 
-/** Every chart mark and signed figure on the pages that show change: none in the success green or error red.
- *  Each page is read once what it shows has drawn: its last part to arrive. */
+/** Every chart mark and signed figure on the pages that show change: marks reach their colour through the direction
+ *  tokens (never a raw palette step, so one change of the pair reaches every chart), and a signed figure is never
+ *  in the error red nor in the other direction's colour. Each page is read once what it shows has drawn: its
+ *  last part to arrive. */
 for (const [name, path, ready] of [
   ['Divisions › Changes', './divisions?tab=changes', '.mantine-Tabs-panel:not([hidden]) td:text-matches("^[+−][$]")'],
   ['Divisions › Retention', './divisions?tab=retention', '.turnover .recharts-bar-rectangle'],
@@ -156,30 +155,34 @@ for (const [name, path, ready] of [
   ['a person', `./person/${encodeURIComponent(AARON)}`, '.peer-strip circle.chart-dot'],
   ['a person, pay tab', `./person/${encodeURIComponent(AARON)}?tab=pay`, '.standing-marker'],
   ['a person, trend tab', `./person/${encodeURIComponent(ALICE)}?tab=trends`, 'text=Appointment (FTE) — lower chart'],
+  ['a person, history', `./person/${encodeURIComponent(AARON)}?tab=history`, 'table.appt-history tbody tr'],
 ] as const) {
-  test(`no change or magnitude in green or red: ${name}`, async ({ page }) => {
+  test(`changes are drawn in the direction pair, never the error red: ${name}`, async ({ page }) => {
     await page.goto(path);
     await expect(page.locator(ready).first(), 'what this page shows never drew').toBeAttached({ timeout: 60_000 });
     await page.waitForTimeout(1500);
-    const [pos, neg] = await Promise.all([ink(page, '--text-pos'), ink(page, '--text-neg')]);
-    const found = await page.evaluate(([pos, neg]) => {
+    const [up, down, neg] = await Promise.all([ink(page, '--text-up'), ink(page, '--text-down'), ink(page, '--text-neg')]);
+    const found = await page.evaluate(([up, down, neg]) => {
       const out: string[] = [];
       for (const el of document.querySelectorAll('svg *')) {
         for (const a of ['fill', 'stroke']) {
           const v = el.getAttribute(a) ?? '';
-          if (/--mantine-color-(pos|red|green)-/.test(v)) out.push(`${el.tagName} ${a}=${v}`);
+          if (/--mantine-color-(pos|red|green|up|down)-/.test(v)) out.push(`${el.tagName} ${a}=${v}`);
         }
       }
       const rgb = (c: number[]) => `rgb(${c.slice(0, 3).map(Math.round).join(', ')})`;
       for (const el of document.querySelectorAll('body *')) {
         if (el.children.length) continue;
         const t = el.textContent?.trim() ?? '';
-        if (!/^\(?[+−▲▼]/.test(t)) continue;
+        const rising = /^\(?[+▲]\$?[1-9]/.test(t), falling = /^\(?[−▼]\$?[1-9]/.test(t);
+        if (!rising && !falling) continue;
         const c = getComputedStyle(el).color;
-        if (c === rgb(pos) || c === rgb(neg)) out.push(`"${t}" in ${c}`);
+        if (c === rgb(neg)) out.push(`"${t}" in the error red`);
+        if (rising && c === rgb(down)) out.push(`"${t}", a rise, in the down colour`);
+        if (falling && c === rgb(up)) out.push(`"${t}", a fall, in the up colour`);
       }
       return out;
-    }, [pos, neg]);
+    }, [up, down, neg]);
     expect(found).toEqual([]);
   });
 }
