@@ -4,8 +4,8 @@ import AxeBuilder from '@axe-core/playwright';
 import { afterReveal } from './reveal';
 
 // Routes exercised in both color schemes. Reports needs a subject to render its full content, so it
-// gets its own case below (rather than a bare `./reports`, which would only show the empty-state).
-const ROUTES = ['./', './paycheck', './explore', './compare', './data', './screening'];
+// gets its own case below (rather than a bare `./raise-case`, which would only show the empty-state).
+const ROUTES = ['./', './titles', './divisions', './compare', './data', './screening'];
 const THEMES = ['light', 'dark'] as const;
 
 /**
@@ -78,7 +78,7 @@ for (const theme of THEMES) {
   }
 
   test(`a11y: reports with a subject (${theme}) has no critical/serious violations`, async ({ page }) => {
-    await page.goto('./reports?type=comparison');
+    await page.goto('./raise-case?type=comparison');
     await setTheme(page, theme);
     const search = page.getByPlaceholder('Search yourself by name to begin…');
     await expect(search).toBeVisible({ timeout: 60_000 });
@@ -139,7 +139,7 @@ for (const theme of THEMES) {
   // rows — 1,329 of them on Titles — had never been scanned. Here each table is scanned once it is in.
   test(`a11y: Divisions tables, loaded (${theme}), have no critical/serious violations`, async ({ page }) => {
     for (const [tab, row] of [['schools', '.school-row'], ['titles', 'svg.mini-range'], ['earners', '.earner-row']] as const) {
-      await page.goto(`./explore?tab=${tab}`);
+      await page.goto(`./divisions?tab=${tab}`);
       await setTheme(page, theme);
       await expect(page.locator(row).first()).toBeAttached({ timeout: 60_000 });
       // Once the theme's change of colour is over: scanned mid-fade, a list's dimmed foot read 3.41:1.
@@ -176,7 +176,7 @@ for (const theme of THEMES) {
   });
 
   test(`a11y: a title page with its people, loaded (${theme}), has no critical/serious violations`, async ({ page }) => {
-    await page.goto('./paycheck?code=IT040');
+    await page.goto('./titles?code=IT040');
     await setTheme(page, theme);
     await expect(page.locator('.peer-row').first()).toBeAttached({ timeout: 60_000 });
     await settled(page);
@@ -227,8 +227,8 @@ for (const theme of THEMES) {
  * Each waits for the content that arrives last, then for motion to end.
  */
 const LOADED: [string, string, string][] = [
-  ['Divisions › Changes', './explore?tab=changes', '.mantine-Tabs-panel:not([hidden]) table'],
-  ['Divisions › Retention', './explore?tab=cohorts', '.mantine-Tabs-panel:not([hidden]) .recharts-bar-rectangle'],
+  ['Divisions › Changes', './divisions?tab=changes', '.mantine-Tabs-panel:not([hidden]) table'],
+  ['Divisions › Retention', './divisions?tab=retention', '.mantine-Tabs-panel:not([hidden]) .recharts-bar-rectangle'],
   ['Raises', './raises', 'table tbody tr'],
   ['People', './people', 'input'],
   ['not found', './does-not-exist', 'h1'],
@@ -293,7 +293,7 @@ test.describe('skip to content', () => {
   // The DOM-order check above is a source-of-truth assertion; this one proves the browser agrees,
   // on a route with nothing autofocused to move the starting point.
   test('is what the first Tab reaches', async ({ page }) => {
-    await page.goto('./explore', { waitUntil: 'networkidle' });
+    await page.goto('./divisions', { waitUntil: 'networkidle' });
     await page.keyboard.press('Tab');
     await expect(page.locator('.skip-link'), 'the first Tab lands somewhere else').toBeFocused();
   });
@@ -302,7 +302,7 @@ test.describe('skip to content', () => {
 /** What axe cannot see: a page with no section headings, a term with no description, a tab with no title. */
 test.describe('names and structure', () => {
   test('Home and Divisions name their sections in headings', async ({ page }) => {
-    for (const path of ['./', './explore']) {
+    for (const path of ['./', './divisions']) {
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 60_000 });
       await expect(page.getByRole('heading', { level: 2 }).first(), path).toBeAttached();
@@ -326,7 +326,7 @@ test.describe('names and structure', () => {
   });
 
   test("Divisions › Trends lists Nov 2021's twins in order, Pre-TTC first", async ({ page }) => {
-    await page.goto('./explore?tab=trends');
+    await page.goto('./divisions?tab=trends');
     const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
     await expect(table.locator('tbody tr').nth(1)).toBeAttached({ timeout: 60_000 });
     const first = await table.locator('tbody tr td:first-child').allTextContents();

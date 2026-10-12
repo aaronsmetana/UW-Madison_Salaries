@@ -22,7 +22,7 @@ async function copyLink(page: Page) {
 
 test('Titles: a title and its school reopen from the link, and a pinned salary never goes in it', async ({ browser }) => {
   const a = await fresh(browser);
-  await a.page.goto('./paycheck?code=FA020');
+  await a.page.goto('./titles?code=FA020');
   await a.page.getByRole('textbox', { name: 'School (optional filter)' }).click();
   await a.page.getByRole('option', { name: /^College of Letters & Science/ }).click();
   await a.page.getByRole('textbox', { name: 'Salary to pin (optional)' }).fill('123456');
@@ -84,7 +84,7 @@ test('a raise case reopens from its link — its people and its settings — wit
     }));
     localStorage.setItem('uwsal.tray.v1', set);
   }, [KEY, JSON.stringify(people.map((p, i) => ({ ...p, colorIdx: i })))] as const);
-  await a.page.goto(`./reports?type=comparison&subject=${encodeURIComponent(KEY)}`);
+  await a.page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(KEY)}`);
   await expect(a.page.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / })).toBeChecked({ timeout: 60_000 });
   await expect(a.page).toHaveURL(/case=/);
   const link = await copyLink(a.page);

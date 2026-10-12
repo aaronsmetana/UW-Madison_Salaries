@@ -99,7 +99,7 @@ export function WhatsNew() {
           <List.Item data-item="step">
             <b>An across-the-board step.</b> {pct(step.share, 0)} of the {num(step.n)} people who kept the same title and
             appointment since {previous?.label} were raised exactly {(step.raise * 100).toFixed(1)}%.{' '}
-            <Anchor component={Link} to="/explore?tab=changes" inherit>See every raise in Changes →</Anchor>
+            <Anchor component={Link} to="/divisions?tab=changes" inherit>See every raise in Changes →</Anchor>
           </List.Item>
         )}
         {release.rangesUpdated && ref && (

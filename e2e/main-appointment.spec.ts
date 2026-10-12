@@ -36,7 +36,7 @@ async function openPerson(page: Page, key: string) {
 }
 
 /** The title the page names them by: the subtitle's first link, to that title's page. */
-const titleLink = (head: ReturnType<Page['locator']>) => head.locator('a[href*="paycheck?code="]').first();
+const titleLink = (head: ReturnType<Page['locator']>) => head.locator('a[href*="titles?code="]').first();
 const jobCodeFact = (page: Page) => page.locator('.fact-strip .fact-cell').filter({ hasText: 'Job code' }).locator('dd');
 
 test('Brett Van Ess is named by his directorship, with his hourly crowd-control job on the line under it', async ({ page }) => {

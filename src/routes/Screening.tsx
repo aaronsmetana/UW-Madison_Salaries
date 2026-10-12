@@ -242,7 +242,7 @@ export default function Screening() {
     setParams((prev) => { const n = new URLSearchParams(prev); n.delete('flag'); return n; }, { replace: true });
 
   const draftReport = (r: ScreeningResult) => {
-    nav(`/reports?type=comparison&subject=${encodeURIComponent(r.key)}`);
+    nav(`/raise-case?type=comparison&subject=${encodeURIComponent(r.key)}`);
   };
 
   return (

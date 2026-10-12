@@ -184,7 +184,8 @@ export default function Explore() {
   // Active tab lives in the URL (?tab=…) so "Copy link" restores the exact view; "schools" is the
   // implicit default and stays out of the query string.
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'schools';
+  // `cohorts` is the Retention tab's name before G1; an old link still opens it.
+  const tab = params.get('tab') === 'cohorts' ? 'retention' : (params.get('tab') ?? 'schools');
   const setTab = (v: string | null) =>
     setParams(
       (prev) => {
@@ -326,7 +327,7 @@ export default function Explore() {
           <Tabs.Tab value="titles">Titles</Tabs.Tab>
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
-          <Tabs.Tab value="cohorts">Retention</Tabs.Tab>
+          <Tabs.Tab value="retention">Retention</Tabs.Tab>
         </Tabs.List>
 
         {/* Each panel names itself in a heading only a screen reader hears: the tab list is not a heading, and the
@@ -356,7 +357,7 @@ export default function Explore() {
           <ChangesPanel />
         </Tabs.Panel>
 
-        <Tabs.Panel value="cohorts" pt="md" className="tab-rise">
+        <Tabs.Panel value="retention" pt="md" className="tab-rise">
           <VisuallyHidden component="h2">Retention</VisuallyHidden>
           <CohortPanel />
         </Tabs.Panel>

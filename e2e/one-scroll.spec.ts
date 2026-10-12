@@ -13,10 +13,10 @@ const ownScrolls = (page: Page) => page.evaluate(() => [...document.querySelecto
 }).map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].slice(0, 3).join('.')} (${e.clientHeight} of ${e.scrollHeight}px)`));
 
 for (const [name, path, ready] of [
-  ['Divisions: schools', './explore?tab=schools', 'table tbody tr'],
-  ['Divisions: top earners', './explore?tab=earners', 'table tbody tr'],
-  ['Divisions: titles', './explore?tab=titles', 'table tbody tr'],
-  ['Titles', './paycheck?code=FA020', '.peer-row'],
+  ['Divisions: schools', './divisions?tab=schools', 'table tbody tr'],
+  ['Divisions: top earners', './divisions?tab=earners', 'table tbody tr'],
+  ['Divisions: titles', './divisions?tab=titles', 'table tbody tr'],
+  ['Titles', './titles?code=FA020', '.peer-row'],
   ['a division', `./school/${encodeURIComponent('School of Education')}?tab=departments`, 'table tbody tr >> visible=true'],
   ['Raises', './raises', '.raise-above-table tbody tr'],
   ['Screening', `./screening?sch=${encodeURIComponent('School of Medicine and Public Health')}&run=1`, 'table tbody tr'],
@@ -31,7 +31,7 @@ for (const [name, path, ready] of [
 }
 
 test('a long list shows its first 25, and "Show all" the rest', async ({ page }) => {
-  await page.goto('./paycheck?code=FA020');
+  await page.goto('./titles?code=FA020');
   const rows = page.locator('.peer-row');
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
   const foot = page.locator('.show-all').first();

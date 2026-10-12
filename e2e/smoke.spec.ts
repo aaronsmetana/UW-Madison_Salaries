@@ -32,7 +32,7 @@ test('theme toggle switches color scheme without blanking the page', async ({ pa
 });
 
 test('explore renders a trend chart and the real-dollar toggle', async ({ page }) => {
-  await page.goto('./explore');
+  await page.goto('./divisions');
   await expect(page.locator('svg').first()).toBeVisible({ timeout: 60_000 });
   const realToggle = page.getByText(/^\d{4} \$$/).first();
   await expect(realToggle).toBeVisible();
@@ -132,7 +132,7 @@ for (const { name, width, height } of [
 // browser history, any copied link, and — because GitHub Pages has no rewrite and deep links bounce
 // through public/404.html — a request URL sent to GitHub's servers. This asserts the promise holds.
 test('a pinned salary never reaches the URL', async ({ page }) => {
-  await page.goto('./paycheck');
+  await page.goto('./titles');
 
   const title = page.getByRole('textbox', { name: 'Title' });
   await expect(title).toBeVisible({ timeout: 60_000 });
@@ -172,11 +172,11 @@ test('canonical URL and social title follow the route', async ({ page }) => {
   expect(about.ogTitle).toBe(about.title);
   expect(about.ogTitle).toMatch(/About the data/);
 
-  await page.goto('./paycheck?code=IT040', { waitUntil: 'networkidle' });
+  await page.goto('./titles?code=IT040', { waitUntil: 'networkidle' });
   const titled = await head();
-  expect(titled.canonical, 'a parameter that selects the content stays').toMatch(/\/paycheck\?code=IT040$/);
+  expect(titled.canonical, 'a parameter that selects the content stays').toMatch(/\/titles\?code=IT040$/);
 
-  await page.goto('./paycheck?code=IT040&tab=people', { waitUntil: 'networkidle' });
+  await page.goto('./titles?code=IT040&tab=people', { waitUntil: 'networkidle' });
   expect((await head()).canonical, 'a view of the same content is not a second URL').toBe(titled.canonical);
 
   expect(titled.canonical).not.toBe(about.canonical);
@@ -215,7 +215,7 @@ test('a route that does query still loads the dataset', async ({ page }) => {
   page.on('request', (r) => {
     if (/\.parquet(\?|$)/.test(r.url())) heavy.push('parquet');
   });
-  await page.goto('./explore');
+  await page.goto('./divisions');
   await expect(page.locator('svg').first()).toBeVisible({ timeout: 60_000 });
   await expect(() => expect(heavy.length).toBeGreaterThan(0)).toPass({ timeout: 60_000 });
 });
@@ -224,7 +224,7 @@ test('the data error banner still fires when the dataset really fails', async ({
   // The banner now observes rather than initiates, so the thing worth proving is that observing is
   // enough: a route that queries must still surface the failure.
   await page.route('**/salaries.parquet', (r) => r.abort());
-  await page.goto('./explore');
+  await page.goto('./divisions');
   await expect(page.getByText(/Couldn't load the salary data/i)).toBeVisible({ timeout: 60_000 });
 });
 

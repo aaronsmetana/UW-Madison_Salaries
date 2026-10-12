@@ -11,10 +11,10 @@ import { test, expect, type Page } from '@playwright/test';
 const measure = (page: Page) => page.getByRole('radiogroup').filter({ has: page.getByRole('radio', { name: 'Full-time rate' }) }).first();
 
 for (const [name, path, opens] of [
-  ['Titles', './paycheck?code=FA020', 'Full-time rate'],
+  ['Titles', './titles?code=FA020', 'Full-time rate'],
   ['Raises', './raises', 'Actual pay'],
   ['a person’s report', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=report`, 'Actual pay'],
-  ['Reports, a raise case', './reports?type=comparison', 'Actual pay'],
+  ['Reports, a raise case', './raise-case?type=comparison', 'Actual pay'],
   ['Compare', './compare', 'Actual pay'],
   ['a division', `./school/${encodeURIComponent('School of Education')}`, 'Actual pay'],
 ] as const) {
@@ -28,7 +28,7 @@ for (const [name, path, opens] of [
 }
 
 test('changing the measure on Titles changes its figures, and the page keeps it in its address', async ({ page }) => {
-  await page.goto('./paycheck?code=FA020');
+  await page.goto('./titles?code=FA020');
   // The title's median, in its stat cell (or card).
   const median = page.locator('.stat-cell, [data-stat-card]', { hasText: /^Median salary · this title/ }).first();
   await expect(median).toContainText('$', { timeout: 60_000 });
@@ -43,10 +43,10 @@ test('changing the measure on Titles changes its figures, and the page keeps it 
 });
 
 test("Divisions' Titles tab opens on the full-time rate, and an old Base pay link on the page's own measure", async ({ page }) => {
-  await page.goto('./explore?tab=titles');
+  await page.goto('./divisions?tab=titles');
   await expect(measure(page).getByRole('radio', { name: 'Full-time rate' })).toBeChecked({ timeout: 60_000 });
-  await page.goto('./explore?tab=schools&metric=base');
+  await page.goto('./divisions?tab=schools&metric=base');
   await expect(measure(page).getByRole('radio', { name: 'Actual pay' })).toBeChecked({ timeout: 60_000 });
-  await page.goto('./paycheck?code=FA020&metric=base');
+  await page.goto('./titles?code=FA020&metric=base');
   await expect(measure(page).getByRole('radio', { name: 'Full-time rate' })).toBeChecked({ timeout: 60_000 });
 });

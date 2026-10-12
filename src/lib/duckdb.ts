@@ -5,6 +5,8 @@ import ehWasm from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url';
 import mvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
 import ehWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
 
+import { setLoadProgress } from './loadProgress';
+
 let dbPromise: Promise<AsyncDuckDB> | null = null;
 
 async function initDB(): Promise<AsyncDuckDB> {
@@ -18,6 +20,7 @@ async function initDB(): Promise<AsyncDuckDB> {
     mvp: { mainModule: mvpWasm, mainWorker: mvpWorker },
     eh: { mainModule: ehWasm, mainWorker: ehWorker },
   };
+  setLoadProgress({ stage: 'engine' });
   const bundle = await duckdb.selectBundle(bundles);
   const worker = new Worker(bundle.mainWorker!);
   const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
@@ -39,7 +42,28 @@ async function initDB(): Promise<AsyncDuckDB> {
     clearTimeout(timeout);
   }
   if (!resp.ok) throw new Error(`Failed to load salary data (HTTP ${resp.status})`);
-  const buf = new Uint8Array(await resp.arrayBuffer());
+  // Read as it arrives, so a page waiting on it can say how far it has got (lib/loadProgress).
+  const total = Number(resp.headers.get('content-length')) || null;
+  setLoadProgress({ stage: 'data', loaded: 0, total });
+  let buf: Uint8Array;
+  if (resp.body) {
+    const reader = resp.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let loaded = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      setLoadProgress({ loaded });
+    }
+    buf = new Uint8Array(loaded);
+    let at = 0;
+    for (const c of chunks) { buf.set(c, at); at += c.length; }
+  } else {
+    buf = new Uint8Array(await resp.arrayBuffer());
+  }
+  setLoadProgress({ stage: 'opening' });
   await db.registerFileBuffer('salaries.parquet', buf);
 
   const conn = await db.connect();
@@ -71,6 +95,7 @@ async function initDB(): Promise<AsyncDuckDB> {
   }
 
   await conn.close();
+  setLoadProgress({ stage: 'ready' });
   return db;
 }
 

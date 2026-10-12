@@ -1,5 +1,6 @@
+import { lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
-import { Stack, Button, Group, Card } from '@mantine/core';
+import { Stack, Button, Group, Card, Skeleton } from '@mantine/core';
 import { NAV, ABOUT } from '../app/nav';
 import { CardTitle } from '../components/CardTitle';
 import { PageHeader } from '../components/PageHeader';
@@ -20,6 +21,10 @@ import { ICON } from '../lib/ui';
  * something else has already gone wrong, and it should not depend on fetching another chunk.
  */
 
+/** The search, first (NF3): a missing page usually means a person, title or division someone was after. Its own
+ *  chunk, fetched once this page is up, so the page itself still never waits on one. */
+const SearchBox = lazy(() => import('../components/SearchBox').then((m) => ({ default: m.SearchBox })));
+
 /** Every destination in the bar, and the Data page, as the bar names them. */
 const DESTINATIONS = [...NAV, ABOUT];
 
@@ -31,6 +36,12 @@ export default function NotFound() {
         title="Page not found"
         description="That address doesn't match anything on this site. The link may be out of date, or it may have a typo in it."
       />
+      <Card>
+        <CardTitle sub="People, titles and divisions, by name.">Search for it</CardTitle>
+        <Suspense fallback={<Skeleton height={42} radius="md" />}>
+          <SearchBox autoFocus placeholder="Search people, titles or divisions…" />
+        </Suspense>
+      </Card>
       {/* Not `EmptyState`: its h2 would restate the h1 above almost word for word. The second heading
           on this page should say something the first one doesn't — where to go. */}
       <Card>

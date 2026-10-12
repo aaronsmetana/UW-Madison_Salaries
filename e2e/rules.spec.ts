@@ -63,7 +63,7 @@ test.describe('R8 — pay figures describe people', () => {
       `SELECT median(pay) med FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL
          WHERE snapshot_id = '${snap}' AND school = '${school}' GROUP BY person_key) WHERE pay > 0`
     );
-    await page.goto('./explore');
+    await page.goto('./divisions');
     const row = page.locator('tr', { has: page.getByRole('link', { name: school, exact: true }) });
     await expect(row).toBeVisible({ timeout: 60_000 });
     await expect(row.locator('td').nth(2)).toContainText(usd(o.med));
@@ -116,7 +116,7 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
     expect(nine.size, 'no 9-month continuing raises across Sep 2025').toBeGreaterThan(1000);
     // At ×11/9 they would all sit near +25.9%; like for like, the usual +3%.
     expect([...nine.values()].filter((r) => r > 0.2).length / nine.size).toBeLessThan(0.02);
-    await page.goto('./explore?tab=changes');
+    await page.goto('./divisions?tab=changes');
     // Exactly these: the growth card at the top of Explore has its own "From snapshot" / "To snapshot".
     await page.getByRole('textbox', { name: 'From', exact: true }).click();
     await page.getByRole('option', { name: 'Apr 2025', exact: true }).click();
@@ -191,7 +191,7 @@ test.describe('R4 — one tenure fit, peers only, with a tolerance', () => {
 
 test.describe('R4 — the brief says one thing about tenure', () => {
   async function brief(page: Page, name: string) {
-    await page.goto('./reports?type=comparison');
+    await page.goto('./raise-case?type=comparison');
     const start = page.getByPlaceholder('Search yourself by name to begin…');
     await expect(start).toBeVisible({ timeout: 60_000 });
     await start.fill(name);
@@ -403,7 +403,7 @@ test.describe('R6 — snapshots sit on a date axis', () => {
 
   test('Divisions → Trends spaces snapshots by date', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('./explore?tab=trends');
+    await page.goto('./divisions?tab=trends');
     const card = page.locator('.mantine-Card-root', { hasText: 'Median salary & headcount over time' });
     const dots = card.locator('.recharts-wrapper').first().locator('.recharts-line-dots').first().locator('circle');
     await expect(dots.first()).toBeVisible({ timeout: 60_000 });
@@ -517,25 +517,25 @@ test.describe('Phones — the figure sits beside the name', () => {
 
   test("A title's people: the salary is on screen", async ({ page }) => {
     await page.setViewportSize(PHONE);
-    await page.goto('./paycheck?code=IT040');
+    await page.goto('./titles?code=IT040');
     await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Salary' }) }), /^Salary$/i);
   });
 
   test('Divisions: the median is on screen', async ({ page }) => {
     await page.setViewportSize(PHONE);
-    await page.goto('./explore');
+    await page.goto('./divisions');
     await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Median' }) }), /^Median$/i);
   });
 
   test('Divisions → Titles: the median is on screen, however long a title', async ({ page }) => {
     await page.setViewportSize(PHONE);
-    await page.goto('./explore?tab=titles');
+    await page.goto('./divisions?tab=titles');
     await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Median' }) }), /^Median$/i);
   });
 
   test('Top earners: the pay is on screen', async ({ page }) => {
     await page.setViewportSize(PHONE);
-    await page.goto('./explore?tab=earners');
+    await page.goto('./divisions?tab=earners');
     await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Pay' }) }), /^Pay$/i);
     // The rank, title and school are still there, under the name.
     await expect(page.locator('.earner-row').first().locator('.fold-under')).toContainText(/^#1 · /);
@@ -543,7 +543,7 @@ test.describe('Phones — the figure sits beside the name', () => {
 
   test("the tray's buttons are on screen", async ({ page }) => {
     await page.setViewportSize(PHONE);
-    await page.goto('./explore?tab=schools');
+    await page.goto('./divisions?tab=schools');
     const add = page.locator('.school-row .peer-add');
     await expect(add.first()).toBeVisible({ timeout: 60_000 });
     await add.nth(0).click();
@@ -560,7 +560,7 @@ test.describe('Phones — the figure sits beside the name', () => {
 
   test('the footer ends the page instead of covering its bottom', async ({ page }) => {
     await page.setViewportSize(PHONE);
-    await page.goto('./explore');
+    await page.goto('./divisions');
     const link = page.locator('.app-footer').getByText('Source on GitHub');
     await expect(link, 'the footer is on the page').toBeVisible({ timeout: 60_000 });
     await link.scrollIntoViewIfNeeded();

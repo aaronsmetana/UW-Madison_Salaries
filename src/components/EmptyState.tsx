@@ -28,7 +28,7 @@ export function EmptyState({
     <Card withBorder padding="lg">
       {/* `lg` + py 16, not `xl` + py 32. Those stacked to 128px of vertical padding before any
           content, which is most of why the page-level empty states ran 251-348px tall and took a
-          quarter to a third of the default view on /compare, /reports and /screening. An empty
+          quarter to a third of the default view on /compare, /raise-case and /screening. An empty
           state should be calm, not cavernous. */}
       <Stack align="center" gap={6} py={size === 'sm' ? 8 : 16}>
         <ThemeIcon size={size === 'sm' ? 36 : 48} radius="xl" variant="light" color="gray">

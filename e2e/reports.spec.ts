@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 // second as a named comparator populates the (tray-driven, not automatic) "Peer comparison" table.
 test.describe('raise case brief', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('./reports?type=comparison');
+    await page.goto('./raise-case?type=comparison');
     const startSearch = page.getByPlaceholder('Search yourself by name to begin…');
     await expect(startSearch).toBeVisible({ timeout: 60_000 });
     await startSearch.fill('Kenneth Poss');
@@ -59,11 +59,11 @@ test.describe('raise case brief', () => {
  * to the one this page used to make opens it there.
  */
 test('Reports is the raise case alone; a one-person report link opens the person’s Report tab', async ({ page }) => {
-  await page.goto('./reports');
+  await page.goto('./raise-case');
   await expect(page.getByPlaceholder('Search yourself by name to begin…')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('main')).not.toContainText(/One person/);
   await expect(page.locator('.mantine-SegmentedControl-root:has(input[value="person"])')).toHaveCount(0);
-  for (const old of ['./reports?person=aaronsmetana%7C2014-10-15&pname=Aaron%20Smetana', './reports?type=person&person=aaronsmetana%7C2014-10-15']) {
+  for (const old of ['./raise-case?person=aaronsmetana%7C2014-10-15&pname=Aaron%20Smetana', './raise-case?type=person&person=aaronsmetana%7C2014-10-15']) {
     await page.goto(old);
     await expect(page).toHaveURL(/\/person\/aaronsmetana%7C2014-10-15\?tab=report$/, { timeout: 30_000 });
     await expect(page.getByRole('tab', { name: 'Report' })).toHaveAttribute('aria-selected', 'true');

@@ -13,7 +13,7 @@ async function caseFor(browser: Browser, subject: string, set: { id: string; lab
   const ctx = await browser.newContext();
   await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify(set.map((p, i) => ({ type: 'person', ...p, colorIdx: i }))));
   const page = await ctx.newPage();
-  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(subject)}`);
+  await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(subject)}`);
   await expect(page.locator('.report-brief')).toBeVisible({ timeout: 60_000 });
   return { ctx, page };
 }
@@ -75,7 +75,7 @@ test('one Export menu holds what each report can export, and the email copy keep
   const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
   await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
   const page = await ctx.newPage();
-  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+  await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`);
   await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
   // Copy link beside it, and no export a button of its own.
   await expect(page.getByRole('button', { name: /Print|Download \.doc|Copy for email/ })).toHaveCount(0);
@@ -107,7 +107,7 @@ test('the recommended figure shows once: beside the setup on a desktop, in the p
     const ctx = await browser.newContext({ viewport: { width, height } });
     await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
     const page = await ctx.newPage();
-    await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+    await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`);
     const where = phone ? 'phone' : 'desktop';
     if (phone) {
       // The ledger has the figure, so the setup's readout would have it too.
@@ -226,7 +226,7 @@ test('an ask at or below current pay reads as no raise, in the setup and on a ph
   for (const [width, height, phone] of [[1440, 900, false], [375, 812, true]] as const) {
     const ctx = await browser.newContext({ viewport: { width, height } });
     const page = await ctx.newPage();
-    await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(kp.k)}`);
+    await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(kp.k)}`);
     await expect(page.locator('.report-brief')).toContainText('maintain current pay', { timeout: 60_000 });
     if (phone) {
       await expect(page.getByText(/^→ /)).toHaveText('→ maintain current pay');
@@ -272,7 +272,7 @@ test('a raise case keeps its own people: the compare set starts a case about one
 
   // The case keeps its people from one visit to the next (opened afresh, not from its link), and can take in
   // the set's others.
-  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+  await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`);
   await expect.poll(() => listed(page), { timeout: 60_000 }).toEqual(names(p2));
   await setup.getByRole('button', { name: new RegExp(`^Add ${p1.nm} from the compare set$`, 'i') }).click();
   await expect.poll(() => listed(page)).toEqual(names(p1, p2));
@@ -490,7 +490,7 @@ test('private to the requester: what to ask if the ask is refused, and a reviewe
   const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
   await ctx.addInitScript((s) => localStorage.setItem('uwsal.tray.v1', s), JSON.stringify([{ type: 'person', id: AARON, label: 'Aaron Smetana', colorIdx: 0 }]));
   const page = await ctx.newPage();
-  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(AARON)}`);
+  await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`);
   const setup = page.locator('.setup-panel');
   const brief = page.locator('.report-brief');
   await expect(brief.locator('.evidence-card').first()).toBeVisible({ timeout: 60_000 });

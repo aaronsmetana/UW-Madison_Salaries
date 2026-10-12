@@ -131,7 +131,7 @@ export default function Reports() {
     setSubjectKey(key);
   };
 
-  useDocTitle('Reports');
+  useDocTitle('Raise case');
   useEffect(() => {
     // Handing a one-person link on to the person's page: this page writes nothing into that page's address.
     if (onePerson) return;
@@ -1081,7 +1081,7 @@ export default function Reports() {
     <Stack gap="lg">
       <div className="no-print">
         <PageHeader
-          title="Reports"
+          title="Raise case"
           // A report on one person is their page's Report tab; this page builds the case for a raise.
           description="A raise case for one person, built on the UW Salary Administration Guidelines."
           right={

@@ -20,7 +20,7 @@ test('screening a school renders ranked rows and drafts a report', async ({ page
   expect(draftedName.length).toBeGreaterThan(0);
 
   await rows.first().getByRole('button', { name: 'Draft report' }).click();
-  await expect(page).toHaveURL(/\/reports\?type=comparison/);
+  await expect(page).toHaveURL(/\/raise-case\?type=comparison/);
   await expect(page.locator('#report-sec-notes').or(page.getByText('at or above'))).toBeVisible({ timeout: 60_000 });
   // The brief's "Prepared for" header must name the person we drafted.
   await expect(page.getByText(`Prepared for ${draftedName}`)).toBeVisible({ timeout: 10_000 });

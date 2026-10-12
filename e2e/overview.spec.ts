@@ -112,7 +112,7 @@ test('the strip card leads with its finding and keeps how-to-read behind its foo
   }), 'the finding comes after the chart').toBe(true);
   await expect(card.getByText(/1 dot = 1 person/)).toHaveCount(0);
   await expect(card.getByRole('link', { name: /Go to title page/ })).toHaveCount(0);
-  await expect(card.getByRole('link', { name: 'System Engineer IV' })).toHaveAttribute('href', /paycheck\?code=IT040/);
+  await expect(card.getByRole('link', { name: 'System Engineer IV' })).toHaveAttribute('href', /titles\?code=IT040/);
   await card.locator('.chart-about').click();
   await expect(page.locator('.chart-about-note')).toContainText('1 dot = 1 person');
   await expect(page.locator('.chart-about-note')).toContainText('middle 50%');

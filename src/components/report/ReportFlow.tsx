@@ -9,7 +9,7 @@ import { usePref } from '../../lib/prefs';
 /**
  * What you give → what it checks → what you get, as three bordered columns.
  *
- * /reports is the one route in the app whose shape isn't visible from its controls. Every other page
+ * /raise-case is the one route in the app whose shape isn't visible from its controls. Every other page
  * shows you data and lets you filter it; this one takes a person and some peers and returns a written
  * document, and until it has both it shows an empty pane. The page header used to carry that in a
  * second sentence of prose — "What comes out is a one-page brief you can print, download, or paste

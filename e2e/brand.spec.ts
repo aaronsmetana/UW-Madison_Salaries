@@ -31,7 +31,7 @@ async function dotsOf(scope: import('@playwright/test').Locator) {
 }
 
 test('every page carries the dot mark beside a one-line name, and the header holds nothing else', async ({ page }) => {
-  for (const route of ['./', `./person/${encodeURIComponent(AARON)}`, './explore', './reports']) {
+  for (const route of ['./', `./person/${encodeURIComponent(AARON)}`, './divisions', './raise-case']) {
     await page.goto(route);
     const word = page.locator('.app-wordmark');
     await expect(word, route).toBeVisible({ timeout: 60_000 });
@@ -40,16 +40,17 @@ test('every page carries the dot mark beside a one-line name, and the header hol
     // One line: the "Open record salary data" line that sat over the name is gone.
     await expect(page.locator('.mantine-AppShell-header'), route).not.toContainText('Open record salary data');
     const header = page.locator('.mantine-AppShell-header');
-    // The credit went to the footer: the header is the mark, the name, the destinations and the theme.
+    // The credit went to the footer: the header is the mark, the name, the destinations, the search (on every
+    // page but Home, whose search box is the page: G5) and the theme.
     await expect(header, `${route}: the credit is back in the header`).not.toContainText('UFAS');
     await expect(header, route).not.toContainText('Built by');
-    await expect(header.getByRole('button').locator('visible=true'), `${route}: the header holds another control`).toHaveCount(1);
+    await expect(header.getByRole('button').locator('visible=true'), `${route}: the header holds another control`).toHaveCount(route === './' ? 1 : 2);
   }
 });
 
 test('the phone menu carries the same mark', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto('./explore');
+  await page.goto('./divisions');
   await page.getByRole('button', { name: 'Toggle navigation' }).click();
   const sheet = page.getByRole('dialog', { name: 'Menu' });
   await expect(sheet).toBeVisible();

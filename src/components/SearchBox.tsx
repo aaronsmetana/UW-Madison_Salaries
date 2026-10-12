@@ -581,7 +581,7 @@ export function SearchBox({
         setTerm('');
         return;
       }
-      nav(`/paycheck?code=${encodeURIComponent(it.hit.code)}`);
+      nav(`/titles?code=${encodeURIComponent(it.hit.code)}`);
     } else {
       if (onPickDivision) {
         onPickDivision(it.hit);

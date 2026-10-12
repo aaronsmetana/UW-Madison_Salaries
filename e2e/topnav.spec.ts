@@ -15,7 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const AARON = 'aaronsmetana|2014-10-15';
 const SMPH = 'School of Medicine and Public Health';
-const NAMES = ['Home', 'People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening'];
+const NAMES = ['Home', 'People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Raise case', 'Screening'];
 /** CI's Linux runner draws text a few percent wider than a Mac (brand.spec's 4%): the bar must fit with that. */
 const widerText = (page: Page) => page.addInitScript(() => {
   document.addEventListener('DOMContentLoaded', () => {
@@ -69,8 +69,8 @@ test('the bar marks the place the page belongs to: a person is People, a divisio
     ['./', 'Home'],
     ['./people', 'People'],
     [`./person/${encodeURIComponent(AARON)}`, 'People'],
-    ['./paycheck?code=IT040', 'Titles'],
-    ['./explore', 'Divisions'],
+    ['./titles?code=IT040', 'Titles'],
+    ['./divisions', 'Divisions'],
     [`./school/${encodeURIComponent(SMPH)}`, 'Divisions'],
     ['./raises', 'Raises'],
     ['./data', null],
@@ -90,12 +90,12 @@ test('the trail says where an entity page sits, and its steps lead there', async
   await expect(trail.locator('[aria-current="page"]')).toHaveText('Aaron Smetana');
   await expect(trail.getByRole('link', { name: 'People' })).toHaveAttribute('href', /\/UW-Madison_Salaries\/people$/);
   await trail.getByRole('link', { name: 'System Engineer IV' }).click();
-  await expect(page).toHaveURL(/\/paycheck\?code=IT040$/);
+  await expect(page).toHaveURL(/\/titles\?code=IT040$/);
   await expect(trail.locator('li')).toHaveText(['Titles', 'System Engineer IV'], { timeout: 60_000 });
   await page.goto(`./school/${encodeURIComponent(SMPH)}`);
   await expect(trail.locator('li')).toHaveText(['Divisions', SMPH], { timeout: 60_000 });
   // A top-level page has no trail, and every page says which release it holds.
-  for (const route of ['./explore', './raises', './']) {
+  for (const route of ['./divisions', './raises', './']) {
     await page.goto(route);
     await expect(page.locator('.page-top .release-tag'), route).toBeVisible({ timeout: 60_000 });
     await expect(trail, route).toHaveCount(0);
@@ -210,7 +210,7 @@ test('on a phone the sheet closes on a tap beside it, on Escape, and on any link
   await expect(burger(page)).toBeFocused();
   await burger(page).tap();
   await sheet(page).getByRole('link', { name: 'Titles', exact: true }).tap();
-  await expect(page).toHaveURL(/\/paycheck$/);
+  await expect(page).toHaveURL(/\/titles$/);
   await expect(sheet(page)).toHaveCount(0);
   // The page it is already on, where the address does not change and nothing else would close it.
   await burger(page).tap();

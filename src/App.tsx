@@ -1,6 +1,6 @@
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBrowserRouter, RouterProvider, Navigate, useParams } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, useParams, useLocation } from 'react-router-dom';
 import { theme } from './theme';
 import { ControlsProvider } from './state/controls';
 import { TrayProvider } from './state/tray';
@@ -23,11 +23,24 @@ const Person = lazyWithRetry(() => import('./routes/Person'));
 const People = lazyWithRetry(() => import('./routes/People'));
 const School = lazyWithRetry(() => import('./routes/School'));
 
-// The old /title/:code page is retired — titles now live at /paycheck?code=. Redirect so any
-// bookmarked or shared /title links still resolve to the canonical Search-Title-Salaries view.
+// The old /title/:code page is retired — titles now live at /titles?code=. Redirect so any
+// bookmarked or shared /title links still resolve to the canonical title view.
 function TitleRedirect() {
   const { code } = useParams();
-  return <Navigate to={`/paycheck?code=${encodeURIComponent(code ?? '')}`} replace />;
+  return <Navigate to={`/titles?code=${encodeURIComponent(code ?? '')}`} replace />;
+}
+
+/**
+ * An address from before the routes were named as the navigation names them (G1): Titles was /paycheck,
+ * Divisions /explore (its Retention tab ?tab=cohorts), the raise case /reports. A shared link named a
+ * different feature from the one the reader clicked; the old ones go to the new, query and all.
+ */
+function Renamed({ to }: { to: string }) {
+  const { search, hash } = useLocation();
+  const params = new URLSearchParams(search);
+  if (params.get('tab') === 'cohorts') params.set('tab', 'retention');
+  const q = params.toString();
+  return <Navigate to={`${to}${q ? `?${q}` : ''}${hash}`} replace />;
 }
 
 const queryClient = new QueryClient({
@@ -47,11 +60,14 @@ const router = createBrowserRouter(
       ),
       children: [
         { index: true, element: <Home /> },
-        { path: 'paycheck', element: <PayCheck /> },
-        { path: 'explore', element: <Explore /> },
+        { path: 'titles', element: <PayCheck /> },
+        { path: 'divisions', element: <Explore /> },
+        { path: 'paycheck', element: <Renamed to="/titles" /> },
+        { path: 'explore', element: <Renamed to="/divisions" /> },
         { path: 'compare', element: <Compare /> },
         { path: 'raises', element: <Raises /> },
-        { path: 'reports', element: <Reports /> },
+        { path: 'raise-case', element: <Reports /> },
+        { path: 'reports', element: <Renamed to="/raise-case" /> },
         { path: 'screening', element: <Screening /> },
         { path: 'data', element: <DataHealth /> },
         { path: 'people', element: <People /> },

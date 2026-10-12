@@ -27,7 +27,7 @@ test("Divisions' median growth across Sep 2025 is like for like, and says so", a
   const asReported = last.med / first.med - 1;
   const lfl = last.med_prior / first.med - 1;
   expect(asReported - lfl, 'the reporting change moves Faculty growth by at least 10 points').toBeGreaterThan(0.1);
-  await page.goto(`./explore${FACULTY}`);
+  await page.goto(`./divisions${FACULTY}`);
   const tile = page.locator('.mantine-Paper-root, [class*="stat"]').filter({ hasText: 'Median pay growth' }).first();
   await expect(tile).toContainText(sgn(lfl), { timeout: 60_000 });
   await expect(tile).not.toContainText(sgn(asReported));
@@ -41,7 +41,7 @@ test("Divisions › Trends gives the Sep 2025 step like for like, and the others
   const i = meds.findIndex((m) => m.d >= '2025-09-01');
   const want = (meds[i].med_prior / meds[i - 1].med - 1) * 100;
   const next = (meds[i + 1].med / meds[i].med - 1) * 100;
-  await page.goto(`./explore${FACULTY.replace('?', '?tab=trends&')}`);
+  await page.goto(`./divisions${FACULTY.replace('?', '?tab=trends&')}`);
   const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
   await expect(table.locator('tbody tr').nth(i)).toBeAttached({ timeout: 60_000 });
   const cell = async (k: number) => Number((await table.locator('tbody tr').nth(k + 1).locator('td').nth(2).textContent())!.replace('%', ''));

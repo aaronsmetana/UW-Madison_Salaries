@@ -395,7 +395,7 @@ test('the pickers’ run is a link: reloaded, it is the same run', async ({ page
 });
 
 test('Raises is a place in the menu and the palette, and Divisions → Changes links to its pair', async ({ page }) => {
-  await page.goto('./explore?tab=changes');
+  await page.goto('./divisions?tab=changes');
   const link = page.locator('.changes-raises-link');
   await expect(link).toBeVisible({ timeout: 90_000 });
   const ids = await snapshots();

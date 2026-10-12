@@ -12,7 +12,7 @@ import { parseColor, flatten, contrast } from './color';
 const DATA = new URL('../public/data/', import.meta.url);
 
 async function tab(page: Page, name: string, query = '') {
-  await page.goto(`./explore?tab=${name}${query}`);
+  await page.goto(`./divisions?tab=${name}${query}`);
 }
 
 /**
@@ -117,7 +117,7 @@ test('a school row opens the school; its chevron and add button do not; its depa
   await expect(row).toBeVisible({ timeout: 60_000 });
 
   await row.locator('.school-expand').click();
-  await expect(page).toHaveURL(/\/explore\?/);
+  await expect(page).toHaveURL(/\/divisions\?/);
   const dept = page.locator('.dept-link').first();
   await expect(dept).toBeVisible({ timeout: 30_000 });
   const href = new URL((await dept.getAttribute('href'))!, 'http://x');
@@ -125,7 +125,7 @@ test('a school row opens the school; its chevron and add button do not; its depa
   expect(href.searchParams.get('dept')).toBe((await dept.textContent())!.trim());
 
   await row.locator('.peer-add').click();
-  await expect(page).toHaveURL(/\/explore\?/);
+  await expect(page).toHaveURL(/\/divisions\?/);
   await expect(row.locator('.peer-add')).toContainText('In set');
 
   await row.locator('td').nth(2).click();
@@ -175,7 +175,7 @@ test('Changes bins raises by 1%, with no change neutral and counted, and cuts in
 
 test('Retention marks the Oct 2023 coverage change, even where another step had more churn', async ({ page }) => {
   for (const q of ['', `&school=${encodeURIComponent('Intercollegiate Athletics')}`]) {
-    await tab(page, 'cohorts', q);
+    await tab(page, 'retention', q);
     const turnover = page.locator('.turnover');
     await expect(turnover).toHaveAttribute('data-coverage-at', /\S/, { timeout: 60_000 });
     await expect(turnover).toHaveAttribute('data-coverage-at', 'Oct 2023');
@@ -219,7 +219,7 @@ test("on a phone, Trends' break labels stay apart", async ({ page }) => {
 
 test("Retention's tooltip names each series and fits a phone", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await tab(page, 'cohorts');
+  await tab(page, 'retention');
   const chart = page.locator('.turnover');
   await expect(chart.locator('.recharts-bar-rectangle').first()).toBeVisible({ timeout: 60_000 });
   await chart.scrollIntoViewIfNeeded();
@@ -238,7 +238,7 @@ test("Retention's tooltip names each series and fits a phone", async ({ page }) 
 test("Retention's scope-change label sits clear of the axis", async ({ page }) => {
   for (const width of [375, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await tab(page, 'cohorts');
+    await tab(page, 'retention');
     const label = page.locator('.turnover .break-label');
     await expect(label).toHaveCount(1, { timeout: 60_000 });
     const l = (await label.boundingBox())!;
@@ -252,7 +252,7 @@ test("Retention's scope-change label sits clear of the axis", async ({ page }) =
 
 test('Retention by hire year labels its years without overlap on a phone, in both orders', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await tab(page, 'cohorts');
+  await tab(page, 'retention');
   const card = page.locator('.mantine-Card-root').filter({ hasText: 'Retention by hire year' });
   await expect(card.locator('.recharts-xAxis .recharts-cartesian-axis-tick-value').first()).toBeVisible({ timeout: 60_000 });
   for (const order of ['By year', 'By retention']) {

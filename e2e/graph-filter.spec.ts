@@ -644,7 +644,7 @@ test('"Show on full page graph" in the page’s search opens the graph full page
   await box.fill('research assoc');
   await expect(row).toBeVisible({ timeout: 60_000 });
   await row.click({ position: { x: 20, y: 10 } });
-  await expect(page).toHaveURL(new RegExp(`/paycheck\\?code=${code}`));
+  await expect(page).toHaveURL(new RegExp(`/titles\\?code=${code}`));
 });
 
 test('the page’s search list, with "Show on full page graph" on its rows, passes a strict accessibility scan', async ({ page }) => {

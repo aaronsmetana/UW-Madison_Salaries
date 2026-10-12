@@ -22,7 +22,9 @@ import { ToolLinks } from '../components/ToolLinks';
 import { usePref } from '../lib/prefs';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
-import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary } from '../lib/hooks';
+import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary, useSearchIndex } from '../lib/hooks';
+import { NotFoundPanel } from '../components/NotFoundPanel';
+import { closeMatches } from '../lib/search';
 import { sqlStr } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { salaryExpr, personEarnings, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
@@ -72,8 +74,6 @@ export default function School() {
   const [hoveredBin, setHoveredBin] = useState<number | null>(null);
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
-  useDocTitle(name);
-  useCrumbs([{ label: 'Divisions', to: '/explore' }, { label: name }]);
   const snap = useActiveSnapshotId();
   // The id keys the SQL; the label is what a chart footer shows a reader.
   const snapLabel = useActiveSnapshotLabel();
@@ -115,6 +115,14 @@ export default function School() {
   const fk = filterKey(filters);
   const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(name)} AND ${filterWhere(filters)}`;
 
+  // Whether the name is a division at all, in any snapshot: one missing only from this snapshot is real, and
+  // says so; a name that never was is not found, and the page offers the divisions it is like (NF2).
+  const { data: everRows } = useSql<{ n: number }>(['school-ever', name], `SELECT count(*) n FROM salaries WHERE school = ${sqlStr(name)}`, !!name);
+  const { data: index } = useSearchIndex(true);
+  // Kept out of the title and the trail until it is known to be a division: an address is not one by being typed.
+  const unknown = !!everRows && Number(everRows[0]?.n ?? 0) === 0;
+  useDocTitle(unknown ? 'Division not found' : name);
+  useCrumbs([{ label: 'Divisions', to: '/divisions' }, { label: unknown ? 'Not found' : name }]);
   const { data: scoreRows, isLoading } = useSql<Score>(
     ['school-score', name, snap ?? '', metric, fk],
     `WITH pe AS (${peopleSql({ metric, where: base, extra: `${personEarnings(metric)} earn` })})
@@ -231,6 +239,26 @@ export default function School() {
     );
 
   if (isLoading) return <Loader />;
+  if (unknown) {
+    const like = closeMatches(index?.divisions ?? [], (d) => d[0], name, 5);
+    return (
+      <NotFoundPanel
+        title="Division not found"
+        description="No school or division by that name is in the records, in any snapshot. The link may be out of date, or have a typo in it."
+        searchKinds={['divisions']}
+        suggestions={like.length > 0 && (
+          <Stack gap={6} className="not-found-suggestions">
+            {like.map(([school, n]) => (
+              <Text key={school} size="sm">
+                <Anchor component={Link} to={`/school/${encodeURIComponent(school)}`}>{school}</Anchor>
+                <Text span c="dimmed"> · {num(n)} people</Text>
+              </Text>
+            ))}
+          </Stack>
+        )}
+      />
+    );
+  }
   if (s && s.headcount === 0) return <Alert color="gray">No records for {name} in this snapshot.</Alert>;
 
   return (
@@ -497,10 +525,10 @@ export default function School() {
                       key={d.department}
                       className="peer-row"
                       style={{ cursor: 'pointer' }}
-                      onClick={() => nav(`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`)}
+                      onClick={() => nav(`/divisions?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`)}
                     >
                       <Table.Td>
-                        <Anchor component={Link} to={`/explore?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>
+                        <Anchor component={Link} to={`/divisions?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>
                           {d.department}
                         </Anchor>
                       </Table.Td>

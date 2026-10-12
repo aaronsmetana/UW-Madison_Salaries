@@ -53,7 +53,7 @@ function DeptRows({ where, school, metric, colSpan }: {
           <Table.Td className="dept-cell">
             <Anchor
               component={Link}
-              to={`/explore?${new URLSearchParams({ school, dept: d.department })}`}
+              to={`/divisions?${new URLSearchParams({ school, dept: d.department })}`}
               size="sm"
               c="var(--mantine-color-text)"
               underline="hover"

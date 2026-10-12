@@ -62,7 +62,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
   test(`the Titles box plot's middle 50% has edges a reader can see (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
-    await page.goto('./explore?tab=titles');
+    await page.goto('./divisions?tab=titles');
     const box = page.locator('rect.band-iqr').first();
     await expect(box).toBeVisible({ timeout: 60_000 });
     const card = await box.evaluate((e) => {
@@ -238,10 +238,10 @@ for (const scheme of ['light', 'dark'] as const) {
       // The report's dashboard trend: pay, the title median and pay had raises been typical.
       [`./person/${encodeURIComponent(AARON)}?tab=report`, '.print-area', 3],
       // The headcount panel under the median, whose two lines end 10px apart at the top of the plot.
-      ['./explore?tab=trends', 'body', 2],
+      ['./divisions?tab=trends', 'body', 2],
       // The raise case's pay history: pay and the title median. It kept a hand-drawn legend under the
       // plot after every other chart lost theirs.
-      ['./reports?type=comparison', '.report-brief', 2, async (p) => {
+      ['./raise-case?type=comparison', '.report-brief', 2, async (p) => {
         const start = p.getByPlaceholder('Search yourself by name to begin…');
         await expect(start).toBeVisible({ timeout: 60_000 });
         await start.fill('Kenneth Poss');
@@ -294,7 +294,7 @@ for (const scheme of ['light', 'dark'] as const) {
  * through its points in order — the order of the chart's own data table.
  */
 test('the keyboard steps a chart through its points, in order', async ({ page }) => {
-  await page.goto('./explore?tab=trends');
+  await page.goto('./divisions?tab=trends');
   const chart = page.locator('svg.recharts-surface[role="application"]').first();
   await expect(chart).toBeAttached({ timeout: 60_000 });
   await expect(chart).toHaveAttribute('aria-label', /^Median salary over time\. Left and right arrow keys/);
@@ -320,7 +320,7 @@ test('the keyboard steps a chart through its points, in order', async ({ page })
  * note is checked in divisions.spec.
  */
 test("a chart's how-to-read note opens from its footer", async ({ page }) => {
-  await page.goto('./explore?tab=changes');
+  await page.goto('./divisions?tab=changes');
   const card = page.locator('.raise-dist-card');
   await expect(card.locator('.recharts-bar-rectangle').first()).toBeAttached({ timeout: 60_000 });
   await expect(card.getByText(/1% bins of raises/)).toHaveCount(0);

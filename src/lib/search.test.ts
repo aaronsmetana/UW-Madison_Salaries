@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchRank, matchTitles, matchDivisions, enterPick } from './search';
+import { matchRank, matchTitles, matchDivisions, enterPick, likeness, closeMatches } from './search';
 import type { SearchIndex } from './manifest';
 
 const INDEX: SearchIndex = {
@@ -89,5 +89,20 @@ describe('enterPick', () => {
   });
   it('opens nothing when there is no row', () => {
     expect(enterPick(0, 0, false, false)).toBeNull();
+  });
+});
+
+describe('closeMatches', () => {
+  const schools = ['School of Pharmacy', 'School of Nursing', 'Law School', 'College of Engineering', 'Wisconsin Union'];
+  it('offers the names most like one that matched nothing, best first', () => {
+    expect(closeMatches(schools, (s) => s, 'Scool of Pharmacy')[0]).toBe('School of Pharmacy');
+    expect(closeMatches(schools, (s) => s, 'school of nurse')[0]).toBe('School of Nursing');
+  });
+  it('offers nothing for a name like none of them', () => {
+    expect(closeMatches(schools, (s) => s, 'Nowhere College', 5, 0.5)).toEqual([]);
+  });
+  it('is 1 for the same name, whatever its case and spacing', () => {
+    expect(likeness('Law School', 'law  school')).toBe(1);
+    expect(likeness('Law School', 'Wisconsin Union')).toBeLessThan(0.2);
   });
 });

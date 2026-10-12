@@ -44,7 +44,7 @@ test('a raise case’s peer comparison and market standing each have their CSV, 
   );
   const people = [{ type: 'person', id: KEY, label: 'Aaron Smetana', colorIdx: 0 }, ...peers.map((p, i) => ({ type: 'person', id: p.k, label: p.nm, colorIdx: i + 1 }))];
   await page.addInitScript((set) => localStorage.setItem('uwsal.tray.v1', set), JSON.stringify(people));
-  await page.goto(`./reports?type=comparison&subject=${encodeURIComponent(KEY)}`);
+  await page.goto(`./raise-case?type=comparison&subject=${encodeURIComponent(KEY)}`);
   await expect(page.getByRole('button', { name: 'CSV of the peer comparison' })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Download CSV' })).toHaveCount(0);
   // The market standing's pools count the others the subject is placed among, and say so (G6).
@@ -59,7 +59,7 @@ test('a raise case’s peer comparison and market standing each have their CSV, 
 test('every CSV button in the app is the same size', async ({ page }) => {
   test.setTimeout(180_000);
   const heights = new Map<string, number[]>();
-  for (const path of ['./explore?tab=schools', './explore?tab=titles', './explore?tab=earners', './explore?tab=changes',
+  for (const path of ['./divisions?tab=schools', './divisions?tab=titles', './divisions?tab=earners', './divisions?tab=changes',
     `./school/${encodeURIComponent('School of Education')}?tab=departments`, './raises', `./screening?sch=${encodeURIComponent('School of Education')}&run=1`]) {
     await page.goto(path);
     const buttons = page.getByRole('button', { name: /^CSV/ });

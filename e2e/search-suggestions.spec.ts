@@ -58,7 +58,7 @@ test('a press on a suggestion opens its page; a press on the list elsewhere leav
   await page.getByText('Most common titles').click();
   await expect(row(page, title), 'a press on the list’s heading closed it').toBeVisible();
   await row(page, title).locator('.mantine-Text-root').first().click();
-  await expect(page).toHaveURL(new RegExp(`/paycheck\\?code=${title.slice(2)}$`));
+  await expect(page).toHaveURL(new RegExp(`/titles\\?code=${title.slice(2)}$`));
   await page.goBack();
   await box(page).click();
   await expect(row(page, division)).toBeVisible({ timeout: 60_000 });

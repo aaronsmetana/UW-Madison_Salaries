@@ -115,7 +115,7 @@ test.describe('the newest release, said', () => {
     const s = read<Summary>('summary.json');
     const bare = (l: string) => l.replace(/\s*\((?:Pre|Post)-TTC\)/, '');
     const span = `${s.snapshots.length} snapshots, ${bare(s.snapshots[0].label)} – ${bare(s.snapshots.at(-1)!.label)}`;
-    for (const route of ['./', `./person/${encodeURIComponent(AARON)}`, './explore', './data']) {
+    for (const route of ['./', `./person/${encodeURIComponent(AARON)}`, './divisions', './data']) {
       await page.goto(route);
       const foot = page.locator('.app-footer');
       await expect(foot, route).toContainText(span, { timeout: 60_000 });
@@ -125,7 +125,7 @@ test.describe('the newest release, said', () => {
     await expect(page.locator('.hero-dist-main')).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText(/Data based on/)).toHaveCount(0);
     // Divisions' own line keeps what is the page's: its rows, and the way to the data's health.
-    await page.goto('./explore');
+    await page.goto('./divisions');
     await expect(page.locator('p', { hasText: 'data health →' })).toHaveText(/^[\d,]+ rows · data health →$/, { timeout: 60_000 });
   });
 
@@ -219,7 +219,7 @@ test.describe('the newest release, said', () => {
     const latest = s.snapshots.at(-1)!;
     for (const [days, n] of [[5, 1], [31, 0]] as const) {
       await page.clock.setFixedTime(dayAfter(latest.published!, days));
-      await page.goto('./explore');
+      await page.goto('./divisions');
       await page.getByRole('textbox', { name: 'Snapshot' }).click();
       await expect(page.getByRole('option').first()).toBeVisible({ timeout: 30_000 });
       const newOpts = page.getByRole('option').filter({ has: page.locator('.new-badge') });
@@ -264,7 +264,7 @@ test.describe('the newest release, said', () => {
     expect(r, `the build does not name ${found[0].school} a reorganization`).toBeTruthy();
     expect(r!.from.flatMap((f) => f.departments.map((d) => `${f.school}|${d}`)).sort())
       .toEqual(found.filter((f) => f.school === r!.school).map((f) => `${f.from_school}|${f.department}`).sort());
-    await page.goto('./explore?tab=changes');
+    await page.goto('./divisions?tab=changes');
     const alert = page.locator('.changes-reorg');
     await expect(alert).toHaveCount(1, { timeout: 60_000 });
     await expect(alert).toContainText(`A reorganization: ${r!.school}`);

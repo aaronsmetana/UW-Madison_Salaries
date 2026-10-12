@@ -64,12 +64,12 @@ for (const [name, route, ready, svg] of [
   ['person, salary trend', `./person/${encodeURIComponent(AARON)}?tab=trends`, '.recharts-wrapper', true],
   // The loaded histogram, not a card title: the page loads with the distribution card's own title on a
   // placeholder (TitleStats), and a sweep that started there on CI measured 27 texts of the loading page.
-  ['a title', './paycheck?code=IT040', '.hist-plot', false],
-  ['Divisions', './explore?tab=schools', '.school-row', false],
+  ['a title', './titles?code=IT040', '.hist-plot', false],
+  ['Divisions', './divisions?tab=schools', '.school-row', false],
   ['a division', `./school/${encodeURIComponent(SMPH)}?tab=dist`, '.card-title', true],
   ['Raises', `./raises?sch=${encodeURIComponent(SMPH)}&dept=Neurology`, '.raise-summary', true],
   ['a person, report', `./person/${encodeURIComponent(AARON)}?tab=report`, '.print-area .card-title', true],
-  ['Reports, raise case', `./reports?type=comparison&subject=${encodeURIComponent(AARON)}`, '.report-brief', false],
+  ['Reports, raise case', `./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`, '.report-brief', false],
   ['Compare', `./compare?sel=${TRAY}`, '.card-title', true],
   ['Screening', './screening?run=1&flag=below-min', '.mantine-Table-table', false],
   ['Data', './data', '.card-title', false],
@@ -106,7 +106,7 @@ for (const [name, route, ready, svg] of [
  */
 test('on a phone, no text field is under 16px', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  for (const route of ['./', './explore', './screening', './raises']) {
+  for (const route of ['./', './divisions', './screening', './raises']) {
     await page.goto(route);
     const fields = page.locator('input:not([type="hidden"], [type="radio"], [type="checkbox"]), textarea').locator('visible=true');
     await expect(fields.first()).toBeVisible({ timeout: 60_000 });

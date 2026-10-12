@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
  * Compare — says "above", and its empty card holds no button. (Reports opens on the raise case's own search.)
  */
 for (const [page_, path, heading] of [
-  ['Titles', './paycheck', 'No title selected'],
+  ['Titles', './titles', 'No title selected'],
   ['Screening', './screening', 'No screen run yet'],
   ['Compare', './compare', 'Build a side-by-side comparison'],
 ] as const) {

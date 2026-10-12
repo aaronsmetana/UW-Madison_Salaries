@@ -85,3 +85,33 @@ export function enterPick(active: number, rows: number, peopleSearching: boolean
   if (active < 0 || active >= rows) return null;
   return active;
 }
+
+/** The letter pairs of a name, its words run together: "Law School" → la, aw, ws, sc, ch, ho, oo, ol. */
+function bigrams(s: string): Map<string, number> {
+  const t = norm(s).replace(/[^a-z0-9]+/g, '');
+  const m = new Map<string, number>();
+  for (let i = 0; i < t.length - 1; i++) m.set(t.slice(i, i + 2), (m.get(t.slice(i, i + 2)) ?? 0) + 1);
+  return m;
+}
+
+/** How alike two names are, 0 to 1: the share of letter pairs they have in common (Dice's coefficient). */
+export function likeness(a: string, b: string): number {
+  const x = bigrams(a), y = bigrams(b);
+  let both = 0, nx = 0, ny = 0;
+  for (const [k, c] of x) { nx += c; both += Math.min(c, y.get(k) ?? 0); }
+  for (const c of y.values()) ny += c;
+  return nx + ny ? (2 * both) / (nx + ny) : 0;
+}
+
+/**
+ * The names most like one that matched nothing — what a "not found" page offers instead of repeating the
+ * address back (NF2): best first, at most `k`, none under `floor`.
+ */
+export function closeMatches<T>(items: readonly T[], name: (t: T) => string, q: string, k = 5, floor = 0.35): T[] {
+  return items
+    .map((t) => ({ t, s: likeness(name(t), q) }))
+    .filter((x) => x.s >= floor)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, k)
+    .map((x) => x.t);
+}

@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useIsFetching } from '@tanstack/react-query';
-import { AppShell, Group, NavLink, Box, Anchor, Burger, Divider, Text, Drawer } from '@mantine/core';
+import { AppShell, Group, NavLink, Box, Anchor, Burger, Divider, Text, Drawer, Button, ActionIcon } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ControlBar } from './ControlBar';
@@ -17,10 +17,11 @@ import { consumeUpdate } from '../lib/appUpdate';
 import { RevealProvider } from '../components/PersonReveal';
 import { prefersReducedMotion } from '../lib/motion';
 import { ICON } from '../lib/ui';
+import { IconSearch } from '@tabler/icons-react';
 
 // the control bar (scope/snapshot/metric/filters) only matters on these data views
 // Explore + Compare render their own controls inline in the page content, so they're excluded here.
-// (Titles render via /paycheck, which has its own inline pickers — no global control bar.)
+// (Titles render via /titles, which has its own inline pickers — no global control bar.)
 const CONTROL_PATHS = ['/school'];
 
 /** The site's mark in the header and the phone menu, in the accent the name's "Salaries" wears. */
@@ -63,6 +64,11 @@ export function AppShellLayout() {
   // A sheet left open as the window widens would sit over a page whose bar has its links back.
   useEffect(() => { if (wide) closeSheet(); }, [wide, closeSheet]);
   const palette = usePalette();
+  // The labelled search button beside the destinations needs the room of a wide window; below it, an icon.
+  const wideSearch = useMediaQuery('(min-width: 82em)', true, { getInitialValueInEffect: false }) ?? true;
+  // A phone's bar holds the burger, the name, the search and the theme on one line: its gaps close up below 480px.
+  const roomy = useMediaQuery('(min-width: 30em)', true, { getInitialValueInEffect: false }) ?? true;
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const settled = useSettled(loc.pathname);
 
   // A newer build activated while this tab was open (see lib/appUpdate). Take it at the first
@@ -156,7 +162,7 @@ export function AppShellLayout() {
           padding={0}
         >
           <AppShell.Header>
-            <Group h={60} className="app-bar" gap="lg" wrap="nowrap">
+            <Group h={60} className="app-bar" gap={roomy ? 'lg' : 8} wrap="nowrap">
               <Burger
                 opened={sheetOpened}
                 onClick={toggleSheet}
@@ -180,7 +186,26 @@ export function AppShellLayout() {
                   their names one hover or one "Expand" away; here each says where it goes. About the data
                   is in the footer, and ⌘K reaches every one of them from anywhere (CommandPalette). */}
               {wide && <nav aria-label="Main" className="app-nav">{NAV.map(barLink)}</nav>}
-              <Box ml="auto"><ColorSchemeToggle /></Box>
+              {/* Search from every page (G5): ⌘K opened it everywhere, but nothing on screen said so once the reader
+                  left Home, whose own search box is the page. A labelled button where there is room, an icon
+                  where there is not. */}
+              <Group ml="auto" gap={6} wrap="nowrap" className="app-bar-tools">
+                {loc.pathname !== '/' && (
+                  wideSearch ? (
+                    <Button variant="default" size="xs" onClick={palette.open} className="app-search"
+                      leftSection={<IconSearch size={ICON.compact} aria-hidden />}
+                      rightSection={<Text span size="xxs" c="dimmed" aria-hidden className="app-search-key">{isMac ? '⌘K' : 'Ctrl K'}</Text>}
+                      aria-label={`Search people, titles and divisions (${isMac ? '⌘K' : 'Ctrl+K'})`}>
+                      Search
+                    </Button>
+                  ) : (
+                    <ActionIcon variant="default" size={wide ? 'lg' : 32} onClick={palette.open} className="app-search" aria-label="Search people, titles and divisions">
+                      <IconSearch size={ICON.control} />
+                    </ActionIcon>
+                  )
+                )}
+                <ColorSchemeToggle />
+              </Group>
             </Group>
             {showControl && <ControlBar />}
           </AppShell.Header>
@@ -245,8 +270,8 @@ export function AppShellLayout() {
         </AppShell>
 
         {/* Floating "cart"-style selection tray — hidden on /compare (selections shown in-page) and on
-            /reports (it's a tool, not part of the formal negotiation document). */}
-        {!loc.pathname.startsWith('/compare') && !loc.pathname.startsWith('/reports') && <SelectionTray />}
+            /raise-case (it's a tool, not part of the formal negotiation document). */}
+        {!loc.pathname.startsWith('/compare') && !loc.pathname.startsWith('/raise-case') && <SelectionTray />}
 
         {/* Mounted outside AppShell so ⌘K reaches it from every route. Modal keeps its children
             unmounted until opened, so `SearchBox` costs nothing (and boots no DuckDB) until used. */}

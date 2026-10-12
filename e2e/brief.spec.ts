@@ -17,7 +17,7 @@ async function pickSubject(page: Page, name: string) {
 }
 
 test('"How this works" is the full strip until there is a subject, then one line', async ({ page }) => {
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   const wrap = page.locator('.report-flow-wrap');
   await expect(wrap).toHaveAttribute('data-expanded', 'yes', { timeout: 60_000 });
   await expect(page.locator('.report-flow > .mantine-Paper-root')).toHaveCount(3);
@@ -34,7 +34,7 @@ test('"How this works" is the full strip until there is a subject, then one line
 });
 
 test('a factor added from the menu is listed, and lights its line in the brief on hover', async ({ page }) => {
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   await pickSubject(page, 'Aaron Smetana');
   const factor = page.locator('[data-factor="credentials"]');
   await expect(factor, 'an unused factor waits in the menu').toHaveCount(0);
@@ -54,7 +54,7 @@ test('a factor added from the menu is listed, and lights its line in the brief o
 });
 
 test('the brief and its .doc give their sections one order, grounds before basis', async ({ page }) => {
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   await pickSubject(page, 'Aaron Smetana');
   await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
   // "2. Grounds for …" → "2 Grounds for": the number and the first two words name a section in both.
@@ -87,7 +87,7 @@ test('the brief and its .doc give their sections one order, grounds before basis
 });
 
 test('evidence cards carry the hairline and no shadow', async ({ page }) => {
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   await pickSubject(page, 'Aaron Smetana');
   const card = page.locator('.evidence-card').first();
   await expect(card).toBeVisible({ timeout: 60_000 });

@@ -508,6 +508,17 @@ body {
 /* ── The top bar (AppShell): the name, the eight destinations named, the theme. The page's own gutter on
    either side, so the name sits over the page's first column. ── */
 .app-bar { padding-inline: var(--page-gutter); }
+/* A phone's bar holds the burger, the mark and name, the search (G5) and the theme on one line, the name never
+   wrapping: tighter gaps, and the name a step down, below 480px. */
+.app-name { white-space: nowrap; }
+@media (max-width: 29.99em) {
+  .app-bar .app-name { font-size: var(--mantine-font-size-md); }
+}
+/* The narrowest phones: the name a step smaller again, and the dot mark left to the menu's sheet. */
+@media (max-width: 22.49em) {
+  .app-bar .app-name { font-size: var(--mantine-font-size-xs); }
+  .app-bar .app-wordmark svg { display: none; }
+}
 .app-nav { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .app-nav-link {
   display: inline-flex;
@@ -577,6 +588,9 @@ html[data-tray] .app-footer { padding-bottom: calc(var(--mantine-spacing-md) + v
   white-space: nowrap;
 }
 .release-tag:hover { color: var(--mantine-color-text); }
+/* A link, and said as one: it read as a caption (G20). */
+.release-tag-long { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.release-tag-close { color: var(--mantine-color-dimmed); min-width: 24px; min-height: 24px; }
 .release-tag-sep { color: var(--mantine-color-dimmed); }
 .release-tag .new-badge { flex: none; }
 /* On a phone the month is the news; what came with it is one tap away, on the Data page. */

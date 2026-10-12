@@ -25,11 +25,11 @@ export const NAV: NavItem[] = [
   // Home is the landing: the whole of UW on one graph, and the search. People is where a person's page belongs.
   { label: 'Home', to: '/', icon: IconHome },
   { label: 'People', to: '/people', icon: IconUserSearch, also: ['/person/'] },
-  { label: 'Titles', to: '/paycheck', icon: IconBriefcase },
-  { label: 'Divisions', to: '/explore', icon: IconBuildingBank, also: ['/school/'] },
+  { label: 'Titles', to: '/titles', icon: IconBriefcase },
+  { label: 'Divisions', to: '/divisions', icon: IconBuildingBank, also: ['/school/'] },
   { label: 'Compare', to: '/compare', icon: IconArrowsDiff },
   { label: 'Raises', to: '/raises', icon: IconTrendingUp },
-  { label: 'Reports', to: '/reports', icon: IconReportAnalytics },
+  { label: 'Raise case', to: '/raise-case', icon: IconReportAnalytics },
   { label: 'Screening', to: '/screening', icon: IconListSearch },
 ];
 

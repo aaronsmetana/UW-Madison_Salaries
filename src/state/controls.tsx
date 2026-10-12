@@ -26,8 +26,8 @@ export type Metric = 'full' | 'fte';
  * page, and Divisions' Titles tab. Everywhere else, actual pay. The control switches either way.
  */
 export function defaultMetric(pathname: string, params: URLSearchParams): Metric {
-  if (pathname.endsWith('/paycheck')) return 'full';
-  if (pathname.endsWith('/explore') && params.get('tab') === 'titles') return 'full';
+  if (pathname.endsWith('/titles')) return 'full';
+  if (pathname.endsWith('/divisions') && params.get('tab') === 'titles') return 'full';
   return 'fte';
 }
 

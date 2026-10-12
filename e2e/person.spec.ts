@@ -231,7 +231,7 @@ for (const { name, width, height } of [
 ]) {
   test(`peer-range quartile labels never overlap (${name})`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    await page.goto('./paycheck?code=FA020');
+    await page.goto('./titles?code=FA020');
     const pin = page.getByLabel('Salary to pin (optional)');
     await expect(pin).toBeVisible({ timeout: 60_000 });
     await pin.fill('278211');
@@ -908,7 +908,7 @@ test("the person's table: nine round them, a filter, Show all, and each row agai
 
 /** Every table: no zebra stripes — a soft rule between rows — and a head on the subtle ground, the sorted column in ink. */
 test('every table has rules, not stripes, and its head says which column it is sorted by', async ({ page }) => {
-  for (const route of [`./person/${encodeURIComponent(AARON)}`, './explore', './paycheck?code=IT040']) {
+  for (const route of [`./person/${encodeURIComponent(AARON)}`, './divisions', './titles?code=IT040']) {
     await page.goto(route);
     const table = page.locator('table.mantine-Table-table:has(tbody tr)').locator('visible=true').first();
     await expect(table).toBeVisible({ timeout: 60_000 });

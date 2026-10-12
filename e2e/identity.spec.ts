@@ -61,7 +61,7 @@ test('an address from before he was joined back leads to him, keeping its tab', 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Timothy Vertein');
   // And an address that was never anyone's still says so.
   await page.goto(`./person/${encodeURIComponent('nobodyatall|1900-01-01')}`);
-  await expect(page.getByText('No records found for this person.')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('heading', { level: 1, name: 'Person not found' })).toBeVisible({ timeout: 60_000 });
 });
 
 test('the hire-year cohorts count each person once, in the year their latest record gives', async ({ page }) => {
@@ -79,7 +79,7 @@ test('the hire-year cohorts count each person once, in the year their latest rec
      WHERE o.y > (SELECT year(min(snapshot_date)) FROM $SAL) ORDER BY y`,
   );
   expect(want.filter((w) => w.ret !== w.twice).length, 'counting twice reads the same, so this proves nothing').toBeGreaterThan(0);
-  await page.goto('./explore?tab=cohorts');
+  await page.goto('./divisions?tab=retention');
   const table = page.locator('table', { has: page.locator('caption', { hasText: 'Retention by hire year' }) });
   await expect(table.locator('tbody tr')).toHaveCount(want.length, { timeout: 60_000 });
   const got = await table.locator('tbody tr').evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent ?? '')));

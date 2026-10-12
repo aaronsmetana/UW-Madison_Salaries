@@ -3,7 +3,8 @@ import { ShowAll, useShowAll } from './ShowAll';
 import { Stack, Card, Text, Group, Table, Badge, Anchor, ScrollArea, TextInput, Alert, ActionIcon, Skeleton, VisuallyHidden } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
-import { useSql, useGrades } from '../lib/hooks';
+import { useSql, useGrades, useSearchIndex } from '../lib/hooks';
+import { closeMatches } from '../lib/search';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, peopleSql, mainOf } from '../lib/queries';
 import { usd, num, fullName, fmtYears } from '../lib/format';
@@ -46,7 +47,7 @@ interface SchoolRow { school: string; n: number; med: number | null; lo: number 
 interface PctRow { scope: string; pct: number; n: number }
 
 /**
- * Everything-about-a-title view, rendered by the Search-Title-Salaries explorer (`/paycheck`, with a
+ * Everything-about-a-title view, rendered by the Search-Title-Salaries explorer (`/titles`, with a
  * title picker + optional school filter + optional salary pin). The legacy `/title/:code` URL now
  * redirects here. Title selection drives the whole view; `pinSalary` only adds the "where it lands"
  * markers/percentile.
@@ -99,6 +100,8 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   );
   const people = useMemo(() => peopleRows ?? [], [peopleRows]);
 
+  const { data: everTitle } = useSql<{ n: number }>(['ts-ever', jobCode], `SELECT count(*) n FROM salaries WHERE job_code = ${sqlStr(jobCode)}`, !!jobCode);
+  const { data: index } = useSearchIndex(!!jobCode);
   const { data: bySchool } = useSql<SchoolRow>(
     ['ts-school', jobCode, snap, metric],
     `WITH pe AS (${peopleSql({ metric, where: `${titleBase} AND school IS NOT NULL`, by: ['school'] })})
@@ -191,7 +194,30 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       </Stack>
     );
   }
-  if (!s || s.n === 0) return <Alert color="gray">No one with this title{scopeLabel} in this snapshot.</Alert>;
+  if (!s || s.n === 0) {
+    // A code that was never anyone's is not found, and the titles it is like are offered (NF2); one that is
+    // only empty in this snapshot, or this school, says that.
+    if (everTitle && Number(everTitle[0]?.n ?? 0) === 0) {
+      const like = closeMatches(index?.titles ?? [], (t) => `${t[0]} ${t[1] ?? ''}`, jobCode, 5);
+      return (
+        <Card withBorder padding="lg" className="not-found">
+          <CardTitle sub="No job code by that name is in the records, in any snapshot. The link may be out of date, or have a typo in it.">Title code not found</CardTitle>
+          {like.length > 0 && (
+            <Stack gap={6} className="not-found-suggestions">
+              <Text size="sm" fw={600}>Did you mean</Text>
+              {like.map(([code, title, n]) => (
+                <Text key={code} size="sm">
+                  <Anchor component={Link} to={`/titles?code=${encodeURIComponent(code)}`}>{title ?? code}</Anchor>
+                  <Text span c="dimmed"> · {code} · {num(n)} people</Text>
+                </Text>
+              ))}
+            </Stack>
+          )}
+        </Card>
+      );
+    }
+    return <Alert color="gray">No one with this title{scopeLabel} in this snapshot.</Alert>;
+  }
 
   return (
     <Stack gap="lg">

@@ -14,10 +14,10 @@ const PHONE = { width: 375, height: 812 };
 
 const ROUTES = [
   ['home', './'],
-  ['paycheck', './paycheck'],
-  ['explore', './explore'],
+  ['titles', './titles'],
+  ['explore', './divisions'],
   ['compare', './compare'],
-  ['reports', './reports'],
+  ['reports', './raise-case'],
   ['screening', './screening'],
   ['data', './data'],
   ['school', `./school/${encodeURIComponent('School of Medicine and Public Health')}`],
@@ -70,7 +70,7 @@ test(`no horizontal page overflow at ${PHONE.width}px: person`, async ({ page })
  * four other routes could not have caught it.
  */
 const TABBED = [
-  ['explore', './explore'],
+  ['explore', './divisions'],
   ['school', `./school/${encodeURIComponent('School of Medicine and Public Health')}`],
 ] as const;
 
@@ -251,7 +251,7 @@ for (const code of ['IT040', 'FA020']) {
   for (const width of [1440, 375]) {
     test(`histogram axis labels never overlap: ${code} at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
-      await page.goto(`./paycheck?code=${code}`, { waitUntil: 'networkidle' });
+      await page.goto(`./titles?code=${code}`, { waitUntil: 'networkidle' });
       await page.waitForSelector('.hist-plot', { timeout: 60_000 });
       // Labels are thinned against a measured container width, which settles after the plot mounts —
       // polled rather than slept for: a fixed 1.5s wait was not always enough in a loaded full run.

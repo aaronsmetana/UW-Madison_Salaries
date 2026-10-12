@@ -168,11 +168,11 @@ export function TitlesPanel() {
                   <Table.Tr
                     className="peer-row"
                     style={{ cursor: 'pointer' }}
-                    onClick={() => nav(`/paycheck?code=${encodeURIComponent(t.job_code)}`)}
+                    onClick={() => nav(`/titles?code=${encodeURIComponent(t.job_code)}`)}
                   >
                     <Table.Td>
                       <div>
-                        <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(t.job_code)}`} onClick={(e) => e.stopPropagation()}>
+                        <Anchor component={Link} to={`/titles?code=${encodeURIComponent(t.job_code)}`} onClick={(e) => e.stopPropagation()}>
                           <Highlight text={t.title} q={q.trim()} />
                         </Anchor>
                         {t.cat && <span className="cat-tag">{t.cat}</span>}

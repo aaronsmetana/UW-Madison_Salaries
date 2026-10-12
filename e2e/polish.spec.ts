@@ -26,17 +26,17 @@ export const PAGES: [string, string][] = [
   ['person, pay & standing', `./person/${AARON}?tab=pay`],
   ['person, salary trend', `./person/${AARON}?tab=trends`],
   ['person, history', `./person/${AARON}?tab=history`],
-  ['a title', './paycheck?code=IT040'],
-  ['Divisions', './explore'],
-  ['Divisions, trends', './explore?tab=trends'],
-  ['Divisions, changes', './explore?tab=changes'],
-  ['Divisions, titles', './explore?tab=titles'],
+  ['a title', './titles?code=IT040'],
+  ['Divisions', './divisions'],
+  ['Divisions, trends', './divisions?tab=trends'],
+  ['Divisions, changes', './divisions?tab=changes'],
+  ['Divisions, titles', './divisions?tab=titles'],
   ['a division', `./school/${SMPH}`],
   ['Compare', `./compare?sel=${TRAY}`],
   ['Compare, empty', './compare'],
   ['Raises', `./raises?sch=${SMPH}&dept=Neurology`],
   ['a person, report', `./person/${AARON}?tab=report`],
-  ['Reports, raise case', `./reports?type=comparison&subject=${AARON}`],
+  ['Reports, raise case', `./raise-case?type=comparison&subject=${AARON}`],
   ['Screening', './screening?run=1&flag=below-min'],
   // With people in the tray, so its bar (and its grey "Clear") is on the page.
   ['Screening, with the tray', './screening?run=1&flag=below-min'],
@@ -302,7 +302,7 @@ test('on a phone, every target a finger can reach is 24px or more each way', asy
 });
 
 test('a radio or a checkbox sits centred on the first line of its label, which reads at the body line height', async ({ page }) => {
-  await page.goto(`./reports?type=comparison&subject=${AARON}`);
+  await page.goto(`./raise-case?type=comparison&subject=${AARON}`);
   // The whole setup: the ask's choices with their figures, down to the last of the report's sections.
   await expect(page.locator('#report-sec-notes')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('checkbox', { name: 'Retention & replacement cost' })).toBeVisible();

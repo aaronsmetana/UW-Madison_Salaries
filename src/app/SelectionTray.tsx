@@ -13,7 +13,7 @@ import { Z } from '../lib/layers';
 
 const TYPE_META: Record<TrayItem['type'], { icon: typeof IconUser; one: string; many: string; href: (id: string) => string }> = {
   person: { icon: IconUser, one: 'person', many: 'people', href: (id) => `/person/${encodeURIComponent(id)}` },
-  title: { icon: IconBriefcase, one: 'title', many: 'titles', href: (id) => `/paycheck?code=${encodeURIComponent(id)}` },
+  title: { icon: IconBriefcase, one: 'title', many: 'titles', href: (id) => `/titles?code=${encodeURIComponent(id)}` },
   school: { icon: IconBuildingBank, one: 'school', many: 'schools', href: (id) => `/school/${encodeURIComponent(id)}` },
 };
 const TYPE_ORDER: TrayItem['type'][] = ['person', 'title', 'school'];
@@ -178,7 +178,7 @@ export function SelectionTray() {
             <Button
               size="xs"
               component={Link}
-              to={`/reports?type=comparison&sel=${encodeURIComponent(encodeSel(items.filter((i) => i.type === 'person')))}`}
+              to={`/raise-case?type=comparison&sel=${encodeURIComponent(encodeSel(items.filter((i) => i.type === 'person')))}`}
               className="compare-bar-case"
               data-disabled={!hasPerson || undefined}
               aria-disabled={!hasPerson || undefined}

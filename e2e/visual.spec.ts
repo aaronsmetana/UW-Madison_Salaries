@@ -255,18 +255,18 @@ async function shots(
 /** A route that renders straight from its URL. */
 const DIRECT: Array<[name: string, route: string, opts?: { maxDiffPixels?: number }]> = [
   ['home', './'],
-  ['titles-empty', './paycheck'],
+  ['titles-empty', './titles'],
   // The same sticky-header re-raster as titles-detail, decoded the same way: now that the Schools
   // table fits a phone, its sticky header row is in the mobile shot, and "MEDIAN" with its sort glyph
   // (rows 1499-1505, x 232-271) re-rasterises half a pixel over in-suite — 70 px, no body row touched.
-  ['divisions', './explore', { maxDiffPixels: STICKY_HEADER_JITTER }],
+  ['divisions', './divisions', { maxDiffPixels: STICKY_HEADER_JITTER }],
   // The same header re-raster on the Titles tab's table ("MEDIAN" and its sort glyph, 42 px, twice on
   // 2026-09-27), decoded the same way.
-  ['divisions-titles-tab', './explore?tab=titles', { maxDiffPixels: STICKY_HEADER_JITTER }],
+  ['divisions-titles-tab', './divisions?tab=titles', { maxDiffPixels: STICKY_HEADER_JITTER }],
   ['compare-empty', './compare'],
   ['data-about', './data'],
   ['screening-empty', './screening'],
-  ['reports-empty', './reports'],
+  ['reports-empty', './raise-case'],
   ['not-found', './this-route-does-not-exist'],
 ];
 
@@ -421,7 +421,7 @@ test('visual: school departments tab', async ({ page }) => {
 });
 
 test('visual: titles with a title selected', async ({ page }) => {
-  await page.goto('./paycheck');
+  await page.goto('./titles');
   const title = page.getByRole('textbox', { name: 'Title' });
   await expect(title).toBeVisible({ timeout: 60_000 });
   await title.click();
@@ -448,7 +448,7 @@ test('visual: reports with a subject', async ({ page }) => {
   // second digit reflowed the provenance line. `setFixedTime` pins only Date; timers still run, so
   // DuckDB and the page load exactly as they otherwise would.
   await page.clock.setFixedTime(new Date('2026-09-10T12:00:00'));
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   const search = page.getByPlaceholder('Search yourself by name to begin…');
   await expect(search).toBeVisible({ timeout: 60_000 });
   await search.fill('Kenneth Poss');

@@ -619,7 +619,7 @@ export default function Home() {
             <div className="home-stat-row">
               {stats.map((s) => <StatItem key={s.label} {...s} />)}
             </div>
-            <Anchor component={Link} to="/explore" underline="never" className="home-stats-browse accent7-text" c="accent.7">
+            <Anchor component={Link} to="/divisions" underline="never" className="home-stats-browse accent7-text" c="accent.7">
               Browse every school and title under Divisions <span className="browse-arrow" aria-hidden>→</span>
             </Anchor>
           </div>
@@ -633,19 +633,19 @@ export default function Home() {
           <h2 id="home-more-title" className="home-more-title"><Eyebrow span>Also in here</Eyebrow></h2>
           <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="lg" verticalSpacing="md">
             <ShowcaseLink
-              to="/paycheck"
+              to="/titles"
               icon={<IconBriefcase size={ICON.nav} stroke={1.8} />}
               title="Look up a title"
               blurb="See a title's full pay distribution, who holds it, and how it varies by school."
             />
             <ShowcaseLink
-              to="/explore"
+              to="/divisions"
               icon={<IconBuildingBank size={ICON.nav} stroke={1.8} />}
               title="Compare divisions"
               blurb="Headcount, median pay and top earners side by side across every school."
             />
             <ShowcaseLink
-              to="/reports"
+              to="/raise-case"
               icon={<IconReportAnalytics size={ICON.nav} stroke={1.8} />}
               title="Build a raise case"
               blurb="Run the UW salary guidelines for one person and print the brief for HR."

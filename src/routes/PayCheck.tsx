@@ -72,7 +72,7 @@ export default function PayCheck() {
   );
   // A title open here is a place of its own: "Titles / System Engineer IV".
   const codeTitle = code ? titles?.find((t) => t.job_code === code)?.title : undefined;
-  useCrumbs(code && codeTitle ? [{ label: 'Titles', to: '/paycheck' }, { label: codeTitle }] : []);
+  useCrumbs(code && codeTitle ? [{ label: 'Titles', to: '/titles' }, { label: codeTitle }] : []);
   const { data: schools } = useSql<{ school: string }>(
     ['pc-schools', snap ?? ''],
     `SELECT DISTINCT school FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL ORDER BY school`,

@@ -12,10 +12,10 @@ const AARON = 'aaronsmetana|2014-10-15';
 const SMPH = 'School of Medicine and Public Health';
 const PAGES: [string, string][] = [
   ['person', `./person/${encodeURIComponent(AARON)}`],
-  ['title', './paycheck?code=IT040'],
-  ['Divisions', './explore'],
-  ['Divisions, changes', './explore?tab=changes'],
-  ['Divisions, cohorts', './explore?tab=cohorts'],
+  ['title', './titles?code=IT040'],
+  ['Divisions', './divisions'],
+  ['Divisions, changes', './divisions?tab=changes'],
+  ['Divisions, cohorts', './divisions?tab=retention'],
   ['a division', `./school/${encodeURIComponent(SMPH)}`],
   ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`],
 ];

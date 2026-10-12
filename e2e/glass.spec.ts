@@ -20,7 +20,7 @@ import { deltaE, readSurface, samplePixels, setScheme, transparencyEmulator } fr
  */
 test.describe('the chart tooltip', () => {
   // Explore's Retention tab mounts two Recharts tooltips, one of each kind.
-  const ROUTE = './explore?tab=cohorts';
+  const ROUTE = './divisions?tab=retention';
 
   /** Resolved value of a custom property, read off `:root`. */
   const token = (page: import('@playwright/test').Page, name: string) =>
@@ -117,7 +117,7 @@ test.describe('chart gradient ids', () => {
   // the bars went flat and the glow line went, so the changes, retention and school-distribution
   // routes now carry none and the vacuity check below would (correctly) refuse them.
   for (const [name, route] of [
-    ['explore trends', './explore?tab=trends'],
+    ['explore trends', './divisions?tab=trends'],
     ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`],
   ] as const) {
     test(`resolve, and none is defined twice: ${name}`, async ({ page }) => {
@@ -190,7 +190,7 @@ test.describe('the plot surface', () => {
   for (const scheme of ['light', 'dark'] as const) {
     test(`is visible and faint (${scheme})`, async ({ page }) => {
       await page.setViewportSize({ width: 1440, height: 1000 });
-      await page.goto('./explore?tab=changes', { waitUntil: 'networkidle' });
+      await page.goto('./divisions?tab=changes', { waitUntil: 'networkidle' });
       await setScheme(page, scheme);
       const card = page.locator('.raise-dist-card');
       await expect(card.locator('.recharts-cartesian-grid-bg')).toBeAttached({ timeout: 60_000 });
@@ -238,7 +238,7 @@ test.describe('the plot surface', () => {
    * it — the person trend's title-era bands sat under the grid until it moved first.
    */
   for (const [name, route, charts] of [
-    ['explore changes', './explore?tab=changes', 2],
+    ['explore changes', './divisions?tab=changes', 2],
     ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`, 2],
   ] as const) {
     test(`is on every grid, under the marks, and the card itself is not lit: ${name}`, async ({ page }) => {
@@ -463,7 +463,7 @@ test.describe('the compare bar', () => {
     await expect(bar.getByRole('button', { name: 'Remove Aaron Smetana' })).toBeVisible();
     const kase = bar.getByRole('link', { name: 'Raise case' });
     // The case starts from these people, in its link; the set itself is never the case's to change.
-    await expect(kase).toHaveAttribute('href', /\/reports\?type=comparison&sel=p%2C/);
+    await expect(kase).toHaveAttribute('href', /\/raise-case\?type=comparison&sel=p%2C/);
     await expect(bar.getByRole('link', { name: 'Compare' })).not.toHaveAttribute('aria-disabled', 'true');
 
     await bar.getByRole('button', { name: 'Clear' }).click();
@@ -475,7 +475,7 @@ test.describe('the compare bar', () => {
     // With both in the set, its first person (Aaron, not Adam) is the raise case's subject: the report
     // writes it into its link. (Reports, like Compare, hides the bar.)
     await kase.click();
-    await expect(page).toHaveURL(/\/reports\?.*subject=aaronsmetana%7C2014-10-15/, { timeout: 30_000 });
+    await expect(page).toHaveURL(/\/raise-case\?.*subject=aaronsmetana%7C2014-10-15/, { timeout: 30_000 });
     await expect(bar).toBeHidden();
     await page.goBack();
 

@@ -1,3 +1,5 @@
+import { PersonSkeleton } from '../components/PersonSkeleton';
+import { PersonNotFound } from '../components/PersonNotFound';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
 import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden } from '@mantine/core';
@@ -44,7 +46,6 @@ import { PayBandBar } from '../components/PayBandBar';
 import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { PeerStrip } from '../components/PeerStrip';
 import { ChartData } from '../components/ChartData';
-import { LoadingState } from '../components/Loading';
 import { SearchBox } from '../components/SearchBox';
 import { CardTitle } from '../components/CardTitle';
 import { FactStrip } from '../components/FactStrip';
@@ -312,7 +313,7 @@ export default function Person() {
   // and them. The trail is one line either way, so it can wait for the record without moving anything.
   useCrumbs(latest ? [
     { label: 'People', to: '/people' },
-    ...(latest.title ? [{ label: latest.title, to: latest.job_code ? `/paycheck?code=${encodeURIComponent(latest.job_code)}` : undefined }] : []),
+    ...(latest.title ? [{ label: latest.title, to: latest.job_code ? `/titles?code=${encodeURIComponent(latest.job_code)}` : undefined }] : []),
     { label: name },
   ] : [{ label: 'People', to: '/people' }]);
   // The People page's "Recently viewed": this person, at the front, once their record is in.
@@ -859,12 +860,12 @@ export default function Person() {
   const medTargetPct = targetRaisePct(peer?.med_rate);
   const maxTargetPct = range ? targetRaisePct(range.max, bandRate) : null;
 
-  if (isLoading) return <LoadingState label="Loading person…" />;
+  if (isLoading) return <PersonSkeleton />;
   if (error) return <Alert color="red">Failed to load person: {(error as Error).message}</Alert>;
   if (!rows.length) {
     if (alias.data) return <Navigate to={{ pathname: `/person/${encodeURIComponent(alias.data)}`, search: params.toString() }} replace />;
-    if (alias.isPending) return <LoadingState label="Loading person…" />;
-    return <Alert color="gray">No records found for this person.</Alert>;
+    if (alias.isPending) return <PersonSkeleton />;
+    return <PersonNotFound personKey={key} />;
   }
 
   return (
@@ -878,7 +879,7 @@ export default function Person() {
           <Title order={1} data-reveal-target tabIndex={-1}>{name}</Title>
           <Text c="dimmed">
             {latest?.job_code ? (
-              <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(latest.job_code)}`} fw={600}>{latest?.title}</Anchor>
+              <Anchor component={Link} to={`/titles?code=${encodeURIComponent(latest.job_code)}`} fw={600}>{latest?.title}</Anchor>
             ) : (
               latest?.title
             )}
@@ -901,7 +902,7 @@ export default function Person() {
                 <Fragment key={i}>
                   {i > 0 && '; '}
                   {a.job_code ? (
-                    <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(a.job_code)}`} inherit>{a.title ?? a.job_code}</Anchor>
+                    <Anchor component={Link} to={`/titles?code=${encodeURIComponent(a.job_code)}`} inherit>{a.title ?? a.job_code}</Anchor>
                   ) : (a.title ?? 'another appointment')}
                   {` (${apptTerms(a, counts.has(a))})`}
                 </Fragment>
@@ -912,7 +913,7 @@ export default function Person() {
           {careerLine && <Text size="xs" c="var(--text-faint)" mt={4}>{careerLine}</Text>}
           <ToolLinks
             links={[
-              { label: 'Raise case', to: `/reports?type=comparison&subject=${encodeURIComponent(key)}` },
+              { label: 'Raise case', to: `/raise-case?type=comparison&subject=${encodeURIComponent(key)}` },
             ]}
           />
         </div>
@@ -1110,7 +1111,7 @@ export default function Person() {
                   {name} is the only employee at UW with the title {latest?.title} (job code {jobCode}) in the latest snapshot — no one else to compare against.
                 </Text>
                 <Group justify="flex-end" mt="md">
-                  <Button component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={ICON.compact} />}>
+                  <Button component={Link} to={`/titles?code=${encodeURIComponent(jobCode)}`} variant="default" size="xs" rightSection={<IconArrowRight size={ICON.compact} />}>
                     Go to title page
                   </Button>
                 </Group>
@@ -1126,7 +1127,7 @@ export default function Person() {
                 <CardTitle
                   mb={spread ? 'xs' : 'md'}
                   sub={(() => {
-                    const titleLink = <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor>;
+                    const titleLink = <Anchor component={Link} to={`/titles?code=${encodeURIComponent(jobCode)}`} inherit className="peer-title-link">{latest?.title}</Anchor>;
                     const where = cohort === 'school' ? <> in {latest?.school}</> : null;
                     // The finding, in one sentence, before the chart that shows it: the share of the others paid
                     // less (the subject is not counted among them) and how far from the median. With no spread

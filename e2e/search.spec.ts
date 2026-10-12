@@ -45,7 +45,7 @@ test('"system engineer" offers the largest System Engineer title, and Enter open
   // Enter waits for people, who are searched first; none are called "system engineer".
   await expect(page.locator('.search-status')).toHaveCount(0, { timeout: 60_000 });
   await box.press('Enter');
-  await expect(page).toHaveURL(new RegExp(`/paycheck\\?code=${top.k}$`));
+  await expect(page).toHaveURL(new RegExp(`/titles\\?code=${top.k}$`));
 });
 
 test('"medicine" offers the largest medical division, and a click opens it', async ({ page }) => {
@@ -180,7 +180,7 @@ test("a 9-month member's pay path breaks where the reporting changed", async ({ 
 });
 
 test('pickers that take only a person show people alone, with no groups', async ({ page }) => {
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   const subject = page.getByPlaceholder('Search yourself by name to begin…');
   await expect(subject).toBeVisible({ timeout: 60_000 });
   await subject.fill('smith');

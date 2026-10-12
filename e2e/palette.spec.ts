@@ -8,8 +8,8 @@ import { test, expect, type Page } from '@playwright/test';
 const DIALOG = '.mantine-Modal-content';
 
 async function ready(page: Page) {
-  await page.goto('./reports');
-  await expect(page.getByRole('heading', { name: 'Reports', level: 1 })).toBeVisible({ timeout: 60_000 });
+  await page.goto('./raise-case');
+  await expect(page.getByRole('heading', { name: 'Raise case', level: 1 })).toBeVisible({ timeout: 60_000 });
 }
 
 test('mod+K opens the palette and puts the cursor in the search box', async ({ page }) => {
@@ -37,7 +37,7 @@ test('Escape closes it and hands focus back', async ({ page }) => {
 
 test('the shortcut still fires while a text field has focus', async ({ page }) => {
   await ready(page);
-  // /reports leads with its own person search (the raise case's subject); a palette that dies inside an input
+  // /raise-case leads with its own person search (the raise case's subject); a palette that dies inside an input
   // is a palette that fails exactly when someone is typing in the wrong box, which is the case it exists for.
   await page.getByPlaceholder('Search yourself by name to begin…').click();
   await page.keyboard.type('smith');
@@ -53,7 +53,7 @@ test('every sidebar destination is reachable from the palette', async ({ page })
   const dialog = page.locator(DIALOG);
   await expect(dialog).toBeVisible();
 
-  for (const label of ['Home', 'People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Reports', 'Screening', 'About the data']) {
+  for (const label of ['Home', 'People', 'Titles', 'Divisions', 'Compare', 'Raises', 'Raise case', 'Screening', 'About the data']) {
     await expect(dialog.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
 });
@@ -81,20 +81,19 @@ test('a destination navigates and closes the palette', async ({ page }) => {
 });
 
 /**
- * No search button in the header, on any page: the landing page's box is the search, People in the
- * sidebar leads to it, and the shortcut opens the palette anywhere. The button stood a few hundred
- * pixels from that box on the landing page, and a phone never showed it.
+ * A search in the header on every page but Home (G5), whose own box is the search: off Home, ⌘K was the only
+ * way to it and nothing on screen said so. The shortcut opens the palette on every page, Home included.
  */
-test('the header has no search button on any page, and the shortcut opens the palette on each', async ({ page }) => {
+test('the header has a search on every page but Home, and the shortcut opens the palette on each', async ({ page }) => {
   for (const [route, ready] of [
     ['./', '.hero-dist-main'],
     [`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`, '.peer-strip'],
     [`./school/${encodeURIComponent('School of Medicine and Public Health')}`, '.release-tag'],
-    ['./reports', 'h1'],
+    ['./raise-case', 'h1'],
   ] as const) {
     await page.goto(route);
     await expect(page.locator(ready).first()).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.mantine-AppShell-header').getByRole('button', { name: /search/i }), route).toHaveCount(0);
+    await expect(page.locator('.mantine-AppShell-header').getByRole('button', { name: /search/i }).locator('visible=true'), route).toHaveCount(route === './' ? 0 : 1);
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.getByRole('dialog', { name: 'Search and go' }), route).toBeVisible();
     await page.keyboard.press('Escape');

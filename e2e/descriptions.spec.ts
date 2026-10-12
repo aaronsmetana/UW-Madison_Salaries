@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test';
 const description = async (page: Page) => (await page.locator('.page-description').first().innerText()).toLowerCase();
 
 test('Divisions describes every one of its tabs', async ({ page }) => {
-  await page.goto('./explore');
+  await page.goto('./divisions');
   await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 60_000 });
   const tabs = (await page.getByRole('tab').allInnerTexts()).map((t) => t.trim().toLowerCase());
   expect(tabs.length).toBeGreaterThan(4);
@@ -17,7 +17,7 @@ test('Divisions describes every one of its tabs', async ({ page }) => {
 });
 
 test('Reports describes the one thing it builds, a raise case', async ({ page }) => {
-  await page.goto('./reports');
+  await page.goto('./raise-case');
   await expect(page.locator('.page-description').first()).toBeVisible({ timeout: 60_000 });
   const text = await description(page);
   expect(text).toContain('raise case');

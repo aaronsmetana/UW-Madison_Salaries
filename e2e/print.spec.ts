@@ -8,7 +8,7 @@ import { afterReveal } from './reveal';
  * white-paper. It did that by hiding `body *` unconditionally — while `.print-area` existed at
  * exactly two call sites. So eight of the ten routes printed a blank sheet, `/person` most visibly:
  * `PersonDashboard` documents itself as the print-friendly single-page report and prints correctly
- * via `/reports?type=person`, but printing the person page it was written for produced nothing.
+ * via `/raise-case?type=person`, but printing the person page it was written for produced nothing.
  *
  * `visibility: hidden` is what made it invisible to everyone — the page still laid out, still
  * scrolled, still had a full DOM, and only a real print preview showed the empty page. Playwright's
@@ -17,8 +17,8 @@ import { afterReveal } from './reveal';
 
 const ROUTES = [
   ['home', './', /^What .* people at UW–Madison are paid$/],
-  ['paycheck', './paycheck', /./],
-  ['explore', './explore', /Divisions/],
+  ['titles', './titles', /./],
+  ['explore', './divisions', /Divisions/],
   ['compare', './compare', /./],
   ['screening', './screening', /./],
   ['data', './data', /./],
@@ -60,7 +60,7 @@ for (const [name, path, heading] of ROUTES) {
 /**
  * `/person` gets its own case because it has no static URL and because it is the sharpest instance
  * of the bug: `PersonDashboard` calls itself the print-friendly single-page report, prints fine at
- * `/reports?type=person`, and printed nothing at all from the person page it describes.
+ * `/raise-case?type=person`, and printed nothing at all from the person page it describes.
  */
 test('prints its content rather than a blank page: person', async ({ page }) => {
   await page.goto('./');
@@ -88,7 +88,7 @@ test('prints its content rather than a blank page: person', async ({ page }) => 
  * and it is the reason the fix is scoped with `:has()` rather than deleted.
  */
 test('a page that declares a print region still prints only that region', async ({ page }) => {
-  await page.goto('./reports?type=comparison', { waitUntil: 'networkidle' });
+  await page.goto('./raise-case?type=comparison', { waitUntil: 'networkidle' });
   const startSearch = page.getByPlaceholder('Search yourself by name to begin…');
   await expect(startSearch).toBeVisible({ timeout: 60_000 });
   await startSearch.fill('Kenneth Poss');
@@ -116,8 +116,8 @@ const SMPH = encodeURIComponent('School of Medicine and Public Health');
 for (const [name, path, says] of [
   ['a person', `./person/${AARON}`, ['tab', 'Sort by Full-time rate']],
   ['a person, pay & standing', `./person/${AARON}?tab=pay`, ['tab']],
-  ['a title', './paycheck?code=IT040', ['Sort by Salary', 'measure']],
-  ['Divisions', './explore', ['tab', 'measure']],
+  ['a title', './titles?code=IT040', ['Sort by Salary', 'measure']],
+  ['Divisions', './divisions', ['tab', 'measure']],
   ['Raises', `./raises?sch=${SMPH}&dept=Neurology`, ['Sort by Raise', 'measure']],
   ['a person’s report', `./person/${AARON}?tab=report`, []],
 ] as const) {

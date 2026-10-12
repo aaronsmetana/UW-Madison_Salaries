@@ -136,7 +136,7 @@ for (const scheme of ['light', 'dark'] as const) {
    */
   test(`a row's add button has no outline at rest and the accent on its row (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
-    await page.goto('./explore?tab=schools');
+    await page.goto('./divisions?tab=schools');
     const btn = page.locator('.school-row .peer-add').first();
     await expect(btn).toBeVisible({ timeout: 60_000 });
     await page.mouse.move(0, 0);
@@ -164,7 +164,7 @@ for (const scheme of ['light', 'dark'] as const) {
 test('on a touch screen every add button carries the accent at rest', async ({ browser }) => {
   const ctx = await browser.newContext({ ...devices['Pixel 5'] });
   const page = await ctx.newPage();
-  await page.goto('./explore?tab=schools');
+  await page.goto('./divisions?tab=schools');
   const btn = page.locator('.school-row .peer-add').first();
   await expect(btn).toBeVisible({ timeout: 60_000 });
   const s = await btn.evaluate((b) => {
@@ -192,8 +192,8 @@ test('every card title is one size, a step over its sub line, and a short phrase
   for (const [route, ready] of [
     [`./person/${encodeURIComponent(AARON)}`, '.peer-strip'],
     // The loaded histogram: the page loads with one real card title on a placeholder.
-    ['./paycheck?code=IT040', '.hist-plot'],
-    ['./explore?tab=changes', '.card-title'],
+    ['./titles?code=IT040', '.hist-plot'],
+    ['./divisions?tab=changes', '.card-title'],
     [`./school/${encodeURIComponent('School of Medicine and Public Health')}?tab=dist`, '.card-title'],
     [`./raises?sch=${encodeURIComponent('School of Medicine and Public Health')}&dept=Neurology`, '.raise-review-dist'],
   ] as const) {
@@ -231,8 +231,8 @@ test('every card title is one size, a step over its sub line, and a short phrase
  */
 test('a link alone in a table cell is underlined under the pointer, not at rest; a link beside words always', async ({ page }) => {
   for (const [route, table] of [
-    ['./paycheck?code=IT040', '.mantine-Table-td a[data-underline="always"]:only-child'],
-    ['./explore?tab=changes', '.mantine-Table-td a[data-underline="always"]:only-child'],
+    ['./titles?code=IT040', '.mantine-Table-td a[data-underline="always"]:only-child'],
+    ['./divisions?tab=changes', '.mantine-Table-td a[data-underline="always"]:only-child'],
   ] as const) {
     await page.goto(route);
     const link = page.locator(table).locator('visible=true').first();
@@ -251,7 +251,7 @@ test('a link alone in a table cell is underlined under the pointer, not at rest;
     await expect(link, `${route}: a cell's link is not underlined under keyboard focus`).toHaveCSS('text-decoration-line', 'underline');
   }
   // Beside words in its cell: a title on Divisions' Titles tab, with its staff category after it.
-  await page.goto('./explore?tab=titles');
+  await page.goto('./divisions?tab=titles');
   const tagged = page.locator('.mantine-Table-td a[data-underline="always"]:has(+ .cat-tag)').locator('visible=true').first();
   await expect(tagged, 'no title link beside its category to check').toBeVisible({ timeout: 60_000 });
   await page.mouse.move(0, 0);

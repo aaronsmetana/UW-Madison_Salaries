@@ -192,7 +192,7 @@ export function EarnersPanel() {
                   </Table.Td>
                   <Table.Td data-fold>
                     {e.job_code
-                      ? <Anchor component={Link} to={`/paycheck?code=${encodeURIComponent(e.job_code)}`} c="var(--mantine-color-text)" underline="hover">{e.title ?? '—'}</Anchor>
+                      ? <Anchor component={Link} to={`/titles?code=${encodeURIComponent(e.job_code)}`} c="var(--mantine-color-text)" underline="hover">{e.title ?? '—'}</Anchor>
                       : (e.title ?? '—')}
                   </Table.Td>
                   <Table.Td data-fold><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>

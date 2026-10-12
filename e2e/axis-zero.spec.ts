@@ -10,10 +10,10 @@ const AARON = 'aaronsmetana|2014-10-15';
 const CHARTS: [string, string, string[]][] = [
   ['the person page', `./person/${encodeURIComponent(AARON)}?tab=trends`, ['Salary over time', 'The group this person started with']],
   ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`, ['Salary over time']],
-  ['Divisions', './explore?tab=trends', ['Median salary over time']],
+  ['Divisions', './divisions?tab=trends', ['Median salary over time']],
   ['a division', `./school/${encodeURIComponent('School of Education')}?tab=dist`, ['Median salary over time']],
   ['Compare', './compare', ['Salary by snapshot', 'Median salary per title over time']],
-  ['a raise case', `./reports?type=comparison&subject=${encodeURIComponent(AARON)}`, ['Pay vs. title median over time']],
+  ['a raise case', `./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`, ['Pay vs. title median over time']],
 ];
 
 /** The text of the lowest tick on a chart's y axis, the chart found by the name it gives a screen reader. */

@@ -22,7 +22,7 @@ test('a person links to their report and to a raise case with them as its subjec
   await expect(page.locator('.print-area')).toContainText(name, { timeout: 60_000 });
   // The links are the page's own, under its name on every tab.
   await links(page).getByRole('link', { name: 'Raise case →' }).click();
-  await expect(page).toHaveURL(/\/reports\?.*type=comparison/);
+  await expect(page).toHaveURL(/\/raise-case\?.*type=comparison/);
   // The case is for them, as its subject; the compare set is left as it was.
   expect(await page.evaluate(() => localStorage.getItem('uwsal.tray.v1') ?? '[]')).toBe('[]');
   await expect(page.getByRole('textbox', { name: 'Pick the person the case is for' })).toHaveValue(name);
@@ -35,7 +35,7 @@ test('a title links to its raises', async ({ page }) => {
   const [t] = await oracle<{ code: string; title: string }>(
     `SELECT job_code code, any_value(title) title FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 AND title = 'Professor' GROUP BY 1 ORDER BY count(*) DESC LIMIT 1`,
   );
-  await page.goto(`./paycheck?code=${t.code}`);
+  await page.goto(`./titles?code=${t.code}`);
   await links(page).getByRole('link', { name: 'Raises in this title →' }).click();
   await expect(page).toHaveURL(new RegExp(`/raises\\?title=${t.code}`));
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(new RegExp(t.title));

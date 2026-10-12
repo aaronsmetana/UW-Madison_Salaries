@@ -11,7 +11,7 @@ import { oracle, PAY, PERSON_PAY, RATE, latestSnapshot, usd } from './oracle';
 const money = (t: string) => Number(t.replace(/[^\d.]/g, ''));
 
 test("a title's histogram draws its median over the bars, and only the median", async ({ page }) => {
-  await page.goto('./paycheck?code=OE009');
+  await page.goto('./titles?code=OE009');
   const plot = page.locator('.hist-plot').first();
   await expect(plot.locator('.recharts-bar-rectangle').first()).toBeAttached({ timeout: 60_000 });
   const order = await plot.evaluate((el) => {
@@ -28,7 +28,7 @@ test("a title's histogram draws its median over the bars, and only the median", 
 });
 
 test("the schools' median bars are drawn from zero", async ({ page }) => {
-  await page.goto('./explore?tab=schools');
+  await page.goto('./divisions?tab=schools');
   const rows = page.locator('.school-row');
   await expect(rows.nth(5)).toBeAttached({ timeout: 60_000 });
   const cells = await rows.evaluateAll((trs) => trs.map((tr) => {
@@ -61,7 +61,7 @@ test('retention counts each cohort from where the data can see it', async ({ pag
     .filter((r) => (hired ? r.y > firstYear : r.y <= firstYear) && (hired ? r.total : r.here) > 0)
     .map((r) => [String(r.y), String(Math.round((100 * (hired ? r.still : r.here_still)) / (hired ? r.total : r.here)))]);
 
-  await page.goto('./explore?tab=cohorts');
+  await page.goto('./divisions?tab=retention');
   const table = page.locator('table', { has: page.locator('caption', { hasText: 'Retention by hire year' }) });
   const read = async () => (await table.locator('tbody tr').evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll('td')].slice(0, 2).map((td) => td.textContent?.trim() ?? ''))));
   await expect(table.locator('tbody tr').first()).toBeAttached({ timeout: 60_000 });
@@ -114,7 +114,7 @@ test("a title's schools of fewer than five are greyed, with no spread", async ({
     `SELECT school, count(DISTINCT person_key) n FROM $SAL WHERE snapshot_id = '${snap}' AND job_code = 'OE009' AND salary > 0 AND school IS NOT NULL GROUP BY 1`,
   );
   expect(schools.some((s) => s.n < 5) && schools.some((s) => s.n >= 5), 'Outreach Specialist has schools of both sizes').toBe(true);
-  await page.goto('./paycheck?code=OE009');
+  await page.goto('./titles?code=OE009');
   const table = page.locator('table.pay-by-school');
   await expect(table.locator('tbody tr').first()).toBeAttached({ timeout: 60_000 });
   await expect(table.locator('tbody tr[data-few]')).toHaveCount(schools.filter((s) => s.n < 5).length);
@@ -178,7 +178,7 @@ test("a title's people give each one's FTE, a part-time one marked", async ({ pa
     `SELECT person_key pk, nullif(sum(fte) FILTER (WHERE salary > 0), 0) fte FROM $SAL
      WHERE snapshot_id = '${snap}' AND job_code = '${t.code}' GROUP BY 1`,
   )).map((r) => [r.pk, r.fte]));
-  await page.goto(`./paycheck?code=${t.code}`);
+  await page.goto(`./titles?code=${t.code}`);
   const rows = page.locator('.peer-row');
   await expect(rows.first()).toBeAttached({ timeout: 60_000 });
   const got = await rows.evaluateAll((trs) => trs.map((tr) => ({

@@ -89,7 +89,7 @@ async function checkScreen(page: Page, c: Case) {
 }
 
 async function checkReport(page: Page, c: Case) {
-  await page.goto('./reports?type=comparison');
+  await page.goto('./raise-case?type=comparison');
   const start = page.getByPlaceholder('Search yourself by name to begin…');
   await expect(start).toBeVisible({ timeout: 60_000 });
   await start.fill(`${c.fn} ${c.ln}`);
