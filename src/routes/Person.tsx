@@ -39,7 +39,7 @@ import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtCh
 import { usePref } from '../lib/prefs';
 import { percentile, MIN_GROUP } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
-import { useCountUp, useMounted, prefersReducedMotion } from '../lib/motion';
+import { useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
@@ -528,9 +528,7 @@ export default function Person() {
 
   const firstSalary = trend[0]?.salary ?? null; // actual paid
   const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
-  const animatedPay = useCountUp(lastSalary); // hero value counts up once on mount (reduced-motion → final)
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
-  const animatedTenure = useCountUp(tenureYears);
   // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
   const firstDate = trend[0]?.date ?? null;
   const lastDate = trend[trend.length - 1]?.date ?? null;
@@ -546,7 +544,7 @@ export default function Person() {
   // Paid by the hour alone in the latest snapshot: no appointment it counts records a percentage.
   const hourlyOnly = trend.length > 0 && lastFte == null && (lastSalary ?? 0) > 0;
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
-  const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
+  const sgnPct = (x: number | null) => (x == null ? '—' : fmtChange(x));
   // Below the precision the card prints, a change is flat — the same threshold as fmtChange's "0%".
   // The reporting changes this history crosses. Their factor is inside `totalChange` and none of it
   // is pay: a 9-month member's growth jumped by ×11/9 in Sep 2025 without a dollar more.
@@ -560,7 +558,6 @@ export default function Person() {
   const firstFte = trend[0]?.fte ?? null;
   const fteMoved = firstFte != null && lastFte != null && Math.abs(firstFte - lastFte) > 0.005;
   const growthLfl = fteMoved && rateChange != null ? (1 + rateChange) / reporting.factor - 1 : payLfl;
-  const animatedGrowth = useCountUp(growthLfl);
   const growthTrend: 'up' | 'down' | 'flat' | 'none' =
     growthLfl == null ? 'none' : Math.abs(growthLfl) < 0.0005 ? 'flat' : growthLfl < 0 ? 'down' : 'up';
 
@@ -991,7 +988,7 @@ export default function Person() {
                 )}
               >
                 <Group gap={8} align="center" wrap="nowrap" mt={6}>
-                  <Text fw={700} style={{ fontSize: 40, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{usd(animatedPay)}</Text>
+                  <Text fw={700} style={{ fontSize: 40, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{usd(lastSalary)}</Text>
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
                     <Badge variant="light" color="gray" radius="xs" style={{ fontWeight: 600 }}>
                       {+lastFte.toFixed(2)} FTE
@@ -1056,7 +1053,7 @@ export default function Person() {
                     style={{ fontSize: 24, lineHeight: 1.15 }}
                     data-trend={growthTrend}
                   >
-                    {sgnPct(animatedGrowth)}
+                    {sgnPct(growthLfl)}
                   </Text>
                   {spanYears != null && spanYears >= 0.1 && <Text size="xs" c="dimmed">over {fmtYears(spanYears)}</Text>}
                 </Group>
@@ -1093,8 +1090,8 @@ export default function Person() {
 
               <StatCell label="Tenure" onOpen={() => setTab('history')}>
                 <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.15 }}>
-                  {animatedTenure == null ? '—' : (
-                    <>{animatedTenure.toFixed(1)}<Text span fw={500} c="dimmed" size="sm"> yrs</Text></>
+                  {tenureYears == null ? '—' : (
+                    <>{tenureYears.toFixed(1)}<Text span fw={500} c="dimmed" size="sm"> yrs</Text></>
                   )}
                 </Text>
                 {hireYear && (

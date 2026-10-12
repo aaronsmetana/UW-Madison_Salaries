@@ -297,7 +297,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         <Stat label="Tenure" value={fmtYears(tenureYears)} sub={hireYear ? `at UW since ${hireYear}` : undefined} />
         <Stat
           label={oldestLabel ? `Growth since ${oldestLabel}` : 'Growth'}
-          value={totalChange == null ? '—' : `${(totalChange * 100).toFixed(1)}%`}
+          value={totalChange == null ? '—' : fmtChange(totalChange)}
           sub={totalChange != null && reporting.changes.length
             ? `${fmtChange((1 + totalChange) / reporting.factor - 1)} without the ${reporting.changes[0].sinceLabel} change in ${reporting.changes[0].what}`
             : `across ${plural(trend.length, 'snapshot')}`}

@@ -1,10 +1,13 @@
+/** A negative figure with a true minus (U+2212), as every change on the site prints it, not a hyphen (G9). */
+const minus = (s: string) => s.replace(/^-/, '−');
+
 export function usd(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return Number(n).toLocaleString('en-US', {
+  return minus(Number(n).toLocaleString('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
-  });
+  }));
 }
 
 /** The hours in the full-time year every hourly figure in the source is annualized over (scripts/lib/normalize
@@ -20,12 +23,12 @@ export function hourly(annual: number | null | undefined): string {
 /** Abbreviated currency for large headline figures (e.g. 1_967_752_095 → "$1.97B"). */
 export function usdCompact(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return Number(n).toLocaleString('en-US', {
+  return minus(Number(n).toLocaleString('en-US', {
     style: 'currency',
     currency: 'USD',
     notation: 'compact',
     maximumFractionDigits: 2,
-  });
+  }));
 }
 
 /**
@@ -39,9 +42,22 @@ export function spanLabel(labels: Array<string | null | undefined>): string | un
   return l.length === 1 ? l[0] : `${l[0]} – ${l[l.length - 1]}`;
 }
 
+/**
+ * Headline money, to three figures: "$2.10B", "$51.9M", "$131M" (G10). Totals were printed to the dollar
+ * ("$2,095,516,666") under a rounded "$2.1B", and Changes' tiles to the dollar while its chart said "$67.05M";
+ * the exact figure goes in the tile's tooltip.
+ */
+export function usdShort(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return '—';
+  if (Math.abs(Number(n)) < 1000) return usd(n);
+  return minus(Number(n).toLocaleString('en-US', {
+    style: 'currency', currency: 'USD', notation: 'compact', minimumSignificantDigits: 3, maximumSignificantDigits: 3,
+  }));
+}
+
 export function num(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return Number(n).toLocaleString('en-US');
+  return minus(Number(n).toLocaleString('en-US'));
 }
 
 /** "1 peer", "3 peers" — count formatted with `num()`, singular/plural word chosen by count. */
@@ -51,7 +67,7 @@ export function plural(n: number, singular: string, pluralForm = `${singular}s`)
 
 export function pct(n: number | null | undefined, digits = 1): string {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return `${(Number(n) * 100).toFixed(digits)}%`;
+  return minus(`${(Number(n) * 100).toFixed(digits)}%`);
 }
 
 /**

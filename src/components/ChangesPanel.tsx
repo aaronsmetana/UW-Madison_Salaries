@@ -11,7 +11,7 @@ import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, whereAll, filterKey, continuingRaisesSql, reportingFactorSql, mainOf } from '../lib/queries';
-import { usd, usdCompact, num, pct, fullName } from '../lib/format';
+import { usd, usdCompact, usdShort, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
@@ -25,8 +25,8 @@ interface Mover { person_key: string; fn: string; ln: string; title: string | nu
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
 interface SummaryRow { stayers: number; joiners: number; leavers: number; title_changes: number; median_raise: number | null; n_continuing: number }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return <StatCard size="sm" label={label} value={value} />;
+function Stat({ label, value, exact }: { label: string; value: string; exact?: string }) {
+  return <StatCard size="sm" label={label} value={exact ? <span title={exact} aria-label={exact}>{value}</span> : value} />;
 }
 
 type BandScale = ((v: string) => number | undefined) & { bandwidth?: () => number };
@@ -423,10 +423,10 @@ export function ChangesPanel() {
       <Card withBorder padding="lg">
         <CardTitle mb="sm">Payroll change decomposition</CardTitle>
         <StatRow cols={{ base: 2, sm: 4 }} flush>
-          <Stat label="Total change" value={usd(d?.total_change)} />
-          <Stat label="From raises (continuing)" value={usd(d?.raises)} />
-          <Stat label="From new hires" value={usd(d?.hires)} />
-          <Stat label="From departures" value={usd(d?.departures)} />
+          <Stat label="Total change" value={usdShort(d?.total_change)} exact={usd(d?.total_change)} />
+          <Stat label="From raises (continuing)" value={usdShort(d?.raises)} exact={usd(d?.raises)} />
+          <Stat label="From new hires" value={usdShort(d?.hires)} exact={usd(d?.hires)} />
+          <Stat label="From departures" value={usdShort(d?.departures)} exact={usd(d?.departures)} />
         </StatRow>
         <Text size="xs" c="dimmed" mt="xs">Raises + new hires + departures reconcile to the total change.</Text>
         {equity && equity.top10_share != null && (

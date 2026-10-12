@@ -262,7 +262,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
         <SalaryHistogram
           values={pays}
           markerValue={pinned ? pinSalary : null}
-          markerLabel="Pinned Salary"
+          markerLabel="Your salary"
           tooFewText={`Only ${num(s.n)} ${s.n === 1 ? 'person has' : 'people have'} this title${scopeLabel} — too few to chart a meaningful distribution.`}
           onBinClick={setBinFilter}
         />

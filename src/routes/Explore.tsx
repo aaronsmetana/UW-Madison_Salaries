@@ -14,10 +14,9 @@ import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hoo
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
 import { personEarnings, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
-import { usd, usdCompact, num } from '../lib/format';
+import { usd, usdShort, num, fmtChange } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
-import { useCountUp } from '../lib/motion';
 import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from '../components/SegmentedToggle';
@@ -26,18 +25,21 @@ import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 
 /** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
-function Kpi({ label, value, format, sub, to, loading }: {
+function Kpi({ label, value, format, exact, sub, to, loading }: {
   label: string;
   value: number | null;
   format: (n: number) => string;
+  /** The figure in full, for a rounded one: on hover and to a screen reader. */
+  exact?: (n: number) => string;
   sub?: ReactNode;
   to?: string;
   loading?: boolean;
 }) {
-  const animated = useCountUp(value);
+  // The figure itself, not counted up to it: mid-animation the tiles read "Headcount 8,208" and "Total payroll
+  // $781.16M" on their way to 21,962 and $2.1B, and a reader could take either (G7).
   const display = loading
     ? <Skeleton height={24} width={96} radius="sm" mt={4} />
-    : animated == null ? '—' : format(Math.round(animated));
+    : value == null ? '—' : exact ? <span title={exact(value)} aria-label={exact(value)}>{format(value)}</span> : format(value);
   return <StatCard size="md" label={label} value={display} sub={loading ? undefined : sub} to={to} />;
 }
 
@@ -131,13 +133,13 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
     >
       <Group align="baseline" gap={8} mt={6} wrap="nowrap">
         <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'pos' : 'red'}>
-          {growth == null ? '—' : `${up ? '+' : ''}${(growth * 100).toFixed(1)}%`}
+          {growth == null ? '—' : fmtChange(growth)}
         </Text>
         <Text size="sm" c="dimmed">{usd(from.med)} → {usd(to.med)}</Text>
         {/* On the figure's own line, not a line of its own under it: the tile is drawn at its loaded height while
             it loads, and a note arriving after it moved the tabs down the page. */}
         {changes.length > 0 && (() => {
-          const why = `Like for like: the ${changes[0].sinceLabel} change in ${changes[0].what} (×${changes[0].ratio}) taken out. As reported, ${from.med ? `${(to.med / from.med - 1) >= 0 ? '+' : ''}${((to.med / from.med - 1) * 100).toFixed(1)}%` : '—'}.`;
+          const why = `Like for like: the ${changes[0].sinceLabel} change in ${changes[0].what} (×${changes[0].ratio}) taken out. As reported, ${from.med ? fmtChange(to.med / from.med - 1) : '—'}.`;
           return (
             <>
               <Tooltip withArrow multiline w={280} events={{ hover: true, focus: true, touch: true }} label={why}>
@@ -301,11 +303,12 @@ export default function Explore() {
             <Kpi
               label="Total payroll"
               value={k?.total_payroll ?? null}
-              format={usdCompact}
+              format={usdShort}
+              exact={usd}
               loading={enabled && !k}
               sub={
                 <Stack gap={2}>
-                  <Text span size="xs" c="dimmed">{usd(k?.total_payroll)} · annualized FTE earnings</Text>
+                  <Text span size="xs" c="dimmed">annualized earnings, everyone at their FTE</Text>
                   <Delta frac={frac(k?.total_payroll, kp?.total_payroll)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />
                 </Stack>
               }

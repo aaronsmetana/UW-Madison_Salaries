@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceLine, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys, fmtCount } from '../lib/chartStyle';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
 import { BreakLabel, BreakLabels } from './chart/BreakLabel';
 import { areaGradDef } from './chartDefs';
@@ -185,7 +185,7 @@ export function TrendsPanel() {
         <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 16, bottom: 0 }}>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
-          <YAxis
+          <YAxis tickFormatter={fmtCount}
             width={92}
             tick={AXIS_TICK}
             padding={Y_PAD}

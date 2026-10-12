@@ -1,5 +1,6 @@
+import { fmtK, fmtCount } from './chartStyle';
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly, usdShort } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -134,5 +135,22 @@ describe('hourly', () => {
     expect(hourly(89440)).toBe('$43.00/hr');
     expect(hourly(34320)).toBe('$16.50/hr');
     expect(hourly(null)).toBe('—');
+  });
+});
+
+describe('one way to write a figure (G9, G10)', () => {
+  it('writes a negative with a true minus, never a hyphen', () => {
+    expect(usd(-131213816)).toBe('−$131,213,816');
+    expect(num(-78)).toBe('−78');
+    expect(pct(-0.306)).toBe('−30.6%');
+    expect(fmtK(-2000)).toBe('−$2k');
+    expect(fmtCount(-2000)).toBe('−2,000');
+    expect(fmtCount(24000)).toBe('24,000');
+  });
+  it('writes headline money to three figures, and small sums in full', () => {
+    expect(usdShort(2095516666)).toBe('$2.10B');
+    expect(usdShort(51892390)).toBe('$51.9M');
+    expect(usdShort(-131213816)).toBe('−$131M');
+    expect(usdShort(950)).toBe('$950');
   });
 });

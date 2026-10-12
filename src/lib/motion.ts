@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * One ramp for every duration in the app: three steps and one easing (P10).
@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
  *
  * Mirrored as `--dur-*` / `--ease` in app.css because CSS cannot read this file; `motion.test.ts` parses
  * that stylesheet and fails if the two drift. Under Reduce Motion the CSS steps are 0 and the JS ones
- * are skipped (`chartAnim`, `useCountUp`, `useMounted`).
+ * are skipped (`chartAnim`, `useMounted`).
  */
 export const MOTION = {
   fast: 150,
@@ -82,29 +82,3 @@ export function useMounted(): boolean {
   return mounted;
 }
 
-/**
- * Animate a number from 0 → `target` once on mount over `duration` ms (ease-out cubic). Returns the
- * current value for rendering. Honors reduced-motion (returns `target` immediately) and re-runs if
- * `target` changes. Returns `null` when `target` is `null`.
- */
-export function useCountUp(target: number | null, duration: number = MOTION.slow): number | null {
-  const [value, setValue] = useState<number | null>(() =>
-    target == null ? null : prefersReducedMotion() ? target : 0,
-  );
-  const raf = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (target == null) { setValue(null); return; }
-    if (prefersReducedMotion() || duration <= 0) { setValue(target); return; }
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
-      setValue(target * eased);
-      if (t < 1) raf.current = requestAnimationFrame(tick);
-      else setValue(target);
-    };
-    raf.current = requestAnimationFrame(tick);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
-  }, [target, duration]);
-  return value;
-}

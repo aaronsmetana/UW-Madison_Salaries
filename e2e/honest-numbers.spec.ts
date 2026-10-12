@@ -143,7 +143,7 @@ async function fteMover() {
 test('where the FTE moved, growth is the rate\'s, with the FTE and actual pay beside it', async ({ page }) => {
   const p = await fteMover();
   expect(p, 'someone whose FTE moved and whose rate and pay went opposite ways').toBeTruthy();
-  const sgn = (x: number) => `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`;
+  const sgn = (x: number) => (Math.abs(x) < 0.0005 ? '0%' : `${x > 0 ? '+' : '−'}${(Math.abs(x) * 100).toFixed(1)}%`);
   await page.goto(`./person/${encodeURIComponent(p.pk)}`);
   await expect(page.locator('.person-figures [data-trend]')).toHaveText(sgn(p.r1 / p.r0 - 1), { timeout: 60_000 });
   await expect(page.locator('.person-figures .growth-fte')).toHaveText(
@@ -191,4 +191,29 @@ test("a title's people give each one's FTE, a part-time one marked", async ({ pa
     expect(g.fte, g.pk).toBe(f == null ? 'hourly' : f.toFixed(2));
   }
   expect(got.some((g) => g.fte !== '1.00' && g.fte !== 'hourly'), 'a part-time row on the page').toBe(true);
+});
+
+test('figures are written one way: headline money to three figures, axes with separators, a true minus', async ({ page }) => {
+  await page.goto('./divisions');
+  const payroll = page.locator('[data-stat-card], .stat-cell').filter({ hasText: 'Total payroll' }).first();
+  await expect(payroll).toContainText(/\$\d\.\d\dB/, { timeout: 60_000 });
+  await expect(payroll.locator('[title^="$"]')).toHaveAttribute('title', /^\$\d{1,3}(,\d{3})+$/);
+  await expect(payroll).not.toContainText(/\$\d{1,3}(,\d{3}){2,}/);
+  await page.goto('./divisions?tab=changes');
+  const tab = page.getByRole('tabpanel', { name: 'Changes' });
+  const tiles = tab.locator('[title]').filter({ hasText: /\$/ });
+  await expect(tiles.first()).toBeVisible({ timeout: 60_000 });
+  for (const t of await tiles.allInnerTexts()) expect(t, 'a Changes tile').toMatch(/^−?\$\d+(\.\d+)?[KMB]$/);
+  const panel = await tab.innerText();
+  expect(panel, 'a hyphen for a minus').not.toMatch(/(^|[\s(])-\$?\d/m);
+  await page.goto('./divisions?tab=trends');
+  const ticks = page.locator('.recharts-yAxis .recharts-cartesian-axis-tick-value');
+  await expect(ticks.first()).toBeVisible({ timeout: 60_000 });
+  const big = (await ticks.allTextContents()).filter((t) => /^\d{4,}$/.test(t.replace(/[$k]/g, '')));
+  expect(big, 'an axis count of four digits or more without a separator').toEqual([]);
+  // A chart's data table in whole dollars, not "78,041.6".
+  const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
+  const medians = await table.locator('tbody tr td:nth-child(2)').allTextContents();
+  expect(medians.length).toBeGreaterThan(5);
+  for (const m of medians) expect(m, 'a median with cents').toMatch(/^\d{1,3}(,\d{3})*$/);
 });

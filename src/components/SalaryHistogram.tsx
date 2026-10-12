@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys, CHART_FONT } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys, CHART_FONT, fmtCount } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
 import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT, BAND_IQR } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
@@ -385,7 +385,7 @@ export function SalaryHistogram({
           <BarChart {...chartKeys('Salary distribution')} data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <CartesianGrid {...GRID} />
             <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tickFormatter={fmtK} tick={AXIS_TICK} />
-            <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} />
+            <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} tickFormatter={fmtCount} />
             <Tooltip content={<BarsHistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Bar
               {...chartAnim(reduceMotion, MOTION.slow)}

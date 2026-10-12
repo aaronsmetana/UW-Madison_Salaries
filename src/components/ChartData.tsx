@@ -22,10 +22,14 @@ const MAX_TABLE_ROWS = 200;
  * unit; the cell carries the number. The CSV is untouched either way — it is the machine-readable
  * copy, and rounding it would be a regression.
  */
+/** A table's number as a reader reads it (G9): whole above a thousand (dollars and headcounts — a median
+ *  read 78,041.6), to two places below it (a percentage, years, a ratio), with a true minus. The CSV keeps
+ *  every digit. */
 function cell(v: string | number | null | undefined): string {
   if (v == null || v === '') return '';
   if (typeof v !== 'number' || !Number.isFinite(v)) return String(v);
-  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const s = Math.abs(v) >= 1000 ? Math.round(v).toLocaleString('en-US') : v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return s.replace(/^-/, '−');
 }
 
 /**

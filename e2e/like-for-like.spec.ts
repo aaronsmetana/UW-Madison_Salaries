@@ -19,7 +19,7 @@ const PEOPLE = `WITH r AS (SELECT *, CASE WHEN CAST(snapshot_date AS DATE) >= DA
      SELECT snapshot_id id, CAST(min(d) AS VARCHAR) d, median(pay) FILTER (WHERE pay > 0) med, median(pay_prior) FILTER (WHERE pay_prior > 0) med_prior
      FROM p GROUP BY 1 ORDER BY 2`;
 
-const sgn = (x: number) => `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`;
+const sgn = (x: number) => (Math.abs(x) < 0.0005 ? '0%' : `${x > 0 ? '+' : '−'}${(Math.abs(x) * 100).toFixed(1)}%`);
 
 test("Divisions' median growth across Sep 2025 is like for like, and says so", async ({ page }) => {
   const meds = await oracle<{ id: string; d: string; med: number; med_prior: number }>(PEOPLE);
@@ -44,7 +44,7 @@ test("Divisions › Trends gives the Sep 2025 step like for like, and the others
   await page.goto(`./divisions${FACULTY.replace('?', '?tab=trends&')}`);
   const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
   await expect(table.locator('tbody tr').nth(i)).toBeAttached({ timeout: 60_000 });
-  const cell = async (k: number) => Number((await table.locator('tbody tr').nth(k + 1).locator('td').nth(2).textContent())!.replace('%', ''));
+  const cell = async (k: number) => Number((await table.locator('tbody tr').nth(k + 1).locator('td').nth(2).textContent())!.replace('%', '').replace('−', '-'));
   // The table lists Nov 2021's twins: the canonical rows follow the Pre-TTC one.
   expect(Math.abs((await cell(i)) - want)).toBeLessThanOrEqual(0.051);
   expect(Math.abs((await cell(i + 1)) - next)).toBeLessThanOrEqual(0.051);

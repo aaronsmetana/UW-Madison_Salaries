@@ -20,7 +20,7 @@ import { useCrumbs } from '../app/PageTop';
 import { CompareSetButton } from '../components/CompareSetButton';
 import { ToolLinks } from '../components/ToolLinks';
 import { usePref } from '../lib/prefs';
-import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys, fmtCount } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary, useSearchIndex } from '../lib/hooks';
 import { NotFoundPanel } from '../components/NotFoundPanel';
@@ -422,7 +422,7 @@ export default function School() {
           <BarChart {...chartKeys('Salary distribution')} data={distData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
-            <YAxis
+            <YAxis tickFormatter={fmtCount}
               width={48}
               tick={AXIS_TICK}
               scale={distScale === 'log' ? 'log' : 'auto'}

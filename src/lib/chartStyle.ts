@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { usd } from './format';
+import { usd, num } from './format';
 
 /**
  * Shared Recharts styling tokens so every chart's axes, gridlines, and number formatting match.
@@ -81,7 +81,9 @@ export const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
 
 /** Axis/number formatters: full currency and compact "$NNk". */
 export const fmtUsd = (v: number) => usd(v);
-export const fmtK = (v: number) => `$${Math.round(v / 1000)}k`;
+export const fmtK = (v: number) => { const k = Math.round(v / 1000); return k < 0 ? `−$${-k}k` : `$${k}k`; };
+/** A count on an axis: thousands separated, a true minus ("24,000", "−2,000"), where axes read "0 12000 24000". */
+export const fmtCount = (v: number) => num(v);
 
 /** Shortens a snapshot label for a crowded x-axis: "Nov 2021 (Pre-TTC)" → "Nov '21·pre", "Mar 2026" →
  *  "Mar '26". The pre/post suffix only appears when the source label carries it (the one pair of

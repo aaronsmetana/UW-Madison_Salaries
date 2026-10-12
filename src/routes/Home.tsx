@@ -6,7 +6,7 @@ import { IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch } 
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useTimeline } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, personEarnings, mainOf } from '../lib/queries';
-import { usd, usdCompact, num, fullName } from '../lib/format';
+import { usd, usdShort, num, fullName } from '../lib/format';
 import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotPeople, topSchoolsForSql, topTitlesInSql, type HomeName, type HomePerson } from '../lib/homePeople';
 import type { DivisionHit, TitleHit } from '../lib/search';
@@ -492,7 +492,7 @@ export default function Home() {
   const stats: StatData[] = [
     { label: 'employees', value: summary?.latest?.headcount ?? null, format: num },
     { label: 'median', value: summary?.latest?.median ?? null, format: usd },
-    { label: 'payroll', value: payroll, format: usdCompact, hint: payroll != null ? usd(payroll) : undefined },
+    { label: 'payroll', value: payroll, format: usdShort, hint: payroll != null ? usd(payroll) : undefined },
     { label: 'divisions', value: dims?.schools ?? null, format: num },
     { label: 'titles', value: dims?.titles ?? null, format: num },
   ];

@@ -5,7 +5,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { BreakLabels } from './chart/BreakLabel';
-import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, TIP_LABEL_STYLE, fmtSnapTick, chartKeys } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, TIP_LABEL_STYLE, fmtSnapTick, chartKeys, fmtCount } from '../lib/chartStyle';
 import { useControls } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -275,7 +275,7 @@ export function CohortPanel() {
               <ComposedChart {...chartKeys('Workforce turnover')} data={turnover} margin={{ left: 12, right: 12, top: 18 }}>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" tick={AXIS_TICK} tickFormatter={fmtSnapTick} />
-                <YAxis width={56} tick={AXIS_TICK} />
+                <YAxis width={56} tick={AXIS_TICK} tickFormatter={fmtCount} />
                 {/* Recharts' own tooltip (TIP_STYLE), with the step's share in its label: those who left, as
                     a share of the staff at the start, and per month, since steps run 4 to 14 months. */}
                 {/* Recharts hands the formatter each series' `name` ("Joined", "Left", "Net change"), not its

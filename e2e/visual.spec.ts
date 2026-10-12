@@ -14,7 +14,7 @@ import { afterReveal } from './reveal';
  * Run it with `npm run e2e:visual`.
  *
  * Determinism comes from the app's own reduced-motion path, not from masking: `prefersReducedMotion`
- * (src/lib/motion.ts) makes `useCountUp` and `useMounted` start in their final state,
+ * (src/lib/motion.ts) makes `useMounted` start in its final state,
  * and stops `RotatingFact` cycling, so there is nothing left mid-tween to mask. The project sets
  * `reducedMotion: 'reduce'` so it applies from the first paint, before any component's initial state
  * is computed. `animations: 'disabled'` then covers the CSS layer.
