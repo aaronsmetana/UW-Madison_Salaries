@@ -40,7 +40,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
-interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; pay: number }
+interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; fte: number | null; pay: number }
 type PeopleSortKey = 'name' | 'school' | 'tenure' | 'salary';
 interface SchoolRow { school: string; n: number; med: number | null; lo: number | null; p25: number | null; p75: number | null; hi: number | null }
 interface PctRow { scope: string; pct: number; n: number }
@@ -92,9 +92,9 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(school) school, any_value(department) department,
         date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 AS tenure,
-        ${personPay(metric)} pay
+        ${personPay(metric)} pay, nullif(sum(fte) FILTER (WHERE salary > 0), 0) fte
         FROM salaries WHERE ${base} GROUP BY person_key)
-     SELECT person_key, fn, ln, school, department, tenure, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
+     SELECT person_key, fn, ln, school, department, tenure, fte, pay FROM pp WHERE pay > 0 ORDER BY pay DESC`,
     enabled
   );
   const people = useMemo(() => peopleRows ?? [], [peopleRows]);
@@ -306,6 +306,8 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                 <SortableTh sortKey="name" label="Name" sort={peopleSort} onSort={setPeopleSort} />
                 <SortableTh sortKey="school" label="School · department" srLabel="school" fold sort={peopleSort} onSort={setPeopleSort} />
                 <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
+                {/* Part-time appointments sat among full-time ones with nothing to tell them apart (T13). */}
+                <Table.Th ta="right" data-fold w={64}>FTE</Table.Th>
                 <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <Table.Th w={132} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
               </Table.Tr>
@@ -338,6 +340,9 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                       {p.department && <Text size="xs" c="var(--text-faint)" lineClamp={1}>{p.department}</Text>}
                     </Table.Td>
                     <Table.Td data-fold ta="right">{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
+                    <Table.Td data-fold ta="right" className="fte-cell" c={p.fte != null && Math.abs(p.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
+                      {p.fte == null ? 'hourly' : p.fte.toFixed(2)}
+                    </Table.Td>
                     <Table.Td ta="right" fw={600}>{usd(p.pay)}</Table.Td>
                     <Table.Td ta="right">
                       <TrayButton

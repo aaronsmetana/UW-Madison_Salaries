@@ -6,7 +6,7 @@ import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
 import { matchAppointments, acrossLabel, byAppointment, combinedReason, laneGutter, type Raise } from '../lib/payHistory';
 import { actualPay, countedAppts, sameBasisAcross, reportingChange, likeForLike, likeForLikeNote, type ReportingChange } from '../lib/queries';
-import { usd, pct, fmtBasis, fmtChange } from '../lib/format';
+import { usd, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 import { useSummary } from '../lib/hooks';
 import { NewBadge } from './NewBadge';
@@ -59,8 +59,13 @@ function ChangeFigure({ delta }: { delta: number }) {
  * between the two snapshots: the figure as reported is mostly how pay was reported, so a paired step draws the
  * change like for like with the factor named, and anything else no figure.
  */
+/** What the full-time rate did, where an appointment-percentage move put a change into actual pay that is not a
+ *  change in pay: the rate's change, and the FTE on each side (null where none is on file, as on an hourly job). */
+interface RateMove { rate: number; fte: [number | null, number | null] }
+const ftePct = (f: number | null) => (f ? `${Math.round(f * 100)}%` : 'hourly');
+
 function RaiseCell({ raise, note, reporting, compare, children }: {
-  raise: Raise; note?: string | null; reporting?: ReportingChange | null;
+  raise: Raise; note?: string | RateMove | null; reporting?: ReportingChange | null;
   /** How a continuing raise compares with that step's raises campus-wide, or why this one is not compared;
    *  `href`, the Raises page for that step and title. */
   compare?: { text: string; compared: boolean; href?: string } | null;
@@ -110,9 +115,12 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
 
   const figure = <ChangeFigure delta={raise.delta} />;
   if (raise.kind === 'paired') {
-    // The figure is the change in ACTUAL pay, so an appointment-percentage or comp-basis move lands
-    // in it looking like a pay change. Where that has happened the note says what the RATE did —
-    // the number the reader came for, and the only one they cannot get elsewhere on the page.
+    // Where the FTE moved, actual pay moved with it: the figure is what the full-time RATE did, the number
+    // the reader came for, and the note gives the change in actual pay and the FTE on each side. It led with
+    // actual pay, "−68.6%" for an FTE going 0.65 → 0.2. A basis change has no rate to compare: its note says so.
+    if (note && typeof note === 'object') {
+      return (<><ChangeFigure delta={note.rate} /><span className="appt-rate-note">actual {fmtChange(raise.delta)} · FTE {ftePct(note.fte[0])} → {ftePct(note.fte[1])}</span>{context}</>);
+    }
     return note ? (<>{figure}<span className="appt-rate-note">{note}</span>{context}</>) : (<>{figure}{context}</>);
   }
 
@@ -339,7 +347,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                 // (rate x FTE), so an appointment-percentage or comp-basis move shows up as if it were a pay
                 // change: 4,159 figures across the data coincide with an FTE change, and 2,519 carry a sign
                 // that contradicts what the rate did.
-                const rateNote = ((): string | null => {
+                const rateNote = ((): string | RateMove | null => {
                   if (!from || raise.kind !== 'paired') return null;
                   // `sameBasisAcross`, never `!==`. The source renamed its own vocabulary — Annual to 12 Month,
                   // Academic to 9 Month, Hourly to 12 Month — and left the column null before it existed, so a
@@ -354,8 +362,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                   // Drawn when one side is `fte = 0` too (no percentage on file). Actual pay there is the full
                   // rate, so the Change column swings by the other side's FTE and the rate is the figure to read.
                   if (!r.salary || !from.salary || from.salary <= 0) return null;
-                  const d = r.salary / from.salary - 1;
-                  return `rate ${d >= 0 ? '+' : ''}${pct(d)}`;
+                  return { rate: r.salary / from.salary - 1, fte: [from.fte || null, r.fte || null] };
                 })();
                 // A reporting change between this row and the one it is measured against: the
                 // appointment's own prior row where the matcher found one, else any prior row under

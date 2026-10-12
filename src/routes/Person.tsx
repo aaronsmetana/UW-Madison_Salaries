@@ -33,7 +33,7 @@ import { personPay, TITLE_RATE, countedAppts, personActualPay, personRate, grade
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
-import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears } from '../lib/format';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears, hourly } from '../lib/format';
 import { usePref } from '../lib/prefs';
 import { percentile, MIN_GROUP } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
@@ -542,6 +542,8 @@ export default function Person() {
   const lastFte = trend[trend.length - 1]?.fte ?? null;
   const rateChange = firstRate && lastRate ? (lastRate - firstRate) / firstRate : null;
   const partTime = lastRate != null && lastSalary != null && Math.round(lastRate) !== Math.round(lastSalary);
+  // Paid by the hour alone in the latest snapshot: no appointment it counts records a percentage.
+  const hourlyOnly = trend.length > 0 && lastFte == null && (lastSalary ?? 0) > 0;
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
   const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
   // Below the precision the card prints, a change is flat — the same threshold as fmtChange's "0%".
@@ -550,7 +552,13 @@ export default function Person() {
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
   // The headline growth, like for like: an Associate Professor's card read +55.2% while the bars under it,
   // which leave the factor out, said +27.0%. The figure as reported is in the note under them.
-  const growthLfl = totalChange != null ? (1 + totalChange) / reporting.factor - 1 : null;
+  const payLfl = totalChange != null ? (1 + totalChange) / reporting.factor - 1 : null;
+  // Where the appointment percentage moved, actual pay moved with it, so the headline is the full-time rate's
+  // growth and the FTE change is stated beside it: a 0.5 FTE Outreach Associate read "−28.9%" in red, of which
+  // the rate's share was −7.5% and the rest FTE going 0.65 → 0.2 → 0.5.
+  const firstFte = trend[0]?.fte ?? null;
+  const fteMoved = firstFte != null && lastFte != null && Math.abs(firstFte - lastFte) > 0.005;
+  const growthLfl = fteMoved && rateChange != null ? (1 + rateChange) / reporting.factor - 1 : payLfl;
   const animatedGrowth = useCountUp(growthLfl);
   const growthTrend: 'up' | 'down' | 'flat' | 'none' =
     growthLfl == null ? 'none' : Math.abs(growthLfl) < 0.0005 ? 'flat' : growthLfl < 0 ? 'down' : 'up';
@@ -966,7 +974,9 @@ export default function Person() {
                 long they have been here. Pay, growth and tenure open the tab that shows them in full. */}
             <StatRow cols={{ base: 1, sm: 2, md: '1.2fr 1fr 1fr .8fr' }} label="Headline figures" className="person-figures">
               <StatCell
-                label="Actual pay"
+                // Hourly only: the figure is the rate over a full-time year, not what was paid — the hours worked are
+                // not in the records, and "Actual pay $58,240" said they were.
+                label={hourlyOnly ? 'Annualized hourly rate' : 'Actual pay'}
                 onOpen={() => setTab('trends')}
                 aside={latest?.snapshot_label && (
                   <Badge variant="light" color="accent" radius="xs" style={{ fontWeight: 600, flexShrink: 0 }}>
@@ -988,6 +998,9 @@ export default function Person() {
                   </Text>
                 )}
                 {partTime && <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>}
+                {hourlyOnly && lastSalary != null && (
+                  <Text size="xs" c="dimmed" mt={2} className="hourly-rate">{hourly(lastSalary)} × 2,080 hours · hours worked are not in the records</Text>
+                )}
               </StatCell>
 
               {/* Where the full-time rate sits among everyone with the title (or, with "Same school", among those in
@@ -1056,12 +1069,17 @@ export default function Person() {
                 })()}
                 {oldestLabel && (
                   <Text size="xs" c="dimmed" mt={8}>
-                    {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} since {oldestLabel}{chgDiffer ? ` · rate ${sgnPct(rateChange)}` : ''}
+                    {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} since {oldestLabel}{chgDiffer && !fteMoved ? ` · rate ${sgnPct(rateChange)}` : ''}
+                  </Text>
+                )}
+                {fteMoved && (
+                  <Text size="xs" c="dimmed" mt={2} className="growth-fte">
+                    Full-time rate · FTE {Math.round(firstFte! * 100)}% → {Math.round(lastFte! * 100)}% · actual pay {sgnPct(payLfl)}
                   </Text>
                 )}
                 {reporting.changes.length > 0 && totalChange != null && (
                   <Text size="xs" c="dimmed" mt={2} data-reporting-note>
-                    Like for like: {sgnPct(totalChange)} as reported, with the {reporting.changes[0].sinceLabel} change
+                    Like for like: {sgnPct(fteMoved ? rateChange : totalChange)} as reported, with the {reporting.changes[0].sinceLabel} change
                     in {reporting.changes[0].what} (×{reporting.changes[0].ratio}), which is not pay.
                   </Text>
                 )}

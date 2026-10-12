@@ -349,7 +349,7 @@ type HistoryRow = {
   nodeX: number;
   dept: string;
   raise: string;
-  /** The "rate +2.0%" line under a percentage, where the pair's FTE or comp basis moved. */
+  /** The "actual −32.0% · FTE 100% → 67%" line under a percentage, where the pair's FTE or comp basis moved. */
   note: string;
   /** Segments on this row marked as an appointment ending. */
   caps: number;
@@ -572,25 +572,25 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
 });
 
 /**
- * The history table's percentage is the change in ACTUAL pay — rate x FTE — so an appointment
- * percentage move lands in it looking like a pay change. Gulnara Glowacki is the case: her rate rose
- * 4.0% in Apr 2024 and 2.0% in Sep 2024, and the column showed +55.9% and -32.0% because her FTE went
- * 0.667 -> 1.0 and back. Across the data 2,519 figures carry a sign that contradicts what the rate
- * did. The note is what stops the number lying on its own.
+ * Actual pay is rate x FTE, so an appointment-percentage move lands in it looking like a pay change.
+ * Gulnara Glowacki is the case: her rate rose 4.0% in Apr 2024 and 2.0% in Sep 2024, and the column led
+ * with +55.9% and -32.0% because her FTE went 0.667 -> 1.0 and back. Across the data 2,519 such figures
+ * carry a sign that contradicts what the rate did. Where the FTE moved, the figure is the rate's change,
+ * and the note gives actual pay's and the FTE on each side.
  */
-test('a percentage moved by FTE says what the rate actually did', async ({ page }) => {
+test('a percentage moved by FTE leads with what the rate actually did', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
   const rows = await readHistory(page);
 
   // An exact set, not `some`/`every`: this fails both when a note goes missing and when one appears
   // on a row whose pair never moved.
   const noted = rows.filter((r) => r.note).map((r) => `${r.snapshot} ${r.note}`).sort();
-  expect(noted).toEqual(['Apr 2024 rate +4.0%', 'Sep 2024 rate +2.0%']);
+  expect(noted).toEqual(['Apr 2024 actual +55.9% · FTE 67% → 100%', 'Sep 2024 actual −32.0% · FTE 100% → 67%']);
 
   // The figure and its explanation must be in the same cell — a note one row away explains nothing.
   const sep24 = rows.find((r) => r.snapshot === 'Sep 2024' && r.note)!;
-  expect(sep24.raise).toContain('−32.0%');
-  expect(sep24.note).toBe('rate +2.0%');
+  expect(sep24.raise).toContain('+2.0%');
+  expect(sep24.raise).not.toContain('−32.0%');
 });
 
 /**
