@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect, VisuallyHidden } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
@@ -169,7 +169,7 @@ export function EarnersPanel() {
               <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
-              <Table.Th className="tray-col" />
+              <Table.Th className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>

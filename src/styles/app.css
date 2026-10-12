@@ -3107,7 +3107,7 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 /* The rest of the site, at the page's foot: plain links under a hairline, no cards. */
 .home-more { border-top: 1px solid var(--hairline); padding-top: var(--mantine-spacing-md); }
-.home-more-title { margin-bottom: var(--mantine-spacing-sm); }
+.home-more-title { margin: 0 0 var(--mantine-spacing-sm); font: inherit; }
 .showcase-link {
   display: flex;
   gap: 10px;

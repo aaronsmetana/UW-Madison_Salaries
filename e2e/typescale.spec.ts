@@ -38,7 +38,8 @@ async function sizes(page: Page) {
       const el = n.parentElement;
       if (!text || !el || !el.checkVisibility({ visibilityProperty: true })) continue;
       const r = el.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) continue;
+      // Nor text clipped to a pixel for screen readers alone (VisuallyHidden): no one sees its size.
+      if (r.width <= 1 || r.height <= 1) continue;
       const cs = getComputedStyle(el);
       out.push({
         px: parseFloat(cs.fontSize),

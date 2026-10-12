@@ -10,7 +10,7 @@ import { BreakLabel, BreakLabels } from './chart/BreakLabel';
 import { areaGradDef } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
-import { useSql } from '../lib/hooks';
+import { useSql, useSummary } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey } from '../lib/queries';
 import { usd, num, pct, spanLabel } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
@@ -21,6 +21,7 @@ import { CardTitle } from './CardTitle';
 import { YoyChips } from './chart/pills';
 import { EndLabels } from './chart/EndLabels';
 import { usePref } from '../lib/prefs';
+import { makeSnapshotComparator } from '../lib/snapshotOrder';
 
 interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
 interface Plot extends Row { x: number; yoy: number | null }
@@ -80,8 +81,11 @@ export function TrendsPanel() {
      FROM salaries JOIN m USING (snapshot_id) WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
   );
 
+  const { data: summary } = useSummary();
   const plot = useMemo<Plot[]>(() => {
-    const rows = data ?? [];
+    // In the snapshots' own order: by date alone, Nov 2021's two twins (one date) came in whatever order the
+    // query returned them, and the table listed Post-TTC before Pre-TTC.
+    const rows = [...(data ?? [])].sort(makeSnapshotComparator(summary?.snapshots));
     return rows.map((r) => {
       if (dollarMode !== 'real' || r.med == null) return r;
       const year = Number(String(r.date).slice(0, 4)) || REAL_BASE_YEAR;
@@ -93,7 +97,7 @@ export function TrendsPanel() {
         : null;
       return { ...r, x: snapX(r.date, r.id), yoy };
     });
-  }, [data, dollarMode]);
+  }, [data, dollarMode, summary]);
   const axis = useMemo(() => snapAxisProps(plot), [plot]);
 
   // The breaks that are not changes in pay or staff, from the one list every chart marks (snapTime's
@@ -211,7 +215,7 @@ export function TrendsPanel() {
       </Text>
       <ChartData
         caption={dollarMode === 'real' ? `Median salary, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : 'Median salary, headcount & renewable staff over time'}
-        columns={['Snapshot', 'Median', 'YoY %', 'Headcount', 'Renewable']}
+        columns={['Snapshot', 'Median', 'Change vs previous snapshot', 'Headcount', 'Renewable']}
         rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])}
         unit="snapshots"
         period={spanLabel(plot.map((d) => d.label))}

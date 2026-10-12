@@ -130,7 +130,7 @@ test('a person’s report gives each figure once: standing in its comparison car
   await expect(tiles, 'a standing figure in the tiles too').not.toContainText(/more than/);
   await expect(tiles).toContainText(/Growth since/);
   // The header names the person and their job; the figures are below it.
-  await expect(report.locator('div:has(> h3)').first(), 'the header repeats a figure').not.toContainText(/%|years of salary data/);
+  await expect(report.locator('div:has(> h2)').first(), 'the header repeats a figure').not.toContainText(/%|years of salary data/);
 });
 
 test('a raise case asks for one thing, chosen second, each choice with its dollars and percent', async ({ browser }) => {

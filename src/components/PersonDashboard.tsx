@@ -267,7 +267,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
   return (
     <Stack gap="lg">
       <div>
-        <Title order={3}>Employee Report — {name}</Title>
+        <Title order={2}>Employee Report — {name}</Title>
         <Text c="dimmed">
           {[
             latest?.title,

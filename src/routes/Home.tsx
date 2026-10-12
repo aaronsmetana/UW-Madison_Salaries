@@ -625,7 +625,9 @@ export default function Home() {
         {/* The rest of the site, below the fold: the page used to end with nothing to say that Compare,
             Reports, Screening or the division pages existed. Links, not features of this page. */}
         <nav className="home-more" aria-labelledby="home-more-title">
-          <div id="home-more-title" className="home-more-title"><Eyebrow span>Also in here</Eyebrow></div>
+          {/* A heading, at eyebrow size: the page had an h1 and nothing under it, so a screen reader's list of
+              headings was empty. */}
+          <h2 id="home-more-title" className="home-more-title"><Eyebrow span>Also in here</Eyebrow></h2>
           <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="lg" verticalSpacing="md">
             <ShowcaseLink
               to="/paycheck"

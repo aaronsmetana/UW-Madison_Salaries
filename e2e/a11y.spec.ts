@@ -41,23 +41,9 @@ async function settled(page: import('@playwright/test').Page) {
 
 async function runAxe(page: import('@playwright/test').Page) {
   const results = await new AxeBuilder({ page })
-    // Mantine's Popover/Combobox target wrapper renders `aria-expanded` on a plain
-    // `<div aria-haspopup="dialog">` with no interactive role, which that role does not allow.
-    //
-    // SearchBox no longer does this: `withRoles={false}` on its Popover stops Mantine adding those
-    // attributes, and the input underneath was already giving the combobox's role, its expanded state
-    // and its link to the list, correctly and on its own. That is why the graph's full page can be
-    // scanned without this exclusion, which is where the search box now lives.
-    //
-    // The exclusion stays for everything else. It was lifted once, on the strength of the search boxes
-    // being fixed, and the Selects on Explore, Compare, Divisions and the school pages still render it
-    // — eight failures, on pages a single-file run of this spec had raced past, scanning them before
-    // their Selects had mounted. Lifting it for good means giving those the same treatment first.
-    //
-    // Scoped by selector rather than `.disableRules(['aria-allowed-attr'])`, which switched the rule
-    // off for the whole page: any genuine misuse of an ARIA attribute in app code would have been
-    // waved through with it. This is the same narrow tool already used for the two known gaps below.
-    .exclude('[id^="mantine-"][id$="-target"]')
+    // No exclusion for Mantine's popover targets any more. The Filters button's Indicator was the target, a
+    // plain div carrying aria-expanded and aria-haspopup (critical aria-allowed-attr, on every page with
+    // Filters), and an exclusion written for the Selects of an older Mantine hid it from this gate.
     // .accent-adaptive-text (TrayButton's outline "+ Compare"): fixed and verified correct (accent-8)
     // on the vast majority of rows in Person's 1000+-row peer tables; a handful of rows measure a
     // different, unexplained blended shade at scan time that further investigation didn't resolve.
@@ -67,7 +53,8 @@ async function runAxe(page: import('@playwright/test').Page) {
   // `heading-order` is scored *moderate*, so a critical/serious gate never sees it — which is how
   // routes drifted to an h1 followed directly by an h3 or h4. Heading structure is the main way a
   // screen-reader user navigates a long page, so it's opted in explicitly alongside the severity gate.
-  const ALSO_FAIL = new Set(['heading-order']);
+  // `empty-table-header` (minor) likewise: a compare or report column with no name was read as nothing.
+  const ALSO_FAIL = new Set(['heading-order', 'empty-table-header']);
   const bad = results.violations.filter(
     (v) => v.impact === 'critical' || v.impact === 'serious' || ALSO_FAIL.has(v.id)
   );
@@ -235,6 +222,35 @@ for (const theme of THEMES) {
 }
 
 /**
+ * Views no scan had reached with their content in: Divisions' Changes and Retention tabs, Raises, People, the
+ * 404 page, Screening with results, Compare with a selection, and a person's Salary trend and Report tabs.
+ * Each waits for the content that arrives last, then for motion to end.
+ */
+const LOADED: [string, string, string][] = [
+  ['Divisions › Changes', './explore?tab=changes', '.mantine-Tabs-panel:not([hidden]) table'],
+  ['Divisions › Retention', './explore?tab=cohorts', '.mantine-Tabs-panel:not([hidden]) .recharts-bar-rectangle'],
+  ['Raises', './raises', 'table tbody tr'],
+  ['People', './people', 'input'],
+  ['not found', './does-not-exist', 'h1'],
+  ['Screening, run', `./screening?run=1&sch=${encodeURIComponent('School of Pharmacy')}`, 'table tbody tr'],
+  ['Compare, with a selection', `./compare?sel=${encodeURIComponent(['p', encodeURIComponent('aaronsmetana|2014-10-15'), encodeURIComponent('Aaron Smetana')].join(','))}`, '.recharts-line-curve'],
+  ['a person, Salary trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`, '.recharts-line-curve'],
+  ['a person, Report', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=report`, 'table tbody tr'],
+];
+for (const theme of THEMES) {
+  for (const [name, path, ready] of LOADED) {
+    test(`a11y: ${name}, loaded (${theme}), has no critical/serious violations`, async ({ page }) => {
+      await page.goto(path);
+      await setTheme(page, theme);
+      await expect(page.locator(ready).first()).toBeAttached({ timeout: 60_000 });
+      await settled(page);
+      const bad = await runAxe(page);
+      expect(bad).toEqual([]);
+    });
+  }
+}
+
+/**
  * A keyboard or screen-reader user crossed 12 focus stops of masthead and sidebar before reaching
  * the content on every route — and the shell does not remount, so it was 12 stops on every
  * navigation, not just the first. `<main>` already existed; only the link was missing.
@@ -280,5 +296,51 @@ test.describe('skip to content', () => {
     await page.goto('./explore', { waitUntil: 'networkidle' });
     await page.keyboard.press('Tab');
     await expect(page.locator('.skip-link'), 'the first Tab lands somewhere else').toBeFocused();
+  });
+});
+
+/** What axe cannot see: a page with no section headings, a term with no description, a tab with no title. */
+test.describe('names and structure', () => {
+  test('Home and Divisions name their sections in headings', async ({ page }) => {
+    for (const path of ['./', './explore']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole('heading', { level: 2 }).first(), path).toBeAttached();
+    }
+    // Each Divisions tab names itself.
+    await expect(page.getByRole('heading', { level: 2, name: 'Schools' })).toBeAttached();
+  });
+
+  test('a glossary term is a button described by its definition', async ({ page }) => {
+    await page.goto(`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`);
+    const grade = page.getByRole('button', { name: 'Grade', exact: true });
+    await expect(grade).toBeVisible({ timeout: 60_000 });
+    await expect(grade).toHaveAccessibleDescription(/pay-grade.{20,}/);
+  });
+
+  test('every route names itself in the browser tab', async ({ page }) => {
+    for (const [path, title] of [['./raises', /^Raises/], ['./screening', /^Screening/]] as const) {
+      await page.goto(path);
+      await expect(page, path).toHaveTitle(title, { timeout: 30_000 });
+    }
+  });
+
+  test("Divisions › Trends lists Nov 2021's twins in order, Pre-TTC first", async ({ page }) => {
+    await page.goto('./explore?tab=trends');
+    const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
+    await expect(table.locator('tbody tr').nth(1)).toBeAttached({ timeout: 60_000 });
+    const first = await table.locator('tbody tr td:first-child').allTextContents();
+    expect(first.slice(0, 2)).toEqual(['Nov 2021 (Pre-TTC)', 'Nov 2021 (Post-TTC)']);
+    await expect(table.locator('thead th').nth(2)).toHaveText('Change vs previous snapshot');
+  });
+
+  test('a name several people share says so in words, with the hire year', async ({ page }) => {
+    await page.goto('./');
+    const box = page.getByRole('combobox', { name: 'Search a person, title or division' });
+    await expect(box).toBeVisible({ timeout: 60_000 });
+    await box.fill('smith');
+    const tag = page.locator('[role="option"] .shared-name').first();
+    await expect(tag).toBeVisible({ timeout: 60_000 });
+    await expect(tag).toHaveText(/^\d+ share this name( · this one hired \d{4})?$/);
   });
 });

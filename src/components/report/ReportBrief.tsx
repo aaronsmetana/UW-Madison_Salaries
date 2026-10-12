@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor, List } from '@mantine/core';
+import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor, List, VisuallyHidden } from '@mantine/core';
 import { useReducedMotion } from '@mantine/hooks';
 import { Link } from 'react-router-dom';
 import {
@@ -441,7 +441,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                     <Text fw={600} mb={6}>{subjectFirst} and {them}, side by side</Text>
                     <Table>
                       <Table.Thead>
-                        <Table.Tr><Table.Th /><Table.Th>{subjectFirst}</Table.Th><Table.Th>{them}</Table.Th></Table.Tr>
+                        <Table.Tr><Table.Th><VisuallyHidden>Measure</VisuallyHidden></Table.Th><Table.Th>{subjectFirst}</Table.Th><Table.Th>{them}</Table.Th></Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
                         {line('Title', a.title ?? '—', b.title ?? '—')}

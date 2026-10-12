@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, Select,
-} from '@mantine/core';
+import { Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, Select, VisuallyHidden } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
@@ -304,27 +302,35 @@ export default function Explore() {
           <Tabs.Tab value="cohorts">Retention</Tabs.Tab>
         </Tabs.List>
 
+        {/* Each panel names itself in a heading only a screen reader hears: the tab list is not a heading, and the
+            page had an h1 and nothing under it. */}
         <Tabs.Panel value="schools" pt="md" className="tab-rise">
+          <VisuallyHidden component="h2">Schools</VisuallyHidden>
           <SchoolsPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="earners" pt="md" className="tab-rise">
+          <VisuallyHidden component="h2">Top earners</VisuallyHidden>
           <EarnersPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="titles" pt="md" className="tab-rise">
+          <VisuallyHidden component="h2">Titles</VisuallyHidden>
           <TitlesPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="trends" pt="md" className="tab-rise">
+          <VisuallyHidden component="h2">Trends</VisuallyHidden>
           <TrendsPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="changes" pt="md" className="tab-rise">
+          <VisuallyHidden component="h2">Changes</VisuallyHidden>
           <ChangesPanel />
         </Tabs.Panel>
 
         <Tabs.Panel value="cohorts" pt="md" className="tab-rise">
+          <VisuallyHidden component="h2">Retention</VisuallyHidden>
           <CohortPanel />
         </Tabs.Panel>
       </Tabs>

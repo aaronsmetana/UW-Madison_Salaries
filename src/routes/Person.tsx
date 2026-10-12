@@ -1,8 +1,6 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
-import {
-  Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton,
-} from '@mantine/core';
+import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
@@ -1210,7 +1208,7 @@ export default function Person() {
                       <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
                       <SortableTh sortKey="salary" label="Full-time rate" sort={peerSort} onSort={setPeerSort} align="right" />
                       <Table.Th ta="right" data-fold className="peer-vs">vs. {selfLabel}</Table.Th>
-                      <Table.Th w={132} className="tray-col" />
+                      <Table.Th w={132} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>

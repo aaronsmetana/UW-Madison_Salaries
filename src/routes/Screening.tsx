@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input } from '@mantine/core';
+import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input, VisuallyHidden } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
 import { ShowAll, LIST_PAGE } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
@@ -21,6 +21,7 @@ import { personPay, GRADED_APPT, gradedCols } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
 import { computeScreeningResults, type ScreeningResult } from '../lib/screening';
 import { downloadCSV } from '../lib/csv';
+import { useDocTitle } from '../lib/useDocTitle';
 
 const TENURE_EXPR = `date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25`;
 
@@ -39,6 +40,7 @@ const DEFAULT_MIN_N = 4;
 const BELOW_MIN = 'below-min';
 
 export default function Screening() {
+  useDocTitle('Screening');
   const nav = useNavigate();
   const snap = useActiveSnapshotId();
   const { data: grades } = useGrades();
@@ -356,7 +358,7 @@ export default function Screening() {
                   <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
                   <Table.Th>Flags</Table.Th>
                   <SortableTh sortKey="score" label="Case strength" sort={sort} onSort={setSort} align="right" />
-                  <Table.Th w={140} />
+                  <Table.Th w={140}><VisuallyHidden>Report</VisuallyHidden></Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>

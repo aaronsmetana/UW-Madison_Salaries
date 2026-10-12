@@ -23,6 +23,7 @@ import { downloadCSV } from '../lib/csv';
 import { ICON } from '../lib/ui';
 import { familyLabel, familySql } from '../lib/jobFamilies';
 import { REPORTING_CHANGES } from '../lib/queries';
+import { useDocTitle } from '../lib/useDocTitle';
 import {
   usualModesSql, usualRaises, usualCaseSql, reviewSql, titleChangesSql, accountSql, distributionSql, fmtBeyond,
   USUAL_SHARE, USUAL_MIN_N, PATTERN_MIN_N, NEAR_TITLE, AT_MINIMUM,
@@ -74,6 +75,7 @@ type ReviewSort = 'name' | 'title' | 'school' | 'pay' | 'raise' | 'beyond';
 type ChangeSort = 'name' | 'title' | 'pay' | 'change';
 
 export default function Raises() {
+  useDocTitle('Raises');
   const { metric } = useControls();
   const { data: summary } = useSummary();
   const { data: ref } = useReferenceStatus();

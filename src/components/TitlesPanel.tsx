@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ShowAll, useShowAll } from './ShowAll';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, VisuallyHidden } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
@@ -153,7 +153,7 @@ export function TitlesPanel() {
               <SortableTh sortKey="n" label="People" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
               <Table.Th ta="right" data-fold w={216} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
-              <Table.Th />
+              <Table.Th><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>

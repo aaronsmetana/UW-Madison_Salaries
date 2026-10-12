@@ -679,7 +679,7 @@ export function SearchBox({
 
   // `compact`, in the bar's list: no pay path, and the pay in thousands — a narrower list over the graph.
   const personRow = (h: PersonHit, i: number, compact = false) => {
-    const sharedName = (nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0) > 1;
+    const sharing = nameCounts.get(`${h.fn} ${h.ln}`.trim().toLowerCase()) ?? 0;
     const multiAppt = (h.latest_appts ?? 0) > 1; // only flag roles held in the latest snapshot
     // Departed employees read in the muted ink with a "Former" badge. They used to be faded to 55% as
     // well, which put their names at 2.5:1 — below what any text on the site may be.
@@ -707,11 +707,13 @@ export function SearchBox({
                   </Badge>
                 </Tooltip>
               )}
-              {sharedName && (
-                <Tooltip label="Multiple people share this name — double-check this is the right person." multiline w={260} withArrow position="top">
-                  <span style={{ display: 'inline-flex', flexShrink: 0 }}>
-                    <IconAlertTriangle size={ICON.compact} color="var(--mantine-color-orange-6)" />
-                  </span>
+              {/* Said in words, not only by an icon whose hover was the one place it explained itself. */}
+              {sharing > 1 && (
+                <Tooltip label="Check the hire year and title to be sure this is the right person." multiline w={260} withArrow position="top">
+                  <Text span size="xs" c="orange" className="shared-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                    <IconAlertTriangle size={ICON.compact} aria-hidden />
+                    {sharing} share this name{h.hire_year ? ` · this one hired ${h.hire_year}` : ''}
+                  </Text>
                 </Tooltip>
               )}
             </Group>
@@ -719,7 +721,7 @@ export function SearchBox({
                 main way to tell two same-named people apart in the dropdown. */}
             {(h.title || h.school || h.hire_year) && (
               <Text fz={t.subFont} c="dimmed" lineClamp={1} mt={1}>
-                {[h.title, h.school, h.hire_year ? `Hired ${h.hire_year}` : null].filter(Boolean).join(' · ')}
+                {[h.title, h.school, h.hire_year && !(sharing > 1) ? `Hired ${h.hire_year}` : null].filter(Boolean).join(' · ')}
               </Text>
             )}
           </Box>

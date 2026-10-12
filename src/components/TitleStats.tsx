@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ShowAll, useShowAll } from './ShowAll';
-import {
-  Stack, Card, Text, Group, Table, Badge, Anchor, ScrollArea, TextInput, Alert, ActionIcon, Skeleton,
-} from '@mantine/core';
+import { Stack, Card, Text, Group, Table, Badge, Anchor, ScrollArea, TextInput, Alert, ActionIcon, Skeleton, VisuallyHidden } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
 import { IconSearch, IconX } from '@tabler/icons-react';
 import { useSql, useGrades } from '../lib/hooks';
@@ -301,7 +299,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                 <SortableTh sortKey="school" label="School · department" srLabel="school" fold sort={peopleSort} onSort={setPeopleSort} />
                 <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
-                <Table.Th w={132} className="tray-col" />
+                <Table.Th w={132} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>

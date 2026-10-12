@@ -76,30 +76,31 @@ export function FilterControls() {
       onOpen={() => setOpened(true)}
       onClose={() => setOpened(false)}
     >
-      <Popover.Target>
-          {/* Notification badge with the applied-filter count, attached to the button. */}
-          <Indicator
-            label={count}
-            size={16}
-            color="accent"
-            offset={4}
-            withBorder
-            disabled={count === 0}
-            styles={{ indicator: { fontWeight: 700, pointerEvents: 'none' } }}
+      {/* Notification badge with the applied-filter count, attached to the button. The Button is the popover's
+          target, not the Indicator: Mantine puts aria-expanded and aria-haspopup on the target, which a plain
+          div may not carry (axe's critical aria-allowed-attr, on every page with Filters). */}
+      <Indicator
+        label={count}
+        size={16}
+        color="accent"
+        offset={4}
+        withBorder
+        disabled={count === 0}
+        styles={{ indicator: { fontWeight: 700, pointerEvents: 'none' } }}
+      >
+        <Popover.Target>
+          <Button
+            size="xs"
+            variant={active ? 'light' : 'default'}
+            color={active ? 'accent' : 'gray'}
+            leftSection={
+              active ? <IconFilterFilled size={ICON.compact} /> : <IconFilter size={ICON.compact} stroke={1.8} />
+            }
           >
-            <Button
-              size="xs"
-              variant={active ? 'light' : 'default'}
-              color={active ? 'accent' : 'gray'}
-              aria-expanded={opened}
-              leftSection={
-                active ? <IconFilterFilled size={ICON.compact} /> : <IconFilter size={ICON.compact} stroke={1.8} />
-              }
-            >
-              Filters
-            </Button>
-          </Indicator>
+            Filters
+          </Button>
         </Popover.Target>
+      </Indicator>
         <Popover.Dropdown p={0}>
           <Stack gap={0} w={300}>
             {/* Header: defines the menu and offers a one-click reset on the right. */}
