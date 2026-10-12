@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode
 import { Text, VisuallyHidden } from '@mantine/core';
 import { usd, num, fmtYears } from '../lib/format';
 import { CHART_FONT, fmtK } from '../lib/chartStyle';
-import { useMounted } from '../lib/motion';
+import { useMounted, useEntrance } from '../lib/motion';
 import {
   MARK_SELF, MARK_PEER, MARK_PEER_SAME_SCHOOL, DOT_R, BAND_IQR, LARGE_GROUP, peerDot,
   MarkerLegend, ChartDot, type PeerPoint,
@@ -184,7 +184,9 @@ export function PeerStrip({
   /** Enter on a person, from the keyboard: open them. */
   onOpen?: (key: string) => void;
 }) {
-  const mounted = useMounted();
+  // Drawn at their final state at once where no entrance plays (a tab switch, Reduce Motion: G8).
+  const entrance = useEntrance();
+  const mounted = useMounted() || !entrance;
 
   const plotRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);

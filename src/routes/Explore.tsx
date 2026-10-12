@@ -24,6 +24,8 @@ import { DeltaChip } from '../components/Delta';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 
+import { OverflowTabsList } from '../components/OverflowTabsList';
+import { markTabSwitch } from '../lib/motion';
 /** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
 function Kpi({ label, value, format, exact, sub, to, loading }: {
   label: string;
@@ -323,15 +325,15 @@ export default function Explore() {
         </div>
       )}
 
-      <Tabs value={tab} onChange={setTab} keepMounted={false}>
-        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+      <Tabs value={tab} onChange={(v) => { markTabSwitch(); setTab(v); }} keepMounted={false}>
+        <OverflowTabsList>
           <Tabs.Tab value="schools">Schools</Tabs.Tab>
           <Tabs.Tab value="earners">Top earners</Tabs.Tab>
           <Tabs.Tab value="titles">Titles</Tabs.Tab>
           <Tabs.Tab value="trends">Trends</Tabs.Tab>
           <Tabs.Tab value="changes">Changes</Tabs.Tab>
           <Tabs.Tab value="retention">Retention</Tabs.Tab>
-        </Tabs.List>
+        </OverflowTabsList>
 
         {/* Each panel names itself in a heading only a screen reader hears: the tab list is not a heading, and the
             page had an h1 and nothing under it. */}

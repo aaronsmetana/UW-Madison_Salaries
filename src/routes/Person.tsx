@@ -39,7 +39,7 @@ import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtCh
 import { usePref } from '../lib/prefs';
 import { percentile, MIN_GROUP } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
-import { useMounted, prefersReducedMotion } from '../lib/motion';
+import { useMounted, prefersReducedMotion, chartAnim, useEntrance, markTabSwitch } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
@@ -63,6 +63,7 @@ import { useCrumbs } from '../app/PageTop';
 import { noteRecent } from '../lib/recent';
 import { ICON } from '../lib/ui';
 
+import { OverflowTabsList } from '../components/OverflowTabsList';
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
 function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
@@ -197,7 +198,9 @@ function TitleChangeLabel({
  *  and grey below, so a below-median pool looked switched off (P15). The fill + marker sweep in
  *  left→right on mount (staggered by `delay`). */
 function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?: number; below?: number; pct?: number; delay?: number }) {
-  const mounted = useMounted();
+  // Drawn at their final state at once where no entrance plays (a tab switch, Reduce Motion: G8).
+  const entrance = useEntrance();
+  const mounted = useMounted() || !entrance;
   // Its counts still coming: the row at its final size, the label real and the rest placeholders.
   if (n == null || below == null || pct == null) {
     return (
@@ -213,7 +216,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?:
   }
   const side = pct > 50 ? 'above' : pct < 50 ? 'below' : 'at';
   const tick = side === 'above' ? 'var(--mark-up)' : side === 'below' ? 'var(--mark-down)' : 'var(--guide-strong)';
-  const sweep = `var(--dur-slow) var(--ease) ${delay}ms`;
+  const sweep = `var(--dur-base) var(--ease) ${delay}ms`;
   return (
     // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: a plotted figure built
     // from divs rather than SVG.
@@ -275,7 +278,7 @@ export default function Person() {
   const { id } = useParams();
   const key = decodeURIComponent(id ?? '');
   const nav = useNavigate();
-  const { add, has } = useTray();
+  const { add, has, remove } = useTray();
   const { metric } = useControls();
 
   // Active tab lives in the URL (?tab=…), same convention as Explore, so a shared/bookmarked link
@@ -758,7 +761,7 @@ export default function Person() {
   /** The trend's figure, named for what it plots (G2): the toggle read "Rate" and the line "Salary rate". */
   const trendMeasure = trendMode === 'rate' ? 'Full-time rate' : 'Actual pay';
   const trendBand = band && bandRate != null && shown != null && Math.round(shown) === Math.round(bandRate) ? band : null;
-  const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
+  const trendEntrance = useEntrance('person-trend');
   // Round steps from $0 to the highest line or grade-band edge drawn (lib/rangeScale): Recharts' own
   // read $0 / $45,000 / $90,000.
   const trendTicks = useMemo(() => {
@@ -964,14 +967,14 @@ export default function Person() {
         </Alert>
       )}
 
-      <Tabs value={tab} onChange={setTab}>
-        <Tabs.List>
+      <Tabs value={tab} onChange={(v) => { markTabSwitch(); setTab(v); }}>
+        <OverflowTabsList>
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
           <Tabs.Tab value="pay">Pay &amp; standing</Tabs.Tab>
           <Tabs.Tab value="trends">Pay trend</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
           <Tabs.Tab value="report">Report</Tabs.Tab>
-        </Tabs.List>
+        </OverflowTabsList>
 
         <Tabs.Panel value="overview" pt="md">
           <Stack gap="lg" className="tab-rise">
@@ -1262,7 +1265,7 @@ export default function Person() {
                       <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peerSort} onSort={setPeerSort} align="right" />
                       <SortableTh sortKey="salary" label="Full-time rate" sort={peerSort} onSort={setPeerSort} align="right" />
                       <Table.Th ta="right" data-fold className="peer-vs">vs. {selfLabel}</Table.Th>
-                      <Table.Th w={132} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
+                      <Table.Th w={44} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -1323,8 +1326,10 @@ export default function Person() {
                             ) : (
                               <TrayButton
                                 inTray={inTray}
+                                name={fullName(p.fn, p.ln)}
                                 stopPropagation
                                 onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
+                                onRemove={() => remove(p.person_key)}
                               />
                             )}
                           </Table.Td>
@@ -1625,7 +1630,7 @@ export default function Person() {
               <Line yAxisId="pay" className="typical-line" type="linear" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
             )}
             {/* Primary line + haloed active dot. */}
-            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMeasure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
+            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMeasure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} {...chartAnim(!trendEntrance)} />
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (

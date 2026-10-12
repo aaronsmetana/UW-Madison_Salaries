@@ -29,7 +29,7 @@ import { HistoryTable } from './HistoryTable';
 import { StatCard, StatRow } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
-import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { chartAnim, useEntrance } from '../lib/motion';
 
 interface Row {
   first_name: string | null;
@@ -86,7 +86,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
  * charts as the /person/:id profile, reflowed for a report.
  */
 export function PersonDashboard({ personKey, metric }: { personKey: string; metric: Metric }) {
-  const reduceMotion = prefersReducedMotion();
+  const entrance = useEntrance();
   const expr = salaryExpr(metric);
   /** What every figure of this person's pay is called here: the measure in force (G2). */
   const measure = METRIC_LABEL[metric];
@@ -317,11 +317,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <XAxis {...trendAxis} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip measure={measure} />} />
-            <Line type="linear" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(!entrance)} />
             {raiseCtx.typical.size > 1 && (
               <Line type="linear" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
             )}
-            <Line type="linear" dataKey="salary" name={measure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="salary" name={measure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(!entrance)} />
             {breakMarks.map((b) => (
               <ReferenceLine key={`brk-${b.key}`} x={b.x} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="reporting-marker" />
             ))}

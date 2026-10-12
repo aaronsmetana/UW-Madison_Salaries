@@ -13,7 +13,7 @@ import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useSummary } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
 import { usd, num, pct, spanLabel } from '../lib/format';
-import { prefersReducedMotion } from '../lib/motion';
+import { chartAnim, useEntrance } from '../lib/motion';
 import { ChartData } from './ChartData';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { SegmentedToggle } from './SegmentedToggle';
@@ -65,7 +65,7 @@ export function TrendsPanel() {
   const expr = salaryExpr(metric);
   /** The plotted figure, named for the measure in force (G2). */
   const med = `Median ${METRIC_LABEL[metric].toLowerCase()}`;
-  const reduce = prefersReducedMotion();
+  const entrance = useEntrance();
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   const [hcScale, setHcScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
   const { data, isFetching } = useSql<Row>(
@@ -161,7 +161,7 @@ export function TrendsPanel() {
 
           {/* Median: gradient area + primary line. */}
           <Area type="linear" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
-          <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
+          <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} {...chartAnim(!entrance)} />
 
           {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
               another where the date axis puts snapshots close. */}
@@ -203,8 +203,8 @@ export function TrendsPanel() {
 
           {/* Two counts, not a direction or this page's subject: the ink and the guide grey, told apart by their
               lightness and named at their ends. Neither is dashed — a dash on these charts is a reference line. */}
-          <Line type="linear" dataKey="hc" name="Headcount" stroke="var(--mantine-color-text)" strokeWidth={2} dot isAnimationActive={!reduce} />
-          <Line type="linear" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--guide-strong)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
+          <Line type="linear" dataKey="hc" name="Headcount" stroke="var(--mantine-color-text)" strokeWidth={2} dot {...chartAnim(!entrance)} />
+          <Line type="linear" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--guide-strong)" strokeWidth={2} dot connectNulls={false} {...chartAnim(!entrance)} />
           <Customized
             component={
               <EndLabels

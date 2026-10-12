@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Text } from '@mantine/core';
 import { usd } from '../lib/format';
 import { assignLabelRows, fmtK, CHART_FONT } from '../lib/chartStyle';
-import { useMounted } from '../lib/motion';
+import { useMounted, useEntrance } from '../lib/motion';
 import { MARK_SELF, MARK_SELF_TEXT, MARK_TARGET, MarkerLegend } from './markers';
 import { Z } from '../lib/layers';
 
@@ -41,7 +41,9 @@ export function PeerRangeBar({
   const span = max - min;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
   const H = 26;
-  const mounted = useMounted();
+  // Drawn at their final state at once where no entrance plays (a tab switch, Reduce Motion: G8).
+  const entrance = useEntrance();
+  const mounted = useMounted() || !entrance;
   const trackRef = useRef<HTMLDivElement>(null);
   const [hoverPct, setHoverPct] = useState<number | null>(null);
 

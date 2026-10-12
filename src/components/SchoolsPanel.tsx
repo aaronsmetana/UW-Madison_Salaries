@@ -77,7 +77,7 @@ function DeptRows({ where, school, metric, colSpan }: {
 export function SchoolsPanel() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
-  const { add, has } = useTray();
+  const { add, has, remove } = useTray();
   const nav = useNavigate();
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
@@ -162,8 +162,9 @@ export function SchoolsPanel() {
         />
       ) : (
       <>
+      <div className="sticky-head">
       <ScrollArea.Autosize type="auto" offsetScrollbars="present">
-        <Table miw={680} className="fold-table">
+        <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={680} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="school" label="School / Division" sort={sort} onSort={setSort} />
@@ -225,7 +226,7 @@ export function SchoolsPanel() {
                       ) : <Text span size="sm" c="dimmed">—</Text>}
                     </Table.Td>
                     <Table.Td ta="right">
-                      <TrayButton inTray={inTray} stopPropagation onAdd={() => add({ type: 'school', id: s.school, label: s.school })} />
+                      <TrayButton inTray={inTray} name={s.school} stopPropagation onAdd={() => add({ type: 'school', id: s.school, label: s.school })} onRemove={() => remove(s.school)} />
                     </Table.Td>
                   </Table.Tr>
                   {isOpen && <DeptRows where={where} school={s.school} metric={metric} colSpan={5} />}
@@ -235,6 +236,7 @@ export function SchoolsPanel() {
           </Table.Tbody>
         </Table>
       </ScrollArea.Autosize>
+      </div>
       <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
       </>
       )}

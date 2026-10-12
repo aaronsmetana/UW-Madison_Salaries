@@ -855,7 +855,7 @@ test('the header adds a person to the compare set and takes them out again', asy
     const inSet = page.getByRole('button', { name: 'In compare set', pressed: true });
     await expect(inSet, route).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('region', { name: 'Compare set' })).toBeVisible();
-    // While they are in it, everything that says so says "compare set" (a row's button: "In set").
+    // While they are in it, everything that says so says "compare set" (a row's button: "… is in the compare set").
     await expect(page.getByText(/\btray\b/i), `${route}: "tray" is still said on the page`).toHaveCount(0);
     await inSet.click();
     await expect(page.getByRole('button', { name: 'Add to compare', pressed: false }), `${route}: a second press did not take it out`).toBeVisible();

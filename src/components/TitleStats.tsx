@@ -7,7 +7,7 @@ import { useSql, useGrades, useSearchIndex } from '../lib/hooks';
 import { closeMatches } from '../lib/search';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, peopleSql, mainOf } from '../lib/queries';
-import { usd, num, fullName, fmtYears } from '../lib/format';
+import { usd, num, fullName, fmtYears, hourly } from '../lib/format';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -20,6 +20,7 @@ import { SortableTh, type SortState } from './SortableTh';
 import { GLOSSARY } from '../lib/glossary';
 import { ChartSkeleton } from './Loading';
 import { SalaryHistogram } from './SalaryHistogram';
+import { HourlyTag, HOURLY_TITLE } from './HourlyTag';
 import { StatCard, StatRow } from './StatCard';
 import { ICON } from '../lib/ui';
 import { PercentileNote } from './PercentileNote';
@@ -40,7 +41,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
 }
 
-interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
+interface StatsRow { title: string | null; n: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null; hourly_share: number | null }
 interface PersonRow { person_key: string; fn: string | null; ln: string | null; school: string | null; department: string | null; tenure: number | null; fte: number | null; pay: number }
 type PeopleSortKey = 'name' | 'school' | 'tenure' | 'salary';
 interface SchoolRow { school: string; n: number; med: number | null; lo: number | null; p25: number | null; p75: number | null; hi: number | null }
@@ -60,7 +61,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   pinSalary?: number | null;
 }) {
   const nav = useNavigate();
-  const { add, has } = useTray();
+  const { add, has, remove } = useTray();
   const { data: grades } = useGrades();
   const enabled = !!snap && !!jobCode;
   const pinned = pinSalary != null && Number.isFinite(pinSalary) && pinSalary > 0;
@@ -72,8 +73,10 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const { data: statRows, isLoading } = useSql<StatsRow>(
     ['ts-stats', jobCode, snap, school ?? '', metric],
-    `WITH pp AS (SELECT person_key, ${mainOf('title')} title, ${personPay(metric)} pay FROM salaries WHERE ${base} GROUP BY person_key)
+    `WITH pp AS (SELECT person_key, ${mainOf('title')} title, ${personPay(metric)} pay,
+        bool_and(coalesce(fte, 0) = 0) FILTER (WHERE salary > 0) hr FROM salaries WHERE ${base} GROUP BY person_key)
      SELECT any_value(title) title, count(*) FILTER (WHERE pay > 0) n,
+        avg(CASE WHEN hr THEN 1.0 ELSE 0.0 END) FILTER (WHERE pay > 0) hourly_share,
         median(pay) FILTER (WHERE pay > 0) med, quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
         quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75, min(pay) FILTER (WHERE pay > 0) lo,
         max(pay) FILTER (WHERE pay > 0) hi FROM pp`,
@@ -191,7 +194,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
         <Card key="dist" withBorder padding="lg">
           <CardTitle>{measure} distribution{scopeLabel}</CardTitle>
           <ChartSkeleton height={DIST_LOADING_H} />
-          <Text size="xs" c="dimmed" mt={4}>Click a bar to filter the people list below to that range.</Text>
+          <Text size="xs" c="dimmed" mt={4}>Select a bar, by pointer or by Tab and Enter, to list just those people below.</Text>
         </Card>
       </Stack>
     );
@@ -228,7 +231,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           size="hero"
           label={`Median ${measure.toLowerCase()} · this title${scopeLabel}`}
           value={usd(s.med)}
-          sub={`${num(s.n)} ${s.n === 1 ? 'person' : 'people'} · job code ${jobCode}`}
+          sub={<>{num(s.n)} {s.n === 1 ? 'person' : 'people'} · job code {jobCode}{(s.hourly_share ?? 0) >= HOURLY_TITLE && <HourlyTag annual={s.med} share={s.hourly_share} />}</>}
         />
         <Stat label="Range (p25–p75)" value={`${usd(s.p25)} – ${usd(s.p75)}`} />
         <Stat label="Spread (min–max)" value={`${usd(s.lo)} – ${usd(s.hi)}`} />
@@ -269,7 +272,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           tooFewText={`Only ${num(s.n)} ${s.n === 1 ? 'person has' : 'people have'} this title${scopeLabel} — too few to chart a meaningful distribution.`}
           onBinClick={setBinFilter}
         />
-        <Text size="xs" c="dimmed" mt={4}>Click a bar to filter the people list below to that range.</Text>
+        <Text size="xs" c="dimmed" mt={4}>Select a bar, by pointer or by Tab and Enter, to list just those people below.</Text>
       </Card>
 
       {isRange(band) && (
@@ -327,8 +330,9 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
         />
+        <div className="sticky-head">
         <ScrollArea.Autosize type="auto" offsetScrollbars="present">
-          <Table miw={760} className="fold-table">
+          <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={760} className="fold-table">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={48} ta="right" data-fold>#</Table.Th>
@@ -338,7 +342,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                 {/* Part-time appointments sat among full-time ones with nothing to tell them apart (T13). */}
                 <Table.Th ta="right" data-fold w={64}>FTE</Table.Th>
                 <SortableTh sortKey="salary" label={measure} sort={peopleSort} onSort={setPeopleSort} align="right" />
-                <Table.Th w={132} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
+                <Table.Th w={44} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -372,12 +376,18 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                     <Table.Td data-fold ta="right" className="fte-cell" c={p.fte != null && Math.abs(p.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
                       {p.fte == null ? 'hourly' : p.fte.toFixed(2)}
                     </Table.Td>
-                    <Table.Td ta="right" fw={600}>{usd(p.pay)}</Table.Td>
+                    <Table.Td ta="right" fw={600}>
+                      {usd(p.pay)}
+                      {/* Paid by the hour: the rate the annualized figure stands for (G23). */}
+                      {p.fte == null && <Text size="xs" c="dimmed" fw={400} className="hourly-rate">{hourly(p.pay)}</Text>}
+                    </Table.Td>
                     <Table.Td ta="right">
                       <TrayButton
                         inTray={inTray}
+                        name={fullName(p.fn, p.ln)}
                         stopPropagation
                         onAdd={() => add({ type: 'person', id: p.person_key, label: fullName(p.fn, p.ln) })}
+                        onRemove={() => remove(p.person_key)}
                       />
                     </Table.Td>
                   </Table.Tr>
@@ -386,6 +396,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
             </Table.Tbody>
           </Table>
         </ScrollArea.Autosize>
+        </div>
         <ShowAll shown={peoplePage.shown.length} total={peoplePage.total} onShowAll={peoplePage.showAll} />
       </Card>
 

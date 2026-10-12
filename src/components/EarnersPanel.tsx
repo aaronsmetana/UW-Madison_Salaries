@@ -44,7 +44,7 @@ export function EarnersPanel() {
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const [limit, setLimit] = useState(100);
-  const { add, has } = useTray();
+  const { add, has, remove } = useTray();
   // Divisions set aside. Nothing by default, so the list stays neutral; applied in SQL before the
   // LIMIT, so what remains still fills the list.
   const [exclude, setExclude] = useState<string[]>([]);
@@ -214,7 +214,9 @@ export function EarnersPanel() {
                   <Table.Td ta="right" className="tray-col">
                     <TrayButton
                       inTray={has(e.person_key)}
+                      name={fullName(e.fn, e.ln)}
                       onAdd={() => add({ type: 'person', id: e.person_key, label: fullName(e.fn, e.ln) })}
+                      onRemove={() => remove(e.person_key)}
                     />
                   </Table.Td>
                 </Table.Tr>

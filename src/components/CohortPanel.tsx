@@ -18,7 +18,7 @@ import { SegmentedToggle } from './SegmentedToggle';
 import { CardTitle } from './CardTitle';
 import { TipSurface } from './chart/ChartTooltip';
 import { MarkerLegend } from './markers';
-import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { chartAnim, useEntrance } from '../lib/motion';
 import { knownBreak } from '../lib/snapTime';
 import { useWidth } from '../lib/useWidth';
 import { monthsBetween } from '../lib/cadence';
@@ -58,7 +58,7 @@ const retColor = (r: number) => {
 const FIGURES = ['Median tenure · current staff', 'Hired in the last 5 years', 'Snapshots span'] as const;
 
 export function CohortPanel() {
-  const reduceMotion = prefersReducedMotion();
+  const entrance = useEntrance();
   const { scope, filters } = useControls();
   const { data: summary } = useSummary();
   const latest = summary?.snapshots[summary.snapshots.length - 1];
@@ -214,7 +214,7 @@ export function CohortPanel() {
             <YAxis width={48} tick={AXIS_TICK} unit="%" domain={[0, 100]} />
             <Tooltip content={<RetentionTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Bar
-              {...chartAnim(reduceMotion, MOTION.slow)}
+              {...chartAnim(!entrance)}
               dataKey="retention"
               name="Retained"
               fill="var(--mantine-color-accent-6)"
@@ -233,7 +233,7 @@ export function CohortPanel() {
               ))}
             </Bar>
             <Bar
-              {...chartAnim(reduceMotion, MOTION.slow)}
+              {...chartAnim(!entrance)}
               dataKey="lost"
               name="Left"
               stackId="r"
@@ -305,7 +305,7 @@ export function CohortPanel() {
                 {coverageLabel && <Customized component={<BreakLabels marks={[{ at: coverageLabel, texts: [scope23.label, scope23.short] }]} />} />}
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
                 <Bar
-                  {...chartAnim(reduceMotion, MOTION.slow)}
+                  {...chartAnim(!entrance)}
                   dataKey="joinedPM"
                   name="Joined"
                   fill="var(--mark-up)"
@@ -316,7 +316,7 @@ export function CohortPanel() {
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
                 <Bar
-                  {...chartAnim(reduceMotion, MOTION.slow)}
+                  {...chartAnim(!entrance)}
                   dataKey="departedPM"
                   name="Left"
                   fill="var(--mark-down)"
@@ -326,7 +326,7 @@ export function CohortPanel() {
                 >
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
-                <Line type="linear" dataKey="netPM" name="Net change" stroke="var(--mantine-color-text)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+                <Line type="linear" dataKey="netPM" name="Net change" stroke="var(--mantine-color-text)" strokeWidth={2} dot {...chartAnim(!entrance)} />
               </ComposedChart>
             </ResponsiveContainer>
             </div>

@@ -6,7 +6,7 @@ import { SEMANTIC } from '../theme';
 export type DeltaTone = 'signed' | 'neutral';
 
 /** Resolves a fractional change + tone to a Mantine color name. `signed` (money, an individual's
- *  standing): up=pos, down=red — a status the reader should react to. `neutral` (population size —
+ *  standing): up blue, down orange, the app's one direction pair (theme SEMANTIC). `neutral` (population size —
  *  headcount, row counts): always dimmed, since more/fewer people isn't inherently good or bad and
  *  shouldn't borrow the reserved status hues. */
 export function deltaColor(frac: number | null | undefined, tone: DeltaTone = 'signed'): string {

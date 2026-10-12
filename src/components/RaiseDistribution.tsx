@@ -5,7 +5,7 @@ import { AXIS_TICK, GRID, BAR_RADIUS, TIP_STYLE, chartKeys, CHART_FONT } from '.
 import { CardTitle } from './CardTitle';
 import { ChartData } from './ChartData';
 import { num } from '../lib/format';
-import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { chartAnim, useEntrance } from '../lib/motion';
 import { raiseBucket, raiseBucketLabel, raiseBuckets } from '../lib/raiseBuckets';
 import { niceCeil, niceStep } from '../lib/rangeScale';
 import { useWidth } from '../lib/useWidth';
@@ -29,13 +29,14 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
   period: string;
   className?: string;
 }) {
-  const reduceMotion = prefersReducedMotion();
+  const entrance = useEntrance();
   const [hoveredDist, setHoveredDist] = useState<number | null>(null);
   const raiseDist = useMemo(() => {
     if (!counts) return undefined;
     const by = new Map(counts.map((r) => [Number(r.bucket), r.n]));
     return raiseBuckets().map((k) => ({ bucket: k, label: raiseBucketLabel(k), n: by.get(k) ?? 0 }));
   }, [counts]);
+  const distTotal = (raiseDist ?? []).reduce((s, r) => s + r.n, 0);
   // Down below 0, up above it, and the no-change bar neutral.
   const distColor = (bucket: number) =>
     bucket < 0 ? 'var(--mark-down)' : bucket === 0 ? 'var(--mantine-color-gray-4)' : 'var(--mark-up)';
@@ -73,7 +74,8 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
       data-raise-capped={distCap?.bucket ?? ''}
       ref={distBoxRef}
     >
-      <CardTitle mb="sm" sub={sub}>{title}</CardTitle>
+      {/* How many people the bars hold, in the line under the title, where the chart's footer said it (G18). */}
+      <CardTitle mb="sm" sub={<>{sub}{distTotal > 0 && <>{sub ? ' ' : ''}{num(distTotal)} people.</>}</>}>{title}</CardTitle>
       <ResponsiveContainer width="100%" height={240}>
         {/* Right margin for the last label, "> +20%", centred on the last bin at the plot's edge. */}
         <BarChart {...chartKeys('Raise distribution')} data={raiseDist ?? []} margin={{ left: 12, right: 24, top: DIST_TOP }} className="raise-dist">
@@ -88,7 +90,7 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
               label={{ value: marker!.label, position: 'top', fontSize: CHART_FONT, fill: 'var(--mantine-color-accent-7)' }} />
           )}
           <Bar
-            {...chartAnim(reduceMotion, MOTION.slow)}
+            {...chartAnim(!entrance)}
             dataKey="n"
             name="People"
             radius={BAR_RADIUS}
@@ -143,8 +145,8 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
         period={period}
         about={<>
           1% bins of raises as this site prints them, to a tenth of a percent: "+3%" is a raise above 2.0% up to 3.0%,
-          and "0%" is pay that did not move. Changes past −10% or +20% are gathered at the ends. Green = raise,
-          red = cut, grey = no change{marker ? `; the dashed line marks the ${marker.name}` : ''}.
+          and "0%" is pay that did not move. Changes past −10% or +20% are gathered at the ends. Blue = raise,
+          orange = cut, grey = no change{marker ? `; the dashed line marks the ${marker.name}` : ''}.
         </>}
       />
     </Card>

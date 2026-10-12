@@ -35,8 +35,9 @@ import { ChartData } from '../components/ChartData';
 import { MARK_POPULATION } from '../components/markers';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
-import { chartAnim, MOTION, prefersReducedMotion } from '../lib/motion';
+import { chartAnim, useEntrance, markTabSwitch } from '../lib/motion';
 
+import { OverflowTabsList } from '../components/OverflowTabsList';
 /**
  * The tenure/pay scatter plots one dot per person, so a large division would otherwise hand Recharts
  * tens of thousands of nodes. The cap is a render budget, not a data statement — which is exactly why
@@ -70,7 +71,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export default function School() {
-  const reduceMotion = prefersReducedMotion();
+  const entrance = useEntrance();
   const [hoveredBin, setHoveredBin] = useState<number | null>(null);
   const { id } = useParams();
   const name = decodeURIComponent(id ?? '');
@@ -280,13 +281,13 @@ export default function School() {
         <CompareSetButton item={{ type: 'school', id: name, label: name }} />
       </Group>
 
-      <Tabs value={tab} onChange={setTab}>
-        <Tabs.List>
+      <Tabs value={tab} onChange={(v) => { markTabSwitch(); setTab(v); }}>
+        <OverflowTabsList>
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
           <Tabs.Tab value="dist">Trends &amp; distribution</Tabs.Tab>
           <Tabs.Tab value="people">People</Tabs.Tab>
           <Tabs.Tab value="departments">Departments</Tabs.Tab>
-        </Tabs.List>
+        </OverflowTabsList>
 
         <Tabs.Panel value="overview" pt="md">
       <Stack gap="lg">
@@ -342,7 +343,7 @@ export default function School() {
         <Tabs.Panel value="dist" pt="md">
           <Stack gap="lg">
       <Card withBorder padding="lg">
-        <CardTitle sub="A compression check: whether longer-serving staff are paid more than newer ones.">Tenure vs. pay</CardTitle>
+        <CardTitle sub={`A compression check: whether longer-serving staff are paid more than newer ones${(tenurePay ?? []).length ? ` — ${num((tenurePay ?? []).length)} people` : ''}${snapLabel ? `, ${snapLabel}` : ''}.`}>Tenure vs. pay</CardTitle>
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
@@ -353,7 +354,7 @@ export default function School() {
                 not the quiet context MARK_PEER is for. `--bar` is for bars, which are counts, and it
                 is a lighter tone because a bar is a large filled area where a dot is a few pixels. */}
             <Scatter
-              {...chartAnim(reduceMotion, MOTION.slow)}
+              {...chartAnim(!entrance)}
               data={tenurePay ?? []}
               fill={MARK_POPULATION}
               fillOpacity={0.5}
@@ -391,7 +392,7 @@ export default function School() {
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             {/* The row's own label: on a date axis Recharts' label is the x value, a timestamp. */}
             <Tooltip formatter={(v: number) => usd(v)} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
-            <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(!entrance)} />
           </LineChart>
         </ResponsiveContainer>
         {/* A reorganization moved whole departments in or out: the trend's step there is that, and says so. */}
@@ -416,7 +417,7 @@ export default function School() {
               options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
             />
           }
-          sub="The latest snapshot, in $20k bins."
+          sub={`${num(distData.reduce((s, d) => s + d.n, 0))} people${snapLabel ? ` in ${snapLabel}` : ''}, in $20k bins.`}
         >
           {METRIC_LABEL[metric]} distribution
         </CardTitle>
@@ -433,7 +434,7 @@ export default function School() {
             />
             <Tooltip formatter={(v: number) => [num(v), 'People']} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
             <Bar
-              {...chartAnim(reduceMotion, MOTION.slow)}
+              {...chartAnim(!entrance)}
               dataKey="n"
               name="People"
               fill="var(--bar)"
@@ -447,7 +448,7 @@ export default function School() {
         </ResponsiveContainer>
         <ChartData
           caption={`${METRIC_LABEL[metric]} distribution`}
-          columns={['Salary bin', 'People']}
+          columns={[`${METRIC_LABEL[metric]} bin`, 'People']}
           rows={distData.map((d) => [d.label, d.n])}
           n={distData.reduce((s, d) => s + d.n, 0)}
           unit="salary records"

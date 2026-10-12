@@ -15,7 +15,7 @@ import { BrandMark } from '../components/BrandMark';
 import { NAV, ABOUT, type NavItem } from './nav';
 import { consumeUpdate } from '../lib/appUpdate';
 import { RevealProvider } from '../components/PersonReveal';
-import { prefersReducedMotion } from '../lib/motion';
+import { prefersReducedMotion, markNavigation } from '../lib/motion';
 import { ICON } from '../lib/ui';
 import { IconSearch } from '@tabler/icons-react';
 
@@ -78,6 +78,9 @@ export function AppShellLayout() {
   useEffect(() => {
     if (consumeUpdate()) window.location.reload();
   }, [loc.pathname]);
+
+  // A new page may arrive with its entrance motion again; a tab switch inside it closes that (lib/motion, G8).
+  useEffect(() => { markNavigation(); }, [loc.pathname]);
 
   // Force the light color scheme for the duration of any print. print.css paints the page white, but
   // Mantine's dark-scheme text vars stay light — printing from dark mode would put near-white text on

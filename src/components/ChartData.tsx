@@ -3,7 +3,7 @@ import { VisuallyHidden, Table, Button, Text, Popover } from '@mantine/core';
 import { IconTable, IconDownload, IconInfoCircle } from '@tabler/icons-react';
 import { downloadCSV } from '../lib/csv';
 import { ICON } from '../lib/ui';
-import { SourceNote } from './SourceNote';
+import { SourceNote, sourceLine } from './SourceNote';
 
 /** Beyond this the table stops being a fallback and becomes an obstruction — see `cell` and the cap
  *  note below. The CSV still carries every row, which is what a reader who wants them all should take. */
@@ -89,18 +89,17 @@ export function ChartData({
 
   // One footer for both states, rendered directly under the chart either way — so opening the table
   // doesn't move the button that closes it to the far side of a screenful of rows.
+  // The source, its population and its period: one click away (G18). Under every chart they repeated the
+  // page footer's source six times on a person page; the count a reader wants is in the chart's own lead.
+  const provenance = sourceLine(n ?? rows.length, unit, period);
   const footer = (
     <SourceNote
-      n={n ?? rows.length}
-      unit={unit}
-      period={period}
       actions={
         <>
-          {about && (
-            // `trapFocus` moves focus into the note as it opens: Mantine hears Escape only from inside
-            // the dropdown, so with focus left on the button the note could not be closed by keyboard.
-            // `returnFocus` hands focus back to the button when it closes.
-            <Popover width={320} position="top-end" withArrow shadow="md" trapFocus returnFocus>
+          {/* `trapFocus` moves focus into the note as it opens: Mantine hears Escape only from inside the
+              dropdown, so with focus left on the button the note could not be closed by keyboard. `returnFocus`
+              hands focus back to the button when it closes. */}
+          <Popover width={320} position="top-end" withArrow shadow="md" trapFocus returnFocus>
               <Popover.Target>
                 <Button size="compact-xs" variant="subtle" color="gray" aria-label="About this chart" className="chart-about chart-tool"
                   leftSection={<IconInfoCircle size={ICON.compact} />}>
@@ -108,10 +107,10 @@ export function ChartData({
                 </Button>
               </Popover.Target>
               <Popover.Dropdown className="chart-about-note">
-                <Text size="xs">{about}</Text>
+                {about && <Text size="xs">{about}</Text>}
+                <Text size="xs" c="dimmed" mt={about ? 6 : 0} className="chart-source">{provenance}</Text>
               </Popover.Dropdown>
             </Popover>
-          )}
           <Button
             size="compact-xs"
             variant="subtle"

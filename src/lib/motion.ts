@@ -45,13 +45,43 @@ export const MOTION = {
  *
  * The default also caps Recharts' own: it uses 1500ms for lines and areas, and 400ms for bars.
  */
-export function chartAnim(reduce: boolean, duration: number = MOTION.slow) {
+export function chartAnim(reduce: boolean, duration: number = MOTION.base) {
   return {
     isAnimationActive: !reduce,
     animationBegin: 0,
-    animationDuration: duration,
+    // Never longer than the base step (G8): a 450ms rise held the Retention bars empty while the reader waited.
+    animationDuration: Math.min(duration, MOTION.base),
     animationEasing: MOTION.easeRecharts,
   } as const;
+}
+
+/**
+ * Whether what mounts now may arrive with a motion (G8): only as a page first draws, never after the reader
+ * switched a tab (what a tab reveals is simply there), never for a panel already seen this visit (`key`),
+ * and never under Reduce Motion. Read once, as the component mounts, so a re-render mid-animation cannot
+ * cut it short. A page navigation (`markNavigation`, AppShell) opens the gate again; a tab switch
+ * (`markTabSwitch`) closes it until then.
+ */
+let tabSwitched = false;
+const seen = new Set<string>();
+export function markTabSwitch() {
+  tabSwitched = true;
+  if (typeof document !== 'undefined') document.documentElement.dataset.tabSwitched = '';
+}
+export function markNavigation() {
+  tabSwitched = false;
+  if (typeof document !== 'undefined') delete document.documentElement.dataset.tabSwitched;
+}
+export function useEntrance(key?: string): boolean {
+  const [on] = useState(() => {
+    if (prefersReducedMotion() || tabSwitched) return false;
+    if (key) {
+      if (seen.has(key)) return false;
+      seen.add(key);
+    }
+    return true;
+  });
+  return on;
 }
 
 export function stagger(i: number): number {

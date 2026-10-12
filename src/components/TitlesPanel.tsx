@@ -12,6 +12,7 @@ import { usd, num } from '../lib/format';
 import { useTray } from '../state/tray';
 import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
+import { HourlyTag, HOURLY_TITLE } from './HourlyTag';
 import { EmptyState } from './EmptyState';
 import { TrayButton } from './TrayButton';
 import { MiniRange } from './MiniRange';
@@ -25,6 +26,8 @@ interface TitleRow {
   p25: number | null; p75: number | null; lo: number | null; hi: number | null;
   /** The employee category most of the title's holders are in (Faculty, Academic Staff, …). */
   cat: string | null;
+  /** The share of its paid people paid by the hour (every appointment in the code at FTE 0). */
+  hourly_share: number | null;
 }
 type SortKey = 'title' | 'job_code' | 'n' | 'med';
 
@@ -42,12 +45,12 @@ export function TitlesPanel() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
   const nav = useNavigate();
-  const { add, has } = useTray();
+  const { add, has, remove } = useTray();
   const where = `${snapWhere(snap ?? '')} AND ${whereAll(scope, filters)}`;
 
   const { data: titles } = useSql<TitleRow>(
     ['browse-titles', snap ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
-    `WITH pe AS (${peopleSql({ metric, where: `${where} AND job_code IS NOT NULL`, by: ['job_code'], extra: 'arg_max(title, salary) t, arg_max(employee_category, salary) cat' })}),
+    `WITH pe AS (${peopleSql({ metric, where: `${where} AND job_code IS NOT NULL`, by: ['job_code'], extra: 'arg_max(title, salary) t, arg_max(employee_category, salary) cat, bool_and(coalesce(fte, 0) = 0) hr' })}),
           cats AS (SELECT job_code, cat, count(*) c FROM pe WHERE cat IS NOT NULL GROUP BY job_code, cat),
           main AS (SELECT job_code, first(cat ORDER BY c DESC, cat) cat FROM cats GROUP BY job_code)
      SELECT job_code, arg_max(t, pay) title, count(*) FILTER (WHERE pay > 0) n,
@@ -55,7 +58,7 @@ export function TitlesPanel() {
         quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
         quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
         min(pay) FILTER (WHERE pay > 0) lo, max(pay) FILTER (WHERE pay > 0) hi,
-        any_value(main.cat) cat
+        any_value(main.cat) cat, avg(CASE WHEN hr THEN 1.0 ELSE 0.0 END) FILTER (WHERE pay > 0) hourly_share
      FROM pe LEFT JOIN main USING (job_code) GROUP BY job_code ORDER BY n DESC`,
     !!snap
   );
@@ -144,8 +147,9 @@ export function TitlesPanel() {
           hint={`Nothing in this scope${q || minN ? ' matches your search/filters' : ''}. Try widening the scope or clearing filters.`}
         />
       ) : (
+      <div className="sticky-head">
       <ScrollArea.Autosize type="auto" offsetScrollbars="present">
-        <Table miw={820} className="fold-table">
+        <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={820} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
@@ -176,6 +180,7 @@ export function TitlesPanel() {
                           <Highlight text={t.title} q={q.trim()} />
                         </Anchor>
                         {t.cat && <span className="cat-tag">{t.cat}</span>}
+                        {(t.hourly_share ?? 0) >= HOURLY_TITLE && <HourlyTag annual={t.med} share={t.hourly_share} />}
                       </div>
                       <Text className="fold-under" size="xs" c="dimmed">
                         {t.job_code} · {num(t.n)} people{t.p25 != null && t.p75 != null ? ` · ${usd(t.p25)} – ${usd(t.p75)}` : ''}
@@ -202,8 +207,10 @@ export function TitlesPanel() {
                     <Table.Td ta="right">
                       <TrayButton
                         inTray={inTray}
+                        name={t.title}
                         stopPropagation
                         onAdd={() => add({ type: 'title', id: t.job_code, label: t.title })}
+                        onRemove={() => remove(t.job_code)}
                       />
                     </Table.Td>
                   </Table.Tr>
@@ -213,6 +220,7 @@ export function TitlesPanel() {
           </Table.Tbody>
         </Table>
       </ScrollArea.Autosize>
+      </div>
       )}
       <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
       <Text size="xs" c="dimmed" mt="xs">

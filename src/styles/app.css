@@ -734,6 +734,8 @@ html:root[data-mantine-color-scheme='dark'] {
   --mantine-color-dark-0: var(--mantine-color-text);
 }
 
+/* The compare control (TrayButton): an icon in a 28px round button, the size a finger can hit (G19). */
+.peer-add { width: 28px; height: 28px; padding: 0; }
 /* TrayButton's outline "accent" text (compact-xs, used in every peer/school/title table) — Mantine's
    shade 7 measured short in both themes. Eight selectors collapse to four now that the
    per-theme value lives on --text-accent. */
@@ -978,6 +980,24 @@ path.recharts-tooltip-cursor {
     padding-inline: 10px;
   }
 }
+
+/* A tab list that runs past its edge (OverflowTabsList, G25): one row at every width, scrolled sideways, and a
+   side with more tabs beyond it fades out under a chevron that pages the list that way. */
+.tabs-overflow { position: relative; }
+.tabs-overflow .mantine-Tabs-list { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabs-overflow .mantine-Tabs-list::-webkit-scrollbar { display: none; }
+.tabs-overflow .mantine-Tabs-tab { flex: none; }
+.tabs-overflow[data-more-end] .mantine-Tabs-list { mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent); }
+.tabs-overflow[data-more-start] .mantine-Tabs-list { mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent); }
+.tabs-overflow[data-more-start][data-more-end] .mantine-Tabs-list {
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+}
+.tabs-more {
+  position: absolute; top: 0; bottom: 0; width: 32px; display: flex; align-items: center; justify-content: center;
+  color: var(--mantine-color-text); cursor: pointer;
+}
+.tabs-more-start { left: 0; }
+.tabs-more-end { right: 0; }
 
 /* Obvious, consistent keyboard focus on every interactive element. */
 /* Skip-to-content link: the first tab stop in the DOM, off-screen until it takes focus, then
@@ -1572,6 +1592,8 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .tab-rise > *:nth-child(2) { animation-delay: 40ms; }
 .tab-rise > *:nth-child(3) { animation-delay: 80ms; }
 .tab-rise > *:nth-child(n + 4) { animation-delay: 110ms; }
+/* What a tab switch reveals is simply there (G8, lib/motion \`markTabSwitch\`): the rise is for a page's first draw. */
+:root[data-tab-switched] .tab-rise > * { animation: none; }
 
 /* One fade+rise on the whole page when navigating between routes (a single beat, not a stagger —
    the tab-rise cascade above is for sections within one page). */
@@ -2223,10 +2245,28 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
      table onto a second line. */
   .fold-table th:not([data-fold]) { white-space: normal !important; }
   .fold-table th:not([data-fold]) .sort-th span { white-space: normal; text-wrap: balance; }
-  /* The tray button keeps its icon and its accessible name, and drops the word. */
-  .fold-table .tray-label { display: none; }
-  .fold-table .peer-add .mantine-Button-section { margin: 0; }
 }
+
+/* A long table keeps its column headers in view (G26): Schools after "Show all", Divisions' Titles and a title's
+   people. A header sticks to the nearest scroll container, which was each table's sideways scroller and its
+   card (Mantine cards clip with \`overflow: hidden\`), so it scrolled away with the page. Where the table fits
+   its card there is nothing to scroll sideways: the scroller stops being one, the card clips with \`clip\`
+   (which is not a scroll container), and the header sticks under the app's header. Narrower, the table
+   scrolls sideways in its card as before, and folds on a phone. */
+.sticky-head { container: sticky-head / inline-size; }
+/* Sticky only where the scroller has let go: inside a box that still scrolls sideways, a header told to keep
+   the app header's height clear of the box's top slid down over the first rows and took their taps. */
+.sticky-head thead[data-sticky],
+.sticky-head thead[data-sticky] th { position: static; }
+@container sticky-head (min-width: 820px) {
+  /* Autosize's own wrapper (inline \`overflow: auto\`), its root and its viewport. */
+  .sticky-head > div,
+  .sticky-head .mantine-ScrollArea-root,
+  .sticky-head .mantine-ScrollArea-viewport { overflow: visible !important; }
+  .sticky-head thead[data-sticky],
+  .sticky-head thead[data-sticky] th { position: sticky; }
+}
+.mantine-Card-root:has(.sticky-head) { overflow: clip; }
 
 /* A job code beside its title: small and monospace — the code is an identifier to match against a pay
    plan, not a word to read. */
@@ -2353,6 +2393,15 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   border-radius: 50%;
 }
 
+/* A histogram bar that filters (SalaryHistogram, G21): a button a keyboard reaches. Focus draws the accent round
+   it, as the pointer's hover dims the others. */
+.hist-pick { cursor: pointer; outline: none; }
+div.hist-pick:focus-visible { box-shadow: 0 0 0 2px var(--mantine-color-accent-6); border-radius: 4px; }
+g.hist-pick:focus-visible path { stroke: var(--mantine-color-accent-7); stroke-width: 2px; }
+
+/* A title paid by the hour (HourlyTag, G23): the category tag's shape, in the ink so it reads as a fact about
+   the figure beside it rather than one more category. */
+.cat-tag.hourly-tag { color: var(--mantine-color-text); border-color: var(--guide-strong); }
 /* A title's main employee category, beside its name on Divisions → Titles. */
 .cat-tag {
   display: inline-block;

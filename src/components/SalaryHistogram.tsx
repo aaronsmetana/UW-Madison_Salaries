@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import {
-  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Rectangle, type RectangleProps,
 } from 'recharts';
 import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys, CHART_FONT, fmtCount } from '../lib/chartStyle';
 import { Text } from '@mantine/core';
@@ -8,9 +8,12 @@ import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT, BAND_IQR } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
 import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num, pct } from '../lib/format';
-import { MOTION, chartAnim, prefersReducedMotion, useMounted } from '../lib/motion';
+import { chartAnim, useMounted, useEntrance } from '../lib/motion';
 import { ChartData } from './ChartData';
 import { Z } from '../lib/layers';
+
+/** What Recharts hands a bar's \`shape\`: the rectangle's own props, its datum and its index. */
+type BarShape = { payload: { lo: number; hi: number; n: number; range: string }; index: number } & RectangleProps;
 
 /** Below this cohort size, the histogram renders as segmented "brick" bars — a normal bar-chart
  *  silhouette where each bar is visibly built from horizontal bricks, 1 brick = 1 person — so small
@@ -75,9 +78,27 @@ export function SalaryHistogram({
   /** Optional: clicking a bar reports that bin's [lo, hi) salary range (e.g. to filter a people list). */
   onBinClick?: (range: { lo: number; hi: number }) => void;
 }) {
-  const reduceMotion = prefersReducedMotion();
-  const mounted = useMounted();
+  // Drawn at their final state at once where no entrance plays (a tab switch, Reduce Motion: G8).
+  const entrance = useEntrance();
+  const mounted = useMounted() || !entrance;
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  /** A bar that filters is a button (G21): reached by Tab, pressed with Enter or Space, lit while focused as it
+   *  is while pointed at, and named for what pressing it shows. It was a pointer-only target with its use in
+   *  a caption. */
+  // `dim`: whether focus also dims the other bars, as a pointer does. Not on Recharts' bars: the redraw that
+  // dimming sets off replaces the focused bar's element, and focus goes with it.
+  const binControl = (b: { lo: number; hi: number; n: number; range: string }, i: number, dim = true) => ({
+    role: 'button' as const,
+    tabIndex: 0,
+    className: 'hist-pick',
+    'aria-label': `Show the ${num(b.n)} ${b.n === 1 ? 'person' : 'people'} paid ${b.range}`,
+    onKeyDown: (e: KeyboardEvent<Element>) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      onBinClick?.({ lo: b.lo, hi: b.hi });
+    },
+    ...(dim ? { onFocus: () => setActiveIdx(i), onBlur: () => setActiveIdx(null) } : {}),
+  });
   // Both render paths wrap in `.hist-plot`, so one measurement serves both. Only the axis labels need
   // it, and only to decide how many of them there is room for.
   const plotRef = useRef<HTMLDivElement>(null);
@@ -260,12 +281,14 @@ export function SalaryHistogram({
             const width = (at(b.hi) - at(b.lo)) * 100;
             const isMarkerCol = i === markerBin;
             const dimmed = activeIdx != null && activeIdx !== i;
+            const pick = onBinClick && b.n > 0;
             return (
               <div
                 key={i}
                 onMouseEnter={b.n > 0 ? () => setActiveIdx(i) : undefined}
                 onMouseLeave={b.n > 0 ? () => setActiveIdx(null) : undefined}
-                onClick={onBinClick && b.n > 0 ? () => onBinClick({ lo: b.lo, hi: b.hi }) : undefined}
+                onClick={pick ? () => onBinClick({ lo: b.lo, hi: b.hi }) : undefined}
+                {...(pick ? binControl(b, i) : {})}
                 style={{
                   position: 'absolute',
                   left: `${left}%`,
@@ -391,13 +414,19 @@ export function SalaryHistogram({
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} tickFormatter={fmtCount} />
             <Tooltip content={<BarsHistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Bar
-              {...chartAnim(reduceMotion, MOTION.slow)}
+              {...chartAnim(!entrance)}
               dataKey="n"
               radius={BAR_RADIUS}
               onClick={onBinClick ? (d: { lo: number; hi: number }) => onBinClick({ lo: d.lo, hi: d.hi }) : undefined}
               onMouseEnter={(_, i) => setActiveIdx(i)}
               onMouseLeave={() => setActiveIdx(null)}
               cursor={onBinClick ? 'pointer' : undefined}
+              shape={onBinClick ? (raw: unknown) => {
+                const props = raw as BarShape;
+                return props.payload.n > 0
+                  ? <g {...binControl(props.payload, props.index, false)}><Rectangle {...props} /></g>
+                  : <Rectangle {...props} />;
+              } : undefined}
             >
               {data.map((_, i) => {
                 const dimmed = activeIdx != null && activeIdx !== i;

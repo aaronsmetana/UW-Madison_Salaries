@@ -126,7 +126,7 @@ test('a school row opens the school; its chevron and add button do not; its depa
 
   await row.locator('.peer-add').click();
   await expect(page).toHaveURL(/\/divisions\?/);
-  await expect(row.locator('.peer-add')).toContainText('In set');
+  await expect(row.locator('.peer-add')).toHaveAttribute('aria-pressed', 'true');
 
   await row.locator('td').nth(2).click();
   await expect(page).toHaveURL(new RegExp(`/school/${encodeURIComponent('School of Education')}`));
