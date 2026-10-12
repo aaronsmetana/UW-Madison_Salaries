@@ -145,7 +145,10 @@ test('a title whose middle 90% already fills its axis is drawn whole', async ({ 
   await expect(strip.locator('[data-pile]')).toHaveCount(0);
   // The axis runs from the lowest pay to the highest: its round ticks inside that span, the first and last
   // within a step of its ends, and the chart's own table names both.
-  const ticks = (await strip.locator('.strip-tick-label').allTextContents()).map((t) => Number(t.replace(/[^\d.]/g, '')) * 1000);
+  const all = (await strip.locator('.strip-tick-label').allTextContents()).map((t) => Number(t.replace(/[^\d.]/g, '')) * 1000);
+  // The axis's own start is named first (P9), to the thousand: the lowest pay.
+  expect(Math.abs(all[0] - pays[0]), 'the axis does not name where it starts').toBeLessThanOrEqual(500);
+  const ticks = all.slice(1);
   expect(ticks.length).toBeGreaterThanOrEqual(2);
   const step = ticks[1] - ticks[0];
   expect(ticks[0]).toBeGreaterThanOrEqual(pays[0] - 1);

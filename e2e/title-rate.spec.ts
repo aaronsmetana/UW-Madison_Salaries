@@ -51,6 +51,9 @@ test('a part-time appointment is placed in its title at its full-time rate, its 
      SELECT regr_intercept(y, x) + regr_slope(y, x) * (SELECT x FROM pp WHERE person_key = '${p.pk}') expected
      FROM pp WHERE person_key <> '${p.pk}' AND y > 0 AND x IS NOT NULL`,
   );
+  // Where tenure explains little of the title's pay, the page says so and expects nothing (P11).
+  await expect(page.locator('.tenure-strip, .tenure-weak').first()).toBeAttached({ timeout: 60_000 });
+  if (await page.locator('.tenure-weak').count()) return;
   const cells = await page.locator('.tenure-strip .tenure-cell').allInnerTexts();
   const money = (t: string) => Number(t.match(/\$([\d,]+)/)![1].replace(/,/g, ''));
   expect(Math.abs(money(cells[1]) - fit.expected), cells[1]).toBeLessThanOrEqual(1);

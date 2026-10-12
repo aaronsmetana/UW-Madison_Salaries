@@ -133,9 +133,9 @@ export function StartingGroup({ personKey, first }: {
           <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} ticks={yTicks} domain={yTicks.length ? [yTicks[0], yTicks[yTicks.length - 1]] : undefined} />
           <Tooltip content={<GroupTip />} />
           {showBreak && <ReferenceLine x={brkX} stroke="var(--mantine-color-gray-4)" strokeDasharray="2 4" />}
-          {/* 10th–90th, then the middle 50% drawn as it is on every chart (BAND_IQR). */}
+          {/* 10th–90th, then the middle 50% drawn as it is on every chart (BAND_IQR): borderless tints (P10). */}
           <Area dataKey="band10" stroke="none" fill={BAND_IQR.fill} isAnimationActive={false} connectNulls={false} />
-          <Area dataKey="band25" stroke={BAND_IQR.edge} strokeWidth={BAND_IQR.edgeWidth} fill={BAND_IQR.fill} isAnimationActive={false} connectNulls={false} />
+          <Area dataKey="band25" stroke="none" fill={BAND_IQR.fill} isAnimationActive={false} connectNulls={false} />
           <Line className="group-median" dataKey="median" stroke="var(--guide-strong)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
           <Line dataKey="mine" stroke={MARK_SELF} strokeWidth={2} dot isAnimationActive={false} connectNulls={false} />
           {showBreak && <Customized component={<BreakLabel at={brkX} texts={[brk.label, brk.short]} />} />}

@@ -9,7 +9,7 @@ import { Text, VisuallyHidden } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { num, usd, fmtYears } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
-import { tenureFit, onCurveBand, TENURE_MIN_PEERS } from '../lib/stats';
+import { tenureFit, onCurveBand, TENURE_MIN_PEERS, WEAK_FIT } from '../lib/stats';
 import { measureText, placeEndLabels } from '../lib/labelLayout';
 import { heldAt, placeLabel, sampleSegment, type Held, type Placement } from '../lib/labelPlace';
 import { nudgeApart, NUDGE_MAX } from '../lib/nudge';
@@ -351,6 +351,11 @@ function DotsLayer({
  * are smaller and nudged apart (lib/nudge), so a hundred people on one salary read as a hundred people.
  * Pointing names the nearest person, with a crosshair to their values; a click opens them.
  */
+/** Where a percentile leaves someone, in words. */
+function standingWords(p: number): string {
+  return p < 20 ? 'near the bottom' : p < 40 ? 'below the middle' : p <= 60 ? 'middle of the pack' : p <= 80 ? 'above the middle' : 'near the top';
+}
+
 export function TenurePayScatter({
   points,
   self,
@@ -388,6 +393,10 @@ export function TenurePayScatter({
   // The cohort only: the dimmed (outside a chosen "Same school") are drawn, not fitted.
   const peerPts = points.filter((p) => !p.isSelf && !p.dimmed).map((p) => ({ x: p.tenure, y: p.pay }));
   const fit = self ? tenureFit(peerPts, { x: self.tenure, y: self.pay }) : null;
+  // A fit that explains under a quarter of the differences in pay (P11): no expected pay, no verdict, a faint
+  // curve, and the page says that tenure barely predicts pay here. It headlined "Expected $118,041" from a fit
+  // that explained 9%.
+  const weak = fit != null && fit.r2 < WEAK_FIT;
   const reg = fit ? { intercept: fit.intercept, slope: fit.slope } : null;
   const tMax = Math.max(10, ...points.map((p) => p.tenure), self?.tenure ?? 0);
   // To the next five years, not ten: a longest tenure of 31.5 years drew an axis to 40.
@@ -511,7 +520,15 @@ export function TenurePayScatter({
           their years, what they are paid, the difference, and where that leaves them once tenure is allowed
           for. Never a warning, below the curve or above it: a status, in the neutral, and the accent's tint
           only for "on". */}
-      {fit && self && (
+      {fit && self && weak && (
+        <>
+          <Text size="sm" fw={600} className="tenure-weak" data-verdict="weak">Tenure barely predicts pay for this title</Text>
+          <Text size="xs" c="dimmed" mt={4} mb="md">
+            It explains about {Math.round(fit.r2 * 100)}% of the differences in pay among the {num(fit.n)} others, so no pay is expected from it.
+          </Text>
+        </>
+      )}
+      {fit && self && !weak && (
         <>
           <div className="tenure-callout tenure-strip" data-verdict={fit.verdict}>
             <div className="tenure-cell tenure-status">
@@ -535,8 +552,12 @@ export function TenurePayScatter({
               </span>
             </div>
             <div className="tenure-cell">
-              <span className="tenure-cell-label">Allowing for tenure</span>
-              <span className="tenure-cell-value">Paid more than {fit.adjustedPercentile}%</span>
+              {/* In words a reader uses (P12): it read "Allowing for tenure · Paid more than 50%". A standing on
+                  screen stays a share paid less, as everywhere (copyWords); the words say where that leaves them. */}
+              <span className="tenure-cell-label">After adjusting for tenure</span>
+              <span className="tenure-cell-value">
+                Paid more than {fit.adjustedPercentile}% <span className="tenure-cell-note">({standingWords(fit.adjustedPercentile)})</span>
+              </span>
             </div>
           </div>
           <Text size="xs" c="dimmed" mt={6} mb="md">
@@ -600,10 +621,11 @@ export function TenurePayScatter({
             // Room at either end for the bands of people paid over and under the window.
             padding={{ top: above ? BAND_H + BAND_GAP * 2 : 10, bottom: below ? BAND_H + BAND_GAP * 2 : 10 }}
           />
-          {reg && <Customized component={FitBandLayer} fit={reg} xMax={xMax} zoom={zoom} />}
+          {reg && !weak && <Customized component={FitBandLayer} fit={reg} xMax={xMax} zoom={zoom} />}
           {reg && (
             <ReferenceLine
-              className="tenure-fit"
+              className={weak ? 'tenure-fit tenure-fit-weak' : 'tenure-fit'}
+              strokeOpacity={weak ? 0.35 : 1}
               stroke={TREND_LINE.stroke}
               strokeWidth={TREND_LINE.width}
               strokeLinecap="round"

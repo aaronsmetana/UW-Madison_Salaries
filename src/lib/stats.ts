@@ -66,6 +66,9 @@ export const MIN_GROUP = 5;
  *  through seven points says more about those seven people than about the title. The comparison
  *  brief already required this many; the person page drew a line and a verdict from two. */
 export const TENURE_MIN_PEERS = 8;
+/** Below this share of the differences in pay explained (R²), a tenure fit is not read as an expectation
+ *  anywhere (P11): the person page says tenure barely predicts pay, and the raise case claims nothing from it. */
+export const WEAK_FIT = 0.25;
 
 /** A gap smaller than this share of pay is "on the curve". The brief's own rule ("under 2% of pay —
  *  omitted as too small to claim"), now the only rule: the person page called a 1.2% gap "Below". */

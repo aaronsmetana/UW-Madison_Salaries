@@ -360,11 +360,16 @@ export function PeerStrip({
   const medBox: Box = medRight
     ? { x0: medX + 6, y0: popTop + 2, x1: medX + 6 + sizes.med, y1: popTop + 2 + sizes.labelH }
     : { x0: medX - 6 - sizes.med, y0: popTop + 2, x1: medX - 6, y1: popTop + 2 + sizes.labelH };
-  // The band's name inside its foot, right-aligned: the full one where it fits, else its first words, else none.
-  const bandRoom = bandX1 - bandX0 - 16;
+  // The band's name along its top edge (P10), on the side of the median's line its own label leaves free: the
+  // full name where it fits, else its first words, else none. It sat in the band's foot, inside a bordered box
+  // that read as a selection.
+  const bandLeft = medRight;
+  const bandRoom = bandLeft ? medX - 6 - (bandX0 + 8) : bandX1 - 8 - (medX + 6);
   const bandWords = sizes.band && sizes.band <= bandRoom ? 'full' : sizes.bandShort && sizes.bandShort <= bandRoom ? 'short' : null;
   const bandW = bandWords === 'full' ? sizes.band : bandWords === 'short' ? sizes.bandShort : 0;
-  const bandBox: Box = { x0: bandX1 - 8 - bandW, y0: plotH - 6 - sizes.labelH, x1: bandX1 - 8, y1: plotH - 6 };
+  const bandBox: Box = bandLeft
+    ? { x0: bandX0 + 8, y0: popTop + 2, x1: bandX0 + 8 + bandW, y1: popTop + 2 + sizes.labelH }
+    : { x0: bandX1 - 8 - bandW, y0: popTop + 2, x1: bandX1 - 8, y1: popTop + 2 + sizes.labelH };
   const bandText = `${BAND_IQR.label[0].toUpperCase()}${BAND_IQR.label.slice(1)}`;
 
   // The subject's name: placed by lib/labelPlace, as close to their dot as the people, the words and the
@@ -394,9 +399,12 @@ export function PeerStrip({
   // under the break beside it ("46 under $100k" says that end's figure already).
   const ticks = useMemo(() => {
     if (!(plotW > 0) || !(span > 0)) return [];
-    return moneyTicks(axisMin, axisMax, Math.max(2, Math.floor(plotW / 90)))
+    const round = moneyTicks(axisMin, axisMax, Math.max(2, Math.floor(plotW / 90)))
       .filter((t) => t >= axisMin - 1e-6 && t <= axisMax + 1e-6)
       .filter((t) => !(lows.length && px(t) < 60) && !(highs.length && px(t) > plotW - 60));
+    // The axis's own start, named, where no pile stands there and its first round step is well in (P9): the
+    // lowest dots sat on an unlabelled stretch left of "$105k".
+    return !lows.length && (!round.length || px(round[0]) > 48) ? [axisMin, ...round] : round;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `px` is a function of `at` and `plotW`
   }, [plotW, span, axisMin, axisMax, lows.length, highs.length, at]);
 
@@ -620,7 +628,8 @@ export function PeerStrip({
           )}
           {plotW > 0 && (
             <svg width={plotW} height={plotH} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
-              {/* The middle 50% (BAND_IQR): a rounded band behind the people, edged, the height of the swarm. */}
+              {/* The middle 50% (BAND_IQR): a borderless tint behind the people, the height of the swarm, named along
+                  its top edge (P10). Edged, it looked like a selection box. */}
               <rect
                 className="band-iqr"
                 x={bandX0}
@@ -629,8 +638,6 @@ export function PeerStrip({
                 height={popH - (useRibbon ? 0 : 4)}
                 rx={useRibbon ? 0 : 8}
                 fill={BAND_IQR.fill}
-                stroke={BAND_IQR.edge}
-                strokeWidth={BAND_IQR.edgeWidth}
               />
               <line
                 className="strip-median"
@@ -686,14 +693,14 @@ export function PeerStrip({
             Median {fmtK(median)}
           </div>
           {bandWords && (
-            <div className="strip-label strip-band-label" style={{ left: bandX1 - 8, bottom: 6, transform: 'translateX(-100%)' }}>
+            <div className="strip-label strip-band-label" style={bandLeft ? { left: bandX0 + 8, top: popTop + 2 } : { left: bandX1 - 8, top: popTop + 2, transform: 'translateX(-100%)' }}>
               {bandWords === 'full' ? `${bandText} · ${fmtK(p25)}–${fmtK(p75)}` : bandText}
             </div>
           )}
           {/* The band's two names, measured where nothing is drawn, to choose the one that fits. */}
           <div aria-hidden style={{ position: 'absolute', left: -10000, top: 0, visibility: 'hidden' }}>
-            <div ref={bandRef} className="strip-label" style={{ position: 'relative' }}>{bandText} · {fmtK(p25)}–{fmtK(p75)}</div>
-            <div ref={bandShortRef} className="strip-label" style={{ position: 'relative' }}>{bandText}</div>
+            <div ref={bandRef} className="strip-label" style={{ position: 'relative', width: 'max-content' }}>{bandText} · {fmtK(p25)}–{fmtK(p75)}</div>
+            <div ref={bandShortRef} className="strip-label" style={{ position: 'relative', width: 'max-content' }}>{bandText}</div>
           </div>
 
           {/* The subject's name, where lib/labelPlace put it. Measured before it is placed, so it is drawn

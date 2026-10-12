@@ -19,7 +19,7 @@ import { usd, pct, fullName, plural, fmtToday, fmtGrade } from '../lib/format';
 import { useDocTitle } from '../lib/useDocTitle';
 import { downloadCSV } from '../lib/csv';
 import { toReal } from '../lib/cpi';
-import { tenureFit, TENURE_MIN_PEERS, printedPercentile } from '../lib/stats';
+import { tenureFit, TENURE_MIN_PEERS, WEAK_FIT, printedPercentile } from '../lib/stats';
 import { readPref, writePref, clearPref } from '../lib/prefs';
 import { SearchBox } from '../components/SearchBox';
 import { PageHeader } from '../components/PageHeader';
@@ -467,7 +467,8 @@ export default function Reports() {
     // argues shortfalls), the opposite sign of tenureFit's own.
     const fit = tenureFit(pts, { x: tenureYears, y: subjectPay });
     if (!fit) return null;
-    return { n: fit.n, expected: fit.expected, gap: -fit.gap, verdict: fit.verdict, perYear: fit.slope };
+    // `weak`: tenure explains under a quarter of pay here (P11), so no verdict of it is claimed or praised.
+    return { n: fit.n, expected: fit.expected, gap: -fit.gap, verdict: fit.verdict, perYear: fit.slope, weak: fit.r2 < WEAK_FIT, r2: fit.r2 };
   }, [peerListRows, subjectPay, tenureYears, subjectKey]);
 
   // Points for the (detailed-format-only) tenure-vs-pay scatter — same-title peers + the subject. Peer
@@ -767,7 +768,7 @@ export default function Reports() {
     if (compression.count > 0) out.push({ kind: 'compression', value: plural(compression.count, 'recent hire'), label: `hired within the last 2 years, paid at or above ${subjectFirst}`, detail: compression.maxGapPay != null ? `up to ${usd(compression.maxGapPay)}` : '' });
     // Gate: only a gap tenureFit calls "below" (2% of pay or more) is claimed — under that is within
     // noise and reads as reaching (the private checklist still flags it; the scatter stays as data).
-    if (tenureRegression?.verdict === 'below') {
+    if (tenureRegression?.verdict === 'below' && !tenureRegression.weak) {
       out.push({
         kind: 'tenureTrend',
         value: usd(tenureRegression.gap),
@@ -912,7 +913,8 @@ export default function Reports() {
       seniorPaidLess: tenureYears == null ? 0 : (peerListRows ?? []).filter((r) => r.person_key !== subjectKey && r.tenure != null && r.tenure > tenureYears && r.pay > 0 && r.pay < subjectPay).length,
       raise: raiseCycle,
       market: marketPosition && isRange(band) ? marketPosition : null,
-      tenure: tenureRegression,
+      // A weak fit predicts nothing (P11): no "in line with what tenure predicts" against the case.
+      tenure: tenureRegression?.weak ? null : tenureRegression,
       overP75: recommended != null && stats.p75 != null && recommended > stats.p75 ? stats.p75 : null,
       tenureExplainsMatch: match?.tenure && match.tenure.perYear > 0 && match.tenure.explained >= match.gap ? (config.anonymize ? 'the person the case asks to match' : match.name) : null,
       selfReported: activeFactors.length,
@@ -927,14 +929,14 @@ export default function Reports() {
     // subjectPct/medianPct comparison mirrors the document's raise-cycle gating (Phase C): the subject
     // line is dropped when the subject out-raised peers, so the checklist explains that omission too.
     const raiseSubjectOutpaced = raiseCycle?.subjectPct != null && raiseCycle.subjectPct > raiseCycle.medianPct;
-    const tenureTrendMeaningful = tenureRegression?.verdict === 'below';
+    const tenureTrendMeaningful = tenureRegression?.verdict === 'below' && !tenureRegression.weak;
     return [
       { label: 'Market standing', ok: has('standing') && standing != null && standing.min != null, note: standing == null || standing.min == null ? 'need ≥1 same-title peer' : `${standing?.pools.length ?? 0} pools`, sectionId: 'standing' },
       { label: 'Standing and gap to median', ok: !!marketProof, note: marketProof ? undefined : 'need ≥4 same-title peers', sectionId: 'highlights' },
       { label: 'Tenure inversions', ok: stats.invCount > 0, note: stats.invCount > 0 ? plural(stats.invCount, 'peer') : 'no lower-tenure, higher-paid peers', sectionId: 'highlights' },
       { label: `Guideline compression (${exempt === false ? '5%' : exempt === true ? '8%' : '5–8%'})`, ok: (guidelineCompression?.count ?? 0) > 0, note: guidelineCompression == null ? 'need same-title peers with ≥5 fewer years' : guidelineCompression.count > 0 ? plural(guidelineCompression.count, 'peer') : 'differential met vs. junior peers', sectionId: 'highlights' },
       { label: 'Supervisory differential', ok: supervisoryCase.reports.some((r) => r.belowFloor), note: config.supervisees.length === 0 ? 'name a direct report under Supervisory scope' : supervisoryCase.reports.some((r) => r.belowFloor) ? undefined : 'reports are already ≥15% below', sectionId: 'highlights' },
-      { label: 'Tenure-trend regression', ok: tenureTrendMeaningful, note: tenureRegression == null ? `need ≥${TENURE_MIN_PEERS} same-title peers with tenure` : tenureRegression.verdict === 'above' ? 'paid above the tenure trend' : tenureRegression.verdict === 'on' ? 'gap under 2% of pay — omitted as too small to claim' : undefined, sectionId: 'highlights' },
+      { label: 'Tenure-trend regression', ok: tenureTrendMeaningful, note: tenureRegression == null ? `need ≥${TENURE_MIN_PEERS} same-title peers with tenure` : tenureRegression.weak ? `tenure explains about ${Math.round(tenureRegression.r2 * 100)}% of pay for this title — too little to claim` : tenureRegression.verdict === 'above' ? 'paid above the tenure trend' : tenureRegression.verdict === 'on' ? 'gap under 2% of pay — omitted as too small to claim' : undefined, sectionId: 'highlights' },
       { label: 'Grade-band position', ok: proofs.some((p) => p.kind === 'gradeband'), note: band == null ? `no published range for grade ${grade ?? '—'}` : proofs.some((p) => p.kind === 'gradeband') ? undefined : isRange(band) ? 'above the band midpoint' : `at or above the grade ${grade} minimum, the only figure published`, sectionId: 'highlights' },
       { label: 'Market-competitive range', ok: marketPosition?.belowCompetitive ?? false, note: marketPosition == null ? (band == null ? `no published range for grade ${grade ?? '—'}` : `grade ${grade} is published with a minimum only`) : marketPosition.belowCompetitive ? `compa-ratio ${marketPosition.compa.toFixed(2)}` : 'within the 85–115% range', sectionId: 'highlights' },
       { label: 'Raise-cycle comparison', ok: raiseCycle != null, note: raiseCycle == null ? 'need a prior snapshot for this title' : raiseSubjectOutpaced ? 'subject out-raised peers — subject line omitted from document' : undefined, sectionId: 'history' },
@@ -981,7 +983,7 @@ export default function Reports() {
   const questions = subjectPay == null ? [] : reviewerQuestions({
     subjectFirst, pay: subjectPay,
     group: stats.n > 0 ? { label: docCohortLabel, n: stats.n, paidMoreThan: stats.percentile } : null,
-    tenure: tenureRegression,
+    tenure: tenureRegression?.weak ? null : tenureRegression,
     matchTenure: match ? matchTenureSentence(match, subjectFirst, match.name) : null,
     raise: raiseCycle,
     market: marketPosition && isRange(band) ? marketPosition : null,

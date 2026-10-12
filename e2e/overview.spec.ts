@@ -1,3 +1,4 @@
+import { oracle } from './oracle';
 import { test, expect, type Page } from '@playwright/test';
 import { parseColor, contrast } from './color';
 
@@ -248,7 +249,7 @@ test('choosing the same school dims the others where they stand', async ({ page 
 /**
  * The subject's name sits beside their dot, inside the plot, off every person and off the median's and the
  * band's names; a leader runs to it only when it has had to sit away. The median and the middle 50% are
- * named where they are: the median's name at the top of its line, the band's inside its foot.
+ * named where they are: the median's name at the top of its line, the band's along its top edge (P10), clear of it.
  */
 for (const width of [1440, 375]) {
   test(`the subject's name and the plot's own names are placed clear of each other and of the people (${width}px)`, async ({ page }) => {
@@ -277,7 +278,10 @@ for (const width of [1440, 375]) {
         onMed: med ? hit(you, med) : false,
         onBand: band ? hit(you, band) : false,
         medNearTop: med ? Math.abs(med.top - medLine.top) <= 6 && Math.abs((med.left + med.right) / 2 - medLine.left) < med.width : true,
-        bandInside: band ? band.left >= bandRect.left - 0.5 && band.right <= bandRect.right + 0.5 && band.bottom <= bandRect.bottom + 0.5 : true,
+        bandInside: band ? band.left >= bandRect.left - 0.5 && band.right <= bandRect.right + 0.5 && Math.abs(band.top - bandRect.top) <= 6 : true,
+        bandOnMed: band && med ? hit(box(band), med) : false,
+        hasBand: !!band,
+        bandEdged: getComputedStyle(el.querySelector('rect.band-iqr')!).stroke !== 'none',
         medText: el.querySelector('.strip-median-label')?.textContent,
       };
     });
@@ -289,7 +293,11 @@ for (const width of [1440, 375]) {
     expect(g.leader, `a leader where the name is ${Math.round(g.dist)}px off`).toBe(g.dist >= 11);
     expect(g.medText).toMatch(/^Median \$\d+k$/);
     expect(g.medNearTop, "the median's name is not at the top of its line").toBe(true);
-    expect(g.bandInside, "the band's name is not inside its foot").toBe(true);
+    // At desktop width there is room beside the median's name for the band's own.
+    if (width === 1440) expect(g.hasBand, "the band is not named").toBe(true);
+    expect(g.bandInside, "the band's name is not along its top edge").toBe(true);
+    expect(g.bandOnMed, "the band's name lies on the median's").toBe(false);
+    expect(g.bandEdged, 'the middle 50% is a bordered box again (P10)').toBe(false);
   });
 }
 
@@ -300,7 +308,11 @@ for (const width of [1440, 375]) {
  * expected, signed, and its share of the expected.
  */
 test('the tenure strip states the verdict and four figures that agree, and the curve is solid', async ({ page }) => {
-  await open(page, AARON);
+  // A title where tenure explains much of pay (R² over 0.5 in the data): Library Assistant III.
+  const [p] = await oracle<{ pk: string }>(
+    `SELECT person_key pk FROM $SAL WHERE snapshot_id = (SELECT max(snapshot_id) FROM $SAL) AND job_code = 'LM010' AND salary > 0
+     GROUP BY 1 HAVING count(*) = 1 ORDER BY 1 LIMIT 1`);
+  await open(page, p.pk);
   const strip = page.locator('.tenure-strip');
   await expect(strip).toHaveAttribute('data-verdict', /^(on|above|below)$/);
   const cells = await strip.locator('.tenure-cell').allInnerTexts();
@@ -315,8 +327,20 @@ test('the tenure strip states the verdict and four figures that agree, and the c
   expect(Math.abs(diff - (actual - expected)), cells[3]).toBeLessThanOrEqual(1);
   const share = Number(cells[3].match(/\(([−+]?)([\d.]+)%\)/)![2]);
   expect(Math.abs(share - Math.abs(actual - expected) / expected * 100)).toBeLessThanOrEqual(0.06);
-  expect(cells[4]).toMatch(/^Allowing for tenure\s+Paid more than \d+%$/);
+  expect(cells[4]).toMatch(/^After adjusting for tenure\s+Paid more than \d+% \((near the bottom|below the middle|middle of the pack|above the middle|near the top)\)$/);
   expect(await page.locator('.tenure-fit line').getAttribute('stroke-dasharray')).toBeNull();
+});
+
+/** Where tenure explains under a quarter of pay (P11): no expected pay, no verdict, a faint curve, and the page
+ *  says so. Aaron's title, System Engineer IV, is one: about 9%. */
+test('where tenure barely predicts pay, the page says so and expects nothing from it', async ({ page }) => {
+  await open(page, AARON);
+  await expect(page.locator('.tenure-weak')).toHaveText('Tenure barely predicts pay for this title', { timeout: 60_000 });
+  await expect(page.locator('.tenure-strip')).toHaveCount(0);
+  await expect(page.getByText(/^Expected at/)).toHaveCount(0);
+  await expect(page.locator('.tenure-fit')).toHaveClass(/tenure-fit-weak/);
+  expect(Number(await page.locator('.tenure-fit line').getAttribute('stroke-opacity'))).toBeLessThan(0.5);
+  await expect(page.locator('.tenure-fit-band')).toHaveCount(0);
 });
 
 /**
@@ -352,8 +376,8 @@ for (const width of [1440, 375]) test(`the subject's guides reach both axes and 
   expect(Math.abs(g.chipX - g.d.x), 'the chip is not where the guide meets the axis').toBeLessThanOrEqual(0.5);
   expect(g.chipText).toMatch(/^\d+\.\d yrs$/);
   expect(g.covered, 'the chip sits on a tick label').toBe(0);
-  // Its years are the subject's, as the strip's "Expected at" says them.
-  await expect(page.locator('.tenure-strip')).toContainText(`Expected at ${g.chipText}`);
+  // Its years are the subject's, as their Tenure figure says them.
+  await expect(page.locator('.person-figures .stat-cell').filter({ hasText: /^Tenure/ })).toContainText(g.chipText);
 });
 
 /** "Same school" dims the scatter's others in place too, and fits its line to the school. */
@@ -364,9 +388,9 @@ test('choosing the same school dims the scatter\'s others where they stand and r
     line: el.querySelector('.tenure-fit line')?.getAttribute('y2'),
   }));
   const before = await read();
-  const expected = await page.locator('.tenure-strip .tenure-cell').nth(1).innerText();
   await page.getByText(/^Same school \d+$/).click();
-  await expect(page.locator('.tenure-strip .tenure-cell').nth(1)).not.toHaveText(expected);
+  // Refitted: the line moves (whatever the strip above it says; for this title the fit is weak, P11).
+  await expect.poll(async () => (await read()).line).not.toBe(before.line);
   await page.waitForTimeout(600);
   const after = await read();
   expect(after.dots.map((d) => d.at).sort(), 'someone moved').toEqual(before.dots.map((d) => d.at).sort());
@@ -439,4 +463,20 @@ test('the strip can be walked from the keyboard, person by person, and Enter ope
   const name = (await page.locator('.peer-strip-tip').innerText()).split(' · ')[0];
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(name, { timeout: 60_000 });
+});
+
+/** The strip's axis names its own start where no pile stands there (P9): the lowest dots sat on an unlabelled
+ *  stretch left of the first round step. */
+test("the strip's axis names where it starts", async ({ page }) => {
+  await open(page, AARON);
+  const strip = page.locator('.peer-strip');
+  await expect(strip.locator('.strip-tick').first()).toBeAttached({ timeout: 60_000 });
+  await expect(strip.locator('.peer-strip-pile-label')).toHaveCount(0);
+  const first = await strip.locator('.strip-tick').first().evaluate((t) => parseFloat((t as HTMLElement).style.left));
+  expect(first, 'the first tick is not at the axis start').toBeLessThanOrEqual(0.5);
+  await expect(strip.locator('.strip-tick-label').first()).toHaveText(/^\$\d+k$/);
+  // The dots all lie right of it.
+  const dotsLeft = await strip.locator('svg circle.chart-dot').evaluateAll((cs) => Math.min(...cs.map((c) => c.getBoundingClientRect().left)));
+  const tickX = await strip.locator('.strip-tick').first().evaluate((t) => t.getBoundingClientRect().left);
+  expect(dotsLeft).toBeGreaterThanOrEqual(tickX - 6);
 });

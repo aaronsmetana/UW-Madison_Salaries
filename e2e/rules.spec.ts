@@ -169,12 +169,11 @@ test.describe('R3 — a title change is reported, and called a promotion only wh
 });
 
 test.describe('R4 — one tenure fit, peers only, with a tolerance', () => {
-  test('your callout reads "On the tenure curve"', async ({ page }) => {
+  test('where tenure explains little of a title’s pay, no verdict is drawn from it', async ({ page }) => {
+    // System Engineer IV: tenure explains about 9% of its differences in pay (P11).
     await page.goto(`./person/${encodeURIComponent(AARON)}`);
-    const callout = page.locator('.tenure-callout');
-    await expect(callout).toBeVisible({ timeout: 60_000 });
-    await expect(callout).toHaveAttribute('data-verdict', 'on');
-    await expect(callout).toContainText('On the tenure curve');
+    await expect(page.locator('.tenure-weak')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.tenure-callout')).toHaveCount(0);
   });
 
   test('with fewer than 8 peers there is no line and no verdict', async ({ page }) => {
@@ -200,7 +199,7 @@ test.describe('R4 — the brief says one thing about tenure', () => {
     await page.getByRole('option').first().click();
     await page.getByText('Detailed review', { exact: true }).click();
     const callout = page.locator('.report-brief .tenure-callout');
-    await expect(callout).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.report-brief .tenure-callout, .report-brief .tenure-weak').first()).toBeVisible({ timeout: 60_000 });
     return callout;
   }
 
@@ -212,9 +211,15 @@ test.describe('R4 — the brief says one thing about tenure', () => {
     return verdict;
   }
 
-  test('on the curve: the scatter and the evidence agree', async ({ page }) => {
-    const callout = await brief(page, 'Aaron Smetana');
-    await agree(page, callout);
+  test('where tenure barely predicts pay, the brief claims nothing from it either way', async ({ page }) => {
+    await brief(page, 'Aaron Smetana');
+    await expect(page.locator('.report-brief .tenure-weak')).toBeVisible();
+    // Neither a shortfall in its evidence nor, among the points a reviewer may raise, a pay "in line with" it.
+    await page.locator('.setup-panel').getByText('Points a reviewer may raise', { exact: true }).click();
+    await expect(page.locator('.report-brief .counter-points')).toBeVisible();
+    const text = await page.locator('.report-brief').innerText();
+    expect(text).not.toContain('below what tenure alone predicts');
+    expect(text).not.toContain('what UW tenure alone predicts for this title');
   });
 
   // A modest shortfall (4–7% of pay): outside the 2% band, and inside any stricter bar the brief
@@ -226,7 +231,8 @@ test.describe('R4 — the brief says one thing about tenure', () => {
                           date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 t
                    FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key HAVING count(*) = 1),
             fit AS (SELECT job, regr_slope(pay, t) b, regr_intercept(pay, t) a FROM pp WHERE pay > 0 AND t IS NOT NULL
-                    GROUP BY job HAVING count(*) >= 30)
+                    -- A title whose fit the brief reads (R² of 0.25 and more, with room to spare).
+                    GROUP BY job HAVING count(*) >= 30 AND regr_r2(pay, t) >= 0.35)
        SELECT any_value(s.first_name) fn, any_value(s.last_name) ln FROM pp JOIN fit USING (job) JOIN $SAL s USING (person_key)
        WHERE pp.pay > 0 AND pp.pay BETWEEN 0.93 * (fit.a + fit.b * pp.t) AND 0.96 * (fit.a + fit.b * pp.t) AND s.snapshot_id = '${snap}'
          AND person_key IN ${UNIQUE_NAME}

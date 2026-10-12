@@ -43,9 +43,11 @@ for (const scheme of ['light', 'dark'] as const) {
       self: await markContrast(page, '.peer-strip-marker', 'fill', card),
       sameSchool: await markContrast(page, '.peer-strip circle[data-mark="same-school"]', 'fill', card),
       peer: await markContrast(page, '.peer-strip circle[data-mark="peer"]', 'fill', card),
-      trendLine: await markContrast(page, '.tenure-fit line', 'stroke', card),
-      bandEdge: await markContrast(page, '.peer-strip rect.band-iqr', 'stroke', card),
+      // A weak fit's line is faint on purpose (P11); a fit the page reads is held to 3:1 below.
+      trendLine: (await page.locator('.tenure-fit-weak').count()) ? 3 : await markContrast(page, '.tenure-fit line', 'stroke', card),
     };
+    // The middle 50% is a tint with no edge (P10): it read as a selection box.
+    expect(await page.locator('.peer-strip rect.band-iqr').evaluate((e) => getComputedStyle(e).stroke)).toBe('none');
     const r = (x: number) => Math.round(x * 100) / 100;
     const summary = Object.fromEntries(Object.entries(got).map(([k, v]) => [k, r(v)]));
     // The subject is the loudest thing on the chart, a same-school peer can be found, and everyone
@@ -57,7 +59,7 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(got.self, 'the subject outranks a same-school peer').toBeGreaterThan(got.sameSchool);
     expect(got.sameSchool, 'a same-school peer outranks everyone else').toBeGreaterThan(got.peer);
     expect(got.trendLine, JSON.stringify(summary)).toBeGreaterThanOrEqual(3);
-    expect(got.bandEdge, JSON.stringify(summary)).toBeGreaterThanOrEqual(3);
+
   });
 
   test(`the Titles box plot's middle 50% has edges a reader can see (${scheme})`, async ({ page }) => {
@@ -88,12 +90,31 @@ async function belowTheCurve(): Promise<string> {
                         date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 t
                  FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key HAVING count(*) = 1),
           fit AS (SELECT job, regr_slope(pay, t) b, regr_intercept(pay, t) a FROM pp WHERE pay > 0 AND t IS NOT NULL
-                  GROUP BY job HAVING count(*) >= 30)
+                  -- A title whose fit the page reads as an expectation (R² of 0.25 and more, with room to spare).
+                  GROUP BY job HAVING count(*) >= 30 AND regr_r2(pay, t) >= 0.35)
      SELECT person_key pk FROM pp JOIN fit USING (job)
      WHERE pp.pay > 0 AND pp.pay < 0.85 * (fit.a + fit.b * pp.t) AND person_key IN ${UNIQUE_NAME}
      ORDER BY person_key LIMIT 1`
   );
   return p.pk;
+}
+
+/** People close to what tenure predicts (within half a percent, fitted here on everyone in the title) in titles
+ *  whose fit the page reads as an expectation: the page fits on the others alone, so it calls most, not all, of
+ *  them "on the tenure curve". */
+async function nearTheCurve(): Promise<string[]> {
+  const snap = await latestSnapshot();
+  const rows = await oracle<{ pk: string }>(
+    `WITH pp AS (SELECT person_key, any_value(job_code) job, ${RATE} pay,
+                        date_diff('day', CAST(any_value(date_of_hire) AS DATE), CAST(any_value(snapshot_date) AS DATE)) / 365.25 t
+                 FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key HAVING count(*) = 1),
+          fit AS (SELECT job, regr_slope(pay, t) b, regr_intercept(pay, t) a FROM pp WHERE pay > 0 AND t IS NOT NULL
+                  GROUP BY job HAVING count(*) >= 30 AND regr_r2(pay, t) >= 0.35)
+     SELECT person_key pk FROM pp JOIN fit USING (job)
+     WHERE pp.pay > 0 AND abs(pp.pay / (fit.a + fit.b * pp.t) - 1) < 0.005 AND person_key IN ${UNIQUE_NAME}
+     ORDER BY person_key LIMIT 8`
+  );
+  return rows.map((r) => r.pk);
 }
 
 /** The scatter's "on the curve" band and the subject's dot, in dollars: each edge of the band at the
@@ -130,8 +151,17 @@ async function bandAtSelf(page: Page) {
  * disagreeing definition of the same words.
  */
 test('the scatter shades exactly what the callout calls "on the tenure curve"', async ({ page }) => {
-  await page.goto(`./person/${encodeURIComponent(AARON)}`);
+  test.setTimeout(300_000);
   const callout = page.locator('.tenure-callout');
+  // The first of them the page calls "on".
+  let found = false;
+  for (const pk of await nearTheCurve()) {
+    await page.goto(`./person/${encodeURIComponent(pk)}`);
+    // A verdict, or the page's word that tenure barely predicts pay here (fitted on the others, it can be weak).
+    await expect(page.locator('.tenure-callout, .tenure-weak').first()).toBeAttached({ timeout: 60_000 });
+    if ((await callout.count()) && (await callout.getAttribute('data-verdict')) === 'on') { found = true; break; }
+  }
+  expect(found, 'no one near the curve is called "on" it').toBe(true);
   await expect(callout).toHaveAttribute('data-verdict', 'on', { timeout: 60_000 });
   const expected = Number((await callout.innerText()).match(/Expected at [\d.]+ yrs\s*\$([\d,]+)/)![1].replace(/,/g, ''));
   const on = await bandAtSelf(page);
