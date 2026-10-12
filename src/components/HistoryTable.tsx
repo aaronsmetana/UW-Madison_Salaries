@@ -10,6 +10,7 @@ import { usd, fmtBasis, fmtChange } from '../lib/format';
 import { ttcRank } from '../lib/snapshotOrder';
 import { useSummary } from '../lib/hooks';
 import { NewBadge } from './NewBadge';
+import { MethodNote } from './MethodNote';
 import { CsvButton } from './CsvButton';
 import { downloadCSV } from '../lib/csv';
 
@@ -303,10 +304,10 @@ export function HistoryTable({ rows, comparisons, csvName }: {
             <Table.Th data-fold data-print-fold>Job code</Table.Th>
             <Table.Th data-fold data-print-fold>School / Dept</Table.Th>
             {onePay ? (
-              <Table.Th ta="right"><GlossaryTerm term="actualPay">Pay</GlossaryTerm></Table.Th>
+              <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
             ) : (
               <>
-                <Table.Th ta="right" data-fold data-print-fold><GlossaryTerm term="rate">Rate</GlossaryTerm></Table.Th>
+                <Table.Th ta="right" data-fold data-print-fold><GlossaryTerm term="rate">Full-time rate</GlossaryTerm></Table.Th>
                 <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
               </>
             )}
@@ -438,16 +439,12 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                   {showSchool && <Text size="sm" className="appt-school">{r.school ?? '—'}</Text>}
                   <Group gap={6} wrap="nowrap">
                     {orgMoved && (
-                      /* The dot was colour plus a hover tooltip and nothing else: invisible to a screen
-                         reader, unreachable by keyboard, and it left the reader to scroll up and
-                         diff two rows themselves. Both the label and the tooltip now name what it
-                         was. */
+                      /* A tag that says what it marks (P34): it was an orange dot keyed in a footnote under the
+                         table, in the colour that now means a fall. The tooltip names where they were. */
                       <MantineTooltip label={orgMovedLabel} withArrow multiline w={280}>
-                        <span
-                          role="img"
-                          aria-label={orgMovedLabel}
-                          style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }}
-                        />
+                        <Badge size="xs" variant="light" color="gray" radius="sm" className="dept-change-tag" aria-label={orgMovedLabel} style={{ flexShrink: 0 }}>
+                          Dept change
+                        </Badge>
                       </MantineTooltip>
                     )}
                     <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
@@ -482,15 +479,15 @@ export function HistoryTable({ rows, comparisons, csvName }: {
         </Table.Tbody>
       </Table>
       </Table.ScrollContainer>
-      <Group gap={6} mt="sm" wrap="wrap">
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--mantine-color-orange-6)', flexShrink: 0, display: 'inline-block' }} />
-        <Text size="xs" c="dimmed">
-          = department changed since this appointment’s previous snapshot. “Change” is the change in
-          actual pay, so a change in appointment percentage or comp basis moves it on its own — where
-          that has happened, what the full-time rate did is printed underneath. “Across both” means the
-          change could only be measured across the lines together.
+      {/* The table's method, folded (G22): it closed on a 60-word footnote. */}
+      <MethodNote className="history-method">
+        <Text inherit>
+          “Change” is the change in actual pay, so a change in appointment percentage or comp basis moves it on its
+          own — where that has happened, what the full-time rate did is printed underneath. “Across both” means the
+          change could only be measured across the lines together. “Dept change” marks an appointment whose
+          division or department differs from its previous snapshot; point to it for where it was.
         </Text>
-      </Group>
+      </MethodNote>
       {gutter.slots > 0 && (
         /* Only where there is a gutter to explain. The samples are the gutter's own class, so the key
            cannot drift from what it describes. */

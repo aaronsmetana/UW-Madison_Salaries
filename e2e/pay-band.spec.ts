@@ -149,11 +149,11 @@ test.describe('a pay band reads the full-time rate of the graded appointment', (
     await expect(page.locator('.person-payband .payband-rate')).toHaveCount(0);
     const legend = page.getByText(new RegExp(`^Grade ${part.grade} band \\$`));
     await page.goto(`./person/${encodeURIComponent(part.person_key)}?tab=trends`);
-    await expect(page.getByRole('heading', { name: 'Salary over time' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: 'Actual pay over time' })).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('.recharts-surface').first()).toBeVisible();
     await expect(legend).toHaveCount(0);
     // Mantine's segmented control keeps its radios visually hidden; a reader clicks the label.
-    await page.locator('label').filter({ hasText: /^Rate$/ }).click();
+    await page.locator('label').filter({ hasText: /^Full-time rate$/ }).click();
     await expect(legend).toHaveCount(1);
   });
 });

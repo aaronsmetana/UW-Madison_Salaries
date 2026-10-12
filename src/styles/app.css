@@ -1901,6 +1901,23 @@ button:active,
   color: var(--mantine-color-dimmed);
 }
 
+/* A card's method, folded (MethodNote, G22): a quiet link-sized summary with a turning chevron, its body the
+   card's small print. The summary is a finger-sized target (24px), as every control here is. */
+.method-note { margin-top: var(--mantine-spacing-xs); }
+.method-note > summary {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 24px; cursor: pointer; list-style: none;
+  font-size: var(--mantine-font-size-xs); font-weight: 600; color: var(--mantine-color-dimmed);
+}
+.method-note > summary::-webkit-details-marker { display: none; }
+.method-note > summary::before {
+  content: ''; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--dur-fast) var(--ease); margin-right: 2px;
+}
+.method-note[open] > summary::before { transform: rotate(45deg); }
+.method-note > summary:hover { color: var(--mantine-color-text); }
+.method-note-body { margin-top: 4px; font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed); line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) { .method-note > summary::before { transition: none; } }
+
 /* "Live" freshness dot. Static: it was a 2.4s infinite animation whose only message was that the page
    had loaded, which the text beside it already says. */
 .live-dot {
@@ -2201,6 +2218,11 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
   /* A raise's comparison ("the same as 67% · typical +2.0%") holds one line on a wider screen; here it
      wraps, or it held History's change column open and the table 37px past its card, a sideways scroll. */
   .appt-history [data-raise-compare] { white-space: normal !important; }
+  /* A figure's column header may take two lines here: named for its measure (G2), "Full-time rate" is wider
+     than the "$763,647" under it, and held unwrapped it widened the column and pushed every name in the
+     table onto a second line. */
+  .fold-table th:not([data-fold]) { white-space: normal !important; }
+  .fold-table th:not([data-fold]) .sort-th span { white-space: normal; text-wrap: balance; }
   /* The tray button keeps its icon and its accessible name, and drops the word. */
   .fold-table .tray-label { display: none; }
   .fold-table .peer-add .mantine-Button-section { margin: 0; }

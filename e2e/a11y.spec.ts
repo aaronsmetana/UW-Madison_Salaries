@@ -223,7 +223,7 @@ for (const theme of THEMES) {
 
 /**
  * Views no scan had reached with their content in: Divisions' Changes and Retention tabs, Raises, People, the
- * 404 page, Screening with results, Compare with a selection, and a person's Salary trend and Report tabs.
+ * 404 page, Screening with results, Compare with a selection, and a person's Pay trend and Report tabs.
  * Each waits for the content that arrives last, then for motion to end.
  */
 const LOADED: [string, string, string][] = [
@@ -234,7 +234,7 @@ const LOADED: [string, string, string][] = [
   ['not found', './does-not-exist', 'h1'],
   ['Screening, run', `./screening?run=1&sch=${encodeURIComponent('School of Pharmacy')}`, 'table tbody tr'],
   ['Compare, with a selection', `./compare?sel=${encodeURIComponent(['p', encodeURIComponent('aaronsmetana|2014-10-15'), encodeURIComponent('Aaron Smetana')].join(','))}`, '.recharts-line-curve'],
-  ['a person, Salary trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`, '.recharts-line-curve'],
+  ['a person, Pay trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`, '.recharts-line-curve'],
   ['a person, Report', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=report`, 'table tbody tr'],
 ];
 for (const theme of THEMES) {
@@ -327,7 +327,7 @@ test.describe('names and structure', () => {
 
   test("Divisions › Trends lists Nov 2021's twins in order, Pre-TTC first", async ({ page }) => {
     await page.goto('./divisions?tab=trends');
-    const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
+    const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median actual pay, headcount & renewable staff over time' }) });
     await expect(table.locator('tbody tr').nth(1)).toBeAttached({ timeout: 60_000 });
     const first = await table.locator('tbody tr td:first-child').allTextContents();
     expect(first.slice(0, 2)).toEqual(['Nov 2021 (Pre-TTC)', 'Nov 2021 (Post-TTC)']);

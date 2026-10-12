@@ -7,6 +7,7 @@ function baseModel(overrides: Partial<BriefModel> = {}): BriefModel {
     subjectName: 'Jordan Rivers',
     subjectFirst: 'Jordan',
     subjectPay: 68_000,
+    measure: 'Full-time rate',
     headerMeta: 'Senior Analyst · College of Letters & Science',
     generated: 'Jul 19, 2026',
     snapLabel: 'May 2026',
@@ -230,5 +231,11 @@ describe('htmlToPlainText (the email copy without formatting)', () => {
     ]));
     expect(text).not.toMatch(/<[a-z/]|&[a-z#0-9]+;/i);
     expect(lines.length).toBeGreaterThan(40);
+  });
+
+  it('names each pay figure for the measure in force, never a bare "Salary" (G2)', () => {
+    const html = briefToWordHtml(baseModel());
+    expect(html).toContain('>Full-time rate</th>');
+    expect(html).not.toMatch(/>Salary</);
   });
 });

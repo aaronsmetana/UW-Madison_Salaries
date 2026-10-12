@@ -56,8 +56,9 @@ interface Row {
 const asAppt = (r: Row) => ({ ...r, salary: r.rate_raw });
 interface PeerStats { n: number; lo: number | null; p25: number | null; med: number | null; p75: number | null; hi: number | null }
 
-/** Salary-trend hover card: full month, the title at that snapshot (it can change), and salary. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; appts?: number; med?: number | null; gap?: boolean } }[] }) {
+/** Pay-trend hover card: full month, the title at that snapshot (it can change), and the pay, named for its
+ *  measure (`measure`, G2). */
+function TrendTooltip({ active, payload, measure }: { active?: boolean; measure: string; payload?: { payload: { full: string; title: string | null; salary: number | null; appts?: number; med?: number | null; gap?: boolean } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   // A gap row only breaks the line at a reporting change; there is no snapshot there.
@@ -66,7 +67,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
     <TipSurface>
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
-      <Text size="sm">Salary: {usd(d.salary)}</Text>
+      <Text size="sm">{measure}: {usd(d.salary)}</Text>
       {d.med != null && <Text size="xs" c="dimmed">Title median: {usd(d.med)}</Text>}
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
@@ -87,6 +88,8 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 export function PersonDashboard({ personKey, metric }: { personKey: string; metric: Metric }) {
   const reduceMotion = prefersReducedMotion();
   const expr = salaryExpr(metric);
+  /** What every figure of this person's pay is called here: the measure in force (G2). */
+  const measure = METRIC_LABEL[metric];
   const generated = fmtToday();
 
   const { data, isLoading, error } = useSql<Row>(
@@ -293,7 +296,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
 
       {/* Headline figures. Where this person stands is the comparison card's, once: three tiles here said it again. */}
       <StatRow cols={{ base: 1, sm: 3 }}>
-        <Stat label="Current salary" value={usd(lastSalary)} />
+        <Stat label={measure} value={usd(lastSalary)} sub={latest?.snapshot_label ? `as of ${latest.snapshot_label}` : undefined} />
         <Stat label="Tenure" value={fmtYears(tenureYears)} sub={hireYear ? `at UW since ${hireYear}` : undefined} />
         <Stat
           label={oldestLabel ? `Growth since ${oldestLabel}` : 'Growth'}
@@ -304,21 +307,21 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         />
       </StatRow>
 
-      {/* Salary over time */}
+      {/* Pay over time, named for the measure in force (G2): it was "Salary", a sixth name for the same figure. */}
       <Card withBorder padding="lg">
-        <CardTitle>Salary over time</CardTitle>
+        <CardTitle sub={`${measure} at each snapshot, against the median for the title held then.`}>{measure} over time</CardTitle>
         <ResponsiveContainer width="100%" height={280}>
           {/* Top margin: room above a line that ends at the top of the plot for its name (EndLabels). */}
-          <LineChart {...chartKeys('Salary over time')} data={trendPlot} margin={{ left: 12, right: 12, top: 18 }}>
+          <LineChart {...chartKeys(`${measure} over time`)} data={trendPlot} margin={{ left: 12, right: 12, top: 18 }}>
             <CartesianGrid {...GRID} />
             <XAxis {...trendAxis} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-            <Tooltip content={<TrendTooltip />} />
+            <Tooltip content={<TrendTooltip measure={measure} />} />
             <Line type="linear" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.slow)} />
             {raiseCtx.typical.size > 1 && (
               <Line type="linear" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
             )}
-            <Line type="linear" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="salary" name={measure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
             {breakMarks.map((b) => (
               <ReferenceLine key={`brk-${b.key}`} x={b.x} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="reporting-marker" />
             ))}
@@ -332,7 +335,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
               component={
                 <EndLabels
                   endSeries={[
-                    { key: 'salary', text: 'Salary', color: 'var(--text-accent)' },
+                    { key: 'salary', text: measure, color: 'var(--text-accent)' },
                     { key: 'med', text: 'Title median', color: 'var(--mantine-color-dimmed)' },
                     ...(raiseCtx.typical.size > 1 ? [{ key: 'typical', text: 'If raises had been typical', color: 'var(--mantine-color-dimmed)' }] : []),
                   ]}
@@ -348,7 +351,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             The line breaks at {reporting.changes[0].sinceLabel}, the change in {reporting.changes[0].what} (×{reporting.changes[0].ratio}).
           </Text>
         )}
-        <ChartData caption="Salary over time" columns={['Snapshot', 'Salary', 'Title median', 'If raises had been typical']} rows={trendData.map((t) => [t.label, t.salary, t.med, raiseCtx.typical.get(t.id) ?? null])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))}
+        <ChartData caption={`${measure} over time`} columns={['Snapshot', measure, 'Title median', 'If raises had been typical']} rows={trendData.map((t) => [t.label, t.salary, t.med, raiseCtx.typical.get(t.id) ?? null])} unit="snapshots" period={spanLabel(trendData.map((t) => t.label))}
           about="Ringed dots mark a title or role change. The title median is the median for the title held at the time." />
       </Card>
 
@@ -397,6 +400,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             values={peerPays}
             markerValue={selfRate}
             markerLabel="this person"
+            measure="Full-time rate"
             tooFewText={`Only ${num(peer.n)} ${peer.n === 1 ? 'person has' : 'people have'} this title — too few to chart a distribution.`}
           />
         </Card>

@@ -116,7 +116,7 @@ const SMPH = encodeURIComponent('School of Medicine and Public Health');
 for (const [name, path, says] of [
   ['a person', `./person/${AARON}`, ['tab', 'Sort by Full-time rate']],
   ['a person, pay & standing', `./person/${AARON}?tab=pay`, ['tab']],
-  ['a title', './titles?code=IT040', ['Sort by Salary', 'measure']],
+  ['a title', './titles?code=IT040', ['Sort by Full-time rate', 'measure']],
   ['Divisions', './divisions', ['tab', 'measure']],
   ['Raises', `./raises?sch=${SMPH}&dept=Neurology`, ['Sort by Raise', 'measure']],
   ['a person’s report', `./person/${AARON}?tab=report`, []],

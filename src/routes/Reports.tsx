@@ -890,7 +890,7 @@ export default function Reports() {
   const bandNote = [payBandNote(refStatus), olderSnapshotNote(refStatus, summary?.snapshots.find((x) => x.id === snap), releasedSnap?.label, releasedSnap?.date)]
     .filter(Boolean).join(' ') || null;
   const model: BriefModel = {
-    subjectName, subjectFirst, subjectPay, headerMeta, generated, snapLabel,
+    subjectName, subjectFirst, subjectPay, measure: METRIC_LABEL[metric], headerMeta, generated, snapLabel,
     payBandNote: bandNote,
     recommended, belowTarget, targetDelta, targetPct,
     basisLabel: config.headline.trim() || basisLabel,

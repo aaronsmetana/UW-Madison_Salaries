@@ -40,7 +40,7 @@ function table(headers: string[], rows: string[][], align?: ('l' | 'r')[]): stri
  *  section order/headings; see model.ts for field docs). */
 export function briefToWordHtml(model: BriefModel): string {
   const {
-    subjectName, subjectFirst, subjectPay, headerMeta, generated, snapLabel,
+    subjectName, subjectFirst, subjectPay, measure, headerMeta, generated, snapLabel,
     recommended, belowTarget, targetDelta, targetPct, basisLabel,
     receipt, activeFactors, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved,
     realErosion, rows, showTenure, anonymize, attrition, divergence, history, format, sections,
@@ -204,7 +204,7 @@ export function briefToWordHtml(model: BriefModel): string {
         ['Title', esc(a.title ?? '—'), esc(b.title ?? '—')],
         ['School or division', esc(a.school ?? '—'), esc(b.school ?? '—')],
         ['UW tenure', fmtYears(a.tenure), fmtYears(b.tenure)],
-        ['Salary', usd(a.pay), `${usd(b.pay)} (+${usd(match.gap)})`],
+        [esc(measure), usd(a.pay), `${usd(b.pay)} (+${usd(match.gap)})`],
       ]));
       const sentence = matchTenureSentence(match, subjectFirst, them);
       if (sentence) body.push(p(esc(sentence)));
@@ -220,7 +220,7 @@ export function briefToWordHtml(model: BriefModel): string {
         ]), ['l', 'r', 'r', 'r']));
       }
     }
-    const headers = ['Name', 'Title', ...(showTenure ? ['Tenure'] : []), 'Salary', `vs ${subjectFirst}`];
+    const headers = ['Name', 'Title', ...(showTenure ? ['Tenure'] : []), measure, `vs ${subjectFirst}`];
     const tRows = rows.map((r) => {
       const name = r.isSubject ? `<b>${esc(r.name)}</b> (Review Subject)` : anonymize ? anonName(r.key) : esc(r.name);
       const flag = !r.isSubject ? (r.isAnomaly ? ' [Pay inversion]' : r.lessTenure ? ' [less tenure]' : '') : '';

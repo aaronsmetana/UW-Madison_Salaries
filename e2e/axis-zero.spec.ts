@@ -8,11 +8,11 @@ import { test, expect, type Page } from '@playwright/test';
 const AARON = 'aaronsmetana|2014-10-15';
 
 const CHARTS: [string, string, string[]][] = [
-  ['the person page', `./person/${encodeURIComponent(AARON)}?tab=trends`, ['Salary over time', 'The group this person started with']],
-  ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`, ['Salary over time']],
-  ['Divisions', './divisions?tab=trends', ['Median salary over time']],
-  ['a division', `./school/${encodeURIComponent('School of Education')}?tab=dist`, ['Median salary over time']],
-  ['Compare', './compare', ['Salary by snapshot', 'Median salary per title over time']],
+  ['the person page', `./person/${encodeURIComponent(AARON)}?tab=trends`, ['Actual pay over time', 'The group this person started with']],
+  ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`, ['Actual pay over time']],
+  ['Divisions', './divisions?tab=trends', ['Median actual pay over time']],
+  ['a division', `./school/${encodeURIComponent('School of Education')}?tab=dist`, ['Median actual pay over time']],
+  ['Compare', './compare', ['Actual pay by snapshot', 'Median actual pay per title over time']],
   ['a raise case', `./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`, ['Pay vs. title median over time']],
 ];
 

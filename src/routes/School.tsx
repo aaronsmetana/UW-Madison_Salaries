@@ -26,7 +26,7 @@ import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary, useSea
 import { NotFoundPanel } from '../components/NotFoundPanel';
 import { closeMatches } from '../lib/search';
 import { sqlStr } from '../lib/duckdb';
-import { useControls } from '../state/controls';
+import { useControls, METRIC_LABEL } from '../state/controls';
 import { salaryExpr, personEarnings, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
 import { usd, num, fullName, spanLabel } from '../lib/format';
@@ -95,6 +95,8 @@ export default function School() {
     });
   }, [summary, name]);
   const expr = salaryExpr(metric);
+  /** The plotted median, named for the measure in force (G2). */
+  const med = `Median ${METRIC_LABEL[metric].toLowerCase()}`;
   const nav = useNavigate();
   // Active tab lives in the URL (?tab=…), same convention as Explore/Person, so a shared link opens on
   // the same tab; "overview" is the implicit default and stays out of the query string.
@@ -372,7 +374,7 @@ export default function School() {
         )}
         <ChartData
           caption="Tenure vs pay"
-          columns={['Tenure (yrs)', 'Pay']}
+          columns={['Tenure (yrs)', METRIC_LABEL[metric]]}
           rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])}
           unit="people plotted"
           period={snapLabel ? `as of ${snapLabel}` : undefined}
@@ -381,9 +383,9 @@ export default function School() {
       </Card>
 
       <Card withBorder padding="lg">
-        <CardTitle>Median salary over time</CardTitle>
+        <CardTitle>{med} over time</CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart {...chartKeys('Median salary over time')} data={trendRows} margin={{ left: 12, right: 12 }}>
+          <LineChart {...chartKeys(`${med} over time`)} data={trendRows} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis {...snapAxisProps(trendRows)} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -397,8 +399,8 @@ export default function School() {
           <Text key={t} size="xs" c="dimmed" mt="xs" className="school-reorg-note">{t}</Text>
         ))}
         <ChartData
-          caption="Median salary over time"
-          columns={['Snapshot', 'Median', 'Headcount']}
+          caption={`${med} over time`}
+          columns={['Snapshot', med, 'Headcount']}
           rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])}
           unit="snapshots"
           period={spanLabel((trend ?? []).map((t) => t.label))}
@@ -416,10 +418,10 @@ export default function School() {
           }
           sub="The latest snapshot, in $20k bins."
         >
-          Salary distribution
+          {METRIC_LABEL[metric]} distribution
         </CardTitle>
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart {...chartKeys('Salary distribution')} data={distData} margin={{ left: 12, right: 12 }}>
+          <BarChart {...chartKeys(`${METRIC_LABEL[metric]} distribution`)} data={distData} margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtCount}
@@ -444,7 +446,7 @@ export default function School() {
           </BarChart>
         </ResponsiveContainer>
         <ChartData
-          caption="Salary distribution"
+          caption={`${METRIC_LABEL[metric]} distribution`}
           columns={['Salary bin', 'People']}
           rows={distData.map((d) => [d.label, d.n])}
           n={distData.reduce((s, d) => s + d.n, 0)}

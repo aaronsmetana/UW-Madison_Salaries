@@ -126,7 +126,9 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
     await expect(raises.first()).toBeVisible({ timeout: 60_000 });
     // Every continuing raise counted, the 9-month ones among them.
     const [{ n }] = await oracle<{ n: number }>(`${raisesCte({ from: '2025-04', to: '2025-09' })} SELECT count(*) n FROM cr`);
-    await expect(page.getByText(`Raises count the ${n.toLocaleString('en-US')} people`)).toBeVisible();
+    // Counted under the median raise, where the figure is; how they were chosen is in the method note.
+    await expect(page.locator('[data-stat-card], .stat-cell').filter({ hasText: 'Median raise' })).toContainText(`${n.toLocaleString('en-US')} counted`);
+    await expect(page.locator('.changes-method')).toContainText(`Raises count the ${n.toLocaleString('en-US')} people`);
     const rows = (await raises.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -404,7 +406,7 @@ test.describe('R6 — snapshots sit on a date axis', () => {
   test('Divisions → Trends spaces snapshots by date', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('./divisions?tab=trends');
-    const card = page.locator('.mantine-Card-root', { hasText: 'Median salary & headcount over time' });
+    const card = page.locator('.mantine-Card-root', { hasText: 'Median actual pay and headcount over time' });
     const dots = card.locator('.recharts-wrapper').first().locator('.recharts-line-dots').first().locator('circle');
     await expect(dots.first()).toBeVisible({ timeout: 60_000 });
     const xs = await dots.evaluateAll((els) => els.map((e) => Number(e.getAttribute('cx'))));
@@ -463,11 +465,12 @@ test.describe('The person page reports the reporting change and trims what repea
     await expect(page.locator('.person-figures [data-trend]')).toHaveText(lfl);
   });
 
-  test('one Pay column when the rate is the pay on every row, and the school once', async ({ page }) => {
+  test('one pay column when the rate is the pay on every row, and the school once', async ({ page }) => {
     await history(page, AARON);
     const heads = (await page.locator('table.appt-history thead th').allInnerTexts()).map((h) => h.trim().toLowerCase());
-    expect(heads).toContain('pay');
-    expect(heads).not.toContain('rate');
+    // Named for its measure (G2): it was "Pay", beside "Rate" when the two differ.
+    expect(heads).toContain('actual pay');
+    expect(heads).not.toContain('full-time rate');
     await expect(page.locator('table.appt-history .appt-school', { hasText: SMPH })).toHaveCount(1);
   });
 });
@@ -519,7 +522,7 @@ test.describe('Phones — the figure sits beside the name', () => {
   test("A title's people: the salary is on screen", async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.goto('./titles?code=IT040');
-    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Salary' }) }), /^Salary$/i);
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Full-time rate' }) }), /^Full-time rate$/i);
   });
 
   test('Divisions: the median is on screen', async ({ page }) => {
@@ -537,7 +540,7 @@ test.describe('Phones — the figure sits beside the name', () => {
   test('Top earners: the pay is on screen', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.goto('./divisions?tab=earners');
-    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Pay' }) }), /^Pay$/i);
+    await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Actual pay' }) }), /^Actual pay$/i);
     // The rank, title and school are still there, under the name.
     await expect(page.locator('.earner-row').first().locator('.fold-under')).toContainText(/^#1 · /);
   });

@@ -345,7 +345,7 @@ test('a person to match: the closest first, the two side by side, what tenure ex
   await setup.getByRole('radio', { name: new RegExp(`^Match ${peer.nm}$`, 'i') }).click();
   const card = brief.locator('.match-card');
   await expect(card).toContainText(/side by side/i, { timeout: 30_000 });
-  const salary = await card.locator('tr', { hasText: 'Salary' }).locator('td').allInnerTexts();
+  const salary = await card.locator('tr', { hasText: /^(Actual pay|Full-time rate)/ }).locator('td').allInnerTexts();
   expect(dollars(salary[2]), 'their pay').toBe(Math.round(peer.pay));
   expect(Number(salary[2].match(/\(\+\$([\d,]+)\)/)?.[1].replace(/,/g, '')), 'the gap beside their pay').toBe(Math.round(peer.pay) - dollars(salary[1]));
   // What tenure accounts for adds up: explained and the rest make the gap.

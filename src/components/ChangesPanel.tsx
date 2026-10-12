@@ -4,7 +4,6 @@ import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, Cartes
 import { AXIS_TICK, GRID, BAR_RADIUS, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
 import { CardTitle } from './CardTitle';
-import { IconInfoCircle } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
@@ -15,9 +14,9 @@ import { usd, usdCompact, usdShort, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
+import { MethodNote } from './MethodNote';
 import { StatCard, StatRow } from './StatCard';
 import { TipSurface } from './chart/ChartTooltip';
-import { ICON } from '../lib/ui';
 import { raiseBucketSql } from '../lib/raiseBuckets';
 import { RaiseDistribution } from './RaiseDistribution';
 
@@ -25,8 +24,8 @@ interface Mover { person_key: string; fn: string; ln: string; title: string | nu
 interface Promo { person_key: string; fn: string; ln: string; a_title: string | null; b_title: string | null; delta: number | null }
 interface SummaryRow { stayers: number; joiners: number; leavers: number; title_changes: number; median_raise: number | null; n_continuing: number }
 
-function Stat({ label, value, exact }: { label: string; value: string; exact?: string }) {
-  return <StatCard size="sm" label={label} value={exact ? <span title={exact} aria-label={exact}>{value}</span> : value} />;
+function Stat({ label, value, exact, sub }: { label: string; value: string; exact?: string; sub?: string }) {
+  return <StatCard size="sm" label={label} sub={sub} value={exact ? <span title={exact} aria-label={exact}>{value}</span> : value} />;
 }
 
 type BandScale = ((v: string) => number | undefined) & { bandwidth?: () => number };
@@ -352,20 +351,22 @@ export function ChangesPanel() {
         <Button size="compact-xs" variant="default" onClick={presetTTC}>Since TTC</Button>
       </Group>
 
-      <Text size="xs" c="dimmed">
-        Division/department filters list only units present in both snapshots; some were renamed or split
-        in the 2025 reorganization, so a unit may not be selectable across that boundary.
-      </Text>
-
+      {/* One sentence, then the figures (G22): the page opened with about 120 words and two callouts before
+          its first number. How each figure was counted closes the section, folded. */}
       {s && enabled && (
-        <Text size="sm" c="dimmed">
-          Between <b>{fromLabel}</b> and <b>{toLabel}</b>{scopeText}: ≈{num(s.stayers)} stayed, ≈{num(s.joiners)} joined,
-          {' '}≈{num(s.leavers)} left (left = not present in {toLabel}); median raise {s.median_raise == null ? '—' : pct(s.median_raise)}
-          {raisedPct != null ? ` — but ${pct(raisedPct)} of them got some raise` : ''}. Raises count the {num(s.n_continuing)} people
-          who held one appointment in both snapshots, in the same title at the same FTE — a promotion,
-          an FTE change or a change in how pay is reported is not a raise.
+        <Text size="sm" className="changes-lead">
+          Between <b>{fromLabel}</b> and <b>{toLabel}</b>{scopeText}:
         </Text>
       )}
+
+      <StatRow cols={{ base: 2, sm: 5 }}>
+        <Stat label="Continuing" value={num(s?.stayers)} />
+        <Stat label="New hires" value={num(s?.joiners)} />
+        <Stat label="Departures" value={num(s?.leavers)} />
+        <Stat label="Title changes" value={num(s?.title_changes)} />
+        <Stat label="Median raise" value={s?.median_raise == null ? '—' : pct(s.median_raise)}
+          sub={s?.n_continuing ? `${num(s.n_continuing)} counted${raisedPct != null ? ` · ${pct(raisedPct)} got one` : ''}` : undefined} />
+      </StatRow>
 
       {s && enabled && commonRaise && (
         <Text size="sm" className="changes-step-note" data-common-raise={commonRaise.k} data-common-share={(commonRaise.c / commonRaise.n).toFixed(4)}>
@@ -397,12 +398,6 @@ export function ChangesPanel() {
         </Alert>
       ))}
 
-      <Alert color="gray" variant="light" icon={<IconInfoCircle size={ICON.nav} />} title="People are matched by name only">
-        No employee ID exists in the public records, so joined/left counts (the ≈ figures above) are
-        approximate — a name change or a shared name can be miscounted.{' '}
-        <Anchor component={Link} to="/data#identity" inherit>How matching works →</Anchor>
-      </Alert>
-
       {isTTC && (
         <Alert color="accent" title="TTC reclassification boundary">
           This pair spans the Nov-2021 Title &amp; Total Compensation restructure — nearly everyone's title/job
@@ -410,13 +405,22 @@ export function ChangesPanel() {
         </Alert>
       )}
 
-      <StatRow cols={{ base: 2, sm: 5 }}>
-        <Stat label="Continuing" value={num(s?.stayers)} />
-        <Stat label="New hires" value={num(s?.joiners)} />
-        <Stat label="Departures" value={num(s?.leavers)} />
-        <Stat label="Title changes" value={num(s?.title_changes)} />
-        <Stat label="Median raise" value={s?.median_raise == null ? '—' : pct(s.median_raise)} />
-      </StatRow>
+      <MethodNote className="changes-method">
+        <Text inherit>
+          Raises count the {num(s?.n_continuing)} people who held one appointment in both snapshots, in the same title
+          at the same FTE: a promotion, an FTE change or a change in how pay is reported is not a raise. A departure
+          is someone not present in {toLabel}.
+        </Text>
+        <Text inherit>
+          People are matched by name only: no employee ID exists in the public records, so the counts of who
+          continued, joined and left are approximate, and a name change or a shared name can be miscounted.{' '}
+          <Anchor component={Link} to="/data#identity" inherit>How matching works →</Anchor>
+        </Text>
+        <Text inherit>
+          The division and department filters list only units present in both snapshots; some were renamed or split
+          in the 2025 reorganization, so a unit may not be selectable across that boundary.
+        </Text>
+      </MethodNote>
 
       <Card withBorder padding="lg">
         <CardTitle mb="sm">Payroll change decomposition</CardTitle>

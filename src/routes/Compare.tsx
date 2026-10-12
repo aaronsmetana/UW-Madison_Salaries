@@ -13,7 +13,7 @@ import { CardTitle } from '../components/CardTitle';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { Eyebrow } from '../components/Eyebrow';
 import { useTray, type TrayItem } from '../state/tray';
-import { useControls } from '../state/controls';
+import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
@@ -90,6 +90,8 @@ export default function Compare() {
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
+  /** Each figure here, named for the measure in force (G2). */
+  const measure = METRIC_LABEL[metric];
   const [xMode, setXMode] = useState<'date' | 'tenure'>('date');
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   // Legend mute/solo: a click dims one series (state only — the tray itself is untouched); shift-click
@@ -409,7 +411,7 @@ export default function Compare() {
               </Group>
             }
           >
-            Salary trajectories
+            {measure} trajectories
           </CardTitle>
           {/* Loading, a block the height of the chart, its note and its footer: a spinner, the card was a third
               of its height and the cards under it dropped 333px when the lines came (layout shift 0.06). */}
@@ -419,7 +421,7 @@ export default function Compare() {
             <>
               <ResponsiveContainer width="100%" height={300}>
                 {xMode === 'date' ? (
-                  <LineChart {...chartKeys('Salary by snapshot')} data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
+                  <LineChart {...chartKeys(`${measure} by snapshot`)} data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis {...snapAxisProps(trajectorySeries)} tick={AXIS_TICK} />
                     <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -466,7 +468,7 @@ export default function Compare() {
                 {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
               </Text>
               <ChartData
-                caption={dollarMode === 'real' ? `Salary by snapshot (in ${REAL_BASE_YEAR} dollars)` : 'Salary by snapshot'}
+                caption={dollarMode === 'real' ? `${measure} by snapshot (in ${REAL_BASE_YEAR} dollars)` : `${measure} by snapshot`}
                 columns={['Snapshot', ...persons.map((p) => p.label)]}
                 rows={trajectorySeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
                 unit="snapshots"
@@ -662,7 +664,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <CardTitle>Title medians over time</CardTitle>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart {...chartKeys('Median salary per title over time')} data={titleSeries} margin={{ left: 12, right: 12 }}>
+            <LineChart {...chartKeys(`Median ${measure.toLowerCase()} per title over time`)} data={titleSeries} margin={{ left: 12, right: 12 }}>
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(titleSeries)} tick={AXIS_TICK} />
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
@@ -673,7 +675,7 @@ export default function Compare() {
             </LineChart>
           </ResponsiveContainer>
           <ChartData
-            caption="Median salary per title over time"
+            caption={`Median ${measure.toLowerCase()} per title over time`}
             columns={['Snapshot', ...titles.map((t) => t.label)]}
             rows={titleSeries.map((row) => [row.label as string, ...titles.map((t) => row[t.id] ?? null)])}
             unit="snapshots"

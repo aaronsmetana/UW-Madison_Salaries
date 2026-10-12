@@ -30,7 +30,7 @@ for (const [name, path, opens] of [
 test('changing the measure on Titles changes its figures, and the page keeps it in its address', async ({ page }) => {
   await page.goto('./titles?code=FA020');
   // The title's median, in its stat cell (or card).
-  const median = page.locator('.stat-cell, [data-stat-card]', { hasText: /^Median salary · this title/ }).first();
+  const median = page.locator('.stat-cell, [data-stat-card]', { hasText: /^Median (full-time rate|actual pay) · this title/ }).first();
   await expect(median).toContainText('$', { timeout: 60_000 });
   const rate = await median.innerText();
   await measure(page).getByText('Actual pay', { exact: true }).click();

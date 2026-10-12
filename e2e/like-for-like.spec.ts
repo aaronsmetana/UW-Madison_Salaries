@@ -42,7 +42,7 @@ test("Divisions › Trends gives the Sep 2025 step like for like, and the others
   const want = (meds[i].med_prior / meds[i - 1].med - 1) * 100;
   const next = (meds[i + 1].med / meds[i].med - 1) * 100;
   await page.goto(`./divisions${FACULTY.replace('?', '?tab=trends&')}`);
-  const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
+  const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median actual pay, headcount & renewable staff over time' }) });
   await expect(table.locator('tbody tr').nth(i)).toBeAttached({ timeout: 60_000 });
   const cell = async (k: number) => Number((await table.locator('tbody tr').nth(k + 1).locator('td').nth(2).textContent())!.replace('%', '').replace('−', '-'));
   // The table lists Nov 2021's twins: the canonical rows follow the Pre-TTC one.

@@ -61,8 +61,11 @@ export function SalaryHistogram({
   height = 240,
   domain,
   onBinClick,
+  measure = 'Pay',
 }: {
   values: number[];
+  /** What the values are, for the chart's name and its table: the measure in force (G2). */
+  measure?: string;
   markerValue?: number | null;
   markerLabel?: string;
   minToShow?: number;
@@ -372,7 +375,7 @@ export function SalaryHistogram({
             </div>
           )}
         </div>
-        <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
+        <ChartData caption={`${measure} distribution`} columns={[`${measure} range`, 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
           about={guides.length === 3 ? '1 block = 1 person · Dashed guides: p25 · median · p75.' : '1 block = 1 person.'} />
       </>
     );
@@ -382,7 +385,7 @@ export function SalaryHistogram({
     <>
       <div ref={plotRef} className="hist-plot" style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={height}>
-          <BarChart {...chartKeys('Salary distribution')} data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
+          <BarChart {...chartKeys(`${measure} distribution`)} data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <CartesianGrid {...GRID} />
             <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tickFormatter={fmtK} tick={AXIS_TICK} />
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} tickFormatter={fmtCount} />
@@ -471,7 +474,7 @@ export function SalaryHistogram({
           </div>
         )}
       </div>
-      <ChartData caption="Salary distribution" columns={['Salary range', 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
+      <ChartData caption={`${measure} distribution`} columns={[`${measure} range`, 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
         about={guides.length === 3 ? 'Dashed guides: p25 · median · p75.' : undefined} />
     </>
   );

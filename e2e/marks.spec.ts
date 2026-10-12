@@ -297,8 +297,8 @@ test('the keyboard steps a chart through its points, in order', async ({ page })
   await page.goto('./divisions?tab=trends');
   const chart = page.locator('svg.recharts-surface[role="application"]').first();
   await expect(chart).toBeAttached({ timeout: 60_000 });
-  await expect(chart).toHaveAttribute('aria-label', /^Median salary over time\. Left and right arrow keys/);
-  const table = page.locator('table').filter({ has: page.locator('caption', { hasText: /^Median salary, headcount/ }) });
+  await expect(chart).toHaveAttribute('aria-label', /^Median actual pay over time\. Left and right arrow keys/);
+  const table = page.locator('table').filter({ has: page.locator('caption', { hasText: /^Median actual pay, headcount/ }) });
   const snaps = (await table.locator('tbody tr td:first-child').allTextContents()).slice(0, 3);
   expect(snaps.length, 'the data table lists fewer than three snapshots').toBe(3);
   const tip = page.locator('.recharts-tooltip-wrapper').first();

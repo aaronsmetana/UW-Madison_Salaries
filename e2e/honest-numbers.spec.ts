@@ -212,7 +212,7 @@ test('figures are written one way: headline money to three figures, axes with se
   const big = (await ticks.allTextContents()).filter((t) => /^\d{4,}$/.test(t.replace(/[$k]/g, '')));
   expect(big, 'an axis count of four digits or more without a separator').toEqual([]);
   // A chart's data table in whole dollars, not "78,041.6".
-  const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median salary, headcount & renewable staff over time' }) });
+  const table = page.locator('table', { has: page.locator('caption', { hasText: 'Median actual pay, headcount & renewable staff over time' }) });
   const medians = await table.locator('tbody tr td:nth-child(2)').allTextContents();
   expect(medians.length).toBeGreaterThan(5);
   for (const m of medians) expect(m, 'a median with cents').toMatch(/^\d{1,3}(,\d{3})*$/);

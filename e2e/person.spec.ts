@@ -306,7 +306,7 @@ test('the peer strip names the person under the cursor, and reads the axis betwe
  */
 test('every dash in the trend legend is a dash the chart actually draws', async ({ page }) => {
   await openPerson(page, 'Aaron Smetana');
-  await page.getByRole('tab', { name: /Salary trend/ }).click();
+  await page.getByRole('tab', { name: /Pay trend/ }).click();
   await expect(page.locator('.recharts-wrapper').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
 
@@ -356,7 +356,7 @@ type HistoryRow = {
   /** `data-group-last`, and the row border that follows from it. */
   groupLast: string;
   border: string;
-  /** The department-change dot's accessible name, '' when there is no dot. */
+  /** The "Dept change" tag's accessible name, '' when there is no tag. */
   dotLabel: string;
 };
 
@@ -392,7 +392,7 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
     }
     const noteEl = row.locator('.appt-rate-note');
     const note = (await noteEl.count()) ? (await noteEl.first().innerText()).trim() : '';
-    const dot = cells.nth(orgCol).locator('[role="img"]');
+    const dot = cells.nth(orgCol).locator('.dept-change-tag');
     // The percentage cell now also holds the note; strip it so the two are asserted separately and
     // a guard on one cannot pass on the other's text.
     const raiseCell = (await cells.nth(changeCol).innerText()).replace(/\s+/g, ' ').trim();
@@ -598,7 +598,7 @@ test('a percentage moved by FTE leads with what the rate actually did', async ({
  * else — invisible to a screen reader, unreachable by keyboard, and it left the reader to scroll up
  * and diff two rows to find out what changed.
  */
-test('the department-change dot names what it was', async ({ page }) => {
+test('the department-change tag says what it marks and names what it was', async ({ page }) => {
   await openPerson(page, 'Gulnara Glowacki');
   const rows = await readHistory(page);
   const dotted = rows.filter((r) => r.dotLabel);
@@ -607,8 +607,10 @@ test('the department-change dot names what it was', async ({ page }) => {
   // (value-map.json `department`), so it is no change and has no dot.
   expect(dotted.map((r) => `${r.snapshot}: ${r.dept}`)).toEqual(['Sep 2025: Regional Centers']);
   expect(dotted[0].dotLabel).toContain('CTR for Rus East Eur Cent Asia');
+  // A tag that reads as words (P34), not a dot keyed in a footnote.
+  await expect(page.locator('table.appt-history .dept-change-tag')).toHaveText(['Dept change']);
   for (const r of dotted) {
-    expect(r.dotLabel, 'the dot must carry an accessible name').not.toBe('');
+    expect(r.dotLabel, 'the tag must carry an accessible name').not.toBe('');
     expect(r.dotLabel, 'and it must name the previous value, not just say something changed')
       .toMatch(/was: .+/);
   }

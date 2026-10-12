@@ -14,7 +14,7 @@ import { LoadingState } from '../components/Loading';
 import { CardTitle } from '../components/CardTitle';
 import { Eyebrow } from '../components/Eyebrow';
 import { RaiseDistribution } from '../components/RaiseDistribution';
-import { useControls } from '../state/controls';
+import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useSummary, useReferenceStatus } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { usd, num, pct, fmtChange, fullName } from '../lib/format';
@@ -393,7 +393,7 @@ export default function Raises() {
                       <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
                       <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} fold />
                       <SortableTh sortKey="school" label="School · department" sort={sort} onSort={setSort} fold />
-                      <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" fold />
+                      <SortableTh sortKey="pay" label={METRIC_LABEL[metric]} sort={sort} onSort={setSort} align="right" fold />
                       <SortableTh sortKey="raise" label="Raise" sort={sort} onSort={setSort} align="right" />
                       <SortableTh sortKey="beyond" label="Above usual" sort={sort} onSort={setSort} align="right" />
                       <Table.Th data-fold>Explanation</Table.Th>
@@ -450,7 +450,7 @@ export default function Raises() {
                     <Table.Tr>
                       <SortableTh sortKey="name" label="Name" sort={changeSort} onSort={setChangeSort} />
                       <SortableTh sortKey="title" label="Title, from → to" sort={changeSort} onSort={setChangeSort} fold />
-                      <SortableTh sortKey="pay" label="Pay" sort={changeSort} onSort={setChangeSort} align="right" fold />
+                      <SortableTh sortKey="pay" label={METRIC_LABEL[metric]} sort={changeSort} onSort={setChangeSort} align="right" fold />
                       <SortableTh sortKey="change" label="Rate change" tip="The change in the full-time rate, so a change of FTE with the new title doesn’t read as a raise or a cut." sort={changeSort} onSort={setChangeSort} align="right" />
                     </Table.Tr>
                   </Table.Thead>

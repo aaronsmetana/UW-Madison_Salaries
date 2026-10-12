@@ -3,7 +3,7 @@ import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Toolt
 import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
-import { useControls } from '../state/controls';
+import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { salaryExpr, personPay, snapWhere, whereAll, filterKey, mainOf } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
@@ -168,7 +168,7 @@ export function EarnersPanel() {
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" fold />
-              <SortableTh sortKey="pay" label="Pay" sort={sort} onSort={setSort} align="right" />
+              <SortableTh sortKey="pay" label={METRIC_LABEL[metric]} sort={sort} onSort={setSort} align="right" />
               <Table.Th className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
             </Table.Tr>
           </Table.Thead>

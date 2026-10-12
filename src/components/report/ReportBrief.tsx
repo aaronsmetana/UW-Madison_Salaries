@@ -52,7 +52,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
   onPoolCsv?: () => void;
 }) {
   const {
-    subjectName, subjectFirst, subjectPay, headerMeta, recommended, belowTarget, targetDelta, targetPct,
+    subjectName, subjectFirst, subjectPay, measure, headerMeta, recommended, belowTarget, targetDelta, targetPct,
     basisLabel, receipt, proofs, yearsToParity, yearsToParityRate, yearsToParityObserved, realErosion, rows, maxPay, showTenure, anonymize,
     attrition, divergence, history, format, sections, jobCode, activeFactors, supervisory, generated, snapLabel,
     standing, tenureScatterPoints, raiseCycle, guidelineCompression, guidelineProvisions, cohortBasisScoped, match, counterPoints,
@@ -415,7 +415,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                         {line('Title', a.title ?? '—', b.title ?? '—')}
                         {line('School or division', a.school ?? '—', b.school ?? '—')}
                         {line(<>UW tenure<Sup n={fn('tenure')} /></>, fmtYears(a.tenure), fmtYears(b.tenure))}
-                        {line('Salary', usd(a.pay), <>{usd(b.pay)} <Text span size="sm" c="dimmed">(+{usd(match.gap)})</Text></>)}
+                        {line(measure, usd(a.pay), <>{usd(b.pay)} <Text span size="sm" c="dimmed">(+{usd(match.gap)})</Text></>)}
                       </Table.Tbody>
                     </Table>
                     {sentence && <Text size="sm" mt="sm" className="match-tenure">{sentence}</Text>}
@@ -456,7 +456,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                       <Table.Th>Name</Table.Th>
                       <Table.Th>Title</Table.Th>
                       {showTenure && <Table.Th ta="right"><GlossaryTerm term="tenure">Tenure</GlossaryTerm><Sup n={fn('tenure')} /></Table.Th>}
-                      <Table.Th>Salary</Table.Th>
+                      <Table.Th>{measure}</Table.Th>
                       <Table.Th ta="right">vs {subjectFirst}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>

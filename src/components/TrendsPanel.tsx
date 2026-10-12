@@ -9,7 +9,7 @@ import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
 import { BreakLabel, BreakLabels } from './chart/BreakLabel';
 import { areaGradDef } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
-import { useControls } from '../state/controls';
+import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useSummary } from '../lib/hooks';
 import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
 import { usd, num, pct, spanLabel } from '../lib/format';
@@ -63,6 +63,8 @@ export function TrendsPanel() {
   const gradId = useId();
   const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
+  /** The plotted figure, named for the measure in force (G2). */
+  const med = `Median ${METRIC_LABEL[metric].toLowerCase()}`;
   const reduce = prefersReducedMotion();
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   const [hcScale, setHcScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
@@ -138,7 +140,7 @@ export function TrendsPanel() {
         </Group>
         }
       >
-        Median salary &amp; headcount over time
+        {med} and headcount over time
       </CardTitle>
       {/* Two stacked single-axis panels sharing an x-axis (syncId) instead of one dual-axis chart —
           a shared plot with two different y-scales makes the point where the lines cross meaningless.
@@ -146,12 +148,12 @@ export function TrendsPanel() {
           though those lines render below); the headcount panel suppresses its own tooltip and relies on
           the synced crosshair, matching the same convention as Person's trend+FTE stack. */}
       <ResponsiveContainer width="100%" height={230}>
-        <ComposedChart {...chartKeys('Median salary over time')} data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 32, bottom: 0 }}>
+        <ComposedChart {...chartKeys(`${med} over time`)} data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 32, bottom: 0 }}>
           <defs>{areaGradDef(gradId)}</defs>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={false} />
           <YAxis tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
-            label={{ value: 'Median salary', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
+            label={{ value: med, angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip content={<TrendTip />} />
 
           {ttcX != null && <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3" />}
@@ -222,8 +224,8 @@ export function TrendsPanel() {
           : 'Nominal dollars (not inflation-adjusted).'}
       </Text>
       <ChartData
-        caption={dollarMode === 'real' ? `Median salary, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : 'Median salary, headcount & renewable staff over time'}
-        columns={['Snapshot', 'Median', 'Change vs previous snapshot', 'Headcount', 'Renewable']}
+        caption={dollarMode === 'real' ? `${med}, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : `${med}, headcount & renewable staff over time`}
+        columns={['Snapshot', med, 'Change vs previous snapshot', 'Headcount', 'Renewable']}
         rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])}
         unit="snapshots"
         period={spanLabel(plot.map((d) => d.label))}

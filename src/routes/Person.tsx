@@ -43,6 +43,7 @@ import { useMounted, prefersReducedMotion } from '../lib/motion';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { TenurePayScatter, type ScatterPoint } from '../components/TenurePayScatter';
 import { PayBandBar } from '../components/PayBandBar';
+import { MethodNote } from '../components/MethodNote';
 import { bandFor, belowMinimum, isRange } from '../lib/bands';
 import { PeerStrip } from '../components/PeerStrip';
 import { ChartData } from '../components/ChartData';
@@ -135,7 +136,7 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
     <Group gap="lg" mt="xs" wrap="wrap">
       {item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-accent-6)" strokeWidth={2} /></svg>,
-        mode === 'actual' ? 'Actual pay' : 'Salary rate',
+        mode === 'actual' ? 'Actual pay' : 'Full-time rate',
       )}
       {item(
         <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray={TREND_DASH.median} /></svg>,
@@ -754,6 +755,8 @@ export default function Person() {
   // The band's lines only where the line drawn is in the band's unit: a full-time rate, and the rate of the
   // graded appointment. A half-time actual-pay line under a full-time range reads as half the band below it.
   const shown = trendMode === 'rate' ? lastRate : lastSalary;
+  /** The trend's figure, named for what it plots (G2): the toggle read "Rate" and the line "Salary rate". */
+  const trendMeasure = trendMode === 'rate' ? 'Full-time rate' : 'Actual pay';
   const trendBand = band && bandRate != null && shown != null && Math.round(shown) === Math.round(bandRate) ? band : null;
   const reduceMotion = prefersReducedMotion(); // gate the trend-line draw-in (and other JS-driven motion)
   // Round steps from $0 to the highest line or grade-band edge drawn (lib/rangeScale): Recharts' own
@@ -965,7 +968,7 @@ export default function Person() {
         <Tabs.List>
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
           <Tabs.Tab value="pay">Pay &amp; standing</Tabs.Tab>
-          <Tabs.Tab value="trends">Salary trend</Tabs.Tab>
+          <Tabs.Tab value="trends">Pay trend</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
           <Tabs.Tab value="report">Report</Tabs.Tab>
         </Tabs.List>
@@ -1045,7 +1048,7 @@ export default function Person() {
                 )}
               </StatCell>
 
-              <StatCell label="Salary growth" onOpen={() => setTab('trends')}>
+              <StatCell label="Actual pay growth" onOpen={() => setTab('trends')}>
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text
                     fw={700}
@@ -1458,13 +1461,6 @@ export default function Person() {
               );
             })}
           </Group>
-          {(presets.uw != null || presets.title != null || presets.own != null) && (
-            <Text size="xs" c="dimmed" mt={-8} mb="md">
-              Typical is the median raise among people who kept the same title and FTE from one snapshot to the next,
-              compounded over this person's time in the data; titles need at least {MIN_TITLE_STEP} such people at a step.
-              Promotions and title changes are not raises, so they are left out of all three.
-            </Text>
-          )}
           <Group align="flex-end" wrap="wrap">
             <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={150} step={0.5} min={0} suffix="%" />
             <NumberInput label="Years" value={years} onChange={(v) => setYears(typeof v === 'number' ? v : 0)} w={120} min={0} max={40} />
@@ -1500,6 +1496,16 @@ export default function Person() {
           {range && pctRaise === 0 && (
             <Text size="xs" c="dimmed" mt="md">Enter a raise above 0% to project years to the band max.</Text>
           )}
+          {/* The presets' method, after the projection it feeds rather than between the presets and their inputs (G22). */}
+          {(presets.uw != null || presets.title != null || presets.own != null) && (
+            <MethodNote className="raise-method">
+              <Text inherit>
+                Typical is the median raise among people who kept the same title and FTE from one snapshot to the next,
+                compounded over this person's time in the data; titles need at least {MIN_TITLE_STEP} such people at a step.
+                Promotions and title changes are not raises, so they are left out of all three.
+              </Text>
+            </MethodNote>
+          )}
         </Card>
       )}
           </Stack>
@@ -1522,12 +1528,12 @@ export default function Person() {
             <SegmentedToggle
               value={trendMode}
               onChange={(v) => setTrendMode(v as 'actual' | 'rate')}
-              options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Rate' }]}
+              options={[{ id: 'actual', label: 'Actual pay' }, { id: 'rate', label: 'Full-time rate' }]}
             />
           </Group>
           }
         >
-          Salary over time
+          {trendMeasure} over time
         </CardTitle>
         {/* Hero salary chart: a ComposedChart with a gradient area + soft-glow line, faint title-era bands,
             grade-band reference lines, and per-step change chips, on a date axis. The FTE sub-chart below
@@ -1535,7 +1541,7 @@ export default function Person() {
             this chart's x-axis. */}
         <div ref={trendBoxRef} className="person-trend">
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart {...chartKeys('Salary over time')} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
+          <ComposedChart {...chartKeys(`${trendMeasure} over time`)} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
             <defs>{areaGradDef(gradId)}</defs>
             {/* First, so the plot surface it paints lies under the era bands rather than over them. */}
             <CartesianGrid {...GRID} />
@@ -1619,7 +1625,7 @@ export default function Person() {
               <Line yAxisId="pay" className="typical-line" type="linear" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
             )}
             {/* Primary line + haloed active dot. */}
-            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
+            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMeasure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (
@@ -1696,7 +1702,7 @@ export default function Person() {
         )}
         <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={trendBand ? { grade: graded?.grade ?? null, min: trendBand.min, max: trendBand.max } : null} mode={trendMode} hasTypical={trendMode === 'actual' && raiseCtx.typical.size > 1} />
         <ChartData
-          caption={dollarMode === 'real' ? `Salary over time (in ${REAL_BASE_YEAR} dollars)` : 'Salary over time'}
+          caption={dollarMode === 'real' ? `Pay over time (in ${REAL_BASE_YEAR} dollars)` : 'Pay over time'}
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}
           rows={trendData.map((t) => [t.label, t.salary, t.rate, t.med])}
           unit="snapshots"

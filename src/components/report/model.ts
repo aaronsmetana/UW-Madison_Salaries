@@ -736,6 +736,8 @@ export interface StandingModel {
 
 export interface BriefModel {
   subjectName: string; subjectFirst: string; subjectPay: number | null;
+  /** What every pay figure in the brief is: the measure in force ("Actual pay", "Full-time rate"), G2. */
+  measure: string;
   /** Beside the grade-band and market-floor grounds (PayBandNote): where the ranges come from, or how much
    *  of UW they cover while that is partial, and whether they postdate the snapshot read. */
   payBandNote?: string | null;

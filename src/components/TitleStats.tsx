@@ -8,7 +8,7 @@ import { closeMatches } from '../lib/search';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, peopleSql, mainOf } from '../lib/queries';
 import { usd, num, fullName, fmtYears } from '../lib/format';
-import type { Metric } from '../state/controls';
+import { METRIC_LABEL, type Metric } from '../state/controls';
 import { useTray } from '../state/tray';
 import { PeerRangeBar } from './PeerRangeBar';
 import { PayBandBar } from './PayBandBar';
@@ -64,6 +64,8 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   const { data: grades } = useGrades();
   const enabled = !!snap && !!jobCode;
   const pinned = pinSalary != null && Number.isFinite(pinSalary) && pinSalary > 0;
+  /** What each figure here is: the measure in force (G2), never a bare "Salary". */
+  const measure = METRIC_LABEL[metric];
 
   const titleBase = `snapshot_id = ${sqlStr(snap)} AND job_code = ${sqlStr(jobCode)}`; // all schools
   const base = school ? `${titleBase} AND school = ${sqlStr(school)}` : titleBase;       // scoped to filter
@@ -181,13 +183,13 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
     return (
       <Stack gap="lg">
         <StatRow key="stats" cols={TITLE_COLS}>
-          <StatCard size="hero" label={`Median salary · this title${scopeLabel}`}
+          <StatCard size="hero" label={`Median ${measure.toLowerCase()} · this title${scopeLabel}`}
             value={<Skeleton height={42} width={180} radius="sm" />} sub={<Skeleton height={23} width={170} radius="sm" />} />
           <StatCard size="sm" label="Range (p25–p75)" value={<Skeleton height={28} width={150} radius="sm" />} />
           <StatCard size="sm" label="Spread (min–max)" value={<Skeleton height={28} width={150} radius="sm" />} />
         </StatRow>
         <Card key="dist" withBorder padding="lg">
-          <CardTitle>Salary distribution{scopeLabel}</CardTitle>
+          <CardTitle>{measure} distribution{scopeLabel}</CardTitle>
           <ChartSkeleton height={DIST_LOADING_H} />
           <Text size="xs" c="dimmed" mt={4}>Click a bar to filter the people list below to that range.</Text>
         </Card>
@@ -224,7 +226,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       <StatRow key="stats" cols={TITLE_COLS}>
         <StatCard
           size="hero"
-          label={`Median salary · this title${scopeLabel}`}
+          label={`Median ${measure.toLowerCase()} · this title${scopeLabel}`}
           value={usd(s.med)}
           sub={`${num(s.n)} ${s.n === 1 ? 'person' : 'people'} · job code ${jobCode}`}
         />
@@ -258,11 +260,12 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
       )}
 
       <Card key="dist" withBorder padding="lg">
-        <CardTitle>Salary distribution{scopeLabel}</CardTitle>
+        <CardTitle>{measure} distribution{scopeLabel}</CardTitle>
         <SalaryHistogram
           values={pays}
           markerValue={pinned ? pinSalary : null}
           markerLabel="Your salary"
+          measure={measure}
           tooFewText={`Only ${num(s.n)} ${s.n === 1 ? 'person has' : 'people have'} this title${scopeLabel} — too few to chart a meaningful distribution.`}
           onBinClick={setBinFilter}
         />
@@ -334,7 +337,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                 <SortableTh sortKey="tenure" label="Tenure" fold tip={GLOSSARY.tenure} sort={peopleSort} onSort={setPeopleSort} align="right" />
                 {/* Part-time appointments sat among full-time ones with nothing to tell them apart (T13). */}
                 <Table.Th ta="right" data-fold w={64}>FTE</Table.Th>
-                <SortableTh sortKey="salary" label="Salary" sort={peopleSort} onSort={setPeopleSort} align="right" />
+                <SortableTh sortKey="salary" label={measure} sort={peopleSort} onSort={setPeopleSort} align="right" />
                 <Table.Th w={132} className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
               </Table.Tr>
             </Table.Thead>

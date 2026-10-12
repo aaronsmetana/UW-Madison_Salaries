@@ -168,7 +168,7 @@ test("the trend tooltip says the same about a raise, and adds the title's own ty
   const cellText = await changeCellText(page, 'Oct 2023');
   const sentence = cellText.slice(cellText.search(/larger than|smaller than|the same as/));
 
-  await page.getByRole('tab', { name: 'Salary trend' }).click();
+  await page.getByRole('tab', { name: 'Pay trend' }).click();
   // Nov '21 pre, Nov '21 post, Mar '22, Aug '22, Oct '23 …
   const dot = page.locator('.person-trend .recharts-line-dots').first().locator('circle').nth(4);
   await expect(dot).toBeVisible({ timeout: 30_000 });
