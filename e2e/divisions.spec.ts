@@ -169,8 +169,8 @@ test('Changes bins raises by 1%, with no change neutral and counted, and cuts in
   const zero = card.locator('.raise-bin-zero').first();
   await expect(zero).toHaveAttribute('fill', /gray-4/);
   await expect(card.locator('.raise-zero-label')).toHaveText(/^[\d,]+$/);
-  for (const down of await card.locator('.raise-bin-down').all()) await expect(down).toHaveAttribute('fill', /red/);
-  for (const up of await card.locator('.raise-bin-up').all()) await expect(up).toHaveAttribute('fill', /pos/);
+  for (const down of await card.locator('.raise-bin-down').all()) await expect(down).toHaveAttribute('fill', 'var(--mark-down)');
+  for (const up of await card.locator('.raise-bin-up').all()) await expect(up).toHaveAttribute('fill', 'var(--mark-up)');
 });
 
 test('Retention marks the Oct 2023 coverage change, even where another step had more churn', async ({ page }) => {

@@ -285,20 +285,18 @@ export function ChangesPanel() {
     const r = d.raises, h = d.hires, dep = d.departures, tot = d.total_change;
     const s2 = r + h;
     // `end` is the running total after the step, where the connector to the next bar is drawn.
-    const step = (name: string, base: number, amount: number, kind: 'pos' | 'red' | 'net', end: number) => ({ name, base, bar: Math.abs(amount), amount, kind, end });
+    const step = (name: string, base: number, amount: number, kind: 'up' | 'down' | 'net', end: number) => ({ name, base, bar: Math.abs(amount), amount, kind, end });
     return [
-      step('Raises', Math.min(0, r), r, r >= 0 ? 'pos' : 'red', r),
-      step('New hires', Math.min(r, s2), h, h >= 0 ? 'pos' : 'red', s2),
-      step('Departures', Math.min(s2, tot), dep, 'red', tot),
+      step('Raises', Math.min(0, r), r, r >= 0 ? 'up' : 'down', r),
+      step('New hires', Math.min(r, s2), h, h >= 0 ? 'up' : 'down', s2),
+      step('Departures', Math.min(s2, tot), dep, 'down', tot),
       step('Net change', Math.min(0, tot), tot, 'net', tot),
     ];
   }, [d]);
-  // A waterfall step's colour: the net bar in the accent (red when the net is a loss), gains green,
-  // losses red.
-  const wfColor = (kind: string, amount: number) =>
-    kind === 'net'
-      ? (amount >= 0 ? 'var(--mantine-color-accent-6)' : 'var(--mantine-color-red-6)')
-      : kind === 'pos' ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-red-5)';
+  // A waterfall step's colour: what added to payroll up, what took from it down (the app's one direction
+  // pair, blue and orange), and the net a total, in the guide grey — its sign is in its label.
+  const wfColor = (kind: string) =>
+    kind === 'net' ? 'var(--guide-strong)' : kind === 'up' ? 'var(--mark-up)' : 'var(--mark-down)';
 
   // Share of continuing staff who got any raise.
   const raisedPct = equity?.n_raised != null && s?.n_continuing ? equity.n_raised / s.n_continuing : null;
@@ -321,7 +319,7 @@ export function ChangesPanel() {
           <Text size="xs" c="dimmed" lineClamp={1}>{[m.title, m.school].filter(Boolean).join(' · ')}</Text>
         </Table.Td>
         <Table.Td ta="right">{usd(m.a_pay)} → {usd(m.b_pay)}</Table.Td>
-        <Table.Td ta="right" c={m.delta >= 0 ? 'pos' : 'red'}>{m.delta >= 0 ? '+' : ''}{usd(m.delta)}</Table.Td>
+        <Table.Td ta="right" c={m.delta >= 0 ? 'up' : 'down'}>{m.delta >= 0 ? '+' : ''}{usd(m.delta)}</Table.Td>
         <Table.Td ta="right">{pct(m.pct)}</Table.Td>
       </Table.Tr>
     ));
@@ -449,7 +447,7 @@ export function ChangesPanel() {
                   return (
                     <TipSurface>
                       <Text size="sm" fw={600}>{w.name}</Text>
-                      <Text size="sm" c={w.amount >= 0 ? 'pos' : 'red'}>{w.amount >= 0 ? '+' : ''}{usd(w.amount)}</Text>
+                      <Text size="sm" c={w.amount >= 0 ? 'up' : 'down'}>{w.amount >= 0 ? '+' : ''}{usd(w.amount)}</Text>
                     </TipSurface>
                   );
                 }}
@@ -468,7 +466,7 @@ export function ChangesPanel() {
                 {waterfall.map((w, i) => (
                   <Cell
                     key={i}
-                    fill={wfColor(w.kind, w.amount)}
+                    fill={wfColor(w.kind)}
                     fillOpacity={hoveredWf != null && hoveredWf !== i ? 0.45 : 1}
                   />
                 ))}
@@ -518,28 +516,28 @@ export function ChangesPanel() {
           <CardTitle mb="sm">Net headcount flow by division</CardTitle>
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <div>
-              <Eyebrow c="pos" mb={4}>Net gainers</Eyebrow>
+              <Eyebrow c="up" mb={4}>Net gainers</Eyebrow>
               <Table>
                 <Table.Tbody>
                   {netTop.gainers.map((r) => (
                     <Table.Tr key={r.school}>
                       <Table.Td><Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor></Table.Td>
                       <Table.Td ta="right" c="dimmed">+{num(r.joined)} / −{num(r.departed)}</Table.Td>
-                      <Table.Td ta="right" c={r.net >= 0 ? 'pos' : 'red'} fw={600}>{r.net >= 0 ? '+' : ''}{num(r.net)}</Table.Td>
+                      <Table.Td ta="right" c={r.net >= 0 ? 'up' : 'down'} fw={600}>{r.net >= 0 ? '+' : ''}{num(r.net)}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
               </Table>
             </div>
             <div>
-              <Eyebrow c="red" mb={4}>Net losers</Eyebrow>
+              <Eyebrow c="down" mb={4}>Net losers</Eyebrow>
               <Table>
                 <Table.Tbody>
                   {netTop.losers.map((r) => (
                     <Table.Tr key={r.school}>
                       <Table.Td><Anchor component={Link} to={`/school/${encodeURIComponent(r.school)}`}>{r.school}</Anchor></Table.Td>
                       <Table.Td ta="right" c="dimmed">+{num(r.joined)} / −{num(r.departed)}</Table.Td>
-                      <Table.Td ta="right" c="red" fw={600}>{num(r.net)}</Table.Td>
+                      <Table.Td ta="right" c="down" fw={600}>{num(r.net)}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -569,7 +567,7 @@ export function ChangesPanel() {
                 <Table.Td>
                   <Text size="sm">{p.a_title ?? '—'} → {p.b_title ?? '—'}</Text>
                 </Table.Td>
-                <Table.Td ta="right" c={(p.delta ?? 0) >= 0 ? 'pos' : 'red'}>
+                <Table.Td ta="right" c={(p.delta ?? 0) >= 0 ? 'up' : 'down'}>
                   {p.delta == null ? '—' : `${p.delta >= 0 ? '+' : ''}${usd(p.delta)}`}
                 </Table.Td>
               </Table.Tr>
@@ -601,7 +599,7 @@ export function ChangesPanel() {
                 <Table.Tr key={i}>
                   <Table.Td><Text size="sm">{f.a_title ?? '—'} → {f.b_title ?? '—'}</Text></Table.Td>
                   <Table.Td ta="right">{num(f.n)}</Table.Td>
-                  <Table.Td ta="right" c={(f.med_delta ?? 0) >= 0 ? 'pos' : 'red'}>
+                  <Table.Td ta="right" c={(f.med_delta ?? 0) >= 0 ? 'up' : 'down'}>
                     {f.med_delta == null ? '—' : `${f.med_delta >= 0 ? '+' : ''}${usd(f.med_delta)}`}
                   </Table.Td>
                 </Table.Tr>
@@ -640,7 +638,7 @@ export function ChangesPanel() {
                     <Text size="sm">{m.a_school ?? '—'} → {m.b_school ?? '—'}</Text>
                     {reorgMove(m.a_school, m.b_school) && <Badge size="xs" variant="light" color="gray" className="reorg-badge">Reorganization</Badge>}
                   </Table.Td>
-                  <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'pos' : 'red'}>
+                  <Table.Td ta="right" c={(m.delta ?? 0) >= 0 ? 'up' : 'down'}>
                     {m.delta == null ? '—' : `${m.delta >= 0 ? '+' : ''}${usd(m.delta)}`}
                   </Table.Td>
                 </Table.Tr>

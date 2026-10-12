@@ -48,7 +48,7 @@ export const LOOK_DARK: DotLook = { steps: DEPTH_STEPS, reach: 0.5, hues: HUES, 
 export const LOOK_LIGHT: DotLook = { steps: DEPTH_STEPS, reach: 0.4, hues: HUES, turn: 8, rimLift: 0, rimChroma: 1.3 };
 /** Any other field's shading: a quiet depth ramp, one hue, no rim. A sparse strip's dots nearly all crown
  *  their own one-pixel column, so a rim there lit almost every dot, and the person page's grey peers came
- *  to outshine the green ones they are the context for. */
+ *  to outshine the same-school ones they are the context for. */
 export const LOOK_PLAIN: DotLook = { steps: DEPTH_STEPS, reach: 0.2, hues: HUES, turn: 0, rimLift: 0, rimChroma: 1 };
 /** Which hue variant a dot wears: fixed per dot, spread evenly. */
 const hueOf = (i: number) => (Math.imul(i + 7, 0x9e3779b1) >>> 16) % HUES;

@@ -147,13 +147,16 @@ export function CohortPanel() {
     return sortMode === 'retention' ? [...rows].sort((a, b) => b.retention - a.retention) : rows;
   }, [data, sortMode, cohort, firstYear, firstMonth]);
 
-  // Steps run 4 to 14 months, so "left" is also given as a share of the staff at the start of the step,
-  // per month — the one figure that compares across them.
+  // Steps run 4 to 14 months, so the chart plots each a month at a time (G15): drawn whole, the 14-month
+  // Aug 2022 → Oct 2023 step's 4,857 joiners stood as a hiring surge. "Left" is also given as a share of the
+  // staff at the start of the step, per month. The table keeps the step's own counts beside the rates.
   const turnover = useMemo(() => (flow ?? []).map((r) => {
     const months = Math.max(1, monthsBetween(String(r.prev_dt), String(r.dt)));
     const leftShare = r.start_n > 0 ? r.departed / r.start_n : null;
+    const net = r.joined - r.departed;
     return {
-      id: r.sid, label: r.lbl, joined: r.joined, departed: r.departed, net: r.joined - r.departed,
+      id: r.sid, label: r.lbl, joined: r.joined, departed: r.departed, net,
+      joinedPM: r.joined / months, departedPM: r.departed / months, netPM: net / months,
       startN: r.start_n, months, leftShare, leftPerMonth: leftShare != null ? leftShare / months : null,
     };
   }), [flow]);
@@ -214,7 +217,7 @@ export function CohortPanel() {
               {...chartAnim(reduceMotion, MOTION.slow)}
               dataKey="retention"
               name="Retained"
-              fill="var(--mantine-color-pos-6)"
+              fill="var(--mantine-color-accent-6)"
               stackId="r"
               stroke="var(--mantine-color-body)"
               strokeWidth={2}
@@ -224,7 +227,7 @@ export function CohortPanel() {
               {chart.map((c, i) => (
                 <Cell
                   key={i}
-                  fill={sortMode === 'retention' ? retColor(c.retention) : 'var(--mantine-color-pos-6)'}
+                  fill={sortMode === 'retention' ? retColor(c.retention) : 'var(--mantine-color-accent-6)'}
                   fillOpacity={hoveredYear != null && hoveredYear !== i ? 0.45 : 1}
                 />
               ))}
@@ -246,7 +249,7 @@ export function CohortPanel() {
           </BarChart>
         </ResponsiveContainer>
         <MarkerLegend items={[
-          { color: 'var(--mantine-color-pos-6)', label: 'Retained', bar: true },
+          { color: 'var(--mantine-color-accent-6)', label: 'Retained', bar: true },
           { color: 'var(--mantine-color-gray-4)', label: 'Left', bar: true },
         ]} />
         <ChartData
@@ -256,7 +259,7 @@ export function CohortPanel() {
           unit="hire-year cohorts"
           period={latest?.label ? `as of ${latest.label}` : undefined}
           about={<>
-            Each bar is one hire-year cohort: green = share still present in the latest snapshot ({latest?.label}),
+            Each bar is one hire-year cohort: teal = share still present in the latest snapshot ({latest?.label}),
             grey = share since gone. The data begins in {firstMonth}, so only people hired after it are seen from the
             start; "Here in {firstMonth}" follows those already employed then, by hire year. The most recent cohorts
             have had little time to leave.
@@ -265,7 +268,7 @@ export function CohortPanel() {
       </Card>
 
       <Card withBorder padding="lg">
-        <CardTitle sub="Paid staff joining vs. leaving, step by step.">Workforce turnover</CardTitle>
+        <CardTitle sub="Paid staff joining vs. leaving, a month at a time: each step's count over the months it covers, since snapshots run 4 to 14 months apart.">Workforce turnover</CardTitle>
         {flowFetching && !flow ? (
           <ChartSkeleton height={280} />
         ) : (
@@ -283,11 +286,11 @@ export function CohortPanel() {
                     wider than the plot (the chart less its axis and margins), where Recharts can keep it:
                     on one line it ran 590px wide on a 375px screen. */}
                 <Tooltip
-                  formatter={(v: number, name) => [num(v), name]}
+                  formatter={(v: number, name) => [`${num(Math.round(v))} a month`, name]}
                   labelFormatter={(label, payload) => {
                     const d = payload?.[0]?.payload as (typeof turnover)[number] | undefined;
                     return d && d.leftShare != null && d.leftPerMonth != null
-                      ? `${label} · ${pct(d.leftShare)} of the ${num(d.startN)} at the start left, over ${d.months} months (${pct(d.leftPerMonth, 2)} a month)`
+                      ? `${label} · over ${d.months} months, ${num(d.joined)} joined and ${num(d.departed)} left: ${pct(d.leftShare)} of the ${num(d.startN)} at the start (${pct(d.leftPerMonth, 2)} a month)`
                       : label;
                   }}
                   cursor={{ fill: 'var(--mantine-color-default-hover)' }}
@@ -303,9 +306,9 @@ export function CohortPanel() {
                 <ReferenceLine y={0} stroke="var(--mantine-color-default-border)" />
                 <Bar
                   {...chartAnim(reduceMotion, MOTION.slow)}
-                  dataKey="joined"
+                  dataKey="joinedPM"
                   name="Joined"
-                  fill="var(--mantine-color-pos-6)"
+                  fill="var(--mark-up)"
                   radius={BAR_RADIUS}
                   onMouseEnter={(_, i) => setHoveredFlow(i)}
                   onMouseLeave={() => setHoveredFlow(null)}
@@ -314,38 +317,40 @@ export function CohortPanel() {
                 </Bar>
                 <Bar
                   {...chartAnim(reduceMotion, MOTION.slow)}
-                  dataKey="departed"
+                  dataKey="departedPM"
                   name="Left"
-                  fill="var(--mantine-color-red-6)"
+                  fill="var(--mark-down)"
                   radius={BAR_RADIUS}
                   onMouseEnter={(_, i) => setHoveredFlow(i)}
                   onMouseLeave={() => setHoveredFlow(null)}
                 >
                   {turnover.map((_, i) => <Cell key={i} fillOpacity={hoveredFlow != null && hoveredFlow !== i ? 0.45 : 1} />)}
                 </Bar>
-                <Line type="monotone" dataKey="net" name="Net change" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+                <Line type="linear" dataKey="netPM" name="Net change" stroke="var(--mantine-color-text)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
               </ComposedChart>
             </ResponsiveContainer>
             </div>
             <MarkerLegend items={[
-              { color: 'var(--mantine-color-pos-6)', label: 'Joined', bar: true },
-              { color: 'var(--mantine-color-red-6)', label: 'Left', bar: true },
-              { color: 'var(--mantine-color-accent-6)', label: 'Net change' },
+              { color: 'var(--mark-up)', label: 'Joined', bar: true },
+              { color: 'var(--mark-down)', label: 'Left', bar: true },
+              { color: 'var(--mantine-color-text)', label: 'Net change' },
             ]} />
             <ChartData
               caption="Workforce turnover"
-              columns={['As of', 'Joined', 'Left', 'Net', 'Staff at start', 'Months', 'Left, % of staff at start', 'Left, % a month']}
-              rows={turnover.map((x) => [x.label, x.joined, x.departed, x.net, x.startN, x.months,
-                x.leftShare != null ? pct(x.leftShare) : null, x.leftPerMonth != null ? pct(x.leftPerMonth, 2) : null])}
+              columns={['As of', 'Months', 'Joined', 'Left', 'Net', 'Joined a month', 'Left a month', 'Net a month', 'Staff at start', 'Left, % of staff at start', 'Left, % a month']}
+              rows={turnover.map((x) => [x.label, x.months, x.joined, x.departed, x.net, Math.round(x.joinedPM), Math.round(x.departedPM),
+                Math.round(x.netPM), x.startN, x.leftShare != null ? pct(x.leftShare) : null, x.leftPerMonth != null ? pct(x.leftPerMonth, 2) : null])}
               unit="snapshot steps"
               period={spanLabel(turnover.map((x) => x.label))}
               about={<>
-                Paid employees who joined vs left between each snapshot and the one before it, and the net change.
+                Paid employees who joined vs left between each snapshot and the one before it, and the net change,
+                each divided by the months the step covers: snapshots run 4 to 14 months apart, so a step's raw count
+                says as much about its length as about hiring. The table gives both.
                 Counts paid staff only (unpaid $0 affiliates excluded); the duplicate Pre-TTC snapshot is
                 omitted. The dashed marker is Oct 2023, when the source's coverage changed (some reports excluded
                 students and trainees): joiners and leavers across it partly reflect coverage, not hiring or
                 attrition. The tooltip and the table also give those who left as a share of the staff at the start
-                of each step, per month, since steps run 4 to 14 months.
+                of each step, and that share per month.
               </>}
             />
           </>

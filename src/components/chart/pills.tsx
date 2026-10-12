@@ -69,7 +69,7 @@ export function YoyPill(props: {
 
 /** A change's colour: up, down, or dimmed for no change (`fmtChange` prints that as "0%"). */
 function changeColor(value: number): string {
-  return fmtChange(value) === '0%' ? 'var(--mantine-color-dimmed)' : value > 0 ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-red-7)';
+  return fmtChange(value) === '0%' ? 'var(--mantine-color-dimmed)' : value > 0 ? 'var(--text-up)' : 'var(--text-down)';
 }
 
 /** The radius of a title-change marker's halo (TitleChangeDot), which no chip may cover. */

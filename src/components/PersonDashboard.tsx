@@ -314,11 +314,11 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
             <XAxis {...trendAxis} tick={AXIS_TICK} />
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             <Tooltip content={<TrendTooltip />} />
-            <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="med" name="Title median" stroke="var(--mantine-color-dimmed)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls={false} {...chartAnim(reduceMotion, MOTION.slow)} />
             {raiseCtx.typical.size > 1 && (
-              <Line type="monotone" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
+              <Line type="linear" className="typical-line" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray="2 3" dot={false} connectNulls={false} isAnimationActive={false} />
             )}
-            <Line type="monotone" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="salary" name="Salary" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
             {breakMarks.map((b) => (
               <ReferenceLine key={`brk-${b.key}`} x={b.x} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" className="reporting-marker" />
             ))}

@@ -38,14 +38,15 @@ export const MARK_PEER_SAME_SCHOOL = 'var(--mark-peer-same-school)';
 
 /** A dot's own edge: 1px inside it, a step darker than its fill (a step lighter on the dark card). The
  *  population's grey is quiet on purpose (2.2:1), so its edge is what makes each person a mark a reader
- *  can see (3.8:1); a same-school peer's sharpens a green that already reads. */
+ *  can see (3.8:1); a same-school peer's sharpens a grey that already reads. */
 export const MARK_PEER_EDGE = 'var(--mark-peer-edge)';
 export const MARK_PEER_SAME_SCHOOL_EDGE = 'var(--mark-peer-same-school-edge)';
 
-/** A target / goal salary. Shares its green with same-school peers, which is safe only because the two
- *  never take the same shape: a target is always a rule across the track, a peer is always a dot. Keep
- *  it that way — if a target ever becomes a dot, it needs its own hue. */
-export const MARK_TARGET = 'var(--mantine-color-pos-6)';
+/** A target / goal salary: this person's, so the accent, a lighter step than their own dot (3.5:1 on
+ *  white). It was green, which is a success here, not a figure (G11). Safe beside the subject's dot only
+ *  because the two never take the same shape: a target is always a rule across the track. Keep it that
+ *  way — if a target ever becomes a dot, it needs its own colour. */
+export const MARK_TARGET = 'var(--mantine-color-accent-5)';
 
 /** Circle radius, in px: one size for everyone, the person included. They were drawn half again as large as
  *  their peers (a `self` radius of its own); now a pip in their dot, their label and their guides say who

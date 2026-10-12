@@ -341,7 +341,7 @@ function DotsLayer({
 
 /**
  * Pay-vs-tenure scatter for everyone with the same title (the caller filters to the active cohort).
- * The subject is the accent dot, named beside it; same-school peers are green, others gray. A dashed
+ * The subject is the accent dot, named beside it; same-school peers a darker grey, others a light one. A dashed
  * least-squares line shows the pay tenure alone predicts, named at its end, inside a faint band of the
  * pays within 2% of it; a callout reads whether the subject sits above, below or on that curve — on it
  * exactly when their dot is inside the band.

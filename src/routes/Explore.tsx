@@ -132,7 +132,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
       }
     >
       <Group align="baseline" gap={8} mt={6} wrap="nowrap">
-        <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'pos' : 'red'}>
+        <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'up' : 'down'}>
           {growth == null ? '—' : fmtChange(growth)}
         </Text>
         <Text size="sm" c="dimmed">{usd(from.med)} → {usd(to.med)}</Text>

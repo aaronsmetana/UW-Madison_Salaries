@@ -1158,7 +1158,7 @@ export default function Reports() {
             <Paper className="no-print glass" withBorder p="xs" style={{ position: 'sticky', top: 8, zIndex: Z.sticky }}>
               <Group justify="space-between" wrap="nowrap">
                 <Text size="sm" c="dimmed">Current {subjectPay != null ? usd(subjectPay) : '—'}</Text>
-                <Text size="sm" fw={700} c={belowTarget ? 'pos' : undefined}>
+                <Text size="sm" fw={700} c={belowTarget ? 'accent' : undefined}>
                   → {recommended == null ? '—' : belowTarget ? `${usd(recommended)} (+${pct(targetPct)})` : 'maintain current pay'}
                 </Text>
               </Group>

@@ -33,9 +33,11 @@ import {
 const PAGE_SIZE = LIST_PAGE;
 
 const WHY: Record<Why, { label: string; color: string }> = {
-  range: { label: 'Pay range minimum', color: 'orange' },
+  // A reason is a category, not a direction or a status (G11): the accent for the three a pattern explains,
+  // grey for the one nothing does. The words tell the three apart.
+  range: { label: 'Pay range minimum', color: 'accent' },
   title: { label: 'Title-wide', color: 'accent' },
-  unit: { label: 'Department-wide', color: 'pos' },
+  unit: { label: 'Department-wide', color: 'accent' },
   individual: { label: 'Individual', color: 'gray' },
 };
 

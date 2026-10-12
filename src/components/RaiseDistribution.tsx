@@ -38,7 +38,7 @@ export function RaiseDistribution({ counts, marker, title, sub, period, classNam
   }, [counts]);
   // Down below 0, up above it, and the no-change bar neutral.
   const distColor = (bucket: number) =>
-    bucket < 0 ? 'var(--mantine-color-red-5)' : bucket === 0 ? 'var(--mantine-color-gray-4)' : 'var(--mantine-color-pos-5)';
+    bucket < 0 ? 'var(--mark-down)' : bucket === 0 ? 'var(--mantine-color-gray-4)' : 'var(--mark-up)';
 
   // One bin can hold nearly everyone. Between two snapshots with no pay-plan raise almost everyone's pay
   // stands still — Sep 2025 to Mar 2026, 18,122 of 19,273 at 0% against 391 in the largest raise bin —

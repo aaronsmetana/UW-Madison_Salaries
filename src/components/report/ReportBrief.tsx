@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Card, Title, Text, Divider, Paper, Group, Stack, SimpleGrid, Table, Badge, ThemeIcon, Progress, Box, Anchor, List, VisuallyHidden } from '@mantine/core';
-import { useReducedMotion } from '@mantine/hooks';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Customized,
@@ -33,36 +32,6 @@ function fmtHistTick(d: string): string {
   return `${MON[m - 1] ?? ''} '${d.slice(2, 4)}`;
 }
 
-/** Smoothly tween a number toward its target (respects reduced-motion). */
-function useAnimatedNumber(target: number, duration = 500) {
-  const [val, setVal] = useState(target);
-  const from = useRef(target);
-  const reduce = useReducedMotion();
-  useEffect(() => {
-    if (reduce) { setVal(target); from.current = target; return; }
-    const start = performance.now();
-    const base = from.current;
-    let raf = 0;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / duration);
-      const e = 1 - Math.pow(1 - p, 3);
-      setVal(base + (target - base) * e);
-      if (p < 1) raf = requestAnimationFrame(tick);
-      else from.current = target;
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration, reduce]);
-  // Guarantee the final value prints even if the user hits Print mid-tween — a half-animated headline
-  // number in a PDF would read as a bug.
-  useEffect(() => {
-    const snap = () => { setVal(target); from.current = target; };
-    window.addEventListener('beforeprint', snap);
-    return () => window.removeEventListener('beforeprint', snap);
-  }, [target]);
-  return val;
-}
-
 const PROOF_ICON: Record<ProofKind, ReactNode> = {
   market: <IconChartBar size={ICON.feature} />,
   inversion: <IconScale size={ICON.feature} />,
@@ -90,7 +59,6 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
   } = model;
   const anonName = (key: string) => peerAlias(rows, key);
 
-  const animated = useAnimatedNumber(recommended ?? 0);
   const has = (s: string) => sections.includes(s);
   const showReceipt = receipt.length > 1; // base + at least one add-on / negotiated line
   const aMax = divergence ? Math.max(divergence.avgAbs, divergence.subjAbs, 1) : 1;
@@ -201,12 +169,12 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
           {belowTarget && recommended != null ? (
             <Paper p="xl" bg="var(--mantine-color-accent-light)" mb="lg">
               <Title order={3} fz="h5" c="dimmed">1. Recommendation</Title>
-              <Text fw={700} c="pos" lh={1} style={{ fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', letterSpacing: '-0.02em' }}>
-                {usd(Math.round(animated))}
+              <Text fw={700} c="accent" lh={1} style={{ fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', letterSpacing: '-0.02em' }}>
+                {usd(recommended)}
               </Text>
               <Text mt={8}>
                 Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                (<Text span fw={700} c="pos">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
+                (<Text span fw={700} c="up">+{usd(targetDelta)}, {pct(targetPct)}</Text>){showReceipt ? '.' : ` — ${basisLabel}.`}<Sup n={fn('basis')} />
               </Text>
               {yearsToParity != null && yearsToParity >= 0.5 && (
                 <Text size="xs" c="dimmed" mt={4}>
@@ -251,7 +219,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                     <Divider my={4} />
                     <Group justify="space-between" wrap="nowrap" px={6}>
                       <Text size="sm" fw={700}>Total parity recommendation</Text>
-                      <Text size="sm" fw={700} c="pos">{usd(recommended)}<Text span fw={600}> (+{pct(targetPct)})</Text></Text>
+                      <Text size="sm" fw={700} c="accent">{usd(recommended)}<Text span fw={600} c="up"> (+{pct(targetPct)})</Text></Text>
                     </Group>
                   </Stack>
                 </Box>
@@ -405,7 +373,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                         {f.note && <Text size="xs" c="dimmed">{f.note}</Text>}
                       </Box>
                       {f.amount != null && (
-                        <Text size="sm" fw={700} c="pos" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
+                        <Text size="sm" fw={700} c="up" style={{ flexShrink: 0 }}>+{usd(f.amount)}</Text>
                       )}
                     </Group>
                   ))}
@@ -574,8 +542,8 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                       .map((it) => ({ color: it.stroke as string, name: it.name, value: usd(it.value as number) }));
                     return <ChartTooltip label={fmtHistTick(String((payload[0].payload as { date: string }).date))} rows={tRows} />;
                   }} />
-                  <Line type="monotone" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
-                  <Line type="monotone" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />
+                  <Line type="linear" dataKey="med" name="Title median" stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="linear" dataKey="pay" name={subjectFirst} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot connectNulls isAnimationActive={false} />
                   {/* Each line named where it ends, as every line chart in the app is — this one kept a
                       hand-drawn legend under the plot after the others lost theirs. */}
                   <Customized

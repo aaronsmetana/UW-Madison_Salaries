@@ -118,14 +118,21 @@
      else, which on the dark card inverted the hierarchy: others read at 7.3:1 and the subject at
      3.9. Now the subject is always loudest (>=4.5:1), a same-school peer is a mark you can find
      (>=3:1, and 3.9 at the dots' 0.9 opacity), everyone else is context (1.5-2.5:1), and a trend
-     line clears 3:1. Light: 5.87 / 4.38 / 2.07 / 3.32. */
+     line clears 3:1. Light: 5.87 / 3.47 / 2.07 / 3.32. A same-school peer wears the accent a step quieter than
+     the person (whose dot also carries a pip, a name and a guide): a category, so not green, which is success
+     here, nor blue or orange, a change's direction (G11). A darker grey was tried and was lost in a dense
+     ribbon on the dark card. */
   --mark-self: var(--mantine-color-accent-7);
-  --mark-peer-same-school: var(--mantine-color-pos-7);
+  --mark-peer-same-school: var(--mantine-color-accent-5);
   --mark-peer: #aab2b8;
   /* Each dot's 1px edge (ChartDot): the population's at 3.8:1, so every person is a mark a reader can see
-     while their fill stays quiet (2.2:1); same school's a step deeper than its green. */
+     while their fill stays quiet (2.2:1); same school's a step deeper than its fill. */
   --mark-peer-edge: #7a848b;
-  --mark-peer-same-school-edge: var(--mantine-color-pos-8);
+  --mark-peer-same-school-edge: var(--mantine-color-accent-6);
+  /* A change's direction as a mark (a bar, a square): up blue, down orange, 7.1:1 and 3.1:1 on the card and
+     24 apart in lightness, so the pair reads without its hues (theme.ts). */
+  --mark-up: var(--mantine-color-up-7);
+  --mark-down: var(--mantine-color-down-6);
   /* Words on the person's own colour (their name's pill): white on accent-7, 7.2:1. */
   --mark-self-on: #ffffff;
   /* The inverse of the page, for what a pointer calls up over a chart (a readout): ink with white words. */
@@ -159,12 +166,15 @@
      brightest of it and 5.4:1 on the deepest. */
   --found-cover: #147a37;
   --found-on: #ffffff;
-  /* Joined since the snapshot before (3a's amber), as words: 5.9:1 on white. */
-  --text-new: #8a5a00;
-  /* A timeline step's squares, raises and cuts (3a): up, down, joined, and the neutral everyone else turns. */
-  --strata-up: #14915c;
-  --strata-down: #da4636;
-  --strata-new: #c98410;
+  /* Joined since the snapshot before, as words: the ink. */
+  --text-new: var(--mantine-color-text);
+  /* A timeline step's squares, raises and cuts (3a): up, down, joined, and the neutral everyone else turns.
+     Up and down are the app's one direction pair. Joined was 3a's amber, which sat 18 (ΔE) from the orange
+     under deuteranopia, so it is a near-ink square now: whether someone is here is not a direction, and who
+     left is already the hollow square beside it. */
+  --strata-up: var(--mark-up);
+  --strata-down: var(--mark-down);
+  --strata-new: #2b3238;
   --strata-neutral: #b7bfc4;
   --guide-strong: var(--mantine-color-gray-6);
   /* The middle 50% of a group (p25-p75), one look everywhere: a neutral wash — teal means "this
@@ -288,10 +298,13 @@
   --seg-track: var(--active-bg);
   --seg-thumb: #ffffff;
   --seg-thumb-shadow: 0 1px 2px rgba(16, 24, 32, 0.12), 0 0 0 1px rgba(16, 24, 32, 0.04);
-  /* pos-8, 6.0:1 on white and 5.4:1 on a light green fill: it reads as green. pos-9 (8.2:1) read as
-     near-black beside the ink, so an "up" lost its colour. */
+  /* Success (copied, in the tray, a check passed): pos-8, 6.0:1 on white and 5.4:1 on a light green fill.
+     An error or a broken rule: red-9. A change's direction is neither (G11): up and down below. */
   --text-pos: var(--mantine-color-pos-8);
   --text-neg: var(--mantine-color-red-9);
+  /* A change's direction in words: up-7, 7.1:1 on white; down is caution's orange ink (below), 5.3:1. */
+  --text-up: var(--mantine-color-up-7);
+  --text-down: var(--text-warn);
   /* Not from the stock orange ramp: orange-9 is its darkest shade and still only reaches 3.96:1 on an
      orange "light" fill, which is why this pairing sat documented-but-unfixed. #b3400d measures
      5.29:1 there and 4.83:1 on the deeper orange-1, and still reads orange rather than brown. */
@@ -417,6 +430,9 @@ body {
   --text-pos: var(--mantine-color-pos-4);
   --text-neg: var(--mantine-color-red-4);
   --text-warn: var(--mantine-color-orange-4);
+  /* 7.2:1 on the card; down is the dark scheme's caution ink, as in light. */
+  --text-up: var(--mantine-color-up-3);
+  --text-down: var(--text-warn);
 
   /* Brighten low-contrast secondary text for readability against the surfaces above. Body text was
      Mantine's dark-0 (#c9c9c9) — a mid grey doing headline duty, the dark-mode twin of the problem
@@ -440,13 +456,16 @@ body {
      text but is a chart fill, and is relieved by the histogram's tooltip and its data table. */
   --bar: var(--mantine-color-gray-6);
   --series-accent: #4f93a4;
-  /* Chart marks on the #141619 card: 5.22 / 4.14 / 2.22 / 5.46 (see :root). */
+  /* Chart marks on the #141619 card: 5.22 / 3.5 / 2.22 / 5.46 (see :root). */
   --mark-self: var(--mantine-color-accent-5);
-  --mark-peer-same-school: var(--mantine-color-pos-7);
+  --mark-peer-same-school: var(--mantine-color-accent-6);
   --mark-peer: #4a5056;
   /* 3.8:1 and 6.5:1 on the card: an edge goes lighter on a dark ground, as a light one goes darker. */
   --mark-peer-edge: #6c747b;
-  --mark-peer-same-school-edge: #44ad80;
+  --mark-peer-same-school-edge: var(--mantine-color-accent-4);
+  /* 4.1:1 and 8.4:1 on the card, L* 52 and 72. */
+  --mark-up: var(--mantine-color-up-5);
+  --mark-down: var(--mantine-color-down-4);
   /* On dark's lighter accent-5, the page's near-black: 5.7:1. */
   --mark-self-on: var(--base);
   /* An ink pill on a near-black page would vanish: the readout floats on the raised surface, edged. */
@@ -473,10 +492,10 @@ body {
   --found: #4be37f;
   --found-cover: #34d06c;
   --found-on: #04260f;
-  --text-new: #f2c14e;
-  --strata-up: #5bd69a;
-  --strata-down: #ff7a6b;
-  --strata-new: #f2c14e;
+  --text-new: var(--mantine-color-text);
+  --strata-up: var(--mark-up);
+  --strata-down: var(--mark-down);
+  --strata-new: #dfe4e8;
   --strata-neutral: #41707b;
   --guide-strong: var(--mantine-color-gray-6);
   --band-fill: rgba(222, 226, 230, 0.1);
@@ -687,11 +706,15 @@ html:root[data-mantine-color-scheme='dark'] {
   --mantine-color-bright: var(--mantine-color-text);
   --mantine-color-pos-text: var(--text-pos);
   --mantine-color-red-text: var(--text-neg);
+  --mantine-color-up-text: var(--text-up);
+  --mantine-color-down-text: var(--text-down);
   --mantine-color-orange-text: var(--text-warn);
   /* A light badge or button's words: the scheme's ink for its meaning. In the dark scheme Mantine took
      shade 1-2, near-white tints (#d3efe0, #ffe8cc, #e5eff2) that no longer read as green, orange, teal. */
   --mantine-color-pos-light-color: var(--text-pos);
   --mantine-color-red-light-color: var(--text-neg);
+  --mantine-color-up-light-color: var(--text-up);
+  --mantine-color-down-light-color: var(--text-down);
   --mantine-color-orange-light-color: var(--text-warn);
   --mantine-color-accent-light-color: var(--text-accent);
   /* A light accent badge, button or row: the one tint, not Mantine's 10% (dark: 15%) of shade 7. */
@@ -1061,7 +1084,7 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
   text-transform: uppercase;
   vertical-align: 1px;
 }
-/* A same-school person: an 8px dot of the same-school green before their school (and in the table's key),
+/* A same-school person: an 8px dot of the same-school teal before their school (and in the table's key),
    where their row was a green tint with a green rail. */
 .same-school-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--mark-peer-same-school); }
 .peer-school { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -2454,10 +2477,10 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
   position: absolute; top: 2px; width: 8px; height: 6px; margin-left: -4px; background: var(--mantine-color-accent-6);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
-/* The median's change since the snapshot before, after its label: up green, down red. */
+/* The median's change since the snapshot before, after its label: up blue, down orange. */
 .strata-pin-change { font-weight: 600; font-variant-numeric: tabular-nums; }
-.strata-pin-change[data-up] { color: var(--text-pos); }
-.strata-pin-change[data-down] { color: var(--text-neg); }
+.strata-pin-change[data-up] { color: var(--text-up); }
+.strata-pin-change[data-down] { color: var(--text-down); }
 /* Histogram and floors (3a): what belongs to one view fades out as the other's comes in, and is out of reach
    (its links and buttons too) once it has gone. */
 /* Shown at once (step-start); hidden only once faded (step-end). */
@@ -2630,10 +2653,10 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-card-title { font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed); line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .strata-card-pay { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; font-size: var(--mantine-font-size-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
 .strata-card-dept { font-size: var(--mantine-font-size-xxs); color: var(--text-faint); line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Since the snapshot before (3a): up green, down red, joined amber, no change (or the first) quiet. */
+/* Since the snapshot before (3a): up blue, down orange, joined in the ink, no change (or the first) quiet. */
 .strata-card-change { font-size: var(--mantine-font-size-xxs); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--mantine-color-dimmed); }
-.strata-card-change[data-tone='up'] { color: var(--text-pos); }
-.strata-card-change[data-tone='down'] { color: var(--text-neg); }
+.strata-card-change[data-tone='up'] { color: var(--text-up); }
+.strata-card-change[data-tone='down'] { color: var(--text-down); }
 .strata-card-change[data-tone='new'] { color: var(--text-new); }
 .strata-card-spark { margin-top: 6px; }
 .strata-card-spark svg { display: block; }

@@ -428,7 +428,7 @@ export default function Compare() {
                       const color = CHART_SERIES[p.colorIdx % CHART_SERIES.length];
                       const muted = mutedIds.has(p.id);
                       return (
-                        <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={color} strokeWidth={lineWidth(p.id)} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
+                        <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={color} strokeWidth={lineWidth(p.id)} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
                           {...chartAnim(reduceMotion, MOTION.slow)}
                           label={persons.length <= 4 && !muted ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
                           onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
@@ -496,7 +496,7 @@ export default function Compare() {
               {soloPerson && (
                 <Area
                   className="gap-shade"
-                  type="monotone"
+                  type="linear"
                   dataKey={soloPerson.id}
                   baseValue={0}
                   stroke="none"
@@ -509,7 +509,7 @@ export default function Compare() {
                 />
               )}
               {persons.map((p) => (
-                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </ComposedChart>
           </ResponsiveContainer>
@@ -537,7 +537,7 @@ export default function Compare() {
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
               <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, (v) => `more than ${Math.round(v)}%`)} /> : null} />
               {persons.map((p) => (
-                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="monotone" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -668,7 +668,7 @@ export default function Compare() {
               <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
               <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
               {titles.map((t) => (
-                <Line key={t.id} className={`cmp-line cmp-t${t.colorIdx}`} type="monotone" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(t.id)} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
+                <Line key={t.id} className={`cmp-line cmp-t${t.colorIdx}`} type="linear" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(t.id)} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(reduceMotion, MOTION.slow)} />
               ))}
             </LineChart>
           </ResponsiveContainer>

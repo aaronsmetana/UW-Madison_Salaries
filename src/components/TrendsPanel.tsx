@@ -48,7 +48,7 @@ function TrendTip({ active, payload }: {
       <Text size="sm" fw={600}>{p.label}</Text>
       <Text size="sm">
         Median {usd(p.med)}{' '}
-        {p.yoy != null && <Text span c={p.yoy >= 0 ? 'pos' : 'red'}>({p.yoy >= 0 ? '+' : ''}{pct(p.yoy)})</Text>}
+        {p.yoy != null && <Text span c={p.yoy >= 0 ? 'up' : 'down'}>({p.yoy >= 0 ? '+' : ''}{pct(p.yoy)})</Text>}
       </Text>
       <Text size="xs" c="dimmed">
         {num(p.hc)} paid{p.renew != null ? ` · ${num(p.renew)} renewable` : ''}
@@ -158,8 +158,8 @@ export function TrendsPanel() {
           {nineX != null && <ReferenceLine x={nineX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
 
           {/* Median: gradient area + primary line. */}
-          <Area type="monotone" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
-          <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
+          <Area type="linear" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
+          <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduce} animationDuration={800} animationEasing="ease-out" />
 
           {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
               another where the date axis puts snapshots close. */}
@@ -192,21 +192,23 @@ export function TrendsPanel() {
             scale={hcScale === 'log' ? 'log' : 'auto'}
             domain={hcScale === 'log' ? [0.5, 'auto'] : undefined}
             allowDataOverflow={hcScale === 'log'}
-            label={{ value: 'Headcount', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-pos-6)', fontSize: 12, textAnchor: 'middle' } }}
+            label={{ value: 'Headcount', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-dimmed)', fontSize: 12, textAnchor: 'middle' } }}
           />
           <Tooltip content={() => null} />
 
           {coverageX != null && <ReferenceLine x={coverageX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
           {coverageX != null && <Customized component={<BreakLabel at={coverageX} texts={[scope23.label, scope23.short]} />} />}
 
-          <Line type="monotone" dataKey="hc" name="Headcount" stroke="var(--mantine-color-pos-6)" strokeWidth={2} dot strokeDasharray="4 2" isAnimationActive={!reduce} />
-          <Line type="monotone" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--mantine-color-orange-6)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
+          {/* Two counts, not a direction or this page's subject: the ink and the guide grey, told apart by their
+              lightness and named at their ends. Neither is dashed — a dash on these charts is a reference line. */}
+          <Line type="linear" dataKey="hc" name="Headcount" stroke="var(--mantine-color-text)" strokeWidth={2} dot isAnimationActive={!reduce} />
+          <Line type="linear" dataKey="renew" name="Ongoing (renewable) appts" stroke="var(--guide-strong)" strokeWidth={2} dot connectNulls={false} isAnimationActive={!reduce} />
           <Customized
             component={
               <EndLabels
                 endSeries={[
-                  { key: 'hc', text: 'Headcount', color: 'var(--text-pos)' },
-                  { key: 'renew', text: 'Ongoing (renewable) appts', color: 'var(--text-warn)' },
+                  { key: 'hc', text: 'Headcount', color: 'var(--mantine-color-text)' },
+                  { key: 'renew', text: 'Ongoing (renewable) appts', color: 'var(--mantine-color-dimmed)' },
                 ]}
                 endBreaks={coverageX != null ? [{ at: coverageX, texts: [scope23.label, scope23.short] }] : []}
               />

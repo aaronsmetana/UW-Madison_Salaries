@@ -156,8 +156,8 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
       )}
       {hasFte && item(
         <svg width={22} height={12} aria-hidden>
-          <rect x={1} y={4} width={20} height={7} fill="var(--mantine-color-pos-6)" fillOpacity={0.18} />
-          <line x1={1} y1={4} x2={21} y2={4} stroke="var(--mantine-color-pos-6)" strokeWidth={2} />
+          <rect x={1} y={4} width={20} height={7} fill="var(--guide-strong)" fillOpacity={0.18} />
+          <line x1={1} y1={4} x2={21} y2={4} stroke="var(--guide-strong)" strokeWidth={2} />
         </svg>,
         'Appointment (FTE) — lower chart',
       )}
@@ -191,9 +191,10 @@ function TitleChangeLabel({
 }
 
 /** One horizontal percentile bar for the "Standing" small-multiples: label + rank on the left, a track
- *  with a fill to p% (green above the pool median, neutral below), a 50th-percentile reference line and a
- *  marker tick, and the percentile on the right. The fill + marker sweep in left→right on mount (staggered
- *  by `delay`). */
+ *  with a neutral fill to p%, the pool median's tick, and a marker coloured by its side of the median (up
+ *  blue above, down orange below), and the percentile on the right. The fill was green above the median
+ *  and grey below, so a below-median pool looked switched off (P15). The fill + marker sweep in
+ *  left→right on mount (staggered by `delay`). */
 function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?: number; below?: number; pct?: number; delay?: number }) {
   const mounted = useMounted();
   // Its counts still coming: the row at its final size, the label real and the rest placeholders.
@@ -209,9 +210,8 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?:
       </Group>
     );
   }
-  const above = pct >= 50;
-  const fill = above ? 'var(--mantine-color-pos-6)' : 'var(--mantine-color-gray-5)';
-  const tick = above ? 'var(--mantine-color-pos-7)' : 'var(--mantine-color-gray-6)';
+  const side = pct > 50 ? 'above' : pct < 50 ? 'below' : 'at';
+  const tick = side === 'above' ? 'var(--mark-up)' : side === 'below' ? 'var(--mark-down)' : 'var(--guide-strong)';
   const sweep = `var(--dur-slow) var(--ease) ${delay}ms`;
   return (
     // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: a plotted figure built
@@ -222,12 +222,12 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?:
         <Text size="xs" c="dimmed">#{num(n - below)} of {num(n)}</Text>
       </div>
       <div style={{ flex: 1, position: 'relative', height: 10, background: 'var(--mantine-color-default-hover)', borderRadius: 6 }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${mounted ? pct : 0}%`, background: fill, opacity: 0.5, borderRadius: 6, transition: `width ${sweep}` }} />
-        {/* pool median (50th) reference */}
-        <div style={{ position: 'absolute', left: '50%', top: -2, bottom: -2, width: 1, background: 'var(--mantine-color-default-border)', transform: 'translateX(-50%)' }} />
-        <div style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${mounted ? pct : 0}%`, background: 'var(--mantine-color-gray-5)', opacity: 0.5, borderRadius: 6, transition: `width ${sweep}` }} />
+        {/* The pool median, a tick that clears the track and is named once, over the first bar. */}
+        <div className="standing-median" style={{ position: 'absolute', left: '50%', top: -4, bottom: -4, width: 2, background: 'var(--guide-strong)', transform: 'translateX(-50%)' }} />
+        <div className="standing-marker" data-side={side} style={{ position: 'absolute', left: `${mounted ? pct : 0}%`, top: -3, bottom: -3, width: 4, borderRadius: 2, background: tick, transform: 'translateX(-50%)', transition: `left ${sweep}` }} />
       </div>
-      <Text size="sm" fw={700} c={above ? 'pos' : 'dimmed'} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
+      <Text size="sm" fw={700} style={{ width: 104, flexShrink: 0, textAlign: 'right' }}>
         <Text span size="xs" fw={500} c="dimmed">more than</Text> {pct}%
       </Text>
     </Group>
@@ -1049,7 +1049,7 @@ export default function Person() {
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text
                     fw={700}
-                    c={growthLfl == null ? undefined : growthLfl < 0 ? 'red' : 'pos'}
+                    c={growthLfl == null ? undefined : growthLfl < 0 ? 'down' : 'up'}
                     style={{ fontSize: 24, lineHeight: 1.15 }}
                     data-trend={growthTrend}
                   >
@@ -1333,7 +1333,7 @@ export default function Person() {
                 {peerQuery && filteredPeers.length === 0 && (
                   <Text size="sm" c="dimmed" mt="sm">No one with this title matches “{peerFilter.trim()}”.</Text>
                 )}
-                {/* The table's foot: what the green dot means, and how much of the list is showing. */}
+                {/* The table's foot: what the same-school dot means, and how much of the list is showing. */}
                 <Group justify="space-between" mt="sm" gap="xs" className="peer-foot">
                   {cohort === 'all' && latest?.school && peers.some((p) => p.person_key !== key && p.school === latest.school) ? (
                     <Group gap={6} wrap="nowrap">
@@ -1372,13 +1372,21 @@ export default function Person() {
             Standing
           </CardTitle>
           <Stack gap="sm">
+            {/* The median's name, once, over its tick: the bars' own columns, so it lands on the line. */}
+            <Group wrap="nowrap" gap="md" aria-hidden mb={-6}>
+              <div style={{ width: 210, flexShrink: 0 }} />
+              <div style={{ flex: 1, position: 'relative', height: 16 }}>
+                <Text className="standing-median-label" size="xs" c="dimmed" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', lineHeight: '16px' }}>Pool median</Text>
+              </div>
+              <div style={{ width: 104, flexShrink: 0 }} />
+            </Group>
             {standingRows
               ? standingPools.map((p, i) => (
                 <PercentileBar key={p.label} label={p.label} n={p.n} below={p.below} pct={p.pct} delay={i * 90} />
               ))
               : poolLabels.map((p) => <PercentileBar key={p.label} label={p.label} />)}
           </Stack>
-          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The centre line is the pool's median; green is above it. Pools of fewer than {MIN_GROUP} people are left out.</Text>
+          <Text size="xs" c="dimmed" mt="md">Each bar is the share of the pool this person is paid more than. The marker is blue above the pool's median and orange below it. Pools of fewer than {MIN_GROUP} people are left out.</Text>
         </Card>
       )}
 
@@ -1404,7 +1412,7 @@ export default function Person() {
             </Text>
           ) : (
             <Text size="sm" mt="md">
-              <Text span fw={700} c="pos">{usd(range.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
+              <Text span fw={700}>{usd(range.max - bandRate)}</Text> of headroom to the top of grade {graded?.grade}'s band
               <Text span c="dimmed"> (grade max {usd(range.max)}).</Text>
             </Text>
           )}
@@ -1465,7 +1473,7 @@ export default function Person() {
               <Text fw={700} size="xl">{projectedRate != null ? usd(projectedRate) : '—'}</Text>
               {projectedRate != null && lastRate != null && (
                 <Text size="xs" c="dimmed">
-                  <Text span c="pos" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
+                  <Text span c="up" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
                   {lastFte != null && Math.abs(lastFte - 1) > 0.005 ? ` · actual ${usd(projectedRate * lastFte)}` : ''}
                 </Text>
               )}
@@ -1587,13 +1595,13 @@ export default function Person() {
             ))}
             {breakMarks.length > 0 && <Customized component={<BreakLabels edge="bottom" marks={breakMarks.map((b) => ({ at: b.x, texts: b.texts }))} />} />}
             {/* Gradient area fill under the active metric. */}
-            <Area yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
+            <Area yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
             {/* Title median, one disconnected dashed segment per era. */}
             {eras.map((e) => (
               <Line
                 key={`med-${e}`}
                 yAxisId="pay"
-                type="monotone"
+                type="linear"
                 dataKey={(d: PlotRow) => (d.era === e ? (trendMode === 'actual' ? d.med : d.medRate) : null)}
                 name="Title median"
                 stroke="var(--mantine-color-gray-5)"
@@ -1608,10 +1616,10 @@ export default function Person() {
             {/* If every raise had been the campus median (lib/raiseContext) — a hypothetical, so dotted,
                 in the strong-guide grey (>=3:1), and only on actual pay, which is what it compounds. */}
             {trendMode === 'actual' && raiseCtx.typical.size > 1 && (
-              <Line yAxisId="pay" className="typical-line" type="monotone" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
+              <Line yAxisId="pay" className="typical-line" type="linear" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
             )}
             {/* Primary line + haloed active dot. */}
-            <Line yAxisId="pay" type="monotone" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
+            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMode === 'actual' ? 'Actual pay' : 'Salary rate'} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} isAnimationActive={!reduceMotion} animationDuration={800} animationEasing="ease-out" />
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (
@@ -1653,12 +1661,12 @@ export default function Person() {
                 <Tooltip content={() => null} />
                 <Area
                   yAxisId="fte"
-                  type="monotone"
+                  type="linear"
                   dataKey="fte"
                   name="Appointment (FTE)"
-                  stroke="var(--mantine-color-pos-6)"
+                  stroke="var(--guide-strong)"
                   strokeWidth={2}
-                  fill="var(--mantine-color-pos-6)"
+                  fill="var(--guide-strong)"
                   fillOpacity={0.18}
                   dot
                   connectNulls

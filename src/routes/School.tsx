@@ -389,7 +389,7 @@ export default function School() {
             <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
             {/* The row's own label: on a date axis Recharts' label is the x value, a timestamp. */}
             <Tooltip formatter={(v: number) => usd(v)} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
-            <Line type="monotone" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
+            <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(reduceMotion, MOTION.slow)} />
           </LineChart>
         </ResponsiveContainer>
         {/* A reorganization moved whole departments in or out: the trend's step there is that, and says so. */}

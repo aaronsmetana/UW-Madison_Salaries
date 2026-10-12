@@ -5,7 +5,7 @@ import { fmtK } from '../lib/chartStyle';
 import { MARK_SELF, MARK_TARGET, MarkerLegend } from './markers';
 import { Z } from '../lib/layers';
 
-/** Horizontal pay-band bar: teal dot at `value` (current, optional), optional green `target` line,
+/** Horizontal pay-band bar: teal dot at `value` (current, optional), optional `target` line (MARK_TARGET),
  *  optional gray `benchmarks` ticks (e.g. title median / p75), and optional `quartiles` (¼/½/¾ of the
  *  official min→max, drawn as subtle ticks + a caption) drawn inside the band. Hovering the band shows
  *  a cursor-following readout of the salary and % through the band at that point — the same interaction
@@ -25,7 +25,8 @@ export function PayBandBar({
   const raw = value != null && span > 0 ? (value - min) / span : 0;
   const at = (x: number) => (span > 0 ? Math.max(0, Math.min(1, (x - min) / span)) * 100 : 0);
   const status = value == null ? null : value < min ? 'below min' : value > max ? 'over max' : `${Math.round(raw * 100)}% through the band`;
-  const color = value == null ? 'gray' : value < min ? 'orange' : value > max ? 'red' : 'pos';
+  // Inside the band is a place, not a success or a direction: the accent. Outside it, caution below and red over.
+  const color = value == null ? 'gray' : value < min ? 'orange' : value > max ? 'red' : 'accent';
   const H = 22;
   const trackRef = useRef<HTMLDivElement>(null);
   const [hoverPct, setHoverPct] = useState<number | null>(null);

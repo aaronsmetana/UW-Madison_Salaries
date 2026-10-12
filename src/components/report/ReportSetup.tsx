@@ -649,7 +649,7 @@ export function ReportSetup({
             <Eyebrow>Recommended</Eyebrow>
             {/* As the brief says it: an ask at or below current pay is no raise. */}
             {recommended > basePay ? (
-              <Text size="sm" fw={700} c="pos">
+              <Text size="sm" fw={700} c="accent">
                 {usd(recommended)}
                 <Text span c="dimmed" fw={600}> (+{pct((recommended - basePay) / basePay)})</Text>
               </Text>

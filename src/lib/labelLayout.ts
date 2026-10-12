@@ -280,7 +280,7 @@ export function placeNearLabels(
   // The furthest a leader may reach along its ray. Past this a name stops being read as this dot's and
   // starts being read as a legend with a line attached, which is the failure this replaced.
   const reach = o.reach ?? 104;
-  // Every point stays clear, whether or not its own label is placed: a name over another green dot
+  // Every point stays clear, whether or not its own label is placed: a name over another same-school dot
   // hides the very thing it is pointing at.
   const points: Box[] = labels.map((l) => ({ left: l.x - l.r, right: l.x + l.r, top: l.y - l.r, bottom: l.y + l.r }));
   const placed: PlacedNearLabel[] = [];

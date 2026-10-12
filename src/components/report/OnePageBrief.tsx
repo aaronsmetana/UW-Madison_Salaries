@@ -32,10 +32,10 @@ export function OnePageBrief({ model }: { model: BriefModel }) {
             <Eyebrow mb={4}>Recommendation</Eyebrow>
             {belowTarget && recommended != null ? (
               <>
-                <Text fw={700} c="pos" fz="h2" lh={1.1}>{usd(recommended)}</Text>
+                <Text fw={700} c="accent" fz="h2" lh={1.1}>{usd(recommended)}</Text>
                 <Text mt={6}>
                   Adjust <b>{subjectName}</b> from <b>{usd(subjectPay)}</b> to <b>{usd(recommended)}</b>{' '}
-                  (<Text span fw={700} c="pos">+{usd(targetDelta)}, {pct(targetPct)}</Text>){basisLabel ? ` — ${basisLabel}` : ''}.
+                  (<Text span fw={700} c="up">+{usd(targetDelta)}, {pct(targetPct)}</Text>){basisLabel ? ` — ${basisLabel}` : ''}.
                 </Text>
               </>
             ) : (

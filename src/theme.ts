@@ -8,16 +8,30 @@ const accent: MantineColorsTuple = [
   '#4f93a4', '#22778e', '#145f72', '#0a5567', '#073f4d',
 ];
 
-// ── Positive / "in tray" green (used sparingly; shade 6 ≈ #15A36B, shade 0 ≈ #E7F6EE) ──
+// ── Success green: something done or in order (copied, in the tray, a data check passed). Not a direction:
+// a raise is `up`, never green. (Shade 6 ≈ #15A36B, shade 0 ≈ #E7F6EE.) ──
 const pos: MantineColorsTuple = [
   '#e7f6ee', '#d3efe0', '#a8dec3', '#79cda4', '#52bf8a',
   '#38b27d', '#15a36b', '#0c8a59', '#057247', '#005a37',
 ];
 
-// Refined marine-teal accent (deliberately NOT UW Badger red — this is a personal tool), green positives,
+// ── Direction of change, one pair everywhere (G12): up is blue, down is orange, with a lightness gap so
+// the pair holds without hue — red and green, the pair it replaces, were 13 apart (ΔE) under protanopia;
+// these are 115. Marks take up-7 and down-6 on the light card (7.1:1 and 3.1:1, L* 37 and 61) and up-5 and
+// down-4 on the dark one; words take --text-up and --text-down (app.css). ──
+const up: MantineColorsTuple = [
+  '#eaf1fd', '#d5e3fb', '#abc6f6', '#7fa8f0', '#5b8eea',
+  '#3f78e0', '#2a64cf', '#1f53b3', '#174394', '#0f3270',
+];
+const down: MantineColorsTuple = [
+  '#fff3e6', '#ffe4c7', '#ffc890', '#fdac5c', '#f99a3d',
+  '#f08a26', '#e07816', '#c4630c', '#a24f08', '#7f3d05',
+];
+
+// Refined marine-teal accent (deliberately NOT UW Badger red — this is a personal tool), blue/orange direction,
 // cool-grey neutrals, rounded cards, soft shadows, Hanken Grotesk type.
 export const theme = createTheme({
-  colors: { accent, pos },
+  colors: { accent, pos, up, down },
   primaryColor: 'accent',
   // The app's ink (app.css `--mantine-color-text`), for anything that asks Mantine for "black".
   black: '#16191d',
@@ -131,6 +145,7 @@ export const theme = createTheme({
   },
 });
 
-// Semantic, colorblind-safe accents used by charts/badges. Severity ramp: neutral (gray) →
-// warn/caution (orange, e.g. approaching a threshold) → down/violated/negative (red). `up` = positive.
-export const SEMANTIC = { up: 'pos', warn: 'orange', down: 'red', neutral: 'gray' } as const;
+// Semantic, colorblind-safe accents used by charts/badges. A change's direction is `up` (blue) or `down`
+// (orange) and nothing else is: a magnitude or a category takes the accent or a neutral (G11). Caution is
+// orange too; an error or a broken rule is red; green is only for success.
+export const SEMANTIC = { up: 'up', warn: 'orange', down: 'down', neutral: 'gray' } as const;

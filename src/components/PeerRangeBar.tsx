@@ -13,7 +13,7 @@ const MAX_PEER_TICKS = 300;
 /**
  * Responsive horizontal range bar for a peer group: spans min→max, shades the interquartile (p25→p75)
  * range, ticks p25 / median / p75 with value labels, and marks `value` (current salary) as a teal dot —
- * with an optional bright-green `target` line so the distance to close reads at a glance. The IQR fill
+ * with an optional `target` line (MARK_TARGET) so the distance to close reads at a glance. The IQR fill
  * grows and the current dot sweeps into place once on mount. Div/percentage based and dark-mode safe.
  * Passing `values` (the cohort's individual pays) adds a slim "rug" lane of one faint mark per peer
  * UNDER the track (never on it — on-track ticks read as a barcode against the pill), so the strip shows
@@ -212,7 +212,7 @@ export function PeerRangeBar({
               }}
             />
           ))}
-          {/* target marker — bright green line */}
+          {/* target marker */}
           {target != null && (
             <div
               style={{
