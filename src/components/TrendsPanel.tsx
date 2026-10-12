@@ -11,7 +11,7 @@ import { areaGradDef } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls } from '../state/controls';
 import { useSql, useSummary } from '../lib/hooks';
-import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey } from '../lib/queries';
+import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
 import { usd, num, pct, spanLabel } from '../lib/format';
 import { prefersReducedMotion } from '../lib/motion';
 import { ChartData } from './ChartData';
@@ -23,7 +23,7 @@ import { EndLabels } from './chart/EndLabels';
 import { usePref } from '../lib/prefs';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 
-interface Row { id: string; label: string; date: string; med: number | null; hc: number; renew: number | null }
+interface Row { id: string; label: string; date: string; med: number | null; med_prior: number | null; hc: number; renew: number | null }
 interface Plot extends Row { x: number; yoy: number | null }
 
 /** Hover marker for the median line: an accent dot with a soft halo. */
@@ -72,13 +72,17 @@ export function TrendsPanel() {
     // Appointment type is only recorded from the Sep 2025 dump on, so it's NULL (not 0) for older
     // snapshots, leaving those points off the line instead of plotting a misleading zero.
     // The median is over people (peopleSql); the counts stay over rows, where they already count people.
+    // `med_prior`: the median with every reporting change undone (`PRIOR_FOOTING`), so the step across one is
+    // like for like.
     `WITH pe AS (${peopleSql({ metric, where: whereAll(scope, filters), by: ['snapshot_id'] })}),
-          m AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY snapshot_id)
-     SELECT snapshot_id id, any_value(snapshot_label) AS "label", any_value(snapshot_date) date,
-        any_value(m.med) med, ${paidHeadcount(metric)} hc,
+          po AS (${peopleSql({ metric, where: whereAll(scope, filters), by: ['snapshot_id'], from: PRIOR_FOOTING })}),
+          m AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY snapshot_id),
+          mp AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med_prior FROM po GROUP BY snapshot_id)
+     SELECT snapshot_id id, any_value(snapshot_label) AS "label", CAST(any_value(snapshot_date) AS VARCHAR) date,
+        any_value(m.med) med, any_value(mp.med_prior) med_prior, ${paidHeadcount(metric)} hc,
         CASE WHEN count(*) FILTER (WHERE employee_type IS NOT NULL) = 0 THEN NULL
              ELSE count(DISTINCT person_key) FILTER (WHERE ${expr} > 0 AND employee_type = 'Regular') END AS renew
-     FROM salaries JOIN m USING (snapshot_id) WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
+     FROM salaries JOIN m USING (snapshot_id) LEFT JOIN mp USING (snapshot_id) WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
   );
 
   const { data: summary } = useSummary();
@@ -89,11 +93,13 @@ export function TrendsPanel() {
     return rows.map((r) => {
       if (dollarMode !== 'real' || r.med == null) return r;
       const year = Number(String(r.date).slice(0, 4)) || REAL_BASE_YEAR;
-      return { ...r, med: toReal(r.med, year) };
+      return { ...r, med: toReal(r.med, year), med_prior: r.med_prior != null ? toReal(r.med_prior, year) : null };
     }).map((r, i, real) => {
       const prev = real[i - 1];
+      // Across a reporting change, like for like (queries `growthBetween`): the Sep 2025 step was +17.6% for
+      // Faculty as reported, nearly all of it how 9-month pay is reported.
       const yoy = prev && prev.date !== r.date && prev.med != null && r.med != null && prev.med !== 0
-        ? (r.med - prev.med) / prev.med
+        ? growthBetween({ date: prev.date, value: prev.med }, { date: r.date, value: r.med, prior: r.med_prior }).growth
         : null;
       return { ...r, x: snapX(r.date, r.id), yoy };
     });
@@ -226,7 +232,7 @@ export function TrendsPanel() {
           dashed markers are changes in the data, not in pay or staff: at Oct 2023 the source's coverage changed
           (some reports excluded students and trainees), so headcount across it partly reflects coverage, not
           hiring or leaving; from Sep 2025 9-month pay is reported ×11/9, which moves the median of a group with
-          9-month faculty.
+          9-month faculty. The change across that step is given like for like, the ×11/9 taken out.
         </>}
       />
     </Card>

@@ -194,7 +194,7 @@ test("a 9-month member's growth gives typical raises without the reporting chang
   // The bars stand on one footing, the reporting change left out, and the note under them says so.
   const note = page.locator('[data-reporting-note]');
   await expect(note).toBeVisible({ timeout: 60_000 });
-  await expect(note).toContainText('The bars leave out');
+  await expect(note).toContainText('Like for like:');
   await expect(page.locator('.growth-bars [data-typical-growth]')).toHaveText(`${typical > 0 ? '+' : ''}${(typical * 100).toFixed(1)}%`);
   // One statement of typical growth, on that footing: not a second one carrying ×11/9.
   await expect(page.locator('[data-typical-growth]')).toHaveCount(1);

@@ -276,11 +276,12 @@ export function gradedAppt(
  * the rule the person pages already used. In the Full-time rate view that means a person with
  * concurrent appointments counts at their combined earnings, not at either rate.
  *
- * `by` are the group's columns; `extra` adds any per-person columns the caller needs.
+ * `by` are the group's columns; `extra` adds any per-person columns the caller needs; `from` reads another
+ * source with the same columns (`PRIOR_FOOTING`).
  */
-export function peopleSql(o: { metric: Metric; where: string; by?: readonly string[]; extra?: string }): string {
+export function peopleSql(o: { metric: Metric; where: string; by?: readonly string[]; extra?: string; from?: string }): string {
   const keys = [...(o.by ?? []), 'person_key'].join(', ');
-  return `SELECT ${keys}, ${personPay(o.metric)} pay${o.extra ? `, ${o.extra}` : ''} FROM salaries WHERE ${o.where} GROUP BY ${keys}`;
+  return `SELECT ${keys}, ${personPay(o.metric)} pay${o.extra ? `, ${o.extra}` : ''} FROM ${o.from ?? 'salaries'} WHERE ${o.where} GROUP BY ${keys}`;
 }
 
 /**
@@ -399,6 +400,40 @@ export function likeForLike(delta: number, c: ReportingChange): number {
 }
 /** What a like-for-like figure says under it: the reporting change, and that its factor is taken out. */
 export const likeForLikeNote = (c: ReportingChange) => `${c.note} · ×${c.ratio} taken out`;
+
+/**
+ * The salaries table with every reporting change undone: from each change's snapshot on, a row on its new
+ * footing (`to`) is restated as the snapshots before it reported it, its pay ÷ the change's factor. A FROM
+ * source with the table's own columns, for a group's figure across a change: Divisions read Faculty's
+ * median growth Nov 2021 → Sep 2026 as +40.8%, of which the Sep 2025 restatement of 9-month pay at ×11/9
+ * was a +17.6% step. The figures before a change cannot be restated the other way: the source names no
+ * basis before Sep 2024. One person's history is restated by their own basis instead (`reportingAcross`).
+ */
+export const PRIOR_FOOTING = (() => {
+  const f = REPORTING_CHANGES.map((c) =>
+    `(CASE WHEN CAST(snapshot_date AS DATE) >= DATE '${c.since}-01' AND lower(trim(comp_basis)) = ${sqlStr(c.to)} THEN ${1 / c.factor} ELSE 1.0 END)`,
+  ).join(' * ');
+  return `(SELECT * EXCLUDE (f_) REPLACE (salary * f_ AS salary, salary_fte_adjusted * f_ AS salary_fte_adjusted, base_pay * f_ AS base_pay)
+    FROM (SELECT *, ${f} f_ FROM salaries))`;
+})();
+
+/** The reporting changes between two snapshot dates (ISO), earlier first. */
+export const changesBetween = (from: string, to: string): ReportingChange[] =>
+  REPORTING_CHANGES.filter((c) => String(from).slice(0, 7) < c.since && String(to).slice(0, 7) >= c.since);
+
+/**
+ * A group's figure from one snapshot to another, like for like: the later one restated to the earlier's
+ * footing (`PRIOR_FOOTING`'s figure, `prior`) wherever a reporting change lies between them; else as reported.
+ * `changes` names what was taken out, for the note under it.
+ */
+export function growthBetween(
+  a: { date: string; value: number },
+  b: { date: string; value: number; prior?: number | null },
+): { growth: number | null; changes: ReportingChange[] } {
+  const changes = changesBetween(a.date, b.date);
+  const later = changes.length && b.prior != null ? b.prior : b.value;
+  return { growth: a.value ? later / a.value - 1 : null, changes: changes.length && b.prior != null ? changes : [] };
+}
 
 /**
  * The reporting changes a run of snapshots crosses, in order, and their combined factor — the part of

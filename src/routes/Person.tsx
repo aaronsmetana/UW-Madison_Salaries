@@ -529,7 +529,6 @@ export default function Person() {
   const lastSalary = trend[trend.length - 1]?.salary ?? null; // actual paid
   const animatedPay = useCountUp(lastSalary); // hero value counts up once on mount (reduced-motion → final)
   const totalChange = firstSalary && lastSalary ? (lastSalary - firstSalary) / firstSalary : null;
-  const animatedGrowth = useCountUp(totalChange);
   const animatedTenure = useCountUp(tenureYears);
   // Span of available salary data (oldest → latest snapshot) — the window the change is measured over.
   const firstDate = trend[0]?.date ?? null;
@@ -546,11 +545,15 @@ export default function Person() {
   const chgDiffer = totalChange != null && rateChange != null && Math.abs(totalChange - rateChange) > 0.005;
   const sgnPct = (x: number | null) => (x == null ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(1)}%`);
   // Below the precision the card prints, a change is flat — the same threshold as fmtChange's "0%".
-  const growthTrend: 'up' | 'down' | 'flat' | 'none' =
-    totalChange == null ? 'none' : Math.abs(totalChange) < 0.0005 ? 'flat' : totalChange < 0 ? 'down' : 'up';
   // The reporting changes this history crosses. Their factor is inside `totalChange` and none of it
   // is pay: a 9-month member's growth jumped by ×11/9 in Sep 2025 without a dollar more.
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
+  // The headline growth, like for like: an Associate Professor's card read +55.2% while the bars under it,
+  // which leave the factor out, said +27.0%. The figure as reported is in the note under them.
+  const growthLfl = totalChange != null ? (1 + totalChange) / reporting.factor - 1 : null;
+  const animatedGrowth = useCountUp(growthLfl);
+  const growthTrend: 'up' | 'down' | 'flat' | 'none' =
+    growthLfl == null ? 'none' : Math.abs(growthLfl) < 0.0005 ? 'flat' : growthLfl < 0 ? 'down' : 'up';
 
   // One-line career summary under the header. Only surface a prior title when it's a genuine *pre-TTC* title
   // (the person's earliest record is the pre-TTC snapshot and the title differs from now) — we can't assume the
@@ -1030,7 +1033,7 @@ export default function Person() {
                 <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
                   <Text
                     fw={700}
-                    c={totalChange == null ? undefined : totalChange < 0 ? 'red' : 'pos'}
+                    c={growthLfl == null ? undefined : growthLfl < 0 ? 'red' : 'pos'}
                     style={{ fontSize: 24, lineHeight: 1.15 }}
                     data-trend={growthTrend}
                   >
@@ -1041,10 +1044,9 @@ export default function Person() {
                 {/* Against what typical raises alone would have given over the same steps. Across a reporting
                     change (a 9-month member's pay grew ×11/9 in Sep 2025 without a dollar more) both bars leave
                     its factor out, so they stand on the same footing; the note under them says so. */}
-                {totalChange != null && typicalGrowth != null && (() => {
-                  const f = reporting.changes.length > 0 ? reporting.factor : 1;
-                  const mine = (1 + totalChange) / f - 1;
-                  const typical = (1 + typicalGrowth) / f - 1;
+                {growthLfl != null && typicalGrowth != null && (() => {
+                  const mine = growthLfl;
+                  const typical = (1 + typicalGrowth) / reporting.factor - 1;
                   return (
                     <GrowthBars rows={[
                       { name: selfLabel, value: mine, self: true, text: sgnPct(mine) },
@@ -1059,7 +1061,7 @@ export default function Person() {
                 )}
                 {reporting.changes.length > 0 && totalChange != null && (
                   <Text size="xs" c="dimmed" mt={2} data-reporting-note>
-                    {typicalGrowth != null ? 'The bars leave out' : `${sgnPct((1 + totalChange) / reporting.factor - 1)} without`} the {reporting.changes[0].sinceLabel} change
+                    Like for like: {sgnPct(totalChange)} as reported, with the {reporting.changes[0].sinceLabel} change
                     in {reporting.changes[0].what} (×{reporting.changes[0].ratio}), which is not pay.
                   </Text>
                 )}

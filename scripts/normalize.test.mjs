@@ -8,8 +8,9 @@ import {
   latestGradeBands, harmonizeHourly, isAnnualizedRate, prepareSheet, HOURS_PER_YEAR, FTE_PLACEHOLDER,
   mapDepartment, departmentChanges, structureChange, releasedWith, divisionReorganizations,
   MAIN_KEY_SQL, ACTUAL_PAY_SQL, PERSON_PAY_SQL, PERSON_EARNINGS_SQL, personActualPay,
+  REPORTING_CHANGES as REPORTING_CHANGES_NODE, priorFooting,
 } from './lib/normalize.mjs';
-import { MAIN_KEY, ACTUAL_PAY, personPay, personEarnings } from '../src/lib/queries.ts';
+import { MAIN_KEY, ACTUAL_PAY, personPay, personEarnings, REPORTING_CHANGES } from '../src/lib/queries.ts';
 
 // The build and the app pick a person's main appointment (and count their pay) by the same text, or the
 // landing page's dots, built here, and the names the app puts on them, picked there, part ways.
@@ -19,6 +20,13 @@ describe('the SQL twins', () => {
     expect(ACTUAL_PAY_SQL).toBe(ACTUAL_PAY);
     expect(PERSON_PAY_SQL).toBe(personPay('fte'));
     expect(PERSON_EARNINGS_SQL).toBe(personEarnings('full'));
+    expect(REPORTING_CHANGES_NODE).toEqual(REPORTING_CHANGES.map((c) => ({ to: c.to, factor: c.factor, since: c.since })));
+  });
+  it('restate a row to the footing before a reporting change, and leave the rest alone', () => {
+    const nine = { comp_basis: '9 Month', salary: 110000, salary_fte_adjusted: null };
+    expect(priorFooting(nine, '2025-09-01').salary).toBeCloseTo(90000, 6);
+    expect(priorFooting(nine, '2025-04-01')).toBe(nine);
+    expect(priorFooting({ ...nine, comp_basis: '12 Month' }, '2026-09-01').salary).toBe(110000);
   });
   it('count one person\'s rows as personPay does', () => {
     const row = (salary, fte) => ({ salary, fte, salary_fte_adjusted: null });

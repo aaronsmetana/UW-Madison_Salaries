@@ -172,6 +172,22 @@ export const PERSON_PAY_SQL = `CASE WHEN count(*) FILTER (WHERE salary > 0 AND f
 export const PERSON_EARNINGS_SQL = `CASE WHEN count(*) FILTER (WHERE salary > 0 AND fte > 0) > 0
             THEN sum(salary * ${FTE_MULT_SQL}) FILTER (WHERE salary > 0 AND fte > 0)
           ELSE max(salary * ${FTE_MULT_SQL}) FILTER (WHERE salary > 0) END`;
+/**
+ * The source's changes in how it reports pay — the Node twin of `REPORTING_CHANGES` in src/lib/queries.ts (a
+ * test holds the two to the same values): from `since` on, a row on the `to` basis reports pay at `factor`
+ * times what the snapshots before it did.
+ */
+export const REPORTING_CHANGES = [{ to: '9 month', factor: 11 / 9, since: '2025-09' }];
+
+/** A row restated as the snapshots before every reporting change reported it (`PRIOR_FOOTING`). */
+export function priorFooting(row, date) {
+  let f = 1;
+  for (const c of REPORTING_CHANGES) {
+    if (String(date).slice(0, 7) >= c.since && String(row.comp_basis ?? '').trim().toLowerCase() === c.to) f /= c.factor;
+  }
+  return f === 1 ? row : { ...row, salary: row.salary * f, salary_fte_adjusted: row.salary_fte_adjusted == null ? null : row.salary_fte_adjusted * f };
+}
+
 export function personActualPay(rows) {
   const paid = rows.filter((r) => r.salary > 0);
   const salaried = paid.filter((r) => r.fte > 0);

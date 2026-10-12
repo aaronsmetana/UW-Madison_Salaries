@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, Select, VisuallyHidden } from '@mantine/core';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, Select, VisuallyHidden, Tooltip, Portal } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
@@ -13,7 +13,7 @@ import { CohortPanel } from '../components/CohortPanel';
 import { useSummary, useManifest, useSql, useActiveSnapshotId } from '../lib/hooks';
 import { getDB } from '../lib/duckdb';
 import { useControls } from '../state/controls';
-import { personEarnings, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { personEarnings, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
 import { usd, usdCompact, num } from '../lib/format';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
@@ -67,7 +67,7 @@ function Delta({ frac, prevLabel, curLabel }: { frac: number | null; prevLabel: 
   return <DeltaChip frac={frac} tone="neutral" suffix={` · ${range}`} />;
 }
 
-interface SnapMed { id: string; label: string; med: number }
+interface SnapMed { id: string; label: string; date: string; med: number; prior: number | null }
 
 /** Combined median + snapshots tile: the median's growth over a selectable snapshot range (defaulting to
  *  the widest span), with the current median, a sparkline of the chosen slice, and the top-10% threshold. */
@@ -75,6 +75,7 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const [fromId, setFromId] = useState<string | null>(null);
   const [toId, setToId] = useState<string | null>(null);
   const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const lflId = useId();
 
   if (loading || series.length < 2) {
     // Loading, the card is the loaded one's shape and height, line for line: the toggle's row, the figure, the
@@ -93,7 +94,10 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   // Real mode: convert every point to REAL_BASE_YEAR dollars using its own snapshot year (the id's
   // leading YYYY) before computing growth — so growth reflects real purchasing power, not inflation.
   const displaySeries = dollarMode === 'real'
-    ? series.map((s) => ({ ...s, med: toReal(s.med, Number(s.id.slice(0, 4)) || REAL_BASE_YEAR) }))
+    ? series.map((s) => {
+      const year = Number(s.id.slice(0, 4)) || REAL_BASE_YEAR;
+      return { ...s, med: toReal(s.med, year), prior: s.prior != null ? toReal(s.prior, year) : null };
+    })
     : series;
 
   // Resolve the picked range, defaulting to widest (first → last) and keeping `from` strictly before `to`.
@@ -102,7 +106,9 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
   const tIdx = Math.max(fIdx + 1, tRaw < 0 ? displaySeries.length - 1 : tRaw);
   const from = displaySeries[fIdx];
   const to = displaySeries[tIdx];
-  const growth = from.med ? (to.med - from.med) / from.med : null;
+  // Like for like across a reporting change: the later median restated to the earlier's footing (queries
+  // `growthBetween`). As reported, Faculty's +40.8% held a +17.6% step that was how 9-month pay was reported.
+  const { growth, changes } = growthBetween({ date: from.date, value: from.med }, { date: to.date, value: to.med, prior: to.prior });
   const slice = displaySeries.slice(fIdx, tIdx + 1).map((s) => s.med);
   const up = (growth ?? 0) >= 0;
   // "Nov 2021 · post", not "Nov 2021 (Post-TTC)": the pickers are sized to their longest label, and the
@@ -128,6 +134,22 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
           {growth == null ? '—' : `${up ? '+' : ''}${(growth * 100).toFixed(1)}%`}
         </Text>
         <Text size="sm" c="dimmed">{usd(from.med)} → {usd(to.med)}</Text>
+        {/* On the figure's own line, not a line of its own under it: the tile is drawn at its loaded height while
+            it loads, and a note arriving after it moved the tabs down the page. */}
+        {changes.length > 0 && (() => {
+          const why = `Like for like: the ${changes[0].sinceLabel} change in ${changes[0].what} (×${changes[0].ratio}) taken out. As reported, ${from.med ? `${(to.med / from.med - 1) >= 0 ? '+' : ''}${((to.med / from.med - 1) * 100).toFixed(1)}%` : '—'}.`;
+          return (
+            <>
+              <Tooltip withArrow multiline w={280} events={{ hover: true, focus: true, touch: true }} label={why}>
+                <Text size="xs" c="dimmed" className="growth-lfl" tabIndex={0} role="button" aria-describedby={lflId}
+                  style={{ borderBottom: '1px dotted currentColor', whiteSpace: 'nowrap' }}>
+                  like for like
+                </Text>
+              </Tooltip>
+              <Portal><span id={lflId} hidden>{why}</span></Portal>
+            </>
+          );
+        })()}
       </Group>
       {slice.length > 1 && <div style={{ marginTop: 6 }}><MiniSparkline values={slice} width={150} /></div>}
       <Group gap={6} mt={8} wrap="wrap" align="center" className="growth-pickers">
@@ -212,15 +234,19 @@ export default function Explore() {
     cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
 
   // Median-over-time series for the KPI sparkline (one point per real snapshot; pre-TTC twin dropped).
-  const { data: sparkRows } = useSql<{ id: string; label: string; med: number | null }>(
+  // With each median restated to the footing before every reporting change (`PRIOR_FOOTING`), for growth
+  // measured across one.
+  const { data: sparkRows } = useSql<{ id: string; label: string; dt: string; med: number | null; med_prior: number | null }>(
     ['kpi-spark', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
-    `WITH pe AS (${peopleSql({ metric, where: `${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'`, by: ['snapshot_id'], extra: 'any_value(snapshot_label) lbl, any_value(snapshot_date) dt' })})
-     SELECT snapshot_id id, any_value(lbl) AS "label", median(pay) FILTER (WHERE pay > 0) med
-     FROM pe GROUP BY snapshot_id ORDER BY any_value(dt)`,
+    `WITH pe AS (${peopleSql({ metric, where: `${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'`, by: ['snapshot_id'], extra: 'any_value(snapshot_label) lbl, any_value(snapshot_date) dt' })}),
+          po AS (${peopleSql({ metric, where: `${whereAll(scope, filters)} AND snapshot_id NOT LIKE '%-pre'`, by: ['snapshot_id'], from: PRIOR_FOOTING })}),
+          a AS (SELECT snapshot_id, any_value(lbl) lbl, CAST(any_value(dt) AS VARCHAR) dt, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY 1),
+          b AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med_prior FROM po GROUP BY 1)
+     SELECT a.snapshot_id id, a.lbl AS "label", a.dt, a.med, b.med_prior FROM a LEFT JOIN b USING (snapshot_id) ORDER BY a.dt`,
     enabled
   );
   const series = useMemo<SnapMed[]>(
-    () => (sparkRows ?? []).filter((r) => r.med != null).map((r) => ({ id: r.id, label: r.label, med: r.med as number })),
+    () => (sparkRows ?? []).filter((r) => r.med != null).map((r) => ({ id: r.id, label: r.label, date: String(r.dt), med: r.med as number, prior: r.med_prior })),
     [sparkRows]
   );
 

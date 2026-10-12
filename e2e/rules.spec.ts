@@ -452,11 +452,14 @@ test.describe('The person page reports the reporting change and trims what repea
     );
     const without = ((o.p1 / o.p0) / (11 / 9) - 1) * 100;
     await page.goto(`./person/${encodeURIComponent(pk)}`);
-    // The person's growth bar is drawn without the change, and the note under the bars names it.
+    // The headline and the person's growth bar are both without the change, and the note gives it as reported.
+    const lfl = `${without > 0 ? '+' : ''}${without.toFixed(1)}%`;
+    const asReported = (o.p1 / o.p0 - 1) * 100;
     const note = page.locator('[data-reporting-note]');
     await expect(note).toBeVisible({ timeout: 60_000 });
-    await expect(note).toContainText('leave out the Sep 2025 change');
-    await expect(page.locator('.growth-bar-row[data-self] .growth-bar-value')).toHaveText(`${without > 0 ? '+' : ''}${without.toFixed(1)}%`);
+    await expect(note).toContainText(`Like for like: ${asReported > 0 ? '+' : ''}${asReported.toFixed(1)}% as reported, with the Sep 2025 change`);
+    await expect(page.locator('.growth-bar-row[data-self] .growth-bar-value')).toHaveText(lfl);
+    await expect(page.locator('.person-figures [data-trend]')).toHaveText(lfl);
   });
 
   test('one Pay column when the rate is the pay on every row, and the school once', async ({ page }) => {

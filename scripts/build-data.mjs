@@ -20,7 +20,7 @@ import XLSX from 'xlsx';
 import duckdb from 'duckdb';
 import {
   norm, parseDate, parseMoney, parseNum, parseGrade, makePersonKey,
-  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, personActualPay, latestGradeBands,
+  snapshotFromSheetName, snapshotFromFilename, snapshotMeta, median, actualPay, personActualPay, priorFooting, latestGradeBands,
   prepareSheet, mapDepartment, departmentChanges, DEPT_RENAME_SHARE, DEPT_RENAME_MIN, structureChange, releasedWith,
   divisionReorganizations,
 } from './lib/normalize.mjs';
@@ -308,6 +308,8 @@ async function main() {
 
       const med = median(salaries);
       const medPeople = median([...rowsByPerson.values()].map(personActualPay).filter((v) => v > 0));
+      // The same, with every reporting change undone (`priorFooting`): a growth figure across one compares it.
+      const medPeoplePrior = median([...rowsByPerson.values()].map((rs) => personActualPay(rs.map((r) => priorFooting(r, meta.date)))).filter((v) => v > 0));
       const min = salaries.length ? Math.min(...salaries) : null;
       const max = salaries.length ? Math.max(...salaries) : null;
       if (max != null && max > 5_000_000) messages.push(`max salary ${max} looks implausible`);
@@ -327,6 +329,7 @@ async function main() {
         salary_min: min,
         salary_median: med,
         salary_median_people: medPeople,
+        salary_median_people_prior: medPeoplePrior,
         salary_max: max,
         detected_mapping: res.detectedHeaders,
         unmapped_headers: res.unmapped,
@@ -546,8 +549,8 @@ async function main() {
     snapshot_count: dataSnaps.length,
     // `median` is over PEOPLE (their summed actual pay), matching the headcount beside it and every
     // median in the app; `median_rows` keeps the per-appointment figure the source's rows give.
-    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, published: publishedOf(s.snapshot_id), rows: s.row_count, headcount: s.distinct_people_paid, median: s.salary_median_people, median_rows: s.salary_median })),
-    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median_people, median_rows: latest.salary_median } : null,
+    snapshots: dataSnaps.map((s) => ({ id: s.snapshot_id, label: s.snapshot_label, date: s.snapshot_date, published: publishedOf(s.snapshot_id), rows: s.row_count, headcount: s.distinct_people_paid, median: s.salary_median_people, median_prior: s.salary_median_people_prior, median_rows: s.salary_median })),
+    latest: latest ? { id: latest.snapshot_id, label: latest.snapshot_label, headcount: latest.distinct_people_paid, median: latest.salary_median_people, median_prior: latest.salary_median_people_prior, median_rows: latest.salary_median } : null,
     // Divisions formed from whole departments of others (normalize `divisionReorganizations`), so a move
     // of every member of a department is read as the reorganization it is.
     reorganizations,

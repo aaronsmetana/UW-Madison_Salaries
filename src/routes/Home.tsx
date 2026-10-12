@@ -469,9 +469,12 @@ export default function Home() {
     const med0 = first?.median ?? null;
     const medNow = summary?.latest?.median ?? null;
     if (med0 != null && medNow != null && med0 > 0) {
-      const up = Math.round(((medNow - med0) / med0) * 100);
+      // Like for like: the latest restated to the first's footing (the Sep 2025 change in how 9-month pay is
+      // reported raised the median without raising anyone's pay).
+      const lfl = summary?.latest?.median_prior ?? medNow;
+      const up = Math.round(((lfl - med0) / med0) * 100);
       const yr = first?.date?.slice(0, 4);
-      f.push(`Median pay rose from ${usd(med0)}${yr ? ` (${yr})` : ''} to ${usd(medNow)} — up ~${up}%`);
+      f.push(`Median pay rose from ${usd(med0)}${yr ? ` (${yr})` : ''} to ${usd(medNow)} — up ~${up}%${lfl !== medNow ? ' like for like' : ''}`);
     }
     if (topTitle?.title) f.push(`Most common title: ${topTitle.title} (${num(topTitle.n)} people)`);
     if (topDivision?.school) f.push(`Largest division: ${topDivision.school} (${num(topDivision.n)} people)`);

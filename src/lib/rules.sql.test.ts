@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import duckdb from 'duckdb';
-import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, TITLE_RATE, personPay, personEarnings, personActualPay, personRate, type MainFields } from './queries';
+import { continuingRaisesSql, standingSql, peopleSql, poolPercentile, comparableSql, scopeWhere, GRADED_APPT, gradedCols, gradedAppt, mainOf, mainRow, TITLE_RATE, personPay, personEarnings, personActualPay, personRate, PRIOR_FOOTING, growthBetween, type MainFields } from './queries';
 import { raiseStepsSql } from './raises';
 
 /**
@@ -294,6 +294,33 @@ describe('personPay', () => {
       }));
       expect(got).toEqual(Object.fromEntries(Object.entries(WANT).map(([k, w]) => [k, { fte: w.fte, rate: w.rate }])));
     }
+  });
+});
+
+describe('PRIOR_FOOTING', () => {
+  it('restates 9-month pay from Sep 2025 on to the footing before it, and nothing else', async () => {
+    await all(`CREATE TABLE pf (snapshot_id VARCHAR, snapshot_date DATE, person_key VARCHAR, comp_basis VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE, base_pay DOUBLE)`);
+    await all(`INSERT INTO pf VALUES
+      ('2025-04', '2025-04-01', 'nine', 'Academic', 90000, 90000, 90000),
+      ('2025-09', '2025-09-01', 'nine', '9 Month', 113300, 113300, NULL),
+      ('2025-09', '2025-09-01', 'twelve', '12 Month', 80000, NULL, 80000)`);
+    const rows = await all<{ snapshot_id: string; person_key: string; salary: number; salary_fte_adjusted: number | null; base_pay: number | null }>(
+      `SELECT snapshot_id, person_key, salary, salary_fte_adjusted, base_pay FROM ${PRIOR_FOOTING.replace('FROM salaries)', 'FROM pf)')} ORDER BY 1, 2`
+    );
+    expect(rows.map((r) => [r.snapshot_id, r.person_key, Math.round(r.salary), r.salary_fte_adjusted == null ? null : Math.round(r.salary_fte_adjusted), r.base_pay])).toEqual([
+      ['2025-04', 'nine', 90000, 90000, 90000],
+      ['2025-09', 'nine', 92700, 92700, null],
+      ['2025-09', 'twelve', 80000, null, 80000],
+    ]);
+  });
+
+  it('measures growth across the change on the earlier footing, and as reported where none lies between', () => {
+    const a = { date: '2025-04-01', value: 100 };
+    const across = growthBetween(a, { date: '2025-09-01', value: 120, prior: 103 });
+    expect(across.growth).toBeCloseTo(0.03, 10);
+    expect(across.changes.map((c) => c.since)).toEqual(['2025-09']);
+    expect(growthBetween({ date: '2025-09-01', value: 120 }, { date: '2026-03-01', value: 126, prior: 103 }).growth).toBeCloseTo(0.05, 10);
+    expect(growthBetween({ date: '2024-09-01', value: 100 }, { date: '2025-04-01', value: 104, prior: null }).changes).toEqual([]);
   });
 });
 
