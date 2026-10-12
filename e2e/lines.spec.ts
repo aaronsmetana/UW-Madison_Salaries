@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 /**
  * Lines between snapshots are straight (G14): pay changes at a point in time, and a curve drew it easing
- * along between them — the Report's salary and Retention's net change were curved where the Salary trend
+ * along between them — the Report's pay and Retention's net change were curved where the Pay trend
  * was not. And turnover is drawn a month at a time (G15): snapshots run 4 to 14 months apart, so raw
  * counts made the 14-month Aug 2022 → Oct 2023 step look like a hiring surge.
  */
@@ -10,12 +10,12 @@ import { test, expect } from '@playwright/test';
 const AARON = 'aaronsmetana|2014-10-15';
 
 const PAGES: [string, string, string][] = [
-  ['the person page', `./person/${encodeURIComponent(AARON)}?tab=trends`, 'Salary over time'],
-  ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`, 'Salary over time'],
-  ['Divisions › Trends', './divisions?tab=trends', 'Median salary over time'],
+  ['the person page', `./person/${encodeURIComponent(AARON)}?tab=trends`, 'Actual pay over time'],
+  ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`, 'Actual pay over time'],
+  ['Divisions › Trends', './divisions?tab=trends', 'Median actual pay over time'],
   ['Divisions › Retention', './divisions?tab=retention', 'Workforce turnover'],
-  ['a division', `./school/${encodeURIComponent('School of Education')}?tab=dist`, 'Median salary over time'],
-  ['Compare', './compare', 'Salary by snapshot'],
+  ['a division', `./school/${encodeURIComponent('School of Education')}?tab=dist`, 'Median actual pay over time'],
+  ['Compare', './compare', 'Actual pay by snapshot'],
   ['a raise case', `./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`, 'Pay vs. title median over time'],
 ];
 
@@ -52,7 +52,12 @@ test('turnover is plotted a month at a time, and the table gives both the counts
   // The bars stand at the rates: each joined bar's height against the tallest, as its rate against the highest.
   const bars = page.locator('.turnover .recharts-bar-rectangle path[fill="var(--mark-up)"]');
   await expect(bars).toHaveCount(rows.length);
-  const heights = await bars.evaluateAll((ps) => ps.map((p) => p.getBoundingClientRect().height));
+  // Read once they have grown in: the bars rise from the axis, and a slow CI runner read them all at 0 (NaN).
+  const read = () => bars.evaluateAll((ps) => ps.map((p) => Math.round(p.getBoundingClientRect().height * 10) / 10));
+  let last = '';
+  await expect.poll(async () => { const h = await read(); const k = h.join(','); const steady = k === last && Math.max(...h) > 0; last = k; return steady; },
+    { timeout: 30_000, intervals: [250] }).toBe(true);
+  const heights = await read();
   const rates = rows.map((r) => n(r[joined]) / n(r[months]));
   const [hMax, rMax] = [Math.max(...heights), Math.max(...rates)];
   rows.forEach((r, i) => expect(Math.abs(heights[i] / hMax - rates[i] / rMax), `${r[0]}: the joined bar is not at its rate`).toBeLessThanOrEqual(0.02));
