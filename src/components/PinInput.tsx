@@ -34,7 +34,8 @@ export function PinInput({ value, onApply, label = 'Salary to pin (optional)' }:
       label={label}
       description={(
         <Group gap={4} wrap="nowrap" component="span" className="pin-privacy">
-          <IconLock size={ICON.compact} aria-hidden />
+          {/* Never shrunk by its line: on a CI runner's wider font the line squeezed it to 13.5px. */}
+          <IconLock size={ICON.compact} aria-hidden style={{ flexShrink: 0 }} />
           <Text span inherit>Private: never sent, saved or put in a link</Text>
         </Group>
       )}
