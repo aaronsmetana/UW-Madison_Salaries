@@ -311,9 +311,13 @@ test('Fast’s play draws the squares moving in every frame, never standing stil
     w.snaps = [];
     const bar = document.querySelector('.strata-timeline') as HTMLElement;
     new MutationObserver(() => w.snaps.push(performance.now())).observe(bar, { attributes: true, attributeFilter: ['data-snap'] });
+    // Recording until the play has started and then ended. It stopped after five frames unless the play had
+    // already begun, and on a CI runner the click came later than that: no frame of the play was recorded.
+    let started = false;
     const f = (t: number) => {
       w.frames.push([t, (window as unknown as { __strataFrames: { strata: { n: number } } }).__strataFrames.strata.n]);
-      if (bar.dataset.playing || w.frames.length < 5) requestAnimationFrame(f);
+      if (bar.dataset.playing) started = true;
+      if (!started || bar.dataset.playing) requestAnimationFrame(f);
     };
     requestAnimationFrame(f);
   });
