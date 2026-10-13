@@ -8,6 +8,11 @@ const BASE_PATH = '/UW-Madison_Salaries/';
 export default defineConfig({
   testDir: 'e2e',
   timeout: 120_000, // DuckDB-WASM init (parquet fetch + wasm boot) is slow on a cold page load
+  // On CI, an expectation waits 15s, not Playwright's 5s. Three deploys in a row failed on a different check each
+  // (a restored field's value, a toggle, a hover card), every one waiting the default for something DuckDB had to
+  // load first, on a runner slower than this machine; each passed here. A check that should hold at once still
+  // passes at once; only a slow one waits longer.
+  expect: { timeout: process.env.CI ? 15_000 : 5_000 },
   workers: 1, // each test spins up its own DuckDB-WASM instance — too heavy to parallelize
   // One machine still runs one test at a time. This is for CI, which splits the suite across machines
   // (`--shard`, .github/workflows/deploy.yml): tests, not files, are shared out, so the slow files

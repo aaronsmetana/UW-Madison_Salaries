@@ -34,8 +34,9 @@ test('theme toggle switches color scheme without blanking the page', async ({ pa
 test('explore renders a trend chart and the real-dollar toggle', async ({ page }) => {
   await page.goto('./divisions');
   await expect(page.locator('svg').first()).toBeVisible({ timeout: 60_000 });
+  // The toggle is drawn with the figures, after the data: the first svg on the page is an icon, drawn at once.
   const realToggle = page.getByText(/^\d{4} \$$/).first();
-  await expect(realToggle).toBeVisible();
+  await expect(realToggle).toBeVisible({ timeout: 60_000 });
   await realToggle.click();
   // Toggling shouldn't blow away the chart.
   await expect(page.locator('svg').first()).toBeVisible();
