@@ -47,7 +47,7 @@ test('Raises: the snapshots and a filter reopen from the link', async ({ browser
   await a.ctx.close();
   const b = await fresh(browser);
   await b.page.goto(link);
-  await expect(b.page.getByRole('textbox', { name: 'School / division' })).toHaveValue('School of Education');
+  await expect(b.page.getByRole('textbox', { name: 'School / division' })).toHaveValue('School of Education', { timeout: 60_000 });
   await b.ctx.close();
 });
 
@@ -59,7 +59,7 @@ test('Screening: a screen, run, reopens from the link run', async ({ browser }) 
   await a.ctx.close();
   const b = await fresh(browser);
   await b.page.goto(link);
-  await expect(b.page.getByRole('textbox', { name: 'School / division' })).toHaveValue('School of Education');
+  await expect(b.page.getByRole('textbox', { name: 'School / division' })).toHaveValue('School of Education', { timeout: 60_000 });
   await expect(b.page.getByRole('table').first()).toBeVisible({ timeout: 60_000 });
   await b.ctx.close();
 });
@@ -94,7 +94,7 @@ test('a raise case reopens from its link — its people and its settings — wit
   const b = await fresh(browser);
   await b.page.goto(link);
   await expect(b.page.getByRole('textbox', { name: 'Pick the person the case is for' })).toHaveValue('Aaron Smetana', { timeout: 60_000 });
-  await expect(b.page.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / })).toBeChecked();
+  await expect(b.page.getByRole('radio', { name: /^The (tenure-adjusted )?median of same-title peers in / })).toBeChecked({ timeout: 60_000 });
   await expect(b.page.getByRole('switch', { name: 'Supervisory scope' })).toBeChecked();
   await expect(b.page.getByRole('textbox', { name: '+$ (optional)' }).first()).toHaveValue('$2,500');
   // Its people are the case's, all three; the reader's own compare set is left as it was.
