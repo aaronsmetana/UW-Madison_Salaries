@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 const PREFIX = 'uwsal.pref.';
 
@@ -32,22 +32,29 @@ export function clearPref(key: string): void {
   }
 }
 
+/** Every mounted user of a key, told when any of them sets it. */
+const listeners = new Map<string, Set<(v: unknown) => void>>();
+
 /**
  * A small view preference that persists across pages and sessions in localStorage (e.g. "show real
  * dollars" or "log scale") — so a choice made on one chart carries to the next instead of resetting
- * per-card. Reads once at mount; components sharing the same key don't live-sync with each other
- * mid-session, but each freshly-mounted page picks up the latest saved value.
+ * per-card. Components sharing a key stay in step while mounted: a toggle in Divisions' control bar sets
+ * the dollars every figure under it reads (D2), where each used to read the value once, at mount.
  */
 export function usePref<T>(key: string, fallback: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => readPref(key, fallback));
+  useEffect(() => {
+    let set = listeners.get(key);
+    if (!set) listeners.set(key, (set = new Set()));
+    const hear = (v: unknown) => setValue(v as T);
+    set.add(hear);
+    return () => { set!.delete(hear); };
+  }, [key]);
   const set = useCallback(
     (v: T) => {
+      writePref(key, v);
+      for (const hear of listeners.get(key) ?? []) hear(v);
       setValue(v);
-      try {
-        localStorage.setItem(PREFIX + key, JSON.stringify(v));
-      } catch {
-        // private browsing / storage full — the preference just won't stick this session
-      }
     },
     [key]
   );

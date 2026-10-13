@@ -116,12 +116,8 @@ test.describe('R2 — the 9-month reporting change is not a raise', () => {
     expect(nine.size, 'no 9-month continuing raises across Sep 2025').toBeGreaterThan(1000);
     // At ×11/9 they would all sit near +25.9%; like for like, the usual +3%.
     expect([...nine.values()].filter((r) => r > 0.2).length / nine.size).toBeLessThan(0.02);
-    await page.goto('./divisions?tab=changes');
-    // Exactly these: the growth card at the top of Explore has its own "From snapshot" / "To snapshot".
-    await page.getByRole('textbox', { name: 'From', exact: true }).click();
-    await page.getByRole('option', { name: 'Apr 2025', exact: true }).click();
-    await page.getByRole('textbox', { name: 'To', exact: true }).click();
-    await page.getByRole('option', { name: 'Sep 2025', exact: true }).click();
+    // The page's period (D1), as a link carries it: Sep 2025 the snapshot, Apr 2025 the start.
+    await page.goto('./divisions?tab=changes&snap=2025-09&from=2025-04');
     const raises = page.locator('.mantine-Card-root', { has: page.getByText('Biggest raises', { exact: true }) }).locator('tbody tr');
     await expect(raises.first()).toBeVisible({ timeout: 60_000 });
     // Every continuing raise counted, the 9-month ones among them.

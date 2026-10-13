@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Group, Select, Text, Badge, Button, Paper, Combobox, useCombobox, InputBase } from '@mantine/core';
-import { IconBuildingBank, IconCalendar, IconSearch, IconRefresh } from '@tabler/icons-react';
+import { useSearchParams } from 'react-router-dom';
+import { Group, Select, Text, Badge, Button, Paper, Combobox, useCombobox, InputBase, Drawer, Stack } from '@mantine/core';
+import { IconBuildingBank, IconCalendar, IconSearch, IconRefresh, IconAdjustmentsHorizontal } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
@@ -13,6 +14,13 @@ import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
 import { CopyLinkButton } from '../components/CopyLinkButton';
 import { PayMeasure } from '../components/PayMeasure';
+import { SegmentedToggle } from '../components/SegmentedToggle';
+import { usePeriod } from '../lib/period';
+import { usePref } from '../lib/prefs';
+import { REAL_BASE_YEAR } from '../lib/cpi';
+
+/** "Nov 2021 · post", not "Nov 2021 (Post-TTC)": a picker sized to its longest label cut the long form short. */
+const pickLabel = (label: string) => label.replace(/\s*\((Pre|Post)-TTC\)/i, (_m, v: string) => ` · ${v.toLowerCase()}`);
 
 /**
  * Scope / division picker. A Combobox (not a plain Select) so the floating menu can open wider than the
@@ -117,8 +125,18 @@ function ScopeMenu({ scope, setScope, options, label }: {
  * FTE-adjusted pay). Two layouts: the persistent header strip (default), and an `inline` panel that
  * pages can drop into their own content (used on Compare) so the controls anchor to the data below.
  */
-export function ControlBar({ inline = false }: { inline?: boolean }) {
-  const { scope, setScope, metric, setMetric, activeSnapshot, setActiveSnapshot, filters, clearFilters } = useControls();
+export function ControlBar({ inline = false, period = false, dollars = false }: {
+  inline?: boolean;
+  /** The page's period (D1): a "from" picker before the snapshot, which is the period's end (lib/period). */
+  period?: boolean;
+  /** Nominal or inflation-adjusted dollars, for every figure on the page that has both (D2). */
+  dollars?: boolean;
+}) {
+  const { scope, setScope, metric, activeSnapshot, setActiveSnapshot, filters } = useControls();
+  const [params, setParams] = useSearchParams();
+  const { from, to, earlier, setPeriod } = usePeriod();
+  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [sheet, setSheet] = useState(false);
   const { data: summary } = useSummary();
   const snapshots = summary?.snapshots ?? [];
   const latest = snapshots[snapshots.length - 1];
@@ -168,18 +186,24 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
     ? snapshots.find((s) => s.id === activeSnapshot)?.label ?? activeSnapshot
     : latest?.label ?? '—';
 
-  // "Reset view": back to the app defaults (All UW · latest · actual pay · no filters).
-  const atDefaults =
-    scope.kind === 'all' && metric === 'fte' && activeSnapshot == null &&
-    Object.values(filters).every((v) => v.length === 0);
-  const resetView = (
+  // "Reset view": back to the app defaults (All UW · latest · the page's measure · no filters). Shown only when
+  // something is set (D5): a disabled Reset sat on screen on every visit. One change to the address, not four: each
+  // setter rewrote it from the same starting point, so only the last one stuck.
+  const filterCount = Object.values(filters).reduce((a, v) => a + v.length, 0);
+  const changed = [scope.kind !== 'all', activeSnapshot != null, period && params.has('from'), params.has('metric'), filterCount > 0]
+    .filter(Boolean).length;
+  const atDefaults = changed === 0;
+  const resetView = atDefaults ? null : (
     <Button
       size="xs"
       variant="subtle"
       color="gray"
       leftSection={<IconRefresh size={ICON.compact} />}
-      onClick={() => { setScope({ kind: 'all' }); setMetric('fte'); setActiveSnapshot(null); clearFilters(); }}
-      disabled={atDefaults}
+      onClick={() => setParams((prev) => {
+        const n = new URLSearchParams(prev);
+        for (const k of ['school', 'dept', 'snap', 'from', 'metric', 'filt']) n.delete(k);
+        return n;
+      }, { replace: true })}
     >
       Reset
     </Button>
@@ -197,6 +221,22 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
       <Eyebrow style={{ flexShrink: 0 }}>Showing</Eyebrow>
       <Group gap="xs" wrap={wrapScope ? 'wrap' : 'nowrap'} style={{ minWidth: 0, flexShrink: wrapScope ? 1 : 0 }}>
         <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} label={label} />
+        {period && from && (
+          <>
+            <Select
+              {...dropdownProps('sm')}
+              w={146}
+              maw="100%"
+              aria-label="From snapshot"
+              data={[...earlier].reverse().map((s) => ({ value: s.id, label: pickLabel(s.label) }))}
+              value={from.id}
+              onChange={(v) => setPeriod(v)}
+              allowDeselect={false}
+              comboboxProps={{ width: 210, position: 'bottom-start' }}
+            />
+            <Text size="xs" c="dimmed" aria-hidden>→</Text>
+          </>
+        )}
         <Select
           {...dropdownProps('sm')}
           w={180}
@@ -224,6 +264,14 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         />
       </Group>
       <PayMeasure />
+      {dollars && (
+        <SegmentedToggle
+          size="xs"
+          value={dollarMode}
+          onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
+          options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
+        />
+      )}
     </>
   );
 
@@ -233,7 +281,37 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
   // actions right — and the Filters button stays put: active-filter chips flow into their own row below.
   if (inline) {
     return (
-      <Paper withBorder px="sm" py="xs">
+      <>
+      {/* On a phone, the view's settings are one button and a sheet (D6): the panel and the figures filled a screen
+          and a half before the tabs, its pickers cut to "Nov 2021 · pos". */}
+      <Group hiddenFrom="sm" justify="space-between" gap="xs" wrap="nowrap" className="control-sheet-row">
+        <Button
+          size="xs"
+          variant={atDefaults ? 'default' : 'light'}
+          color={atDefaults ? 'gray' : 'accent'}
+          leftSection={<IconAdjustmentsHorizontal size={ICON.compact} />}
+          onClick={() => setSheet(true)}
+          className="control-sheet-button"
+          style={{ flexShrink: 0 }}
+        >
+          {atDefaults ? 'View' : `View (${changed})`}
+        </Button>
+        <Text size="xs" c="dimmed" truncate style={{ minWidth: 0, flex: 1 }}>
+          {label} · {period && from && to ? `${from.label} → ${to.label}` : snapLabel} · {METRIC_LABEL[metric]}
+        </Text>
+        <div style={{ flexShrink: 0 }}>{copyLink}</div>
+      </Group>
+      <Drawer opened={sheet} onClose={() => setSheet(false)} position="bottom" size="sm" radius="md" title="View" hiddenFrom="sm">
+        <Stack gap="sm" pb="md">
+          <Group gap="sm" wrap="wrap" align="center">{lens(true)}</Group>
+          <Group gap="xs" wrap="wrap">
+            <FilterControls />
+            {resetView}
+          </Group>
+          <ActiveFilters standalone />
+        </Stack>
+      </Drawer>
+      <Paper withBorder px="sm" py="xs" visibleFrom="sm">
         <Group justify="space-between" gap="md" wrap="wrap">
           <Group gap="md" wrap="wrap" align="center">{lens(true)}</Group>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
@@ -251,6 +329,7 @@ export function ControlBar({ inline = false }: { inline?: boolean }) {
         </Group>
         <ActiveFilters standalone />
       </Paper>
+      </>
     );
   }
 

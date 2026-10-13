@@ -1,5 +1,5 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, Select, VisuallyHidden, Tooltip, Portal } from '@mantine/core';
+import { useEffect, useId, useMemo, type ReactNode } from 'react';
+import { Stack, Text, Group, Alert, Loader, Tabs, Anchor, Skeleton, VisuallyHidden, Tooltip, Portal } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
@@ -16,15 +16,14 @@ import { useControls } from '../state/controls';
 import { personEarnings, paidHeadcount, peopleSql, snapWhere, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
 import { usd, usdShort, num, fmtChange } from '../lib/format';
 import { ICON } from '../lib/ui';
-import { dropdownProps } from '../lib/selectProps';
 import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
-import { SegmentedToggle } from '../components/SegmentedToggle';
 import { DeltaChip } from '../components/Delta';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 
 import { OverflowTabsList } from '../components/OverflowTabsList';
+import { usePeriod, type PeriodSnap } from '../lib/period';
 import { markTabSwitch } from '../lib/motion';
 /** A KPI tile that count-ups its value (reduced-motion safe) and shows a skeleton while loading. */
 function Kpi({ label, value, format, exact, sub, to, loading }: {
@@ -73,23 +72,27 @@ function Delta({ frac, prevLabel, curLabel }: { frac: number | null; prevLabel: 
 
 interface SnapMed { id: string; label: string; date: string; med: number; prior: number | null }
 
-/** Combined median + snapshots tile: the median's growth over a selectable snapshot range (defaulting to
- *  the widest span), with the current median, a sparkline of the chosen slice, and the top-10% threshold. */
-function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: number | null; loading: boolean }) {
-  const [fromId, setFromId] = useState<string | null>(null);
-  const [toId, setToId] = useState<string | null>(null);
-  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+/** The median's growth over the page's period (lib/period), with the median at each end, a sparkline of the
+ *  period and the top-10% threshold. Read-only (D2): the period is the control bar's, and so is the dollars mode.
+ *  It had a Nominal / 2026 $ toggle and two snapshot pickers of its own, a second period on the page. */
+function MedianGrowthCard({ series, from, to, p90, loading }: {
+  series: SnapMed[];
+  from: PeriodSnap | null;
+  to: PeriodSnap | null;
+  p90: number | null;
+  loading: boolean;
+}) {
+  const [dollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   const lflId = useId();
 
-  if (loading || series.length < 2) {
-    // Loading, the card is the loaded one's shape and height, line for line: the toggle's row, the figure, the
-    // sparkline, the two pickers and the top-10% line. A label and one bar, it was half as tall, and the
-    // row of tiles grew under the reader, taking the tabs below it down 60px (layout shift 0.23).
+  if (loading || series.length < 2 || !from || !to) {
+    // Loading, the card is the loaded one's shape and height, line for line: the figure, the period, the
+    // sparkline and the top-10% line, so the row of tiles does not grow under the reader as it loads.
     return (
-      <StatCell label="Median pay growth" aside={<Skeleton height={28} width={116} radius="sm" />}>
+      <StatCell label="Median pay growth">
         <Skeleton height={28} width={210} radius="sm" mt={6} />
+        <Skeleton height={18} width={170} radius="sm" mt={6} />
         <Skeleton height={26} width={150} radius="sm" mt={6} />
-        <Skeleton height={28} width={2 * PICKER_W + 22} radius="sm" mt={8} />
         <Skeleton height={18} width={130} radius="sm" mt={6} />
       </StatCell>
     );
@@ -104,44 +107,34 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
     })
     : series;
 
-  // Resolve the picked range, defaulting to widest (first → last) and keeping `from` strictly before `to`.
-  const fIdx = Math.min(Math.max(0, displaySeries.findIndex((s) => s.id === fromId)), displaySeries.length - 2);
-  const tRaw = displaySeries.findIndex((s) => s.id === toId);
-  const tIdx = Math.max(fIdx + 1, tRaw < 0 ? displaySeries.length - 1 : tRaw);
-  const from = displaySeries[fIdx];
-  const to = displaySeries[tIdx];
+  // The period's ends on this series, which leaves out the Pre-TTC twin: a period from it starts at its pair.
+  const at = (p: PeriodSnap) => {
+    const i = displaySeries.findIndex((s) => s.id === p.id);
+    return i >= 0 ? i : displaySeries.findIndex((s) => s.date >= p.date);
+  };
+  const fIdx = Math.max(0, at(from));
+  const tIdx = Math.max(fIdx, at(to) < 0 ? displaySeries.length - 1 : at(to));
+  const a = displaySeries[fIdx];
+  const b = displaySeries[tIdx];
   // Like for like across a reporting change: the later median restated to the earlier's footing (queries
   // `growthBetween`). As reported, Faculty's +40.8% held a +17.6% step that was how 9-month pay was reported.
-  const { growth, changes } = growthBetween({ date: from.date, value: from.med }, { date: to.date, value: to.med, prior: to.prior });
+  const { growth, changes } = fIdx < tIdx
+    ? growthBetween({ date: a.date, value: a.med }, { date: b.date, value: b.med, prior: b.prior })
+    : { growth: null, changes: [] as ReturnType<typeof growthBetween>['changes'] };
   const slice = displaySeries.slice(fIdx, tIdx + 1).map((s) => s.med);
   const up = (growth ?? 0) >= 0;
-  // "Nov 2021 · post", not "Nov 2021 (Post-TTC)": the pickers are sized to their longest label, and the
-  // full form at 118px read "Nov 2021 (Po:". The pair of Nov 2021 snapshots is the only one with a suffix.
-  const pickLabel = (label: string) => label.replace(/\s*\((Pre|Post)-TTC\)/i, (_m, v: string) => ` · ${v.toLowerCase()}`);
-  const fromOpts = displaySeries.slice(0, tIdx).map((s) => ({ value: s.id, label: pickLabel(s.label) }));
-  const toOpts = displaySeries.slice(fIdx + 1).map((s) => ({ value: s.id, label: pickLabel(s.label) }));
 
   return (
-    <StatCell
-      label="Median pay growth"
-      aside={
-        <SegmentedToggle
-          size="xs"
-          value={dollarMode}
-          onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
-          options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
-        />
-      }
-    >
+    <StatCell label="Median pay growth">
       <Group align="baseline" gap={8} mt={6} wrap="nowrap">
-        <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={up ? 'up' : 'down'}>
+        <Text style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.15 }} c={growth == null ? undefined : up ? 'up' : 'down'} data-figure="median-growth">
           {growth == null ? '—' : fmtChange(growth)}
         </Text>
-        <Text size="sm" c="dimmed">{usd(from.med)} → {usd(to.med)}</Text>
+        <Text size="sm" c="dimmed">{usd(a.med)} → {usd(b.med)}</Text>
         {/* On the figure's own line, not a line of its own under it: the tile is drawn at its loaded height while
             it loads, and a note arriving after it moved the tabs down the page. */}
         {changes.length > 0 && (() => {
-          const why = `Like for like: the ${changes[0].sinceLabel} change in ${changes[0].what} (×${changes[0].ratio}) taken out. As reported, ${from.med ? fmtChange(to.med / from.med - 1) : '—'}.`;
+          const why = `Like for like: the ${changes[0].sinceLabel} change in ${changes[0].what} (×${changes[0].ratio}) taken out. As reported, ${a.med ? fmtChange(b.med / a.med - 1) : '—'}.`;
           return (
             <>
               <Tooltip withArrow multiline w={280} events={{ hover: true, focus: true, touch: true }} label={why}>
@@ -156,21 +149,14 @@ function MedianGrowthCard({ series, p90, loading }: { series: SnapMed[]; p90: nu
           );
         })()}
       </Group>
+      <Text size="xs" c="dimmed" mt={4} className="growth-period">
+        {from.label} → {to.label}{dollarMode === 'real' ? ` · in ${REAL_BASE_YEAR} dollars` : ''}
+      </Text>
       {slice.length > 1 && <div style={{ marginTop: 6 }}><MiniSparkline values={slice} width={150} /></div>}
-      <Group gap={6} mt={8} wrap="wrap" align="center" className="growth-pickers">
-        <Select {...dropdownProps('sm')} w={PICKER_W} aria-label="From snapshot" data={fromOpts} value={from.id}
-          onChange={setFromId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
-        <Text size="xs" c="dimmed">→</Text>
-        <Select {...dropdownProps('sm')} w={PICKER_W} aria-label="To snapshot" data={toOpts} value={to.id}
-          onChange={setToId} allowDeselect={false} comboboxProps={{ width: 210, position: 'bottom-start' }} />
-      </Group>
       {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}{dollarMode === 'real' ? ' (nominal)' : ''}</Text>}
     </StatCell>
   );
 }
-
-/** The growth card's snapshot pickers: wide enough for their longest label, "Nov 2021 · post". */
-const PICKER_W = 146;
 
 interface Kpis { headcount: number; all_people: number; total_payroll: number | null; med: number | null; p90: number | null }
 
@@ -221,10 +207,10 @@ export default function Explore() {
   );
   const k = kpis?.[0];
 
-  // Deltas vs the previous distinct-date snapshot (skips the Nov-2021 TTC same-date twin).
-  const snapsAsc = useMemo(() => summary?.snapshots ?? [], [summary]);
-  const curSnapMeta = snapsAsc.find((s) => s.id === snap);
-  const prevSnapMeta = curSnapMeta ? [...snapsAsc].filter((s) => s.date < curSnapMeta.date).at(-1) : undefined;
+  // Changes over the page's one period (D1): from its start to its end, the snapshot shown.
+  const { from: periodFrom, to: periodTo } = usePeriod();
+  const prevSnapMeta = periodFrom ?? undefined;
+  const curSnapMeta = periodTo ?? undefined;
   const { data: kprevRows } = useSql<{ headcount: number; total_payroll: number | null; med: number | null }>(
     ['kpis-prev', prevSnapMeta?.id ?? '', scope.kind, scope.kind === 'school' ? scope.value : '', metric, fk],
     `WITH pe AS (${peopleSql({ metric, where: `${snapWhere(prevSnapMeta?.id ?? '')} AND ${whereAll(scope, filters)}`, extra: `${personEarnings(metric)} earn` })})
@@ -268,7 +254,7 @@ export default function Explore() {
 
       {/* No page-wide search here: its table has its own filter, and finding a person, title or division is
           the landing page's box and ⌘K anywhere. A second search above the figures was one too many. */}
-      <ControlBar inline />
+      <ControlBar inline period dollars />
 
       {flagged.length > 0 && (
         <Alert
@@ -293,7 +279,8 @@ export default function Explore() {
         <Loader />
       ) : (
         <div>
-          <StatRow cols={{ base: 1, sm: 3 }}>
+          {/* On a phone, a row to scroll sideways rather than three screens of tiles (D6). */}
+          <StatRow cols={{ base: 1, sm: 3 }} className="kpi-scroll">
             <Kpi
               label="Headcount"
               value={k?.headcount ?? null}
@@ -301,7 +288,7 @@ export default function Explore() {
               loading={enabled && !k}
               sub={<Delta frac={frac(k?.headcount, kp?.headcount)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />}
             />
-            <MedianGrowthCard series={series} p90={k?.p90 ?? null} loading={series.length < 2} />
+            <MedianGrowthCard series={series} from={periodFrom} to={periodTo} p90={k?.p90 ?? null} loading={series.length < 2} />
             <Kpi
               label="Total payroll"
               value={k?.total_payroll ?? null}
@@ -310,7 +297,8 @@ export default function Explore() {
               loading={enabled && !k}
               sub={
                 <Stack gap={2}>
-                  <Text span size="xs" c="dimmed">annualized earnings, everyone at their FTE</Text>
+                  {/* What it sums, and that the Pay setting above does not change it (D4). */}
+                  <Text span size="xs" c="dimmed" className="payroll-measure">actual pay, summed: each person at their FTE, under either Pay setting</Text>
                   <Delta frac={frac(k?.total_payroll, kp?.total_payroll)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />
                 </Stack>
               }

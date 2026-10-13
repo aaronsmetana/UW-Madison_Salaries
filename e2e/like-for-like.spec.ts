@@ -27,7 +27,8 @@ test("Divisions' median growth across Sep 2025 is like for like, and says so", a
   const asReported = last.med / first.med - 1;
   const lfl = last.med_prior / first.med - 1;
   expect(asReported - lfl, 'the reporting change moves Faculty growth by at least 10 points').toBeGreaterThan(0.1);
-  await page.goto(`./divisions${FACULTY}`);
+  // The period from the first snapshot (D1): by default it starts at the one before the latest.
+  await page.goto(`./divisions${FACULTY}&from=${first.id}`);
   const tile = page.locator('.mantine-Paper-root, [class*="stat"]').filter({ hasText: 'Median pay growth' }).first();
   await expect(tile).toContainText(sgn(lfl), { timeout: 60_000 });
   await expect(tile).not.toContainText(sgn(asReported));

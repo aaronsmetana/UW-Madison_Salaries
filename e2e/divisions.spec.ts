@@ -16,16 +16,15 @@ async function tab(page: Page, name: string, query = '') {
 }
 
 /**
- * The growth card's snapshot pickers show their whole label. At 118px, "Nov 2021 (Post-TTC)" read
- * "Nov 2021 (Po:"; the pickers now say "Nov 2021 · post" and are sized to it. Every option of both
- * pickers is measured in the field's own font against the room the field gives its text.
+ * The period's From picker shows its whole label. At 118px, "Nov 2021 (Post-TTC)" read "Nov 2021 (Po:"; the
+ * picker says "Nov 2021 · post" and is sized to it. It was the growth card's, with a To beside it; the page's
+ * period is the control bar's now (D1). Every option is measured in the field's own font against its room.
  */
-test("the growth card's snapshot pickers show every label whole", async ({ page }) => {
+test("the period's From picker shows every label whole", async ({ page }) => {
   await tab(page, 'schools');
-  const pickers = page.locator('.growth-pickers input[aria-label]');
-  await expect(pickers).toHaveCount(2, { timeout: 60_000 });
-  for (const name of ['From snapshot', 'To snapshot']) {
-    const field = page.locator(`.growth-pickers input[aria-label="${name}"]`);
+  await expect(page.getByRole('textbox', { name: 'From snapshot' })).toBeVisible({ timeout: 60_000 });
+  for (const name of ['From snapshot']) {
+    const field = page.locator(`input[aria-label="${name}"]`);
     await field.click();
     const options = await page.getByRole('option').locator('visible=true').allTextContents();
     await page.keyboard.press('Escape');
@@ -269,10 +268,12 @@ async function changesPair(page: Page, from: string, to: string) {
   await tab(page, 'changes');
   const card = page.locator('.raise-dist-card');
   await expect(card).toHaveAttribute('data-raise-counts', /,/, { timeout: 60_000 });
-  for (const [label, value] of [['From', from], ['To', to]] as const) {
-    await page.getByRole('textbox', { name: label, exact: true }).click();
-    await page.getByRole('option', { name: value, exact: true }).click();
-  }
+  // The page's period (D1): the bar's snapshot is its end, its From the start.
+  // A snapshot option carries its row count after the label, so it is matched by its start.
+  await page.getByRole('textbox', { name: 'Snapshot', exact: true }).click();
+  await page.getByRole('option', { name: new RegExp(`^${to}\\b`) }).click();
+  await page.getByRole('textbox', { name: 'From snapshot', exact: true }).click();
+  await page.getByRole('option', { name: from, exact: true }).click();
   await expect(page.getByText(`Between ${from} and ${to}`)).toBeVisible({ timeout: 60_000 });
   await expect(card).toHaveAttribute('data-raise-counts', /,/, { timeout: 60_000 });
   await page.waitForTimeout(500);

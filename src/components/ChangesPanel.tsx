@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Stack, Card, Text, Group, Select, SimpleGrid, Table, Alert, Anchor, Button, Badge } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { Stack, Card, Text, Group, SimpleGrid, Table, Alert, Anchor, Button, Badge } from '@mantine/core';
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, LabelList, Customized } from 'recharts';
 import { AXIS_TICK, GRID, BAR_RADIUS, chartKeys, CHART_FONT } from '../lib/chartStyle';
 import { Eyebrow } from './Eyebrow';
@@ -7,12 +7,12 @@ import { CardTitle } from './CardTitle';
 import { CsvButton } from './CsvButton';
 import { Link } from 'react-router-dom';
 import { useControls } from '../state/controls';
+import { usePeriod } from '../lib/period';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, whereAll, filterKey, continuingRaisesSql, reportingFactorSql, mainOf } from '../lib/queries';
 import { usd, usdCompact, usdShort, num, pct, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
-import { dropdownProps } from '../lib/selectProps';
 import { ChartData } from './ChartData';
 import { MethodNote } from './MethodNote';
 import { StatCard, StatRow } from './StatCard';
@@ -64,23 +64,17 @@ export function ChangesPanel() {
   const { data: summary } = useSummary();
   const snaps = useMemo(() => summary?.snapshots ?? [], [summary]);
 
-  const [fromId, setFromId] = useState<string | null>(null);
-  const [toId, setToId] = useState<string | null>(null);
-  const [filterSchool, setFilterSchool] = useState<string | null>(null);
-  const [filterDept, setFilterDept] = useState<string | null>(null);
-  useEffect(() => {
-    if (snaps.length >= 2 && !fromId && !toId) {
-      setFromId(snaps[snaps.length - 2].id);
-      setToId(snaps[snaps.length - 1].id);
-    }
-  }, [snaps, fromId, toId]);
-
+  // The page's period (D1): the control bar's From and snapshot. The tab had its own From and To, a second period.
+  const { from: periodFrom, to: periodTo, setPeriod } = usePeriod();
+  const fromId = periodFrom?.id ?? null;
+  const toId = periodTo?.id ?? null;
   const enabled = !!fromId && !!toId && fromId !== toId;
   const A = sqlStr(fromId ?? '');
   const B = sqlStr(toId ?? '');
-  // In-panel school/department filter — scopes the whole panel (composes with the global scope).
-  const localWhere = `${where}${filterSchool ? ` AND school = ${sqlStr(filterSchool)}` : ''}${filterDept ? ` AND department = ${sqlStr(filterDept)}` : ''}`;
-  const scopeKey = `${scope.kind === 'school' ? scope.value : ''}|${filterKey(filters)}|${filterSchool ?? ''}|${filterDept ?? ''}`;
+  // The page's scope, the one control for it (D3): the tab had a School and a Department picker of its own under
+  // the page's "Showing".
+  const localWhere = where;
+  const scopeKey = `${scope.kind === 'school' ? scope.value : scope.kind === 'department' ? `${scope.school ?? ''}/${scope.value}` : ''}|${filterKey(filters)}`;
 
   // Only offer divisions/departments present in BOTH snapshots. UW renamed and split divisions in the
   // 2025 reorg (e.g. "Sch of Med & Public Health" → "School of Medicine and Public Health"), so a unit
@@ -94,32 +88,13 @@ export function ChangesPanel() {
      ) ORDER BY school`,
     enabled
   );
-  // The school a department filter would sit inside: the panel's own pick, else the global scope's.
-  // Department names repeat across schools, so the department picker only opens once there is one.
-  const deptSchool = filterSchool ?? (scope.kind === 'school' ? scope.value : scope.kind === 'department' ? scope.school : null);
-  const deptSchoolClause = deptSchool ? ` AND school = ${sqlStr(deptSchool)}` : '';
-  // The department the Raises link carries: the panel's own pick, else the global scope's.
-  const linkDept = filterDept ?? (scope.kind === 'department' ? scope.value : null);
-  const { data: deptOpts } = useSql<{ department: string }>(
-    ['chg-depts', fromId, toId, deptSchool ?? ''],
-    `SELECT department FROM (
-        SELECT department FROM salaries WHERE snapshot_id = ${A} AND department IS NOT NULL${deptSchoolClause} GROUP BY department
-        INTERSECT
-        SELECT department FROM salaries WHERE snapshot_id = ${B} AND department IS NOT NULL${deptSchoolClause} GROUP BY department
-     ) ORDER BY department`,
-    enabled && !!deptSchool
-  );
-
-  // Drop a selected school/department that isn't present in both snapshots (e.g. after moving "From"
-  // across the 2025 reorg) so the panel reverts to a valid scope instead of reading as all-new-hires.
-  useEffect(() => {
-    if (!schoolOpts || !filterSchool) return;
-    if (!schoolOpts.some((x) => x.school === filterSchool)) { setFilterSchool(null); setFilterDept(null); }
-  }, [schoolOpts, filterSchool]);
-  useEffect(() => {
-    if (!deptOpts || !filterDept) return;
-    if (!deptOpts.some((x) => x.department === filterDept)) setFilterDept(null);
-  }, [deptOpts, filterDept]);
+  // The school and department the Raises link carries: the page's scope.
+  const deptSchool = scope.kind === 'school' ? scope.value : scope.kind === 'department' ? scope.school : null;
+  const linkDept = scope.kind === 'department' ? scope.value : null;
+  // A division the period's start does not have under this name (the 2025 reorganization renamed several):
+  // everyone in it would read as a new hire, so the tab says so instead of counting it.
+  const scopeMissing = scope.kind === 'school' && !!schoolOpts && !schoolOpts.some((x) => x.school === scope.value);
+  const live = enabled && !scopeMissing;
 
   // Restrict both sides to people with a paid appointment so unpaid $0 affiliates don't read as
   // joiners/leavers (a $0-only person has NULL personPay and is dropped by the HAVING).
@@ -149,7 +124,7 @@ export function ChangesPanel() {
             (SELECT median(r) FROM ${crs}) median_raise,
             (SELECT count(*) FROM ${crs}) n_continuing
      FROM a FULL OUTER JOIN b ON a.person_key = b.person_key`,
-    enabled
+    live
   );
   const s = sumData?.[0];
 
@@ -159,7 +134,7 @@ export function ChangesPanel() {
     ['chg-mode', fromId, toId, scopeKey, metric],
     `WITH c AS (SELECT round(r, 3) k FROM ${crs})
      SELECT k, count(*) c, (SELECT count(*) FROM c) n FROM c GROUP BY k ORDER BY c DESC, k LIMIT 1`,
-    enabled
+    live
   );
   const commonRaise = modeRows?.[0] && modeRows[0].n > 0 && modeRows[0].k > 0 && modeRows[0].c / modeRows[0].n >= 0.5 ? modeRows[0] : null;
 
@@ -177,14 +152,14 @@ export function ChangesPanel() {
   const moverSelect = `${cte}
      SELECT c.person_key, b.fn, b.ln, b.title, b.school, c.pay_from a_pay, c.pay_to b_pay, (c.pay_to - c.pay_from) delta, c.r pct
      FROM ${crs} c JOIN b ON b.person_key = c.person_key`;
-  const { data: raises } = useSql<Mover>(['chg-raise', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta DESC LIMIT 12`, enabled);
-  const { data: cuts } = useSql<Mover>(['chg-cut', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta ASC LIMIT 12`, enabled);
+  const { data: raises } = useSql<Mover>(['chg-raise', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta DESC LIMIT 12`, live);
+  const { data: cuts } = useSql<Mover>(['chg-cut', fromId, toId, scopeKey, metric], `${moverSelect} ORDER BY delta ASC LIMIT 12`, live);
   const { data: promos } = useSql<Promo>(
     ['chg-promo', fromId, toId, scopeKey, metric],
     // Like for like across the 9-month reporting change, as a continuing raise is.
     `${cte} SELECT b.person_key, b.fn, b.ln, a.title a_title, b.title b_title, (b.pay - a.pay * ${reportingFactorSql('a.basis', 'b.basis')}) delta
      FROM a JOIN b ON a.person_key = b.person_key WHERE a.job IS DISTINCT FROM b.job ORDER BY delta DESC LIMIT 12`,
-    enabled
+    live
   );
 
   const { data: decompData } = useSql<{ total_change: number; raises: number; hires: number; departures: number }>(
@@ -196,7 +171,7 @@ export function ChangesPanel() {
        coalesce(sum(b.pay) FILTER (WHERE a.person_key IS NULL), 0) hires,
        -coalesce(sum(a.pay) FILTER (WHERE b.person_key IS NULL), 0) departures
      FROM a FULL OUTER JOIN b ON a.person_key = b.person_key`,
-    enabled
+    live
   );
   const d = decompData?.[0];
 
@@ -205,7 +180,7 @@ export function ChangesPanel() {
   const { data: raiseCounts } = useSql<{ bucket: number; n: number }>(
     ['chg-dist', fromId, toId, scopeKey, metric],
     `SELECT ${raiseBucketSql('r')} AS bucket, count(*) n FROM ${crs} GROUP BY 1 ORDER BY 1`,
-    enabled
+    live
   );
 
   const { data: mobility } = useSql<{ person_key: string; fn: string; ln: string; a_school: string | null; b_school: string | null; delta: number }>(
@@ -214,7 +189,7 @@ export function ChangesPanel() {
      SELECT b.person_key, b.fn, b.ln, a.school a_school, b.school b_school, (b.pay - a.pay) delta
      FROM a JOIN b ON a.person_key = b.person_key
      WHERE a.school IS DISTINCT FROM b.school ORDER BY abs(b.pay - a.pay) DESC LIMIT 12`,
-    enabled
+    live
   );
 
   const { data: equityRows } = useSql<{ top10_share: number | null; n_raised: number }>(
@@ -223,7 +198,7 @@ export function ChangesPanel() {
      SELECT count(*) n_raised,
        CASE WHEN sum(raise) > 0 THEN round(100.0 * sum(raise) FILTER (WHERE raise >= (SELECT quantile_cont(raise, 0.9) FROM r)) / sum(raise), 1) ELSE NULL END top10_share
      FROM r`,
-    enabled
+    live
   );
   const equity = equityRows?.[0];
 
@@ -233,7 +208,7 @@ export function ChangesPanel() {
      SELECT a.title a_title, b.title b_title, count(*) n, round(median(b.pay - a.pay)) med_delta
      FROM a JOIN b ON a.person_key = b.person_key WHERE a.job IS DISTINCT FROM b.job
      GROUP BY a.title, b.title ORDER BY n DESC LIMIT 15`,
-    enabled
+    live
   );
 
   // Net headcount flow per division: who hired more than they lost (and vice versa) over the window.
@@ -247,7 +222,7 @@ export function ChangesPanel() {
      WHERE coalesce(a.school, b.school) IS NOT NULL
      GROUP BY coalesce(a.school, b.school)
      HAVING count(*) FILTER (WHERE a.person_key IS NULL) + count(*) FILTER (WHERE b.person_key IS NULL) > 0`,
-    enabled
+    live
   );
   const netTop = useMemo(() => {
     const rows = (netFlows ?? []).map((r) => ({ ...r, net: r.joined - r.departed }));
@@ -257,13 +232,13 @@ export function ChangesPanel() {
   }, [netFlows]);
 
   const isTTC = !!fromId && !!toId && fromId.includes('pre') && toId.includes('post');
-  const opts = [...snaps].reverse().map((x) => ({ value: x.id, label: x.label }));
   const fromLabel = snaps.find((x) => x.id === fromId)?.label ?? '—';
   const toLabel = snaps.find((x) => x.id === toId)?.label ?? '—';
-  const scopeText = filterDept ? ` in ${filterDept}` : filterSchool ? ` in ${filterSchool}` : '';
+  const scopeText = scope.kind === 'department' ? ` in ${scope.value}` : scope.kind === 'school' ? ` in ${scope.value}` : '';
 
   // Quick snapshot-pair presets.
-  const setPair = (a: string, b: string) => { setFromId(a); setToId(b); setFilterSchool(null); setFilterDept(null); };
+  // Quick ranges set the page's period, its start and end at once.
+  const setPair = (a: string, b: string) => setPeriod(a, b);
   const presetLatest = () => { if (snaps.length >= 2) setPair(snaps[snaps.length - 2].id, snaps[snaps.length - 1].id); };
   const presetYoY = () => {
     const last = snaps[snaps.length - 1];
@@ -325,25 +300,12 @@ export function ChangesPanel() {
 
   return (
     <Stack gap="lg">
-      <Group align="flex-end" wrap="wrap" gap="md">
-        <Select {...dropdownProps('sm')} size="xs" w={150} label="From" data={opts} value={fromId} onChange={setFromId} allowDeselect={false} />
-        <Select {...dropdownProps('sm')} size="xs" w={150} label="To" data={opts} value={toId} onChange={setToId} allowDeselect={false} />
-        <Select
-          {...dropdownProps('sm')}
-          size="xs" w={230} label="School" placeholder="All UW" searchable clearable
-          data={(schoolOpts ?? []).map((x) => x.school)}
-          value={filterSchool}
-          onChange={(v) => { setFilterSchool(v); setFilterDept(null); }}
-        />
-        <Select
-          {...dropdownProps('sm')}
-          size="xs" w={250} label="Department" placeholder={deptSchool ? 'All departments' : 'Choose a school first'} searchable clearable
-          disabled={!deptSchool}
-          data={(deptOpts ?? []).map((x) => x.department)}
-          value={filterDept}
-          onChange={setFilterDept}
-        />
-      </Group>
+      {scopeMissing && (
+        <Alert color="gray" variant="light" className="changes-scope-missing">
+          {scope.kind === 'school' ? scope.value : ''} is not in {fromLabel} under this name (the 2025 reorganization renamed
+          several divisions), so its changes cannot be measured from there. Choose a later From, or All UW.
+        </Alert>
+      )}
       <Group gap="xs" wrap="wrap">
         <Eyebrow>Quick range</Eyebrow>
         <Button size="compact-xs" variant="default" onClick={presetLatest}>Latest pair</Button>
@@ -353,7 +315,7 @@ export function ChangesPanel() {
 
       {/* One sentence, then the figures (G22): the page opened with about 120 words and two callouts before
           its first number. How each figure was counted closes the section, folded. */}
-      {s && enabled && (
+      {s && live && (
         <Text size="sm" className="changes-lead">
           Between <b>{fromLabel}</b> and <b>{toLabel}</b>{scopeText}:
         </Text>
@@ -368,7 +330,7 @@ export function ChangesPanel() {
           sub={s?.n_continuing ? `${num(s.n_continuing)} counted${raisedPct != null ? ` · ${pct(raisedPct)} got one` : ''}` : undefined} />
       </StatRow>
 
-      {s && enabled && commonRaise && (
+      {s && live && commonRaise && (
         <Text size="sm" className="changes-step-note" data-common-raise={commonRaise.k} data-common-share={(commonRaise.c / commonRaise.n).toFixed(4)}>
           <b>An across-the-board step:</b> {pct(commonRaise.c / commonRaise.n, 0)} of the {num(commonRaise.n)} who kept the same title and
           appointment{scopeText} were raised exactly {(commonRaise.k * 100).toFixed(1)}%.
@@ -376,7 +338,7 @@ export function ChangesPanel() {
       )}
 
       {/* The same pair and unit on the Raises page, where the Pre-TTC twin is never an end. */}
-      {s && enabled && !fromId?.endsWith('-pre') && !toId?.endsWith('-pre') && (
+      {s && live && !fromId?.endsWith('-pre') && !toId?.endsWith('-pre') && (
         <Anchor component={Link} size="sm" className="changes-raises-link"
           to={`/raises?${new URLSearchParams({
             from: fromId ?? '', to: toId ?? '',

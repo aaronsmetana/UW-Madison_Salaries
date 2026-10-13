@@ -2,7 +2,7 @@ import { useId, useMemo } from 'react';
 import { Card, Text, Loader, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-  ReferenceLine, Customized,
+  ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys, fmtCount } from '../lib/chartStyle';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
@@ -21,6 +21,7 @@ import { CardTitle } from './CardTitle';
 import { YoyChips } from './chart/pills';
 import { EndLabels } from './chart/EndLabels';
 import { usePref } from '../lib/prefs';
+import { usePeriod } from '../lib/period';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 
 interface Row { id: string; label: string; date: string; med: number | null; med_prior: number | null; hc: number; renew: number | null }
@@ -66,7 +67,9 @@ export function TrendsPanel() {
   /** The plotted figure, named for the measure in force (G2). */
   const med = `Median ${METRIC_LABEL[metric].toLowerCase()}`;
   const entrance = useEntrance();
-  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  // The dollars are the page's (the control bar's Nominal / 2026 $, D2): this tab had a toggle of its own too.
+  const [dollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const { from: periodFrom, to: periodTo } = usePeriod();
   const [hcScale, setHcScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
   const { data, isFetching } = useSql<Row>(
     ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
@@ -120,6 +123,10 @@ export function TrendsPanel() {
   const coverageX = inRange(snapX(scope23.date, scope23.snapshotId)) ? snapX(scope23.date, scope23.snapshotId) : undefined;
   const nineX = inRange(snapX(nine.date, nine.snapshotId)) ? snapX(nine.date, nine.snapshotId) : undefined;
 
+  const periodX = periodFrom && periodTo && plot.length > 1
+    ? [snapX(periodFrom.date, periodFrom.id), snapX(periodTo.date, periodTo.id)] as const
+    : null;
+
   if (isFetching && !data) return <Loader />;
 
   return (
@@ -127,11 +134,6 @@ export function TrendsPanel() {
       <CardTitle
         right={
         <Group gap="sm" wrap="wrap">
-          <SegmentedToggle
-            value={dollarMode}
-            onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
-            options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
-          />
           <SegmentedToggle
             value={hcScale}
             onChange={(v) => setHcScale(v as 'linear' | 'log')}
@@ -156,6 +158,10 @@ export function TrendsPanel() {
             label={{ value: med, angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
           <Tooltip content={<TrendTip />} />
 
+          {/* The page's period, shaded (D1): every snapshot is drawn, the period the figures and Changes read marked. */}
+          {periodX && (
+            <ReferenceArea x1={periodX[0]} x2={periodX[1]} fill="var(--band-fill)" stroke="none" ifOverflow="hidden" className="trend-period" />
+          )}
           {ttcX != null && <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3" />}
           {nineX != null && <ReferenceLine x={nineX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
 
@@ -222,6 +228,7 @@ export function TrendsPanel() {
         {dollarMode === 'real'
           ? `Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).`
           : 'Nominal dollars (not inflation-adjusted).'}
+        {periodFrom && periodTo ? ` Shaded: ${periodFrom.label} → ${periodTo.label}, the page's period.` : ''}
       </Text>
       <ChartData
         caption={dollarMode === 'real' ? `${med}, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : `${med}, headcount & renewable staff over time`}

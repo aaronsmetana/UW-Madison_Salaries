@@ -1524,6 +1524,19 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .stat-row-flush { margin-inline: -16px; }
 .stat-row-flush .stat-cell { padding: 12px 16px; }
 @media (max-width: 47.99em) { .stat-cell { padding: 16px; } }
+/* A row of figures to scroll sideways on a phone (D6, Divisions): three tiles stacked filled a screen and a half
+   before the tabs. Each a snap stop, most of the width, so the next shows at the edge and says there is more. */
+@media (max-width: 47.99em) {
+  .kpi-scroll .stat-row {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 82%;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+  }
+  .kpi-scroll .stat-cell { scroll-snap-align: start; }
+}
 .stat-cell-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
 /* A cell that opens what it summarises (a tab, a page): the pointer's grey, as a row's. */
 .stat-cell-open { cursor: pointer; transition: background-color var(--dur-fast) var(--ease); }

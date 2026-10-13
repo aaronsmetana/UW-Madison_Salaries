@@ -220,7 +220,7 @@ test.describe('the newest release, said', () => {
     for (const [days, n] of [[5, 1], [31, 0]] as const) {
       await page.clock.setFixedTime(dayAfter(latest.published!, days));
       await page.goto('./divisions');
-      await page.getByRole('textbox', { name: 'Snapshot' }).click();
+      await page.getByRole('textbox', { name: 'Snapshot', exact: true }).click();
       await expect(page.getByRole('option').first()).toBeVisible({ timeout: 30_000 });
       const newOpts = page.getByRole('option').filter({ has: page.locator('.new-badge') });
       await expect(newOpts, `picker, day ${days}`).toHaveCount(n, { timeout: 30_000 });
