@@ -67,15 +67,13 @@ import { ICON } from '../lib/ui';
 
 import { OverflowTabsList } from '../components/OverflowTabsList';
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
-function TrendTooltip({ active, payload, onHeight }: { active?: boolean; onHeight?: (h: number) => void; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   // A gap row only breaks the line at a reporting change; there is no snapshot there to describe.
   if (d.gap || d.salary == null) return null;
   const partTime = d.rate != null && Math.round(d.rate) !== Math.round(d.salary);
-  // Its height, so a card above the pointer ends above it however many lines it has (P25).
   return (
-    <div ref={(el) => { if (el) onHeight?.(el.offsetHeight); }}>
     <TipSurface>
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
@@ -89,7 +87,6 @@ function TrendTooltip({ active, payload, onHeight }: { active?: boolean; onHeigh
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
     </TipSurface>
-    </div>
   );
 }
 
@@ -190,10 +187,6 @@ function OffChartMax({ text, offset }: { text: string; offset?: { left: number; 
   );
 }
 
-/** The trend's hover card: below a pointer above this height (or above the card's own, if taller), above one under
- *  it (P25). Until the card has been measured, it is taken to be about TIP_H tall. */
-const TIP_H = 132;
-const TIP_FLIP_Y = 150;
 
 /** The title labels' second row, a line of chart text above the first: at 14px, two 12px titles touched. */
 const ERA_ROW = Math.round(CHART_FONT * 4 / 3);
@@ -779,8 +772,6 @@ export default function Person() {
   // choice away. All of it at once — six legend entries, a chip on every point, eras, diamonds and a band —
   // was too much to read.
   const [showTypical, setShowTypical] = useState(false);
-  const [trendTipY, setTrendTipY] = useState<number | null>(null);
-  const [trendTipH, setTrendTipH] = useState(TIP_H);
   const [showBand, setShowBand] = useState(false);
   // Round steps from $0 to the highest line drawn (lib/rangeScale): Recharts' own read $0 / $45,000 / $90,000.
   // Fitted to the person and the title median (P22), never stretched to the band's top: a $183k maximum held a
@@ -1638,8 +1629,7 @@ export default function Person() {
             this chart's x-axis. */}
         <div ref={trendBoxRef} className="person-trend">
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart {...chartKeys(`${trendMeasure} over time`)} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}
-            onMouseMove={(st: { chartY?: number }) => { if (st?.chartY != null) setTrendTipY(st.chartY); }}>
+          <ComposedChart {...chartKeys(`${trendMeasure} over time`)} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
             <defs>{areaGradDef(gradId)}</defs>
             {/* First, so the plot surface it paints lies under the era bands rather than over them. */}
             <CartesianGrid {...GRID} />
@@ -1664,15 +1654,16 @@ export default function Person() {
               height={fteVaries ? 8 : 34}
             />
             <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} ticks={trendTicks} domain={[0, trendTicks[trendTicks.length - 1] ?? 'auto']} />
-            {/* The hover card follows the pointer down the chart and flips above it in the lower half (P25): pinned to
-                the plot's top, it covered the title labels and the axis whatever was pointed at. */}
+            {/* The hover card follows the pointer down the chart, below it, and above it where it would not fit below
+                (P25): pinned to the plot's top, it covered the title labels and the axis whatever was pointed at. Kept
+                inside the plot, which keeps it off the labels over it. Recharts places it by its own measure of the
+                card: placed here from the page's state, every pointer move re-rendered the whole page, and on a CI
+                runner the card ended 22px past the pointer. Placed at once, not eased there. */}
             <Tooltip
-              content={<TrendTooltip onHeight={setTrendTipH} />}
+              content={<TrendTooltip />}
               cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }}
-              position={trendTipY == null ? undefined : { y: trendTipY > Math.max(TIP_FLIP_Y, trendTipH + 12) ? trendTipY - trendTipH - 12 : trendTipY + 16 }}
-              allowEscapeViewBox={{ x: false, y: true }}
-              // Placed at once, not eased there: the card's measured height moves it after its first frame, and a
-              // 400ms glide left it over the pointer meanwhile (a CI runner caught it there).
+              offset={14}
+              allowEscapeViewBox={{ x: false, y: false }}
               isAnimationActive={false}
             />
             {/* The grade's official band, on demand (P23): shading from its floor, clipped at the plot's top, which is
