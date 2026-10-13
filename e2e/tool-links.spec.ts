@@ -37,7 +37,8 @@ test('a title links to its raises', async ({ page }) => {
     `SELECT job_code code, any_value(title) title FROM $SAL WHERE snapshot_id = '${snap}' AND salary > 0 AND title = 'Professor' GROUP BY 1 ORDER BY count(*) DESC LIMIT 1`,
   );
   await page.goto(`./titles?code=${t.code}`);
-  await links(page).getByRole('link', { name: 'Raises in this title →' }).click();
+  // One of the header's actions (T14), as on a person's and a division's page.
+  await page.locator('.title-actions').getByRole('link', { name: 'Raises in this title' }).click({ timeout: 60_000 });
   await expect(page).toHaveURL(new RegExp(`/raises\\?title=${t.code}`));
   await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(new RegExp(t.title));
 });

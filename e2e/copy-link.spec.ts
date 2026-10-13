@@ -23,7 +23,7 @@ async function copyLink(page: Page) {
 test('Titles: a title and its school reopen from the link, and a pinned salary never goes in it', async ({ browser }) => {
   const a = await fresh(browser);
   await a.page.goto('./titles?code=FA020');
-  await a.page.getByRole('textbox', { name: 'School (optional filter)' }).click();
+  await a.page.getByRole('textbox', { name: 'School', exact: true }).click();
   await a.page.getByRole('option', { name: /^College of Letters & Science/ }).click();
   await a.page.getByRole('textbox', { name: 'Salary to pin (optional)' }).fill('123456');
   const link = await copyLink(a.page);
@@ -33,7 +33,7 @@ test('Titles: a title and its school reopen from the link, and a pinned salary n
   const b = await fresh(browser);
   await b.page.goto(link);
   await expect(b.page.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(/FA020/);
-  await expect(b.page.getByRole('textbox', { name: 'School (optional filter)' })).toHaveValue(/^College of Letters & Science/);
+  await expect(b.page.getByRole('textbox', { name: 'School', exact: true })).toHaveValue(/^College of Letters & Science/, { timeout: 60_000 });
   await b.ctx.close();
 });
 

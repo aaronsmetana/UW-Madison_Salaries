@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { parseColor, flatten, contrast } from './color';
 import { afterReveal } from './reveal';
+import { oracle, latestSnapshot } from './oracle';
 
 test('search finds a person and navigates to their profile', async ({ page }) => {
   await page.goto('./');
@@ -231,10 +232,13 @@ for (const { name, width, height } of [
 ]) {
   test(`peer-range quartile labels never overlap (${name})`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    await page.goto('./titles?code=FA020');
-    const pin = page.getByLabel('Salary to pin (optional)');
-    await expect(pin).toBeVisible({ timeout: 60_000 });
-    await pin.fill('278211');
+    // The Titles page placed a pinned salary on this bar; it marks it on its histogram now (T11), so the bar is
+    // read where it still is, on a person's Report: the best-paid Professor, against the same cohort.
+    const [p] = await oracle<{ pk: string }>(
+      `SELECT person_key pk FROM $SAL WHERE snapshot_id = '${await latestSnapshot()}' AND job_code = 'FA020' AND salary > 0
+       GROUP BY person_key HAVING count(*) = 1 ORDER BY max(salary) DESC, pk LIMIT 1`
+    );
+    await page.goto(`./person/${encodeURIComponent(p.pk)}?tab=report`);
 
     // Anchor both ends: the labels' container starts with "p25 $…" too, so a start-anchored regex
     // would match the wrapper and compare the wrong boxes.

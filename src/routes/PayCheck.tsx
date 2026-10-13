@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Stack, Text, Card, Group, Select, NumberInput, type ComboboxItem } from '@mantine/core';
+import { Stack, Text, Group, Select, type ComboboxItem } from '@mantine/core';
 import { IconChevronDown, IconChartHistogram } from '@tabler/icons-react';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { useControls } from '../state/controls';
 import { paidHeadcount } from '../lib/queries';
 import { sqlStr } from '../lib/duckdb';
-import { num } from '../lib/format';
+import { num, fmtGrade, legacyTitle } from '../lib/format';
+import { CATEGORY_SPELLINGS } from '../lib/timeline';
 import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { TitleStats } from '../components/TitleStats';
@@ -17,6 +18,11 @@ import { CopyLinkButton } from '../components/CopyLinkButton';
 import { PayMeasure } from '../components/PayMeasure';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
+import { PinInput } from '../components/PinInput';
+
+/** The school picker's "every school" choice: a value of its own, so "All UW" reads as chosen (T3). It was the
+ *  field's placeholder, grey, and the field looked switched off. */
+const ALL_UW = '__all__';
 
 /** A dropdown row: name on the left, the member count right-aligned (dimmed), or a compact "none"
  *  for options where no one matches the active filter (Mantine greys the disabled row itself). */
@@ -46,8 +52,7 @@ export default function PayCheck() {
   // because GitHub Pages has no rewrite and deep links bounce through public/404.html — it ends up in
   // a request URL sent to GitHub's servers. Component state keeps the claim literally true. Nobody
   // wants to share their own salary in a link anyway, so nothing of value is lost.
-  const [pinInput, setPinInput] = useState<number | string>('');
-  const pinSalary = typeof pinInput === 'number' && Number.isFinite(pinInput) && pinInput > 0 ? pinInput : null;
+  const [pinSalary, setPinSalary] = useState<number | null>(null);
 
   const snap = useActiveSnapshotId();
   const { metric } = useControls();
@@ -71,8 +76,31 @@ export default function PayCheck() {
     !!snap
   );
   // A title open here is a place of its own: "Titles / System Engineer IV".
-  const codeTitle = code ? titles?.find((t) => t.job_code === code)?.title : undefined;
+  const codeRow = code ? titles?.find((t) => t.job_code === code) : undefined;
+  const codeTitle = codeRow?.title ? legacyTitle(codeRow.title) : undefined;
   useCrumbs(code && codeTitle ? [{ label: 'Titles', to: '/titles' }, { label: codeTitle }] : []);
+  // What the title is, for the line under its name (T1): its grade (the most common, where appointments differ,
+  // as TitleStats reads its band) and its employee category.
+  const { data: metaRows } = useSql<{ cat: string | null; grade_number: number | null; grade_basis: string | null }>(
+    ['pc-meta', snap ?? '', code ?? ''],
+    `WITH t AS (SELECT employee_category, grade_number, grade_basis FROM salaries
+        WHERE snapshot_id = ${sqlStr(snap ?? '')} AND job_code = ${sqlStr(code ?? '')} AND salary > 0),
+      g AS (SELECT grade_number, grade_basis FROM t WHERE grade_number IS NOT NULL
+        GROUP BY grade_number, grade_basis ORDER BY count(*) DESC, grade_number LIMIT 1)
+     SELECT (SELECT employee_category FROM t WHERE employee_category IS NOT NULL
+               GROUP BY employee_category ORDER BY count(*) DESC, employee_category LIMIT 1) cat,
+            (SELECT grade_number FROM g) grade_number, (SELECT grade_basis FROM g) grade_basis`,
+    !!snap && !!code
+  );
+  const meta = metaRows?.[0];
+  const metaLine = code && codeRow
+    ? [
+        code,
+        meta?.grade_number != null ? `grade ${fmtGrade(meta.grade_number)}` : null,
+        meta?.cat ? CATEGORY_SPELLINGS[meta.cat] ?? meta.cat : null,
+        `${num(codeRow.n)} ${codeRow.n === 1 ? 'person' : 'people'}`,
+      ].filter(Boolean).join(' · ')
+    : null;
   const { data: schools } = useSql<{ school: string }>(
     ['pc-schools', snap ?? ''],
     `SELECT DISTINCT school FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL ORDER BY school`,
@@ -113,6 +141,7 @@ export default function PayCheck() {
   }, [titles, school, titleCounts]);
 
   // Schools: label is the school name; the in-title count rides in `counts` (only when a title is picked).
+  // "All UW" first, counted with the title's whole headcount.
   const schoolOptions = useMemo(() => {
     const all = (schools ?? []).map((s) => s.school);
     const inTitle = code && schoolCounts ? new Map(schoolCounts.map((r) => [r.school, r.n])) : null;
@@ -123,69 +152,67 @@ export default function PayCheck() {
       })
       .sort((a, b) => (b.n ?? 0) - (a.n ?? 0) || a.value.localeCompare(b.value));
     return {
-      data: rows.map(({ value, label, disabled }) => ({ value, label, disabled })),
-      counts: new Map<string, number | null>(rows.map((r) => [r.value, r.n])),
+      data: [{ value: ALL_UW, label: 'All UW', disabled: false }, ...rows.map(({ value, label, disabled }) => ({ value, label, disabled }))],
+      counts: new Map<string, number | null>([[ALL_UW, codeRow?.n ?? null], ...rows.map((r) => [r.value, r.n] as [string, number | null])]),
     };
-  }, [schools, code, schoolCounts]);
+  }, [schools, code, schoolCounts, codeRow]);
 
   return (
     <Stack gap="lg">
+      {/* The title is the page's heading once one is chosen (T1), what it is on the line under it, and the page's
+          controls one compact row beneath (T2): a three-field form card, the measure and a privacy paragraph came
+          before the first number. The raises link is one of the header's actions (T14). */}
       <PageHeader
-        right={<CopyLinkButton size="sm" />}
-        title="Titles"
-        description="Pick a job title to see what it pays across UW–Madison: the full range, who holds it, and how it varies by school. You can pin your own salary to see where it lands — it stays in your browser and is never sent anywhere."
+        eyebrow={code ? 'Titles' : undefined}
+        title={code ? (codeTitle ?? code) : 'Titles'}
+        meta={metaLine ?? undefined}
+        description={code ? undefined : 'Pick a job title to see what it pays across UW–Madison: the full range, who holds it, and how it varies by school.'}
+        right={(
+          <Group gap="sm" wrap="wrap" className="title-actions">
+            {code && (
+              <ToolLinks asButtons links={[{ label: 'Raises in this title', to: `/raises?title=${encodeURIComponent(code)}${school ? `&sch=${encodeURIComponent(school)}` : ''}` }]} />
+            )}
+            <CopyLinkButton size="sm" />
+          </Group>
+        )}
       />
 
-      <Card padding="lg">
-        <Group align="flex-end" wrap="wrap" gap="xl">
-          <Select
-            {...dropdownProps('md')}
-            label="Title"
-            placeholder="Search titles…"
-            data={titleOptions.data}
-            renderOption={({ option }) => <DropdownCountRow option={option} counts={titleOptions.counts} />}
-            value={code}
-            onChange={(v) => setP('code', v)}
-            searchable
-            // ~1,300 titles, each rendered through a custom renderOption. Mantine mounts every option
-            // when no limit is set, so opening this dropdown built ~1,300 DOM subtrees before showing
-            // anything. The field is searchable, so the full set stays reachable by typing.
-            limit={50}
-            w={440}
-            nothingFoundMessage="No matching title"
-            rightSection={<IconChevronDown size={ICON.control} stroke={2} />}
-          />
-          <Select
-            {...dropdownProps('md')}
-            label="School (optional filter)"
-            placeholder="All UW"
-            data={schoolOptions.data}
-            renderOption={({ option }) => <DropdownCountRow option={option} counts={schoolOptions.counts} />}
-            value={school}
-            onChange={(v) => setP('sch', v)}
-            searchable
-            clearable
-            w={360}
-          />
-          <NumberInput
-            size="md"
-            label="Salary to pin (optional)"
-            placeholder="e.g. 120000"
-            value={pinInput}
-            onChange={setPinInput}
-            min={0}
-            step={1000}
-            thousandSeparator=","
-            prefix="$"
-            w={200}
-          />
-          <PayMeasure />
-        </Group>
-        <Text size="xs" c="dimmed" mt="xs">
-          Private — the salary you enter stays on this page. It is never uploaded, saved, or put in the
-          address bar, so it can&rsquo;t end up in your history or in a link you share.
-        </Text>
-      </Card>
+      <Group align="flex-start" wrap="wrap" gap="md" className="title-controls">
+        <Select
+          {...dropdownProps('sm')}
+          label="Title"
+          placeholder="Search titles…"
+          data={titleOptions.data}
+          renderOption={({ option }) => <DropdownCountRow option={option} counts={titleOptions.counts} />}
+          value={code}
+          onChange={(v) => setP('code', v)}
+          searchable
+          // ~1,300 titles, each rendered through a custom renderOption. Mantine mounts every option
+          // when no limit is set, so opening this dropdown built ~1,300 DOM subtrees before showing
+          // anything. The field is searchable, so the full set stays reachable by typing.
+          limit={50}
+          w={360}
+          maw="100%"
+          nothingFoundMessage="No matching title"
+          rightSection={<IconChevronDown size={ICON.control} stroke={2} />}
+        />
+        <Select
+          {...dropdownProps('sm')}
+          label="School"
+          data={schoolOptions.data}
+          renderOption={({ option }) => <DropdownCountRow option={option} counts={schoolOptions.counts} />}
+          value={school ?? ALL_UW}
+          onChange={(v) => setP('sch', !v || v === ALL_UW ? null : v)}
+          allowDeselect={false}
+          searchable
+          w={280}
+          maw="100%"
+          rightSection={<IconChevronDown size={ICON.control} stroke={2} />}
+        />
+        <PinInput value={pinSalary} onApply={setPinSalary} />
+        {/* Level with the fields, under their labels' line. */}
+        <div className="title-measure" style={{ marginTop: 25 }}><PayMeasure /></div>
+      </Group>
 
       {!code || !snap ? (
         <EmptyState
@@ -195,7 +222,6 @@ export default function PayCheck() {
         />
       ) : (
         <>
-          <ToolLinks links={[{ label: 'Raises in this title', to: `/raises?title=${encodeURIComponent(code)}${school ? `&sch=${encodeURIComponent(school)}` : ''}` }]} />
           <TitleStats jobCode={code} snap={snap} metric={metric} school={school} pinSalary={pinSalary} />
         </>
       )}

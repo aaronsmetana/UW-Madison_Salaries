@@ -10,8 +10,6 @@ import { personPay, peopleSql, mainOf } from '../lib/queries';
 import { usd, num, fullName, fmtYears, hourly } from '../lib/format';
 import { METRIC_LABEL, type Metric } from '../state/controls';
 import { useTray } from '../state/tray';
-import { PeerRangeBar } from './PeerRangeBar';
-import { PayBandBar } from './PayBandBar';
 import { bandFor, isRange } from '../lib/bands';
 import { PayBandNote } from './PayBandNote';
 import { CardTitle } from './CardTitle';
@@ -23,7 +21,6 @@ import { SalaryHistogram } from './SalaryHistogram';
 import { HourlyTag, HOURLY_TITLE } from './HourlyTag';
 import { StatCard, StatRow } from './StatCard';
 import { ICON } from '../lib/ui';
-import { PercentileNote } from './PercentileNote';
 import { MiniRange } from './MiniRange';
 import { rangeScale } from '../lib/rangeScale';
 import { MIN_GROUP } from '../lib/stats';
@@ -34,8 +31,9 @@ import { fmtK } from '../lib/chartStyle';
  *  card is the loaded one's height. */
 const DIST_LOADING_H = 322;
 
-/** The title's figures: its median leads, the two spreads beside it from `md` up. */
+/** The title's figures: its median leads, the two spreads beside it from `md` up; a pinned salary is a fourth (T11). */
 const TITLE_COLS = { base: 1, md: '1.4fr 1fr 1fr' };
+const TITLE_COLS_PINNED = { base: 1, sm: 2, md: '1.3fr 1fr 1fr 1.3fr' };
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
@@ -83,7 +81,6 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
     enabled
   );
   const s = statRows?.[0];
-  const titleLabel = s?.title ?? jobCode;
 
   const { data: payRows } = useSql<{ pay: number }>(
     ['ts-pays', jobCode, snap, school ?? '', metric],
@@ -121,19 +118,20 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const { data: pct } = useSql<PctRow>(
     ['ts-pct', jobCode, snap, school ?? '', pinSalary ?? 0, metric],
+    // "Paid more than" these people: the share paid strictly less, as a person's own standing is counted.
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school FROM salaries WHERE ${titleBase} GROUP BY person_key)
-     SELECT 'title' AS "scope", round(100.0 * avg(CASE WHEN pay <= ${pinSalary ?? 0} THEN 1 ELSE 0 END), 1) pct, count(*) n FROM pp WHERE pay > 0
-     ${school ? `UNION ALL SELECT 'title_school' AS "scope", round(100.0 * avg(CASE WHEN pay <= ${pinSalary ?? 0} THEN 1 ELSE 0 END), 1) pct, count(*) n FROM pp WHERE pay > 0 AND school = ${sqlStr(school)}` : ''}`,
+     SELECT 'title' AS "scope", round(100.0 * avg(CASE WHEN pay < ${pinSalary ?? 0} THEN 1 ELSE 0 END), 1) pct, count(*) n FROM pp WHERE pay > 0
+     ${school ? `UNION ALL SELECT 'title_school' AS "scope", round(100.0 * avg(CASE WHEN pay < ${pinSalary ?? 0} THEN 1 ELSE 0 END), 1) pct, count(*) n FROM pp WHERE pay > 0 AND school = ${sqlStr(school)}` : ''}`,
     enabled && pinned
   );
   const titleRow = pct?.find((r) => r.scope === 'title');
   const schoolRow = pct?.find((r) => r.scope === 'title_school');
 
-  // The title's grade (its most common, where appointments differ), and the median full-time rate of the
-  // appointments in it: a band is a range of full-time rates, so that is the median it can be read against.
-  const { data: gradeRow } = useSql<{ grade_number: number; grade_basis: string; comp_basis: string | null; med_rate: number | null }>(
+  // The title's grade (its most common, where appointments differ). Its band is drawn under the distribution, on
+  // the distribution's own scale (T8); the title's median is the figures' and the histogram's, said once (T10).
+  const { data: gradeRow } = useSql<{ grade_number: number; grade_basis: string; comp_basis: string | null }>(
     ['ts-grade', jobCode, snap],
-    `SELECT grade_number, grade_basis, any_value(comp_basis) comp_basis, median(salary) med_rate
+    `SELECT grade_number, grade_basis, any_value(comp_basis) comp_basis
      FROM salaries WHERE ${titleBase} AND grade_number IS NOT NULL AND salary > 0
      GROUP BY grade_number, grade_basis ORDER BY count(*) DESC, grade_number LIMIT 1`,
     enabled
@@ -226,41 +224,34 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   return (
     <Stack gap="lg">
-      <StatRow key="stats" cols={TITLE_COLS}>
+      <StatRow key="stats" cols={pinned ? TITLE_COLS_PINNED : TITLE_COLS}>
         <StatCard
           size="hero"
           label={`Median ${measure.toLowerCase()} · this title${scopeLabel}`}
           value={usd(s.med)}
-          sub={<>{num(s.n)} {s.n === 1 ? 'person' : 'people'} · job code {jobCode}{(s.hourly_share ?? 0) >= HOURLY_TITLE && <HourlyTag annual={s.med} share={s.hourly_share} />}</>}
+          // The code and the headcount are the header's line now (T1); here, the people the median is of.
+          sub={<>{num(s.n)} {s.n === 1 ? 'person' : 'people'}{school ? ` in ${school}` : ''}{(s.hourly_share ?? 0) >= HOURLY_TITLE && <HourlyTag annual={s.med} share={s.hourly_share} />}</>}
         />
         <Stat label="Range (p25–p75)" value={`${usd(s.p25)} – ${usd(s.p75)}`} />
         <Stat label="Spread (min–max)" value={`${usd(s.lo)} – ${usd(s.hi)}`} />
+        {/* A pinned salary is placed in the figures' own row and marked on the charts (T11): it added a card of its
+            own between these and the histogram, and the whole page moved down under the reader. */}
+        {pinned && (
+          <StatCard
+            size="sm"
+            label="Your salary"
+            className="pin-result"
+            value={usd(pinSalary)}
+            sub={titleRow ? (
+              <>
+                {/* One line, so the row keeps its height when a salary is pinned. */}
+                paid more than <b>{Math.round(titleRow.pct)}%</b> of {num(titleRow.n)}
+                {school && schoolRow ? <> · {Math.round(schoolRow.pct)}% of {num(schoolRow.n)} in the school</> : rank != null ? ` · rank #${rank}` : ''}
+              </>
+            ) : undefined}
+          />
+        )}
       </StatRow>
-
-      {pinned && s.lo != null && s.p25 != null && s.med != null && s.p75 != null && s.hi != null && (
-        <Card withBorder padding="lg">
-          <CardTitle>Where {usd(pinSalary)} lands among {titleLabel}{scopeLabel}</CardTitle>
-          <PeerRangeBar min={s.lo} p25={s.p25} median={s.med} p75={s.p75} max={s.hi} value={pinSalary!} values={pays} />
-          {titleRow && (
-            <PercentileNote
-              pct={titleRow.pct}
-              n={titleRow.n}
-              pool={`people with this title${school ? ' across UW' : ''}`}
-              subject={<b>{usd(pinSalary)}</b>}
-              mt="md"
-            />
-          )}
-          {school && schoolRow && (
-            <PercentileNote
-              pct={schoolRow.pct}
-              n={schoolRow.n}
-              pool={`people with this title within ${school}`}
-              subject={<b>{usd(pinSalary)}</b>}
-              mt={4}
-            />
-          )}
-        </Card>
-      )}
 
       <Card key="dist" withBorder padding="lg">
         <CardTitle>{measure} distribution{scopeLabel}</CardTitle>
@@ -271,41 +262,27 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           measure={measure}
           tooFewText={`Only ${num(s.n)} ${s.n === 1 ? 'person has' : 'people have'} this title${scopeLabel} — too few to chart a meaningful distribution.`}
           onBinClick={setBinFilter}
+          // The grade's band under the people, on their scale (T8): its own card below, on a scale of its own, left
+          // the reader to line the two up. A band is a range of full-time rates, so it is drawn under that measure.
+          band={band && metric === 'full' ? {
+            min: band.min,
+            max: isRange(band) ? band.max : null,
+            label: isRange(band)
+              ? `Grade ${g?.grade_number} pay band: HR's official range of full-time rates, ${usd(band.min)} – ${usd(band.max)}, ticked at its quarters.`
+              : `Grade ${g?.grade_number} minimum: ${usd(band.min)}. HR publishes no maximum for this grade.`,
+          } : null}
         />
+        {band && metric !== 'full' && (
+          <Text size="xs" c="dimmed" mt={4} className="band-measure-note">
+            Grade {g?.grade_number}&apos;s pay band is a range of full-time rates, so it is drawn under the full-time rate.
+          </Text>
+        )}
         <Text size="xs" c="dimmed" mt={4}>Select a bar, by pointer or by Tab and Enter, to list just those people below.</Text>
+        {band && <PayBandNote snapshotId={snap} />}
       </Card>
 
-      {isRange(band) && (
-        <Card withBorder padding="lg" className="title-payband">
-          <CardTitle sub="HR's official range for this title's grade.">Grade {g?.grade_number} pay band</CardTitle>
-          <PayBandBar
-            min={band.min}
-            max={band.max}
-            value={pinned ? pinSalary : null}
-            quartiles
-            benchmarks={g?.med_rate != null ? [{ value: g.med_rate, label: 'title median full-time rate' }] : []}
-          />
-          <PayBandNote snapshotId={snap} />
-        </Card>
-      )}
-      {band && !isRange(band) && (
-        <Card withBorder padding="lg" className="title-payband title-payfloor">
-          <CardTitle>Grade {g?.grade_number} minimum</CardTitle>
-          <Text size="sm">
-            HR publishes a minimum of {usd(band.min)} for grade {g?.grade_number} and no maximum
-            {g?.med_rate != null ? <>; this title&apos;s median full-time rate is {usd(g.med_rate)}</> : null}.
-          </Text>
-          <PayBandNote snapshotId={snap} />
-        </Card>
-      )}
-
       <Card withBorder padding="lg">
-        <CardTitle
-          mb="sm"
-          right={pinned && rank != null && (
-            <Text size="sm" c="dimmed">{usd(pinSalary)} would rank <b>#{rank}</b> of {num(s.n)}</Text>
-          )}
-        >
+        <CardTitle mb="sm">
           People with this title{scopeLabel}
         </CardTitle>
         {binFilter && (

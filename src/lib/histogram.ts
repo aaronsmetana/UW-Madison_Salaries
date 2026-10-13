@@ -27,6 +27,25 @@ function niceStep(range: number, targetBins: number): number {
 }
 
 /**
+ * How many bins a distribution of `values` wants (T7): as many as its middle half's spread calls for, the
+ * Freedman–Diaconis width (2 × IQR / ∛n) across the whole range, between 8 and 40. Ten across a range a few
+ * outliers stretched put 175 of an Outreach Specialist's 362 people in one $10k bar.
+ */
+export function binsForSpread(values: readonly number[]): number {
+  const vals = values.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  if (vals.length < 4) return 10;
+  const q = (p: number) => {
+    const i = (vals.length - 1) * p;
+    const a = Math.floor(i), c = Math.ceil(i);
+    return vals[a] + (vals[c] - vals[a]) * (i - a);
+  };
+  const width = (2 * (q(0.75) - q(0.25))) / Math.cbrt(vals.length);
+  const range = vals[vals.length - 1] - vals[0];
+  if (!(width > 0) || !(range > 0)) return 10;
+  return Math.max(8, Math.min(40, Math.round(range / width)));
+}
+
+/**
  * Bin a list of salary values using a nice round, data-scaled step so the shape of
  * the distribution reads clearly regardless of the title's pay level or spread.
  *

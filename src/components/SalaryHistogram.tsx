@@ -6,7 +6,7 @@ import { AXIS_TICK, GRID, fmtK, BAR_RADIUS, chartKeys, CHART_FONT, fmtCount } fr
 import { Text } from '@mantine/core';
 import { MARK_SELF, MARK_SELF_TEXT, GUIDE_SOFT, BAND_IQR } from './markers';
 import { TipSurface } from './chart/ChartTooltip';
-import { binSalaries, MIN_FOR_HISTOGRAM } from '../lib/histogram';
+import { binSalaries, binsForSpread, MIN_FOR_HISTOGRAM } from '../lib/histogram';
 import { num, pct } from '../lib/format';
 import { chartAnim, useMounted, useEntrance } from '../lib/motion';
 import { ChartData } from './ChartData';
@@ -58,6 +58,89 @@ function HistTipBody({ d, total, below }: { d: TipData; total: number; below: nu
 }
 
 /**
+ * An x-axis tick whose axis's ends stay inside the plot: the first label starts at the origin, clear of the y-axis's
+ * "0" beside it (with bins fitted to the spread the axis no longer starts at $0, where the two had shared a corner),
+ * and the last ends at the plot's edge.
+ */
+function EdgeTick({ x, y, payload, index, visibleTicksCount }: {
+  x?: number; y?: number; payload?: { value: number }; index?: number; visibleTicksCount?: number;
+}) {
+  if (x == null || y == null || !payload) return null;
+  const anchor = index === 0 ? 'start' : index === (visibleTicksCount ?? 0) - 1 ? 'end' : 'middle';
+  return (
+    <text x={x} y={y} dy="0.71em" textAnchor={anchor} {...AXIS_TICK} className="recharts-cartesian-axis-tick-value">
+      {fmtK(payload.value)}
+    </text>
+  );
+}
+
+/** A pay band to draw under the distribution: its floor, its ceiling (null where HR publishes none), and its line. */
+export interface HistBand {
+  min: number;
+  max: number | null;
+  label: string;
+}
+
+/**
+ * A pay band under a histogram, on the histogram's own scale (T8), so its floor, quarters and ceiling line up with
+ * the people above them. Clipped to the plot: an end beyond it is named at the edge with an arrow. `inset` is the
+ * plot's offset inside the chart (the bars' y-axis), `at` the histogram's own value → fraction.
+ */
+function BandStrip({ band, at, lo, hi, inset, marker, plotW }: {
+  band: HistBand;
+  at: (v: number) => number;
+  lo: number;
+  hi: number;
+  inset: { left: number; right: number };
+  marker: number | null;
+  plotW: number;
+}) {
+  const l = at(band.min);
+  const r = band.max != null ? at(band.max) : 1;
+  const quarters = band.max != null
+    ? [0.25, 0.5, 0.75].map((f) => band.min + (band.max! - band.min) * f).filter((v) => v > lo && v < hi)
+    : [];
+  const minText = `${band.min < lo ? '← ' : ''}min ${fmtK(band.min)}`;
+  const maxText = band.max == null ? 'no maximum →' : `max ${fmtK(band.max)}${band.max > hi ? ' →' : ''}`;
+  // The two ends' words side by side where the band is too narrow on this scale to hold them apart.
+  const w = Math.max(0, plotW - inset.left - inset.right);
+  const together = w > 0 && (r - l) * w < measureText(minText, CHART_FONT) + measureText(maxText, CHART_FONT) + 12;
+  const word = { position: 'absolute' as const, whiteSpace: 'nowrap' as const, fontSize: CHART_FONT, lineHeight: 1 };
+  return (
+    <div className="hist-band" style={{ marginLeft: inset.left, marginRight: inset.right, marginTop: 8 }}>
+      <div style={{ position: 'relative', height: 12 }} aria-hidden>
+        <div
+          className="hist-band-fill"
+          style={{ position: 'absolute', left: `${l * 100}%`, width: `${Math.max(0.5, (r - l) * 100)}%`, top: 0, bottom: 0, borderRadius: 6, background: 'var(--band-fill-strong)', boxShadow: 'inset 0 0 0 1px var(--hairline-strong)' }}
+        />
+        {quarters.map((v) => (
+          <div key={v} className="hist-band-quarter" style={{ position: 'absolute', left: `${at(v) * 100}%`, top: 2, bottom: 2, width: 1, background: 'var(--guide-strong)' }} />
+        ))}
+        {marker != null && (
+          <div
+            className="hist-band-marker"
+            style={{ position: 'absolute', left: `${at(marker) * 100}%`, top: '50%', width: 10, height: 10, borderRadius: '50%', background: MARK_SELF, boxShadow: '0 0 0 2px var(--mantine-color-body)', transform: 'translate(-50%, -50%)' }}
+          />
+        )}
+      </div>
+      <div style={{ position: 'relative', height: 14, marginTop: 3 }}>
+        {together ? (
+          <Text c="dimmed" className="hist-band-ends" style={{ ...word, left: `${((l + r) / 2) * 100}%`, transform: 'translateX(-50%)' }}>
+            {minText} · {maxText}
+          </Text>
+        ) : (
+          <>
+            <Text c="dimmed" className="hist-band-min" style={{ ...word, left: `${l * 100}%` }}>{minText}</Text>
+            <Text c="dimmed" className="hist-band-max" style={{ ...word, left: `${r * 100}%`, transform: 'translateX(-100%)' }}>{maxText}</Text>
+          </>
+        )}
+      </div>
+      <Text size="xs" c="dimmed" mt={4} className="hist-band-label">{band.label}</Text>
+    </div>
+  );
+}
+
+/**
  * Salary distribution histogram with dynamic, data-scaled bins. Optionally marks
  * where one value (e.g. a person's salary) lands. Renders a short prompt instead
  * of a chart when there are too few records to be meaningful.
@@ -72,6 +155,7 @@ export function SalaryHistogram({
   domain,
   onBinClick,
   measure = 'Pay',
+  band = null,
 }: {
   values: number[];
   /** What the values are, for the chart's name and its table: the measure in force (G2). */
@@ -84,6 +168,8 @@ export function SalaryHistogram({
   domain?: [number, number];
   /** Optional: clicking a bar reports that bin's [lo, hi) salary range (e.g. to filter a people list). */
   onBinClick?: (range: { lo: number; hi: number }) => void;
+  /** A pay band to draw under the people, on their scale (T8). */
+  band?: HistBand | null;
 }) {
   // Drawn at their final state at once where no entrance plays (a tab switch, Reduce Motion: G8).
   const entrance = useEntrance();
@@ -123,7 +209,8 @@ export function SalaryHistogram({
     return () => ro.disconnect();
   }, []);
 
-  const bins = binSalaries(values, 10, domain);
+  // As many bins as the middle half's spread calls for (T7): ten across the whole range put half of a title in one bar.
+  const bins = binSalaries(values, binsForSpread(values), domain);
   if (values.length < minToShow || bins.length < 2) {
     return (
       <Text size="sm" c="dimmed">
@@ -406,7 +493,8 @@ export function SalaryHistogram({
               key={i}
               size="xs"
               c="dimmed"
-              style={{ position: 'absolute', left: `${at(e) * 100}%`, bottom: 0, transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: CHART_FONT }}
+              // The ends inside the plot: centred on its edge, the first label was cut to "00k".
+              style={{ position: 'absolute', left: `${at(e) * 100}%`, bottom: 0, transform: `translateX(${i === 0 ? '0%' : i === shownEdges.length - 1 ? '-100%' : '-50%'})`, whiteSpace: 'nowrap', fontSize: CHART_FONT }}
             >
               {fmtK(e)}
             </Text>
@@ -478,6 +566,7 @@ export function SalaryHistogram({
             </div>
           )}
         </div>
+        {band && <BandStrip band={band} at={at} lo={lo} hi={hi} inset={{ left: 0, right: 0 }} marker={markerValue ?? null} plotW={plotW} />}
         <ChartData caption={`${measure} distribution`} columns={[`${measure} range`, 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
           about={guides.length === 3 ? '1 block = 1 person · Dashed guides: p25 · median · p75.' : '1 block = 1 person.'} />
       </>
@@ -490,7 +579,7 @@ export function SalaryHistogram({
         <ResponsiveContainer width="100%" height={height}>
           <BarChart {...chartKeys(`${measure} distribution`)} data={data} margin={{ left: 12, right: 12, top: PLOT_TOP }}>
             <CartesianGrid {...GRID} />
-            <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tickFormatter={fmtK} tick={AXIS_TICK} />
+            <XAxis type="number" dataKey="x" domain={[lo, hi]} ticks={shownEdges} tick={<EdgeTick />} />
             <YAxis width={48} tick={AXIS_TICK} allowDecimals={false} tickFormatter={fmtCount} />
             <Tooltip content={<BarsHistTip />} cursor={{ fill: 'var(--mantine-color-default-hover)' }} />
             <Bar
@@ -583,6 +672,7 @@ export function SalaryHistogram({
           </div>
         )}
       </div>
+      {band && <BandStrip band={band} at={at} lo={lo} hi={hi} inset={{ left: PLOT_LEFT, right: PLOT_RIGHT }} marker={markerValue ?? null} plotW={plotW} />}
       <ChartData caption={`${measure} distribution`} columns={[`${measure} range`, 'People']} rows={bins.map((b) => [b.range, b.n])} n={total} unit="people"
         about={guides.length === 3 ? 'Dashed guides: p25 · median · p75.' : undefined} />
     </>
