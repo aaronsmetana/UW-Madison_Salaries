@@ -23,13 +23,14 @@ export interface RaiseComparison {
   equal: number;
   n: number;
   med: number | null;
-  /** "larger than 99% · typical +4.0%", "the same as 58% · typical 0%". */
+  /** "Bigger than 99% of UW raises (typical +4.0%)", "Matched 58% of UW raises (typical 0%)" (P31). Of UW raises, not
+   *  of peers: the step's raises campus-wide, where "peers" means the people with the title everywhere else. */
   text: string;
   /** The same step for this person's own title, where enough people continued in it to say. */
   title?: { med: number; n: number } | null;
 }
 
-/** Past this share of people on the exact same figure, "larger than X%" hides the real story. */
+/** Past this share of people on the exact same figure, "Bigger than X%" hides the real story. */
 const SAME_SHARE = 0.2;
 
 export function compareRaise(r: number, step: RaiseStepStats, histStep: number): RaiseComparison {
@@ -45,12 +46,13 @@ export function compareRaise(r: number, step: RaiseStepStats, histStep: number):
   const eq = Math.max(0, equal - 1) / others;
   const lo = below / others;
   const pctOf = (x: number) => `${Math.round(x * 100)}%`;
+  // A sentence, not shorthand (P31): it read "the same as 67% · typical +2.0%".
   const vs = eq >= SAME_SHARE
-    ? `the same as ${pctOf(eq)}`
+    ? `Matched ${pctOf(eq)}`
     : lo >= 0.5
-      ? `larger than ${pctOf(lo)}`
-      : `smaller than ${pctOf(1 - lo - eq)}`;
-  return { r, below: lo, equal: eq, n: step.n, med: step.med, text: `${vs} · typical ${step.med == null ? '—' : fmtChange(step.med)}` };
+      ? `Bigger than ${pctOf(lo)}`
+      : `Smaller than ${pctOf(1 - lo - eq)}`;
+  return { r, below: lo, equal: eq, n: step.n, med: step.med, text: `${vs} of UW raises (typical ${step.med == null ? '—' : fmtChange(step.med)})` };
 }
 
 export interface TrendPointLike {

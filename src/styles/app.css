@@ -1186,6 +1186,13 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .appt-history tbody td:first-child {
   position: relative;
 }
+/* Newest first (P35): the rows run backwards in time, so each row's tracks are turned over in place and the
+   column of them is the time-ordered picture upside down. The rules below describe that picture: "above" there is
+   below on screen, a line that begins at its station runs up from it, and an ended line's cap is at its top. The
+   stations are not in this layer, so the letters stay upright. */
+.appt-history[data-order='newest'] .appt-gutter-tracks {
+  transform: scaleY(-1);
+}
 .appt-gutter-track {
   /* Absolute, so its own ::after cap resolves against the track rather than the cell. */
   position: absolute;

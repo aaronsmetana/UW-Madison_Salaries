@@ -481,13 +481,15 @@ test.describe('The person page reports the reporting change and trims what repea
     }
   });
 
-  test('one pay column when the rate is the pay on every row, and the school once', async ({ page }) => {
+  test('one pay column when the rate is the pay on every row, and the school once, over the table', async ({ page }) => {
     await history(page, AARON);
     const heads = (await page.locator('table.appt-history thead th').allInnerTexts()).map((h) => h.trim().toLowerCase());
     // Named for its measure (G2): it was "Pay", beside "Rate" when the two differ.
     expect(heads).toContain('actual pay');
     expect(heads).not.toContain('full-time rate');
-    await expect(page.locator('table.appt-history .appt-school', { hasText: SMPH })).toHaveCount(1);
+    // One school throughout: the table's header (P30), not its first row's.
+    await expect(page.locator('.appt-history-card .history-school')).toHaveText(`All in ${SMPH}`);
+    await expect(page.locator('table.appt-history .appt-school')).toHaveCount(0);
   });
 });
 

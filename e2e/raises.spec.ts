@@ -34,8 +34,8 @@ test('each continuing raise says how it compares with that step, campus-wide', a
     const others = s.n - 1;
     const same = (s.eq - 1) / others;
     const lo = s.below / others;
-    const vs = same >= 0.2 ? `the same as ${Math.round(same * 100)}%` : lo >= 0.5 ? `larger than ${Math.round(lo * 100)}%` : `smaller than ${Math.round((1 - lo - same) * 100)}%`;
-    return `${vs} · typical ${pct(s.med)}`;
+    const vs = same >= 0.2 ? `Matched ${Math.round(same * 100)}%` : lo >= 0.5 ? `Bigger than ${Math.round(lo * 100)}%` : `Smaller than ${Math.round((1 - lo - same) * 100)}%`;
+    return `${vs} of UW raises (typical ${pct(s.med)})`;
   };
   await page.goto(`./person/${encodeURIComponent(AARON)}?tab=history`);
   await expect(page.locator('[data-raise-compare="yes"]').first()).toBeVisible({ timeout: 60_000 });
@@ -44,7 +44,7 @@ test('each continuing raise says how it compares with that step, campus-wide', a
     expect(await changeCellText(page, label), label).toContain(want(tt));
   }
   // The promotion is not a raise and is not compared.
-  expect(await changeCellText(page, 'Aug 2022')).not.toMatch(/larger than|smaller than|the same as/);
+  expect(await changeCellText(page, 'Aug 2022')).not.toMatch(/Bigger than|Smaller than|Matched/);
 });
 
 /** How many canonical snapshots the data holds (the Pre-TTC twin is not one): "in every snapshot". */
@@ -169,7 +169,7 @@ test("the trend tooltip says the same about a raise, and adds the title's own ty
   // Oct 2023: the step where System Engineer IV's own median (~7%) and campus's (3.3%) part ways, so a
   // title figure that quietly fell back to campus would show.
   const cellText = await changeCellText(page, 'Oct 2023');
-  const sentence = cellText.slice(cellText.search(/larger than|smaller than|the same as/));
+  const sentence = cellText.slice(cellText.search(/Bigger than|Smaller than|Matched/));
 
   await page.getByRole('tab', { name: 'Pay trend' }).click();
   // Nov '21 pre, Nov '21 post, Mar '22, Aug '22, Oct '23 …

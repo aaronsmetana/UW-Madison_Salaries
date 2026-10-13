@@ -371,7 +371,8 @@ async function readHistory(page: import('@playwright/test').Page): Promise<Histo
     if (i < 0) throw new Error(`no "${name}" column in: ${headers.join(' | ')}`);
     return i;
   };
-  const [snapCol, orgCol, changeCol] = [col('snapshot'), col('school / dept'), col('change')];
+  // "Department" alone where one school runs through the whole history and heads the table instead (P30).
+  const [snapCol, orgCol, changeCol] = [col('snapshot'), headers.includes('school / dept') ? col('school / dept') : col('department'), col('change')];
   const rows = await page.locator('table.appt-history tbody tr').all();
   const out: HistoryRow[] = [];
   let snapshot = '';
@@ -520,10 +521,12 @@ test('a lane follows its appointment even as the rows around it disappear', asyn
   // job code, so nothing pairs across it and the lanes legitimately restart there. Filtering on
   // `tracked` instead would tie this assertion to the rail's, and a sabotage of one would trip the
   // other — which is exactly what happened when this was written that way.
+  // Rows run newest first, a snapshot's own lines turned over with them (P35), so the row's place in time order
+  // is counted from the foot of its group.
   const cancer = [...groups.entries()]
-    .map(([snapshot, g]) => ({ snapshot, at: g.findIndex((r) => r.dept.includes('Cancer')), g }))
-    .filter((x) => x.at >= 0 && !x.snapshot.startsWith('Nov 2021'))
-    .map((x) => ({ snapshot: x.snapshot, at: x.at, lane: x.g[x.at].lane }));
+    .map(([snapshot, g]) => ({ snapshot, i: g.findIndex((r) => r.dept.includes('Cancer')), g }))
+    .filter((x) => x.i >= 0 && !x.snapshot.startsWith('Nov 2021'))
+    .map((x) => ({ snapshot: x.snapshot, at: x.g.length - 1 - x.i, lane: x.g[x.i].lane }));
   expect(cancer.length, 'need several snapshots holding the Cancer Center appointment').toBeGreaterThan(2);
   expect(new Set(cancer.map((c) => c.lane)).size, `lane moved: ${JSON.stringify(cancer)}`).toBe(1);
   expect(new Set(cancer.map((c) => c.at)).size, `position never moved, so this proves nothing: ${JSON.stringify(cancer)}`).toBeGreaterThan(1);
@@ -631,11 +634,12 @@ test('only an appointment the next snapshot does not hold is marked as ended', a
   const rows = await readHistory(page);
 
   const capped = rows.filter((r) => r.caps > 0).map((r) => `${r.snapshot} x${r.caps}`);
-  expect(capped).toEqual(['Aug 2022 x1', 'Sep 2025 x1']);
+  // Newest first (P35).
+  expect(capped).toEqual(['Sep 2025 x1', 'Aug 2022 x1']);
 
   // Stated separately, and selected by position rather than by `caps`, so this cannot pass merely
-  // because the assertion above did.
-  expect(rows[rows.length - 1].caps, 'the final snapshot holds current appointments, not ended ones').toBe(0);
+  // because the assertion above did. The final snapshot is the top row.
+  expect(rows[0].caps, 'the final snapshot holds current appointments, not ended ones').toBe(0);
   const ttc = rows.filter((r) => r.snapshot.startsWith('Nov 2021'));
   expect(ttc.map((r) => r.caps), 'a TTC reclassification is not an ending').toEqual(ttc.map(() => 0));
 });
@@ -691,7 +695,7 @@ test('the only appointment in a snapshot still names its line', async ({ page })
   const lone = [...bySnapshot(rows).entries()]
     .filter(([, g]) => g.length === 1)
     .map(([snapshot, g]) => `${snapshot}: ${g[0].lane || '(no letter)'} ${g[0].tracked ? 'filled' : 'dashed'}`);
-  expect(lone).toEqual(['Mar 2026: A filled', 'Sep 2026: A filled']);
+  expect(lone).toEqual(['Sep 2026: A filled', 'Mar 2026: A filled']);
 });
 
 /**

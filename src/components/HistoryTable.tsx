@@ -100,7 +100,8 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
 
   // A compared raise opens the Raises page for its step and title: who else in it got more than the usual.
   const context = raise.kind === 'paired' && compare && (
-    <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} style={{ whiteSpace: 'nowrap' }}>
+    // Wraps at a sentence's width (P31): on one line, "Bigger than 98% of UW raises (typical +2.0%)" widened the column.
+    <Text size="xs" c="dimmed" data-raise-compare={compare.compared ? 'yes' : 'no'} maw={190} ml="auto">
       {compare.href ? (
         <Anchor component={Link} to={compare.href} inherit c="dimmed" underline="always" className="raise-compare-link"
           aria-label={`${compare.text}: who in this title got more than the usual raise`}>{compare.text}</Anchor>
@@ -136,6 +137,9 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
     </MantineTooltip>
   );
 }
+
+/** No snapshot holds two lines: the history is one continuous line, and the lanes (laneGutter) are not drawn. */
+const gutterFree = (rows: readonly HistoryRow[]) => new Set(rows.map((r) => r.snapshot_id)).size === rows.length;
 
 export function HistoryTable({ rows, comparisons, csvName }: {
   rows: readonly HistoryRow[];
@@ -195,13 +199,28 @@ export function HistoryTable({ rows, comparisons, csvName }: {
     return { order, index, bySnap };
   }, [historyRows]);
 
+  // Newest first (P35): today's row was at the foot of the table. Every figure is still worked out in time order
+  // (`historyRows`, which the matcher and the lanes read); only the drawing runs the other way. The whole list
+  // turns over, a snapshot's own lines too, so the lanes are the same picture upside down: each row's tracks are
+  // flipped in place (app.css, `data-order`), and a line that began at a station now runs up from it.
+  const displayRows = useMemo(() => [...historyRows].reverse(), [historyRows]);
+
   // Where each snapshot's first row sits — the one row of the group that carries the snapshot's
   // label, now that the label is printed once per snapshot rather than once per line.
   const apptFirstRow = useMemo(() => {
     const m = new Map<string, number>();
-    historyRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
+    displayRows.forEach((r, i) => { if (!m.has(r.snapshot_id)) m.set(r.snapshot_id, i); });
     return m;
-  }, [historyRows]);
+  }, [displayRows]);
+
+  // One school across the whole history, for a one-line-per-snapshot person: named once over the table (P30),
+  // the group's header, rather than on its first row alone. Where it changes, each run names it on its top row.
+  const oneSchool = useMemo(
+    () => (gutterFree(historyRows) && historyRows.length > 0 && historyRows.every((r) => (r.school ?? '') === (historyRows[0].school ?? ''))
+      ? historyRows[0].school
+      : null),
+    [historyRows]
+  );
 
   // Per-appointment change for every history row, plus the lane that lets a reader follow ONE
   // appointment down the page and the prior row each line continues. `historyRows` is already in
@@ -265,6 +284,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
   return (
     <Card withBorder padding="lg" className="appt-history-card">
       <CardTitle
+        sub={oneSchool ? <span className="history-school">All in {oneSchool}</span> : undefined}
         right={(
           <CsvButton
             label="CSV of the title and salary history"
@@ -288,6 +308,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
       {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
       <Table
         className="appt-history fold-table"
+        data-order="newest"
         striped={false}
         style={gutter.slots ? ({ ['--lane-slots' as string]: gutter.slots }) : undefined}
       >
@@ -302,7 +323,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
             <Table.Th className="appt-snapshot" data-fold>Snapshot</Table.Th>
             <Table.Th>Title</Table.Th>
             <Table.Th data-fold data-print-fold>Job code</Table.Th>
-            <Table.Th data-fold data-print-fold>School / Dept</Table.Th>
+            <Table.Th data-fold data-print-fold>{oneSchool ? 'Department' : 'School / Dept'}</Table.Th>
             {onePay ? (
               <Table.Th ta="right"><GlossaryTerm term="actualPay">Actual pay</GlossaryTerm></Table.Th>
             ) : (
@@ -317,7 +338,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {historyRows.map((r, i) => {
+          {displayRows.map((r, i) => {
             // Compare to the SAME job code in the prior snapshot (not the adjacent interleaved row).
             const pos = snapHistory.index.get(r.snapshot_id) ?? 0;
             const priorId = pos > 0 ? snapHistory.order[pos - 1] : null;
@@ -332,15 +353,16 @@ export function HistoryTable({ rows, comparisons, csvName }: {
             // The row this line continues. Everything below that claims continuity — the lane's
             // solid rail, the department-change dot — is answered by this and nothing else.
             const from = matching.priorOf.get(r);
-            const lastOfGroup = i === historyRows.length - 1 || historyRows[i + 1].snapshot_id !== r.snapshot_id;
+            const lastOfGroup = i === displayRows.length - 1 || displayRows[i + 1].snapshot_id !== r.snapshot_id;
             // Org move = this appointment's OWN department a snapshot ago. It used to compare
             // against the previous displayed row, which on a split page is a different appointment
             // entirely: 4,787 rows across the data were guaranteed a dot that meant nothing.
             const orgMoved = !!from && ((r.school ?? '') !== (from.school ?? '') || (r.department ?? '') !== (from.department ?? ''));
             // With one appointment per snapshot the rows are one continuous line, so the school is
-            // printed where it starts and where it changes; the rows between repeated it to no end.
-            // A split history keeps it on every row — the line above may be another appointment.
-            const showSchool = gutter.slots > 0 || i === 0 || (r.school ?? '') !== (historyRows[i - 1].school ?? '');
+            // printed at the top of each run of it; the rows between repeated it to no end. One school
+            // throughout is the table's header instead (P30). A split history keeps it on every row — the
+            // line above may be another appointment.
+            const showSchool = !oneSchool && (gutter.slots > 0 || i === 0 || (r.school ?? '') !== (displayRows[i - 1].school ?? ''));
                 const orgMovedLabel = orgMoved
                   ? `Division/Department changed since this appointment's previous snapshot — was: ${[from!.school, from!.department].filter(Boolean).join(' · ') || 'not recorded'}`
                   : '';
@@ -470,12 +492,20 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                     )}
                   </RaiseCell>
                 </Table.Td>
-                {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says. */}
+                {/* `||`, not `??`: a recorded 0 means no appointment percentage on file (hourly), which is what the em dash says.
+                    A percentage, as the trend's card gives it (P32): it printed "1". */}
                 <Table.Td ta="right" data-fold>
-                  {r.fte || '—'}
+                  {r.fte ? `${Math.round(r.fte * 100)}%` : '—'}
                   {r.comp_basis && <Text className="print-under" size="xs" c="dimmed">{fmtBasis(r.comp_basis)}</Text>}
                 </Table.Td>
-                <Table.Td data-fold data-print-fold><Text size="xs">{fmtBasis(r.comp_basis)}</Text></Table.Td>
+                <Table.Td data-fold data-print-fold>
+                  {r.comp_basis ? <Text size="xs">{fmtBasis(r.comp_basis)}</Text> : (
+                    // Said, not a dash (P33): from Nov 2021 to Apr 2024 the column was a run of "—".
+                    <MantineTooltip label="The source did not report a pay basis for this snapshot." withArrow>
+                      <Text size="xs" c="dimmed" className="basis-not-reported">Not reported</Text>
+                    </MantineTooltip>
+                  )}
+                </Table.Td>
               </Table.Tr>
             );
           })}
@@ -485,10 +515,12 @@ export function HistoryTable({ rows, comparisons, csvName }: {
       {/* The table's method, folded (G22): it closed on a 60-word footnote. */}
       <MethodNote className="history-method">
         <Text inherit>
-          “Change” is the change in actual pay, so a change in appointment percentage or comp basis moves it on its
+          Rows run newest first, and each “Change” is measured from the snapshot below it. “Change” is the change in
+          actual pay, so a change in appointment percentage or comp basis moves it on its
           own — where that has happened, what the full-time rate did is printed underneath. “Across both” means the
           change could only be measured across the lines together. “Dept change” marks an appointment whose
-          division or department differs from its previous snapshot; point to it for where it was.
+          division or department differs from its previous snapshot; point to it for where it was. “Not reported” in
+          Basis: the source gave no pay basis for that snapshot.
         </Text>
       </MethodNote>
       {gutter.slots > 0 && (
@@ -497,7 +529,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
         <Text size="xs" c="dimmed" mt={6}>
           Where a person holds several appointments at once, each runs as its own line down the left of
           the table, and each row is a letter on its line.{' '}
-          <LaneStationSample /> continues the same appointment from the snapshot above;{' '}
+          <LaneStationSample /> continues the same appointment from the snapshot below;{' '}
           <LaneStationSample start /> means the source does not connect it to the previous snapshot, so
           its line starts there; a line that stops with a bar is an appointment that ended.
         </Text>
