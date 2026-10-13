@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ShowAll, useShowAll } from './ShowAll';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, VisuallyHidden } from '@mantine/core';
+import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, VisuallyHidden, Select } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
@@ -20,6 +20,7 @@ import { rangeScale } from '../lib/rangeScale';
 import { fmtK } from '../lib/chartStyle';
 import { SortableTh, type SortState } from './SortableTh';
 import { ICON } from '../lib/ui';
+import { dropdownProps } from '../lib/selectProps';
 
 interface TitleRow {
   job_code: string; title: string; n: number; med: number | null;
@@ -29,7 +30,7 @@ interface TitleRow {
   /** The share of its paid people paid by the hour (every appointment in the code at FTE 0). */
   hourly_share: number | null;
 }
-type SortKey = 'title' | 'job_code' | 'n' | 'med';
+type SortKey = 'title' | 'job_code' | 'cat' | 'n' | 'med';
 
 /** Bold the matched span of a title (case-insensitive, first occurrence). */
 function Highlight({ text, q }: { text: string; q: string }) {
@@ -65,6 +66,10 @@ export function TitlesPanel() {
 
   const [q, setQ] = useState('');
   const [minN, setMinN] = useState(0);
+  // The category as a column of its own, sorted and filtered (D16): it was a badge after each title, which left
+  // the title column ragged.
+  const [cat, setCat] = useState<string | null>(null);
+  const cats = useMemo(() => [...new Set((titles ?? []).map((t) => t.cat).filter((c): c is string => !!c))].sort(), [titles]);
   // Sort persists in the URL (?tsort/&tdir) so a shared link reopens with the same ordering.
   const [params, setParams] = useSearchParams();
   const sortKey = (params.get('tsort') as SortKey) || 'n';
@@ -84,17 +89,18 @@ export function TitlesPanel() {
     const t = q.trim().toLowerCase();
     let rows = titles ?? [];
     if (minN > 0) rows = rows.filter((r) => r.n >= minN);
+    if (cat) rows = rows.filter((r) => r.cat === cat);
     if (t) rows = rows.filter((r) => r.title.toLowerCase().includes(t) || r.job_code.toLowerCase().includes(t));
     const sorted = [...rows].sort((a, b) => {
-      const cmp = sortKey === 'title' || sortKey === 'job_code'
-        ? String(a[sortKey]).localeCompare(String(b[sortKey]))
+      const cmp = sortKey === 'title' || sortKey === 'job_code' || sortKey === 'cat'
+        ? String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? ''))
         : Number(a[sortKey] ?? 0) - Number(b[sortKey] ?? 0);
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [titles, q, minN, sortKey, sortDir]);
+  }, [titles, q, minN, cat, sortKey, sortDir]);
   // The first titles, the rest on "Show all" (G11): one scroll for the page, not a box inside it.
-  const page = useShowAll(view, `${q}|${minN}|${sortKey}|${sortDir}|${where}`);
+  const page = useShowAll(view, `${q}|${minN}|${cat ?? ''}|${sortKey}|${sortDir}|${where}`);
 
   const maxN = useMemo(() => Math.max(1, ...(titles ?? []).map((t) => t.n)), [titles]);
   // One scale for the whole column, so equal widths are equal dollars on every row.
@@ -135,6 +141,17 @@ export function TitlesPanel() {
               ))}
             </Button.Group>
           </Group>
+          <Select
+            {...dropdownProps('sm')}
+            aria-label="Category"
+            placeholder="Every category"
+            data={cats}
+            value={cat}
+            onChange={setCat}
+            clearable
+            w={190}
+            className="titles-category"
+          />
           <Text size="xs" c="dimmed">{num(view.length)} of {num((titles ?? []).length)} titles</Text>
           <CsvButton onClick={exportCsv} disabled={!titles?.length} />
         </Group>
@@ -149,14 +166,15 @@ export function TitlesPanel() {
       ) : (
       <div className="sticky-head">
       <ScrollArea.Autosize type="auto" offsetScrollbars="present">
-        <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={820} className="fold-table">
+        <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={980} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
               <SortableTh sortKey="job_code" label="Job code" sort={sort} onSort={setSort} fold />
+              <SortableTh sortKey="cat" label="Category" sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="n" label="People" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
-              <Table.Th ta="right" data-fold w={216} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
+              <Table.Th ta="right" data-fold w={300} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
               <Table.Th><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -179,7 +197,6 @@ export function TitlesPanel() {
                         <Anchor component={Link} to={`/titles?code=${encodeURIComponent(t.job_code)}`} onClick={(e) => e.stopPropagation()}>
                           <Highlight text={t.title} q={q.trim()} />
                         </Anchor>
-                        {t.cat && <span className="cat-tag">{t.cat}</span>}
                         {(t.hourly_share ?? 0) >= HOURLY_TITLE && <HourlyTag annual={t.med} share={t.hourly_share} />}
                       </div>
                       <Text className="fold-under" size="xs" c="dimmed">
@@ -187,6 +204,7 @@ export function TitlesPanel() {
                       </Text>
                     </Table.Td>
                     <Table.Td data-fold><span className="code-pill">{t.job_code}</span></Table.Td>
+                    <Table.Td data-fold className="title-cat"><Text span size="sm" c="dimmed">{t.cat ?? '—'}</Text></Table.Td>
                     <Table.Td ta="right" data-fold>
                       {num(t.n)}
                       <MiniBar frac={t.n / maxN} />
@@ -226,7 +244,7 @@ export function TitlesPanel() {
       <Text size="xs" c="dimmed" mt="xs">
         Each spread is on one scale, printed in the header, so equal widths are equal dollars on every row:
         the line runs from the lowest to the highest pay, the box is the middle 50%, and the tick the median.
-        A spread that runs past the scale is cut at the edge and marked with an arrow. Hover for the exact
+        A spread that runs past the scale is cut at the edge, and marked with an arrow where its box does. Hover for the exact
         five-number summary.
       </Text>
     </>

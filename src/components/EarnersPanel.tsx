@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect, VisuallyHidden } from '@mantine/core';
+import { useId, useMemo, useState } from 'react';
+import { Group, Text, Table, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect, VisuallyHidden, Chip, Portal } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
 import { useControls, METRIC_LABEL } from '../state/controls';
-import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
-import { salaryExpr, personPay, snapWhere, whereAll, filterKey, mainOf } from '../lib/queries';
+import { useSql, useActiveSnapshotId } from '../lib/hooks';
+import { salaryExpr, personPay, snapWhere, whereAll, filterKey, mainOf, earningsExpr } from '../lib/queries';
+import { usePeriod } from '../lib/period';
+import { Eyebrow } from './Eyebrow';
 import { sqlStr } from '../lib/duckdb';
 import { useTray } from '../state/tray';
 import { TrayButton } from './TrayButton';
@@ -14,7 +16,7 @@ import { usd, num, fullName } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { SegmentedToggle } from './SegmentedToggle';
 import { MiniBar } from './MiniBar';
-import { RankDeltaChip } from './Delta';
+import { SEMANTIC } from '../theme';
 import { SortableTh, type SortState } from './SortableTh';
 import { GLOSSARY } from '../lib/glossary';
 import { EmptyState } from './EmptyState';
@@ -34,10 +36,44 @@ const ATHLETICS = 'Intercollegiate Athletics';
 
 type SortKey = 'name' | 'title' | 'school' | 'fte' | 'pay';
 
+/** Rank movement in a column of its own, in words a screen reader reads (D13): it was "▼1" and "▲12" in 10px
+ *  coloured text under the rank. Up is a rise in pay rank. */
+function RankMove({ prev, cur, since }: { prev?: number; cur: number; since: string }) {
+  if (prev == null) return <Text span size="sm" className="accent-adaptive-text">new<VisuallyHidden> in the top since {since}</VisuallyHidden></Text>;
+  const d = prev - cur;
+  if (d === 0) return <Text span size="sm" c="dimmed">—<VisuallyHidden>no change since {since}</VisuallyHidden></Text>;
+  const up = d > 0;
+  return (
+    <Text span size="sm" fw={600} c={up ? SEMANTIC.up : SEMANTIC.down}>
+      <span aria-hidden>{up ? '▲' : '▼'}{Math.abs(d)}</span>
+      <VisuallyHidden>{up ? 'up' : 'down'} {Math.abs(d)} since {since}</VisuallyHidden>
+    </Text>
+  );
+}
+
+/** A row that sums several appointments says so (D12): "3 appts", its appointments on hover or focus. The
+ *  Chancellor's FTE 2.40 and $1.4 million were explained only in the note under the table. */
+function ApptsTag({ appts, list }: { appts: number; list: { title: string | null; fte: number | null; pay: number }[] }) {
+  const id = useId();
+  const text = list.length
+    ? list.map((a) => `${a.title ?? '—'}${a.fte != null ? ` (${Math.round(a.fte * 100)}% FTE)` : ''}: ${usd(a.pay)}`).join('; ')
+    : `${appts} appointments, summed`;
+  return (
+    <>
+      <Tooltip withArrow multiline w={320} events={{ hover: true, focus: true, touch: true }} label={text}>
+        <Text span size="xs" c="dimmed" className="appts-tag" tabIndex={0} role="button" aria-describedby={id}
+          style={{ display: 'inline-flex', alignItems: 'center', minHeight: 24, whiteSpace: 'nowrap', cursor: 'help', borderBottom: '1px dotted currentColor' }}>
+          {appts} appts
+        </Text>
+      </Tooltip>
+      <Portal><span id={id} hidden>{text}</span></Portal>
+    </>
+  );
+}
+
 export function EarnersPanel() {
   const { scope, metric, filters } = useControls();
   const snap = useActiveSnapshotId();
-  const { data: summary } = useSummary();
   const expr = salaryExpr(metric);
   const scopeVal = scope.kind === 'school' ? scope.value : '';
   const fk = filterKey(filters);
@@ -70,10 +106,8 @@ export function EarnersPanel() {
   );
   const earners = useMemo(() => earnersRaw ?? [], [earnersRaw]);
 
-  // Previous distinct-date snapshot, for pay-rank movement.
-  const snapsAsc = summary?.snapshots ?? [];
-  const cur = snapsAsc.find((s) => s.id === snap);
-  const prevSnap = cur ? [...snapsAsc].filter((s) => s.date < cur.date).at(-1) : undefined;
+  // Pay-rank movement over the page's period (D1): from its start to the snapshot shown.
+  const { from: prevSnap } = usePeriod();
   const { data: prevRanks } = useSql<{ person_key: string; rnk: number }>(
     ['earners-prevrank', prevSnap?.id ?? '', scope.kind, scopeVal, metric, fk, exclude.join('|')],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries
@@ -83,6 +117,21 @@ export function EarnersPanel() {
     !!snap && !!prevSnap
   );
   const prevRankMap = useMemo(() => new Map((prevRanks ?? []).map((r) => [r.person_key, r.rnk])), [prevRanks]);
+
+  // The appointments a combined row sums, for its tag.
+  const multi = useMemo(() => earners.filter((e) => e.appts > 1).map((e) => e.person_key), [earners]);
+  const { data: apptRows } = useSql<{ person_key: string; title: string | null; fte: number | null; pay: number }>(
+    ['earners-appts', snap ?? '', metric, multi.join('|')],
+    `SELECT person_key, title, fte, ${earningsExpr(metric)} pay FROM salaries
+     WHERE ${snapWhere(snap ?? '')} AND salary > 0 AND fte > 0 AND person_key IN (${multi.map(sqlStr).join(', ') || "''"})
+     ORDER BY person_key, pay DESC`,
+    !!snap && multi.length > 0
+  );
+  const apptsOf = useMemo(() => {
+    const m = new Map<string, { title: string | null; fte: number | null; pay: number }[]>();
+    for (const r of apptRows ?? []) m.set(r.person_key, [...(m.get(r.person_key) ?? []), r]);
+    return m;
+  }, [apptRows]);
 
   // Pay rank is anchored to the underlying pay-desc query order, independent of the table's current
   // display sort — "#12" always means "12th highest pay in this scope," not "12th row shown."
@@ -126,23 +175,34 @@ export function EarnersPanel() {
           leftSection={<IconSearch size={ICON.control} />} value={q} onChange={(e) => setQ(e.currentTarget.value)}
         />
         <Group gap="sm" wrap="wrap">
-          <MultiSelect
-            {...dropdownProps('sm')}
-            aria-label="Exclude divisions"
-            placeholder={exclude.length ? undefined : 'Exclude divisions…'}
-            data={(schoolOpts ?? []).map((o) => o.school)}
-            value={exclude}
-            onChange={setExclude}
-            searchable
-            clearable
-            w={260}
-            className="exclude-divisions"
-          />
-          {!exclude.includes(ATHLETICS) && (schoolOpts ?? []).some((o) => o.school === ATHLETICS) && (
-            <Button size="compact-xs" variant="default" radius="xl" onClick={() => setExclude((x) => [...x, ATHLETICS])} className="exclude-athletics">
-              Without Athletics
-            </Button>
-          )}
+          {/* One way to leave divisions out (D14): the picker, and Athletics as a quick chip in it. They were a
+              picker and a separate "Without Athletics" button. */}
+          <Group gap={6} wrap="wrap" className="exclude-group" maw="100%">
+            <Eyebrow>Leave out</Eyebrow>
+            {(schoolOpts ?? []).some((o) => o.school === ATHLETICS) && (
+              <Chip
+                size="xs"
+                checked={exclude.includes(ATHLETICS)}
+                onChange={(on) => setExclude((x) => (on ? [...x, ATHLETICS] : x.filter((s) => s !== ATHLETICS)))}
+                className="exclude-athletics"
+              >
+                Athletics
+              </Chip>
+            )}
+            <MultiSelect
+              {...dropdownProps('sm')}
+              aria-label="Exclude divisions"
+              placeholder={exclude.length ? undefined : 'Divisions…'}
+              data={(schoolOpts ?? []).map((o) => o.school)}
+              value={exclude}
+              onChange={setExclude}
+              searchable
+              clearable
+              w={240}
+              maw="100%"
+              className="exclude-divisions"
+            />
+          </Group>
           <SegmentedToggle
             size="xs" label="Show top" value={String(limit)} onChange={(v) => setLimit(Number(v))}
             options={[{ id: '25', label: '25' }, { id: '100', label: '100' }, { id: '500', label: '500' }]}
@@ -164,6 +224,7 @@ export function EarnersPanel() {
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={56} ta="right" data-fold>#</Table.Th>
+              {prevSnap && <Table.Th w={84} ta="right" data-fold className="rank-move-th">Δ rank</Table.Th>}
               <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} fold />
@@ -179,11 +240,14 @@ export function EarnersPanel() {
                 <Table.Tr key={e.person_key} className="peer-row earner-row" data-school={e.school ?? ''}>
                   <Table.Td ta="right" data-fold>
                     <Text span c="dimmed">{realRank}</Text>
-                    {prevSnap && <div style={{ lineHeight: 1.1 }}><RankDeltaChip prev={prevRankMap.get(e.person_key)} cur={realRank} /></div>}
                   </Table.Td>
+                  {prevSnap && (
+                    <Table.Td ta="right" data-fold className="rank-move">
+                      <RankMove prev={prevRankMap.get(e.person_key)} cur={realRank} since={prevSnap.label} />
+                    </Table.Td>
+                  )}
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>{fullName(e.fn, e.ln)}</Anchor>
-                    {e.department && <Text size="xs" c="dimmed" lineClamp={1}>{e.department}</Text>}
                     {/* On a phone: rank, title, school and a part-time FTE under the name, then the pay. */}
                     <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
                       #{realRank} · {e.title ?? '—'} · {e.school ?? '—'}
@@ -195,7 +259,11 @@ export function EarnersPanel() {
                       ? <Anchor component={Link} to={`/titles?code=${encodeURIComponent(e.job_code)}`} c="var(--mantine-color-text)" underline="hover">{e.title ?? '—'}</Anchor>
                       : (e.title ?? '—')}
                   </Table.Td>
-                  <Table.Td data-fold><Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text></Table.Td>
+                  {/* The department under its school (D11): it sat under the name, in the wrong column. */}
+                  <Table.Td data-fold>
+                    <Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text>
+                    {e.department && <Text size="xs" c="dimmed" lineClamp={1} className="earner-dept">{e.department}</Text>}
+                  </Table.Td>
                   <Table.Td ta="right" data-fold c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
                     {e.fte == null ? '—' : Math.abs(e.fte - 1) > 0.005 ? (
                       <Tooltip label={e.fte < 1 ? 'Part-time appointment' : 'Combined FTE across multiple appointments'} withArrow>
@@ -205,6 +273,7 @@ export function EarnersPanel() {
                   </Table.Td>
                   <Table.Td ta="right">
                     {usd(e.pay)}
+                    {e.appts > 1 && <div><ApptsTag appts={e.appts} list={apptsOf.get(e.person_key) ?? []} /></div>}
                     {/* Part-time: what the job pays full-time, as on the person page. */}
                     {metric === 'fte' && e.appts === 1 && e.fte != null && e.fte < 0.995 && e.rate != null && e.rate > e.pay && (
                       <Text size="xs" c="dimmed" className="earner-rate">full-time {usd(e.rate)}</Text>
@@ -235,7 +304,7 @@ export function EarnersPanel() {
         </Text>
         <Text size="xs" c="dimmed">
           Coaches and senior leaders may also receive deferred or supplemental compensation not captured here.
-          {prevSnap ? ` ▲/▼ shows pay-rank movement since ${prevSnap.label}.` : ''}
+          {prevSnap ? ` Δ rank: pay-rank movement since ${prevSnap.label}, the page's period.` : ''}
         </Text>
       </Stack>
     </>

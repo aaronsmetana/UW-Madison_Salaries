@@ -4,9 +4,11 @@ import { scaleX, type RangeScale } from '../lib/rangeScale';
 /**
  * A pay spread on its column's one scale (`rangeScale`): the min–max whisker, the middle 50% as every
  * chart draws it (BAND_IQR), the median tick, and faint lines at the scale's round values. What runs
- * past the scale is cut at the edge and marked there with a small arrow.
+ * past the scale is cut at the edge; a box that does is marked there with a small arrow. A whisker alone
+ * running past is not (D8): nearly every row's maximum did, so nearly every row ended in an arrow. 280px
+ * wide, not 200: at 200 most boxes were 5 to 20px.
  */
-export function MiniRange({ scale, lo, p25, med, p75, hi, width = 200, height = 16 }: {
+export function MiniRange({ scale, lo, p25, med, p75, hi, width = 280, height = 16 }: {
   scale: RangeScale;
   lo: number; p25: number; med: number; p75: number; hi: number;
   width?: number; height?: number;
@@ -34,7 +36,7 @@ export function MiniRange({ scale, lo, p25, med, p75, hi, width = 200, height = 
       <rect className="band-iqr" x={x(p25)} y={mid - 5} width={Math.max(1, x(p75) - x(p25))} height={10} rx={2}
         fill={BAND_IQR.fill} stroke={BAND_IQR.edge} strokeWidth={BAND_IQR.edgeWidth} />
       <line x1={x(med)} y1={mid - 6} x2={x(med)} y2={mid + 6} stroke="var(--mantine-color-dimmed)" strokeWidth={2} />
-      {hi > scale.hi && (
+      {p75 > scale.hi && (
         <path className="mini-range-over" d={`M${width - 6},${mid - 3.5} L${width - 1.5},${mid} L${width - 6},${mid + 3.5}`}
           fill="none" stroke="var(--mantine-color-dimmed)" strokeWidth={1.5} />
       )}

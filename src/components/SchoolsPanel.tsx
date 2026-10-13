@@ -6,9 +6,10 @@ import { IconSearch, IconSearchOff, IconChevronRight } from '@tabler/icons-react
 import { CsvButton } from './CsvButton';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
-import { peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
+import { peopleSql, snapWhere, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
+import { usePeriod } from '../lib/period';
 import { sqlStr } from '../lib/duckdb';
-import { usd, num } from '../lib/format';
+import { usd, num, fmtChange } from '../lib/format';
 import { useTray } from '../state/tray';
 import { downloadCSV } from '../lib/csv';
 import { MiniBar } from './MiniBar';
@@ -23,7 +24,7 @@ import { fmtK } from '../lib/chartStyle';
 interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
 interface DeptRow { department: string; headcount: number; med: number | null }
 
-type SortKey = 'school' | 'headcount' | 'med';
+type SortKey = 'school' | 'headcount' | 'med' | 'dhc' | 'dmed';
 
 /** Lazily-loaded department breakdown for an expanded division row. */
 function DeptRows({ where, school, metric, colSpan }: {
@@ -67,6 +68,8 @@ function DeptRows({ where, school, metric, colSpan }: {
           <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} color="var(--bar)" /></Table.Td>
           <Table.Td ta="right"><Text size="sm" c="dimmed">{usd(d.med)}</Text></Table.Td>
           <Table.Td data-fold />
+          <Table.Td data-fold />
+          <Table.Td data-fold />
           <Table.Td />
         </Table.Tr>
       ))}
@@ -93,6 +96,35 @@ export function SchoolsPanel() {
     !!snap
   );
 
+  // Each division against the page's period start (D10): its headcount and median then, and its median now on the
+  // footing of then (PRIOR_FOOTING), so a change across a change in how pay is reported is like for like.
+  const { from: periodFrom, to: periodTo } = usePeriod();
+  const scopeVal = scope.kind === 'school' ? scope.value : '';
+  const { data: before } = useSql<{ school: string; headcount: number; med: number | null }>(
+    ['browse-schools-from', periodFrom?.id ?? '', scope.kind, scopeVal, metric, filterKey(filters)],
+    `WITH pe AS (${peopleSql({ metric, where: `${snapWhere(periodFrom?.id ?? '')} AND ${whereAll(scope, filters)} AND school IS NOT NULL`, by: ['school'] })})
+     SELECT school, count(*) FILTER (WHERE pay > 0) headcount, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY school`,
+    !!snap && !!periodFrom
+  );
+  const { data: prior } = useSql<{ school: string; med_prior: number | null }>(
+    ['browse-schools-prior', snap ?? '', scope.kind, scopeVal, metric, filterKey(filters)],
+    `WITH po AS (${peopleSql({ metric, where: `${where} AND school IS NOT NULL`, by: ['school'], from: PRIOR_FOOTING })})
+     SELECT school, median(pay) FILTER (WHERE pay > 0) med_prior FROM po GROUP BY school`,
+    !!snap && !!periodFrom
+  );
+  const change = useMemo(() => {
+    const b = new Map((before ?? []).map((r) => [r.school, r]));
+    const p = new Map((prior ?? []).map((r) => [r.school, r.med_prior]));
+    return new Map((schools ?? []).map((s) => {
+      const then = b.get(s.school);
+      if (!then || !periodFrom || !periodTo) return [s.school, null] as const;
+      const growth = then.med != null && s.med != null
+        ? growthBetween({ date: periodFrom.date, value: then.med }, { date: periodTo.date, value: s.med, prior: p.get(s.school) ?? null }).growth
+        : null;
+      return [s.school, { dhc: s.headcount - then.headcount, dmed: growth }] as const;
+    }));
+  }, [schools, before, prior, periodFrom, periodTo]);
+
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'headcount', dir: 'desc' });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -108,12 +140,16 @@ export function SchoolsPanel() {
     let rows = schools ?? [];
     if (t) rows = rows.filter((r) => r.school.toLowerCase().includes(t));
     const { key, dir } = sort;
+    // A division new in the period has no change: it sorts last either way.
+    const val = (r: SchoolRow) => key === 'dhc' || key === 'dmed' ? change.get(r.school)?.[key] ?? null : Number(r[key] ?? 0);
     const sorted = [...rows].sort((a, b) => {
-      const cmp = key === 'school' ? a.school.localeCompare(b.school) : Number(a[key] ?? 0) - Number(b[key] ?? 0);
-      return dir === 'asc' ? cmp : -cmp;
+      if (key === 'school') return (dir === 'asc' ? 1 : -1) * a.school.localeCompare(b.school);
+      const [x, y] = [val(a), val(b)];
+      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+      return (dir === 'asc' ? 1 : -1) * (Number(x) - Number(y));
     });
     return sorted;
-  }, [schools, q, sort]);
+  }, [schools, q, sort, change]);
   // The first rows, the rest on "Show all" (G11): the page's one scroll, not a box inside it.
   const page = useShowAll(view, `${q}|${sort.key}|${sort.dir}`);
 
@@ -164,13 +200,15 @@ export function SchoolsPanel() {
       <>
       <div className="sticky-head">
       <ScrollArea.Autosize type="auto" offsetScrollbars="present">
-        <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={680} className="fold-table">
+        <Table stickyHeader stickyHeaderOffset="var(--app-shell-header-offset, 0px)" miw={900} className="fold-table">
           <Table.Thead>
             <Table.Tr>
               <SortableTh sortKey="school" label="School / Division" sort={sort} onSort={setSort} />
               <SortableTh sortKey="headcount" label="Headcount" sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="med" label="Median" sort={sort} onSort={setSort} align="right" />
-              <Table.Th ta="right" data-fold w={216} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
+              <SortableTh sortKey="dhc" label="Δ people" sort={sort} onSort={setSort} align="right" fold />
+              <SortableTh sortKey="dmed" label="Δ median" sort={sort} onSort={setSort} align="right" fold />
+              <Table.Th ta="right" data-fold w={300} className="range-th">Pay spread · {scale.lo === 0 ? '$0' : fmtK(scale.lo)}–{fmtK(scale.hi)}</Table.Th>
               <Table.Th><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -218,6 +256,14 @@ export function SchoolsPanel() {
                       {usd(s.med)}
                       <MiniBar frac={medFrac(s.med)} color="var(--bar)" />
                     </Table.Td>
+                    {/* People are a count, not a direction: their change in the ink, signed. Pay is: its change in its
+                        direction's colour. */}
+                    <Table.Td ta="right" data-fold className="school-dhc">
+                      {(() => { const c = change.get(s.school); return c == null ? <Text span size="sm" c="dimmed">new</Text> : <Text span size="sm">{c.dhc > 0 ? '+' : c.dhc < 0 ? '−' : ''}{num(Math.abs(c.dhc))}</Text>; })()}
+                    </Table.Td>
+                    <Table.Td ta="right" data-fold className="school-dmed">
+                      {(() => { const g = change.get(s.school)?.dmed; return g == null ? <Text span size="sm" c="dimmed">—</Text> : <Text span size="sm" fw={600} c={Math.abs(g) < 0.0005 ? 'dimmed' : g > 0 ? 'up' : 'down'}>{fmtChange(g)}</Text>; })()}
+                    </Table.Td>
                     <Table.Td ta="right" data-fold>
                       {canPlot ? (
                         <Tooltip withArrow multiline label={`min ${usd(s.lo)} · p25 ${usd(s.p25)} · median ${usd(s.med)} · p75 ${usd(s.p75)} · max ${usd(s.hi)}`}>
@@ -229,7 +275,7 @@ export function SchoolsPanel() {
                       <TrayButton inTray={inTray} name={s.school} stopPropagation onAdd={() => add({ type: 'school', id: s.school, label: s.school })} onRemove={() => remove(s.school)} />
                     </Table.Td>
                   </Table.Tr>
-                  {isOpen && <DeptRows where={where} school={s.school} metric={metric} colSpan={5} />}
+                  {isOpen && <DeptRows where={where} school={s.school} metric={metric} colSpan={7} />}
                 </Fragment>
               );
             })}
@@ -238,6 +284,12 @@ export function SchoolsPanel() {
       </ScrollArea.Autosize>
       </div>
       <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
+      {periodFrom && (
+        <Text size="xs" c="dimmed" mt="xs" className="schools-change-note">
+          Δ: since {periodFrom.label}, the page&apos;s period; the median like for like across a change in how pay is
+          reported. &ldquo;New&rdquo; is a division {periodFrom.label} did not have under this name.
+        </Text>
+      )}
       </>
       )}
     </>

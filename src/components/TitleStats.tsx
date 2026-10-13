@@ -385,7 +385,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
               <Table.Th>School</Table.Th>
               <Table.Th ta="right">People</Table.Th>
               <Table.Th ta="right">Median</Table.Th>
-              <Table.Th ta="right" data-fold w={216}>Middle 50% · {schoolScale.lo === 0 ? '$0' : fmtK(schoolScale.lo)}–{fmtK(schoolScale.hi)}</Table.Th>
+              <Table.Th ta="right" data-fold w={300}>Middle 50% · {schoolScale.lo === 0 ? '$0' : fmtK(schoolScale.lo)}–{fmtK(schoolScale.hi)}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
