@@ -318,7 +318,8 @@ test.describe('R5 — standing is one query, per person, the department inside i
          FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key) WHERE pay > 0`
     );
     await page.goto(`./person/${encodeURIComponent(AARON)}?tab=pay`);
-    const dept = page.locator('.chart-plot', { hasText: `Administration · ${SMPH}` });
+    // "Dept: Administration" (P16), the department of the school in the pool above it.
+    const dept = page.locator('.chart-plot', { hasText: 'Dept: Administration' });
     await expect(dept).toContainText(`of ${o.dept.toLocaleString('en-US')}`, { timeout: 60_000 });
     await expect(page.locator('.chart-plot', { hasText: 'Grade 27 (12-month)' })).toContainText(`of ${o.grade.toLocaleString('en-US')}`);
   });

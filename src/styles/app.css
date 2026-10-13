@@ -1934,6 +1934,10 @@ button:active,
 .fact-details[open] > summary::before { transform: rotate(45deg); }
 .fact-details[open] > summary { margin-bottom: var(--mantine-spacing-xs); }
 
+/* The raise simulator's presets: one row, scrolled sideways where it does not fit (P19). */
+.raise-presets { overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.raise-presets::-webkit-scrollbar { display: none; }
+
 /* A card's method, folded (MethodNote, G22): a quiet link-sized summary with a turning chevron, its body the
    card's small print. The summary is a finger-sized target (24px), as every control here is. */
 .method-note { margin-top: var(--mantine-spacing-xs); }

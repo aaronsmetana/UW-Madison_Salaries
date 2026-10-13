@@ -2,12 +2,12 @@ import { PersonSkeleton } from '../components/PersonSkeleton';
 import { PersonNotFound } from '../components/PersonNotFound';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
-import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden } from '@mantine/core';
+import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input } from '@mantine/core';
 import {
-  ResponsiveContainer, ComposedChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, ComposedChart, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick, chartKeys, CHART_FONT } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, fmtK, fmtUsd, fmtSnapTick, chartKeys, CHART_FONT, TIP_STYLE, TIP_LABEL_STYLE, niceCurrencyTicks } from '../lib/chartStyle';
 import { YoyChips, MARK_HALO } from '../components/chart/pills';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, sameTitleText, mainSwapped } from '../lib/payHistory';
@@ -205,7 +205,7 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?:
   if (n == null || below == null || pct == null) {
     return (
       <Group wrap="nowrap" gap="md" align="center">
-        <div style={{ width: 210, flexShrink: 0 }}>
+        <div style={{ flex: '0 0 35%', minWidth: 0 }}>
           <Text size="sm" fw={500} lineClamp={2} title={label}>{label}</Text>
           <Skeleton height={13} width={84} radius="sm" my={2.5} />
         </div>
@@ -221,7 +221,8 @@ function PercentileBar({ label, n, below, pct, delay = 0 }: { label: string; n?:
     // `chart-plot` for the same reason PayBandBar and PeerRangeBar carry it: a plotted figure built
     // from divs rather than SVG.
     <Group className="chart-plot" wrap="nowrap" gap="md" align="center">
-      <div style={{ width: 210, flexShrink: 0 }}>
+      {/* A wider label column (P16): at 210px a pool's name wrapped to three lines while the bar took 65%. */}
+      <div style={{ flex: '0 0 35%', minWidth: 0 }}>
         <Text size="sm" fw={500} lineClamp={2} title={label}>{label}</Text>
         <Text size="xs" c="dimmed">#{num(n - below)} of {num(n)}</Text>
       </div>
@@ -614,8 +615,9 @@ export default function Person() {
     return [
       { key: 'all', label: 'All UW–Madison', ok: true },
       { key: 'div', label: latest?.school ?? 'Division', ok: !!latest?.school },
-      // Named with its school: "Administration" alone is twelve different units.
-      { key: 'dept', label: [latest?.department, latest?.school].filter(Boolean).join(' · ') || 'Department', ok: !!latest?.department },
+      // "Dept: Administration" (P16), its school on the line above it in this list; it was "Administration ·
+      // School of Medicine and Public Health", three lines in a squeezed column.
+      { key: 'dept', label: latest?.department ? `Dept: ${latest.department}` : 'Department', ok: !!latest?.department },
       { key: 'grade', label: `Grade ${fmtGrade(latest?.grade_number, latest?.grade_basis)}`, ok: latest?.grade_number != null },
       { key: 'title', label: latest?.title ?? 'Title', ok: !!latest?.job_code },
     ].filter((x) => x.ok);
@@ -853,7 +855,12 @@ export default function Person() {
   const growth = Math.pow(1 + pctRaise / 100, years);
   const projectedRate = lastRate != null ? lastRate * growth : null;
   // On the band, the graded appointment's rate moves by the same raise.
-  const projectedBandRate = bandRate != null ? bandRate * growth : null;
+  // The simulator's year-by-year line (P19), and the top of its axis: the band's maximum when it is in view.
+  const raisePath = useMemo(() => (lastRate == null ? [] : Array.from({ length: years + 1 }, (_, y) => ({ year: y, rate: lastRate * (1 + pctRaise / 100) ** y }))), [lastRate, years, pctRaise]);
+  const raisePathTop = useMemo(() => {
+    const hi = Math.max(...raisePath.map((r) => r.rate), range?.max ?? 0);
+    return niceCurrencyTicks(0, hi * 1.05).at(-1) ?? hi;
+  }, [raisePath, range]);
   // Quick-target presets: the annualized %/yr needed to take `from` to a target rate over the current `years`.
   const targetRaisePct = (t: number | null | undefined, from: number | null = lastRate) =>
     from != null && from > 0 && years > 0 && t != null && t > from
@@ -1424,7 +1431,7 @@ export default function Person() {
           <Stack gap="sm">
             {/* The median's name, once, over its tick: the bars' own columns, so it lands on the line. */}
             <Group wrap="nowrap" gap="md" aria-hidden mb={-6}>
-              <div style={{ width: 210, flexShrink: 0 }} />
+              <div style={{ flex: '0 0 35%' }} />
               <div style={{ flex: 1, position: 'relative', height: 16 }}>
                 <Text className="standing-median-label" size="xs" c="dimmed" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', lineHeight: '16px' }}>Pool median</Text>
               </div>
@@ -1449,7 +1456,15 @@ export default function Person() {
           >
             Grade {graded?.grade} pay band
           </CardTitle>
-          <PayBandBar min={range.min} max={range.max} value={bandRate} quartiles />
+          <PayBandBar
+            min={range.min}
+            max={range.max}
+            value={bandRate}
+            quartiles
+            // The title's own spread on its band (P18), where there are enough people to have one.
+            peers={peer && peer.n >= MIN_GROUP && peer.p25 != null && peer.med != null && peer.p75 != null && latest?.title
+              ? { p25: peer.p25, med: peer.med, p75: peer.p75, label: `everyone titled ${latest.title}` } : null}
+          />
           {bandRate !== lastRate && (
             <Text size="xs" c="dimmed" mt={4} className="payband-rate">
               Placed on the full-time rate of the appointment in grade {graded?.grade}, {usd(bandRate)}.
@@ -1491,58 +1506,109 @@ export default function Person() {
           <CardTitle mb="sm" sub="Projects the full-time salary rate; actual pay scales with FTE.">
             Raise / what-if simulator
           </CardTitle>
-          <Group gap="xs" mb="md" wrap="wrap">
+          {/* The presets on one row (P19), short enough to fit and scrolled sideways where they don't; each sets the
+              raise below. They wrapped to two rows of long phrases. */}
+          <Group gap="xs" mb="md" wrap="nowrap" className="raise-presets">
             {[
               { id: 'flat', label: 'Flat 2%', val: 2 },
-              ...(presets.uw != null && presets.uw >= 0 ? [{ id: 'uw', label: `Typical UW raise ≈${r1(presets.uw * 100)}%/yr`, val: r1(presets.uw * 100) }] : []),
-              ...(presets.title != null && presets.title >= 0 ? [{ id: 'title', label: `Typical for this title ≈${r1(presets.title * 100)}%/yr`, val: r1(presets.title * 100) }] : []),
-              ...(presets.own != null && presets.own >= 0 ? [{ id: 'own', label: `This person, excluding title changes ≈${r1(presets.own * 100)}%/yr`, val: r1(presets.own * 100) }] : []),
-              ...(medTargetPct != null ? [{ id: 'median', label: `Reach title median (${medTargetPct}%/yr)`, val: medTargetPct }] : []),
-              ...(maxTargetPct != null ? [{ id: 'bandmax', label: `Reach band max (${maxTargetPct}%/yr)`, val: maxTargetPct }] : []),
+              ...(presets.uw != null && presets.uw >= 0 ? [{ id: 'uw', label: `UW typical ≈${r1(presets.uw * 100)}%`, val: r1(presets.uw * 100) }] : []),
+              ...(presets.title != null && presets.title >= 0 ? [{ id: 'title', label: `Title typical ≈${r1(presets.title * 100)}%`, val: r1(presets.title * 100) }] : []),
+              ...(presets.own != null && presets.own >= 0 ? [{ id: 'own', label: `Own raises ≈${r1(presets.own * 100)}%`, val: r1(presets.own * 100) }] : []),
+              ...(medTargetPct != null ? [{ id: 'median', label: `To title median ${medTargetPct}%`, val: medTargetPct }] : []),
+              ...(maxTargetPct != null ? [{ id: 'bandmax', label: `To band max ${maxTargetPct}%`, val: maxTargetPct }] : []),
             ].map((c) => {
               const sel = Math.abs(pctRaise - c.val) < 0.05;
               return (
-                <Button key={c.id} data-raise-preset={c.id} size="compact-sm" radius="xl" variant={sel ? 'light' : 'default'} color="accent" onClick={() => setPctRaise(c.val)}>
+                <Button key={c.id} data-raise-preset={c.id} size="compact-sm" radius="xl" variant={sel ? 'light' : 'default'} color="accent" onClick={() => setPctRaise(c.val)} style={{ flexShrink: 0 }}>
                   {c.label}
                 </Button>
               );
             })}
           </Group>
-          <Group align="flex-end" wrap="wrap">
-            <NumberInput label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={150} step={0.5} min={0} suffix="%" />
-            <NumberInput label="Years" value={years} onChange={(v) => setYears(typeof v === 'number' ? v : 0)} w={120} min={0} max={40} />
-            <div>
-              <Text size="xs" c="dimmed">Projected full-time rate</Text>
-              <Text fw={700} size="xl">{projectedRate != null ? usd(projectedRate) : '—'}</Text>
-              {projectedRate != null && lastRate != null && (
-                <Text size="xs" c="dimmed">
-                  <Text span c="up" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
-                  {lastFte != null && Math.abs(lastFte - 1) > 0.005 ? ` · actual ${usd(projectedRate * lastFte)}` : ''}
-                </Text>
-              )}
-            </div>
+          {/* A slider with its number beside it, in half-percent steps, and the years as four choices (P21): two
+              spin boxes asked for both. */}
+          <Group align="flex-end" wrap="wrap" gap="lg">
+            <Input.Wrapper label="Annual raise" style={{ flex: '1 1 260px', minWidth: 0 }}>
+              <Group gap="sm" wrap="nowrap" mt={4}>
+                <Slider
+                  className="raise-slider"
+                  value={pctRaise}
+                  onChange={setPctRaise}
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  label={(v) => `${v}%`}
+                  thumbLabel="Annual raise"
+                  // A finger-sized thumb (24px), as every target on a phone is.
+                  thumbSize={24}
+                  style={{ flex: 1 }}
+                />
+                <NumberInput aria-label="Annual raise %" value={pctRaise} onChange={(v) => setPctRaise(typeof v === 'number' ? v : 0)} w={92} step={0.5} min={0} max={25} suffix="%" />
+              </Group>
+            </Input.Wrapper>
+            <Input.Wrapper label="Years">
+              <SegmentedToggle
+                ariaLabel="Years"
+                value={String(years)}
+                onChange={(v) => setYears(Number(v))}
+                options={[1, 3, 5, 10].map((y) => ({ id: String(y), label: String(y) }))}
+              />
+            </Input.Wrapper>
           </Group>
 
-          {range && bandRate != null && projectedBandRate != null && (
-            <div style={{ marginTop: 'var(--mantine-spacing-md)' }}>
-              <Text size="xs" c="dimmed" mb={6}>Projected position in {years}y (gray tick = today)</Text>
-              <PayBandBar min={range.min} max={range.max} value={projectedBandRate} benchmarks={[{ value: bandRate, label: 'today' }]} />
+          {/* The headline (P19): how long to the top of the band at this raise, where there is a band; otherwise the
+              projected rate. */}
+          <div className="raise-headline" style={{ marginTop: 'var(--mantine-spacing-md)' }}>
+            {range && bandRate != null && bandRate >= range.max ? (
+              <Text fw={700} size="lg">Already at the top of grade {graded?.grade}&apos;s band ({usd(range.max)})</Text>
+            ) : range && bandRate != null && pctRaise > 0 ? (
+              <Text fw={700} size="lg">
+                ≈{Math.ceil(Math.log(range.max / bandRate) / Math.log(1 + pctRaise / 100))} years to the band max at {pctRaise}%/yr
+              </Text>
+            ) : range ? (
+              <Text fw={700} size="lg">Set a raise above 0% to see the years to the band max</Text>
+            ) : null}
+            {projectedRate != null && lastRate != null && (
+              <Text size="sm" c={range ? 'dimmed' : undefined} mt={2}>
+                Full-time rate in {years} {years === 1 ? 'year' : 'years'}: <Text span fw={700} c="var(--mantine-color-text)">{usd(projectedRate)}</Text>
+                {' '}(<Text span c="up" fw={600}>+{usd(projectedRate - lastRate)}</Text> vs today
+                {lastFte != null && Math.abs(lastFte - 1) > 0.005 ? `; actual ${usd(projectedRate * lastFte)}` : ''})
+              </Text>
+            )}
+          </div>
+
+          {/* Year by year against the band's top (P19), the band held where it is today (P20): the published maximum
+              does not grow with the projection. */}
+          {lastRate != null && (
+            <div className="raise-path" style={{ marginTop: 'var(--mantine-spacing-md)' }}>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart {...chartKeys('Projected full-time rate by year')} data={raisePath} margin={{ left: 12, right: 24, top: 18, bottom: 0 }}>
+                  <CartesianGrid {...GRID} />
+                  <XAxis dataKey="year" tick={AXIS_TICK} tickFormatter={(y: number) => (y === 0 ? 'Today' : `+${y} yr`)} interval={0} />
+                  <YAxis tick={AXIS_TICK} tickFormatter={fmtK} width={56} domain={[0, raisePathTop]} />
+                  <Tooltip formatter={(v: number) => [usd(v), 'Full-time rate']} labelFormatter={(y: number) => (y === 0 ? 'Today' : `In ${y} ${y === 1 ? 'year' : 'years'}`)} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
+                  {range && (
+                    <ReferenceLine
+                      y={range.max}
+                      stroke="var(--guide-strong)"
+                      strokeDasharray="4 3"
+                      className="raise-band-max"
+                      label={{ value: `Band max ${usd(range.max)}, held at ${latest?.snapshot_label ?? 'today'}'s value`, position: 'insideTopRight', fontSize: CHART_FONT, fill: 'var(--mantine-color-dimmed)' }}
+                    />
+                  )}
+                  <Line type="linear" dataKey="rate" name="Full-time rate" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+              <ChartData
+                caption="Projected full-time rate by year"
+                columns={['Year', 'Full-time rate']}
+                rows={raisePath.map((r) => [r.year === 0 ? 'Today' : `+${r.year}`, Math.round(r.rate)])}
+                unit="years"
+                about={`Today's full-time rate grown at ${pctRaise}% a year.${range ? ` The band's maximum is held at its published value; it does not grow with the projection.` : ''}`}
+              />
             </div>
           )}
 
-          {range && bandRate != null && bandRate >= range.max && (
-            <Text size="xs" c="dimmed" mt="md">
-              This rate is already at or above the top of grade {graded?.grade}'s pay band ({usd(range.max)}) — effectively maxed out, so there are no years to reach the cap at the current raise rate.
-            </Text>
-          )}
-          {range && bandRate != null && bandRate < range.max && pctRaise > 0 && (
-            <Text size="xs" c="dimmed" mt="md">
-              At {pctRaise}%/yr, about {Math.ceil(Math.log(range.max / bandRate) / Math.log(1 + pctRaise / 100))} years to reach the band max ({usd(range.max)}).
-            </Text>
-          )}
-          {range && pctRaise === 0 && (
-            <Text size="xs" c="dimmed" mt="md">Enter a raise above 0% to project years to the band max.</Text>
-          )}
           {/* The presets' method, after the projection it feeds rather than between the presets and their inputs (G22). */}
           {(presets.uw != null || presets.title != null || presets.own != null) && (
             <MethodNote className="raise-method">

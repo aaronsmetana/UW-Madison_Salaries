@@ -81,7 +81,7 @@ export const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
 
 /** Axis/number formatters: full currency and compact "$NNk". */
 export const fmtUsd = (v: number) => usd(v);
-export const fmtK = (v: number) => { const k = Math.round(v / 1000); return k < 0 ? `−$${-k}k` : `$${k}k`; };
+export const fmtK = (v: number) => { const k = Math.round(v / 1000); return k === 0 ? '$0' : k < 0 ? `−$${-k}k` : `$${k}k`; };
 /** A count on an axis: thousands separated, a true minus ("24,000", "−2,000"), where axes read "0 12000 24000". */
 export const fmtCount = (v: number) => num(v);
 
