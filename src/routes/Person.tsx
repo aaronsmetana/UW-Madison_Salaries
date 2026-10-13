@@ -67,7 +67,7 @@ import { ICON } from '../lib/ui';
 
 import { OverflowTabsList } from '../components/OverflowTabsList';
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
+function TrendTooltip({ active, payload, showTypical = false }: { active?: boolean; showTypical?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   // A gap row only breaks the line at a reporting change; there is no snapshot there to describe.
@@ -79,10 +79,12 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
       <Text size="sm">Actual paid: {usd(d.salary)}</Text>
       {partTime && <Text size="xs" c="dimmed">Full-time rate: {usd(d.rate)}</Text>}
-      {d.fte != null && <Text size="xs" c="dimmed">Appointment: {Math.round(d.fte * 100)}% FTE</Text>}
+      {/* Said where it is not 100%, as the figures say it; the typical path's figure where that layer is drawn. A
+          card of every line was too tall for the plot on a CI runner's fonts. */}
+      {d.fte != null && Math.abs(d.fte - 1) > 0.005 && <Text size="xs" c="dimmed">Appointment: {Math.round(d.fte * 100)}% FTE</Text>}
       {d.med != null && <Text size="xs" c="dimmed">Title median: {usd(d.med)}</Text>}
       {d.compare && <Text size="xs" c="dimmed">This raise: {d.compare}</Text>}
-      {d.typical != null && <Text size="xs" c="dimmed">If raises had been typical: {usd(d.typical)}</Text>}
+      {showTypical && d.typical != null && <Text size="xs" c="dimmed">If raises had been typical: {usd(d.typical)}</Text>}
       {d.appts && d.appts > 1 && (
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
@@ -1660,7 +1662,7 @@ export default function Person() {
                 card: placed here from the page's state, every pointer move re-rendered the whole page, and on a CI
                 runner the card ended 22px past the pointer. Placed at once, not eased there. */}
             <Tooltip
-              content={<TrendTooltip />}
+              content={<TrendTooltip showTypical={showTypical} />}
               cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }}
               offset={14}
               allowEscapeViewBox={{ x: false, y: false }}

@@ -47,10 +47,16 @@ test('the hover card follows the pointer, below it high up and above it low down
   await trend(page);
   const plot = (await page.locator('.person-trend .recharts-cartesian-grid').first().boundingBox())!;
   const labels = await page.locator('.person-trend .trend-era-label').evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect()).map((r) => ({ top: r.top, bottom: r.bottom, left: r.left, right: r.right })));
-  for (const [frac, where] of [[0.75, 'above'], [0.2, 'below']] as const) {
-    const y = plot.y + plot.height * frac;
+  const tip = page.locator('.person-trend .recharts-tooltip-wrapper');
+  // Near the plot's foot and near its top: a card that fits the plot at all has room above the one and below the
+  // other. Fixed fractions assumed the card's height here; CI's fonts draw it about 60px taller.
+  await page.mouse.move(plot.x + plot.width * 0.45, plot.y + plot.height / 2);
+  await expect(tip).toBeVisible();
+  await page.waitForTimeout(250);
+  const h = (await tip.boundingBox())!.height;
+  expect(h + 2 * 14 + 16, `a ${Math.round(h)}px card has no room in a ${Math.round(plot.height)}px plot`).toBeLessThanOrEqual(plot.height);
+  for (const [y, where] of [[plot.y + plot.height - 8, 'above'], [plot.y + 8, 'below']] as const) {
     await page.mouse.move(plot.x + plot.width * 0.45, y);
-    const tip = page.locator('.person-trend .recharts-tooltip-wrapper');
     await expect(tip).toBeVisible();
     await page.waitForTimeout(250);
     const b = (await tip.boundingBox())!;
