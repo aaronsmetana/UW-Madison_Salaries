@@ -1,17 +1,18 @@
-import { useId, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, Text, Loader, Group } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceLine, ReferenceArea, Customized,
 } from 'recharts';
-import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys, fmtCount } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, fmtUsd, chartKeys, fmtCount, CHART_SERIES } from '../lib/chartStyle';
 import { snapX, snapAxisProps, knownBreak } from '../lib/snapTime';
 import { BreakLabel, BreakLabels } from './chart/BreakLabel';
-import { areaGradDef } from './chartDefs';
 import { TipSurface } from './chart/ChartTooltip';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useSummary } from '../lib/hooks';
-import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
+import { salaryExpr, paidHeadcount, peopleSql, whereAll, filterKey, PRIOR_FOOTING, growthBetween, mainOf } from '../lib/queries';
+import { sqlStr } from '../lib/duckdb';
+import { CATEGORY_SPELLINGS } from '../lib/timeline';
 import { usd, num, pct, spanLabel } from '../lib/format';
 import { chartAnim, useEntrance } from '../lib/motion';
 import { ChartData } from './ChartData';
@@ -24,8 +25,17 @@ import { usePref } from '../lib/prefs';
 import { usePeriod } from '../lib/period';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 
-interface Row { id: string; label: string; date: string; med: number | null; med_prior: number | null; hc: number; renew: number | null }
-interface Plot extends Row { x: number; yoy: number | null }
+interface Row { id: string; label: string; date: string; med: number | null; med_prior: number | null; p10: number | null; p90: number | null; hc: number; renew: number | null }
+interface Plot extends Row {
+  x: number; yoy: number | null; band: [number, number] | null; [cat: `c${number}`]: number | null;
+  /** The row in dollars, whatever the chart shows: the table under it gives these. */
+  dollars: { med: number | null; p10: number | null; p90: number | null; cats: (number | null)[] };
+}
+
+/** The employee categories drawn one line each (D19), named as the latest release names them. University Staff
+ *  and some trainees appear only as codes before Apr 2024 (CP, CL, ET…), which no public source defines and
+ *  which are never merged on a guess (lib/timeline), so their lines start there. */
+const CATS = ['Faculty', 'Academic Staff', 'University Staff', 'Employees in Training', 'Limited'] as const;
 
 /** Hover marker for the median line: an accent dot with a soft halo. */
 function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
@@ -38,19 +48,24 @@ function ActiveDot({ cx, cy }: { cx?: number; cy?: number }) {
   );
 }
 
-function TrendTip({ active, payload }: {
-  active?: boolean; payload?: { payload: Plot }[];
+function TrendTip({ active, payload, byCat = false, index = false }: {
+  active?: boolean; payload?: { payload: Plot }[]; byCat?: boolean; index?: boolean;
 }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
+  const fmt = (v: number | null) => (v == null ? '—' : index ? String(Math.round(v)) : usd(v));
   return (
     <TipSurface>
       {/* The row's label, not Recharts' \`label\`: on a date axis that is the x value, a timestamp. */}
       <Text size="sm" fw={600}>{p.label}</Text>
-      <Text size="sm">
-        Median {usd(p.med)}{' '}
-        {p.yoy != null && <Text span c={p.yoy >= 0 ? 'up' : 'down'}>({p.yoy >= 0 ? '+' : ''}{pct(p.yoy)})</Text>}
-      </Text>
+      {byCat ? CATS.map((c, i) => p[`c${i}`] != null && (
+        <Text key={c} size="xs"><Text span c={CHART_SERIES[i]} fw={700}>■</Text> {c} {fmt(p[`c${i}`])}</Text>
+      )) : (
+        <Text size="sm">
+          Median {fmt(p.med)}{' '}
+          {p.yoy != null && <Text span c={p.yoy >= 0 ? 'up' : 'down'}>({p.yoy >= 0 ? '+' : ''}{pct(p.yoy)})</Text>}
+        </Text>
+      )}
       <Text size="xs" c="dimmed">
         {num(p.hc)} paid{p.renew != null ? ` · ${num(p.renew)} renewable` : ''}
       </Text>
@@ -61,7 +76,6 @@ function TrendTip({ active, payload }: {
 export function TrendsPanel() {
   // Scopes this chart's <defs>. An SVG id is document-global, so a literal here would collide with
   // any second instance — see chartDefs.
-  const gradId = useId();
   const { scope, metric, filters } = useControls();
   const expr = salaryExpr(metric);
   /** The plotted figure, named for the measure in force (G2). */
@@ -70,7 +84,14 @@ export function TrendsPanel() {
   // The dollars are the page's (the control bar's Nominal / 2026 $, D2): this tab had a toggle of its own too.
   const [dollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
   const { from: periodFrom, to: periodTo } = usePeriod();
-  const [hcScale, setHcScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
+  // Dollars, or each line as an index of its own first snapshot (D17, D18): from a $0 baseline a +25% median read
+  // flat, and the Log scale offered for one line added nothing. The axis stays at $0 in dollars, as every pay
+  // line in the app does; the index is where the shape reads.
+  const [view, setView] = usePref<'dollars' | 'index'>('trendView', 'dollars');
+  // All UW's median with its 10th–90th band, or a line for each employee category (D19).
+  const [lines, setLines] = useState<'all' | 'cats'>('all');
+  const byCat = lines === 'cats';
+  const index = view === 'index';
   const { data, isFetching } = useSql<Row>(
     ['trend', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
     // `renew` = paid employees on a renewable ("Regular") appointment — excludes Terminal and Temporary.
@@ -81,13 +102,23 @@ export function TrendsPanel() {
     // like for like.
     `WITH pe AS (${peopleSql({ metric, where: whereAll(scope, filters), by: ['snapshot_id'] })}),
           po AS (${peopleSql({ metric, where: whereAll(scope, filters), by: ['snapshot_id'], from: PRIOR_FOOTING })}),
-          m AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY snapshot_id),
+          m AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med, quantile_cont(pay, 0.1) FILTER (WHERE pay > 0) p10,
+                       quantile_cont(pay, 0.9) FILTER (WHERE pay > 0) p90 FROM pe GROUP BY snapshot_id),
           mp AS (SELECT snapshot_id, median(pay) FILTER (WHERE pay > 0) med_prior FROM po GROUP BY snapshot_id)
      SELECT snapshot_id id, any_value(snapshot_label) AS "label", CAST(any_value(snapshot_date) AS VARCHAR) date,
-        any_value(m.med) med, any_value(mp.med_prior) med_prior, ${paidHeadcount(metric)} hc,
+        any_value(m.med) med, any_value(mp.med_prior) med_prior, any_value(m.p10) p10, any_value(m.p90) p90, ${paidHeadcount(metric)} hc,
         CASE WHEN count(*) FILTER (WHERE employee_type IS NOT NULL) = 0 THEN NULL
              ELSE count(DISTINCT person_key) FILTER (WHERE ${expr} > 0 AND employee_type = 'Regular') END AS renew
      FROM salaries JOIN m USING (snapshot_id) LEFT JOIN mp USING (snapshot_id) WHERE ${whereAll(scope, filters)} GROUP BY snapshot_id ORDER BY date`
+  );
+
+  // Each category's median per snapshot, by each person's main appointment, its spellings folded into the latest's.
+  const fold = `CASE c ${Object.entries(CATEGORY_SPELLINGS).map(([a, b]) => `WHEN ${sqlStr(a)} THEN ${sqlStr(b)}`).join(' ')} ELSE c END`;
+  const { data: catRows } = useSql<{ id: string; cat: string; med: number | null }>(
+    ['trend-cats', scope.kind, scope.kind === 'school' ? scope.value : '', metric, filterKey(filters)],
+    `WITH pe AS (${peopleSql({ metric, where: whereAll(scope, filters), by: ['snapshot_id'], extra: `${mainOf('employee_category')} c` })})
+     SELECT snapshot_id id, ${fold} cat, median(pay) FILTER (WHERE pay > 0) med FROM pe WHERE c IS NOT NULL GROUP BY 1, 2`,
+    byCat
   );
 
   const { data: summary } = useSummary();
@@ -95,20 +126,43 @@ export function TrendsPanel() {
     // In the snapshots' own order: by date alone, Nov 2021's two twins (one date) came in whatever order the
     // query returned them, and the table listed Post-TTC before Pre-TTC.
     const rows = [...(data ?? [])].sort(makeSnapshotComparator(summary?.snapshots));
-    return rows.map((r) => {
-      if (dollarMode !== 'real' || r.med == null) return r;
+    const cats = new Map<string, Record<string, number | null>>();
+    for (const r of catRows ?? []) {
+      const i = (CATS as readonly string[]).indexOf(r.cat);
+      if (i >= 0) cats.set(r.id, { ...(cats.get(r.id) ?? {}), [`c${i}`]: r.med });
+    }
+    const real = rows.map((r) => {
       const year = Number(String(r.date).slice(0, 4)) || REAL_BASE_YEAR;
-      return { ...r, med: toReal(r.med, year), med_prior: r.med_prior != null ? toReal(r.med_prior, year) : null };
-    }).map((r, i, real) => {
+      const k = (v: number | null | undefined) => (v == null ? null : dollarMode === 'real' ? toReal(v, year) : v);
+      const c = cats.get(r.id) ?? {};
+      return {
+        ...r, med: k(r.med), med_prior: k(r.med_prior), p10: k(r.p10), p90: k(r.p90),
+        ...Object.fromEntries(CATS.map((_, i) => [`c${i}`, k(c[`c${i}`])])),
+      } as Row & Record<`c${number}`, number | null>;
+    });
+    // Each line over its own first snapshot, × 100; the band over the median's.
+    const base = (key: string) => real.find((r) => (r as unknown as Record<string, number | null>)[key] != null) as unknown as Record<string, number> | undefined;
+    const by = (key: string, v: number | null, of = key) => {
+      if (!index || v == null) return v;
+      const b = base(of)?.[of];
+      return b ? (v / b) * 100 : null;
+    };
+    return real.map((r, i) => {
       const prev = real[i - 1];
       // Across a reporting change, like for like (queries `growthBetween`): the Sep 2025 step was +17.6% for
       // Faculty as reported, nearly all of it how 9-month pay is reported.
       const yoy = prev && prev.date !== r.date && prev.med != null && r.med != null && prev.med !== 0
         ? growthBetween({ date: prev.date, value: prev.med }, { date: r.date, value: r.med, prior: r.med_prior }).growth
         : null;
-      return { ...r, x: snapX(r.date, r.id), yoy };
+      const p10 = by('p10', r.p10, 'med'), p90 = by('p90', r.p90, 'med');
+      return {
+        ...r, med: by('med', r.med), p10, p90, band: p10 != null && p90 != null ? [p10, p90] as [number, number] : null,
+        ...Object.fromEntries(CATS.map((_, k) => [`c${k}`, by(`c${k}`, r[`c${k}`])])),
+        x: snapX(r.date, r.id), yoy,
+        dollars: { med: r.med, p10: r.p10, p90: r.p90, cats: CATS.map((_, k) => r[`c${k}`]) },
+      } as Plot;
     });
-  }, [data, dollarMode, summary]);
+  }, [data, catRows, dollarMode, summary, index]);
   const axis = useMemo(() => snapAxisProps(plot), [plot]);
 
   // The breaks that are not changes in pay or staff, from the one list every chart marks (snapTime's
@@ -135,9 +189,16 @@ export function TrendsPanel() {
         right={
         <Group gap="sm" wrap="wrap">
           <SegmentedToggle
-            value={hcScale}
-            onChange={(v) => setHcScale(v as 'linear' | 'log')}
-            options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
+            ariaLabel="Lines"
+            value={lines}
+            onChange={(v) => setLines(v as 'all' | 'cats')}
+            options={[{ id: 'all', label: 'Median and spread' }, { id: 'cats', label: 'By category' }]}
+          />
+          <SegmentedToggle
+            ariaLabel="Scale"
+            value={view}
+            onChange={(v) => setView(v as 'dollars' | 'index')}
+            options={[{ id: 'dollars', label: 'Dollars' }, { id: 'index', label: 'Index' }]}
           />
         </Group>
         }
@@ -151,27 +212,35 @@ export function TrendsPanel() {
           the synced crosshair, matching the same convention as Person's trend+FTE stack. */}
       <ResponsiveContainer width="100%" height={230}>
         <ComposedChart {...chartKeys(`${med} over time`)} data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 32, bottom: 0 }}>
-          <defs>{areaGradDef(gradId)}</defs>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={false} />
-          <YAxis tickFormatter={fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
-            label={{ value: med, angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
-          <Tooltip content={<TrendTip />} />
+          <YAxis tickFormatter={index ? (v: number) => String(Math.round(v)) : fmtUsd} width={92} tick={AXIS_TICK} padding={Y_PAD}
+            domain={index ? ['auto', 'auto'] : undefined}
+            label={{ value: index ? `Index, ${plot[0]?.label ?? 'first'} = 100` : med, angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-accent-6)', fontSize: 12, textAnchor: 'middle' } }} />
+          <Tooltip content={<TrendTip byCat={byCat} index={index} />} />
 
           {/* The page's period, shaded (D1): every snapshot is drawn, the period the figures and Changes read marked. */}
           {periodX && (
-            <ReferenceArea x1={periodX[0]} x2={periodX[1]} fill="var(--band-fill)" stroke="none" ifOverflow="hidden" className="trend-period" />
+            // The accent's tint, not the band's grey: the 10th–90th band is grey, and the two ran into each other.
+            <ReferenceArea x1={periodX[0]} x2={periodX[1]} fill="var(--tint-accent)" fillOpacity={0.8} stroke="none" ifOverflow="hidden" className="trend-period" />
           )}
           {ttcX != null && <ReferenceLine x={ttcX} stroke="var(--mantine-color-accent-5)" strokeDasharray="3 3" />}
           {nineX != null && <ReferenceLine x={nineX} stroke="var(--mantine-color-gray-5)" strokeDasharray="2 4" />}
 
-          {/* Median: gradient area + primary line. */}
-          <Area type="linear" dataKey="med" stroke="none" fill={`url(#${gradId}-area-grad)`} isAnimationActive={false} legendType="none" />
-          <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} {...chartAnim(!entrance)} />
+          {/* The median with its 10th–90th band, the spread a single line hid; or a line for each category. */}
+          {!byCat && <Area type="linear" dataKey="band" stroke="none" fill="var(--band-fill)" fillOpacity={1} isAnimationActive={false} legendType="none" className="trend-p10-band" connectNulls={false} />}
+          {!byCat && <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} {...chartAnim(!entrance)} />}
+          {byCat && CATS.map((c, i) => (
+            <Line key={c} type="linear" dataKey={`c${i}`} name={c} stroke={CHART_SERIES[i]} strokeWidth={2} dot={{ r: 2.5 }} connectNulls={false}
+              className={`trend-cat trend-cat-${i}`} {...chartAnim(!entrance)} />
+          ))}
+          {byCat && (
+            <Customized component={<EndLabels endSeries={CATS.map((c, i) => ({ key: `c${i}`, text: c, color: CHART_SERIES[i] }))} />} />
+          )}
 
-          {/* Change chips, drawn last so they sit above the area fill, placed together so none covers
-              another where the date axis puts snapshots close. */}
-          <Customized component={<YoyChips chipRows={plot} chipValueKey="med" chipYoyKey="yoy" chipAxis="0" chipBelow />} />
+          {/* Change chips, drawn last so they sit above the band, placed together so none covers
+              another where the date axis puts snapshots close. On the median alone. */}
+          {!byCat && <Customized component={<YoyChips chipRows={plot} chipValueKey="med" chipYoyKey="yoy" chipAxis="0" chipBelow />} />}
           {/* The TTC relabel's words and the reporting change's, placed together: on a phone they ran
               into one another. */}
           <Customized
@@ -189,7 +258,8 @@ export function TrendsPanel() {
 
       <div style={{ height: 16 }} />
 
-      <ResponsiveContainer width="100%" height={130}>
+      {/* Taller (D17): at 70px its ticks were "0 12000 24000". */}
+      <ResponsiveContainer width="100%" height={180}>
         <ComposedChart data={plot} syncId="explore-trend" margin={{ left: 12, right: 16, top: 16, bottom: 0 }}>
           <CartesianGrid {...GRID} />
           <XAxis {...axis} tick={AXIS_TICK} tickMargin={10} height={34} />
@@ -197,9 +267,6 @@ export function TrendsPanel() {
             width={92}
             tick={AXIS_TICK}
             padding={Y_PAD}
-            scale={hcScale === 'log' ? 'log' : 'auto'}
-            domain={hcScale === 'log' ? [0.5, 'auto'] : undefined}
-            allowDataOverflow={hcScale === 'log'}
             label={{ value: 'Headcount', angle: -90, position: 'insideLeft', style: { fill: 'var(--mantine-color-dimmed)', fontSize: 12, textAnchor: 'middle' } }}
           />
           <Tooltip content={() => null} />
@@ -229,11 +296,18 @@ export function TrendsPanel() {
           ? `Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).`
           : 'Nominal dollars (not inflation-adjusted).'}
         {periodFrom && periodTo ? ` Shaded: ${periodFrom.label} → ${periodTo.label}, the page's period.` : ''}
+        {!byCat ? ' The band: the middle 80% of pay, the 10th to the 90th percentile.' : ''}
+        {index ? ' Index: each line over its own first snapshot, × 100.' : ''}
+      </Text>
+      {/* Where the second line starts, said (D20): it first appeared at Sep '25 with no word why. */}
+      <Text size="xs" c="dimmed" className="renew-note">
+        Ongoing (renewable) appointments are reported from Sep 2025, so that line starts there.
+        {byCat ? ' University Staff and some trainees appear only as codes before Apr 2024, so their lines start there.' : ''}
       </Text>
       <ChartData
         caption={dollarMode === 'real' ? `${med}, headcount & renewable staff over time (in ${REAL_BASE_YEAR} dollars)` : `${med}, headcount & renewable staff over time`}
-        columns={['Snapshot', med, 'Change vs previous snapshot', 'Headcount', 'Renewable']}
-        rows={plot.map((d) => [d.label, d.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew])}
+        columns={['Snapshot', med, 'Change vs previous snapshot', 'Headcount', 'Renewable', '10th percentile', '90th percentile', ...(byCat ? CATS : [])]}
+        rows={plot.map((d) => [d.label, d.dollars.med, d.yoy == null ? '' : pct(d.yoy), d.hc, d.renew, d.dollars.p10, d.dollars.p90, ...(byCat ? d.dollars.cats : [])])}
         unit="snapshots"
         period={spanLabel(plot.map((d) => d.label))}
         about={<>

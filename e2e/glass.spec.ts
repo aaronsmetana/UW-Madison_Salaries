@@ -113,11 +113,10 @@ test.describe('the chart tooltip', () => {
  * resolves, and no id is defined twice — which stays true however the ids are generated.
  */
 test.describe('chart gradient ids', () => {
-  // The two trend charts are what still define a gradient (the wash under the line, `areaGradDef`):
-  // the bars went flat and the glow line went, so the changes, retention and school-distribution
-  // routes now carry none and the vacuity check below would (correctly) refuse them.
+  // The person's trend is what still defines a gradient (the wash under the line, `areaGradDef`): the bars
+  // went flat and the glow line went, and Divisions › Trends drew its median's wash until the 10th–90th band
+  // took its place (D19), so those routes carry none and the vacuity check below would (correctly) refuse them.
   for (const [name, route] of [
-    ['explore trends', './divisions?tab=trends'],
     ['person trend', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=trends`],
   ] as const) {
     test(`resolve, and none is defined twice: ${name}`, async ({ page }) => {
