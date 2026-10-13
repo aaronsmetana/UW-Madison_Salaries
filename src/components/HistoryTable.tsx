@@ -422,8 +422,11 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                   )}
                   {r.title ?? '—'}
                   {isNew && (
-                    <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'accent'}>
-                      {ttcReclass ? 'Reclassified (TTC)' : 'New title'}
+                    // The change column's own word (P28): "Promotion" only where the grade rose, else "Title change";
+                    // a new appointment with nothing before it is a "New title". The tag said "New title" beside a
+                    // change the column called a promotion.
+                    <Badge ml="xs" size="xs" variant="light" color={ttcReclass ? 'gray' : 'accent'} data-title-tag>
+                      {ttcReclass ? 'Reclassified (TTC)' : raise.kind === 'titleChange' ? (raise.move === 'promotion' ? 'Promotion' : 'Title change') : 'New title'}
                     </Badge>
                   )}
                   <Text className="fold-under" size="xs" c="dimmed">

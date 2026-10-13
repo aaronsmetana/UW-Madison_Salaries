@@ -11,7 +11,7 @@ import { AXIS_TICK, GRID, fmtUsd, chartKeys } from '../lib/chartStyle';
 import { EndLabels } from './chart/EndLabels';
 import { moneyTicks } from '../lib/rangeScale';
 import { usd, num } from '../lib/format';
-import { BAND_IQR, MARK_SELF } from './markers';
+import { MARK_SELF } from './markers';
 import { CardTitle } from './CardTitle';
 import { ChartData } from './ChartData';
 import { TipSurface } from './chart/ChartTooltip';
@@ -134,8 +134,10 @@ export function StartingGroup({ personKey, first }: {
           <Tooltip content={<GroupTip />} />
           {showBreak && <ReferenceLine x={brkX} stroke="var(--mantine-color-gray-4)" strokeDasharray="2 4" />}
           {/* 10th–90th, then the middle 50% drawn as it is on every chart (BAND_IQR): borderless tints (P10). */}
-          <Area dataKey="band10" stroke="none" fill={BAND_IQR.fill} isAnimationActive={false} connectNulls={false} />
-          <Area dataKey="band25" stroke="none" fill={BAND_IQR.fill} isAnimationActive={false} connectNulls={false} />
+          {/* Stronger than a tint (P29): the two bands read at a glance, the middle 50% the deeper where they overlap.
+              At full opacity — Recharts draws an Area at 0.6 unless told otherwise. */}
+          <Area dataKey="band10" stroke="none" fill="var(--band-fill-strong)" fillOpacity={1} isAnimationActive={false} connectNulls={false} />
+          <Area dataKey="band25" stroke="none" fill="var(--band-fill-strong)" fillOpacity={1} isAnimationActive={false} connectNulls={false} />
           <Line className="group-median" dataKey="median" stroke="var(--guide-strong)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
           <Line dataKey="mine" stroke={MARK_SELF} strokeWidth={2} dot isAnimationActive={false} connectNulls={false} />
           {showBreak && <Customized component={<BreakLabel at={brkX} texts={[brk.label, brk.short]} />} />}
@@ -152,6 +154,13 @@ export function StartingGroup({ personKey, first }: {
           />
         </ComposedChart>
       </ResponsiveContainer>
+      {/* What the mark on the axis means (P29): it was two words floating at Sep '25 with nothing to say why. */}
+      {showBreak && (
+        <Text size="xs" c="dimmed" mt={4} className="group-break-note">
+          The break at Sep 2025: from then the source reports a 9-month appointment&apos;s pay at its 12-month equivalent
+          (×11/9), so the lines are not joined across it, and a step over it is not a raise.
+        </Text>
+      )}
       <ChartData
         caption={`The group that started as ${first.title} in ${when}`}
         columns={['Snapshot', 'Still here', '10th', '25th', 'Median', '75th', '90th', 'This person', 'Paid more than (%)']}

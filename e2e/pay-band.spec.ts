@@ -152,8 +152,12 @@ test.describe('a pay band reads the full-time rate of the graded appointment', (
     await expect(page.getByRole('heading', { name: 'Actual pay over time' })).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('.recharts-surface').first()).toBeVisible();
     await expect(legend).toHaveCount(0);
+    // On actual pay there is no band to offer: its unit is the full-time rate.
+    await expect(page.locator('.trend-show-band')).toHaveCount(0);
     // Mantine's segmented control keeps its radios visually hidden; a reader clicks the label.
     await page.locator('label').filter({ hasText: /^Full-time rate$/ }).click();
+    // On the rate it is a layer the reader adds (P23).
+    await page.locator('.trend-show-band').click();
     await expect(legend).toHaveCount(1);
   });
 });

@@ -124,6 +124,10 @@
      ribbon on the dark card. */
   --mark-self: var(--mantine-color-accent-7);
   --mark-peer-same-school: var(--mantine-color-accent-5);
+  /* A person's own line over time and the reference beside it (P26): the person louder than the title's median in
+     both schemes. Dark had the person's line a dim teal (accent-6) under a near-white median. */
+  --trend-self: var(--mantine-color-accent-6);
+  --trend-ref: var(--mantine-color-gray-5);
   --mark-peer: #aab2b8;
   /* Each dot's 1px edge (ChartDot): the population's at 3.8:1, so every person is a mark a reader can see
      while their fill stays quiet (2.2:1); same school's a step deeper than its fill. */
@@ -180,6 +184,8 @@
      person" — bounded by two edges a reader can see (3.32:1). The wash it replaces was the accent at
      8%, 1.11:1, with no edges at all. */
   --band-fill: rgba(73, 80, 87, 0.1);
+  /* A band that is the chart's subject, not context (the start-group chart's spreads, P29). */
+  --band-fill-strong: rgba(73, 80, 87, 0.16);
   --band-edge: var(--mantine-color-gray-6);
   /* The tenure line's "on the curve" wash (FIT_BAND in markers.tsx): the line's own grey, faint, and
      edgeless, so it is never mistaken for a middle-50% band. One definition for both schemes, because
@@ -458,6 +464,8 @@ body {
   /* Chart marks on the #141619 card: 5.22 / 3.5 / 2.22 / 5.46 (see :root). */
   --mark-self: var(--mantine-color-accent-5);
   --mark-peer-same-school: var(--mantine-color-accent-6);
+  --trend-self: var(--mantine-color-accent-4);
+  --trend-ref: var(--mantine-color-gray-6);
   --mark-peer: #4a5056;
   /* 3.8:1 and 6.5:1 on the card: an edge goes lighter on a dark ground, as a light one goes darker. */
   --mark-peer-edge: #6c747b;
@@ -498,6 +506,7 @@ body {
   --strata-neutral: #41707b;
   --guide-strong: var(--mantine-color-gray-6);
   --band-fill: rgba(222, 226, 230, 0.1);
+  --band-fill-strong: rgba(222, 226, 230, 0.15);
   --band-edge: var(--mantine-color-gray-6);
 }
 
@@ -1937,6 +1946,18 @@ button:active,
 /* The raise simulator's presets: one row, scrolled sideways where it does not fit (P19). */
 .raise-presets { overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
 .raise-presets::-webkit-scrollbar { display: none; }
+
+/* "Where the difference came from" as a horizontal waterfall (GapBreakdown, P27): a label, a track the steps float
+   on, and the amount, one row per step between the typical and the actual figures. */
+.gap-waterfall { display: grid; gap: 6px; }
+.gap-row { display: grid; grid-template-columns: minmax(0, 40%) minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.gap-track { position: relative; height: 14px; }
+.gap-bar { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.gap-value { white-space: nowrap; text-align: right; min-width: 6.5em; font-variant-numeric: tabular-nums; }
+@media (max-width: 36em) {
+  .gap-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .gap-row .gap-track { grid-column: 1 / -1; grid-row: 2; }
+}
 
 /* A card's method, folded (MethodNote, G22): a quiet link-sized summary with a turning chevron, its body the
    card's small print. The summary is a finger-sized target (24px), as every control here is. */

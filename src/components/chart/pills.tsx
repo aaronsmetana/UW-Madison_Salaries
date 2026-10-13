@@ -97,11 +97,14 @@ export function YoyChips(props: {
   /** Every chip tries below its point first — for a line that runs along the top of its plot, where
    *  "above" fits only now and then and the chips would zigzag. */
   chipBelow?: boolean;
+  /** Only changes at least this large (a fraction) get a chip, besides a title change's (P24): the rest are in the
+   *  tooltip and the table. Small steps' chips sat on the median line and on each other. */
+  chipMin?: number;
   xAxisMap?: Record<string, { scale: Scale }>;
   yAxisMap?: Record<string, { scale: Scale }>;
   offset?: { left: number; top: number; width: number; height: number };
 }) {
-  const { chipRows, chipValueKey, chipYoyKey, chipAxis, chipMarks = [], chipBelow = false, xAxisMap, yAxisMap, offset } = props;
+  const { chipRows, chipValueKey, chipYoyKey, chipAxis, chipMarks = [], chipBelow = false, chipMin = 0, xAxisMap, yAxisMap, offset } = props;
   const xa = xAxisMap ? Object.values(xAxisMap)[0] : undefined;
   const ya = yAxisMap?.[chipAxis];
   if (!xa || !ya || !offset) return null;
@@ -121,6 +124,7 @@ export function YoyChips(props: {
     const d = row(i)[chipYoyKey];
     const p = at(i);
     if (typeof d !== 'number' || !p) return [];
+    if (Math.abs(d) < chipMin && !marks.has(i)) return [];
     const text = fmtChange(d);
     texts.set(i, { text, value: d });
     // Title changes first, then the largest changes: when a narrow chart cannot hold every chip,

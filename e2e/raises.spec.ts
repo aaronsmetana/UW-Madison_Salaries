@@ -77,6 +77,8 @@ test('the typical line starts after the TTC relabel and ends where every step at
     const head = (await card.innerText()).replace(/\s+/g, ' ');
     const shown = Number(head.match(/if raises had been typical \$([\d,]+)/)![1].replace(/,/g, ''));
     expect(Math.abs(shown - typical), `${pk}: ${shown} vs ${Math.round(typical)}`).toBeLessThanOrEqual(1);
+    // The path is a layer the reader adds (P23).
+    await page.locator('.trend-show-typical').click();
     await expect(page.locator('.person-trend .typical-line path.recharts-line-curve')).toBeAttached();
   }
 });
@@ -134,6 +136,7 @@ for (const scheme of ['light', 'dark'] as const) {
   test(`the typical line clears 3:1 (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await page.goto(`./person/${encodeURIComponent(AARON)}?tab=trends`);
+    await page.locator('.trend-show-typical').click({ timeout: 60_000 });
     const line = page.locator('.person-trend .typical-line path.recharts-line-curve');
     await expect(line).toBeAttached({ timeout: 60_000 });
     const card = parseColor(await page.locator('.person-trend').evaluate((e) => getComputedStyle(e.closest('.mantine-Card-root')!).backgroundColor)).slice(0, 3);
@@ -206,9 +209,11 @@ test('steps at exactly the typical raise are said to be, not folded into "smalle
      SELECT count(*) n FROM cr JOIN m USING (fr) WHERE person_key = '${AARON}' AND abs(r - med) < 0.0005`
   );
   await page.goto(`./person/${encodeURIComponent(AARON)}?tab=trends`);
-  const row = page.locator('.gap-breakdown [data-gap-row="typical"]');
+  // A note under the waterfall, not a "$0" row in it (P27).
+  const row = page.locator('.gap-breakdown [data-gap-note="typical"]');
   await expect(row).toBeVisible({ timeout: 60_000 });
   await expect(row).toContainText(`${o.n} steps at the typical raise`);
-  await expect(row).toContainText('$0');
+  await expect(row).toContainText('adding nothing');
+  await expect(page.locator('.gap-breakdown [data-gap-row="typical"]')).toHaveCount(0);
   await expect(page.locator('.gap-breakdown')).not.toContainText(/smaller steps?.*\$0$/m);
 });

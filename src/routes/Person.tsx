@@ -2,7 +2,7 @@ import { PersonSkeleton } from '../components/PersonSkeleton';
 import { PersonNotFound } from '../components/PersonNotFound';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
-import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input } from '@mantine/core';
+import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input, Chip } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
@@ -65,13 +65,15 @@ import { ICON } from '../lib/ui';
 
 import { OverflowTabsList } from '../components/OverflowTabsList';
 /** Salary-trend hover card: the title at that snapshot, actual pay, and the full-time rate breakdown. */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
+function TrendTooltip({ active, payload, onHeight }: { active?: boolean; onHeight?: (h: number) => void; payload?: { payload: { full: string; title: string | null; salary: number | null; rate?: number | null; fte?: number | null; appts?: number; med?: number | null; gap?: boolean; compare?: string | null; typical?: number | null } }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   // A gap row only breaks the line at a reporting change; there is no snapshot there to describe.
   if (d.gap || d.salary == null) return null;
   const partTime = d.rate != null && Math.round(d.rate) !== Math.round(d.salary);
+  // Its height, so a card above the pointer ends above it however many lines it has (P25).
   return (
+    <div ref={(el) => { if (el) onHeight?.(el.offsetHeight); }}>
     <TipSurface>
       <Text size="sm" fw={600}>{d.full}</Text>
       <Text size="xs" c="dimmed">Title: {d.title ?? '—'}</Text>
@@ -85,6 +87,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: { paylo
         <Text size="xs" c="dimmed">Blended across {d.appts} concurrent appointments</Text>
       )}
     </TipSurface>
+    </div>
   );
 }
 
@@ -136,11 +139,11 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
   return (
     <Group gap="lg" mt="xs" wrap="wrap">
       {item(
-        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-accent-6)" strokeWidth={2} /></svg>,
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--trend-self)" strokeWidth={2} /></svg>,
         mode === 'actual' ? 'Actual pay' : 'Full-time rate',
       )}
       {item(
-        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={2} strokeDasharray={TREND_DASH.median} /></svg>,
+        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--trend-ref)" strokeWidth={2} strokeDasharray={TREND_DASH.median} /></svg>,
         'Title median — resets at each title change',
       )}
       {hasTypical && item(
@@ -148,7 +151,7 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
         'If raises had been typical',
       )}
       {gradeBand && item(
-        <svg width={22} height={12} aria-hidden><line x1={1} y1={6} x2={21} y2={6} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} /></svg>,
+        <svg width={22} height={12} aria-hidden><rect x={1} y={2} width={20} height={8} fill="var(--band-fill)" /><line x1={1} y1={10} x2={21} y2={10} stroke="var(--guide-strong)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} /></svg>,
         // The values used to sit on the lines themselves, right-aligned — exactly where the latest
         // snapshot's chip lands, so "grade min $70,720" printed through "+3.0%".
         // A grade published with a minimum only draws that one line, and says so.
@@ -174,6 +177,21 @@ function TrendLegend({ hasTitleChange, hasFte, gradeBand, mode, hasTypical = fal
     </Group>
   );
 }
+
+/** A grade band's top above the chart (P22): named at the plot's top left, where a rising line is lowest. */
+function OffChartMax({ text, offset }: { text: string; offset?: { left: number; top: number; width: number } }) {
+  if (!offset) return null;
+  return (
+    <text className="trend-band-offchart" x={offset.left + 6} y={offset.top + 14} fontSize={CHART_FONT} fill="var(--mantine-color-dimmed)">
+      {text}
+    </text>
+  );
+}
+
+/** The trend's hover card: below a pointer above this height (or above the card's own, if taller), above one under
+ *  it (P25). Until the card has been measured, it is taken to be about TIP_H tall. */
+const TIP_H = 132;
+const TIP_FLIP_Y = 150;
 
 /** The title labels' second row, a line of chart text above the first: at 14px, two 12px titles touched. */
 const ERA_ROW = Math.round(CHART_FONT * 4 / 3);
@@ -763,13 +781,23 @@ export default function Person() {
   const trendMeasure = trendMode === 'rate' ? 'Full-time rate' : 'Actual pay';
   const trendBand = band && bandRate != null && shown != null && Math.round(shown) === Math.round(bandRate) ? band : null;
   const trendEntrance = useEntrance('person-trend');
-  // Round steps from $0 to the highest line or grade-band edge drawn (lib/rangeScale): Recharts' own
-  // read $0 / $45,000 / $90,000.
+  // The chart opens on the pay and the title median (P23); the typical-raise path and the grade band are a
+  // choice away. All of it at once — six legend entries, a chip on every point, eras, diamonds and a band —
+  // was too much to read.
+  const [showTypical, setShowTypical] = useState(false);
+  const [trendTipY, setTrendTipY] = useState<number | null>(null);
+  const [trendTipH, setTrendTipH] = useState(TIP_H);
+  const [showBand, setShowBand] = useState(false);
+  // Round steps from $0 to the highest line drawn (lib/rangeScale): Recharts' own read $0 / $45,000 / $90,000.
+  // Fitted to the person and the title median (P22), never stretched to the band's top: a $183k maximum held a
+  // $72k → $116k line flat in the lower half. The band is clipped to the plot and its top named off the chart.
   const trendTicks = useMemo(() => {
-    const vals = trendPlot.flatMap((r) => (trendMode === 'actual' ? [r.salary, r.med, r.typical] : [r.rate, r.medRate]));
-    const top = Math.max(1, ...vals.filter((v): v is number => v != null && Number.isFinite(v)), trendBand?.max ?? 0);
+    const vals = trendPlot.flatMap((r) => (trendMode === 'actual' ? [r.salary, r.med, ...(showTypical ? [r.typical] : [])] : [r.rate, r.medRate]));
+    const top = Math.max(1, ...vals.filter((v): v is number => v != null && Number.isFinite(v)));
     return moneyTicks(0, top);
-  }, [trendPlot, trendMode, trendBand]);
+  }, [trendPlot, trendMode, showTypical]);
+  const trendTop = trendTicks[trendTicks.length - 1] ?? 0;
+  const bandShown = showBand && trendBand ? trendBand : null;
 
   // The table opens on the people round the subject (AROUND either side of them), with the rest one "Show all"
   // away, and a filter over name, school and department; no scroll box inside the page (G11). It used to open
@@ -1654,7 +1682,8 @@ export default function Person() {
             this chart's x-axis. */}
         <div ref={trendBoxRef} className="person-trend">
         <ResponsiveContainer width="100%" height={fteVaries ? 244 : 300}>
-          <ComposedChart {...chartKeys(`${trendMeasure} over time`)} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}>
+          <ComposedChart {...chartKeys(`${trendMeasure} over time`)} data={trendPlot} syncId="person-trend" margin={{ left: 12, right: 30, top: eraLayout.rows === 2 ? 36 : 22, bottom: 0 }}
+            onMouseMove={(st: { chartY?: number }) => { if (st?.chartY != null) setTrendTipY(st.chartY); }}>
             <defs>{areaGradDef(gradId)}</defs>
             {/* First, so the plot surface it paints lies under the era bands rather than over them. */}
             <CartesianGrid {...GRID} />
@@ -1679,14 +1708,27 @@ export default function Person() {
               height={fteVaries ? 8 : 34}
             />
             <YAxis yAxisId="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={{ top: 6, bottom: 0 }} ticks={trendTicks} domain={[0, trendTicks[trendTicks.length - 1] ?? 'auto']} />
-            <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }} />
-            {/* The grade's official band, floor and ceiling (kept as separate siblings — Recharts does not
-                traverse a Fragment's children). Their values are in the legend. */}
-            {trendBand && (
-              <ReferenceLine yAxisId="pay" y={trendBand.min} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
+            {/* The hover card follows the pointer down the chart and flips above it in the lower half (P25): pinned to
+                the plot's top, it covered the title labels and the axis whatever was pointed at. */}
+            <Tooltip
+              content={<TrendTooltip onHeight={setTrendTipH} />}
+              cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }}
+              position={trendTipY == null ? undefined : { y: trendTipY > Math.max(TIP_FLIP_Y, trendTipH + 12) ? trendTipY - trendTipH - 12 : trendTipY + 16 }}
+              allowEscapeViewBox={{ x: false, y: true }}
+            />
+            {/* The grade's official band, on demand (P23): shading from its floor, clipped at the plot's top, which is
+                fitted to the pay rather than to the band (P22). A top above the chart is named there (below). */}
+            {bandShown && (
+              <ReferenceArea yAxisId="pay" y1={bandShown.min} y2={Math.min(bandShown.max ?? trendTop, trendTop)} fill="var(--band-fill)" stroke="none" ifOverflow="hidden" className="trend-band" />
             )}
-            {trendBand?.max != null && (
-              <ReferenceLine yAxisId="pay" y={trendBand.max} stroke="var(--mantine-color-gray-5)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="extendDomain" />
+            {bandShown && bandShown.min <= trendTop && (
+              <ReferenceLine yAxisId="pay" y={bandShown.min} stroke="var(--guide-strong)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="hidden" />
+            )}
+            {bandShown?.max != null && bandShown.max <= trendTop && (
+              <ReferenceLine yAxisId="pay" y={bandShown.max} stroke="var(--guide-strong)" strokeWidth={1} strokeDasharray={TREND_DASH.gradeBand} ifOverflow="hidden" />
+            )}
+            {bandShown?.max != null && bandShown.max > trendTop && (
+              <Customized component={<OffChartMax text={`↑ grade max ${usd(bandShown.max)}`} />} />
             )}
             {/* Title-change dividers segment the chart into title eras; each era's title sits above it
                 (the first at the left edge, which has no divider), unless they could not all fit. */}
@@ -1723,7 +1765,7 @@ export default function Person() {
                 type="linear"
                 dataKey={(d: PlotRow) => (d.era === e ? (trendMode === 'actual' ? d.med : d.medRate) : null)}
                 name="Title median"
-                stroke="var(--mantine-color-gray-5)"
+                stroke="var(--trend-ref)"
                 strokeWidth={2}
                 strokeDasharray={TREND_DASH.median}
                 dot={false}
@@ -1734,11 +1776,11 @@ export default function Person() {
             ))}
             {/* If every raise had been the campus median (lib/raiseContext) — a hypothetical, so dotted,
                 in the strong-guide grey (>=3:1), and only on actual pay, which is what it compounds. */}
-            {trendMode === 'actual' && raiseCtx.typical.size > 1 && (
+            {showTypical && trendMode === 'actual' && raiseCtx.typical.size > 1 && (
               <Line yAxisId="pay" className="typical-line" type="linear" dataKey="typical" name="If raises had been typical" stroke="var(--guide-strong)" strokeWidth={2} strokeDasharray={TREND_DASH.typical} dot={false} connectNulls={false} isAnimationActive={false} legendType="none" />
             )}
             {/* Primary line + haloed active dot. */}
-            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMeasure} stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot activeDot={<ActiveDot />} {...chartAnim(!trendEntrance)} />
+            <Line yAxisId="pay" type="linear" dataKey={trendMode === 'actual' ? 'salary' : 'rate'} name={trendMeasure} stroke="var(--trend-self)" strokeWidth={2} dot activeDot={<ActiveDot />} {...chartAnim(!trendEntrance)} />
             {titleChanges.map((t) => {
               const y = trendMode === 'actual' ? t.salary : t.rate;
               return y != null ? (
@@ -1754,6 +1796,7 @@ export default function Person() {
                   chipYoyKey={trendMode === 'actual' ? 'yoyActual' : 'yoyRate'}
                   chipAxis="pay"
                   chipMarks={markIdx}
+                  chipMin={0.03}
                 />
               }
             />
@@ -1813,7 +1856,18 @@ export default function Person() {
             the step across it is not a raise.
           </Text>
         )}
-        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={trendBand ? { grade: graded?.grade ?? null, min: trendBand.min, max: trendBand.max } : null} mode={trendMode} hasTypical={trendMode === 'actual' && raiseCtx.typical.size > 1} />
+        <TrendLegend hasTitleChange={titleChanges.length > 0} hasFte={fteVaries} gradeBand={bandShown ? { grade: graded?.grade ?? null, min: bandShown.min, max: bandShown.max } : null} mode={trendMode} hasTypical={showTypical && trendMode === 'actual' && raiseCtx.typical.size > 1} />
+        {/* The layers a reader adds (P23). Changes under 3% are in the tooltip and the table, not on the line (P24). */}
+        {((trendMode === 'actual' && raiseCtx.typical.size > 1) || trendBand) && (
+          <Group gap="xs" mt="xs" className="trend-layers">
+            {trendMode === 'actual' && raiseCtx.typical.size > 1 && (
+              <Chip size="sm" checked={showTypical} onChange={setShowTypical} className="trend-show-typical">Typical-raise path</Chip>
+            )}
+            {trendBand && (
+              <Chip size="sm" checked={showBand} onChange={setShowBand} className="trend-show-band">Grade {graded?.grade} band</Chip>
+            )}
+          </Group>
+        )}
         <ChartData
           caption={dollarMode === 'real' ? `Pay over time (in ${REAL_BASE_YEAR} dollars)` : 'Pay over time'}
           columns={['Snapshot', 'Actual pay', 'Full-time rate', 'Title median']}
