@@ -54,8 +54,9 @@ test('the hover card follows the pointer, below it high up and above it low down
   await expect(tip).toBeVisible();
   await page.waitForTimeout(250);
   const h = (await tip.boundingBox())!.height;
-  expect(h + 2 * 14 + 16, `a ${Math.round(h)}px card has no room in a ${Math.round(plot.height)}px plot`).toBeLessThanOrEqual(plot.height);
-  for (const [y, where] of [[plot.y + plot.height - 8, 'above'], [plot.y + 8, 'below']] as const) {
+  expect(h + 14 + 30, `a ${Math.round(h)}px card has no room in a ${Math.round(plot.height)}px plot`).toBeLessThanOrEqual(plot.height);
+  // Inside the plot by more than a pixel's rounding: 8px from its foot, a CI runner had the pointer off the plot.
+  for (const [y, where] of [[plot.y + plot.height - 30, 'above'], [plot.y + 24, 'below']] as const) {
     await page.mouse.move(plot.x + plot.width * 0.45, y);
     await expect(tip).toBeVisible();
     await page.waitForTimeout(250);
