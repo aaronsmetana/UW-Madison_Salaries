@@ -2,7 +2,7 @@ import { PersonSkeleton } from '../components/PersonSkeleton';
 import { PersonNotFound } from '../components/PersonNotFound';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
-import { Stack, Title, Text, Group, Button, Card, Table, Badge, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input, Chip } from '@mantine/core';
+import { Stack, Title, Text, Group, Button, Card, Table, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input, Chip } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
@@ -51,6 +51,8 @@ import { SearchBox } from '../components/SearchBox';
 import { CardTitle } from '../components/CardTitle';
 import { FactStrip } from '../components/FactStrip';
 import { StatRow, StatCell } from '../components/StatCard';
+import { PayCell, GrowthCell, GrowthNotes, TenureCell } from '../components/PersonFigures';
+import { headlineGrowth } from '../lib/growth';
 import { SpreadMark, GrowthBars } from '../components/FigureBars';
 import { CompareSetButton } from '../components/CompareSetButton';
 import { HistoryTable } from '../components/HistoryTable';
@@ -572,17 +574,9 @@ export default function Person() {
   // The reporting changes this history crosses. Their factor is inside `totalChange` and none of it
   // is pay: a 9-month member's growth jumped by ×11/9 in Sep 2025 without a dollar more.
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
-  // The headline growth, like for like: an Associate Professor's card read +55.2% while the bars under it,
-  // which leave the factor out, said +27.0%. The figure as reported is in the note under them.
-  const payLfl = totalChange != null ? (1 + totalChange) / reporting.factor - 1 : null;
-  // Where the appointment percentage moved, actual pay moved with it, so the headline is the full-time rate's
-  // growth and the FTE change is stated beside it: a 0.5 FTE Outreach Associate read "−28.9%" in red, of which
-  // the rate's share was −7.5% and the rest FTE going 0.65 → 0.2 → 0.5.
-  const firstFte = trend[0]?.fte ?? null;
-  const fteMoved = firstFte != null && lastFte != null && Math.abs(firstFte - lastFte) > 0.005;
-  const growthLfl = fteMoved && rateChange != null ? (1 + rateChange) / reporting.factor - 1 : payLfl;
-  const growthTrend: 'up' | 'down' | 'flat' | 'none' =
-    growthLfl == null ? 'none' : Math.abs(growthLfl) < 0.0005 ? 'flat' : growthLfl < 0 ? 'down' : 'up';
+  // The headline growth, like for like and on the full-time rate where the FTE moved (lib/growth): the Report
+  // works it out the same way. The figure as reported is in the note under the bars.
+  const { payLfl, firstFte, fteMoved, growth: growthLfl } = headlineGrowth(trend, reporting.factor);
 
   // One-line career summary under the header. Only surface a prior title when it's a genuine *pre-TTC* title
   // (the person's earliest record is the pre-TTC snapshot and the title differs from now) — we can't assume the
@@ -1038,25 +1032,16 @@ export default function Person() {
                 everyone with the title, how it grew against what typical raises alone would have given, and how
                 long they have been here. Pay, growth and tenure open the tab that shows them in full. */}
             <StatRow cols={{ base: 1, sm: 2, md: '1.2fr 1fr 1fr .8fr' }} label="Headline figures" className="person-figures">
-              <StatCell
+              {/* The cells the Report draws too (PersonFigures, P37); what follows the figure is this page's. */}
+              <PayCell
                 // Hourly only: the figure is the rate over a full-time year, not what was paid — the hours worked are
                 // not in the records, and "Actual pay $58,240" said they were.
                 label={hourlyOnly ? 'Annualized hourly rate' : 'Actual pay'}
+                value={lastSalary}
+                asOf={latest?.snapshot_label}
+                fte={lastFte}
                 onOpen={() => setTab('trends')}
-                aside={latest?.snapshot_label && (
-                  <Badge variant="light" color="accent" radius="xs" style={{ fontWeight: 600, flexShrink: 0 }}>
-                    {latest.snapshot_label}
-                  </Badge>
-                )}
               >
-                <Group gap={8} align="center" wrap="nowrap" mt={6}>
-                  <Text fw={700} style={{ fontSize: 40, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{usd(lastSalary)}</Text>
-                  {lastFte != null && Math.abs(lastFte - 1) > 0.005 && (
-                    <Badge variant="light" color="gray" radius="xs" style={{ fontWeight: 600 }}>
-                      {+lastFte.toFixed(2)} FTE
-                    </Badge>
-                  )}
-                </Group>
                 {latest?.title && (
                   <Text size="sm" c="dimmed" mt={4}>
                     {latest.title}{latest.comp_basis ? ` · ${fmtBasis(latest.comp_basis)} basis` : ''}
@@ -1070,7 +1055,7 @@ export default function Person() {
                 {hourlyOnly && lastSalary != null && (
                   <Text size="xs" c="dimmed" mt={2} className="hourly-rate">{hourly(lastSalary)} × 2,080 hours · hours worked are not in the records</Text>
                 )}
-              </StatCell>
+              </PayCell>
 
               {/* Where the full-time rate sits among everyone with the title (or, with "Same school", among those in
                   the person's school): the share on a lower rate, the spread it sits in, and the rank. The sentence sat in
@@ -1110,18 +1095,7 @@ export default function Person() {
                 )}
               </StatCell>
 
-              <StatCell label="Actual pay growth" onOpen={() => setTab('trends')}>
-                <Group gap={8} align="baseline" wrap="nowrap" mt={6}>
-                  <Text
-                    fw={700}
-                    c={growthLfl == null ? undefined : growthLfl < 0 ? 'down' : 'up'}
-                    style={{ fontSize: 24, lineHeight: 1.15 }}
-                    data-trend={growthTrend}
-                  >
-                    {sgnPct(growthLfl)}
-                  </Text>
-                  {spanYears != null && spanYears >= 0.1 && <Text size="xs" c="dimmed">over {fmtYears(spanYears)}</Text>}
-                </Group>
+              <GrowthCell label="Actual pay growth" value={growthLfl} years={spanYears} onOpen={() => setTab('trends')}>
                 {/* Against what typical raises alone would have given over the same steps. Across a reporting
                     change (a 9-month member's pay grew ×11/9 in Sep 2025 without a dollar more) both bars leave
                     its factor out, so they stand on the same footing; the note under them says so. */}
@@ -1150,36 +1124,18 @@ export default function Person() {
                     </>
                   );
                 })()}
-                {oldestLabel && (
-                  <Text size="xs" c="dimmed" mt={8}>
-                    {num(trend.length)} snapshot{trend.length === 1 ? '' : 's'} since {oldestLabel}{chgDiffer && !fteMoved ? ` · rate ${sgnPct(rateChange)}` : ''}
-                  </Text>
-                )}
-                {fteMoved && (
-                  <Text size="xs" c="dimmed" mt={2} className="growth-fte">
-                    Full-time rate · FTE {Math.round(firstFte! * 100)}% → {Math.round(lastFte! * 100)}% · actual pay {sgnPct(payLfl)}
-                  </Text>
-                )}
-                {reporting.changes.length > 0 && totalChange != null && (
-                  <Text size="xs" c="dimmed" mt={2} data-reporting-note>
-                    Like for like: {sgnPct(fteMoved ? rateChange : totalChange)} as reported, with the {reporting.changes[0].sinceLabel} change
-                    in {reporting.changes[0].what} (×{reporting.changes[0].ratio}), which is not pay.
-                  </Text>
-                )}
-              </StatCell>
+                <GrowthNotes
+                  snapshots={trend.length}
+                  since={oldestLabel}
+                  rateAside={chgDiffer ? rateChange : null}
+                  fte={fteMoved ? [firstFte!, lastFte!] : null}
+                  actualPay={payLfl}
+                  reported={totalChange == null ? null : fteMoved ? rateChange : totalChange}
+                  change={reporting.changes[0] ?? null}
+                />
+              </GrowthCell>
 
-              <StatCell label="Tenure" onOpen={() => setTab('history')}>
-                <Text fw={700} mt={6} style={{ fontSize: 24, lineHeight: 1.15 }}>
-                  {tenureYears == null ? '—' : (
-                    <>{tenureYears.toFixed(1)}<Text span fw={500} c="dimmed" size="sm"> yrs</Text></>
-                  )}
-                </Text>
-                {hireYear && (
-                  <Text size="xs" c="dimmed" mt={4}>
-                    Since {hireYear}{latest?.snapshot_label ? ` · as of ${latest.snapshot_label}` : ''}
-                  </Text>
-                )}
-              </StatCell>
+              <TenureCell years={tenureYears} hireYear={hireYear} asOf={latest?.snapshot_label} onOpen={() => setTab('history')} />
             </StatRow>
 
             {peer && peer.n === 1 && jobCode && (
@@ -1715,6 +1671,9 @@ export default function Person() {
               cursor={{ stroke: 'var(--mantine-color-accent-5)', strokeWidth: 1, strokeDasharray: '4 3' }}
               position={trendTipY == null ? undefined : { y: trendTipY > Math.max(TIP_FLIP_Y, trendTipH + 12) ? trendTipY - trendTipH - 12 : trendTipY + 16 }}
               allowEscapeViewBox={{ x: false, y: true }}
+              // Placed at once, not eased there: the card's measured height moves it after its first frame, and a
+              // 400ms glide left it over the pointer meanwhile (a CI runner caught it there).
+              isAnimationActive={false}
             />
             {/* The grade's official band, on demand (P23): shading from its floor, clipped at the plot's top, which is
                 fitted to the pay rather than to the band (P22). A top above the chart is named there (below). */}

@@ -128,7 +128,9 @@ test('a person’s report gives each figure once: standing in its comparison car
   const tiles = report.locator('.stat-row').first();
   await expect(tiles.locator('> *')).toHaveCount(3);
   await expect(tiles, 'a standing figure in the tiles too').not.toContainText(/more than/);
-  await expect(tiles).toContainText(/Growth since/);
+  // The Overview's own cells (P37): "Actual pay growth", signed, over the snapshots since the first.
+  await expect(tiles).toContainText(/Actual pay growth/);
+  await expect(tiles).toContainText(/snapshots since/);
   // The header names the person and their job; the figures are below it.
   await expect(report.locator('div:has(> h2)').first(), 'the header repeats a figure').not.toContainText(/%|years of salary data/);
 });

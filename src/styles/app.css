@@ -112,6 +112,9 @@
   --dur-slow: 450ms;
   --ease: cubic-bezier(.22, .8, .3, 1);
   --bar: var(--mantine-color-gray-4);
+  /* A count written on the bars (SalaryHistogram, P38): >= 4.5:1 on --bar. The body ink in light; in dark, where
+     the body ink is light and the bars mid-grey (about 2:1), the near-black base. */
+  --bar-ink: var(--mantine-color-text);
 
   /* Chart marks (markers.tsx), one per meaning and per scheme, each measured against the card.
      The scatter and the strip used the button's teal for "this person" and gray-5 for everyone
@@ -460,6 +463,7 @@ body {
      (accent-5) reads at 5.22:1, clearly brighter than bar (accent-7) at 3.09:1 — which is below AA for
      text but is a chart fill, and is relieved by the histogram's tooltip and its data table. */
   --bar: var(--mantine-color-gray-6);
+  --bar-ink: var(--base);
   --series-accent: #4f93a4;
   /* Chart marks on the #141619 card: 5.22 / 3.5 / 2.22 / 5.46 (see :root). */
   --mark-self: var(--mantine-color-accent-5);

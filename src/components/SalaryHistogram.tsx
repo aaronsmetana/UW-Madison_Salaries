@@ -11,6 +11,8 @@ import { num, pct } from '../lib/format';
 import { chartAnim, useMounted, useEntrance } from '../lib/motion';
 import { ChartData } from './ChartData';
 import { Z } from '../lib/layers';
+import { measureText, type Box } from '../lib/labelLayout';
+import { pinClearance, medianPlace as placeMedian } from '../lib/histLabels';
 
 /** What Recharts hands a bar's \`shape\`: the rectangle's own props, its datum and its index. */
 type BarShape = { payload: { lo: number; hi: number; n: number; range: string }; index: number } & RectangleProps;
@@ -29,6 +31,11 @@ const EDGE_LABEL_PITCH = 52;
  *  printed straight through the count sitting above the tallest bar — measured at 1440px, not just
  *  at phone width. */
 const MEDIAN_LABEL_BAND = 16;
+/** A count's line: chart text at line-height 1, and a pixel. */
+const COUNT_H = 12;
+/** A column at least this tall holds its count inside its top (P38), on the bricks, which cover the guides there:
+ *  above the column, the count of 5 over $125–130k sat on the dashed p75 line. */
+const COUNT_IN = 13;
 /** The tallest stack always fills roughly this plot height — brick height scales to the cohort, so a
  *  3-person maximum and a 12-person maximum both look intentional rather than stubby or towering. */
 const TARGET_PLOT_H = 200;
@@ -222,6 +229,28 @@ export function SalaryHistogram({
     const p25v = guides.length === 3 ? guides[0].value : null;
     const p75v = guides.length === 3 ? guides[2].value : null;
 
+    // Every column's count, the subject's too (P38): it went without one, the pin standing in its place. Inside the
+    // top of a column tall enough to hold it, unless the top brick is the subject's own; above it otherwise.
+    const countIn = (i: number) => colH(bins[i].n) >= COUNT_IN && !(i === markerBin && markerRank === bins[i].n - 1);
+    /** How high a column reaches, its count included where that sits above it. */
+    const reach = (i: number) => colH(bins[i].n) + (bins[i].n > 0 && !countIn(i) ? COUNT_H + 3 : 0);
+    // The subject's pin clears every column its label spans, and their counts (P38): it stood over its own column
+    // alone, so a taller neighbour's bricks or count ran into "this person". A stem joins it to its column.
+    const pinW = measureText(markerLabel, CHART_FONT) + 4;
+    const pinX = markerBin != null ? ((at(bins[markerBin].lo) + at(bins[markerBin].hi)) / 2) * plotW : 0;
+    const pinOwn = markerBin != null ? reach(markerBin) : 0;
+    const pinBase = markerBin == null || plotW <= 0
+      ? pinOwn
+      : pinClearance(bins.map((b, i) => ({ left: at(b.lo) * plotW, right: at(b.hi) * plotW, reach: reach(i) })), pinOwn, pinX, pinW);
+    // The pin's label, as a box from the plot's top left: it sits 8px over `pinBase`, 13px tall with its padding.
+    const pinBox: Box | null = markerBin != null && markerRank >= 0 && plotW > 0
+      ? { left: pinX - pinW / 2, right: pinX + pinW / 2, top: containerH - X_AXIS_H - pinBase - 8 - 13, bottom: containerH - X_AXIS_H - pinBase - 8 }
+      : null;
+    // "median" over its line, unless the pin's label is there: then beside the line, away from the pin, or a row up.
+    const medianPlace = med == null
+      ? 'over'
+      : placeMedian({ x: at(med) * plotW, width: measureText('median', CHART_FONT), top: UNIT_TOP - MEDIAN_LABEL_BAND - 14 - 2, height: COUNT_H }, pinBox, plotW);
+
     return (
       <>
         {/* `hist-plot` marks the plot area on both render paths. Its geometry comes from a measured
@@ -261,14 +290,30 @@ export function SalaryHistogram({
                 borderLeft: `${g.isMedian ? 1.5 : BAND_IQR.edgeWidth}px dashed ${g.isMedian ? GUIDE_SOFT.stroke : BAND_IQR.edge}`,
                 opacity: g.isMedian ? 0.7 : 1,
               }}
-            >
-              {g.isMedian && (
-                <Text size="xs" c="dimmed" style={{ position: 'absolute', top: -2, left: 0, transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: CHART_FONT, lineHeight: 1 }}>
-                  median
-                </Text>
-              )}
-            </div>
+            />
           ))}
+          {/* The median's word, beside its line rather than inside it: the line is drawn at 0.7, and the word with it
+              read at 3.5:1, which went unmeasured while it sat on the line. */}
+          {med != null && guides.some((g) => g.isMedian) && (
+            <Text
+              size="xs"
+              c="dimmed"
+              aria-hidden
+              className="hist-median-label"
+              data-place={medianPlace}
+              style={{
+                position: 'absolute',
+                left: `calc(${at(med) * 100}% + ${medianPlace === 'left' ? -4 : medianPlace === 'right' ? 4 : 0}px)`,
+                top: UNIT_TOP - MEDIAN_LABEL_BAND - 14 - (medianPlace === 'up' ? 16 : 2),
+                transform: medianPlace === 'left' ? 'translateX(-100%)' : medianPlace === 'right' ? 'none' : 'translateX(-50%)',
+                whiteSpace: 'nowrap',
+                fontSize: CHART_FONT,
+                lineHeight: 1,
+              }}
+            >
+              median
+            </Text>
+          )}
 
           {/* Baseline the bars sit on (columns floating in space read as unfinished). */}
           <div
@@ -289,6 +334,7 @@ export function SalaryHistogram({
                 onMouseLeave={b.n > 0 ? () => setActiveIdx(null) : undefined}
                 onClick={pick ? () => onBinClick({ lo: b.lo, hi: b.hi }) : undefined}
                 {...(pick ? binControl(b, i) : {})}
+                className={pick ? 'hist-col hist-pick' : 'hist-col'}
                 style={{
                   position: 'absolute',
                   left: `${left}%`,
@@ -308,6 +354,7 @@ export function SalaryHistogram({
                   return (
                     <div
                       key={brick}
+                      className="hist-brick"
                       style={{
                         width: '68%',
                         height: brickH,
@@ -323,13 +370,28 @@ export function SalaryHistogram({
                     />
                   );
                 })}
-                {/* Count above each bar — quiet, useful, and it fills the air over the stacks. The
-                    subject's bar shows the pin instead (rendered separately, below). */}
-                {b.n > 0 && !isMarkerCol && (
+                {/* The column's count (P38): inside its top on the bricks' own colour, so a gap between bricks never
+                    cuts a digit; above a short column on the card's, so a guide behind it breaks around the number. */}
+                {b.n > 0 && (
                   <Text
                     component="span"
-                    c="dimmed"
-                    style={{ fontSize: CHART_FONT, lineHeight: 1, marginBottom: 3, opacity: mounted ? (dimmed ? 0.4 : 0.9) : 0, transition: 'opacity var(--dur-base) var(--ease)' }}
+                    className="hist-count"
+                    data-place={countIn(i) ? 'in' : 'above'}
+                    style={{
+                      position: 'absolute',
+                      left: '50%',
+                      bottom: countIn(i) ? colH(b.n) - COUNT_H : colH(b.n) + 3,
+                      transform: 'translateX(-50%)',
+                      padding: '0 2px',
+                      borderRadius: 2,
+                      fontSize: CHART_FONT,
+                      lineHeight: 1,
+                      color: countIn(i) ? 'var(--bar-ink)' : 'var(--mantine-color-dimmed)',
+                      background: countIn(i) ? 'var(--bar)' : 'var(--mantine-color-body)',
+                      opacity: mounted ? (dimmed ? 0.4 : 1) : 0,
+                      transition: 'opacity var(--dur-base) var(--ease)',
+                      pointerEvents: 'none',
+                    }}
                   >
                     {b.n}
                   </Text>
@@ -350,15 +412,33 @@ export function SalaryHistogram({
             </Text>
           ))}
 
-          {/* Marker pin + label above the TOP of the subject's column (mid-stack anchoring overlapped
-              the bricks above it); the highlighted brick inside the stack carries the emphasis. */}
-          {markerBin != null && markerRank >= 0 && (
+          {/* Marker pin + label over the subject's column, clear of every column its label spans (`pinBase`); the
+              highlighted brick inside the stack carries the emphasis. Where it stands over a taller neighbour, a stem
+              runs down to its own column. */}
+          {markerBin != null && markerRank >= 0 && pinBase > pinOwn && (
             <div
               aria-hidden
+              className="hist-pin-stem"
               style={{
                 position: 'absolute',
                 left: `${(at(bins[markerBin].lo) + at(bins[markerBin].hi)) * 50}%`,
-                bottom: X_AXIS_H + colH(bins[markerBin].n) + 8,
+                bottom: X_AXIS_H + pinOwn + 2,
+                height: pinBase - pinOwn + 1,
+                width: 1.5,
+                marginLeft: -0.75,
+                background: MARK_SELF,
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+          {markerBin != null && markerRank >= 0 && (
+            <div
+              aria-hidden
+              className="hist-pin"
+              style={{
+                position: 'absolute',
+                left: `${(at(bins[markerBin].lo) + at(bins[markerBin].hi)) * 50}%`,
+                bottom: X_AXIS_H + pinBase + 8,
                 transform: 'translateX(-50%)',
                 pointerEvents: 'none',
               }}
@@ -376,7 +456,7 @@ export function SalaryHistogram({
                   borderTop: `7px solid ${MARK_SELF}`,
                 }}
               />
-              <Text component="span" className="accent7-text" style={{ whiteSpace: 'nowrap', fontSize: CHART_FONT, lineHeight: 1, color: MARK_SELF_TEXT, display: 'block', textAlign: 'center', paddingBottom: 2 }}>
+              <Text component="span" className="accent7-text hist-pin-label" style={{ whiteSpace: 'nowrap', fontSize: CHART_FONT, lineHeight: 1, color: MARK_SELF_TEXT, display: 'block', textAlign: 'center', paddingBottom: 2 }}>
                 {markerLabel}
               </Text>
             </div>

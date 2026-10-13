@@ -7,14 +7,16 @@ import { useSql, useGrades, useSummary } from '../lib/hooks';
 import { PayBandNote } from './PayBandNote';
 import { sqlStr } from '../lib/duckdb';
 import { latestHire, latestMain } from '../lib/personQuery';
-import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf, countedAppts, TITLE_RATE } from '../lib/queries';
+import { salaryExpr, earningsExpr, personPay, reportingAcross, standingSql, poolPercentile, gradedAppt, mainRow, mainOf, countedAppts, personRate, TITLE_RATE } from '../lib/queries';
+import { PayCell, GrowthCell, GrowthNotes, TenureCell } from './PersonFigures';
+import { headlineGrowth } from '../lib/growth';
 import { snapX, snapAxisProps, reportingBreaks, KNOWN_BREAKS } from '../lib/snapTime';
 import { titleEras, mainSwapped } from '../lib/payHistory';
 import { BreakLabels } from './chart/BreakLabel';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from './GapBreakdown';
 import { METRIC_LABEL, type Metric } from '../state/controls';
-import { usd, num, plural, fullName, spanLabel, fmtChange, fmtToday, fmtYears, fmtGrade } from '../lib/format';
+import { usd, num, fullName, spanLabel, fmtToday, fmtGrade } from '../lib/format';
 import { TipSurface } from './chart/ChartTooltip';
 import { EndLabels } from './chart/EndLabels';
 import { PeerRangeBar } from './PeerRangeBar';
@@ -26,7 +28,7 @@ import { PercentileNote } from './PercentileNote';
 import { percentile, MIN_GROUP } from '../lib/stats';
 import { CardTitle } from './CardTitle';
 import { HistoryTable } from './HistoryTable';
-import { StatCard, StatRow } from './StatCard';
+import { StatRow } from './StatCard';
 import { LoadingState } from './Loading';
 import { ICON } from '../lib/ui';
 import { chartAnim, useEntrance } from '../lib/motion';
@@ -74,10 +76,6 @@ function TrendTooltip({ active, payload, measure }: { active?: boolean; measure:
       )}
     </TipSurface>
   );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return <StatCard size="sm" label={label} value={value} sub={sub} />;
 }
 
 /**
@@ -137,7 +135,10 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         const salary = appts > 1 ? counted.reduce((s, r) => s + (r.earn ?? 0), 0) : (counted[0]?.pay ?? 0);
         const primary = mainRow(g.rows.map(asAppt))!;
         const codes = g.rows.map((r) => r.job_code);
-        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, title: primary.title, job_code: primary.job_code, codes, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
+        // The rate and the FTE as /person reads them, for the headline growth's one rule (lib/growth).
+        const rate = personRate(g.rows.map(asAppt));
+        const fte = counted.some((r) => r.fte) ? counted.reduce((s, r) => s + (r.fte ?? 0), 0) : null;
+        return { id: g.id, label: g.label, full: g.full, date: g.date, salary, rate, fte, title: primary.title, job_code: primary.job_code, codes, appts, basis: primary.comp_basis, grade: primary.grade_number, gradeBasis: primary.grade_basis };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)) || ttcRank(a.id) - ttcRank(b.id));
   }, [rows]);
@@ -180,6 +181,16 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
     return [{ key: next?.id ?? String(i), x: r.x, texts: kb ? [kb.label, kb.short] : ['pay reported differently'] }];
   }), [trendPlot]);
   const reporting = useMemo(() => reportingAcross(trend.map((t) => t.basis)), [trend]);
+  // The growth as the Overview gives it (lib/growth): on actual pay, the full-time rate's where the FTE moved. On
+  // the full-time rate, an FTE move is no part of the figure.
+  const growth = useMemo(
+    () => headlineGrowth(metric === 'fte' ? trend : trend.map((t) => ({ ...t, fte: null })), reporting.factor),
+    [trend, metric, reporting.factor]
+  );
+  const lastFte = trend[trend.length - 1]?.fte ?? null;
+  const spanYears = trend.length > 1
+    ? (new Date(trend[trend.length - 1].date).getTime() - new Date(trend[0].date).getTime()) / (365.25 * 864e5)
+    : null;
 
   // The history table's rows: the rate is the source's `salary`, whatever measure the report's figures use.
   const historyRows = useMemo(() => rows.map((r) => ({ ...r, salary: r.rate_raw })), [rows]);
@@ -294,17 +305,26 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
         </Alert>
       )}
 
-      {/* Headline figures. Where this person stands is the comparison card's, once: three tiles here said it again. */}
-      <StatRow cols={{ base: 1, sm: 3 }}>
-        <Stat label={measure} value={usd(lastSalary)} sub={latest?.snapshot_label ? `as of ${latest.snapshot_label}` : undefined} />
-        <Stat label="Tenure" value={fmtYears(tenureYears)} sub={hireYear ? `at UW since ${hireYear}` : undefined} />
-        <Stat
-          label={oldestLabel ? `Growth since ${oldestLabel}` : 'Growth'}
-          value={totalChange == null ? '—' : fmtChange(totalChange)}
-          sub={totalChange != null && reporting.changes.length
-            ? `${fmtChange((1 + totalChange) / reporting.factor - 1)} without the ${reporting.changes[0].sinceLabel} change in ${reporting.changes[0].what}`
-            : `across ${plural(trend.length, 'snapshot')}`}
+      {/* Headline figures: the Overview's own cells (PersonFigures, P37), in its order. Where this person stands is
+          the comparison card's, once: three tiles here said it again. */}
+      <StatRow cols={{ base: 1, sm: 3 }} label="Headline figures">
+        <PayCell
+          label={metric === 'fte' && lastFte == null && (lastSalary ?? 0) > 0 ? 'Annualized hourly rate' : measure}
+          value={lastSalary}
+          asOf={latest?.snapshot_label}
+          fte={metric === 'fte' ? lastFte : null}
         />
+        <GrowthCell label={`${measure} growth`} value={growth.growth} years={spanYears}>
+          <GrowthNotes
+            snapshots={trend.length}
+            since={oldestLabel}
+            fte={growth.fteMoved ? [growth.firstFte!, growth.lastFte!] : null}
+            actualPay={growth.payLfl}
+            reported={totalChange == null ? null : growth.fteMoved ? growth.rate : totalChange}
+            change={reporting.changes[0] ?? null}
+          />
+        </GrowthCell>
+        <TenureCell years={tenureYears} hireYear={hireYear} asOf={latest?.snapshot_label} />
       </StatRow>
 
       {/* Pay over time, named for the measure in force (G2): it was "Salary", a sixth name for the same figure. */}
