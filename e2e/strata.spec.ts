@@ -74,7 +74,7 @@ test('the landing page draws one square for each person, under the cap and in th
   expect(requests.filter((u) => /\.parquet|duckdb/i.test(u)), 'the landing page fetched the database').toEqual([]);
 });
 
-test('each column stands its own people from the baseline up, a few a row, sorted by salary — the same on every load', async ({ page }) => {
+test('each column stands its own people from the baseline up, a few a row, by type then salary — the same on every load', async ({ page }) => {
   await home(page);
   const { main } = await byIndex();
   const pts = await placesOf(page, 'main');
@@ -89,15 +89,17 @@ test('each column stands its own people from the baseline up, a few a row, sorte
   }
   const sorted = [...lefts.entries()].sort((a, b) => a[0] - b[0]);
   for (let k = 1; k < sorted.length; k++) expect(sorted[k][1], `column ${sorted[k][0]} starts before ${sorted[k - 1][0]}`).toBeGreaterThan(sorted[k - 1][1]);
-  // Slots fill each column from the floor with no gaps, `per` a row, and by pay from the floor up — to the $100 the
-  // page's counts know a pay by.
+  // Slots fill each column from the floor with no gaps, `per` a row, and from the floor up by type, in the legend's
+  // order (H5), then by pay — to the $100 the page's counts know a pay by.
+  const ORDER = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'];
+  const rank = (cat: string) => (ORDER.includes(cat) ? ORDER.indexOf(cat) : ORDER.length);
   const cols = new Map<number, number[]>();
   for (let i = 0; i < main.length; i++) cols.set(main[i].col, [...(cols.get(main[i].col) ?? []), i]);
   for (const [c, idx] of cols) {
     const bySlot = idx.sort((a, b) => slots[a] - slots[b]);
     expect(bySlot.map((i) => slots[i]), `column ${c}'s slots`).toEqual(bySlot.map((_, k) => k));
-    const pays = bySlot.map((i) => Math.floor(main[i].pay / 100));
-    expect(pays, `column ${c} is not sorted by salary`).toEqual([...pays].sort((a, b) => a - b));
+    const keys = bySlot.map((i) => [rank(main[i].cat), Math.floor(main[i].pay / 100)] as const);
+    expect(keys, `column ${c} is not sorted by type, then salary`).toEqual([...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
     // Up a row every `per` squares.
     const y0 = pts[2 * bySlot[0] + 1];
     bySlot.forEach((i, k) => expect(Math.abs(pts[2 * i + 1] - (y0 - Math.floor(k / per) * rowPitch))).toBeLessThan(0.01));

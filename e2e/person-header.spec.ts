@@ -67,11 +67,12 @@ test('growth sets raises against typical raises, and says what the title change 
   await expect(figures.locator('.pay-is-rate')).toHaveText('= the full-time rate, at 100% FTE');
 });
 
-test("on a phone: the table's difference under each pay, a same-school peer in words, and the details folded", async ({ page }) => {
+test("on a phone: the table's difference on each row's second line, a same-school peer in words, and the details folded", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(`./person/${encodeURIComponent(AARON)}`);
   const card = page.locator('.peer-table-card');
-  const under = card.locator('.peer-vs-under').first();
+  // At the right end of the row's own line under it (M3), the "vs." column folded away.
+  const under = card.locator('tr.fold-row .fold-row-aside').first();
   await expect(under).toBeVisible({ timeout: 60_000 });
   await expect(under).toHaveText(/^[+−]\$[\d,]+ vs\. Aaron$/);
   await expect(card.locator('td.peer-vs').first()).toBeHidden();

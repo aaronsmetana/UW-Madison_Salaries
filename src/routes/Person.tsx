@@ -17,6 +17,7 @@ import { packLabelRows, measureText } from '../lib/labelLayout';
 import { useWidth } from '../lib/useWidth';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from '../components/GapBreakdown';
+import { FoldRow, useFolded } from '../components/FoldRow';
 import { StartingGroup } from '../components/StartingGroup';
 import { PayBandNote } from '../components/PayBandNote';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
@@ -672,6 +673,8 @@ export default function Person() {
   const [cohort, setCohort] = useState<'all' | 'school'>('all');
   // The person pointed at on the overview — in the strip, the scatter or the table — shown in all three.
   const [pointed, setPointed] = useState<string | null>(null);
+  // A phone's tables: a second line under each row (components/FoldRow).
+  const folded = useFolded();
   useEffect(() => setPileShown(0), [cohort, key]);
   const sameSchoolPeers = useMemo(
     () => (peers ?? []).filter((p) => p.school != null && p.school === latest?.school),
@@ -1298,9 +1301,11 @@ export default function Person() {
                       const sameSchool = !isYou && !!p.school && p.school === latest?.school;
                       const rank = sortedCohort.indexOf(p) + 1;
                       const vs = !isYou && selfPeerPay != null ? p.pay - selfPeerPay : null;
+                      const vsText = vs == null ? null : `${vs > 0 ? '+' : vs < 0 ? '−' : ''}${usd(Math.abs(vs))}`;
+                      const open = () => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`);
                       return (
+                        <Fragment key={p.person_key}>
                         <Table.Tr
-                          key={p.person_key}
                           className={`peer-row${isYou ? ' row-this' : ''}`}
                           // Pointing at a row points at the person in both charts above; the charts point back.
                           data-pointed={pointed === p.person_key || undefined}
@@ -1309,7 +1314,7 @@ export default function Person() {
                           // Mouse convenience only — the name below is a real link, so keyboard/screen-reader
                           // users have a proper, unambiguous way in (a `role="button"` row would otherwise
                           // nest one interactive element inside another around the add button in the last cell).
-                          onClick={() => !isYou && nav(`/person/${encodeURIComponent(p.person_key)}`)}
+                          onClick={open}
                           style={{ cursor: isYou ? 'default' : 'pointer' }}
                         >
                           <Table.Td ta="right" c="dimmed" data-fold>{rank}</Table.Td>
@@ -1326,10 +1331,6 @@ export default function Person() {
                               )}
                               {isYou && <span className="viewing-pill">Viewing</span>}
                             </div>
-                            {/* On a phone: rank, school and department under the name, then the salary. */}
-                            <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
-                              #{rank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
-                            </Text>
                           </Table.Td>
                           <Table.Td data-fold title={sameSchool ? `Same school as ${name}` : undefined}>
                             <div className="peer-school">
@@ -1342,15 +1343,9 @@ export default function Person() {
                           <Table.Td data-fold ta="right" fw={isYou ? 700 : undefined}>{p.tenure != null ? fmtYears(Math.max(0, p.tenure)) : '—'}</Table.Td>
                           <Table.Td ta="right" fw={isYou ? 700 : 600}>
                             {usd(p.pay)}
-                            {/* On a phone, where the "vs." column folds away, the difference under the pay (P13). */}
-                            {vs != null && (
-                              <Text className="fold-under peer-vs-under" size="xs" c="dimmed" fw={400}>
-                                {`${vs > 0 ? '+' : vs < 0 ? '−' : ''}${usd(Math.abs(vs))} vs. ${selfLabel}`}
-                              </Text>
-                            )}
                           </Table.Td>
                           <Table.Td ta="right" data-fold c="dimmed" className="peer-vs">
-                            {vs == null ? '—' : `${vs > 0 ? '+' : vs < 0 ? '−' : ''}${usd(Math.abs(vs))}`}
+                            {vsText ?? '—'}
                           </Table.Td>
                           <Table.Td ta="right">
                             {isYou ? (
@@ -1366,6 +1361,16 @@ export default function Person() {
                             )}
                           </Table.Td>
                         </Table.Tr>
+                        {/* On a phone: rank, school and department across the row's width, and the difference (P13). */}
+                        {folded && (
+                          <FoldRow span={7} className={isYou ? 'row-this' : undefined} onClick={open}
+                            pointed={pointed === p.person_key}
+                            onPoint={(on) => setPointed((k) => (on ? p.person_key : k === p.person_key ? null : k))}
+                            aside={vsText != null ? `${vsText} vs. ${selfLabel}` : undefined}>
+                            #{rank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
+                          </FoldRow>
+                        )}
+                        </Fragment>
                       );
                     })}
                   </Table.Tbody>

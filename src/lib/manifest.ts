@@ -145,8 +145,9 @@ export async function fetchData<T>(file: string): Promise<T> {
 export interface SearchIndex {
   snapshot: string;
   label: string;
-  /** [job code, title, headcount, median actual pay, the code's other names (matched, never shown)] */
-  titles: [string, string | null, number, number | null, string[]?][];
+  /** [job code, title, headcount, median actual pay, the employee category most of its people are in, the code's
+   *  other names (matched, never shown)] */
+  titles: [string, string | null, number, number | null, string | null, string[]?][];
   /** [division, headcount, median actual pay] */
   divisions: [string, number, number | null][];
 }

@@ -1499,11 +1499,14 @@ p.mantine-Text-root[style*='text-align: right'] { margin-left: auto; }
 .tenure-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .tenure-pill[data-verdict='on'] { background: var(--tint-accent); border-color: var(--tint-accent-strong); color: var(--text-accent); }
 
-/* A chart card's tools (ChartData): About, CSV and Table, each its icon and its name. On a phone the names
-   go and the icons stay; each keeps its name for a screen reader. */
-@media (max-width: 47.99em) {
-  .chart-tool-label { display: none; }
-  .chart-tool .mantine-Button-section[data-position='left'] { margin-inline-end: 0; }
+/* A chart card's tools (ChartData): About, CSV and Table, each its icon and its name, on a phone too (M1): three
+   bare icons under every chart were easy to miss and to mistake for one another. Where the pointer is a finger,
+   each answers a press 44px tall (an invisible hit area, nothing drawn differently), the strip's height kept. */
+@media (pointer: coarse) {
+  .chart-tool { position: relative; overflow: visible; }
+  .chart-tool::after {
+    content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: 44px; transform: translate(-50%, -50%);
+  }
 }
 
 /* A page's figures in one card (StatRow): cells on a grid, parted by a pixel of each cell's own shadow above
@@ -2260,6 +2263,17 @@ button.peer-strip-pile:focus-visible { outline: 2px solid var(--mantine-color-ac
 @media print, screen and (min-width: 48.001em) {
   .fold-table .fold-under { display: none; }
 }
+/* A row's second line on a phone (components/FoldRow, M3): the row above it and it read as one row — no rule
+   between them, the row's hover on both — and the line runs the table's width, its aside at the right end. */
+.fold-table tr:has(+ .fold-row) { border-bottom: 0; }
+.fold-table tr:has(+ .fold-row) > td { padding-bottom: 2px; }
+.fold-row > td { padding-top: 0; }
+.fold-row-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fold-row-text { min-width: 0; }
+.fold-row-aside { flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+.fold-table tr:has(+ .fold-row:hover), .fold-table tr:hover + .fold-row { background-color: var(--table-highlight-on-hover-color); }
+.fold-table tr[data-pointed] + .fold-row > td { background-color: var(--hover-bg); }
+@media print { .fold-row { display: none; } }
 /* Its paper counterpart: shown only in print (print.css), where a cell marked `data-print-fold` hides. */
 .print-under { display: none; }
 /* A history on a screen too narrow for its columns (a tablet, a narrow window: the table needs 880px and
@@ -2497,7 +2511,13 @@ g.hist-pick:focus-visible path { stroke: var(--mantine-color-accent-7); stroke-w
 
 /* The panel's controls ("All · By employment type"): over its top-right corner, in the clear band
    above the curve's peak; on a phone, a row of their own above the plot, where the corner has no room. */
-.hero-dist-wrap { position: relative; }
+.hero-dist-wrap { position: relative; container-type: inline-size; }
+/* The graph's room before its people are in (StrataGraph): the plot's height (30% of its width, 400–520px; 300 on a
+   phone) and the panel's rows round it, as they measure at each width — a few pixels out, not the whole panel. */
+.hero-dist-holder { height: calc(clamp(400px, (100cqw - 34px) * 0.3, 520px) + 189px); }
+@container (max-width: 1100px) { .hero-dist-holder { height: 649px; } }
+@container (max-width: 880px) { .hero-dist-holder { height: 675px; } }
+@container (max-width: 480px) { .hero-dist-holder { height: 646px; } }
 .hero-dist-controls {
   position: absolute;
   top: 10px;
@@ -2690,6 +2710,14 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 /* Two groups: Play and its settings, then the track and the status chip. Where both do not fit one line, the
    track and chip take the next; where the track is short, its ends' names go (the chip and the toolbar say where). */
 .strata-tl-controls { display: flex; align-items: center; gap: 14px; flex: none; }
+/* Play and its speed, one control (H4): Play on the speed's own track. Play holds the width of its longest words,
+   so "Pause" while it plays never moves the track beside it. */
+.strata-play-group { display: inline-flex; align-items: center; gap: 2px; border-radius: 999px; background: var(--seg-track); flex: none; }
+.strata-play-group .mantine-SegmentedControl-root { background: none; }
+.strata-play-group .mantine-SegmentedControl-indicator { border-radius: 999px; }
+.strata-play-group .mantine-Button-root.strata-play { min-width: 11.5em; }
+/* Over the legend's right end (H4): what Play's steps colour people by, before the way to full page. */
+.strata-mode-wrap { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-right: 8px; }
 .strata-tl-progress { display: flex; align-items: center; gap: 14px; flex: 1 1 600px; min-width: 0; container-type: inline-size; }
 .strata-play, .strata-speed, .strata-mode, .strata-settings { flex: none; }
 /* The status chip (3a §11): a ring with the seconds left inside, what is happening, and when the timeline ends. */
@@ -2702,6 +2730,7 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
   flex: none; position: relative; width: 28px; height: 28px; border-radius: 50%;
   background: conic-gradient(var(--mantine-color-accent-6) var(--ring), var(--hairline-strong) 0);
 }
+.strata-status-ring[data-idle] { background: none; display: flex; align-items: center; justify-content: center; color: var(--text-faint); }
 .strata-status-count {
   position: absolute; inset: 3px; border-radius: 50%; background: var(--surface); display: flex; align-items: center; justify-content: center;
   font-size: var(--mantine-font-size-xs); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--mantine-color-text);
@@ -2715,18 +2744,20 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-status[data-compact] .strata-status-ring { width: 24px; height: 24px; }
 .strata-status[data-compact] .strata-status-count { background: var(--surface-sunken); }
 .strata-track { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; container-type: inline-size; }
-/* Under each tick (3a), on a line kept below the dots: its snapshot ("Nov 21") where the track gives each tick room,
-   else the year where each year begins ("2021", narrower "’21"); the snapshot shown in the ink. */
+/* Under each tick (3a), on a line kept below the dots: its snapshot ("Nov 21"), the one shown in the ink. One form
+   at every width (I13): where the track gives a tick too little room, every other label, the first and the last
+   kept, and the one shown always, its neighbours making room for it. */
 .strata-track-dots { margin-bottom: 13px; }
 .strata-tick-label {
   position: absolute; top: 100%; left: 50%; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
   font-size: var(--mantine-font-size-xxs); line-height: 13px; color: var(--text-faint); font-variant-numeric: tabular-nums;
 }
 .strata-track-dot[data-state='now'] .strata-tick-label { color: var(--mantine-color-text); font-weight: 600; }
-.strata-tick-full, .strata-tick-year, .strata-tick-yy { display: none; }
-@container (min-width: 560px) { .strata-tick-full { display: inline; } }
-@container (min-width: 360px) and (max-width: 559.98px) { .strata-tick-year { display: inline; } }
-@container (max-width: 359.98px) { .strata-tick-yy { display: inline; } }
+@container (max-width: 559.98px) {
+  .strata-track-dot:nth-child(even):not([data-state='now']) .strata-tick-label,
+  .strata-track-dot:has(+ .strata-track-dot[data-state='now']) .strata-tick-label,
+  .strata-track-dot[data-state='now'] + .strata-track-dot .strata-tick-label { visibility: hidden; }
+}
 /* The hint (3a): after the count in the toolbar, one line, cut short with an ellipsis where the room runs out. On a
    phone, under the count, two lines at most; left out of full page, whose plot has the room. */
 .strata-hint { flex: 1 1 0; min-width: 0; margin: 0 0 0 14px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2975,19 +3006,21 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 /* "Show on full page graph" on a title or division row of the page's own search: the way from searching for
    a group to seeing it on the full page's graph. There on every such row, and in the accent on every one, so
-   a reader finds there is a full page graph; filled on the row they are on. It sits beside the row's short
-   line — the count and the median — so the name above keeps the row's width: beside the name, "School of
-   Medicine and Public Health" ran out of room at 1440px. */
+   a reader finds there is a full page graph; filled on the row they are on. An icon, its words on hover (H8).
+   It sits beside the row's short line — the category, count and median — so the name above keeps the row's
+   width: beside the name, "School of Medicine and Public Health" ran out of room at 1440px. */
 [data-showable] { position: relative; }
-[data-showable] .search-row-sub { padding-right: 196px; }
+[data-showable] .search-row-sub { padding-right: 40px; }
 .search-show-on-graph {
   position: absolute;
-  bottom: 11px;
+  bottom: 9px;
   right: 10px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--mantine-color-accent-6) 55%, transparent);
   border-radius: 999px;
   background: var(--mantine-color-accent-light);
@@ -3244,9 +3277,25 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 .home { padding-block: 0 clamp(24px, 6vh, 64px); }
 /* The page's header, on the same left edge as the panel under it: the title and its lead. Which release
    the page holds is beside the app's name, on every page (`.release-tag`). */
-.home-head { margin-bottom: 4px; }
+.home-head { margin-bottom: 4px; display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 12px; }
 .home-head-main { min-width: 0; }
 .home-lead { margin-top: 2px; }
+/* The search beside the title where both fit (H1, H2): in the half of the hero the title's two lines left
+   empty, its foot on the lead's last line. Narrower, under the lead, the page's width. */
+@media (min-width: 62em) {
+  .home-head { grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); column-gap: 40px; align-items: end; }
+}
+.home-head-search { min-width: 0; }
+/* The facts at the page's foot (H6): all at once, a phrase each by a quiet dot, two columns where they fit. Run
+   together on one wrapping line, a wrapped fact began with the dot that parted it from the last. */
+.home-facts {
+  margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 4px 28px;
+  font-size: var(--mantine-font-size-xs); line-height: 1.55; color: var(--mantine-color-dimmed);
+}
+.home-facts li { position: relative; padding-left: 12px; }
+.home-facts li::before {
+  content: ''; position: absolute; left: 1px; top: calc(0.775em - 2px); width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint);
+}
 /* The figures under the search, read as phrases: "22,009 employees", hairlines between them, and the way
    to every school and title at the line's end. */
 .home-stats {

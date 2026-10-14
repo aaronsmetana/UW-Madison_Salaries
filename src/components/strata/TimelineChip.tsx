@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { IconSortAscending } from '@tabler/icons-react';
 import { chipState, type ChipInput } from '../../lib/timelineChip';
 import { MOTION, prefersReducedMotion } from '../../lib/motion';
 
@@ -20,6 +21,9 @@ export function TimelineChip({ input, compact = false }: { input: Omit<ChipInput
     return () => window.clearInterval(id);
   }, [live, input.phase, input.rest, input.fade]);
   const st = chipState({ ...input, now: performance.now() });
+  // At rest ("Sorted by …", "Paused · …") nothing counts and nothing turns: a sort mark where the ring is (H3), not an
+  // empty ring that read as an unchecked radio button.
+  const idle = !live && !st.count;
 
   const ringRef = useRef<HTMLSpanElement>(null);
   const { from, to, start, end, linear } = st.ring;
@@ -36,8 +40,8 @@ export function TimelineChip({ input, compact = false }: { input: Omit<ChipInput
 
   return (
     <div className="strata-status" data-compact={compact || undefined} data-count={st.count || undefined}>
-      <span ref={ringRef} className="strata-status-ring" aria-hidden>
-        <span className="strata-status-count">{st.count}</span>
+      <span ref={ringRef} className="strata-status-ring" aria-hidden data-idle={idle || undefined}>
+        {idle ? <IconSortAscending size={16} stroke={1.8} /> : <span className="strata-status-count">{st.count}</span>}
       </span>
       <span className="strata-status-text">
         <span className="strata-status-label">{st.label}</span>

@@ -12,7 +12,15 @@ export interface TitleHit {
   title: string;
   n: number;
   med: number | null;
+  /** The employee category most of its people are in. */
+  cat: string | null;
 }
+
+/**
+ * A job code ending in N is a title's non-exempt twin: overtime-eligible under the FLSA (every holder of one is
+ * recorded non-exempt). Said where the code alone is all that tells two titles of one name apart.
+ */
+export const isNonExemptCode = (code: string) => /\dN$/.test(code);
 
 export interface DivisionHit {
   school: string;
@@ -50,7 +58,7 @@ const byRank = <T extends { n: number }>(a: { rank: number; hit: T; name: string
 export function matchTitles(index: SearchIndex | undefined, q: string, limit: number = GROUP_LIMIT.titles): TitleHit[] {
   if (!index || norm(q).length < 2) return [];
   const out: { rank: number; hit: TitleHit; name: string }[] = [];
-  for (const [code, title, n, med, former] of index.titles) {
+  for (const [code, title, n, med, cat, former] of index.titles) {
     const byCode = norm(code) === norm(q) ? 0 : norm(code).startsWith(norm(q)) ? 1 : null;
     const byName = matchRank(title ?? '', q);
     const byFormer = (former ?? []).reduce<number | null>((best, f) => {
@@ -58,7 +66,7 @@ export function matchTitles(index: SearchIndex | undefined, q: string, limit: nu
       return r == null ? best : Math.min(best ?? 9, r + 0.5);
     }, null);
     const rank = Math.min(byCode ?? 9, byName ?? 9, byFormer ?? 9);
-    if (rank < 9) out.push({ rank, hit: { code, title: title ?? code, n, med }, name: title ?? code });
+    if (rank < 9) out.push({ rank, hit: { code, title: title ?? code, n, med, cat }, name: title ?? code });
   }
   return out.sort(byRank).slice(0, limit).map((x) => x.hit);
 }

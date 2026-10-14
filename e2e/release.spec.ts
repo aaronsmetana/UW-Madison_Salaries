@@ -328,12 +328,12 @@ test.describe('the newest release, said', () => {
   });
 
   test('search finds a title by its former wording, and names it as it reads now', async ({ page }) => {
-    const index = read<{ titles: [string, string | null, number, number | null, string[]?][] }>('search-index.json');
+    const index = read<{ titles: [string, string | null, number, number | null, string | null, string[]?][] }>('search-index.json');
     // The largest title whose old wording shares no word with its new one: only the alias can find it.
     const words = (t: string) => new Set(t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1));
     const pick = index.titles
-      .filter((t) => t[4]?.length && t[1])
-      .map((t) => ({ code: t[0], title: t[1]!, n: t[2], was: t[4]!.find((f) => [...words(f)].every((w) => ![...words(t[1]!)].some((x) => x.startsWith(w)))) }))
+      .filter((t) => t[5]?.length && t[1])
+      .map((t) => ({ code: t[0], title: t[1]!, n: t[2], was: t[5]!.find((f) => [...words(f)].every((w) => ![...words(t[1]!)].some((x) => x.startsWith(w)))) }))
       .filter((t) => t.was)
       .sort((a, b) => b.n - a.n)[0];
     expect(pick, 'no retitled job reads wholly differently, so the alias is untested').toBeTruthy();

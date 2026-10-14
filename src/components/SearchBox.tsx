@@ -9,7 +9,7 @@ import { personPay, latestMainOf } from '../lib/queries';
 import { fullName, usd, num } from '../lib/format';
 import { fmtK } from '../lib/chartStyle';
 import { snapX, reportingBreaks } from '../lib/snapTime';
-import { ALL_KINDS, GROUP_LIMIT, matchTitles, matchDivisions, enterPick, type SearchKind, type TitleHit, type DivisionHit } from '../lib/search';
+import { ALL_KINDS, GROUP_LIMIT, matchTitles, matchDivisions, enterPick, isNonExemptCode, type SearchKind, type TitleHit, type DivisionHit } from '../lib/search';
 import { DROPDOWN_TIERS, type DropdownSize } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
 import { Sparkline } from './chart/Sparkline';
@@ -176,6 +176,7 @@ export function SearchBox({
   onListOpen,
   listLimit,
   whileFocused = false,
+  listMinWidth,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -239,10 +240,14 @@ export function SearchBox({
    *  over something the reader is looking at, as the landing box's does on a phone, where it sits above the
    *  graph. A press on one of its rows keeps the focus in the box, so the list is still there to take it. */
   whileFocused?: boolean;
+  /** The list at least this wide (list only), where the box is narrower than its two columns want — the landing
+   *  box beside the title. It then hangs from the box's right edge as a card of its own, a little below the box. */
+  listMinWidth?: number;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
   const narrow = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
+  const roomy = useMediaQuery(`(min-width: ${(listMinWidth ?? 0) + 24}px)`, false, { getInitialValueInEffect: false }) ?? false;
   const large = size === 'lg';
   const bar = results === 'bar';
   const grouped = kinds.some((k) => k !== 'people');
@@ -757,18 +762,24 @@ export function SearchBox({
 
   // "Show on full page graph" on a title or division row: part of the option, not a control inside it — a focusable
   // button in an option is an interactive element where only the option may be — so it is hidden from the
-  // accessibility tree, and the keyboard's way to it (Shift+Enter) is said on the box instead.
+  // accessibility tree, and the keyboard's way to it (Shift+Enter) is said on the box instead. An icon with its
+  // words on hover (H8): the words on every row said the same thing six times over.
   const showable = !!onShowOnGraph;
   const showMark = (i: number) => showable && (
-    <span
-      className="search-show-on-graph"
-      aria-hidden
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={(e) => { e.stopPropagation(); e.preventDefault(); showOnGraph(items[i]); }}
-    >
-      Show on full page graph <IconArrowsMaximize size={ICON.compact} />
-    </span>
+    <Tooltip label="Show on full page graph" withArrow openDelay={250} position="left">
+      <span
+        className="search-show-on-graph"
+        aria-hidden
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => { e.stopPropagation(); e.preventDefault(); showOnGraph(items[i]); }}
+      >
+        <IconArrowsMaximize size={ICON.compact} />
+        <span className="visually-hidden">Show on full page graph</span>
+      </span>
+    </Tooltip>
   );
+  // A title's line says which employees hold it (H7), and a non-exempt twin says so: "Outreach Specialist" is
+  // OE009 and OE009N, and the code was all that told the two apart.
   const titleRow = (h: TitleHit, i: number) => (
     <UnstyledButton key={items[i].key} {...optionProps(i, items[i])} data-showable={showable || undefined}>
       <Group wrap="nowrap" gap="xs" align="center" style={{ minWidth: 0 }}>
@@ -776,7 +787,11 @@ export function SearchBox({
         <span className="code-pill">{h.code}</span>
       </Group>
       <Text fz={t.subFont} c="dimmed" mt={1} className="search-row-sub">
-        {num(h.n)} {h.n === 1 ? 'person' : 'people'}{h.med != null ? ` · median ${usd(h.med)}` : ''}
+        {[
+          h.cat || isNonExemptCode(h.code) ? <span key="k" className="search-title-kind">{[h.cat, isNonExemptCode(h.code) ? (h.cat ? 'non-exempt' : 'Non-exempt') : null].filter(Boolean).join(', ')}</span> : null,
+          `${num(h.n)} ${h.n === 1 ? 'person' : 'people'}`,
+          h.med != null ? `median ${usd(h.med)}` : null,
+        ].filter(Boolean).flatMap((x, k) => (k ? [' · ', x] : [x]))}
       </Text>
       {showMark(i)}
     </UnstyledButton>
@@ -1037,12 +1052,15 @@ export function SearchBox({
     );
   }
 
+  // Wider than the box (`listMinWidth`), where the screen has the room: a card of its own under the box's right
+  // edge, not the box's continuation.
+  const wide = !!listMinWidth && !bar && roomy;
   return (
     <Popover
       opened={!!opened}
-      width="target"
-      position="bottom-start"
-      offset={0}
+      width={wide ? undefined : 'target'}
+      position={wide ? 'bottom-end' : 'bottom-start'}
+      offset={wide ? 6 : 0}
       radius={t.radius}
       withinPortal
       // Mantine would otherwise hang `aria-haspopup`, `aria-expanded` and `aria-controls` on the target
@@ -1063,7 +1081,8 @@ export function SearchBox({
         shift: true,
         size: {
           padding: 12,
-          apply({ availableHeight, elements }) {
+          apply({ availableHeight, elements, rects }) {
+            if (wide) elements.floating.style.width = `${Math.round(Math.max(rects.reference.width, Math.min(listMinWidth!, window.innerWidth - 24)))}px`;
             const cap = listLimitRef.current?.();
             const below = targetRef.current?.getBoundingClientRect().bottom;
             const room = cap != null && below != null
@@ -1136,12 +1155,15 @@ export function SearchBox({
           // people column off above its sixth row on the landing box.
           // The listbox inside scrolls, not this (app.css, .search-dropdown).
           maxHeight: `min(${grouped ? Math.max(t.maxDropdown, GROUPED_MAX_HEIGHT[size]) : t.maxDropdown}px, var(--search-room, 100vh))`,
-          // Flat top flush against the input; bottom radius pairs with the input; one continuous card.
-          borderTopLeftRadius: 0,
-          borderTopRightRadius: 0,
-          borderTopWidth: 0,
-          borderBottomLeftRadius: t.radius,
-          borderBottomRightRadius: t.radius,
+          // Flat top flush against the input; bottom radius pairs with the input; one continuous card. Wider than
+          // the box, a card of its own, rounded all round.
+          ...(wide ? { borderRadius: t.radius } : {
+            borderTopLeftRadius: 0,
+            borderTopRightRadius: 0,
+            borderTopWidth: 0,
+            borderBottomLeftRadius: t.radius,
+            borderBottomRightRadius: t.radius,
+          }),
           borderColor: CARD_BORDER,
           boxShadow: CARD_SHADOW,
         }}

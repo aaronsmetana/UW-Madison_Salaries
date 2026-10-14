@@ -104,21 +104,21 @@ for (const over of [false, true]) {
 }
 
 for (const [width, height] of [[1440, 900], [1280, 720]] as const) {
-  test(`the list opens below the box, and the graph stays in view above it (${width}x${height})`, async ({ page }) => {
-    // Flipped up, the list covered the whole graph at 1440x900 — every dot it had just marked.
+  test(`the list opens below the box, over the plot's top half, never past it; the page holds still (${width}x${height})`, async ({ page }) => {
+    // Flipped up, a list covered the whole graph at 1440x900 — every dot it had just marked. The box is above
+    // the graph now (H1), its list over the plot's top half, the lower half in sight with its marks.
     await page.setViewportSize({ width, height });
     await home(page);
     await searchBox(page).fill('smith');
     await expect(page.locator('.hero-dots')).toHaveAttribute('data-marks', /./, { timeout: 60_000 });
     await page.waitForTimeout(800);
     const list = (await page.locator('.search-dropdown').boundingBox())!;
+    const box = (await searchBox(page).boundingBox())!;
     const plot = (await page.locator('.hero-dist-main').boundingBox())!;
-    const header = (await page.locator('.mantine-AppShell-header').boundingBox())!;
-    expect(list.y, 'the list covers the graph').toBeGreaterThanOrEqual(plot.y + plot.height);
-    expect(plot.y, 'the graph was scrolled under the header').toBeGreaterThanOrEqual(header.y + header.height - 1);
-    // Where the window has the height for it, the page made the list room to show its rows — as much as
-    // it can with the graph still whole above it (241px at 1440x900; unscrolled, under 60).
-    if (height >= 900) expect(height - list.y, 'the list was left no room below the box').toBeGreaterThanOrEqual(200);
+    expect(list.y, 'the list is not below the box').toBeGreaterThanOrEqual(box.y + box.height);
+    expect(list.y + list.height, 'the list reaches past the middle of the plot').toBeLessThanOrEqual(plot.y + plot.height / 2 + 1);
+    expect(list.height, 'the list was left no room').toBeGreaterThanOrEqual(110);
+    expect(await page.evaluate(() => scrollY), 'the page moved to make room').toBe(0);
     // The marks go with the text.
     await searchBox(page).fill('');
     await expect(page.locator('.hero-dots')).not.toHaveAttribute('data-marks', /./);
@@ -399,8 +399,11 @@ test('the search goes full page with the graph: one box, the query kept, the dot
   const before = (await marksOf(page, '.hero-dots')).length;
   expect(before, 'nobody was marked to begin with').toBeGreaterThan(1);
   await expect(page.locator('.hero-found-label')).toHaveCount(before);
-  // On the page, the list is open: that is what typing does.
+  // On the page, the list is open: that is what typing does. It lies over the graph's top, its way to full page
+  // with it; away from the box, it goes, the marks staying.
   expect(await page.getByRole('option').count()).toBeGreaterThan(0);
+  await page.locator('.home-lead').click();
+  await expect(searchBox(page)).toHaveAttribute('aria-expanded', 'false');
 
   const leaderEnds = () => page.locator('.hero-found-leaders line').evaluateAll((els) => els.map((el) => ({
     x: Number(el.getAttribute('x1')), y: Number(el.getAttribute('y1')),

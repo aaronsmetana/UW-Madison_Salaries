@@ -18,15 +18,23 @@ const people = (src, snap, col) =>
 
 /**
  * Every title held in the snapshot: its job code, its most common name, headcount and median, as the
- * title page states them. Ties are broken by name, never by scan order, so the same data builds the
- * same file — `mode()` and `any_value()` picked a different spelling from run to run.
+ * title page states them, and the employee category most of its people are in — so two titles of one name
+ * (Outreach Specialist, OE009 and OE009N) are told apart by more than a code. Ties are broken by name,
+ * never by scan order, so the same data builds the same file — `mode()` and `any_value()` picked a
+ * different spelling from run to run.
  */
 export const titlesQuery = (src, snap) =>
   `WITH pe AS (${people(src, snap, 'job_code')}),
         spellings AS (SELECT job_code, title, count(*) c FROM pe WHERE title IS NOT NULL GROUP BY job_code, title),
-        named AS (SELECT job_code, first(title ORDER BY c DESC, title) title FROM spellings GROUP BY job_code)
-   SELECT job_code code, any_value(named.title) title, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med
-   FROM pe LEFT JOIN named USING (job_code)
+        named AS (SELECT job_code, first(title ORDER BY c DESC, title) title FROM spellings GROUP BY job_code),
+        kinds AS (
+          SELECT job_code, employee_category k, count(DISTINCT person_key) c FROM ${src}
+          WHERE snapshot_id = '${snap}' AND job_code IS NOT NULL AND employee_category IS NOT NULL AND salary > 0 GROUP BY job_code, employee_category
+        ),
+        kind AS (SELECT job_code, first(k ORDER BY c DESC, k) k FROM kinds GROUP BY job_code)
+   SELECT job_code code, any_value(named.title) title, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med,
+          any_value(kind.k) category
+   FROM pe LEFT JOIN named USING (job_code) LEFT JOIN kind USING (job_code)
    GROUP BY job_code HAVING count(*) FILTER (WHERE pay > 0) > 0 ORDER BY n DESC, code`;
 
 /**
@@ -54,7 +62,7 @@ export const divisionsQuery = (src, snap) =>
 
 /**
  * What search can offer before the database loads: titles and divisions in the latest snapshot, as
- * compact rows — `[code, title, headcount, median, former names?]` and `[division, headcount, median]`.
+ * compact rows — `[code, title, headcount, median, category, former names?]` and `[division, headcount, median]`.
  */
 export function computeSearchIndex(parquetPath, latest) {
   return new Promise((resolve, reject) => {
@@ -71,7 +79,7 @@ export function computeSearchIndex(parquetPath, latest) {
       return {
         snapshot: latest.snapshot_id,
         label: latest.snapshot_label,
-        titles: titles.map((r) => [r.code, r.title, Number(r.n), usd(r.med), ...(former.has(r.code) ? [former.get(r.code)] : [])]),
+        titles: titles.map((r) => [r.code, r.title, Number(r.n), usd(r.med), r.category ?? null, ...(former.has(r.code) ? [former.get(r.code)] : [])]),
         divisions: divisions.map((r) => [r.school, Number(r.n), usd(r.med)]),
       };
     })()

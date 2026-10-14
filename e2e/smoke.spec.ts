@@ -393,7 +393,8 @@ test.describe('the landing distribution', () => {
           outside.push({ text: (n.textContent ?? '').trim().slice(0, 30), size: parseFloat(getComputedStyle(el).fontSize), inTitle: !!el.closest('h1') });
         }
         return {
-          room, chart: w('.hero-dist'), search: w('.hero-search-input'), plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height, plotW: w('.hero-dist-main'),
+          room, chart: w('.hero-dist'), search: w('.hero-search-input'),
+          searchRight: document.querySelector('.hero-search-input')!.getBoundingClientRect().right, chartRight: document.querySelector('.hero-dist')!.getBoundingClientRect().right, plotH: document.querySelector('.hero-dist-main')!.getBoundingClientRect().height, plotW: w('.hero-dist-main'),
           searchFont: parseFloat(getComputedStyle(document.querySelector('.hero-search-input')!).fontSize),
           title: parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),
           under: [...sizes('.home-stat-value'), ...sizes('.home-stat-label'), ...sizes('.home-stats-browse'), ...sizes('.showcase-title'), ...sizes('.showcase-blurb')],
@@ -405,7 +406,9 @@ test.describe('the landing distribution', () => {
     const wide = await read(2560);
     for (const [name, r] of [['1440px', laptop], ['2560px', wide]] as const) {
       expect(Math.abs(r.chart - r.room), `at ${name} the chart is ${r.chart}px of ${r.room}px`).toBeLessThanOrEqual(1);
-      expect(Math.abs(r.search - r.room), `at ${name} the search is ${r.search}px of ${r.room}px`).toBeLessThanOrEqual(1);
+      // The search beside the title (H1, H2): the hero's right half at most, its right edge the chart's.
+      expect(r.search, `at ${name} the search is ${r.search}px of ${r.room}px`).toBeLessThanOrEqual(461);
+      expect(Math.abs(r.searchRight - r.chartRight), `at ${name} the search does not end where the chart does`).toBeLessThanOrEqual(1);
       expect(r.under.length, `at ${name} the figures and links under the search are not there to measure`).toBeGreaterThanOrEqual(14);
       for (const s of r.under) expect(s, `at ${name} something under the search is set larger than the search itself`).toBeLessThanOrEqual(r.searchFont);
       // The title's own words, whatever they say, and nothing else.

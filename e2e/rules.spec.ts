@@ -555,8 +555,8 @@ test.describe('Phones — the figure sits beside the name', () => {
     await page.setViewportSize(PHONE);
     await page.goto('./divisions?tab=earners');
     await figureInView(page.locator('table', { has: page.getByRole('button', { name: 'Sort by Actual pay' }) }), /^Actual pay$/i);
-    // The rank, title and school are still there, under the name.
-    await expect(page.locator('.earner-row').first().locator('.fold-under')).toContainText(/^#1 · /);
+    // The rank, title and school are still there, on the row's second line.
+    await expect(page.locator('tr.earner-row + tr.fold-row').first()).toContainText(/^#1 · /);
   });
 
   test("the tray's buttons are on screen", async ({ page }) => {

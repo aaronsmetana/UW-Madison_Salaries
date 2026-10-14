@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { Fragment, useId, useMemo, useState } from 'react';
 import { Group, Text, Table, Anchor, ScrollArea, TextInput, Stack, Tooltip, MultiSelect, VisuallyHidden, Chip, Portal } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
@@ -21,6 +21,7 @@ import { SortableTh, type SortState } from './SortableTh';
 import { GLOSSARY } from '../lib/glossary';
 import { EmptyState } from './EmptyState';
 import { ICON } from '../lib/ui';
+import { FoldRow, useFolded } from './FoldRow';
 
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
@@ -92,6 +93,7 @@ export function EarnersPanel() {
   );
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<SortState<SortKey>>({ key: 'pay', dir: 'desc' });
+  const folded = useFolded();
 
   const { data: earnersRaw } = useSql<EarnerRow>(
     ['top-earners', snap ?? '', scope.kind, scopeVal, metric, fk, limit, exclude.join('|')],
@@ -237,7 +239,8 @@ export function EarnersPanel() {
             {view.map((e) => {
               const realRank = payRank.get(e.person_key) ?? 0;
               return (
-                <Table.Tr key={e.person_key} className="peer-row earner-row" data-school={e.school ?? ''}>
+                <Fragment key={e.person_key}>
+                <Table.Tr className="peer-row earner-row" data-school={e.school ?? ''}>
                   <Table.Td ta="right" data-fold>
                     <Text span c="dimmed">{realRank}</Text>
                   </Table.Td>
@@ -248,11 +251,6 @@ export function EarnersPanel() {
                   )}
                   <Table.Td>
                     <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>{fullName(e.fn, e.ln)}</Anchor>
-                    {/* On a phone: rank, title, school and a part-time FTE under the name, then the pay. */}
-                    <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
-                      #{realRank} · {e.title ?? '—'} · {e.school ?? '—'}
-                      {e.fte != null && Math.abs(e.fte - 1) > 0.005 ? ` · FTE ${e.fte.toFixed(2)}` : ''}
-                    </Text>
                   </Table.Td>
                   <Table.Td data-fold>
                     {e.job_code
@@ -289,6 +287,14 @@ export function EarnersPanel() {
                     />
                   </Table.Td>
                 </Table.Tr>
+                {/* On a phone: rank, title, school and a part-time FTE across the row's width (M3). */}
+                {folded && (
+                  <FoldRow span={prevSnap ? 8 : 7}>
+                    #{realRank} · {e.title ?? '—'} · {e.school ?? '—'}
+                    {e.fte != null && Math.abs(e.fte - 1) > 0.005 ? ` · FTE ${e.fte.toFixed(2)}` : ''}
+                  </FoldRow>
+                )}
+                </Fragment>
               );
             })}
           </Table.Tbody>

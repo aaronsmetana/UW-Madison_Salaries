@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { matchRank, matchTitles, matchDivisions, enterPick, likeness, closeMatches } from './search';
+import { matchRank, matchTitles, matchDivisions, enterPick, likeness, closeMatches, isNonExemptCode } from './search';
 import type { SearchIndex } from './manifest';
 
 const INDEX: SearchIndex = {
   snapshot: '2026-03',
   label: 'Mar 2026',
   titles: [
-    ['FA020', 'Professor', 1251, 216964],
-    ['IT037', 'System Engineer I', 3, 65649],
-    ['IT038', 'System Engineer II', 24, 80688],
-    ['IT039', 'System Engineer III', 42, 102385],
-    ['IT040', 'System Engineer IV', 48, 116991],
-    ['IT050', 'Systems Analyst', 60, 90000],
-    ['FA040', 'Assistant Professor', 654, 139321],
+    ['FA020', 'Professor', 1251, 216964, 'Faculty'],
+    ['IT037', 'System Engineer I', 3, 65649, 'Academic Staff'],
+    ['IT038', 'System Engineer II', 24, 80688, 'Academic Staff'],
+    ['IT039', 'System Engineer III', 42, 102385, 'Academic Staff'],
+    ['IT040', 'System Engineer IV', 48, 116991, 'Academic Staff'],
+    ['IT050', 'Systems Analyst', 60, 90000, 'Academic Staff'],
+    ['FA040', 'Assistant Professor', 654, 139321, 'Faculty'],
     // Written out in full in Sep 2026: its former name is a search alias.
-    ['AD101', 'Administrative Assistant Director', 12, 70000, ['Admin Asst Dir']],
-    ['AD102', 'Assistant Director of Admissions', 40, 72000],
+    ['AD101', 'Administrative Assistant Director', 12, 70000, 'Academic Staff', ['Admin Asst Dir']],
+    ['AD102', 'Assistant Director of Admissions', 40, 72000, 'Academic Staff'],
   ],
   divisions: [
     ['School of Medicine and Public Health', 5840, 72107],
@@ -42,7 +42,7 @@ describe('matchTitles', () => {
     expect(matchTitles(INDEX, 'system engineer').map((t) => t.code)).toEqual(['IT040', 'IT039', 'IT038', 'IT037']);
   });
   it('finds a title by its job code', () => {
-    expect(matchTitles(INDEX, 'it040')[0]).toEqual({ code: 'IT040', title: 'System Engineer IV', n: 48, med: 116991 });
+    expect(matchTitles(INDEX, 'it040')[0]).toEqual({ code: 'IT040', title: 'System Engineer IV', n: 48, med: 116991, cat: 'Academic Staff' });
   });
   it('puts a title that starts with the query before a larger one that only contains it', () => {
     expect(matchTitles(INDEX, 'prof').map((t) => t.code)).toEqual(['FA020', 'FA040']);
@@ -55,16 +55,24 @@ describe('matchTitles', () => {
 describe('matchTitles, former names', () => {
   it('finds a retitled job by its new name and by its old one, showing the new', () => {
     expect(matchTitles(INDEX, 'administrative assistant').map((h) => h.code)).toEqual(['AD101']);
-    expect(matchTitles(INDEX, 'asst dir')).toEqual([{ code: 'AD101', title: 'Administrative Assistant Director', n: 12, med: 70000 }]);
+    expect(matchTitles(INDEX, 'asst dir')).toEqual([{ code: 'AD101', title: 'Administrative Assistant Director', n: 12, med: 70000, cat: 'Academic Staff' }]);
     expect(matchTitles(INDEX, 'admin asst dir').map((h) => h.title)).toEqual(['Administrative Assistant Director']);
   });
   it('puts a match on a current name ahead of the same match on a former one', () => {
     const index: SearchIndex = {
       ...INDEX,
-      titles: [['B1', 'Budget Analyst', 50, 70000, ['Fin Analyst']], ['F1', 'Fin Specialist', 2, 60000]],
+      titles: [['B1', 'Budget Analyst', 50, 70000, null, ['Fin Analyst']], ['F1', 'Fin Specialist', 2, 60000, null]],
     };
     // Both start with "fin" — one by its name today, the larger only by its old name.
     expect(matchTitles(index, 'fin').map((h) => h.code)).toEqual(['F1', 'B1']);
+  });
+});
+
+describe('isNonExemptCode', () => {
+  it('reads a trailing N after the number as the non-exempt twin, and nothing else', () => {
+    expect(isNonExemptCode('OE009N')).toBe(true);
+    expect(isNonExemptCode('OE009')).toBe(false);
+    expect(isNonExemptCode('IN001')).toBe(false);
   });
 });
 

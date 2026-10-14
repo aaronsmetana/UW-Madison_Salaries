@@ -172,8 +172,11 @@ test('a name typed lights exactly the people it names, within the filters full p
   await expect(page.locator('.hero-dist-main').first(), 'a title typed lit a group').not.toHaveAttribute('data-filter', /./);
   await expect(page.locator('.hero-dots')).not.toHaveAttribute('data-lit', /./);
 
-  // Full page, within a filter: the name's people who are in it.
+  // Full page, within a filter: the name's people who are in it. The box's list lies over the graph's top, its
+  // way to full page with it: away from the box, the list goes.
   await pageBox.fill('');
+  await page.locator('.home-lead').click();
+  await expect(pageBox).toHaveAttribute('aria-expanded', 'false');
   await page.locator('.hero-dist-full-toggle').click();
   await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on');
   await expect(page.locator('.hero-dist-full .hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });

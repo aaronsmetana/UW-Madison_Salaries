@@ -27,6 +27,8 @@ const RIBBON_H = 76;
 /** Over a ribbon, the subject sits on a lane of their own above it, with room over that for their name. */
 const SELF_LANE_H = R * 2 + 5;
 const LABEL_LANE_H = 32;
+/** Narrower than this, the strip puts the subject's name on a lane over its swarm (M2). */
+const NAME_LANE_BELOW = 520;
 /** How close the cursor must come to a dot before the readout names that person instead of the
  *  axis position. Roughly a dot's diameter plus a little slack — enough to be reachable, small
  *  enough that the space between dots still reads the axis. */
@@ -257,11 +259,15 @@ export function PeerStrip({
   }, [plotW, peers.length, inPlot, at]);
   const useRibbon = plotW > 0 && !swarm;
   const ribbonH = ribbonHeight(plotW);
-  /** Where the population starts below the plot's top: under the subject's lanes over a ribbon. */
-  const popTop = useRibbon ? LABEL_LANE_H + SELF_LANE_H : 0;
+  // A phone's strip (M2): the subject's name on a lane of its own over the swarm, tied to their dot by a leader.
+  // Among the dots, in a plot this narrow, it covered the people beside them.
+  const nameLane = !useRibbon && stripW > 0 && stripW < NAME_LANE_BELOW;
+  /** Where the population starts below the plot's top: under the subject's lanes over a ribbon, under the name's
+   *  lane on a phone. */
+  const popTop = useRibbon ? LABEL_LANE_H + SELF_LANE_H : nameLane ? LABEL_LANE_H : 0;
   const popH = useRibbon ? ribbonH : SWARM_H;
   const plotH = popTop + popH;
-  const midY = SWARM_H / 2;
+  const midY = popTop + SWARM_H / 2;
 
   /**
    * The density ribbon: a smoothed curve over the cohort, drawn as an area plus a line the way the
@@ -384,7 +390,7 @@ export function PeerStrip({
     const p = placeLabel({
       anchor: { x: selfX, y: selfY },
       size: { w: sizes.youW, h: sizes.youH },
-      bounds: { x0: -lowAside, y0: 0, x1: plotW + highAside, y1: plotH },
+      bounds: { x0: -lowAside, y0: 0, x1: plotW + highAside, y1: nameLane ? LABEL_LANE_H : plotH },
       dots,
       boxes: [medBox, ...(bandWords ? [bandBox] : [])],
       lines: [{ points: sampleVertical(medX, popTop, plotH), weight: 0.25 }],
@@ -395,11 +401,12 @@ export function PeerStrip({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the boxes are functions of these
   }, [plotW, sizes, useRibbon, swarm, inPlot, at, selfX, selfY, lowAside, highAside, plotH, medX, popTop, bandWords, medRight]);
 
-  // The axis: ticks at round steps across the plot, about one per 90px — none where a pile's count stands
-  // under the break beside it ("46 under $100k" says that end's figure already).
+  // The axis: ticks at round steps across the plot, about one per 90px and never fewer than four asked for (M2: a
+  // phone's strip had two) — none where a pile's count stands under the break beside it ("46 under $100k" says
+  // that end's figure already).
   const ticks = useMemo(() => {
     if (!(plotW > 0) || !(span > 0)) return [];
-    const round = moneyTicks(axisMin, axisMax, Math.max(2, Math.floor(plotW / 90)))
+    const round = moneyTicks(axisMin, axisMax, Math.max(4, Math.floor(plotW / 90)))
       .filter((t) => t >= axisMin - 1e-6 && t <= axisMax + 1e-6)
       .filter((t) => !(lows.length && px(t) < 60) && !(highs.length && px(t) > plotW - 60));
     // The axis's own start, named, where no pile stands there and its first round step is well in (P9): the
@@ -561,7 +568,7 @@ export function PeerStrip({
                   key={p.personKey || i}
                   kind={p.sameSchool ? 'same' : 'peer'}
                   cx={((i + 0.5) / Math.max(1, list.length)) * w}
-                  cy={midY + dots.ys![i]}
+                  cy={SWARM_H / 2 + dots.ys![i]}
                   fillOpacity={dot.fillOpacity}
                   dimmed={p.dimmed}
                 />

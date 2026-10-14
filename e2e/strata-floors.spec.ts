@@ -3,8 +3,8 @@ import { HOME_STATS, people, spots } from './homeDots';
 
 /**
  * Floors (mockup 3a): the landing graph's second view — everyone in $10k bands stacked from the bottom up, under $30k
- * to $200k or more, each band a block of squares as wide as the others and wrapping into rows, sorted by salary from
- * its bottom row up, its name at the left and its people at the right. Switching between the views moves each person
+ * to $200k or more, each band a block of squares as wide as the others and wrapping into rows, sorted by type, then
+ * salary, from its bottom row up, its name at the left and its people at the right. Switching between the views moves each person
  * from one place to the other, staggered, over about 2.2 s, while the views' own labels cross-fade. Who is where is
  * checked against the data through the indexing the search's marks use (homeDots `spots`), the bands restated here.
  */
@@ -31,20 +31,23 @@ async function toFloors(page: Page) {
   await expect(plot(page)).toHaveAttribute('data-view', 'floors');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
 }
-/** Everyone on the graph by their square: their floor and pay. */
+/** Everyone on the graph by their square: their floor, pay and type. */
 async function byIndex() {
   const at = await spots();
-  const out: Record<Field, { floor: number; pay: number }[]> = { main: [], pile: [] };
+  const out: Record<Field, { floor: number; pay: number; cat: string }[]> = { main: [], pile: [] };
   for (const p of await people()) {
     const s = at.get(p.person_key);
-    if (s) out[s.field][s.index] = { floor: floorOf(p.pay), pay: p.pay };
+    if (s) out[s.field][s.index] = { floor: floorOf(p.pay), pay: p.pay, cat: p.cat };
   }
   return out;
 }
+/** The legend's order: a column, and a floor, stand by type in it, then by salary (H5). */
+const ORDER = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'];
+const rank = (cat: string) => (ORDER.includes(cat) ? ORDER.indexOf(cat) : ORDER.length);
 
 test.beforeEach(async ({ page }) => { await page.setViewportSize({ width: 1440, height: 900 }); });
 
-test('Floors lays everyone out in $10k bands from the bottom up, each sorted by salary, its band at its left and its people at its right', async ({ page }) => {
+test('Floors lays everyone out in $10k bands from the bottom up, each by type then salary, its band at its left and its people at its right', async ({ page }) => {
   await home(page);
   await expect(views(page).getByRole('radio', { name: 'Histogram' })).toBeChecked();
   await toFloors(page);
@@ -52,10 +55,10 @@ test('Floors lays everyone out in $10k bands from the bottom up, each sorted by 
   const who = await byIndex();
   const per = Number(await field(page).getAttribute('data-per')), pitch = Number(await field(page).getAttribute('data-pitch'));
   // Each floor's squares, by their place: rows from the bottom, then across.
-  const floors = Array.from({ length: 19 }, () => [] as { x: number; y: number; pay: number }[]);
+  const floors = Array.from({ length: 19 }, () => [] as { x: number; y: number; pay: number; rank: number }[]);
   for (const f of ['main', 'pile'] as const) {
     const pts = await hook(page, 'squarePlaces', f);
-    who[f].forEach((p, i) => floors[p.floor].push({ x: pts[2 * i], y: pts[2 * i + 1], pay: p.pay }));
+    who[f].forEach((p, i) => floors[p.floor].push({ x: pts[2 * i], y: pts[2 * i + 1], pay: p.pay, rank: rank(p.cat) }));
   }
   const left = Math.min(...floors.flat().map((s) => s.x));
   for (let f = 0; f < 19; f++) {
@@ -66,9 +69,9 @@ test('Floors lays everyone out in $10k bands from the bottom up, each sorted by 
     expect(Math.max(...sq.map((s) => s.x)) - left).toBeLessThan(per * pitch);
     // Above the floor below it, every one of its squares.
     if (f) expect(Math.max(...sq.map((s) => s.y)), `${LABELS[f]} reaches into ${LABELS[f - 1]}`).toBeLessThan(Math.min(...floors[f - 1].map((s) => s.y)));
-    // By salary from the bottom row up, left to right — to the $100 the page's counts know a pay by.
-    const order = [...sq].sort((a, b) => b.y - a.y || a.x - b.x).map((s) => Math.floor(s.pay / 100));
-    expect(order, `${LABELS[f]} is not sorted by salary`).toEqual([...order].sort((a, b) => a - b));
+    // By type, then salary, from the bottom row up, left to right — to the $100 the page's counts know a pay by.
+    const order = [...sq].sort((a, b) => b.y - a.y || a.x - b.x).map((s) => [s.rank, Math.floor(s.pay / 100)] as const);
+    expect(order, `${LABELS[f]} is not sorted by type, then salary`).toEqual([...order].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
   }
   // Each band's name and people, the median's band marked.
   const rows = await page.locator('.strata-floor').evaluateAll((els) => els.map((e) => ({

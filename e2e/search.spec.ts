@@ -123,11 +123,11 @@ test('the best matches come first, and within them people still here', async ({ 
 });
 
 /**
- * People with the list to themselves, in a wide box: two to a line, row by row, so the room under the
- * graph shows twice as many; the list runs to the window's bottom and scrolls there. With a title in it
- * too, people keep their one column beside the titles.
+ * People with the list to themselves, in a wide list: two to a line, row by row, so its room over the graph
+ * shows twice as many; the list runs to the plot's middle and scrolls there. With a title in it too, people
+ * keep their one column beside the titles.
  */
-test('people alone in a wide list take two columns, and the list scrolls at the window’s bottom', async ({ page }) => {
+test('people alone in a wide list take two columns, and the list scrolls at the plot’s middle', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await homeSearch(page, 'aaron');
   const people = page.locator('[role="option"][data-kind="person"]');
@@ -139,9 +139,10 @@ test('people alone in a wide list take two columns, and the list scrolls at the 
   expect(at[2].y, 'the third person does not start the next line').toBeGreaterThan(at[0].y + 10);
   expect(Math.abs(at[2].x - at[0].x), 'the third person is not under the first').toBeLessThan(1);
   const l = await page.locator('[role="listbox"]').evaluate((e) => ({ bottom: e.getBoundingClientRect().bottom, scrolls: e.scrollHeight > e.clientHeight + 1 }));
+  const plot = (await page.locator('.hero-dist-main').boundingBox())!;
   expect(l.scrolls, 'fifty people and no scroll').toBe(true);
-  expect(l.bottom, 'the list stops short of the window’s bottom').toBeGreaterThan(900 - 40);
-  expect(l.bottom, 'the list runs past the window').toBeLessThanOrEqual(900);
+  expect(l.bottom, 'the list stops well short of the plot’s middle').toBeGreaterThan(plot.y + plot.height / 2 - 40);
+  expect(l.bottom, 'the list runs past the plot’s middle').toBeLessThanOrEqual(plot.y + plot.height / 2 + 1);
   // A title in the list too: people keep one column, beside the titles.
   await page.getByRole('combobox', { name: 'Search a person, title or division' }).fill('smith');
   await expect(page.locator('[data-group="titles"] [role="option"]').first()).toBeVisible({ timeout: 60_000 });
@@ -344,6 +345,9 @@ test('a link to a search opens the page holding it — its marks on the graph, n
   // And the graph's full page carries it, address and all.
   await page.keyboard.press('Escape');
   await box.fill('smith');
+  // Away from the box its list goes (it lies over the graph's top, its way to full page with it).
+  await page.locator('.home-lead').click();
+  await expect(box).toHaveAttribute('aria-expanded', 'false');
   await page.getByRole('button', { name: 'Full page' }).click();
   await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
   await expect(page.locator('.hero-dist-full').getByRole('combobox')).toHaveValue('smith');

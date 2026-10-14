@@ -11,7 +11,6 @@ import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '
 import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotPeople, topSchoolsForSql, topTitlesInSql, type HomeName, type HomePerson } from '../lib/homePeople';
 import type { DivisionHit, TitleHit } from '../lib/search';
 import { Eyebrow } from '../components/Eyebrow';
-import { prefersReducedMotion } from '../lib/motion';
 import { useDocTitle } from '../lib/useDocTitle';
 import { Z } from '../lib/layers';
 import { StrataGraph, type FoundPerson, type GraphGroup, type GraphTimeline, type WhoIs } from '../components/strata/StrataGraph';
@@ -74,30 +73,16 @@ function ShowcaseLink({ icon, title, blurb, to }: {
   );
 }
 
-/** A quiet line that gently cross-fades through a few computed facts (static under reduced motion). */
-function RotatingFact({ facts }: { facts: string[] }) {
-  const [i, setI] = useState(0);
-  const [show, setShow] = useState(true);
-  const swapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (facts.length < 2 || prefersReducedMotion()) return;
-    const id = setInterval(() => {
-      setShow(false);
-      // Held in a ref so unmounting mid-fade cancels the swap too — clearing only the interval
-      // leaves this one pending and it sets state on a gone component.
-      swapTimer.current = setTimeout(() => { setI((p) => (p + 1) % facts.length); setShow(true); }, 350);
-    }, 6000);
-    return () => {
-      clearInterval(id);
-      if (swapTimer.current) clearTimeout(swapTimer.current);
-    };
-  }, [facts.length]);
-  // Its line is held from the first paint, a fact or not: arriving, it pushed the links under it down
-  // (layout shift 0.07). One line, as every fact is short.
+/**
+ * A few figures worked out from the data, at the page's foot, all at once. They used to take turns on one line,
+ * a new one every six seconds, so the one being read could go mid-sentence. The list's line is held from the
+ * first paint, so the links above it never move as it fills in.
+ */
+function HomeFacts({ facts }: { facts: string[] }) {
   return (
-    <Text size="xs" c="dimmed" ta="center" style={{ opacity: show && facts.length ? 1 : 0, transition: 'opacity var(--dur-base) var(--ease)' }}>
-      {facts.length ? facts[i % facts.length] : '\u00a0'}
-    </Text>
+    <ul className="home-facts">
+      {facts.length ? facts.map((f) => <li key={f}>{f}</li>) : <li>{'\u00a0'}</li>}
+    </ul>
   );
 }
 
@@ -169,8 +154,8 @@ export default function Home() {
   // a box returning to a page the reader is already looking at, and full page hands focus to its own
   // exit button, which this would take straight back off it.
   const firstSearchRef = useRef(true);
-  // A phone by the plot's own measure (Distribution's `phone`): there the page's search is above the graph.
-  const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
+  // A finger, not a mouse: a press on the graph while the list lies over it only puts the list away.
+  const coarse = useMediaQuery('(pointer: coarse)', false, { getInitialValueInEffect: false }) ?? false;
   useEffect(() => { firstSearchRef.current = false; }, []);
   /** What both boxes share: the one query, the one list of found people, and the one way to open them. */
   const searchProps = {
@@ -348,8 +333,8 @@ export default function Home() {
   );
   const starters = useMemo<SearchPick[]>(() => {
     if (!searchIndex || (title && school)) return [];
-    const asTitle = ([code, name, n, med]: SearchIndex['titles'][number]): SearchPick =>
-      ({ kind: 'title', hit: { code, title: name ?? code, n, med } });
+    const asTitle = ([code, name, n, med, cat]: SearchIndex['titles'][number]): SearchPick =>
+      ({ kind: 'title', hit: { code, title: name ?? code, n, med, cat } });
     const asSchool = ([name, n, med]: [string, number, number | null]): SearchPick => ({ kind: 'division', hit: { school: name, n, med } });
     if (!title && !school) {
       const schools = [...searchIndex.divisions].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(asSchool);
@@ -407,7 +392,7 @@ export default function Home() {
     [artifactUsable, homeStats, dimRows]
   );
 
-  // Distribution sparkline + rotating facts (lightweight aggregates over the latest snapshot).
+  // Distribution sparkline + the facts at the foot (lightweight aggregates over the latest snapshot).
   const { data: binRows } = useSql<{ bucket: number; n: number }>(
     ['home-bins', snap ?? ''],
     // $1k buckets, matching the precomputed artifact — and over actual pay, not the raw rate. The
@@ -481,7 +466,7 @@ export default function Home() {
     if (p90 != null) f.push(`The top 10% earn more than ${usd(p90)}`);
     if (dims?.lo != null && dims?.hi != null) f.push(`Pay ranges from ${usd(dims.lo)} to ${usd(dims.hi)}`);
     if (tenure != null) f.push(`Median tenure is ${tenure.toFixed(1)} years`);
-    if (categoryMedians.length) f.push(`Median pay by group — ${categoryMedians.map((c) => `${c.category} ${usd(c.median)}`).join(' · ')}`);
+    if (categoryMedians.length) f.push(`Median pay by group: ${categoryMedians.map((c) => `${c.category} ${usd(c.median)}`).join(', ')}`);
     return f;
   }, [summary, topTitle, topDivision, p90, dims, tenure, categoryMedians]);
 
@@ -497,11 +482,12 @@ export default function Home() {
     { label: 'titles', value: dims?.titles ?? null, format: num },
   ];
 
-  // The page's own search. Under the graph its list drops below the plot, never over it (`keepBelow`). On a
-  // phone it is above the graph instead, where it is in sight at load — under the graph it started below the
-  // first screen — and there its list lies over the plot, so it is the full page's on a phone: open only
-  // while the box is in use, stopping halfway down the plot so the marks landing as the reader types stay in
-  // sight, and put away by a press on the graph (`searchOpenRef`) rather than that press bringing up the lens.
+  // The page's own search, in the hero beside the title (under it where the two do not fit side by side): in
+  // sight at load, where the title's own line says to search. It used to be under the graph, below the first
+  // screen at 1280×800. Its list lies over the plot, so it is open only while the box is in use, stopping
+  // halfway down the plot so the marks landing as the reader types stay in sight. A click on the graph does
+  // what it does and the list goes with the box's focus; a finger's first tap only puts the list away
+  // (`searchOpenRef`), as it cannot point at what is under the list before pressing it.
   const midPlot = () => {
     const plot = document.querySelector('.hero-dist-main')?.getBoundingClientRect();
     return plot ? plot.top + plot.height / 2 : null;
@@ -512,10 +498,11 @@ export default function Home() {
       peopleInGroup={SEARCH_PEOPLE}
       size="lg"
       autoFocus={firstSearchRef.current && !arrivedWithQuery.current}
-      keepBelow={phone ? undefined : () => document.querySelector<HTMLElement>('.hero-dist-main')}
-      whileFocused={phone}
-      listLimit={phone ? midPlot : undefined}
-      onListOpen={phone ? (open) => { searchOpenRef.current = open; } : undefined}
+      whileFocused
+      listLimit={midPlot}
+      // Beside the title the box is narrower than the list's two columns: the list takes them anyway.
+      listMinWidth={820}
+      onListOpen={coarse ? (open) => { searchOpenRef.current = open; } : undefined}
       // Focused and empty, it suggests where to start: the full page's starters, with no filter on.
       starters={starters}
       // The way in to the full page's filters from the page's own search: a title or school shown
@@ -553,9 +540,10 @@ export default function Home() {
                 their title.
               </Text>
             </div>
+            {/* Held while the graph is full page, which carries the same search itself: the hero keeps its height. */}
+            <div className="home-head-search">{pageSearch}</div>
           </div>
 
-          {phone && pageSearch}
           <div className="hero-dist-wrap" data-people-mapped={spots ? spots.size : undefined}>
             <StrataGraph
               bins={bins}
@@ -611,10 +599,6 @@ export default function Home() {
               timeline={timeline}
             />
           </div>
-          {/* Away while the graph is full page, which carries the same search itself. Its place is not
-              held: the scrim over it is a blur of the page, not a picture of it. */}
-          {!phone && pageSearch}
-
           <div className="home-stats">
             <div className="home-stat-row">
               {stats.map((s) => <StatItem key={s.label} {...s} />)}
@@ -661,7 +645,7 @@ export default function Home() {
 
         {/* Footnotes: the least urgent thing on the page, at its end. */}
         <Stack gap="xs" maw="var(--content-prose)" mx="auto" w="100%">
-          <RotatingFact facts={facts} />
+          <HomeFacts facts={facts} />
 
           <Text size="xs" c="dimmed" ta="center" fs="italic" maw="var(--measure)" mx="auto">
             Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between

@@ -75,18 +75,30 @@ test('a readout over a chart is the page\'s inverse, in both schemes, and the do
   }
 });
 
-test('a chart card\'s tools say what they are; on a phone their icons stay and their names are read out', async ({ page }) => {
+test('a chart card\'s tools say what they are, on a phone too, where each answers a finger 44px tall', async ({ browser }) => {
   for (const width of [1440, 375]) {
-    await page.setViewportSize({ width, height: 900 });
+    const ctx = await browser.newContext({ viewport: { width, height: 900 }, ...(width < 500 ? { hasTouch: true, isMobile: true } : {}) });
+    const page = await ctx.newPage();
     await page.goto(`./person/${encodeURIComponent(AARON)}`);
     const tools = page.locator('.chart-tool').first().locator('xpath=..');
     await expect(page.locator('.chart-tool').first()).toBeVisible({ timeout: 60_000 });
     for (const [name, words] of [['About this chart', 'About'], ["CSV of this chart's data", 'CSV'], ["Table of this chart's data", 'Table']] as const) {
       const b = tools.getByRole('button', { name });
       await expect(b, `${width}px: no "${name}"`).toBeVisible();
-      if (width === 1440) await expect(b, `${width}px`).toHaveText(words);
-      else await expect(b.locator('.chart-tool-label'), `${width}px: the name is drawn on a phone`).toBeHidden();
+      // Named on a phone as well (M1): three bare icons were easy to miss and to mistake for one another.
+      await expect(b, `${width}px`).toHaveText(words);
+      await expect(b.locator('.chart-tool-label'), `${width}px: the name is not drawn`).toBeVisible();
+      if (width < 500) {
+        await b.scrollIntoViewIfNeeded();
+        const r = (await b.boundingBox())!;
+        // A press 21px above and below its middle still lands on it: 44px tall, though drawn smaller.
+        for (const dy of [-21, 21]) {
+          const hit = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest('.chart-tool')?.getAttribute('aria-label') ?? null, [r.x + r.width / 2, r.y + r.height / 2 + dy] as const);
+          expect(hit, `${name}: a press ${dy}px from its middle missed it`).toBe(name);
+        }
+      }
     }
+    await ctx.close();
   }
 });
 

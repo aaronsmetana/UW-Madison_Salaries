@@ -10,10 +10,10 @@ import { peopleSql } from '../src/lib/queries.ts';
  * carrying each case that separates people from rows.
  */
 
-const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'job_code', 'title', 'school', 'salary', 'salary_fte_adjusted', 'base_pay', 'fte', 'comp_basis', 'ttc_variant'];
+const COLS = ['snapshot_id', 'snapshot_date', 'person_key', 'job_code', 'title', 'school', 'salary', 'salary_fte_adjusted', 'base_pay', 'fte', 'comp_basis', 'ttc_variant', 'employee_category'];
 const r = (snap, person, job, title, school, salary, extra = {}) => ({
   snapshot_id: snap, snapshot_date: snap === 's1' ? '2025-09-01' : '2026-03-01', person_key: person, job_code: job, title, school,
-  salary, salary_fte_adjusted: null, base_pay: null, fte: 1, comp_basis: 'Annual', ttc_variant: null, ...extra,
+  salary, salary_fte_adjusted: null, base_pay: null, fte: 1, comp_basis: 'Annual', ttc_variant: null, employee_category: 'Academic Staff', ...extra,
 });
 const ROWS = [
   // An earlier snapshot, which the index must not count.
@@ -28,7 +28,7 @@ const ROWS = [
   // Unpaid: in neither the headcount nor the median.
   r('s2', 'unpaid', 'J1', 'Engineer', 'A', 0),
   // Hourly (FTE 0): counted at the full rate.
-  r('s2', 'hourly', 'H1', 'Custodian', 'B', 41600, { fte: 0 }),
+  r('s2', 'hourly', 'H1', 'Custodian', 'B', 41600, { fte: 0, employee_category: 'University Staff' }),
   // A title with only an unpaid holder is not offered.
   r('s2', 'zero', 'Z1', 'Emeritus', 'A', 0),
   r('s2', 'nocode', null, 'No Code', 'A', 50000),
@@ -42,6 +42,15 @@ const ROWS = [
   r('s2', 'l1', 'J3', 'Lab Tech', 'A', 50000),
   r('s2', 'l2', 'J3', 'Lab Tech', 'A', 51000),
   r('s2', 'l3', 'J3', 'Laboratory Technician', 'A', 52000),
+  // A title held across two categories: the one most of its people are in, a tie going to the name first.
+  r('s2', 'k1', 'K1', 'Coordinator', 'A', 50000, { employee_category: 'University Staff' }),
+  r('s2', 'k2', 'K1', 'Coordinator', 'A', 51000, { employee_category: 'University Staff' }),
+  r('s2', 'k3', 'K1', 'Coordinator', 'A', 52000),
+  r('s2', 'k4', 'K2', 'Fellow', 'A', 40000, { employee_category: 'Employees in Training' }),
+  r('s2', 'k5', 'K2', 'Fellow', 'A', 41000),
+  // Earlier snapshots and unpaid holders say nothing about it.
+  r('s1', 'k6', 'K2', 'Fellow', 'A', 41000, { employee_category: 'Faculty' }),
+  r('s2', 'k7', 'K2', 'Fellow', 'A', 0, { employee_category: 'Faculty' }),
 ];
 
 let db;
@@ -52,7 +61,7 @@ beforeAll(async () => {
   db = new duckdb.Database(':memory:');
   const lit = (v) => (v == null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v}'`);
   await all(`CREATE TABLE salaries (snapshot_id VARCHAR, snapshot_date DATE, person_key VARCHAR, job_code VARCHAR, title VARCHAR,
-    school VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE, base_pay DOUBLE, fte DOUBLE, comp_basis VARCHAR, ttc_variant VARCHAR)`);
+    school VARCHAR, salary DOUBLE, salary_fte_adjusted DOUBLE, base_pay DOUBLE, fte DOUBLE, comp_basis VARCHAR, ttc_variant VARCHAR, employee_category VARCHAR)`);
   await all(`INSERT INTO salaries VALUES ${ROWS.map((row) => `(${COLS.map((c) => lit(row[c])).join(', ')})`).join(',\n')}`);
 });
 afterAll(() => db.close());
@@ -80,6 +89,11 @@ describe('search-index.json', () => {
   it("names a title by its most common spelling", async () => {
     const [j1] = (await all(titlesQuery('salaries', 's2'))).filter((x) => x.code === 'J1');
     expect(j1.title).toBe('Engineer');
+  });
+
+  it('gives a title the category most of its paid people are in, a tie by name', async () => {
+    const cat = Object.fromEntries((await all(titlesQuery('salaries', 's2'))).map((x) => [x.code, x.category]));
+    expect(cat).toMatchObject({ K1: 'University Staff', K2: 'Academic Staff', H1: 'University Staff', J1: 'Academic Staff' });
   });
 
   it("gives a title the other names its job code has carried since the TTC, not its case variants", async () => {

@@ -51,7 +51,7 @@ async function pace(page: Page, p: 'Slow' | 'Medium' | 'Fast') {
   await page.getByRole('radiogroup', { name: 'Speed' }).getByText(p, { exact: true }).click();
   await expect(page.getByRole('radiogroup', { name: 'Speed' }).getByRole('radio', { name: p })).toBeChecked();
 }
-async function mode(page: Page, m: 'Raises & cuts' | 'Employment type') {
+async function mode(page: Page, m: 'Raises & cuts' | 'Type') {
   await page.getByRole('radiogroup', { name: 'Show each step by' }).getByText(m, { exact: true }).click();
   await expect(page.getByRole('radiogroup', { name: 'Show each step by' }).getByRole('radio', { name: m })).toBeChecked();
 }
@@ -92,6 +92,7 @@ test('the landing page loads no database until the timeline is asked for; Play t
   const requests: string[] = [];
   page.on('request', (r) => requests.push(r.url()));
   await home(page);
+  await pace(page, 'Fast');
   await expect(bar(page)).toHaveAttribute('data-timeline', 'off');
   await expect(page.locator('.strata-play')).toHaveText(`Play ${SNAPS[0].label.slice(4, 8)} → ${SNAPS[LAST].label.slice(-4)}`);
   expect(requests.filter((u) => /\.parquet|duckdb/i.test(u)), 'the page fetched the database before it was asked').toEqual([]);
@@ -202,7 +203,7 @@ test('a step fades out who left where they stood and fades in who joined where t
   };
   const before = await top();
   // By employment type (raises and cuts leave fading trails behind the movers, on purpose), at Medium.
-  await mode(page, 'Employment type');
+  await mode(page, 'Type');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
   await pace(page, 'Medium');
   // Every frame of a step on to the next snapshot: how high any part-way faded ink reaches (the big movers arc high
@@ -260,6 +261,8 @@ test('Pause holds the snapshot and Resume goes on; under reduced motion each ste
   const page = await browser.newPage();
   await home(page);
   await page.locator('.strata-play').click();
+  // Playing: from the first snapshot (the bar shows the latest until it starts, which `reached` would take).
+  await expect(bar(page)).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
   await reached(page, 2);
   await page.locator('.strata-play').click();
   await expect(page.locator('.strata-play')).toHaveText('Resume');
@@ -304,6 +307,7 @@ test('a step moves in frames inside the frame budget, at CI’s pace', async ({ 
 test('Fast’s play draws the squares moving in every frame, never standing still between snapshots', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);
+  await pace(page, 'Fast');
   await goTo(page, 0);
   await page.evaluate(() => {
     const w = window as unknown as { frames: [number, number][]; snaps: number[] };
@@ -343,6 +347,7 @@ for (const dpr of [1, 2]) {
     const page = await ctx.newPage();
     await atCiPace(page);
     await home(page);
+    await pace(page, 'Fast');
     await goTo(page, 0);
     await clearFrames(page);
     await page.locator('.strata-play').click();
@@ -403,22 +408,34 @@ test('a group is its people: in another snapshot they are lit wherever they stan
 });
 
 /**
- * Under each tick (3a): its snapshot ("Nov 21") where the track gives each tick room; else the year where each year
- * begins ("2021", narrower "’21"). The snapshot shown in the ink, and no two labels touching.
+ * Under each tick (3a): its snapshot ("Nov 21", a second in a month by its own words), the one shown in the ink — one
+ * form at every width and while it plays (I13: it was the year at some widths, and became it as Play's words
+ * changed). Where the track is short, every other label, the first, the last and the one shown kept; none touching.
  */
 test.describe('the track’s labels', () => {
   const MON = (l: string) => l.replace(/\s*\(.*\)$/, '').replace(/^(\w{3})\w* (\d{2})(\d{2})$/, '$1 $3');
+  const FORM = SNAPS.map((sn, i) => (i > 0 && MON(SNAPS[i - 1].label) === MON(sn.label) ? sn.label.match(/\(([^)]*)\)/)![1].replace(/^(Pre|Post)-/, '') : MON(sn.label)));
   const shown = (page: Page) => page.locator('.strata-track-dot').evaluateAll((els) => els.map((b) => {
-    const span = [...b.querySelectorAll('.strata-tick-label > span')].find((s) => getComputedStyle(s).display !== 'none' && s.textContent);
+    const span = b.querySelector('.strata-tick-label') as HTMLElement | null;
+    const on = !!span && getComputedStyle(span).visibility !== 'hidden' && getComputedStyle(span).display !== 'none';
     const r = span?.getBoundingClientRect();
-    return { text: span?.textContent ?? '', left: r?.left ?? 0, right: r?.right ?? 0, weight: span ? getComputedStyle(span).fontWeight : '' };
+    return { text: on ? span!.textContent ?? '' : '', left: r?.left ?? 0, right: r?.right ?? 0, weight: span ? getComputedStyle(span).fontWeight : '', now: (b as HTMLElement).dataset.state === 'now' };
   }));
   const apart = (labels: { text: string; left: number; right: number }[]) => {
     const on = labels.filter((l) => l.text);
     return Math.min(...on.slice(1).map((l, k) => l.left - on[k].right));
   };
-  // Each snapshot's first of its year, by index.
-  const firsts = SNAPS.map((sn, i) => i === 0 || SNAPS[i - 1].label.match(/\d{4}/)![0] !== sn.label.match(/\d{4}/)![0]);
+  const check = (labels: Awaited<ReturnType<typeof shown>>, every: boolean) => {
+    labels.forEach((l, i) => { if (l.text) expect(l.text, `tick ${i}`).toBe(FORM[i]); });
+    if (every) expect(labels.map((l) => l.text)).toEqual(FORM);
+    else {
+      expect(labels[0].text || labels[1].now, 'the first unnamed').toBeTruthy();
+      expect(labels[LAST].text || labels[LAST - 1].now, 'the last unnamed').toBeTruthy();
+      expect(labels.filter((l) => l.text).length).toBeGreaterThanOrEqual(5);
+    }
+    expect(labels.find((l) => l.now)!.text, 'the snapshot shown unnamed').toBeTruthy();
+    expect(apart(labels), 'two labels touching').toBeGreaterThanOrEqual(4);
+  };
 
   test('wide, every tick its snapshot; the one shown in the ink', async ({ page }) => {
     await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
@@ -426,25 +443,24 @@ test.describe('the track’s labels', () => {
     await page.goto('./');
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
     const labels = await shown(page);
-    // A snapshot taken twice in a month is told apart by its own words.
-    expect(labels.map((l) => l.text)).toEqual(SNAPS.map((sn, i) => (i > 0 && MON(SNAPS[i - 1].label) === MON(sn.label) ? sn.label.match(/\(([^)]*)\)/)![1].replace(/^(Pre|Post)-/, '') : MON(sn.label))));
-    expect(apart(labels), 'two labels touching').toBeGreaterThanOrEqual(4);
+    check(labels, true);
     expect(Number(labels[LAST].weight)).toBeGreaterThan(Number(labels[0].weight));
   });
 
-  for (const { width, form } of [{ width: 1440, form: 'year' }, { width: 390, form: 'yy' }] as const) {
-    test(`at ${width}px, the year where each begins (${form === 'year' ? '2021' : '’21'}), none touching`, async ({ browser }) => {
+  for (const width of [1280, 768, 390]) {
+    test(`at ${width}px, the same form, at rest and while it plays`, async ({ browser }) => {
+      test.setTimeout(120_000);
       const ctx = await browser.newContext({ viewport: { width, height: 900 }, ...(width < 500 ? { hasTouch: true, isMobile: true } : {}) });
       const page = await ctx.newPage();
       await home(page);
       await page.setViewportSize({ width, height: 900 });
-      const labels = await shown(page);
-      expect(labels.map((l) => l.text)).toEqual(SNAPS.map((sn, i) => {
-        if (!firsts[i]) return '';
-        const y = sn.label.match(/\d{4}/)![0];
-        return form === 'year' ? y : `’${y.slice(2)}`;
-      }));
-      expect(apart(labels), 'two labels touching').toBeGreaterThanOrEqual(4);
+      await page.waitForTimeout(300);
+      const rest = await shown(page);
+      check(rest, false);
+      await page.locator('.strata-play').click();
+      await expect(bar(page)).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
+      await reached(page, 2);
+      check(await shown(page), false);
       await ctx.close();
     });
   }
@@ -459,11 +475,11 @@ test('the hint under the graph says what each view shows and how to use it, for 
   const page = await browser.newPage();
   await home(page);
   const hint = page.locator('.strata-hint');
-  await expect(hint).toHaveText('Sorted by salary within each $5k column. Point to look closer; click to magnify.');
+  await expect(hint).toHaveText('Sorted by type, then salary within each $5k column. Point to look closer; click to magnify.');
   const lineH = parseFloat(await hint.evaluate((e) => getComputedStyle(e).lineHeight));
   expect((await hint.boundingBox())!.height, 'more than one line').toBeLessThan(lineH * 1.5);
   await page.getByRole('radiogroup', { name: 'View' }).getByText('Floors').click();
-  await expect(hint).toHaveText('Each floor is a $10k band, sorted by salary from the bottom row up. Point to look closer.');
+  await expect(hint).toHaveText('Each floor is a $10k band, sorted by type, then salary from the bottom row up. Point to look closer.');
   await page.getByRole('radiogroup', { name: 'View' }).getByText('Histogram').click();
   await page.locator('.strata-magnify').click();
   await expect(hint).toHaveText('A $30k window, magnified. Drag to pan; point at anyone to see who they are.');
@@ -478,7 +494,7 @@ test('the hint under the graph says what each view shows and how to use it, for 
   const phone = await ctx.newPage();
   await phone.goto('./');
   await expect(phone.locator('.strata-hint')).toHaveText('Each square is one person, colored by employment type.');
-  await expect(phone.locator('.strata-hint')).toHaveText('Sorted by salary within each $5k column. Hold a finger still to look closer; tap to magnify.', { timeout: 60_000 });
+  await expect(phone.locator('.strata-hint')).toHaveText('Sorted by type, then salary within each $5k column. Hold a finger still to look closer; tap to magnify.', { timeout: 60_000 });
   await ctx.close();
 });
 
@@ -493,7 +509,8 @@ test('the track is a radio group: arrows step between snapshots, Home and End go
   await page.keyboard.press('Home');
   await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[0].id);
   await page.keyboard.press('End');
-  await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+  // Through every snapshot between, a quick step each.
+  await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id, { timeout: 60_000 });
 });
 
 test.describe('one scale for every snapshot, and the pace', () => {
@@ -543,12 +560,14 @@ test.describe('one scale for every snapshot, and the pace', () => {
  * and set Slow's countdown.
  */
 test.describe('speed, mode and settings', () => {
-  test('the speed is a radio group of Slow, Medium and Fast, Fast first: Play goes a snapshot every quarter second, never held', async ({ page }) => {
+  test('the speed is a radio group of Slow, Medium and Fast, Medium to start; Fast goes a snapshot every quarter second, never held', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
     const speed = page.getByRole('radiogroup', { name: 'Speed' });
     await expect(speed.getByRole('radio')).toHaveCount(3);
-    await expect(speed.getByRole('radio', { name: 'Fast' })).toBeChecked();
+    // Medium to start (I11): at Fast the whole timeline ran in about two and a half seconds.
+    await expect(speed.getByRole('radio', { name: 'Medium' })).toBeChecked();
+    await pace(page, 'Fast');
     await goTo(page, 0);
     await logSteps(page);
     await page.locator('.strata-play').click();
@@ -571,6 +590,7 @@ test.describe('speed, mode and settings', () => {
   test('Fast plays as one flow: each step’s clock runs on from the last one’s end, the track fills at one steady pace, and the counts hold still', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    await pace(page, 'Fast');
     await goTo(page, 0);
     await page.evaluate(() => {
       const w = window as unknown as { starts: number[]; fills: number[]; boxes: Record<string, number[]> };
@@ -635,6 +655,7 @@ test.describe('speed, mode and settings', () => {
   test('Fast’s movers go straight, in the up and down inks raising and cutting, in their types’ by employment type', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    await pace(page, 'Fast');
     await goTo(page, 7);
     const ink = (v: string) => page.evaluate((v) => { const s = document.createElement('span'); document.body.appendChild(s); s.style.color = `var(${v})`; const c = getComputedStyle(s).color; s.remove(); return c; }, v);
     const up = parseColor(await ink('--strata-up'));
@@ -683,7 +704,7 @@ test.describe('speed, mode and settings', () => {
     expect(change.n, 'no mover in the up ink on the way').toBeGreaterThan(100);
     expect(change.top, 'a square above both snapshots’ tallest columns').toBeGreaterThanOrEqual(Math.min(before, after));
     // The same step again by employment type: no one in the up ink.
-    const type = await midStep(() => mode(page, 'Employment type'));
+    const type = await midStep(() => mode(page, 'Type'));
     expect(type.n, 'squares in the up ink by employment type').toBe(0);
   });
 
@@ -716,7 +737,7 @@ test.describe('speed, mode and settings', () => {
     await goTo(page, 6);
     await pace(page, 'Medium');
     await logSteps(page);
-    await mode(page, 'Employment type');
+    await mode(page, 'Type');
     await expect(bar(page)).toHaveAttribute('data-mode', 'type');
     // The step into this snapshot again, now by type: the squares move, the snapshot stays.
     await expect(field(page)).toHaveAttribute('data-settled', 'false', { timeout: 2_000 });
@@ -745,7 +766,7 @@ test.describe('speed, mode and settings', () => {
     expect(await page.evaluate(() => performance.now()) - held, 'the countdown ran on').toBeLessThan(1_500);
   });
 
-  test('the settings: Slow’s countdown, 1 to 8 seconds; and each column by type, then salary', async ({ page }) => {
+  test('the settings: Slow’s countdown, 1 to 8 seconds; each column by type, then salary, to start, or by salary alone', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
     const settings = page.getByRole('button', { name: 'Timeline settings' });
@@ -755,23 +776,26 @@ test.describe('speed, mode and settings', () => {
     await cd.focus();
     await page.keyboard.press('Home');
     await expect(cd).toHaveAttribute('aria-valuenow', '1');
-    // Each column by type, then salary: up every column the types in the legend's order, each by pay.
-    await page.getByRole('radiogroup', { name: 'Sort each column by' }).getByText('Type, then salary').click();
-    await page.keyboard.press('Escape');
-    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    // Each column by type, then salary, as the page opens (H5): up every column the types in the legend's order,
+    // each by pay. Then by salary alone: up every column by pay, whatever the type.
+    const sortBy = page.getByRole('radiogroup', { name: 'Sort each column by' });
+    await expect(sortBy.getByRole('radio', { name: 'Type, then salary' })).toBeChecked();
     const at = await spots(), rows = await people();
     const order = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'];
-    const slot = await field(page).evaluate((el) => (el as unknown as { squareSlots: (f: string) => number[] }).squareSlots('main'));
-    const cols = new Map<number, { slot: number; rank: number; pay: number }[]>();
-    for (const p of rows) {
-      const s = at.get(p.person_key);
-      if (s?.field !== 'main') continue;
-      const c = Math.floor(p.pay / 5000);
-      cols.set(c, [...(cols.get(c) ?? []), { slot: slot[s.index], rank: order.indexOf(p.cat), pay: Math.floor(p.pay / 100) }]);
-    }
-    let checked = 0;
-    for (const [c, list] of cols) {
-      list.sort((x, y) => x.slot - y.slot);
+    const columns = async () => {
+      const slot = await field(page).evaluate((el) => (el as unknown as { squareSlots: (f: string) => number[] }).squareSlots('main'));
+      const cols = new Map<number, { slot: number; rank: number; pay: number }[]>();
+      for (const p of rows) {
+        const s = at.get(p.person_key);
+        if (s?.field !== 'main') continue;
+        const c = Math.floor(p.pay / 5000);
+        cols.set(c, [...(cols.get(c) ?? []), { slot: slot[s.index], rank: order.indexOf(p.cat), pay: Math.floor(p.pay / 100) }]);
+      }
+      for (const list of cols.values()) list.sort((x, y) => x.slot - y.slot);
+      return cols;
+    };
+    let checked = 0, mixed = 0;
+    for (const [c, list] of await columns()) {
       for (let k = 1; k < list.length; k++) {
         const [x, y] = [list[k - 1], list[k]];
         expect(x.rank < y.rank || (x.rank === y.rank && x.pay <= y.pay), `column ${c}: slot ${k} out of order`).toBe(true);
@@ -779,6 +803,20 @@ test.describe('speed, mode and settings', () => {
       }
     }
     expect(checked).toBeGreaterThan(10_000);
+    await sortBy.getByText('Salary', { exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    checked = 0;
+    for (const [c, list] of await columns()) {
+      for (let k = 1; k < list.length; k++) {
+        const [x, y] = [list[k - 1], list[k]];
+        expect(x.pay <= y.pay, `column ${c}: slot ${k} out of order by salary`).toBe(true);
+        if (x.rank > y.rank) mixed++;
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(10_000);
+    expect(mixed, 'by salary alone, the types still stood in bands').toBeGreaterThan(1_000);
     // And Slow's countdown, as set: a second.
     await goTo(page, 7);
     await pace(page, 'Slow');
@@ -820,7 +858,7 @@ test.describe('the status chip', () => {
     await home(page);
     await goTo(page, 7);
     await pace(page, 'Slow');
-    await expect(label(page)).toHaveText('Sorted by salary');
+    await expect(label(page)).toHaveText('Sorted by type, then salary');
     await chipLog(page);
     await dot(page, 8).click();
     await expect(bar(page)).toHaveAttribute('data-phase', 'hold', { timeout: 10_000 });
@@ -833,9 +871,10 @@ test.describe('the status chip', () => {
     const seen = await chipSeen(page);
     const labels = runs(seen);
     expect(labels).toEqual([
-      'Sorted by salary', `Moving people · ${SNAPS[7].label} → ${SNAPS[8].label}`, 'Sorting by salary in', 'Sorting by salary…', 'Sorted by salary',
+      'Sorted by type, then salary', `Moving people · ${SNAPS[7].label} → ${SNAPS[8].label}`, 'Sorting by type, then salary in', 'Sorting by type, then salary…',
+      'Sorted by type, then salary',
     ]);
-    expect(seen.filter(([l]) => l === 'Sorting by salary in').map(([, c]) => c), 'the countdown’s seconds').toEqual(['3', '2', '1']);
+    expect(seen.filter(([l]) => l === 'Sorting by type, then salary in').map(([, c]) => c), 'the countdown’s seconds').toEqual(['3', '2', '1']);
   });
 
   test('while it plays, counts the rest to the next snapshot and says when the timeline ends; at Fast, how many a second', async ({ page }) => {
@@ -862,7 +901,7 @@ test.describe('the status chip', () => {
     expect(await secs(), 'the time left did not go down').toBeLessThan(s0);
     await page.locator('.strata-play').click();
     await expect(eta).toHaveCount(0);
-    await expect(label(page)).toHaveText('Paused · sorted by salary', { timeout: 15_000 });
+    await expect(label(page)).toHaveText('Paused · sorted by type, then salary', { timeout: 15_000 });
     // Fast.
     await pace(page, 'Fast');
     await page.locator('.strata-play').click();
@@ -882,7 +921,7 @@ test.describe('the status chip', () => {
     expect(labels).toContain(`Rewinding to ${SNAPS[2].label.replace(/ \(.*\)$/, '')}`);
     expect(labels).toContain(`Skipping ahead · ${SNAPS[2].label.replace(/ \(.*\)$/, '')} → ${SNAPS[3].label}`);
     expect(labels).toContain('Switching view');
-    expect(labels[labels.length - 1]).toBe('Sorted by salary');
+    expect(labels[labels.length - 1]).toBe('Sorted by type, then salary');
   });
 
   test('on a phone, takes Play’s row while it plays — Play down to its icon — and the row never changes height', async ({ browser }) => {
@@ -899,7 +938,7 @@ test.describe('the status chip', () => {
     await expect(page.locator('.strata-play')).toHaveAttribute('aria-label', 'Pause');
     expect((await bar(page).boundingBox())!.height, 'the row grew').toBeCloseTo(h0, 0);
     await expect(page.locator('.strata-status-eta'), 'no room for when it ends on a phone').toHaveCount(0);
-    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 100_000 });
     await expect(page.locator('.strata-status')).toHaveCount(0);
     expect((await bar(page).boundingBox())!.height).toBeCloseTo(h0, 0);
     await ctx.close();
@@ -924,6 +963,7 @@ test.describe('jumps along the track', () => {
   test('several snapshots on, a quick step through each between', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    await pace(page, 'Fast');
     await goTo(page, 2);
     await log(page);
     await dot(page, 6).click();

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { ShowAll, useShowAll } from './ShowAll';
 import { Stack, Card, Text, Group, Table, Badge, Anchor, ScrollArea, TextInput, Alert, ActionIcon, Skeleton, VisuallyHidden } from '@mantine/core';
 import { Link, useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ import { MiniRange } from './MiniRange';
 import { rangeScale } from '../lib/rangeScale';
 import { MIN_GROUP } from '../lib/stats';
 import { fmtK } from '../lib/chartStyle';
+import { FoldRow, useFolded } from './FoldRow';
 
 
 /** The loading distribution card's chart block: the histogram (284px) and its footer of controls, so the
@@ -150,6 +151,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   // change the same way the name search above already does, since this component isn't remounted then).
   const [binFilter, setBinFilter] = useState<{ lo: number; hi: number } | null>(null);
   const [peopleSort, setPeopleSort] = useState<SortState<PeopleSortKey>>({ key: 'salary', dir: 'desc' });
+  const folded = useFolded();
   // Pay rank is anchored to the underlying pay-desc query order, independent of the table's current
   // display sort — "#12" always means "12th highest pay for this title," not "12th row shown."
   const payRank = useMemo(() => new Map(people.map((p, i) => [p.person_key, i + 1])), [people]);
@@ -326,23 +328,20 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
               {peoplePage.shown.map((p) => {
                 const realRank = payRank.get(p.person_key) ?? 0;
                 const inTray = has(p.person_key);
+                const open = () => nav(`/person/${encodeURIComponent(p.person_key)}`);
                 return (
+                  <Fragment key={p.person_key}>
                   <Table.Tr
-                    key={p.person_key}
                     className="peer-row"
                     // A click anywhere on the row opens the person; the keyboard's way in is the name's link.
                     // As a role="button" with that link and the tray button inside it, every row was a
                     // nested interactive control (axe), 458 of them for Associate Professor.
-                    onClick={() => nav(`/person/${encodeURIComponent(p.person_key)}`)}
+                    onClick={open}
                     style={{ cursor: 'pointer' }}
                   >
                     <Table.Td ta="right" c="dimmed" data-fold>{realRank}</Table.Td>
                     <Table.Td>
                       <div><Anchor component={Link} to={`/person/${encodeURIComponent(p.person_key)}`} onClick={(e) => e.stopPropagation()}>{fullName(p.fn, p.ln) || '—'}</Anchor></div>
-                      {/* On a phone: rank, name and school in one cell, then the salary. */}
-                      <Text className="fold-under" size="xs" c="dimmed" lineClamp={2}>
-                        #{realRank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
-                      </Text>
                     </Table.Td>
                     {/* School over department, as a person's table has them: one column for where someone works. */}
                     <Table.Td data-fold>
@@ -368,6 +367,14 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
                       />
                     </Table.Td>
                   </Table.Tr>
+                  {/* On a phone: rank, school and department across the row's width (M3). */}
+                  {folded && (
+                    <FoldRow span={7} onClick={open}>
+                      #{realRank} · {[p.school, p.department].filter(Boolean).join(' · ') || '—'}
+                      {p.fte != null && Math.abs(p.fte - 1) > 0.005 ? ` · FTE ${p.fte.toFixed(2)}` : ''}
+                    </FoldRow>
+                  )}
+                  </Fragment>
                 );
               })}
             </Table.Tbody>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { ActionIcon, Button, CloseButton, FocusTrap, Popover, Slider, Stack, Text } from '@mantine/core';
+import { ActionIcon, Button, CloseButton, FocusTrap, Loader, Popover, Slider, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconAdjustmentsHorizontal, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, seatedSlots, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
@@ -116,7 +116,7 @@ const PLAY_RESTART_MS = 700;
 /** Play's speeds (3a): Fast, a snapshot every quarter second; Medium and Slow stage each step. */
 const PACES: { id: Pace; label: string }[] = [{ id: 'slow', label: 'Slow' }, { id: 'medium', label: 'Medium' }, { id: 'fast', label: 'Fast' }];
 /** How a step shows (3a): who moved up, down, joined and left, or everyone in their type's colour. */
-const MODES: { id: StepMode; label: string }[] = [{ id: 'change', label: 'Raises & cuts' }, { id: 'type', label: 'Employment type' }];
+const MODES: { id: StepMode; label: string }[] = [{ id: 'change', label: 'Raises & cuts' }, { id: 'type', label: 'Type' }];
 /** Slow's countdown, seconds: the reader's choice, within these. */
 const COUNTDOWN_RANGE = [1, 8] as const;
 
@@ -256,12 +256,15 @@ export function StrataGraph({
   playingRef.current = playing;
   // How fast (3a): Slow and Medium stage each step — its people move, a countdown holds them, they re-sort — and
   // Fast goes straight through, a snapshot every quarter second. Read by a step as it is made (refs), so a change
-  // of speed never restarts the one in flight.
-  const [pace, setPace] = useState<Pace>('fast');
+  // of speed never restarts the one in flight. Medium to start (I11): Fast ran the whole timeline in about 2.5 s.
+  const [pace, setPace] = useState<Pace>('medium');
   // How a step shows (3a): raises and cuts, or employment type.
   const [mode, setMode] = useState<StepMode>('change');
-  // The settings (3a's tweaks): each column by salary, or by type then salary; and Slow's countdown, seconds.
-  const [byType, setByType] = useState(false);
+  // The settings (3a's tweaks): each column by type then salary, or by salary alone; and Slow's countdown, seconds.
+  // By type to start (H5): by salary alone the five types' colours were threaded through every column, and how
+  // many of each a column holds could not be read at a glance; by type, each column stands in bands of colour.
+  const [byType, setByType] = useState(true);
+  const sortWords = byType ? 'type, then salary' : 'salary';
   const [countdown, setCountdown] = useState(COUNTDOWN_S);
   const paceRef = useRef(pace), modeRef = useRef(mode), countdownRef = useRef(countdown);
   paceRef.current = pace;
@@ -611,17 +614,21 @@ export function StrataGraph({
     if (wait > 0) { const t0 = performance.now(); setRest({ start: t0, end: t0 + wait, next: bareLabel(snaps[at + 1].label) }); }
     return () => { window.clearTimeout(t); setRest(null); };
   }, [playing, at, goal, lastSnap, queue, onScreen, moving, landed, pace, mode, countdown, snaps]);
-  // The track's tick labels: "Nov 21", a snapshot taken twice in a month told apart by its own words ("TTC"); and the
-  // year ("2021", "’21") under the first snapshot of each.
+  // The track's tick labels: "Nov 21", a snapshot taken twice in a month told apart by its own words ("TTC"). One
+  // form at every width and while it plays (I13); where the track is short, every other one (app.css).
   const tickLabels = useMemo(() => snaps.map((sn, i) => {
-    const bare = bareLabel(sn.label), m = bare.match(/^(\w{3})\w* (\d{4})$/), yr = m ? m[2] : '';
+    const bare = bareLabel(sn.label), m = bare.match(/^(\w{3})\w* (\d{4})$/);
     const prev = i > 0 ? bareLabel(snaps[i - 1].label) : null, own = sn.label.match(/\(([^)]*?)\)/)?.[1] ?? '';
-    const full = m ? (prev === bare && own ? own.replace(/^(Pre|Post)-/, '') : `${m[1]} ${yr.slice(2)}`) : bare;
-    const firstOfYear = !!yr && (i === 0 || !bareLabel(snaps[i - 1].label).endsWith(yr));
-    return { full, year: firstOfYear ? yr : '', yy: firstOfYear ? `’${yr.slice(2)}` : '' };
+    return m ? (prev === bare && own ? own.replace(/^(Pre|Post)-/, '') : `${m[1]} ${m[2].slice(2)}`) : bare;
   }), [snaps]);
-  const playLabel = playing ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : snaps.length > 1 ? `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}` : 'Play';
+  // Asked to play and not yet playing — the timeline loading, then the field drawn from the latest's people before
+  // the first step: said as playing (Pause), with a spinner in Play's icon while it loads. It read "Play 2021 →
+  // 2026" again for a moment between the two, and went blank while it loaded.
+  const waiting = !!goal?.play;
+  const loadingTl = waiting && !tl && timeline?.data === 'loading';
+  const playLabel = playing || waiting ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : snaps.length > 1 ? `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}` : 'Play';
   const onPlay = () => {
+    if (waiting) { setGoal(null); return; }
     if (playing) { setPlaying(false); setPaused(true); return; }
     setPaused(false);
     // At the latest (or not yet started), from the first again.
@@ -724,7 +731,7 @@ export function StrataGraph({
   const chipInput: Omit<ChipInput, 'now'> | null = snaps.length > 1 ? {
     playing, paused, fast: pace === 'fast', fastMs: FAST_MS, phase,
     step: step && stepFrom != null && at != null && snaps[stepFrom] && snaps[at] ? { from: bareLabel(snaps[stepFrom].label), to: bareLabel(snaps[at].label), quick: !!step.quick } : null,
-    fade: fadeInfo, switching, rest, sortBy: byType ? 'type, then salary' : 'salary', intro: intro === 'title' || intro === 'zoom',
+    fade: fadeInfo, switching, rest, sortBy: sortWords, intro: intro === 'title' || intro === 'zoom',
     plan: pacePlan(pace, mode, countdown), stepsLeft: lastSnap - (at ?? lastSnap), last: bareLabel(snaps[lastSnap].label),
     progress: { from: Math.max(0, (at ?? lastSnap) - 1) / lastSnap, to: (at ?? lastSnap) / lastSnap },
   } : null;
@@ -733,6 +740,8 @@ export function StrataGraph({
   // What a raises-and-cuts step's colours mean, in the legend: while it moves and holds, and all through Fast's play.
   const changeShown = mode === 'change' && !!step?.counts && !step.fade && (phase?.phase === 'move' || phase?.phase === 'hold' || (pace === 'fast' && playing));
   const changePace = (p: Pace) => { setPace(p); setSkipHold((k) => k + 1); };
+  // The step colours' toggle in the toolbar, over the legend; on a phone and full page, in the settings.
+  const modeInBar = !phone && !full && !!timeline && snaps.length > 1;
   // A change of mode plays the last step again in it (3a).
   const changeMode = (md: StepMode) => {
     setMode(md);
@@ -965,8 +974,8 @@ export function StrataGraph({
       : (layout?.view ?? view) === 'magnify'
         ? `A $30k window, magnified. Drag to pan; ${canHover ? 'point at' : 'tap'} anyone to see who they are.`
         : (layout?.view ?? view) === 'floors'
-          ? `Each floor is a $10k band, sorted by salary from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
-          : `Sorted by salary within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
+          ? `Each floor is a $10k band, sorted by ${sortWords} from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
+          : `Sorted by ${sortWords} within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
   const readout = useMemo(() => {
     // Magnified there is no glass to read: the columns are labelled under the plot, and counted over each.
     if (!strata || !layout || !lensAt || layout.view === 'magnify') return null;
@@ -1301,8 +1310,12 @@ export function StrataGraph({
     if (!strata || !layout) return null;
     if (layout.floors) return keyFloor(c);
     const x = Math.min(layout.mainW - 1, (c + 0.5) * layout.colW);
-    const top = colTopY(strata, layout, c);
-    const y = Math.max(PIN_BAND + R / 2, Math.min(layout.base - 4, (top + layout.base) / 2));
+    // Under a filter, among its people in the column, not on the column's middle: by type, then salary, a group
+    // stands in a band of its own, and the middle could be a faded square, with no one to name.
+    let lo = Infinity, hi = -Infinity;
+    if (dim) for (let i = 0; i < strata.col.length; i++) if (strata.col[i] === c && !dim.main[i]) { lo = Math.min(lo, layout.my[i]); hi = Math.max(hi, layout.my[i]); }
+    const mid = lo <= hi ? (lo + hi + layout.grid.sq) / 2 : (colTopY(strata, layout, c) + layout.base) / 2;
+    const y = Math.max(PIN_BAND + R / 2, Math.min(layout.base - 4, mid));
     return { x, y };
   };
   // Unrolled, the arrows walk the tail's people by pay (with Shift ten at a time): the lens over each in turn,
@@ -1487,7 +1500,9 @@ export function StrataGraph({
   }, [full]);
   useEffect(() => () => clearHold(), []);
 
-  if (!strata) return null;
+  // Its room held until the people are in (app.css, `.hero-dist-holder`): drawn from nothing, the panel pushed the
+  // page's links and notes 590px down under the reader as it arrived.
+  if (!strata) return <div className="hero-dist-holder" aria-hidden />;
 
   const fullToggle = phone ? (
     <ActionIcon ref={toggleRef} variant={full ? 'filled' : 'light'} color="accent" size="md"
@@ -1609,6 +1624,15 @@ export function StrataGraph({
           <Text size="xs" className="strata-hint" data-view={layout?.view ?? view}>{hint}</Text>
         </div>
         <div className="strata-toolbar-right">
+          {/* What a step's colours show while the timeline plays, over the key to them (H4): in this row, whose hint
+              gives way, so the legend's row never wraps (a wider snapshot's types would move the plot as it played).
+              On a phone and full page, in the timeline's settings. */}
+          {modeInBar && (
+            <div className="strata-mode-wrap" title="What each step of Play colours people by: raises and cuts, or their type">
+              <Text span size="xs" c="dimmed" className="strata-mode-lead">Play shows</Text>
+              <SegmentedToggle ariaLabel="Show each step by" className="strata-mode" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} />
+            </div>
+          )}
           {fullToggle}
         </div>
       </div>
@@ -1642,9 +1666,11 @@ export function StrataGraph({
               <div className="strata-change-legend" data-step-counts data-on={changeShown || undefined} aria-hidden={!changeShown || undefined}>
                 {stepFrom != null && snaps[stepFrom] && <Text span size="xs" className="strata-legend-meta strata-change-since">since {bareLabel(snaps[stepFrom].label)}</Text>}
                 {([['up', step.counts.up, 'moved up'], ['down', step.counts.down, 'moved down'], ['new', step.counts.joined, 'joined'], ['left', step.counts.left, 'left']] as const).map(([k, v, label]) => (
+                  // The count, then the swatch against its words (I12): the count's room (its widest, so nothing moves
+                  // as it counts) on its left, where it parts one item from the last, never between swatch and words.
                   <span key={k} className="hero-dist-legend-item strata-change-item" data-change={k}>
-                    <span className="hero-dist-swatch strata-change-swatch" aria-hidden data-change={k} />
                     <Text span size="xs" fw={600} className="strata-change-n">{num(v)}</Text>
+                    <span className="hero-dist-swatch strata-change-swatch" aria-hidden data-change={k} />
                     <Text span size="xs">{label}</Text>
                   </span>
                 ))}
@@ -1924,22 +1950,25 @@ export function StrataGraph({
           data-step={step?.counts ? `${step.counts.up}:${step.counts.down}:${step.counts.joined}:${step.counts.left}` : undefined}
           data-pace={pace} data-mode={mode} data-phase={phase?.phase} data-phase-at={phase ? Math.round(phase.start) : undefined}>
           <div className="strata-tl-controls">
+          {/* Play and its speed, one control (H4). Play keeps its words while the timeline loads (I11): a spinner in
+              its icon's place, never a blank button. */}
+          <div className="strata-play-group" role="group" aria-label="Play the timeline">
           {phone && chipActive ? (
             <ActionIcon size={28} radius="xl" color="accent" variant="filled" className="strata-play" onClick={onPlay} aria-label={playLabel}
-              loading={!!goal && !tl && timeline.data === 'loading'}>
-              {playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
+              aria-busy={loadingTl || undefined}>
+              {loadingTl ? <Loader size={ICON.compact} color="white" /> : playing || waiting ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
             </ActionIcon>
           ) : (
-            <Button size="compact-sm" radius="xl" color="accent" className="strata-play"
-              leftSection={playing ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
-              loading={!!goal && !tl && timeline.data === 'loading'} onClick={onPlay}>
+            <Button size="compact-sm" radius="xl" color="accent" className="strata-play" aria-busy={loadingTl || undefined}
+              leftSection={loadingTl ? <Loader size={ICON.compact} color="white" /> : playing || waiting ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
+              onClick={onPlay}>
               {playLabel}
             </Button>
           )}
-          {phone && chipActive && chipInput && <TimelineChip input={chipInput} compact />}
-          {/* The speed and how a step shows; on a phone, with the settings, so the row stays two lines over the plot. */}
+          {/* On a phone, in the settings, so the row stays two lines over the plot. */}
           {!phone && <SegmentedToggle ariaLabel="Speed" className="strata-speed" value={pace} onChange={(v) => changePace(v as Pace)} options={PACES} />}
-          {!phone && <SegmentedToggle ariaLabel="Show each step by" className="strata-mode" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} />}
+          </div>
+          {phone && chipActive && chipInput && <TimelineChip input={chipInput} compact />}
           {/* 3a's tweaks: each column's order, and Slow's countdown. */}
           <Popover width={phone ? 300 : 260} position="top-end" withArrow shadow="md" trapFocus returnFocus>
             <Popover.Target>
@@ -1949,14 +1978,10 @@ export function StrataGraph({
             </Popover.Target>
             <Popover.Dropdown className="strata-settings-panel">
               <Stack gap="md">
-                {phone && (
-                  <>
-                    <SegmentedToggle label="Speed" ariaLabel="Speed" value={pace} onChange={(v) => changePace(v as Pace)} options={PACES} fullWidth />
-                    <SegmentedToggle label="Show each step by" ariaLabel="Show each step by" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} fullWidth />
-                  </>
-                )}
+                {phone && <SegmentedToggle label="Speed" ariaLabel="Speed" value={pace} onChange={(v) => changePace(v as Pace)} options={PACES} fullWidth />}
+                {!modeInBar && <SegmentedToggle label="Show each step by" ariaLabel="Show each step by" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} fullWidth />}
                 <SegmentedToggle label="Sort each column by" ariaLabel="Sort each column by" value={byType ? 'type' : 'salary'} onChange={(v) => setByType(v === 'type')} fullWidth
-                  options={[{ id: 'salary', label: 'Salary' }, { id: 'type', label: 'Type, then salary' }]} />
+                  options={[{ id: 'type', label: 'Type, then salary' }, { id: 'salary', label: 'Salary' }]} />
                 <div>
                   <Eyebrow>Slow’s countdown · {countdown} {countdown === 1 ? 'second' : 'seconds'}</Eyebrow>
                   <Slider className="strata-countdown" min={COUNTDOWN_RANGE[0]} max={COUNTDOWN_RANGE[1]} step={1} value={countdown} onChange={setCountdown}
@@ -1985,12 +2010,8 @@ export function StrataGraph({
                   <button key={sn.id} type="button" role="radio" aria-checked={here} aria-label={sn.label} tabIndex={here ? 0 : -1}
                     className="strata-track-dot" data-state={here ? 'now' : i < (at ?? lastSnap) ? 'past' : 'next'}
                     onClick={() => { setPlaying(false); setPaused(false); goTo(i); }}>
-                    {/* Under each tick (3a): its snapshot where the track has room, else the year where each year begins. */}
-                    <span className="strata-tick-label" aria-hidden>
-                      <span className="strata-tick-full">{tickLabels[i].full}</span>
-                      <span className="strata-tick-year">{tickLabels[i].year}</span>
-                      <span className="strata-tick-yy">{tickLabels[i].yy}</span>
-                    </span>
+                    {/* Under each tick (3a): its snapshot. */}
+                    <span className="strata-tick-label" aria-hidden><span className="strata-tick-full">{tickLabels[i]}</span></span>
                   </button>
                 );
               })}
