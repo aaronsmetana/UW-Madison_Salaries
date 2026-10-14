@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input, VisuallyHidden } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
-import { ShowAll, LIST_PAGE } from '../components/ShowAll';
+import { ShowAll, LIST_PAGE, pageOf } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
@@ -208,7 +208,10 @@ export default function Screening() {
     });
   }, [results, sort]);
 
-  const visible = showAll ? sorted : sorted.slice(0, PAGE_SIZE);
+  // The first rows, then all of them a hundred a page (I6), back to the first page with every new screen.
+  const [listPage, setListPage] = useState(1);
+  useEffect(() => { if (!showAll) setListPage(1); }, [showAll]);
+  const { shown: visible, pages, from: pageFrom } = pageOf(sorted, showAll, listPage, PAGE_SIZE);
 
   // Export the whole ranking, not just the visible page — the point of a screen is to hand the list
   // to someone. Flags are flattened to their own columns so the CSV is filterable in a spreadsheet.
@@ -418,7 +421,7 @@ export default function Screening() {
               <PayBandNote mt={2} snapshotId={snap} />
             </Box>
           )}
-          {!showAll && <ShowAll shown={PAGE_SIZE} total={results.length} onShowAll={() => setShowAll(true)} />}
+          <ShowAll shown={visible.length} total={results.length} onShowAll={() => setShowAll(true)} pager={{ page: listPage, pages, from: pageFrom, setPage: setListPage }} />
         </Card>
       )}
     </Stack>

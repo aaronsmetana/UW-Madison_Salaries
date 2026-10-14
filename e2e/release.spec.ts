@@ -192,9 +192,18 @@ test.describe('the newest release, said', () => {
     await expect(page.locator('.screen-count')).toHaveText(new RegExp(`^${want.n} (people|person) paid below their grade's minimum, ranked`), { timeout: 120_000 });
     const all = page.getByRole('button', { name: /^Show all/ });
     if (await all.count()) await all.click();
-    await expect(page.locator('table tbody tr')).toHaveCount(want.n);
-    // Every one of them carries the flag.
-    await expect(page.locator('table tbody tr').filter({ hasNot: page.getByText('Below grade minimum') })).toHaveCount(0);
+    // Every one of them, a hundred a page past a hundred (I6), each carrying the flag.
+    const next = page.locator('.list-pager').getByRole('button', { name: 'Next page' });
+    let seen = 0;
+    for (;;) {
+      seen += await page.locator('table tbody tr').count();
+      await expect(page.locator('table tbody tr').filter({ hasNot: page.getByText('Below grade minimum') })).toHaveCount(0);
+      if (!(await next.count()) || !(await next.isEnabled())) break;
+      const range = await page.locator('.list-pager-range').innerText();
+      await next.click();
+      await expect(page.locator('.list-pager-range')).not.toHaveText(range);
+    }
+    expect(seen).toBe(want.n);
   });
 
   test('the salary ranges table is grades.json, and HR’s published figures', async ({ page }) => {

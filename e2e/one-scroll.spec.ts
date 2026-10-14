@@ -30,7 +30,7 @@ for (const [name, path, ready] of [
   });
 }
 
-test('a long list shows its first 25, and "Show all" the rest', async ({ page }) => {
+test('a long list shows its first 25, and "Show all" the rest, a hundred a page', async ({ page }) => {
   await page.goto('./titles?code=FA020');
   const rows = page.locator('.peer-row');
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
@@ -40,7 +40,9 @@ test('a long list shows its first 25, and "Show all" the rest', async ({ page })
   expect(total).toBeGreaterThan(25);
   await expect(rows).toHaveCount(25);
   await foot.getByRole('button', { name: /^Show all/ }).click();
-  await expect(rows).toHaveCount(total);
-  await expect(page.locator('.show-all')).toHaveCount(0);
+  // Past a hundred, a hundred a page (I6), the rest on the pager — still in the page's one scroll.
+  await expect(rows).toHaveCount(Math.min(total, 100));
+  if (total > 100) await expect(page.locator('.list-pager-range')).toHaveText(`Rows 1–100 of ${total.toLocaleString('en-US')}`);
+  else await expect(page.locator('.show-all')).toHaveCount(0);
   expect(await ownScrolls(page)).toEqual([]);
 });

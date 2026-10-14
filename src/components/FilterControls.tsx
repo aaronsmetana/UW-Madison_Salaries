@@ -4,7 +4,8 @@ import { IconFilter, IconFilterFilled } from '@tabler/icons-react';
 import { Eyebrow } from './Eyebrow';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
-import { FACETS, whereAll, snapWhere, filterKey } from '../lib/queries';
+import { FACETS, whereAll, snapWhere, filterKey, deptValue, splitDeptValue } from '../lib/queries';
+import type { Filters } from '../state/controls';
 import { scopeKey } from '../state/controls';
 import { dropdownProps } from '../lib/selectProps';
 import { ICON } from '../lib/ui';
@@ -22,23 +23,38 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
     return o;
   }, [filters, field]);
 
-  const { data } = useSql<{ v: string }>(
+  // A department is one school's (I1): the list grouped by school, each pick that school's unit. As one flat list of
+  // about 400 names it read as duplicates — "Dean's Office" and "Deans Office" are two schools' offices.
+  const dept = field === 'department';
+  const { data } = useSql<{ v: string; school: string | null }>(
     ['facet', field, snap ?? '', scopeKey(scope), filterKey(otherFilters)],
-    `SELECT DISTINCT ${field} v FROM salaries
+    `SELECT DISTINCT ${field} v, ${dept ? 'school' : 'NULL'} school FROM salaries
      WHERE ${snapWhere(snap ?? '')} AND ${whereAll(scope, otherFilters)} AND ${field} IS NOT NULL
-     ORDER BY v LIMIT 500`,
+     ORDER BY ${dept ? 'school, ' : ''}v LIMIT ${dept ? 2000 : 500}`,
     !!snap
   );
 
-  const options = useMemo(() => (data ?? []).map((d) => d.v), [data]);
+  const options = useMemo(() => (data ?? []).map((d) => (dept ? deptValue(d.school ?? '', d.v) : d.v)), [data, dept]);
+  const grouped = useMemo(() => {
+    if (!dept) return options;
+    const by = new Map<string, { value: string; label: string }[]>();
+    for (const d of data ?? []) {
+      const g = d.school ?? 'No school';
+      if (!by.has(g)) by.set(g, []);
+      by.get(g)!.push({ value: deptValue(d.school ?? '', d.v), label: d.v });
+    }
+    return [...by].map(([group, items]) => ({ group, items }));
+  }, [dept, data, options]);
 
-  // Auto-remove selected values that are no longer possible under the current constraints.
+  // Auto-remove selected values that are no longer possible under the current constraints. A department from an
+  // older link, named without its school, stands while its name is anywhere in the list.
   useEffect(() => {
     if (!data) return; // wait until options have loaded
     const valid = new Set(options);
-    const pruned = selected.filter((v) => valid.has(v));
+    const names = new Set((data ?? []).map((d) => d.v));
+    const pruned = selected.filter((v) => valid.has(v) || (dept && !v.includes('|') && names.has(v)));
     if (pruned.length !== selected.length) setFilter(field, pruned);
-  }, [data, options, selected, field, setFilter]);
+  }, [data, options, selected, field, setFilter, dept]);
 
   return (
     <MultiSelect
@@ -46,7 +62,7 @@ function FacetMultiSelect({ field, label, searchable }: { field: string; label: 
       size="xs"
       label={label}
       placeholder="Any"
-      data={options}
+      data={grouped}
       value={selected}
       onChange={(v) => setFilter(field, v)}
       searchable={searchable}
@@ -138,6 +154,18 @@ export function FilterControls() {
  * Filters button so chips never shove the button around. `standalone` wraps them in a labeled,
  * divided row — the dedicated "Active filters" area below the control bar.
  */
+/** A filter's value as a reader reads it: a department with its school. */
+export function filterValueLabel(field: string, v: string): string {
+  if (field !== 'department') return v;
+  const { school, department } = splitDeptValue(v);
+  return school ? `${department} · ${school}` : department;
+}
+
+/** Every filter in force, in a phrase: "Faculty · Pharmacy · School of Pharmacy" — for the view's one summary line (I2). */
+export function filtersSummary(filters: Filters): string {
+  return FACETS.flatMap((f) => (filters[f.field] ?? []).map((v) => filterValueLabel(f.field, v))).join(' · ');
+}
+
 export function ActiveFilters({ standalone = false }: { standalone?: boolean }) {
   const { filters, setFilter, clearFilters } = useControls();
   const chips = Object.entries(filters).flatMap(([field, vals]) => vals.map((v) => ({ field, v })));
@@ -152,7 +180,7 @@ export function ActiveFilters({ standalone = false }: { standalone?: boolean }) 
           withRemoveButton
           onRemove={() => setFilter(field, (filters[field] ?? []).filter((x) => x !== v))}
         >
-          {v}
+          {filterValueLabel(field, v)}
         </Pill>
       ))}
       <Button size="compact-xs" variant="subtle" color="gray" onClick={clearFilters}>

@@ -18,6 +18,7 @@ import { useWidth } from '../lib/useWidth';
 import { useRaiseContext } from '../lib/raiseContext';
 import { GapBreakdown } from '../components/GapBreakdown';
 import { FoldRow, useFolded } from '../components/FoldRow';
+import { ShowAll, pageOf } from '../components/ShowAll';
 import { StartingGroup } from '../components/StartingGroup';
 import { PayBandNote } from '../components/PayBandNote';
 import { raiseStepsSql, annualized, MIN_TITLE_STEP, type RaiseStep } from '../lib/raises';
@@ -821,11 +822,15 @@ export default function Person() {
   );
   const AROUND = 4;
   const windowed = !peerQuery && !pileShown && !showAllPeers && sortedCohort.length > 2 * AROUND + 1;
+  // Everyone, or everyone matching, a hundred a page (I6): Professor's 1,251 drew at once.
+  const [peerPg, setPeerPg] = useState(1);
+  useEffect(() => setPeerPg(1), [peerQuery, pileShown, showAllPeers, peerSort, key]);
+  const peerPaged = useMemo(() => pageOf(filteredPeers, true, peerPg), [filteredPeers, peerPg]);
   const visiblePeers = useMemo(() => {
-    if (!windowed) return filteredPeers;
+    if (!windowed) return peerPaged.shown;
     const start = subjectIndexInSort < 0 ? 0 : Math.max(0, Math.min(sortedCohort.length - (2 * AROUND + 1), subjectIndexInSort - AROUND));
     return sortedCohort.slice(start, start + 2 * AROUND + 1);
-  }, [windowed, filteredPeers, sortedCohort, subjectIndexInSort]);
+  }, [windowed, peerPaged, sortedCohort, subjectIndexInSort]);
   const selfPeerPay = useMemo(() => cohortList.find((p) => p.person_key === key)?.pay ?? null, [cohortList, key]);
   // A pile pressed on the strip lists its people here, and brings the table into view; pressed again,
   // everyone is back.
@@ -1378,8 +1383,12 @@ export default function Person() {
                 {peerQuery && filteredPeers.length === 0 && (
                   <Text size="sm" c="dimmed" mt="sm">No one with this title matches “{peerFilter.trim()}”.</Text>
                 )}
-                {/* The table's foot: how much of the list is showing. */}
+                {/* The table's foot: how much of the list is showing, and past a hundred, its pages. */}
                 <Group justify="flex-end" mt="sm" gap="xs" className="peer-foot">
+                  {!windowed && peerPaged.pages > 1 && (
+                    <ShowAll shown={peerPaged.shown.length} total={filteredPeers.length} onShowAll={() => {}}
+                      pager={{ page: peerPg, pages: peerPaged.pages, from: peerPaged.from, setPage: setPeerPg }} />
+                  )}
                   {!pileShown && sortedCohort.length > 2 * AROUND + 1 && (
                     <Group gap={6} wrap="nowrap">
                       <Text size="xs" c="dimmed">

@@ -381,7 +381,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
           </Table>
         </ScrollArea.Autosize>
         </div>
-        <ShowAll shown={peoplePage.shown.length} total={peoplePage.total} onShowAll={peoplePage.showAll} />
+        <ShowAll shown={peoplePage.shown.length} total={peoplePage.total} onShowAll={peoplePage.showAll} pager={peoplePage.pager} />
       </Card>
 
       <Card withBorder padding="lg">

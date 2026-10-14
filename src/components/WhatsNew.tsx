@@ -228,7 +228,7 @@ export function SalaryRanges() {
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
-          <ShowAll shown={rangePage.shown.length} total={rangePage.total} onShowAll={rangePage.showAll} />
+          <ShowAll shown={rangePage.shown.length} total={rangePage.total} onShowAll={rangePage.showAll} pager={rangePage.pager} />
         </Box>
         <Box>
           <Text size="sm" fw={600} mb={6}>Grades with a minimum only ({num(floors.length)})</Text>
@@ -247,7 +247,7 @@ export function SalaryRanges() {
               </Table.Tbody>
             </Table>
           </ScrollArea.Autosize>
-          <ShowAll shown={floorPage.shown.length} total={floorPage.total} onShowAll={floorPage.showAll} />
+          <ShowAll shown={floorPage.shown.length} total={floorPage.total} onShowAll={floorPage.showAll} pager={floorPage.pager} />
         </Box>
       </SimpleGrid>
       <Text size="xs" c="dimmed" mt="sm">

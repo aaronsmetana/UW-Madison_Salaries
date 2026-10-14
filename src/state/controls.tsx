@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
+import { FACETS } from '../lib/queries';
 
 export type Scope =
   | { kind: 'all' }
@@ -49,13 +50,31 @@ export interface ControlsState {
 
 const Ctx = createContext<ControlsState | null>(null);
 
-function parseFilters(raw: string | null): Filters {
+function parseLegacy(raw: string | null): Filters {
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Filters;
   } catch {
     return {};
   }
+}
+
+/** The facet filters in the address: one parameter each (`?cat=Faculty&cat=Limited`, I3), and an older link's
+ *  `?filt=` JSON read as well. */
+export function readFilters(params: URLSearchParams): Filters {
+  const out: Filters = { ...parseLegacy(params.get('filt')) };
+  for (const f of FACETS) {
+    const vals = params.getAll(f.param);
+    if (vals.length) out[f.field] = [...new Set([...(out[f.field] ?? []), ...vals])];
+  }
+  return out;
+}
+/** Every parameter the facet filters may take, the legacy one with them. */
+export const FILTER_PARAMS = ['filt', ...FACETS.map((f) => f.param)];
+/** The filters written back flat, the legacy JSON gone. */
+function writeFilters(p: URLSearchParams, filters: Filters) {
+  for (const k of FILTER_PARAMS) p.delete(k);
+  for (const f of FACETS) for (const v of filters[f.field] ?? []) p.append(f.param, v);
 }
 
 /** Controls live in the URL query string → every view is shareable/bookmarkable. */
@@ -79,7 +98,7 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
     const asked = params.get('metric');
     const metric: Metric = asked === 'full' || asked === 'fte' ? asked : fallback;
     const activeSnapshot = params.get('snap');
-    const filters = parseFilters(params.get('filt'));
+    const filters = readFilters(params);
 
     const update = (mut: (p: URLSearchParams) => void) =>
       setParams(
@@ -110,13 +129,12 @@ export function ControlsProvider({ children }: { children: ReactNode }) {
       setActiveSnapshot: (id) => update((p) => (id ? p.set('snap', id) : p.delete('snap'))),
       setFilter: (field, values) =>
         update((p) => {
-          const cur = parseFilters(p.get('filt'));
+          const cur = readFilters(p);
           if (values.length) cur[field] = values;
           else delete cur[field];
-          if (Object.keys(cur).length) p.set('filt', JSON.stringify(cur));
-          else p.delete('filt');
+          writeFilters(p, cur);
         }),
-      clearFilters: () => update((p) => p.delete('filt')),
+      clearFilters: () => update((p) => { for (const k of FILTER_PARAMS) p.delete(k); }),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

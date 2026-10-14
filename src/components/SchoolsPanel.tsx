@@ -1,9 +1,10 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ShowAll, useShowAll } from './ShowAll';
 import { Group, Text, Table, Anchor, ScrollArea, TextInput, ActionIcon, Loader, Tooltip, VisuallyHidden } from '@mantine/core';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconSearch, IconSearchOff, IconChevronRight } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
+import { MinPeople } from './MinPeople';
 import { useControls, type Metric } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { peopleSql, snapWhere, whereAll, filterKey, PRIOR_FOOTING, growthBetween } from '../lib/queries';
@@ -22,20 +23,58 @@ import { rangeScale } from '../lib/rangeScale';
 import { fmtK } from '../lib/chartStyle';
 
 interface SchoolRow { school: string; headcount: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
-interface DeptRow { department: string; headcount: number; med: number | null }
+interface DeptRow { department: string; headcount: number; med: number | null; p25: number | null; p75: number | null; lo: number | null; hi: number | null }
 
 type SortKey = 'school' | 'headcount' | 'med' | 'dhc' | 'dmed';
 
-/** Lazily-loaded department breakdown for an expanded division row. */
-function DeptRows({ where, school, metric, colSpan }: {
-  where: string; school: string; metric: Metric; colSpan: number;
+/**
+ * Lazily-loaded department breakdown for an expanded division row: each department with the division's own columns
+ * (I4) — its people and median, their change over the page's period, and its spread on the divisions' scale — and
+ * a press on it opens the page scoped to it. They were a name, a count and a median: a dead end. A department has no
+ * Compare (the tray holds people, divisions and titles).
+ */
+function DeptRows({ where, whereFrom, school, metric, colSpan, scale, period, href }: {
+  where: string; whereFrom: string | null; school: string; metric: Metric; colSpan: number;
+  scale: ReturnType<typeof rangeScale>;
+  period: { from: { date: string; label: string }; to: { date: string } } | null;
+  /** The page scoped to a department. */
+  href: (department: string) => string;
 }) {
+  const nav = useNavigate();
+  const inSchool = `school = ${sqlStr(school)} AND department IS NOT NULL`;
   const { data } = useSql<DeptRow>(
     ['schools-depts', where, school, metric],
-    `WITH pe AS (${peopleSql({ metric, where: `${where} AND school = ${sqlStr(school)} AND department IS NOT NULL`, by: ['department'] })})
-     SELECT department, count(*) FILTER (WHERE pay > 0) headcount, median(pay) FILTER (WHERE pay > 0) med
+    `WITH pe AS (${peopleSql({ metric, where: `${where} AND ${inSchool}`, by: ['department'] })})
+     SELECT department, count(*) FILTER (WHERE pay > 0) headcount, median(pay) FILTER (WHERE pay > 0) med,
+        quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25, quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
+        min(pay) FILTER (WHERE pay > 0) lo, max(pay) FILTER (WHERE pay > 0) hi
      FROM pe GROUP BY department ORDER BY headcount DESC LIMIT 50`
   );
+  // Over the page's period, as a division's: its people and median then, and its median now on then's footing.
+  const { data: before } = useSql<{ department: string; headcount: number; med: number | null }>(
+    ['schools-depts-from', whereFrom ?? '', school, metric],
+    `WITH pe AS (${peopleSql({ metric, where: `${whereFrom} AND ${inSchool}`, by: ['department'] })})
+     SELECT department, count(*) FILTER (WHERE pay > 0) headcount, median(pay) FILTER (WHERE pay > 0) med FROM pe GROUP BY department`,
+    !!whereFrom
+  );
+  const { data: prior } = useSql<{ department: string; med_prior: number | null }>(
+    ['schools-depts-prior', where, school, metric],
+    `WITH po AS (${peopleSql({ metric, where: `${where} AND ${inSchool}`, by: ['department'], from: PRIOR_FOOTING })})
+     SELECT department, median(pay) FILTER (WHERE pay > 0) med_prior FROM po GROUP BY department`,
+    !!whereFrom
+  );
+  const change = useMemo(() => {
+    const b = new Map((before ?? []).map((r) => [r.department, r]));
+    const p = new Map((prior ?? []).map((r) => [r.department, r.med_prior]));
+    return new Map((data ?? []).map((d) => {
+      const then = b.get(d.department);
+      if (!then || !period) return [d.department, null] as const;
+      const growth = then.med != null && d.med != null
+        ? growthBetween({ date: period.from.date, value: then.med }, { date: period.to.date, value: d.med, prior: p.get(d.department) ?? null }).growth
+        : null;
+      return [d.department, { dhc: d.headcount - then.headcount, dmed: growth }] as const;
+    }));
+  }, [data, before, prior, period]);
   if (!data) {
     return (
       <Table.Tr>
@@ -49,30 +88,45 @@ function DeptRows({ where, school, metric, colSpan }: {
   const maxHc = Math.max(...data.map((d) => d.headcount), 1);
   return (
     <>
-      {data.map((d) => (
-        <Table.Tr key={d.department} className="dept-row">
-          <Table.Td className="dept-cell">
-            <Anchor
-              component={Link}
-              to={`/divisions?${new URLSearchParams({ school, dept: d.department })}`}
-              size="sm"
-              c="var(--mantine-color-text)"
-              underline="hover"
-              lineClamp={1}
-              className="dept-link"
-            >
-              {d.department}
-            </Anchor>
-            <Text className="fold-under" size="xs" c="dimmed">{num(d.headcount)} people</Text>
-          </Table.Td>
-          <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} color="var(--bar)" /></Table.Td>
-          <Table.Td ta="right"><Text size="sm" c="dimmed">{usd(d.med)}</Text></Table.Td>
-          <Table.Td data-fold />
-          <Table.Td data-fold />
-          <Table.Td data-fold />
-          <Table.Td />
-        </Table.Tr>
-      ))}
+      {data.map((d) => {
+        const c = change.get(d.department);
+        const canPlot = d.lo != null && d.p25 != null && d.med != null && d.p75 != null && d.hi != null && d.hi > d.lo;
+        return (
+          <Table.Tr key={d.department} className="dept-row" style={{ cursor: 'pointer' }} onClick={() => nav(href(d.department))}>
+            <Table.Td className="dept-cell">
+              <Anchor
+                component={Link}
+                to={href(d.department)}
+                size="sm"
+                c="var(--mantine-color-text)"
+                underline="hover"
+                lineClamp={1}
+                className="dept-link"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {d.department}
+              </Anchor>
+              <Text className="fold-under" size="xs" c="dimmed">{num(d.headcount)} people</Text>
+            </Table.Td>
+            <Table.Td ta="right" data-fold><Text size="sm" c="dimmed">{num(d.headcount)}</Text><MiniBar frac={d.headcount / maxHc} color="var(--bar)" /></Table.Td>
+            <Table.Td ta="right"><Text size="sm" c="dimmed">{usd(d.med)}</Text></Table.Td>
+            <Table.Td ta="right" data-fold className="dept-dhc">
+              {!period ? null : c == null ? <Text span size="sm" c="dimmed">new</Text> : <Text span size="sm" c="dimmed">{c.dhc > 0 ? '+' : c.dhc < 0 ? '−' : ''}{num(Math.abs(c.dhc))}</Text>}
+            </Table.Td>
+            <Table.Td ta="right" data-fold className="dept-dmed">
+              {!period ? null : c?.dmed == null ? <Text span size="sm" c="dimmed">—</Text> : <Text span size="sm" fw={600} c={Math.abs(c.dmed) < 0.0005 ? 'dimmed' : c.dmed > 0 ? 'up' : 'down'}>{fmtChange(c.dmed)}</Text>}
+            </Table.Td>
+            <Table.Td ta="right" data-fold>
+              {canPlot ? (
+                <Tooltip withArrow multiline label={`min ${usd(d.lo)} · p25 ${usd(d.p25)} · median ${usd(d.med)} · p75 ${usd(d.p75)} · max ${usd(d.hi)}`}>
+                  <div><MiniRange scale={scale} lo={d.lo!} p25={d.p25!} med={d.med!} p75={d.p75!} hi={d.hi!} /></div>
+                </Tooltip>
+              ) : <Text span size="sm" c="dimmed">—</Text>}
+            </Table.Td>
+            <Table.Td />
+          </Table.Tr>
+        );
+      })}
     </>
   );
 }
@@ -126,6 +180,11 @@ export function SchoolsPanel() {
   }, [schools, before, prior, periodFrom, periodTo]);
 
   const [q, setQ] = useState('');
+  // 25 people or more to start (I5): sorted by median, a division of 99 and one of 17 led the list. Only where the tab
+  // lists every division: scoped to one, or filtered to a department (whose division holds only its people), it is
+  // shown however small.
+  const [minN, setMinN] = useState(25);
+  const sizing = scope.kind === 'all' && !filters.department?.length;
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'headcount', dir: 'desc' });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (s: string) =>
@@ -139,6 +198,7 @@ export function SchoolsPanel() {
     const t = q.trim().toLowerCase();
     let rows = schools ?? [];
     if (t) rows = rows.filter((r) => r.school.toLowerCase().includes(t));
+    if (sizing && minN > 0) rows = rows.filter((r) => r.headcount >= minN);
     const { key, dir } = sort;
     // A division new in the period has no change: it sorts last either way.
     const val = (r: SchoolRow) => key === 'dhc' || key === 'dmed' ? change.get(r.school)?.[key] ?? null : Number(r[key] ?? 0);
@@ -149,14 +209,24 @@ export function SchoolsPanel() {
       return (dir === 'asc' ? 1 : -1) * (Number(x) - Number(y));
     });
     return sorted;
-  }, [schools, q, sort, change]);
+  }, [schools, q, sort, change, sizing, minN]);
   // The first rows, the rest on "Show all" (G11): the page's one scroll, not a box inside it.
-  const page = useShowAll(view, `${q}|${sort.key}|${sort.dir}`);
+  const page = useShowAll(view, `${q}|${sort.key}|${sort.dir}|${sizing ? minN : 0}`);
 
   const maxHc = useMemo(() => Math.max(1, ...(schools ?? []).map((s) => s.headcount)), [schools]);
   const maxMed = useMemo(() => Math.max(1, ...(schools ?? []).map((s) => s.med ?? 0)), [schools]);
   const scale = useMemo(() => rangeScale((schools ?? []).map((s) => s.p75)), [schools]);
   const open = (school: string) => nav(`/school/${encodeURIComponent(school)}`);
+  // A department: this page, scoped to it, the rest of the view kept.
+  const [params] = useSearchParams();
+  const deptHref = (school: string, department: string) => {
+    const n = new URLSearchParams(params);
+    n.set('school', school);
+    n.set('dept', department);
+    return `/divisions?${n}`;
+  };
+  const whereFrom = periodFrom ? `${snapWhere(periodFrom.id)} AND ${whereAll(scope, filters)}` : null;
+  const period = periodFrom && periodTo ? { from: periodFrom, to: periodTo } : null;
   // From zero, as a bar's length must be: scaled from the lowest median to the highest, Veterinary Medicine's
   // $63,088 was a sliver beside Information Technology's $107,720, a 1.7× gap drawn as about 7×.
   const medFrac = (m: number | null) => (m == null ? 0 : m / maxMed);
@@ -184,8 +254,9 @@ export function SchoolsPanel() {
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
         />
-        <Group gap="sm" wrap="nowrap">
-          <Text size="xs" c="dimmed">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
+        <Group gap="sm" wrap="wrap">
+          {sizing && <MinPeople value={minN} onChange={setMinN} />}
+          <Text size="xs" c="dimmed" className="schools-count">{num(view.length)} of {num((schools ?? []).length)} divisions</Text>
           <CsvButton onClick={exportCsv} disabled={!schools?.length} />
         </Group>
       </Group>
@@ -194,7 +265,7 @@ export function SchoolsPanel() {
           size="sm"
           icon={<IconSearchOff size={ICON.nav} />}
           title="No divisions match"
-          hint={`Nothing in this scope${q ? ' matches your search' : ''}. Try widening the scope or clearing filters.`}
+          hint={`Nothing in this scope${q ? ' matches your search' : ''}${sizing && minN ? ` with ${minN} people or more` : ''}. Try widening the scope, clearing filters or a lower minimum.`}
         />
       ) : (
       <>
@@ -275,7 +346,7 @@ export function SchoolsPanel() {
                       <TrayButton inTray={inTray} name={s.school} stopPropagation onAdd={() => add({ type: 'school', id: s.school, label: s.school })} onRemove={() => remove(s.school)} />
                     </Table.Td>
                   </Table.Tr>
-                  {isOpen && <DeptRows where={where} school={s.school} metric={metric} colSpan={7} />}
+                  {isOpen && <DeptRows where={where} whereFrom={whereFrom} school={s.school} metric={metric} colSpan={7} scale={scale} period={period} href={(d) => deptHref(s.school, d)} />}
                 </Fragment>
               );
             })}
@@ -283,7 +354,7 @@ export function SchoolsPanel() {
         </Table>
       </ScrollArea.Autosize>
       </div>
-      <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
+      <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} pager={page.pager} />
       {periodFrom && (
         <Text size="xs" c="dimmed" mt="xs" className="schools-change-note">
           Δ: since {periodFrom.label}, the page&apos;s period; the median like for like across a change in how pay is

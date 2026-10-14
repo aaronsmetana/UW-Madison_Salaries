@@ -1,15 +1,29 @@
 import type { Metric, Scope, Filters } from '../state/controls';
 import { sqlStr } from './duckdb';
 
-/** allowed facet columns (canonical names — never user-typed) */
-export const FACETS: { field: string; label: string; searchable?: boolean }[] = [
-  { field: 'employee_category', label: 'Category' },
-  { field: 'employee_type', label: 'Employee type' },
-  { field: 'flsa_status', label: 'FLSA' },
-  { field: 'pay_rate_type', label: 'Pay type' },
-  { field: 'department', label: 'Department', searchable: true },
+/**
+ * Allowed facet columns (canonical names — never user-typed), each with its own parameter in the address (I3):
+ * `?cat=Faculty`, repeated for more than one. They went in as one JSON blob, `?filt={"employee_category":[...]}`.
+ */
+export const FACETS: { field: string; label: string; param: string; searchable?: boolean }[] = [
+  { field: 'employee_category', label: 'Category', param: 'cat' },
+  { field: 'employee_type', label: 'Employee type', param: 'etype' },
+  { field: 'flsa_status', label: 'FLSA', param: 'flsa' },
+  { field: 'pay_rate_type', label: 'Pay type', param: 'paytype' },
+  { field: 'department', label: 'Department', param: 'unit', searchable: true },
 ];
 const FACET_FIELDS = new Set(FACETS.map((f) => f.field));
+
+/**
+ * A department filter's value: its school and its name, `School|Department` (I1). A name alone matched every school
+ * that uses it — "Administration" is a department in twelve — so the filter's list is grouped by school and each
+ * pick is one school's unit. A value with no school (an older link) still matches the name wherever it is.
+ */
+export const deptValue = (school: string, department: string) => `${school}|${department}`;
+export function splitDeptValue(v: string): { school: string | null; department: string } {
+  const at = v.indexOf('|');
+  return at < 0 ? { school: null, department: v } : { school: v.slice(0, at), department: v.slice(at + 1) };
+}
 
 /**
  * The FTE multiplier used by every actual-pay expression below.
@@ -306,7 +320,15 @@ export const snapWhere = (snapshotId: string): string => `snapshot_id = ${sqlStr
 export function filterWhere(filters: Filters): string {
   const parts = Object.entries(filters)
     .filter(([field, vals]) => FACET_FIELDS.has(field) && vals && vals.length)
-    .map(([field, vals]) => `${field} IN (${vals.map(sqlStr).join(', ')})`);
+    .map(([field, vals]) => {
+      if (field !== 'department') return `${field} IN (${vals.map(sqlStr).join(', ')})`;
+      // Each department in its own school (`deptValue`); a bare name, from an older link, in any.
+      const one = vals.map((v) => {
+        const { school, department } = splitDeptValue(v);
+        return school == null ? `department = ${sqlStr(department)}` : `(school = ${sqlStr(school)} AND department = ${sqlStr(department)})`;
+      });
+      return `(${one.join(' OR ')})`;
+    });
   return parts.length ? parts.join(' AND ') : 'TRUE';
 }
 

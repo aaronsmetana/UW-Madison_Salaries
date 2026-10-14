@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Anchor, Box, List, ScrollArea, SimpleGrid, UnstyledButton } from '@mantine/core';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { IconCheck, IconTrendingUp } from '@tabler/icons-react';
-import { ShowAll, LIST_PAGE } from '../components/ShowAll';
+import { ShowAll, LIST_PAGE, pageOf } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
 import { CopyLinkButton } from '../components/CopyLinkButton';
@@ -222,6 +222,13 @@ export default function Raises() {
     });
   }, [changes, changeSort]);
   const [showAllChanges, setShowAllChanges] = useState(false);
+  // Each list's first rows, then all of them a hundred a page (I6), back to the first page with every new reading.
+  const [abovePg, setAbovePg] = useState(1);
+  const [changesPg, setChangesPg] = useState(1);
+  useEffect(() => { if (!showAll) setAbovePg(1); }, [showAll]);
+  useEffect(() => { if (!showAllChanges) setChangesPg(1); }, [showAllChanges]);
+  const abovePage = { ...pageOf(sorted, showAll, abovePg, PAGE_SIZE), page: abovePg };
+  const changesPage = { ...pageOf(changesSorted, showAllChanges, changesPg, PAGE_SIZE), page: changesPg };
 
   const scopeText = filters.department ? ` in ${filters.department}` : filters.school ? ` in ${filters.school}` : '';
   const narrowed = [
@@ -400,7 +407,7 @@ export default function Raises() {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {(showAll ? sorted : sorted.slice(0, PAGE_SIZE)).map((r) => (
+                    {abovePage.shown.map((r) => (
                       <Table.Tr key={r.person_key} data-person={r.person_key} data-why={r.why}>
                         <Table.Td>
                           <Anchor component={Link} to={`/person/${encodeURIComponent(r.person_key)}`}>{fullName(r.fn, r.ln)}</Anchor>
@@ -429,7 +436,7 @@ export default function Raises() {
                 </Table>
               </ScrollArea.Autosize>
             )}
-            {!showAll && <ShowAll shown={PAGE_SIZE} total={sorted.length} onShowAll={() => setShowAll(true)} />}
+            <ShowAll shown={abovePage.shown.length} total={sorted.length} onShowAll={() => setShowAll(true)} pager={{ ...abovePage, setPage: setAbovePg }} />
           </Card>
 
           <Card withBorder padding={0} className="raise-title-changes" data-count={changes?.length ?? ''}>
@@ -455,7 +462,7 @@ export default function Raises() {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {(showAllChanges ? changesSorted : changesSorted.slice(0, PAGE_SIZE)).map((r) => {
+                    {changesPage.shown.map((r) => {
                       const fte = Math.abs(r.fte_from - r.fte_to) > 0.005 ? ` · FTE ${r.fte_from.toFixed(2)} → ${r.fte_to.toFixed(2)}` : '';
                       return (
                         <Table.Tr key={r.person_key} data-person={r.person_key}>
@@ -476,7 +483,7 @@ export default function Raises() {
                 </Table>
               </ScrollArea.Autosize>
             )}
-            {!showAllChanges && <ShowAll shown={PAGE_SIZE} total={changesSorted.length} onShowAll={() => setShowAllChanges(true)} />}
+            <ShowAll shown={changesPage.shown.length} total={changesSorted.length} onShowAll={() => setShowAllChanges(true)} pager={{ ...changesPage, setPage: setChangesPg }} />
           </Card>
 
           {account && (

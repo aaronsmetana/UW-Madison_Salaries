@@ -68,6 +68,9 @@ async function screen(page: Page, c: Case) {
   const all = page.getByRole('button', { name: /^Show all/ });
   if (await all.count()) await all.click();
   const row = page.locator('table tbody tr').filter({ has: page.locator('td:first-child', { hasText: nameRe(c) }) });
+  // A hundred a page past a hundred (I6): on through the pages to theirs.
+  const next = page.locator('.list-pager').getByRole('button', { name: 'Next page' });
+  while (!(await row.count()) && (await next.count()) && await next.isEnabled()) await next.click();
   await expect(row).toHaveCount(1);
   return row;
 }

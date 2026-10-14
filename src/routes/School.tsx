@@ -550,7 +550,7 @@ export default function School() {
                 </Table.Tbody>
                 </Table>
               </ScrollArea.Autosize>
-              <ShowAll shown={deptPage.shown.length} total={deptPage.total} onShowAll={deptPage.showAll} />
+              <ShowAll shown={deptPage.shown.length} total={deptPage.total} onShowAll={deptPage.showAll} pager={deptPage.pager} />
               </>
             )}
             <Text size="xs" c="dimmed" mt="sm">

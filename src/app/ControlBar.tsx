@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Group, Select, Text, Badge, Button, Paper, Combobox, useCombobox, InputBase, Drawer, Stack } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconSearch, IconRefresh, IconAdjustmentsHorizontal } from '@tabler/icons-react';
-import { useControls, METRIC_LABEL, scopeLabel, type Scope } from '../state/controls';
+import { useControls, METRIC_LABEL, scopeLabel, FILTER_PARAMS, type Scope } from '../state/controls';
 import { useSummary, useSql } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { paidHeadcount } from '../lib/queries';
 import { num } from '../lib/format';
-import { FilterControls, ActiveFilters } from '../components/FilterControls';
+import { FilterControls, ActiveFilters, filtersSummary } from '../components/FilterControls';
 import { NewBadge } from '../components/NewBadge';
 import { Eyebrow } from '../components/Eyebrow';
 import { dropdownProps, DROPDOWN_TIERS } from '../lib/selectProps';
@@ -201,7 +201,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
       leftSection={<IconRefresh size={ICON.compact} />}
       onClick={() => setParams((prev) => {
         const n = new URLSearchParams(prev);
-        for (const k of ['school', 'dept', 'snap', 'from', 'metric', 'filt']) n.delete(k);
+        for (const k of ['school', 'dept', 'snap', 'from', 'metric', ...FILTER_PARAMS]) n.delete(k);
         return n;
       }, { replace: true })}
     >
@@ -276,6 +276,9 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
   );
 
   const copyLink = <CopyLinkButton size="xs" />;
+  // The view in one line (I2): where, when, the measure, and every filter on — "Faculty" was only in a row of its own.
+  const summaryLine = [label, period && from && to ? `${from.label} → ${to.label}` : snapLabel, METRIC_LABEL[metric], filtersSummary(filters)]
+    .filter(Boolean).join(' · ');
 
   // Inline: an in-content panel (used on Compare/Explore) sharing the page background. Controls left,
   // actions right — and the Filters button stays put: active-filter chips flow into their own row below.
@@ -297,7 +300,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
           {atDefaults ? 'View' : `View (${changed})`}
         </Button>
         <Text size="xs" c="dimmed" truncate style={{ minWidth: 0, flex: 1 }}>
-          {label} · {period && from && to ? `${from.label} → ${to.label}` : snapLabel} · {METRIC_LABEL[metric]}
+          {summaryLine}
         </Text>
         <div style={{ flexShrink: 0 }}>{copyLink}</div>
       </Group>
@@ -318,8 +321,8 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
             {/* Active-lens summary: only when the view is narrowed from the defaults, so it reads as a
                 "you've focused the data" reminder beside the Reset button rather than restating the toggles. */}
             {!atDefaults && (
-              <Badge variant="light" color="accent" visibleFrom="md">
-                {label} · {snapLabel} · {METRIC_LABEL[metric]}
+              <Badge variant="light" color="accent" visibleFrom="md" className="view-summary" maw={420} title={summaryLine}>
+                {summaryLine}
               </Badge>
             )}
             <FilterControls />
@@ -348,8 +351,8 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
         <ActiveFilters />
         {resetView}
         {copyLink}
-        <Badge variant="light" color="accent">
-          {label} · {snapLabel} · {METRIC_LABEL[metric]}
+        <Badge variant="light" color="accent" className="view-summary" title={summaryLine}>
+          {summaryLine}
         </Badge>
       </Group>
     </Group>

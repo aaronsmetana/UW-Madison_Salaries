@@ -196,7 +196,7 @@ export function DuplicateIdentities({ snap }: { snap?: string }) {
                     );
                   })}
                 </Stack>
-                <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
+                <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} pager={page.pager} />
               </>
             )}
           </>

@@ -1,10 +1,10 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ShowAll, useShowAll } from './ShowAll';
-import { Group, Text, Table, Button, Anchor, ScrollArea, TextInput, Tooltip, Mark, VisuallyHidden, Select } from '@mantine/core';
+import { Group, Text, Table, Anchor, ScrollArea, TextInput, Tooltip, Mark, VisuallyHidden, Select } from '@mantine/core';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
-import { Eyebrow } from './Eyebrow';
+import { MinPeople } from './MinPeople';
 import { useControls } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { peopleSql, snapWhere, whereAll, filterKey } from '../lib/queries';
@@ -40,7 +40,6 @@ function Highlight({ text, q }: { text: string; q: string }) {
   return <>{text.slice(0, i)}<Mark color="accent">{text.slice(i, i + q.length)}</Mark>{text.slice(i + q.length)}</>;
 }
 
-const THRESHOLDS = [{ id: '0', label: 'All' }, { id: '5', label: '≥5' }, { id: '25', label: '≥25' }, { id: '100', label: '≥100' }];
 
 export function TitlesPanel() {
   const { scope, metric, filters } = useControls();
@@ -132,15 +131,7 @@ export function TitlesPanel() {
         />
         {/* Wraps: on a phone the CSV button ran past the screen's edge. */}
         <Group gap="sm" wrap="wrap">
-          <Group gap={6} wrap="nowrap">
-            <Eyebrow>Min people</Eyebrow>
-            <Button.Group>
-              {THRESHOLDS.map((th) => (
-                <Button key={th.id} size="compact-xs" variant={minN === Number(th.id) ? 'filled' : 'default'}
-                  color="accent" onClick={() => setMinN(Number(th.id))}>{th.label}</Button>
-              ))}
-            </Button.Group>
-          </Group>
+          <MinPeople value={minN} onChange={setMinN} />
           <Select
             {...dropdownProps('sm')}
             aria-label="Category"
@@ -240,7 +231,7 @@ export function TitlesPanel() {
       </ScrollArea.Autosize>
       </div>
       )}
-      <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} />
+      <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} pager={page.pager} />
       <Text size="xs" c="dimmed" mt="xs">
         Each spread is on one scale, printed in the header, so equal widths are equal dollars on every row:
         the line runs from the lowest to the highest pay, the box is the middle 50%, and the tick the median.
