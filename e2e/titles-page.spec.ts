@@ -172,3 +172,29 @@ test('a histogram’s axis keeps its first and last labels on the plot, on both 
     expect(out, `${code}: labels off the plot`).toEqual([]);
   }
 });
+
+/**
+ * The line under a title's name is there from the first frame the page's controls are: it arrived once the title's
+ * row was in, and pushed the controls and everything under them down (on CI's runner the page's layout shift read
+ * 0.74). The code holds its place; the grade, category and headcount fill it in.
+ */
+test('the line under a title’s name is held from the first frame, so nothing under it moves as it fills', async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { firstFrame: { meta: boolean; text: string } | null };
+    w.firstFrame = null;
+    const tick = () => {
+      if (!w.firstFrame && document.querySelector('.title-controls')) {
+        const m = document.querySelector('.page-meta');
+        w.firstFrame = { meta: !!m, text: m?.textContent ?? '' };
+      }
+      if (!w.firstFrame) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await page.goto('./titles?code=IT040');
+  await expect(page.locator('.page-meta')).toContainText('people', { timeout: 60_000 });
+  const first = await page.evaluate(() => (window as unknown as { firstFrame: { meta: boolean; text: string } | null }).firstFrame);
+  expect(first, 'the controls never drew').not.toBeNull();
+  expect(first!.meta, 'the controls drew before the line over them').toBe(true);
+  expect(first!.text).toMatch(/^IT040/);
+});

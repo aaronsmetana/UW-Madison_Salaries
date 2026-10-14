@@ -165,7 +165,9 @@ export default function PayCheck() {
       <PageHeader
         eyebrow={code ? 'Titles' : undefined}
         title={code ? (codeTitle ?? code) : 'Titles'}
-        meta={metaLine ?? undefined}
+        // Held from the first paint by the code (it is in the address), the rest added as it loads: arriving
+        // whole once the title's row was in, it pushed the controls and everything under them down.
+        meta={code ? (metaLine ?? code) : undefined}
         description={code ? undefined : 'Pick a job title to see what it pays across UW–Madison: the full range, who holds it, and how it varies by school.'}
         right={(
           <Group gap="sm" wrap="wrap" className="title-actions">
