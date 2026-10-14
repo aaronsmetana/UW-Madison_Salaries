@@ -201,9 +201,10 @@ test('figures are written one way: headline money to three figures, axes with se
   await expect(payroll).not.toContainText(/\$\d{1,3}(,\d{3}){2,}/);
   await page.goto('./divisions?tab=changes');
   const tab = page.getByRole('tabpanel', { name: 'Changes' });
-  const tiles = tab.locator('[title]').filter({ hasText: /\$/ });
-  await expect(tiles.first()).toBeVisible({ timeout: 60_000 });
-  for (const t of await tiles.allInnerTexts()) expect(t, 'a Changes tile').toMatch(/^−?\$\d+(\.\d+)?[KMB]$/);
+  // The payroll is its waterfall's labels now (D21): its tiles said the same figures again.
+  const labels = tab.locator('#changes-payroll .recharts-label-list text');
+  await expect(labels.first()).toBeVisible({ timeout: 60_000 });
+  for (const t of await labels.allTextContents()) expect(t, 'a payroll step').toMatch(/^[+−]\$\d+(\.\d+)?[KMB]$/);
   const panel = await tab.innerText();
   expect(panel, 'a hyphen for a minus').not.toMatch(/(^|[\s(])-\$?\d/m);
   await page.goto('./divisions?tab=trends');

@@ -55,14 +55,13 @@ const retColor = (r: number) => {
 
 
 /** The panel's three figures, named once for the loaded row and its placeholder. */
-const FIGURES = ['Median tenure · current staff', 'Hired in the last 5 years', 'Snapshots span'] as const;
+const FIGURES = ['Median tenure · current staff', 'Hired in the last 5 years', 'Left since the snapshot before'] as const;
 
 export function CohortPanel() {
   const entrance = useEntrance();
   const { scope, filters } = useControls();
   const { data: summary } = useSummary();
   const latest = summary?.snapshots[summary.snapshots.length - 1];
-  const latestYear = latest ? Number(latest.date.slice(0, 4)) : 2026;
   const where = whereAll(scope, filters);
   const scopeVal = scope.kind === 'school' ? scope.value : '';
   const [sortMode, setSortMode] = useState<'year' | 'retention'>('year');
@@ -163,6 +162,7 @@ export function CohortPanel() {
   // The Oct 2023 scope change (snapTime's KNOWN_BREAKS), when the source's coverage changed. It used to
   // be guessed as the step with the most churn, which in some divisions is another step entirely.
   const scope23 = knownBreak('scope2023');
+  const lastStep = turnover[turnover.length - 1] ?? null;
   const coverageLabel = turnover.find((r) => r.id === scope23.snapshotId)?.label;
 
   if (isFetching && !data) {
@@ -182,7 +182,11 @@ export function CohortPanel() {
       <StatRow cols={{ base: 1, sm: 3 }}>
         <StatCard size="sm" label={FIGURES[0]} value={fmtYears(t?.med)} />
         <StatCard size="sm" label={FIGURES[1]} value={t && t.n ? pct(t.recent5 / t.n) : '—'} sub={t ? `${num(t.recent5)} of ${num(t.n)}` : undefined} />
-        <StatCard size="sm" label={FIGURES[2]} value={latest ? `2021 – ${latestYear}` : '—'} sub="data begins Nov 2021" />
+        {/* A rate, not a date range (D31): the tile said "2021 – 2026 · data begins Nov 2021", a figure of nothing.
+            The latest step's leavers as a share of the staff at its start, from the turnover below. */}
+        <StatCard size="sm" label={FIGURES[2]} className="left-latest"
+          value={lastStep?.leftShare != null ? pct(lastStep.leftShare) : '—'}
+          sub={lastStep ? `${num(lastStep.departed)} of the ${num(lastStep.startN)} paid then, gone by ${lastStep.label} (${lastStep.months} months)` : undefined} />
       </StatRow>
 
       <Card withBorder padding="lg">

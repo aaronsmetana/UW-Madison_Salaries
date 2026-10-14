@@ -3310,3 +3310,18 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   border-radius: var(--mantine-radius-md);
   box-shadow: var(--shadow-merged-card);
 }
+
+/* Divisions › Changes: its map, held under the page header (D29), and each section stopping clear of it. */
+.changes-index {
+  position: sticky;
+  top: var(--app-shell-header-offset, 0px);
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 8px 0;
+  background: var(--page-bg);
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.changes-section { scroll-margin-top: calc(var(--app-shell-header-offset, 0px) + 56px); }
+.compact-notice { padding: 6px 0; }
