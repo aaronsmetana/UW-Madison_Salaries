@@ -210,4 +210,22 @@ test.describe('on a phone', () => {
     });
     expect(fits, 'six tabs fit 390px, so the scroll is untested').toBe(false);
   });
+
+  // Stacked as a column the releases ran 830px over the detail they choose, and a tap changed something off the screen.
+  test('the releases are one row that scrolls on its own, with the renames they choose right under it', async ({ page }) => {
+    await open(page, 'renames', '.rename-release');
+    const strip = page.locator('.rename-releases');
+    const { scrolls, tall } = await strip.evaluate((el) => ({ scrolls: el.scrollWidth > el.clientWidth + 1, tall: el.getBoundingClientRect().height }));
+    expect(scrolls, 'the releases fit 390px, so the row is untested').toBe(true);
+    expect(tall, 'the releases are a column again').toBeLessThan(160);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    const second = page.locator('.rename-release').nth(1);
+    await second.scrollIntoViewIfNeeded();
+    await second.click();
+    await expect(second).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.rename-detail')).toHaveAttribute('data-step', (await second.getAttribute('data-step'))!);
+    const gap = await page.evaluate(() => document.querySelector('.rename-filter')!.getBoundingClientRect().top
+      - document.querySelector('.rename-releases')!.getBoundingClientRect().bottom);
+    expect(gap, 'the chosen release’s renames are not right under the releases').toBeLessThan(120);
+  });
 });

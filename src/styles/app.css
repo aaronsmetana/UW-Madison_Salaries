@@ -3488,6 +3488,12 @@ tr[data-unpaid] > td { color: var(--mantine-color-dimmed); }
 }
 .rename-release:hover { background: var(--hover-bg); }
 .rename-release[aria-pressed='true'] { background: var(--chip-tint); border-color: var(--mantine-color-accent-4); }
+/* Stacked, the ten releases were a column 830px tall over the detail they choose, so a tap changed something off
+   the screen. There they are one row that scrolls on its own, and the detail sits right under it. */
+@media (max-width: 62em) {
+  .rename-releases { flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; overscroll-behavior-x: contain; padding-bottom: 6px; }
+  .rename-release { flex: 0 0 232px; scroll-snap-align: start; border-color: var(--hairline); }
+}
 .rename-minibar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; min-width: 2px; }
 .rename-key-renamed { background: var(--mantine-color-accent-7); }
 .rename-key-merged { background: var(--mantine-color-accent-4); }
