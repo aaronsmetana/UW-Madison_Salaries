@@ -27,8 +27,9 @@ export type Metric = 'full' | 'fte';
  * page, and Divisions' Titles tab. Everywhere else, actual pay. The control switches either way.
  */
 export function defaultMetric(pathname: string, params: URLSearchParams): Metric {
-  if (pathname.endsWith('/titles')) return 'full';
-  if (pathname.endsWith('/divisions') && params.get('tab') === 'titles') return 'full';
+  const path = pathname.replace(/\/+$/, ''); // `/titles/` too: a host can add the slash, as GitHub Pages does to /data
+  if (path.endsWith('/titles')) return 'full';
+  if (path.endsWith('/divisions') && params.get('tab') === 'titles') return 'full';
   return 'fte';
 }
 

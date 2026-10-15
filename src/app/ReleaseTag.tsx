@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Anchor, Badge, CloseButton, Group, Text, UnstyledButton } from '@mantine/core';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useMatch } from 'react-router-dom';
 import { useRelease, useSummary } from '../lib/hooks';
 import { useControls } from '../state/controls';
 import { NewBadge } from '../components/NewBadge';
@@ -27,7 +27,9 @@ const seenKey = (month: string) => `release-tag-dismissed:${month}`;
 
 export function ReleaseTag() {
   const release = useRelease();
-  const { pathname } = useLocation();
+  // Matched as a route, not by the address's ending: GitHub Pages answers /data with /data/ (the site has a
+  // data/ folder), and the tag stood over the What's new it points to on every visit there.
+  const onDataPage = useMatch('/data') != null;
   const [dismissed, setDismissed] = useState<string | null>(() => {
     try { return localStorage.getItem('release-tag-dismissed'); } catch { return null; }
   });
@@ -48,7 +50,7 @@ export function ReleaseTag() {
       </Group>
     );
   }
-  if (!release?.month || pathname.endsWith('/data')) return null;
+  if (!release?.month || onDataPage) return null;
   const { month, isNew, rangesUpdated } = release;
   if (dismissed === seenKey(month)) return null;
   const dismiss = () => {

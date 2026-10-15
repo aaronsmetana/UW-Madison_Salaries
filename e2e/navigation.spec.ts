@@ -50,9 +50,12 @@ test('the release note can be put away until the next release, and is not on the
   await page.evaluate(() => localStorage.setItem('release-tag-dismissed', 'release-tag-dismissed:January 1999'));
   await page.reload();
   await expect(page.locator('.page-top .release-tag')).toBeVisible({ timeout: 60_000 });
-  await page.goto('./data');
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator('.page-top .release-tag')).toHaveCount(0);
+  // As GitHub Pages serves it too: it answers /data with /data/, because the site has a data/ folder.
+  for (const path of ['./data', './data/', './data/?tab=snapshots']) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1, name: 'About the data' }), path).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.page-top .release-tag'), path).toHaveCount(0);
+  }
 });
 
 test('an unknown person, division, title or page says so, offers what it is like, and a search', async ({ page }) => {
