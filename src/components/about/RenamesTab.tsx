@@ -95,15 +95,21 @@ function RenamesCard() {
               </Text>
             ) : (
               <>
-                <Table.ScrollContainer minWidth={560}>
-                  <Table verticalSpacing={6} className="dept-table" data-kind="carried">
-                    <Table.Thead><Table.Tr><Table.Th>School</Table.Th><Table.Th>Was</Table.Th><Table.Th>Now</Table.Th><Table.Th ta="right">People</Table.Th></Table.Tr></Table.Thead>
+                {/* On a phone the school and the old name fold into the new name's cell (the app's phone-table rule):
+                    "Now" began off the screen, behind a sideways scroll. */}
+                <Table.ScrollContainer minWidth={560} className="fold-scroll">
+                  <Table verticalSpacing={6} className="dept-table fold-table" data-kind="carried">
+                    <Table.Thead><Table.Tr><Table.Th data-fold>School</Table.Th><Table.Th data-fold>Was</Table.Th><Table.Th>Now</Table.Th><Table.Th ta="right">People</Table.Th></Table.Tr></Table.Thead>
                     <Table.Tbody>
                       {page.shown.map((r) => (
                         <Table.Tr key={`${r.school}|${r.from}`}>
-                          <Table.Td><Text size="sm">{r.school ?? '—'}</Text></Table.Td>
-                          <Table.Td><Text size="sm" c="dimmed" td="line-through">{r.from}</Text></Table.Td>
-                          <Table.Td><Anchor component={Link} to={deptLink(r.school, r.to)} size="sm">{r.to}</Anchor></Table.Td>
+                          <Table.Td data-fold><Text size="sm">{r.school ?? '—'}</Text></Table.Td>
+                          <Table.Td data-fold><Text size="sm" c="dimmed" td="line-through">{r.from}</Text></Table.Td>
+                          <Table.Td>
+                            <Text className="fold-under" size="sm" c="dimmed"><Text span inherit td="line-through">{r.from}</Text> <span aria-hidden>→</span></Text>
+                            <Anchor component={Link} to={deptLink(r.school, r.to)} size="sm">{r.to}</Anchor>
+                            <Text className="fold-under" size="xs" c="dimmed">{r.school ?? '—'}</Text>
+                          </Table.Td>
                           <Table.Td ta="right" className="tabular">{num(r.carried)}</Table.Td>
                         </Table.Tr>
                       ))}

@@ -529,6 +529,16 @@ test.describe('Phones — the figure sits beside the name', () => {
     await expect(page.locator('table.appt-history tbody tr').first().locator('.fold-under').last()).toBeVisible();
   });
 
+  test('Renames: the people a department carried are on screen, the old name and school under the new', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto('./data?tab=renames');
+    const table = page.locator('table.dept-table');
+    await figureInView(table, /^People$/i);
+    const cell = table.locator('tbody tr').first().locator('td').nth(2);
+    await expect(cell.locator('.fold-under')).toHaveCount(2);
+    for (const line of await cell.locator('.fold-under').all()) await expect(line).toBeVisible();
+  });
+
   test('Peers: the salary is on screen', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.goto(`./person/${encodeURIComponent(AARON)}`);
