@@ -61,7 +61,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 }) {
   const nav = useNavigate();
   const { add, has, remove } = useTray();
-  const { data: grades } = useGrades();
+  const { data: grades, isLoading: gradesLoading } = useGrades();
   const enabled = !!snap && !!jobCode;
   const pinned = pinSalary != null && Number.isFinite(pinSalary) && pinSalary > 0;
   /** What each figure here is: the measure in force (G2), never a bare "Salary". */
@@ -83,7 +83,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   );
   const s = statRows?.[0];
 
-  const { data: payRows } = useSql<{ pay: number }>(
+  const { data: payRows, isLoading: paysLoading } = useSql<{ pay: number }>(
     ['ts-pays', jobCode, snap, school ?? '', metric],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay FROM salaries WHERE ${base} GROUP BY person_key)
      SELECT pay FROM pp WHERE pay > 0`,
@@ -91,7 +91,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   );
   const pays = useMemo(() => (payRows ?? []).map((r) => r.pay), [payRows]);
 
-  const { data: peopleRows } = useSql<PersonRow>(
+  const { data: peopleRows, isLoading: peopleLoading } = useSql<PersonRow>(
     ['ts-people', jobCode, snap, school ?? '', metric],
     `WITH pp AS (SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(school) school, any_value(department) department,
@@ -105,7 +105,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   const { data: everTitle } = useSql<{ n: number }>(['ts-ever', jobCode], `SELECT count(*) n FROM salaries WHERE job_code = ${sqlStr(jobCode)}`, !!jobCode);
   const { data: index } = useSearchIndex(!!jobCode);
-  const { data: bySchool } = useSql<SchoolRow>(
+  const { data: bySchool, isLoading: schoolsLoading } = useSql<SchoolRow>(
     ['ts-school', jobCode, snap, metric],
     `WITH pe AS (${peopleSql({ metric, where: `${titleBase} AND school IS NOT NULL`, by: ['school'] })})
      SELECT school, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med,
@@ -130,7 +130,7 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
 
   // The title's grade (its most common, where appointments differ). Its band is drawn under the distribution, on
   // the distribution's own scale (T8); the title's median is the figures' and the histogram's, said once (T10).
-  const { data: gradeRow } = useSql<{ grade_number: number; grade_basis: string; comp_basis: string | null }>(
+  const { data: gradeRow, isLoading: gradeLoading } = useSql<{ grade_number: number; grade_basis: string; comp_basis: string | null }>(
     ['ts-grade', jobCode, snap],
     `SELECT grade_number, grade_basis, any_value(comp_basis) comp_basis
      FROM salaries WHERE ${titleBase} AND grade_number IS NOT NULL AND salary > 0
@@ -182,7 +182,11 @@ export function TitleStats({ jobCode, snap, metric, school = null, pinSalary = n
   // the loaded cards are, so each placeholder becomes its card. Shaped otherwise (shorter tiles, a chart
   // card and a table card), the table's placeholder was taken for the distribution and rose 263px into place
   // as it loaded (layout shift 0.06 here, 0.10 on CI).
-  if (isLoading) {
+  // Drawn whole, or not yet. The figures are one query, and the histogram's values, its band, the people and the
+  // schools are four more: drawn when the figures came, the histogram said "too few to chart" until its values
+  // landed and then grew 300px under the reader, pushing the people and the schools off the screen (a layout shift
+  // of 0.27, on CI's slower runner only — DuckDB answers one query at a time, and locally they all landed at once).
+  if (isLoading || paysLoading || peopleLoading || schoolsLoading || gradeLoading || gradesLoading) {
     return (
       <Stack gap="lg">
         <StatRow key="stats" cols={TITLE_COLS}>
