@@ -181,3 +181,14 @@ export function assignLabelRows(centersPx: number[], widthsPx: number[], gap = 6
     return row;
   });
 }
+
+/** Each staff category's ink (app.css, one per scheme). By name, so a type keeps its colour in any order, on the
+ *  landing graph and on a division's charts alike. */
+const CATEGORY_INK: Record<string, string> = {
+  'Academic Staff': 'var(--cat-academic)',
+  'University Staff': 'var(--cat-university)',
+  Faculty: 'var(--cat-faculty)',
+  'Employees in Training': 'var(--cat-training)',
+  Limited: 'var(--cat-limited)',
+};
+export const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';

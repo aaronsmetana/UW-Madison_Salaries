@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useMatch, useSearchParams } from 'react-router-dom';
 import { Group, Select, Text, Badge, Button, Paper, Combobox, useCombobox, InputBase, Drawer, Stack } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconSearch, IconRefresh, IconAdjustmentsHorizontal } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, FILTER_PARAMS, type Scope } from '../state/controls';
@@ -161,7 +161,11 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
      WHERE snapshot_id = ${sqlStr(snapId ?? '')} AND department = ${sqlStr(legacyDept ?? '')}`,
     !!snapId && !!legacyDept
   );
-  const label = scopeLabel(scope, spanRows?.[0]?.n ?? null);
+  // A division's own page is that division (SC1): the bar names it, where it read "All UW" over a page about one
+  // division and a scope picked in it changed nothing there.
+  const schoolPage = useMatch('/school/:id');
+  const locked = schoolPage ? decodeURIComponent(schoolPage.params.id ?? '') : null;
+  const label = locked ?? scopeLabel(scope, spanRows?.[0]?.n ?? null);
 
   // If the scoped school isn't in the active snapshot, fall back to All UW (keeps the view non-empty).
   useEffect(() => {
@@ -190,7 +194,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
   // something is set (D5): a disabled Reset sat on screen on every visit. One change to the address, not four: each
   // setter rewrote it from the same starting point, so only the last one stuck.
   const filterCount = Object.values(filters).reduce((a, v) => a + v.length, 0);
-  const changed = [scope.kind !== 'all', activeSnapshot != null, period && params.has('from'), params.has('metric'), filterCount > 0]
+  const changed = [!locked && scope.kind !== 'all', activeSnapshot != null, period && params.has('from'), params.has('metric'), filterCount > 0]
     .filter(Boolean).length;
   const atDefaults = changed === 0;
   const resetView = atDefaults ? null : (
@@ -220,7 +224,11 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
     <>
       <Eyebrow style={{ flexShrink: 0 }}>Showing</Eyebrow>
       <Group gap="xs" wrap={wrapScope ? 'wrap' : 'nowrap'} style={{ minWidth: 0, flexShrink: wrapScope ? 1 : 0 }}>
-        <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} label={label} />
+        {locked ? (
+          <Text size="sm" fw={600} className="scope-locked" lineClamp={1} title={locked}>{locked}</Text>
+        ) : (
+          <ScopeMenu scope={scope} setScope={setScope} options={scopeOptions} label={label} />
+        )}
         {period && from && (
           <>
             <Select

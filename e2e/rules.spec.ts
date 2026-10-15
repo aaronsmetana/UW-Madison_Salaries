@@ -35,7 +35,9 @@ test.describe('R1 — a department is named inside its school', () => {
       `SELECT count(DISTINCT person_key) n FROM $SAL WHERE snapshot_id = '${snap}' AND school = '${SMPH}' AND department = 'Administration' AND salary > 0`
     );
     await page.goto(`./school/${encodeURIComponent(SMPH)}?tab=departments`);
-    await page.getByRole('link', { name: 'Administration', exact: true }).first().click();
+    // A department opens in place (SC5); the way to it under Divisions is in what opens.
+    await page.locator('.school-dept-toggle').filter({ hasText: /^Administration$/ }).first().click({ timeout: 60_000 });
+    await page.getByRole('link', { name: 'All of Administration under Divisions →' }).click();
     await expect(page).toHaveURL(/school=School%20of%20Medicine.*dept=Administration|dept=Administration.*school=/);
     await expect(page.getByText(/1 of 1 divisions/)).toBeVisible({ timeout: 60_000 });
     const row = page.locator('tr', { has: page.getByRole('link', { name: SMPH, exact: true }) });

@@ -1,41 +1,42 @@
 import { useParams } from 'react-router-dom';
 import { ShowAll, useShowAll } from '../components/ShowAll';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   Stack, Title, Text, Group, Card, SimpleGrid, Table, Anchor, Loader, Alert, Tabs,
-  ScrollArea,
+  ScrollArea, Select, UnstyledButton,
 } from '@mantine/core';
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CsvButton } from '../components/CsvButton';
 import {
   ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-  ScatterChart, Scatter,
+  ScatterChart, Scatter, Customized,
 } from 'recharts';
 import { StatCard, StatRow } from '../components/StatCard';
 import { CardTitle } from '../components/CardTitle';
-import { SegmentedToggle } from '../components/SegmentedToggle';
 import { SortableTh, type SortState } from '../components/SortableTh';
 import { useDocTitle } from '../lib/useDocTitle';
 import { useCrumbs } from '../app/PageTop';
 import { CompareSetButton } from '../components/CompareSetButton';
 import { ToolLinks } from '../components/ToolLinks';
-import { usePref } from '../lib/prefs';
-import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, BAR_RADIUS, chartKeys, fmtCount } from '../lib/chartStyle';
+import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, TIP_LABEL_STYLE, fmtUsd, fmtK, BAR_RADIUS, chartKeys, fmtCount, categoryInk } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps } from '../lib/snapTime';
 import { useSql, useActiveSnapshotId, useActiveSnapshotLabel, useSummary, useSearchIndex } from '../lib/hooks';
 import { NotFoundPanel } from '../components/NotFoundPanel';
 import { closeMatches } from '../lib/search';
 import { sqlStr } from '../lib/duckdb';
 import { useControls, METRIC_LABEL } from '../state/controls';
-import { salaryExpr, personEarnings, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols } from '../lib/queries';
+import { salaryExpr, personEarnings, personPay, paidHeadcount, peopleSql, filterWhere, filterKey, GRADED_APPT, gradedCols, mainOf } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
-import { usd, num, fullName, spanLabel } from '../lib/format';
+import { usd, num, fullName, spanLabel, pct } from '../lib/format';
 import { downloadCSV } from '../lib/csv';
 import { ChartData } from '../components/ChartData';
-import { MARK_POPULATION } from '../components/markers';
 import { MiniBar } from '../components/MiniBar';
 import { TipSurface } from '../components/chart/ChartTooltip';
+import { EndLabels } from '../components/chart/EndLabels';
 import { chartAnim, useEntrance, markTabSwitch } from '../lib/motion';
+import { EarnersPanel } from '../components/EarnersPanel';
+import { dropdownProps } from '../lib/selectProps';
 
 import { OverflowTabsList } from '../components/OverflowTabsList';
 /**
@@ -44,16 +45,19 @@ import { OverflowTabsList } from '../components/OverflowTabsList';
  * the chart has to say when it bites, rather than letting the plotted count read as the headcount.
  */
 const TENURE_PLOT_CAP = 3000;
+/** Under this FTE an appointment's actual pay is a sliver of a year's (SC3): a quarter-time job. */
+const SMALL_FTE = 0.25;
 
-interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number }
+interface TenureRow { person_key: string; fn: string | null; ln: string | null; tenure: number; pay: number; cat: string | null }
 
-/** Tenure-vs-pay hover card: who the dot is, their pay and tenure, and a click hint. */
+/** Tenure-vs-pay hover card: who the dot is, their category, pay and tenure, and a click hint. */
 function TenureTip({ active, payload }: { active?: boolean; payload?: { payload: TenureRow }[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <TipSurface>
       <Text size="sm" fw={600}>{fullName(d.fn, d.ln) || '—'}</Text>
+      {d.cat && <Text size="xs" c="dimmed">{d.cat}</Text>}
       <Text size="xs">Pay: {usd(d.pay)}</Text>
       <Text size="xs">Tenure: {d.tenure.toFixed(1)} years</Text>
       <Text size="xs" c="dimmed" mt={2}>Click to view profile</Text>
@@ -62,12 +66,22 @@ function TenureTip({ active, payload }: { active?: boolean; payload?: { payload:
 }
 
 interface Score {
-  headcount: number; total_payroll: number | null; med: number | null; mean: number | null;
-  p25: number | null; p75: number | null; p90: number | null; lo: number | null; hi: number | null;
+  headcount: number; total_payroll: number | null; med: number | null;
+  p25: number | null; p75: number | null; small: number | null;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <StatCard size="sm" label={label} value={value} />;
+}
+
+/** A category's swatch and name, as the landing graph's legend draws them. */
+function CatKey({ cat, n }: { cat: string; n?: number }) {
+  return (
+    <Group gap={6} wrap="nowrap" className="cat-key">
+      <span className="series-dot" aria-hidden style={{ background: categoryInk(cat) }} />
+      <Text size="xs" span>{cat}{n != null && <Text span c="dimmed"> {num(n)}</Text>}</Text>
+    </Group>
+  );
 }
 
 export default function School() {
@@ -100,9 +114,10 @@ export default function School() {
   const med = `Median ${METRIC_LABEL[metric].toLowerCase()}`;
   const nav = useNavigate();
   // Active tab lives in the URL (?tab=…), same convention as Explore/Person, so a shared link opens on
-  // the same tab; "overview" is the implicit default and stays out of the query string.
+  // the same tab; "overview" is the implicit default and stays out of the query string. The trend and the
+  // distribution moved to Overview (SC2), so an older link to their tab (`dist`) opens there.
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') ?? 'overview';
+  const asked = params.get('tab') ?? 'overview';
   const setTab = (v: string | null) =>
     setParams(
       (prev) => {
@@ -113,7 +128,6 @@ export default function School() {
       },
       { replace: true }
     );
-  const [distScale, setDistScale] = usePref<'linear' | 'log'>('scaleMode', 'linear');
   const enabled = !!snap;
   const fk = filterKey(filters);
   const base = `snapshot_id = ${sqlStr(snap ?? '')} AND school = ${sqlStr(name)} AND ${filterWhere(filters)}`;
@@ -126,47 +140,42 @@ export default function School() {
   const unknown = !!everRows && Number(everRows[0]?.n ?? 0) === 0;
   useDocTitle(unknown ? 'Division not found' : name);
   useCrumbs([{ label: 'Divisions', to: '/divisions' }, { label: unknown ? 'Not found' : name }]);
+  // `small`: the people whose appointments come to under a quarter-time (SC3) — at actual pay they are the
+  // division's lowest figures, a part of a year's pay and not a low salary.
   const { data: scoreRows, isLoading } = useSql<Score>(
     ['school-score', name, snap ?? '', metric, fk],
-    `WITH pe AS (${peopleSql({ metric, where: base, extra: `${personEarnings(metric)} earn` })})
+    `WITH pe AS (${peopleSql({ metric, where: base, extra: `${personEarnings(metric)} earn, sum(fte) FILTER (WHERE salary > 0 AND fte > 0) fte` })})
      SELECT (SELECT ${paidHeadcount(metric)} FROM salaries WHERE ${base}) headcount,
         sum(earn) total_payroll,
         median(pay) FILTER (WHERE pay > 0) med,
-        avg(pay) FILTER (WHERE pay > 0) mean,
         quantile_cont(pay, 0.25) FILTER (WHERE pay > 0) p25,
         quantile_cont(pay, 0.75) FILTER (WHERE pay > 0) p75,
-        quantile_cont(pay, 0.90) FILTER (WHERE pay > 0) p90,
-        min(pay) FILTER (WHERE pay > 0) lo,
-        max(pay) FILTER (WHERE pay > 0) hi
+        count(*) FILTER (WHERE pay > 0 AND fte < ${SMALL_FTE}) small
      FROM pe`,
     enabled
   );
   const s = scoreRows?.[0];
 
+  // People, not appointment records (SC3): one bar per person at their pay, as every headcount here counts them.
   const { data: dist } = useSql<{ bucket: number; n: number }>(
     ['school-dist', name, snap ?? '', metric, fk],
-    `SELECT (floor(${expr} / 20000) * 20000)::BIGINT bucket, count(*) n
-     FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY 1 ORDER BY 1`,
+    `WITH pe AS (${peopleSql({ metric, where: base })})
+     SELECT (floor(pay / 20000) * 20000)::BIGINT bucket, count(*) n FROM pe WHERE pay > 0 GROUP BY 1 ORDER BY 1`,
     enabled
   );
-  const distData = useMemo(
-    () => (dist ?? []).map((d) => ({ label: `${Math.round(d.bucket / 1000)}k`, n: d.n })),
-    [dist]
-  );
+  // The axis says money the way every other chart does (SC6): "$20k", not "20k".
+  const distData = useMemo(() => (dist ?? []).map((d) => ({ label: fmtK(d.bucket), n: d.n })), [dist]);
+  const distN = distData.reduce((t, d) => t + d.n, 0);
 
+  // Each person once, in their main appointment's category.
   const { data: comp } = useSql<{ cat: string; n: number }>(
     ['school-comp', name, snap ?? '', metric, fk],
-    `SELECT COALESCE(employee_category, '—') cat, ${paidHeadcount(metric)} n
-     FROM salaries WHERE ${base} GROUP BY 1 ORDER BY 2 DESC`,
+    `SELECT COALESCE(cat, '—') cat, count(*) n FROM (
+       SELECT person_key, ${mainOf('employee_category')} cat FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key)
+     GROUP BY 1 ORDER BY 2 DESC`,
     enabled
   );
-
-  const { data: earners } = useSql<{ person_key: string; fn: string; ln: string; title: string | null; pay: number }>(
-    ['school-earners', name, snap ?? '', metric, fk],
-    `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title, ${personPay(metric)} pay
-     FROM salaries WHERE ${base} AND ${expr} > 0 GROUP BY person_key ORDER BY pay DESC LIMIT 12`,
-    enabled
-  );
+  const compTotal = (comp ?? []).reduce((t, c) => t + c.n, 0);
 
   const { data: trend } = useSql<{ label: string; date: string; med: number | null; hc: number }>(
     ['school-trend', name, metric, fk],
@@ -197,15 +206,41 @@ export default function School() {
   );
   const band = bandRows?.[0];
 
+  // Tenure against pay within one title or category (SC4): across every job at once the cloud said nothing about
+  // compression, which is a question about people doing the same work.
+  const [tenureCat, setTenureCat] = useState<string | null>(null);
+  const [tenureTitle, setTenureTitle] = useState<string | null>(null);
+  const { data: titleOpts } = useSql<{ code: string; title: string; n: number }>(
+    ['school-tenure-titles', name, snap ?? '', metric, fk],
+    `SELECT code, any_value(title) title, count(*) n FROM (
+       SELECT person_key, ${mainOf('job_code')} code, ${mainOf('title')} title FROM salaries
+       WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key)
+     WHERE code IS NOT NULL GROUP BY code HAVING count(*) >= 3 ORDER BY n DESC, title`,
+    enabled
+  );
+  const tenureWhere = [
+    tenureCat ? `employee_category = ${sqlStr(tenureCat)}` : null,
+    tenureTitle ? `job_code = ${sqlStr(tenureTitle)}` : null,
+  ].filter(Boolean).join(' AND ');
   const { data: tenurePay } = useSql<TenureRow>(
-    ['school-tenure', name, snap ?? '', metric, fk],
+    ['school-tenure', name, snap ?? '', metric, fk, tenureCat ?? '', tenureTitle ?? ''],
     `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure,
-        ${personPay(metric)} pay
-     FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL GROUP BY person_key
+        ${personPay(metric)} pay, ${mainOf('employee_category')} cat
+     FROM salaries WHERE ${base} AND ${expr} > 0 AND date_of_hire IS NOT NULL${tenureWhere ? ` AND ${tenureWhere}` : ''}
+     GROUP BY person_key
      LIMIT ${TENURE_PLOT_CAP}`,
     enabled
   );
+  const tenureByCat = useMemo(() => {
+    const m = new Map<string, TenureRow[]>();
+    for (const r of tenurePay ?? []) {
+      const k = r.cat ?? '—';
+      m.set(k, [...(m.get(k) ?? []), r]);
+    }
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [tenurePay]);
+  const tenureTitleName = tenureTitle ? (titleOpts ?? []).find((t) => t.code === tenureTitle)?.title ?? tenureTitle : null;
 
   const { data: depts } = useSql<{ department: string; headcount: number; med: number | null; payroll: number | null }>(
     ['school-depts-full', name, snap ?? '', metric, fk],
@@ -216,6 +251,9 @@ export default function School() {
      FROM pe GROUP BY department ORDER BY headcount DESC`,
     enabled
   );
+  // A division of one department has no Departments tab (SC5): its one row was the division again.
+  const manyDepts = (depts?.length ?? 0) > 1;
+  const tab = asked === 'dist' ? 'overview' : asked === 'departments' && depts && !manyDepts ? 'overview' : asked;
   type DeptSortKey = 'department' | 'headcount' | 'med' | 'payroll';
   const [deptSort, setDeptSort] = useState<SortState<DeptSortKey>>({ key: 'headcount', dir: 'desc' });
   const deptView = useMemo(() => {
@@ -230,6 +268,15 @@ export default function School() {
   // The first rows, the rest on "Show all" (G11): the page's one scroll, not a box inside it.
   const deptPage = useShowAll(deptView, `${deptSort.key}|${deptSort.dir}`);
   const maxDeptHc = useMemo(() => Math.max(1, ...(depts ?? []).map((d) => d.headcount)), [depts]);
+  // A department opened in place (SC5): its titles under its row, where it sent the reader to Divisions.
+  const [openDept, setOpenDept] = useState<string | null>(null);
+  const { data: deptTitles, isFetching: deptTitlesLoading } = useSql<{ code: string; title: string | null; n: number; med: number | null }>(
+    ['school-dept-titles', name, snap ?? '', metric, fk, openDept ?? ''],
+    `WITH pe AS (${peopleSql({ metric, where: `${base} AND department = ${sqlStr(openDept ?? '')}`, by: ['job_code'], extra: 'any_value(title) title' })})
+     SELECT job_code code, any_value(title) title, count(*) FILTER (WHERE pay > 0) n, median(pay) FILTER (WHERE pay > 0) med
+     FROM pe GROUP BY job_code HAVING count(*) FILTER (WHERE pay > 0) > 0 ORDER BY n DESC, title LIMIT 8`,
+    enabled && !!openDept
+  );
   const exportDeptsCsv = () =>
     downloadCSV(
       `uw-${name}-departments-${snap ?? 'latest'}.csv`,
@@ -288,23 +335,100 @@ export default function School() {
       <Tabs value={tab} onChange={(v) => { markTabSwitch(); setTab(v); }}>
         <OverflowTabsList>
           <Tabs.Tab value="overview">Overview</Tabs.Tab>
-          <Tabs.Tab value="dist">Trends &amp; distribution</Tabs.Tab>
+          <Tabs.Tab value="tenure">Tenure &amp; pay</Tabs.Tab>
           <Tabs.Tab value="people">People</Tabs.Tab>
-          <Tabs.Tab value="departments">Departments</Tabs.Tab>
+          {manyDepts && <Tabs.Tab value="departments">Departments</Tabs.Tab>}
         </OverflowTabsList>
 
+        {/* The division at a glance (SC2): four figures, its pay laid out and how it has moved, then its bands.
+            Eight tiles and no picture, with every chart a tab away. */}
         <Tabs.Panel value="overview" pt="md">
       <Stack gap="lg">
       <StatRow cols={{ base: 2, sm: 4 }}>
         <Stat label="Headcount" value={num(s?.headcount)} />
         <Stat label="Median" value={usd(s?.med)} />
-        <Stat label="Mean" value={usd(s?.mean)} />
+        <Stat label="Middle half" value={`${usd(s?.p25)} – ${usd(s?.p75)}`} />
         <Stat label="Total payroll" value={usd(s?.total_payroll)} />
-        <Stat label="25th pctile" value={usd(s?.p25)} />
-        <Stat label="75th pctile" value={usd(s?.p75)} />
-        <Stat label="90th pctile" value={usd(s?.p90)} />
-        <Stat label="Range" value={`${usd(s?.lo)} – ${usd(s?.hi)}`} />
       </StatRow>
+
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+      <Card withBorder padding="lg" className="school-dist">
+        <CardTitle sub={`${num(distN)} people${snapLabel ? ` in ${snapLabel}` : ''}, in $20k bins.`}>
+          {METRIC_LABEL[metric]} distribution
+        </CardTitle>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart {...chartKeys(`${METRIC_LABEL[metric]} distribution`)} data={distData} margin={{ left: 12, right: 12 }}>
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" tick={AXIS_TICK} />
+            <YAxis tickFormatter={fmtCount} width={48} tick={AXIS_TICK} />
+            <Tooltip formatter={(v: number) => [num(v), 'People']} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
+            <Bar
+              {...chartAnim(!entrance)}
+              dataKey="n"
+              name="People"
+              fill="var(--bar)"
+              radius={BAR_RADIUS}
+              onMouseEnter={(_, i) => setHoveredBin(i)}
+              onMouseLeave={() => setHoveredBin(null)}
+            >
+              {distData.map((_, i) => <Cell key={i} fillOpacity={hoveredBin != null && hoveredBin !== i ? 0.45 : 1} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        {metric === 'fte' && (s?.small ?? 0) > 0 && (
+          <Text size="xs" c="dimmed" mt={4} className="school-small-fte">
+            {num(s!.small)} {s!.small === 1 ? 'person holds' : 'people hold'} under a quarter-time appointment, so at actual pay they
+            are the lowest bars: a part of a year&apos;s pay, not a low salary. The full-time rate (Pay, above) places them at a full-time year.
+          </Text>
+        )}
+        <ChartData
+          caption={`${METRIC_LABEL[metric]} distribution`}
+          columns={[`${METRIC_LABEL[metric]} bin`, 'People']}
+          rows={distData.map((d) => [d.label, d.n])}
+          n={distN}
+          unit="people"
+          period={snapLabel ? `as of ${snapLabel}` : undefined}
+        />
+      </Card>
+
+      <Card withBorder padding="lg" className="school-trend">
+        <CardTitle>{med} and headcount over time</CardTitle>
+        <ResponsiveContainer width="100%" height={150}>
+          {/* Room under the plot for its $0, the axis being the chart below's: at the edge, Recharts drops the tick. */}
+          <LineChart {...chartKeys(`${med} over time`)} data={trendRows} syncId="school-trend" margin={{ left: 12, right: 12, top: 18, bottom: 10 }}>
+            <CartesianGrid {...GRID} />
+            <XAxis {...snapAxisProps(trendRows)} tick={AXIS_TICK} hide />
+            <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+            {/* The row's own label: on a date axis Recharts' label is the x value, a timestamp. */}
+            <Tooltip formatter={(v: number) => usd(v)} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
+            <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(!entrance)} />
+            {/* Each of the two charts says which it is, at its line's end. */}
+            <Customized component={<EndLabels endSeries={[{ key: 'med', text: 'Median', color: 'var(--text-accent)' }]} />} />
+          </LineChart>
+        </ResponsiveContainer>
+        <ResponsiveContainer width="100%" height={120}>
+          <LineChart {...chartKeys('Headcount over time')} data={trendRows} syncId="school-trend" margin={{ left: 12, right: 12, top: 18 }}>
+            <CartesianGrid {...GRID} />
+            <XAxis {...snapAxisProps(trendRows)} tick={AXIS_TICK} />
+            <YAxis tickFormatter={fmtCount} width={80} tick={AXIS_TICK} padding={Y_PAD} />
+            <Tooltip formatter={(v: number) => [num(v), 'People']} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
+            <Line type="linear" dataKey="hc" name="People" stroke="var(--mantine-color-gray-6)" strokeWidth={2} dot {...chartAnim(!entrance)} />
+            <Customized component={<EndLabels endSeries={[{ key: 'hc', text: 'Headcount', color: 'var(--mantine-color-dimmed)' }]} />} />
+          </LineChart>
+        </ResponsiveContainer>
+        {/* A reorganization moved whole departments in or out: the trend's step there is that, and says so. */}
+        {reorgNotes.map((t) => (
+          <Text key={t} size="xs" c="dimmed" mt="xs" className="school-reorg-note">{t}</Text>
+        ))}
+        <ChartData
+          caption={`${med} over time`}
+          columns={['Snapshot', med, 'Headcount']}
+          rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])}
+          unit="snapshots"
+          period={spanLabel((trend ?? []).map((t) => t.label))}
+        />
+      </Card>
+      </SimpleGrid>
 
       <Card withBorder padding="lg">
         <CardTitle>Pay-band utilization</CardTitle>
@@ -344,161 +468,96 @@ export default function School() {
       </Stack>
         </Tabs.Panel>
 
-        <Tabs.Panel value="dist" pt="md">
-          <Stack gap="lg">
-      <Card withBorder padding="lg">
-        <CardTitle sub={`A compression check: whether longer-serving staff are paid more than newer ones${(tenurePay ?? []).length ? ` — ${num((tenurePay ?? []).length)} people` : ''}${snapLabel ? `, ${snapLabel}` : ''}.`}>Tenure vs. pay</CardTitle>
-        <ResponsiveContainer width="100%" height={260}>
+        <Tabs.Panel value="tenure" pt="md">
+      <Card withBorder padding="lg" className="school-tenure">
+        <CardTitle sub={`A compression check — whether longer-serving people are paid more than newer ones — means most within one title${(tenurePay ?? []).length ? `. ${num((tenurePay ?? []).length)} people` : ''}${tenureTitleName ? ` in ${tenureTitleName}` : tenureCat ? `, ${tenureCat}` : ''}${snapLabel ? `, ${snapLabel}` : ''}.`}>
+          Tenure vs. pay
+        </CardTitle>
+        <Group gap="sm" wrap="wrap" mb="sm" align="flex-end">
+          <Select {...dropdownProps('sm')} w={300} maw="100%" label="Title" placeholder="Every title" searchable clearable limit={80}
+            data={(titleOpts ?? []).map((t) => ({ value: t.code, label: `${t.title} · ${num(t.n)}` }))}
+            value={tenureTitle} onChange={setTenureTitle} className="school-tenure-title" />
+          <Select {...dropdownProps('sm')} w={220} maw="100%" label="Category" placeholder="Every category" clearable
+            data={(comp ?? []).filter((c) => c.cat !== '—').map((c) => c.cat)}
+            value={tenureCat} onChange={setTenureCat} className="school-tenure-cat" />
+        </Group>
+        {/* Coloured by category (SC4), keyed here: one grey crowd mixed faculty, staff and trainees on one axis. */}
+        <Group gap="md" wrap="wrap" mb={4} className="school-tenure-key">
+          {tenureByCat.map(([cat, rows]) => <CatKey key={cat} cat={cat} n={rows.length} />)}
+        </Group>
+        <ResponsiveContainer width="100%" height={300}>
           <ScatterChart margin={{ left: 12, right: 12 }}>
             <CartesianGrid {...GRID} />
             <XAxis type="number" dataKey="tenure" name="Tenure" unit=" yrs" tick={AXIS_TICK} />
             <YAxis type="number" dataKey="pay" tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} />
             <Tooltip content={<TenureTip />} cursor={{ strokeDasharray: '3 3' }} />
-            {/* A population with no one singled out, so MARK_POPULATION: the dots are the data here,
-                not the quiet context MARK_PEER is for. `--bar` is for bars, which are counts, and it
-                is a lighter tone because a bar is a large filled area where a dot is a few pixels. */}
-            <Scatter
-              {...chartAnim(!entrance)}
-              data={tenurePay ?? []}
-              fill={MARK_POPULATION}
-              fillOpacity={0.5}
-              // No rim (DOT_RIM): this is a crowd of up to 3,000, where overlapping half-tone dots are
-              // what shades the dense regions darker, and a rim on each cut that shading into bubbles.
-              cursor="pointer"
-              onClick={(pt: { person_key?: string; payload?: { person_key?: string } }) => {
-                const k = pt?.person_key ?? pt?.payload?.person_key;
-                if (k) nav(`/person/${encodeURIComponent(k)}`);
-              }}
-            />
+            {/* One series a category, each in its ink. No rim (DOT_RIM): this is a crowd of up to 3,000, where
+                overlapping half-tone dots are what shades the dense regions darker. */}
+            {tenureByCat.map(([cat, rows]) => (
+              <Scatter
+                key={cat}
+                className="school-tenure-dots"
+                data-cat={cat}
+                {...chartAnim(!entrance)}
+                data={rows}
+                name={cat}
+                fill={categoryInk(cat)}
+                fillOpacity={0.6}
+                cursor="pointer"
+                onClick={(pt: { person_key?: string; payload?: { person_key?: string } }) => {
+                  const k = pt?.person_key ?? pt?.payload?.person_key;
+                  if (k) nav(`/person/${encodeURIComponent(k)}`);
+                }}
+              />
+            ))}
           </ScatterChart>
         </ResponsiveContainer>
         {(tenurePay ?? []).length >= TENURE_PLOT_CAP && (
           <Text size="xs" c="dimmed">
-            Divisions larger than {num(TENURE_PLOT_CAP)} people are capped here, so this cloud is a sample rather than everyone.
+            Divisions larger than {num(TENURE_PLOT_CAP)} people are capped here, so this cloud is a sample rather than everyone. Choose a title to see all of its people.
           </Text>
         )}
         <ChartData
           caption="Tenure vs pay"
-          columns={['Tenure (yrs)', METRIC_LABEL[metric]]}
-          rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay])}
+          columns={['Tenure (yrs)', METRIC_LABEL[metric], 'Category']}
+          rows={(tenurePay ?? []).map((t) => [t.tenure, t.pay, t.cat])}
           unit="people plotted"
           period={snapLabel ? `as of ${snapLabel}` : undefined}
-          about="A flat or downward cloud suggests salary compression (newer hires paid like — or above — veterans)."
+          about="A flat or downward cloud within one title suggests salary compression (newer hires paid like — or above — veterans)."
         />
       </Card>
-
-      <Card withBorder padding="lg">
-        <CardTitle>{med} over time</CardTitle>
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart {...chartKeys(`${med} over time`)} data={trendRows} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid {...GRID} />
-            <XAxis {...snapAxisProps(trendRows)} tick={AXIS_TICK} />
-            <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-            {/* The row's own label: on a date axis Recharts' label is the x value, a timestamp. */}
-            <Tooltip formatter={(v: number) => usd(v)} labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
-            <Line type="linear" dataKey="med" name="Median" stroke="var(--mantine-color-accent-6)" strokeWidth={2} dot {...chartAnim(!entrance)} />
-          </LineChart>
-        </ResponsiveContainer>
-        {/* A reorganization moved whole departments in or out: the trend's step there is that, and says so. */}
-        {reorgNotes.map((t) => (
-          <Text key={t} size="xs" c="dimmed" mt="xs" className="school-reorg-note">{t}</Text>
-        ))}
-        <ChartData
-          caption={`${med} over time`}
-          columns={['Snapshot', med, 'Headcount']}
-          rows={(trend ?? []).map((t) => [t.label, t.med, t.hc])}
-          unit="snapshots"
-          period={spanLabel((trend ?? []).map((t) => t.label))}
-        />
-      </Card>
-
-      <Card withBorder padding="lg">
-        <CardTitle
-          right={
-            <SegmentedToggle
-              value={distScale}
-              onChange={(v) => setDistScale(v as 'linear' | 'log')}
-              options={[{ id: 'linear', label: 'Linear' }, { id: 'log', label: 'Log' }]}
-            />
-          }
-          sub={`${num(distData.reduce((s, d) => s + d.n, 0))} people${snapLabel ? ` in ${snapLabel}` : ''}, in $20k bins.`}
-        >
-          {METRIC_LABEL[metric]} distribution
-        </CardTitle>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart {...chartKeys(`${METRIC_LABEL[metric]} distribution`)} data={distData} margin={{ left: 12, right: 12 }}>
-            <CartesianGrid {...GRID} />
-            <XAxis dataKey="label" tick={AXIS_TICK} />
-            <YAxis tickFormatter={fmtCount}
-              width={48}
-              tick={AXIS_TICK}
-              scale={distScale === 'log' ? 'log' : 'auto'}
-              domain={distScale === 'log' ? [0.5, 'auto'] : undefined}
-              allowDataOverflow={distScale === 'log'}
-            />
-            <Tooltip formatter={(v: number) => [num(v), 'People']} contentStyle={TIP_STYLE} labelStyle={TIP_LABEL_STYLE} />
-            <Bar
-              {...chartAnim(!entrance)}
-              dataKey="n"
-              name="People"
-              fill="var(--bar)"
-              radius={BAR_RADIUS}
-              onMouseEnter={(_, i) => setHoveredBin(i)}
-              onMouseLeave={() => setHoveredBin(null)}
-            >
-              {distData.map((_, i) => <Cell key={i} fillOpacity={hoveredBin != null && hoveredBin !== i ? 0.45 : 1} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-        <ChartData
-          caption={`${METRIC_LABEL[metric]} distribution`}
-          columns={[`${METRIC_LABEL[metric]} bin`, 'People']}
-          rows={distData.map((d) => [d.label, d.n])}
-          n={distData.reduce((s, d) => s + d.n, 0)}
-          unit="salary records"
-          period={snapLabel ? `as of ${snapLabel}` : undefined}
-        />
-      </Card>
-          </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="people" pt="md">
-      <SimpleGrid cols={{ base: 1, md: 2 }}>
-        <Card withBorder padding="lg">
-          <CardTitle>Composition by category</CardTitle>
-          <Table>
+      <Stack gap="lg">
+        {/* Composition drawn (SC7): each category's share a bar, in its own ink. */}
+        <Card withBorder padding="lg" className="school-comp">
+          <CardTitle sub="Each person once, in the category of their main appointment.">Composition by category</CardTitle>
+          <Table maw={560}>
             <Table.Tbody>
               {(comp ?? []).map((c) => (
-                <Table.Tr key={c.cat}>
-                  <Table.Td>{c.cat}</Table.Td>
-                  <Table.Td ta="right">{num(c.n)}</Table.Td>
+                <Table.Tr key={c.cat} className="school-comp-row" data-cat={c.cat} data-n={c.n}>
+                  <Table.Td><CatKey cat={c.cat} /></Table.Td>
+                  <Table.Td ta="right" w={180}>
+                    {num(c.n)} <Text span size="xs" c="dimmed">· {pct(compTotal ? c.n / compTotal : 0, 0)}</Text>
+                    <MiniBar frac={compTotal ? c.n / compTotal : 0} color={categoryInk(c.cat)} />
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
         </Card>
 
-        <Card withBorder padding="lg">
-          <CardTitle>Top earners</CardTitle>
-          <Table>
-            <Table.Tbody>
-              {(earners ?? []).map((e) => (
-                <Table.Tr key={e.person_key}>
-                  <Table.Td>
-                    <Anchor component={Link} to={`/person/${encodeURIComponent(e.person_key)}`}>
-                      {fullName(e.fn, e.ln)}
-                    </Anchor>
-                    <Text size="xs" c="dimmed">{e.title}</Text>
-                  </Table.Td>
-                  <Table.Td ta="right">{usd(e.pay)}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+        {/* Everyone, sortable and searchable (SC7), where a dozen top earners stood: the table Divisions' Top earners
+            is, kept to this division. */}
+        <Card withBorder padding="lg" className="school-people">
+          <CardTitle>People in {name}</CardTitle>
+          <EarnersPanel school={name} />
         </Card>
-      </SimpleGrid>
+      </Stack>
         </Tabs.Panel>
 
+        {manyDepts && (
         <Tabs.Panel value="departments" pt="md">
           <Card withBorder padding="lg">
             <CardTitle
@@ -508,16 +567,12 @@ export default function School() {
             >
               Departments in {name}
             </CardTitle>
-            {depts && depts.length === 0 ? (
-              <Text c="dimmed" ta="center" py="xl">No departments recorded for this school.</Text>
-            ) : (
-              // Wide content scrolls inside its own container, never the document — and never gets
-              // clipped out of reach either. Without this the Card's `overflow: hidden` swallowed
-              // 219px at phone width: Headcount, Median and Total payroll, i.e. every number in the
-              // table, with no scrollbar to reach them. Matches the five other wide tables in the app.
-              <>
+              {/* Wide content scrolls inside its own container, never the document — and never gets
+                  clipped out of reach either. Without this the Card's `overflow: hidden` swallowed
+                  219px at phone width: Headcount, Median and Total payroll, i.e. every number in the
+                  table, with no scrollbar to reach them. Matches the five other wide tables in the app. */}
               <ScrollArea.Autosize type="auto" offsetScrollbars="present">
-                <Table miw={560}>
+                <Table miw={560} className="school-dept-table">
                 <Table.Thead>
                   <Table.Tr>
                     <SortableTh sortKey="department" label="Department" sort={deptSort} onSort={setDeptSort} />
@@ -527,37 +582,70 @@ export default function School() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {deptPage.shown.map((d) => (
-                    <Table.Tr
-                      key={d.department}
-                      className="peer-row"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => nav(`/divisions?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`)}
-                    >
-                      <Table.Td>
-                        <Anchor component={Link} to={`/divisions?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`} c="var(--mantine-color-text)" underline="hover" onClick={(e) => e.stopPropagation()} lineClamp={1}>
-                          {d.department}
-                        </Anchor>
-                      </Table.Td>
-                      <Table.Td ta="right">
-                        {num(d.headcount)}
-                        <MiniBar frac={d.headcount / maxDeptHc} />
-                      </Table.Td>
-                      <Table.Td ta="right">{usd(d.med)}</Table.Td>
-                      <Table.Td ta="right">{usd(d.payroll)}</Table.Td>
-                    </Table.Tr>
-                  ))}
+                  {deptPage.shown.map((d) => {
+                    const open = openDept === d.department;
+                    return (
+                      <Fragment key={d.department}>
+                        <Table.Tr className="peer-row school-dept-row" data-open={open || undefined} style={{ cursor: 'pointer' }}
+                          onClick={() => setOpenDept(open ? null : d.department)}>
+                          <Table.Td>
+                            <UnstyledButton className="school-dept-toggle" aria-expanded={open} onClick={(e) => { e.stopPropagation(); setOpenDept(open ? null : d.department); }}>
+                              <Group gap={6} wrap="nowrap">
+                                {open ? <IconChevronDown size={14} aria-hidden /> : <IconChevronRight size={14} aria-hidden />}
+                                <Text size="sm" lineClamp={1}>{d.department}</Text>
+                              </Group>
+                            </UnstyledButton>
+                          </Table.Td>
+                          <Table.Td ta="right">
+                            {num(d.headcount)}
+                            <MiniBar frac={d.headcount / maxDeptHc} />
+                          </Table.Td>
+                          <Table.Td ta="right">{usd(d.med)}</Table.Td>
+                          <Table.Td ta="right">{usd(d.payroll)}</Table.Td>
+                        </Table.Tr>
+                        {open && (
+                          <Table.Tr className="school-dept-detail">
+                            <Table.Td colSpan={4} pl="xl">
+                              {deptTitlesLoading && !deptTitles ? <Loader size="xs" /> : (
+                                <Table withRowBorders={false} verticalSpacing={2} maw={620} className="school-dept-titles">
+                                  <Table.Thead>
+                                    <Table.Tr>
+                                      <Table.Th>Its largest titles</Table.Th>
+                                      <Table.Th ta="right">People</Table.Th>
+                                      <Table.Th ta="right">{med}</Table.Th>
+                                    </Table.Tr>
+                                  </Table.Thead>
+                                  <Table.Tbody>
+                                    {(deptTitles ?? []).map((t) => (
+                                      <Table.Tr key={t.code}>
+                                        <Table.Td><Anchor component={Link} to={`/titles?code=${encodeURIComponent(t.code)}`} size="sm">{t.title ?? t.code}</Anchor></Table.Td>
+                                        <Table.Td ta="right">{num(t.n)}</Table.Td>
+                                        <Table.Td ta="right">{usd(t.med)}</Table.Td>
+                                      </Table.Tr>
+                                    ))}
+                                  </Table.Tbody>
+                                </Table>
+                              )}
+                              <Anchor component={Link} size="sm" mt={6} display="inline-block" className="school-dept-open"
+                                to={`/divisions?school=${encodeURIComponent(name)}&dept=${encodeURIComponent(d.department)}`}>
+                                All of {d.department} under Divisions →
+                              </Anchor>
+                            </Table.Td>
+                          </Table.Tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </Table.Tbody>
                 </Table>
               </ScrollArea.Autosize>
               <ShowAll shown={deptPage.shown.length} total={deptPage.total} onShowAll={deptPage.showAll} pager={deptPage.pager} />
-              </>
-            )}
             <Text size="xs" c="dimmed" mt="sm">
-              Click a department to see it on its own under Divisions.
+              Press a department for its largest titles.
             </Text>
           </Card>
         </Tabs.Panel>
+        )}
       </Tabs>
     </Stack>
   );

@@ -72,7 +72,10 @@ test.describe('the newest release, said', () => {
     await expect(page.locator('#whats-new')).toBeInViewport({ timeout: 60_000 });
     const head = await page.evaluate(() => {
       const nav = document.querySelector('.data-jumpnav')!.getBoundingClientRect();
-      return document.getElementById('whats-new')!.getBoundingClientRect().top - nav.bottom;
+      const sec = document.getElementById('whats-new')!.getBoundingClientRect();
+      // Under the chrome: the index when it is a bar over the sections, the app bar when it is a column beside them (AD1).
+      const chrome = nav.left >= sec.right - 1 ? document.querySelector('header')!.getBoundingClientRect().bottom : nav.bottom;
+      return sec.top - chrome;
     });
     expect(head, 'the section landed under the jump nav').toBeGreaterThanOrEqual(0);
 

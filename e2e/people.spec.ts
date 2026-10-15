@@ -34,5 +34,5 @@ test('People lists the people this browser opened, most recent first, and the co
   await expect(recent.first()).toContainText('Kenneth Poss');
   await expect(recent.nth(1)).toContainText('Aaron Smetana');
   await expect(recent.nth(1)).toHaveAttribute('href', new RegExp(encodeURIComponent(AARON).replace(/\|/g, '\\|') + '$'));
-  await expect(page.locator('.people-set .people-card')).toHaveText(['Kenneth Poss']);
+  await expect(page.locator('.people-set .people-card-name')).toHaveText(['Kenneth Poss']);
 });

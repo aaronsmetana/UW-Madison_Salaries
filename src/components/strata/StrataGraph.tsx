@@ -9,7 +9,7 @@ import { snapStats, stepKinds, strataFromPeople, type Timeline, type TimelineStr
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
 import { MOTION, prefersReducedMotion } from '../../lib/motion';
-import { fmtK } from '../../lib/chartStyle';
+import { fmtK, categoryInk } from '../../lib/chartStyle';
 import { num, usd, vsCampus } from '../../lib/format';
 import { useReveal } from '../PersonReveal';
 import { SegmentedToggle } from '../SegmentedToggle';
@@ -28,16 +28,6 @@ import { ICON } from '../../lib/ui';
  * its own people where they stand and fades the rest; the pile past the cap, which unrolls to show each of
  * its people at their own pay on an axis run out to the top salary; and the page's full-page view of it.
  */
-
-/** Each staff category's ink (app.css, one per scheme). By name, so a type keeps its colour in any order. */
-const CATEGORY_INK: Record<string, string> = {
-  'Academic Staff': 'var(--cat-academic)',
-  'University Staff': 'var(--cat-university)',
-  Faculty: 'var(--cat-faculty)',
-  'Employees in Training': 'var(--cat-training)',
-  Limited: 'var(--cat-limited)',
-};
-export const categoryInk = (name: string) => CATEGORY_INK[name] ?? 'var(--cat-other)';
 
 /** The plot's height on a phone, and wider: a wide plot grows with its width (PLOT_ASPECT) up to `most`. */
 const PLOT_H = { phone: 300, wide: 400, most: 520 };

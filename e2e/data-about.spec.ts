@@ -39,7 +39,8 @@ test.describe('data · about', () => {
     const ids = ['source', 'disclaimer', 'privacy', 'how-it-works', 'pipeline', 'methodology', 'snapshots', 'duplicates'];
 
     const m = await page.evaluate((sectionIds) => {
-      const column = document.querySelector('.data-about')!.getBoundingClientRect();
+      // The sections' column: beside the page's index from 75em (AD1), the page's own width below.
+      const column = (document.querySelector('.data-main') ?? document.querySelector('.data-about'))!.getBoundingClientRect();
       return {
         columnRight: Math.round(column.right),
         edges: sectionIds.map((id) => {
@@ -358,8 +359,11 @@ test.describe('data · about', () => {
       const hidden = await page.evaluate((sectionId) => {
         const sec = document.getElementById(sectionId)!.getBoundingClientRect();
         const nav = document.querySelector('.data-jumpnav')!.getBoundingClientRect();
-        // How far the section's top sits above the bottom edge of the sticky chrome.
-        return Math.round(nav.bottom - sec.top);
+        // How far the section's top sits above the bottom edge of the sticky chrome: the index's, when it is a bar
+        // over the sections; the app bar's, when it is a column beside them (AD1).
+        const beside = nav.left >= sec.right - 1;
+        const chrome = beside ? document.querySelector('header')!.getBoundingClientRect().bottom : nav.bottom;
+        return Math.round(chrome - sec.top);
       }, id);
 
       expect(hidden, `#${id} lands behind the sticky nav`).toBeLessThanOrEqual(0);

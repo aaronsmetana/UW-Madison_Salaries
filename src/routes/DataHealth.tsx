@@ -153,7 +153,9 @@ function JumpNav({ items }: { items: [string, string][] }) {
     const root = document.documentElement.style;
     const set = () => {
       const cs = getComputedStyle(el);
-      if (cs.position === 'sticky') root.setProperty('--data-chrome-top', `${Math.ceil((parseFloat(cs.top) || 0) + el.offsetHeight)}px`);
+      // Beside the sections (a column, from 75em) the nav covers none of them: the chrome is the app bar alone.
+      if (cs.position === 'sticky' && cs.flexDirection === 'column') root.setProperty('--data-chrome-top', `${Math.max(0, (parseFloat(cs.top) || 0) - 16)}px`);
+      else if (cs.position === 'sticky') root.setProperty('--data-chrome-top', `${Math.ceil((parseFloat(cs.top) || 0) + el.offsetHeight)}px`);
       else root.removeProperty('--data-chrome-top');
     };
     set();
@@ -344,7 +346,10 @@ export default function DataHealth() {
         description="Where these salary records come from, how they were processed, and what they can and can't tell you."
       />
 
+      {/* The index beside the sections from 75em, a bar over them below (AD1, AD2: app.css, .data-layout). */}
+      <div className="data-layout">
       <JumpNav items={toc} />
+      <Stack gap="lg" className="data-main">
 
       <Zone title="What's new" blurb="The newest release, and what came with it.">
         <WhatsNew />
@@ -696,6 +701,8 @@ export default function DataHealth() {
 
       <DuplicateIdentities snap={snapId} />
       </Zone>
+      </Stack>
+      </div>
     </Stack>
     <BackToTop />
     </>

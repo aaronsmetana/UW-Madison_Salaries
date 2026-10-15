@@ -3,7 +3,7 @@ import { Group, Text, Table, Anchor, ScrollArea, TextInput, Stack, Tooltip, Mult
 import { Link } from 'react-router-dom';
 import { IconSearch, IconSearchOff } from '@tabler/icons-react';
 import { CsvButton } from './CsvButton';
-import { useControls, METRIC_LABEL } from '../state/controls';
+import { useControls, METRIC_LABEL, type Scope } from '../state/controls';
 import { useSql, useActiveSnapshotId } from '../lib/hooks';
 import { salaryExpr, personPay, snapWhere, whereAll, filterKey, mainOf, earningsExpr } from '../lib/queries';
 import { usePeriod } from '../lib/period';
@@ -22,6 +22,7 @@ import { GLOSSARY } from '../lib/glossary';
 import { EmptyState } from './EmptyState';
 import { ICON } from '../lib/ui';
 import { FoldRow, useFolded } from './FoldRow';
+import { ShowAll, useShowAll } from './ShowAll';
 
 interface EarnerRow {
   person_key: string; fn: string; ln: string; title: string | null; job_code: string | null;
@@ -72,8 +73,14 @@ function ApptsTag({ appts, list }: { appts: number; list: { title: string | null
   );
 }
 
-export function EarnersPanel() {
-  const { scope, metric, filters } = useControls();
+/**
+ * `school`: the panel on a division's own page (SC7) — everyone in it, a page at a time, their department where
+ * the school would repeat, and nothing to leave out; the bar's scope has no say there.
+ */
+export function EarnersPanel({ school }: { school?: string } = {}) {
+  const controls = useControls();
+  const { metric, filters } = controls;
+  const scope: Scope = school ? { kind: 'school', value: school } : controls.scope;
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
   const scopeVal = scope.kind === 'school' ? scope.value : '';
@@ -103,7 +110,7 @@ export function EarnersPanel() {
         sum(fte) FILTER (WHERE salary > 0) fte, ${personPay(metric)} pay,
         sum(salary) FILTER (WHERE salary > 0 AND fte > 0) rate, count(*) FILTER (WHERE salary > 0 AND fte > 0) appts
      FROM salaries WHERE ${where} AND ${expr} > 0
-     GROUP BY person_key ${excludeSql} ORDER BY pay DESC LIMIT ${limit}`,
+     GROUP BY person_key ${excludeSql} ORDER BY pay DESC${school ? '' : ` LIMIT ${limit}`}`,
     !!snap
   );
   const earners = useMemo(() => earnersRaw ?? [], [earnersRaw]);
@@ -149,20 +156,23 @@ export function EarnersPanel() {
       switch (sort.key) {
         case 'name': cmp = fullName(a.fn, a.ln).localeCompare(fullName(b.fn, b.ln)); break;
         case 'title': cmp = (a.title ?? '').localeCompare(b.title ?? ''); break;
-        case 'school': cmp = (a.school ?? '').localeCompare(b.school ?? ''); break;
+        case 'school': cmp = ((school ? a.department : a.school) ?? '').localeCompare((school ? b.department : b.school) ?? ''); break;
         case 'fte': cmp = (a.fte ?? 0) - (b.fte ?? 0); break;
         default: cmp = a.pay - b.pay;
       }
       return sort.dir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [earners, q, sort]);
+  }, [earners, q, sort, school]);
+  // In a division, everyone: the first rows, then a hundred a page (G11, I6).
+  const page = useShowAll(view, `${q}|${sort.key}|${sort.dir}|${school ?? ''}`);
+  const rows = school ? page.shown : view;
 
   const maxPay = earners[0]?.pay ?? 1;
 
   const exportCsv = () =>
     downloadCSV(
-      `uw-top-${limit}-earners-${snap ?? 'latest'}.csv`,
+      school ? `uw-${school}-people-${snap ?? 'latest'}.csv` : `uw-top-${limit}-earners-${snap ?? 'latest'}.csv`,
       earners.map((e, i) => ({
         rank: i + 1, name: fullName(e.fn, e.ln), title: e.title ?? '', job_code: e.job_code ?? '',
         school: e.school ?? '', department: e.department ?? '', fte: e.fte ?? '', pay: Math.round(e.pay),
@@ -179,6 +189,7 @@ export function EarnersPanel() {
         <Group gap="sm" wrap="wrap">
           {/* One way to leave divisions out (D14): the picker, and Athletics as a quick chip in it. They were a
               picker and a separate "Without Athletics" button. */}
+          {!school && (
           <Group gap={6} wrap="wrap" className="exclude-group" maw="100%">
             <Eyebrow>Leave out</Eyebrow>
             {(schoolOpts ?? []).some((o) => o.school === ATHLETICS) && (
@@ -205,10 +216,13 @@ export function EarnersPanel() {
               className="exclude-divisions"
             />
           </Group>
-          <SegmentedToggle
-            size="xs" label="Show top" value={String(limit)} onChange={(v) => setLimit(Number(v))}
-            options={[{ id: '25', label: '25' }, { id: '100', label: '100' }, { id: '500', label: '500' }]}
-          />
+          )}
+          {!school && (
+            <SegmentedToggle
+              size="xs" label="Show top" value={String(limit)} onChange={(v) => setLimit(Number(v))}
+              options={[{ id: '25', label: '25' }, { id: '100', label: '100' }, { id: '500', label: '500' }]}
+            />
+          )}
           <CsvButton onClick={exportCsv} disabled={!earners.length} />
         </Group>
       </Group>
@@ -229,14 +243,14 @@ export function EarnersPanel() {
               {prevSnap && <Table.Th w={84} ta="right" data-fold className="rank-move-th">Δ rank</Table.Th>}
               <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
               <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} fold />
-              <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} fold />
+              <SortableTh sortKey="school" label={school ? 'Department' : 'School'} sort={sort} onSort={setSort} fold />
               <SortableTh sortKey="fte" label="FTE" tip={GLOSSARY.fte} sort={sort} onSort={setSort} align="right" fold />
               <SortableTh sortKey="pay" label={METRIC_LABEL[metric]} sort={sort} onSort={setSort} align="right" />
               <Table.Th className="tray-col"><VisuallyHidden>Compare</VisuallyHidden></Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {view.map((e) => {
+            {rows.map((e) => {
               const realRank = payRank.get(e.person_key) ?? 0;
               return (
                 <Fragment key={e.person_key}>
@@ -259,8 +273,8 @@ export function EarnersPanel() {
                   </Table.Td>
                   {/* The department under its school (D11): it sat under the name, in the wrong column. */}
                   <Table.Td data-fold>
-                    <Text span size="sm" lineClamp={1}>{e.school ?? '—'}</Text>
-                    {e.department && <Text size="xs" c="dimmed" lineClamp={1} className="earner-dept">{e.department}</Text>}
+                    <Text span size="sm" lineClamp={1}>{(school ? e.department : e.school) ?? '—'}</Text>
+                    {!school && e.department && <Text size="xs" c="dimmed" lineClamp={1} className="earner-dept">{e.department}</Text>}
                   </Table.Td>
                   <Table.Td ta="right" data-fold c={e.fte != null && Math.abs(e.fte - 1) > 0.005 ? 'orange' : 'dimmed'}>
                     {e.fte == null ? '—' : Math.abs(e.fte - 1) > 0.005 ? (
@@ -290,7 +304,7 @@ export function EarnersPanel() {
                 {/* On a phone: rank, title, school and a part-time FTE across the row's width (M3). */}
                 {folded && (
                   <FoldRow span={prevSnap ? 8 : 7}>
-                    #{realRank} · {e.title ?? '—'} · {e.school ?? '—'}
+                    #{realRank} · {e.title ?? '—'} · {(school ? e.department : e.school) ?? '—'}
                     {e.fte != null && Math.abs(e.fte - 1) > 0.005 ? ` · FTE ${e.fte.toFixed(2)}` : ''}
                   </FoldRow>
                 )}
@@ -301,10 +315,13 @@ export function EarnersPanel() {
         </Table>
       </ScrollArea.Autosize>
       )}
+      {school && <ShowAll shown={page.shown.length} total={page.total} onShowAll={page.showAll} pager={page.pager} />}
 
       <Stack gap={2} mt="xs">
         <Text size="xs" c="dimmed">
-          Showing the top {num(view.length)}{q ? ` of ${num(earners.length)}` : ''} by pay in this scope{exclude.length ? `, without ${exclude.join(', ')}` : ''}. Pay is each
+          {school
+            ? `Everyone in ${school}${q ? ` matching “${q.trim()}”` : ''}, highest pay first unless sorted. `
+            : `Showing the top ${num(view.length)}${q ? ` of ${num(earners.length)}` : ''} by pay in this scope${exclude.length ? `, without ${exclude.join(', ')}` : ''}. `}Pay is each
           person's annual rate for the snapshot (FTE-blended actual earnings when someone holds multiple appointments);
           an FTE ≠ 1.00 (amber) means a part-time appointment or a combined FTE across multiple roles.
         </Text>
