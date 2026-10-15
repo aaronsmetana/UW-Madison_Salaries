@@ -236,12 +236,16 @@ test('every page holds still while it loads', async ({ browser }) => {
       const w = window as unknown as { shift: number; moved: string[] };
       w.shift = 0; w.moved = [];
       new PerformanceObserver((list) => {
-        for (const e of list.getEntries() as unknown as { value: number; hadRecentInput: boolean; sources?: { node?: Node }[] }[]) {
+        type Src = { node?: Node; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly };
+        for (const e of list.getEntries() as unknown as { value: number; startTime: number; hadRecentInput: boolean; sources?: Src[] }[]) {
           if (e.hadRecentInput) continue;
           w.shift += e.value;
+          // When, how much, and how each part moved: the title page has failed this on CI three times, never locally,
+          // and three names with no distances could not say what had grown above them.
           for (const s of e.sources ?? []) {
             const n = s.node as HTMLElement | undefined;
-            if (n?.className) w.moved.push(`${String(n.className).split(' ').slice(-1)[0]} "${(n.textContent ?? '').trim().slice(0, 24)}"`);
+            const [a, b] = [s.previousRect, s.currentRect];
+            if (n?.className && e.value >= 0.001) w.moved.push(`${Math.round(e.startTime)}ms +${e.value.toFixed(3)} ${String(n.className).split(' ').slice(-1)[0]} "${(n.textContent ?? '').trim().slice(0, 24)}" y ${Math.round(a.y)}→${Math.round(b.y)} h ${Math.round(a.height)}→${Math.round(b.height)}`);
           }
         }
       }).observe({ type: 'layout-shift', buffered: true });
@@ -254,7 +258,7 @@ test('every page holds still while it loads', async ({ browser }) => {
       return { shift: w.shift, moved: w.moved };
     });
     expect(typeof shift, `${name}: no layout-shift reading`).toBe('number');
-    if (shift >= 0.1) over.push(`${name}: ${shift.toFixed(3)} (${[...new Set(moved)].slice(0, 3).join('; ')})`);
+    if (shift >= 0.1) over.push(`${name}: ${shift.toFixed(3)} (${[...new Set(moved)].slice(0, 8).join('; ')})`);
     await ctx.close();
   }
   expect(over, 'a page that moves under the reader while it loads').toEqual([]);
