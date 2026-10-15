@@ -72,7 +72,13 @@ for (const [name, route, ready, svg] of [
   ['Reports, raise case', `./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`, '.report-brief', false],
   ['Compare', `./compare?sel=${TRAY}`, '.card-title', true],
   ['Screening', './screening?run=1&flag=below-min', '.mantine-Table-table', false],
-  ['Data', './data', '.card-title', false],
+  ['Data', './data', '.whats-new-change', false],
+  // Every tab of it, each once its data is in.
+  ['Data, accuracy', './data?tab=accuracy', '#identity', false],
+  ['Data, how it’s built', './data?tab=method', '.pipeline-step', false],
+  ['Data, salary ranges', './data?tab=ranges', '.range-table tbody tr', false],
+  ['Data, snapshots', './data?tab=snapshots', '.snap-note-row', true],
+  ['Data, renames', './data?tab=renames', '.dup-row', false],
 ] as const) {
   test(`every size on ${name} is on the type scale, and chart text is one size`, async ({ page }) => {
     // A raise case is built from the tray: Compare's link puts Aaron and Adam in it.

@@ -289,6 +289,15 @@
   /* The redesign's teal, accent-7 (#145f72), is 7.2:1 on white and 5.9:1 on its own pill ground (accent-1), so
      a link and a teal word are one ink now. It was accent-8 while accent-7 was the lighter #0e6e83. */
   --text-accent: var(--mantine-color-accent-7);
+  /* A caution that is not an error (a snapshot's note, a flagged identity): amber ink on a pale amber, 5.9:1. */
+  --caution-ink: #8a5a00;
+  --caution-bg: #fdf8ec;
+  /* A tint for chips and code pills, and the About page's snapshot bars: rows light, people paid dark. */
+  --chip-tint: var(--mantine-color-accent-0);
+  --chip-tint-ink: var(--text-accent);
+  --snap-rows: var(--mantine-color-accent-2);
+  --snap-paid: var(--mantine-color-accent-7);
+  --snap-median: var(--mantine-color-accent-5);
   /* A third, quieter text tier (the redesign's "faint"): small-caps labels, axis text, a table's head. Its
      #6d767c measured 4.32:1 on the page and 4.20 on a hovered row, under the 4.5:1 that 11px text needs;
      #687076 clears every ground it sits on (4.57 at the lowest, a hovered row). */
@@ -363,8 +372,8 @@ body {
 
      These resolve OPAQUE on purpose. A literal rgba() surface would break three things this file has
      already fixed: a Paper nested in a Card (Compare's three add-blocks, ReportBrief's note panel)
-     would stack the overlay and render darker than a card on its own; and `.data-snap-table thead th`,
-     that table's pinned first column, and `.data-jumpnav` below are all sticky surfaces that have to
+     would stack the overlay and render darker than a card on its own; and `.data-snap-table thead th`
+     and that table's pinned first column are sticky surfaces that have to
      occlude the rows scrolling underneath them — see the comment on the table header, which records
      that exact bug. */
   --base: #08090b;
@@ -395,7 +404,7 @@ body {
   /* Mantine's dark palette drives every surface in dark mode: dark-7 the canvas, dark-6 cards and
      inputs, dark-5 hover, dark-4 borders. Remapping these four onto the ramp is what makes the
      elevation reach Paper, Card, AppShell, Popover, Select, and this file's own .scope-search-pill /
-     .app-dropdown-option / .data-jump-chip rules, all at once. */
+     .app-dropdown-option rules, all at once. */
   --mantine-color-dark-7: var(--page-bg);
   --mantine-color-dark-6: var(--surface);
   --mantine-color-dark-5: var(--surface-raised);
@@ -424,6 +433,13 @@ body {
   --mantine-shadow-lg: 0 10px 34px rgba(0, 0, 0, 0.68), 0 2px 6px rgba(0, 0, 0, 0.5);
 
   --text-accent: var(--mantine-color-accent-4);
+  --caution-ink: #e8b85c;
+  --caution-bg: rgba(232, 184, 92, 0.1);
+  --chip-tint: var(--mantine-color-accent-9);
+  --chip-tint-ink: var(--text-accent);
+  --snap-rows: var(--mantine-color-accent-9);
+  --snap-paid: var(--mantine-color-accent-4);
+  --snap-median: var(--mantine-color-accent-6);
   /* 6.0:1 on the card, a step under dimmed's 10.2. */
   --text-faint: #8d969c;
   /* The mark's teal over the card, as the light tints are over white: accent-4 text reads 6.3:1 and 5.0:1. */
@@ -1830,51 +1846,6 @@ button:active,
   .home-stats-browse:hover .browse-arrow { transform: none; }
 }
 
-/* ── Data · About page: reading comfort + chip nav. Page-scoped (.data-about) but built only from the
-   global tokens above, so the page still reads as the same app — just calmer for a long, prose-heavy page. ── */
-
-/* One number for the fixed chrome this page stacks: the 60px app bar plus the sticky jump nav.
-   It used to be written three times — the nav's `top`, the table's `stickyHeaderOffset`, and the
-   scrollspy's `rootMargin` — as 64 / 108 / 112, none of which knew the others existed. */
-:root { --data-chrome-top: 104px; }
-
-/* A reading column with data breakouts, which is what this page actually is: eight sections of prose
-   and one 10-column ingestion table. 880px is right for the prose and wrong for the table — capped, it
-   scrolled 94px at *every* width, because `miw: 920` cannot fit an 880px column.
-
-   The cap is still expressed on containers rather than on each section, which is the property worth
-   keeping: it used to live on eight children as `maw={PROSE}` and was duly forgotten in three places
-   (`#snapshots`, `#duplicates` in another file, and the loading skeleton). But the cards are not
-   children of `.data-about` — they sit inside the two `Zone` stacks — so holding that property takes
-   both levels. A new section is capped by default and has to opt out with `.data-wide`, which is also
-   why the opt-out is written as a descendant rather than a child: the loading skeleton's blocks sit at
-   the top level, and it needs a wide one too so the page does not reflow when the manifest lands.
-
-   Left-aligned, not centred: the page has no right rail to balance a centred column, so centring only
-   opens a gap beside the nav. `#snapshots` fills the region instead, landing on the same edges as every
-   other route (measured 346 → 1424 at 1440, identical to /explore) and needing no horizontal scroll at
-   all above a ~1324px viewport. */
-.data-about > :not(.data-zone),
-.data-about .data-zone > * { max-width: var(--content-prose); }
-.data-about .data-wide { max-width: none; }
-
-/* Fragment links landed their section at y=0, i.e. behind all of that. */
-.data-about [id] { scroll-margin-top: calc(var(--data-chrome-top) + 12px); }
-
-/* "Jump to" links become subtle pill chips (mirrors the .scope-search-pill / .app-dropdown-option neutrals). */
-.data-jump-chip {
-  padding: 3px 11px;
-  border-radius: 999px;
-  font-weight: 600;
-  border: 1px solid var(--mantine-color-default-border);
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-:root[data-mantine-color-scheme='light'] .data-jump-chip { background-color: var(--mantine-color-gray-1); }
-:root[data-mantine-color-scheme='dark'] .data-jump-chip { background-color: var(--mantine-color-dark-6); }
-.data-jump-chip:hover { border-color: var(--mantine-color-accent-5); }
-:root[data-mantine-color-scheme='light'] .data-jump-chip:hover { background-color: var(--mantine-color-accent-1); }
-:root[data-mantine-color-scheme='dark'] .data-jump-chip:hover { background-color: var(--mantine-color-dark-5); }
-
 /* Warning alerts that carry a title (the accuracy disclaimer, pay-band reference, data-health notes):
    a neutral "light" Alert with a bold amber left rule and icon — the warning semantic without the muddy
    orange fill. An orange `Alert` renders its bold title in mid-orange on a pale orange fill — 2.5:1, a
@@ -1884,17 +1855,6 @@ button:active,
 .alert-warn .mantine-Alert-icon { color: var(--mantine-color-orange-7); }
 :root[data-mantine-color-scheme='dark'] .alert-warn { border-left-color: var(--mantine-color-orange-4); }
 :root[data-mantine-color-scheme='dark'] .alert-warn .mantine-Alert-icon { color: var(--mantine-color-orange-4); }
-
-/* Collapsible disclaimer body (<details>/<summary>). The native marker does the disclosure job; it used
-   to be replaced by a hand-built rotating '▸' in a third accent colour. */
-.disc-details > summary { cursor: pointer; }
-
-/* The caveat list packs into columns instead of a row-major grid: eleven items of uneven height left
-   ragged holes opposite the tall ones. Columns fill top-to-bottom, so there are none. */
-.disc-grid > * { break-inside: avoid; margin-bottom: var(--mantine-spacing-xs); }
-@media (min-width: 62em) {
-  .disc-grid { columns: 2; column-gap: var(--mantine-spacing-xl); }
-}
 
 /* ── The ingestion pipeline (DataPipeline.tsx) ──────────────────────────────────────────────────
    A numbered vertical flow: a dot column on the left, the step on the right, and a hairline running
@@ -2085,43 +2045,6 @@ button:active,
   pointer-events: auto;
 }
 
-/* Sticky scrollspy "Jump to" nav: pinned just under the app header; the chip for the in-view section lights
-   up. A semi-transparent body surface + blur keeps the content beneath legible. */
-.data-jumpnav {
-  position: sticky;
-  top: 60px;
-  z-index: var(--z-sticky);
-  padding: 8px 0;
-  background-color: var(--surface);
-  border-bottom: 1px solid var(--hairline);
-}
-
-/* On a phone the chips wrap to 123px — 15% of the screen — and stickiness pinned that there for all
-   ten screens of the page. Below `sm` they scroll sideways on one line and stay put. */
-@media (max-width: 48em) {
-  .data-jumpnav {
-    position: static;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .data-jumpnav::-webkit-scrollbar { display: none; }
-  .data-jumpnav > * { flex: 0 0 auto; }
-}
-
-.data-jump-chip.active {
-  border-color: var(--mantine-color-accent-5);
-  color: var(--mantine-color-accent-7);
-  font-weight: 700;
-}
-:root[data-mantine-color-scheme='light'] .data-jump-chip.active { background-color: var(--mantine-color-accent-1); }
-:root[data-mantine-color-scheme='dark'] .data-jump-chip.active {
-  background-color: var(--mantine-color-dark-5);
-  /* accent-7 (the light-mode color, set above) only reads 2.81:1 against this dark chip — same fix
-     as the header wordmark/credit link (see .accent7-text). accent-4 measures 6.88:1. */
-  color: var(--mantine-color-accent-4);
-}
-
 /* Sortable table headers. The label lives in a real <button> (the ARIA pattern for a sortable header),
    and a button's UA styles would otherwise beat the inherited `.mantine-Table-th` treatment above — which
    is exactly what happened on the ingestion table, where two of ten columns rendered at 16px sentence
@@ -2200,7 +2123,6 @@ button:active,
 
 @media (prefers-reduced-motion: reduce) {
   .live-dot { animation: none; }
-  .disc-details > summary::before,
   .back-to-top { transition: none; }
 }
 
@@ -3424,30 +3346,6 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .raise-name-cell > a { white-space: nowrap; }
 }
 
-/* The About page's index (AD1, AD2). From 75em, a column of its own beside the sections, where the right half of a
-   laptop's screen sat empty beside the 880px reading column; below that, a bar over the content's full width — it
-   stopped at the prose's 880px while the tables under it ran wider, and their rows showed beside it. */
-.data-about > .data-layout { max-width: none; }
-.data-layout { display: flex; flex-direction: column; gap: var(--mantine-spacing-lg); }
-.data-main { min-width: 0; }
-@media (min-width: 75em) {
-  .data-layout { display: grid; grid-template-columns: minmax(0, 1fr) 176px; column-gap: var(--mantine-spacing-xl); align-items: start; }
-  .data-layout > .data-main { grid-column: 1; grid-row: 1; }
-  .data-layout > .data-jumpnav {
-    grid-column: 2;
-    grid-row: 1;
-    top: calc(60px + 16px);
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 4px;
-    padding: 0;
-    border-bottom: none;
-    background: none;
-  }
-  .data-layout .data-jump-chip { border-radius: var(--mantine-radius-sm); }
-}
-
 /* Above the compare tray while it is open (AD5): it sat on the tray's right end. */
 html[data-tray] .back-to-top { bottom: calc(var(--tray-room, 88px) + 8px); }
 
@@ -3458,3 +3356,156 @@ html[data-tray] .back-to-top { bottom: calc(var(--tray-room, 88px) + 8px); }
 
 /* An unpaid appointment in History (E3): an affiliate's, said and quieted, not a new title at $0. */
 tr[data-unpaid] > td { color: var(--mantine-color-dimmed); }
+
+/* ── About the data (/data): the person page's shape — header, fact strip, tabs of cards. ──────────────────── */
+.about-page [id] { scroll-margin-top: calc(var(--app-shell-header-offset, 60px) + 16px); }
+.about-status { margin-top: -4px; }
+.lede { font-size: 18px; line-height: 1.45; }
+.tabular { font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }
+.caution-icon { color: var(--caution-ink); flex-shrink: 0; }
+.caution-text { color: var(--caution-ink); }
+.ok-icon { color: var(--mantine-color-pos-7, var(--mantine-color-green-7)); flex-shrink: 0; }
+.help-underline { border-bottom: 1px dotted var(--mantine-color-dimmed); cursor: help; }
+/* An h3 that reads as the app's small-caps label. */
+.eyebrow-heading {
+  margin: 0 0 6px;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  line-height: 1.4 !important;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+.formula-pill {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--chip-tint);
+  color: var(--chip-tint-ink);
+  white-space: nowrap;
+}
+.field-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--chip-tint);
+  color: var(--chip-tint-ink);
+}
+.field-chip-never { background: var(--mantine-color-body); color: var(--mantine-color-dimmed); border: 1px dashed var(--mantine-color-default-border); }
+.field-chip-plain { background: var(--mantine-color-body); color: var(--mantine-color-text); border: 1px solid var(--hairline); }
+.muted-panel { background: var(--hover-bg); border-radius: var(--mantine-radius-md); padding: 16px 18px; }
+.muted-box { background: var(--hover-bg); border-radius: var(--mantine-radius-sm); padding: 12px 14px; }
+.caveat-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--mantine-color-dimmed); }
+.caveat-list b { color: var(--mantine-color-text); }
+.jump-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px;
+  border-radius: 999px; background: var(--hover-bg); color: var(--mantine-color-text); font-size: 13px; font-weight: 600;
+}
+.jump-chip:hover { background: var(--chip-tint); }
+/* A rule: its term beside its explanation, stacked on a phone. */
+.rule-rows { margin: 0; }
+.rule-row { display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+.rule-rows-ruled .rule-row { border-bottom: none; border-top: 1px solid var(--hairline); }
+.rule-rows-ruled { margin-top: var(--mantine-spacing-md); }
+.rule-row dt { flex: 0 1 240px; min-width: 200px; font-size: 15px; font-weight: 650; }
+.rule-row dd { flex: 1 1 420px; min-width: 0; margin: 0; font-size: 13px; color: var(--mantine-color-dimmed); max-width: 80ch; }
+.privacy-emphasis { padding-top: 14px; border-top: 1px solid var(--hairline); }
+.whats-new-change { min-width: 0; }
+/* The Overview's seven steps, a tile each. */
+.pipeline-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.pipeline-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: var(--mantine-radius-md); }
+.pipeline-tile .pipeline-dot { position: static; }
+/* 44px to a finger (the page's spec); a mouse keeps the app's 28 / 36 control heights. */
+@media (pointer: coarse) {
+  .data-downloads .data-dl-btn,
+  .about-actions .mantine-Button-root,
+  .rename-filter input { min-height: 44px; }
+}
+/* Salary ranges: coverage in one bar, three keys under it. */
+.coverage-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--hover-bg); }
+.coverage-full { background: var(--mantine-color-accent-7); }
+.coverage-floor { background: var(--mantine-color-accent-4); }
+.coverage-none { background: var(--mantine-color-gray-3); }
+:root[data-mantine-color-scheme='dark'] .coverage-none { background: var(--mantine-color-dark-4); }
+.coverage-key { display: flex; gap: 10px; align-items: flex-start; }
+.coverage-swatch { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 3px; margin-top: 8px; display: inline-block; }
+.coverage-big { font-size: 24px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+/* Every grade's range on one axis, as a table so its numbers stay a table's. */
+.range-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.range-table th, .range-table td { padding: 5px 8px; text-align: right; white-space: nowrap; }
+.range-table thead th { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mantine-color-dimmed); }
+.range-table th[scope='row'], .range-table thead th:first-child { text-align: left; width: 56px; }
+.range-table tbody th[scope='row'] { font-weight: 600; }
+.range-axis-head, .range-track-cell { width: 100%; min-width: 260px; }
+.range-axis { position: relative; height: 16px; }
+.range-axis > span { position: absolute; top: 0; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.range-track {
+  position: relative; height: 16px;
+  background-image: linear-gradient(to right, var(--hairline-strong) 1px, transparent 1px);
+  background-size: calc(100% / var(--range-steps, 6)) 100%;
+  border-right: 1px solid var(--hairline-strong);
+}
+.range-bar { position: absolute; top: 3px; height: 10px; border-radius: 5px; background: var(--mantine-color-accent-3); }
+:root[data-mantine-color-scheme='dark'] .range-bar { background: var(--mantine-color-accent-8); }
+.range-mid { position: absolute; top: -3px; width: 2px; height: 16px; margin-left: -1px; background: var(--mantine-color-text); border-radius: 1px; }
+.range-mid-value { font-weight: 650; }
+.range-outside th { text-align: left !important; padding-top: 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mantine-color-dimmed); }
+.range-key { font-size: 13px; color: var(--mantine-color-dimmed); }
+.range-key > span { display: inline-flex; align-items: center; gap: 6px; }
+.range-key-bar { display: inline-block; width: 22px; height: 8px; border-radius: 4px; background: var(--mantine-color-accent-3); }
+.range-key-mid { display: inline-block; width: 2px; height: 14px; background: var(--mantine-color-text); }
+.floor-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.floor-tile { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--mantine-radius-sm); }
+/* Snapshots: two charts, the ingestion table's notes as rows of their own, each sheet's mapping. */
+.glance-figure { margin: 0; min-width: 0; }
+.glance-figure figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
+.glance-key { font-size: 12px; color: var(--mantine-color-dimmed); }
+.glance-key > span { display: inline-flex; align-items: center; gap: 6px; }
+.glance-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.note-flag {
+  display: inline-grid; place-items: center; flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+  font-size: 11px; font-weight: 700; color: var(--caution-ink); background: var(--caution-bg); border: 1px solid var(--caution-ink);
+}
+.data-snap-table tbody tr.snap-note-row,
+.data-snap-table tbody tr.snap-note-row td { background: var(--caution-bg); }
+.snap-note-row td { white-space: normal; }
+.mapping-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 24px; }
+.mapping-pair { display: flex; gap: 8px; align-items: baseline; min-width: 0; font-size: 13px; }
+.mapping-pair > code { color: var(--mantine-color-text); flex: 0 0 auto; }
+.source-files { max-height: 360px; overflow: auto; }
+/* Renames: the releases on the left, the one chosen on the right; stacked on a phone. */
+.rename-panes { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 62em) { .rename-panes { grid-template-columns: minmax(0, 1fr); } }
+.rename-releases { display: flex; flex-direction: column; gap: 6px; }
+.rename-release {
+  display: flex; flex-direction: column; gap: 4px; min-height: 44px; padding: 10px 12px;
+  border: 1px solid transparent; border-radius: var(--mantine-radius-md); background: var(--mantine-color-body);
+}
+.rename-release:hover { background: var(--hover-bg); }
+.rename-release[aria-pressed='true'] { background: var(--chip-tint); border-color: var(--mantine-color-accent-4); }
+.rename-minibar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; min-width: 2px; }
+.rename-key-renamed { background: var(--mantine-color-accent-7); }
+.rename-key-merged { background: var(--mantine-color-accent-4); }
+.rename-key-ended { background: var(--mantine-color-gray-4); }
+:root[data-mantine-color-scheme='dark'] .rename-key-ended { background: var(--mantine-color-dark-3); }
+.rename-totals { font-size: 13px; color: var(--mantine-color-dimmed); }
+.rename-totals > span { display: inline-flex; align-items: center; gap: 6px; }
+.rename-totals b { color: var(--mantine-color-text); }
+.rename-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.rename-detail { min-width: 0; padding: 4px 0; }
+.rename-filter:focus-within .mantine-Input-wrapper { box-shadow: 0 0 0 2px var(--mantine-color-accent-7); border-radius: var(--mantine-radius-sm); }
+.rename-ended { margin-top: var(--mantine-spacing-md); border-top: 1px solid var(--hairline); padding-top: 10px; }
+.rename-ended-toggle { min-height: 44px; }
+.rename-ended-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 20px; }
+/* Duplicates: the flagged first, a pill saying so. */
+.caution-pill { color: var(--caution-ink) !important; background: var(--caution-bg) !important; }
+/* 44px to a finger, without growing the row: the margin takes back what the box adds. */
+.dup-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; margin: -8px -8px -8px -12px; border-radius: 8px; flex: 0 0 auto; }
+.dup-toggle:hover { background: var(--hover-bg); }
+.text-button { min-height: 44px; padding: 0 4px; }
+.about-page :is(a, button, select, input):focus-visible { outline: 2px solid var(--mantine-color-accent-7); outline-offset: 2px; }

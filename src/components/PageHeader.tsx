@@ -40,9 +40,11 @@ export function PageHeader({
     </Box>
   );
   if (!right) return head;
+  // The heading takes what the actions leave, from a basis of its own: at its natural width — its description
+  // unwrapped — it pushed the actions under it at any width short of a wide desktop.
   return (
     <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
-      {head}
+      <Box style={{ flex: '1 1 420px', minWidth: 0 }}>{head}</Box>
       {right}
     </Group>
   );

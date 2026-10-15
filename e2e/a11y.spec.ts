@@ -184,14 +184,18 @@ for (const theme of THEMES) {
     expect(bad).toEqual([]);
   });
 
-  test(`a11y: the data page, loaded (${theme}), has no critical/serious violations`, async ({ page }) => {
-    await page.goto('./data');
-    await setTheme(page, theme);
-    await expect(page.getByText(/shared-name groups/)).toBeVisible({ timeout: 60_000 });
-    await settled(page);
-    const bad = await runAxe(page);
-    expect(bad).toEqual([]);
-  });
+  // Every tab, each once its data is in (the page draws only the tab in view).
+  for (const [tab, ready] of [['overview', '.whats-new-change'], ['accuracy', '#identity'], ['method', '.pipeline-step'],
+    ['ranges', '.range-table tbody tr'], ['snapshots', '.snap-note-row'], ['renames', '.dup-row']] as const) {
+    test(`a11y: the data page's ${tab} tab (${theme}) has no critical/serious violations`, async ({ page }) => {
+      await page.goto(`./data?tab=${tab}`);
+      await setTheme(page, theme);
+      await expect(page.locator(ready).first()).toBeVisible({ timeout: 60_000 });
+      await settled(page);
+      const bad = await runAxe(page);
+      expect(bad).toEqual([]);
+    });
+  }
 
   test(`a11y: school page (${theme}) has no critical/serious violations`, async ({ page }) => {
     await page.goto(`./school/${encodeURIComponent('School of Medicine and Public Health')}`);

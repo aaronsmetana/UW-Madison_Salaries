@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { Text, Anchor, Box } from '@mantine/core';
+import { Text, Box, Title } from '@mantine/core';
 import { num, plural } from '../lib/format';
+import { SectionLink } from './about/shared';
 
 /**
  * The seven steps between an open-records request and the number on the screen.
@@ -27,7 +28,7 @@ import { num, plural } from '../lib/format';
  * one number printed twice. That count already has a home in the Methodology accordion below.
  */
 
-type Stage = { label: string; body: ReactNode; fact?: ReactNode };
+type Stage = { label: string; body: ReactNode; fact?: ReactNode; link?: ReactNode };
 
 export function DataPipeline({
   snapshots,
@@ -57,8 +58,8 @@ export function DataPipeline({
       body: (
         <>
           UFAS asks the university for its salary report under Wisconsin's public-records law. Nothing
-          here is scraped, leaked, or estimated — <Anchor href="#source" underline="always" inherit>every
-          record starts as a request someone filed</Anchor>.
+          here is scraped, leaked, or estimated — <SectionLink id="source" underline="always" inherit>every
+          record starts as a request someone filed</SectionLink>.
         </>
       ),
       fact: 'Wis. Stat. § 19.35',
@@ -72,6 +73,7 @@ export function DataPipeline({
       label: 'Columns are detected',
       body: "Each sheet names its columns differently, so headers are matched to this app's fields rather than assumed — per report, not once. A mis-match here is one way a value ends up under the wrong label.",
       fact: columnsMapped != null ? `${columnsMapped} columns${of(latestLabel)}` : undefined,
+      link: <SectionLink id="mapping" fw={500} inherit>Each sheet&apos;s mapping →</SectionLink>,
     },
     {
       label: 'Values are normalized, and rows become people',
@@ -79,10 +81,11 @@ export function DataPipeline({
         <>
           Names are re-cased, salaries and FTE are typed as numbers, and rows are linked into one
           person by name and hire date. This is the step that can{' '}
-          <Anchor href="#identity" underline="always" inherit>merge two people or split one</Anchor>.
+          <SectionLink id="identity" underline="always" inherit>merge two people or split one</SectionLink>.
         </>
       ),
       fact: peopleLatest != null ? `${num(peopleLatest)} people${of(latestLabel)}` : undefined,
+      link: <SectionLink id="duplicates" fw={500} inherit>Possible duplicates →</SectionLink>,
     },
     {
       label: 'Each report is kept as its own snapshot',
@@ -108,10 +111,10 @@ export function DataPipeline({
           <span className="pipeline-dot" aria-hidden>{i + 1}</span>
           <Box>
             <div className="pipeline-head">
-              <Text size="sm" fw={600}>{s.label}</Text>
-              {s.fact && <Text size="xs" c="dimmed" className="mono pipeline-fact">{s.fact}</Text>}
+              <Title order={3} fz="md" fw={650}>{s.label}</Title>
+              {s.fact && <code className="formula-pill pipeline-fact">{s.fact}</code>}
             </div>
-            <Text size="xs" c="dimmed" mt={2}>{s.body}</Text>
+            <Text size="sm" c="dimmed" mt={2} maw="82ch">{s.body}{s.link && <> {s.link}</>}</Text>
           </Box>
         </li>
       ))}

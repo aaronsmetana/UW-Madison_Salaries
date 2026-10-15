@@ -20,7 +20,7 @@ for (const [name, path, ready] of [
   ['a division', `./school/${encodeURIComponent('School of Education')}?tab=departments`, 'table tbody tr >> visible=true'],
   ['Raises', './raises', '.raise-above-table tbody tr'],
   ['Screening', `./screening?sch=${encodeURIComponent('School of Medicine and Public Health')}&run=1`, 'table tbody tr'],
-  ['Data', './data', '.data-snap-table tbody tr'],
+  ['Data', './data?tab=snapshots', '.data-snap-table tbody tr'],
 ] as const) {
   test(`one vertical scroll, the page's own: ${name}`, async ({ page }) => {
     await page.goto(path);

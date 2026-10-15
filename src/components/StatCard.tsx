@@ -56,13 +56,15 @@ export function StatRow({ cols, children, className, flush = false, label }: {
  * chip), then whatever the figure is. `onOpen` makes the whole cell a way to where the figure is shown in
  * full (a tab), as a button; `to`, as a link.
  */
-export function StatCell({ label, aside, children, onOpen, to, className }: {
+export function StatCell({ label, aside, children, onOpen, to, className, figure }: {
   label: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
   onOpen?: () => void;
   to?: string;
   className?: string;
+  /** Names the figure for a test or a reader's tools (`data-figure`), as the Data page's release figures are. */
+  figure?: string;
 }) {
   const head = (
     <div className="stat-cell-head">
@@ -73,7 +75,7 @@ export function StatCell({ label, aside, children, onOpen, to, className }: {
   const cls = `stat-cell${onOpen || to ? ' stat-cell-open' : ''}${className ? ` ${className}` : ''}`;
   if (to) {
     return (
-      <Anchor component={Link} to={to} underline="never" c="inherit" className={cls}>
+      <Anchor component={Link} to={to} underline="never" c="inherit" className={cls} data-figure={figure}>
         {head}
         {children}
       </Anchor>
@@ -83,7 +85,7 @@ export function StatCell({ label, aside, children, onOpen, to, className }: {
     if (onOpen && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); }
   };
   return (
-    <div className={cls} role={onOpen ? 'button' : undefined} tabIndex={onOpen ? 0 : undefined} onClick={onOpen} onKeyDown={onOpen ? key : undefined}>
+    <div className={cls} data-figure={figure} role={onOpen ? 'button' : undefined} tabIndex={onOpen ? 0 : undefined} onClick={onOpen} onKeyDown={onOpen ? key : undefined}>
       {head}
       {children}
     </div>
@@ -102,6 +104,7 @@ export function StatCard({
   size = 'md',
   to,
   className,
+  figure,
 }: {
   label: ReactNode;
   value: ReactNode;
@@ -109,6 +112,7 @@ export function StatCard({
   size?: StatSize;
   to?: string;
   className?: string;
+  figure?: string;
 }) {
   const inRow = useContext(InRow);
   const body = (
@@ -117,9 +121,9 @@ export function StatCard({
       {sub != null && <Text size="sm" c="dimmed" mt={4}>{sub}</Text>}
     </>
   );
-  if (inRow) return <StatCell label={label} to={to} className={className}>{body}</StatCell>;
+  if (inRow) return <StatCell label={label} to={to} className={className} figure={figure}>{body}</StatCell>;
   const card = (
-    <Card padding={size === 'hero' ? 'xl' : 'lg'} className={className} data-stat-card style={{ height: '100%', ...(to ? { cursor: 'pointer' } : {}) }}>
+    <Card padding={size === 'hero' ? 'xl' : 'lg'} className={className} data-stat-card data-figure={figure} style={{ height: '100%', ...(to ? { cursor: 'pointer' } : {}) }}>
       <Eyebrow>{label}{to && <Text span c="accent.7" className="accent7-text"> →</Text>}</Eyebrow>
       {body}
     </Card>

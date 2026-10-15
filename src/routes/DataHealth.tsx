@@ -1,114 +1,25 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Stack, Title, Text, Table, Badge, Skeleton, Alert, Group, Code, Anchor, Card, Accordion, Tooltip, SimpleGrid, Paper, Button, Box, ActionIcon, Switch, ThemeIcon, Select, ScrollArea, VisuallyHidden } from '@mantine/core';
-import { IconAlertTriangle, IconBrandGithub, IconDownload, IconBraces, IconBook2, IconCash, IconClock, IconArrowUp, IconReload } from '@tabler/icons-react';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Stack, Text, Skeleton, Alert, Group, Button, ActionIcon, Tabs } from '@mantine/core';
+import { IconAlertTriangle, IconBrandGithub, IconDownload, IconArrowUp, IconReload } from '@tabler/icons-react';
 import { useManifest, useActiveSnapshotId, useSummary } from '../lib/hooks';
-import { num, usd } from '../lib/format';
+import { num } from '../lib/format';
 import { PageHeader } from '../components/PageHeader';
-import { Eyebrow } from '../components/Eyebrow';
-import { dropdownProps } from '../lib/selectProps';
-import { MiniBar } from '../components/MiniBar';
-import { DuplicateIdentities } from '../components/DuplicateIdentities';
-import { DeltaChip, type DeltaTone } from '../components/Delta';
-import { SortableTh, type SortState } from '../components/SortableTh';
-import { CardTitle } from '../components/CardTitle';
-import { DataPipeline } from '../components/DataPipeline';
+import { FactStrip } from '../components/FactStrip';
+import { OverflowTabsList } from '../components/OverflowTabsList';
+import { useCrumbs } from '../app/PageTop';
 import { useDocTitle } from '../lib/useDocTitle';
-import { REAL_BASE_YEAR } from '../lib/cpi';
+import { markTabSwitch } from '../lib/motion';
 import { REPO_URL } from '../lib/links';
 import type { SnapshotInfo } from '../lib/manifest';
 import { ICON } from '../lib/ui';
-import { NewBadge } from '../components/NewBadge';
-import { WhatsNew, SalaryRanges, DepartmentRenames } from '../components/WhatsNew';
-
-// 'pos' (not stock Mantine 'green') — the app's own vetted positive palette; plain 'green's light-variant
-// text (green-7, ~2.4:1 on this badge's pale fill) fails WCAG AA, 'pos' clears it comfortably (~5:1).
-const STATUS_COLOR: Record<string, string> = { ok: 'pos', warning: 'orange', error: 'red', info: 'gray' };
-
-/** The columns one appointment row carries. Kept here rather than inline so the count in the disclosure
- *  label can't drift from the list, and `data-about.spec.ts` can check it against the manifest. */
-const RECORD_FIELDS = [
-  'name', 'title', 'job code', 'school', 'department', 'grade', 'basis', 'salary',
-  'FTE-adjusted salary', 'base pay', 'FTE', 'pay-rate type', 'FLSA status',
-  'employee category', 'employee type', 'hire date',
-] as const;
-
-/** Snapshot-over-snapshot delta chip for the ingestion table. `tone="neutral"` for headcount (a
- *  population size, not a status); the median-salary delta keeps `signed` (money). */
-function Delta({ frac, tone = 'signed' }: { frac: number | null; tone?: DeltaTone }) {
-  return <DeltaChip frac={frac} tone={tone} flatLabel="0.0%" />;
-}
-
-/** One disclaimer caveat: a small amber marker + a bold lead phrase + the rest — laid out in a 2-col grid. */
-function DItem({ lead, children, id }: { lead: string; children: ReactNode; id?: string }) {
-  return (
-    <Group id={id} wrap="nowrap" gap={8} align="flex-start">
-      <Box mt={8} style={{ width: 5, height: 5, borderRadius: 999, flexShrink: 0, background: 'var(--mantine-color-orange-5)' }} />
-      <Text size="sm"><b>{lead}</b> — {children}</Text>
-    </Group>
-  );
-}
-
-/** Table header with an optional explanatory tooltip (dotted "help" underline). */
-function Th({ children, tip, ta }: { children: ReactNode; tip?: string; ta?: 'right' }) {
-  if (!tip) return <Table.Th ta={ta}>{children}</Table.Th>;
-  return (
-    <Table.Th ta={ta}>
-      <Tooltip label={tip} multiline w={250} withArrow>
-        <span style={{ borderBottom: '1px dotted var(--mantine-color-dimmed)', cursor: 'help' }}>{children}</span>
-      </Tooltip>
-    </Table.Th>
-  );
-}
-
-/** One of the page's two subjects. The sections beneath are h3s, so the outline reads
- *  h1 (page) → h2 (subject) → h3 (section) with nothing skipped. */
-function Zone({ title, blurb, children }: { title: string; blurb: string; children: ReactNode }) {
-  return (
-    <Stack gap="lg" className="data-zone">
-      <Box>
-        <Title order={2}>{title}</Title>
-        <Text c="dimmed" mt={4} maw="var(--measure)">{blurb}</Text>
-      </Box>
-      {children}
-    </Stack>
-  );
-}
-
-/** One "Pay" definition: an accent icon anchor + bold term + description, in a small bordered card. */
-function DefCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
-  return (
-    <Paper withBorder p="sm" radius="md">
-      <Group gap={8} mb={4} wrap="nowrap">
-        <ThemeIcon variant="light" color="accent" size="md" radius="md">{icon}</ThemeIcon>
-        <Text size="sm" fw={700}>{title}</Text>
-      </Group>
-      <Text size="sm">{children}</Text>
-    </Paper>
-  );
-}
-
-function formatBytes(n: number): string {
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
-  return `${n} B`;
-}
-
-/** Resolve a static asset's size via a HEAD request (so a download button can show its payload up front). */
-function useFileSize(url: string): string | null {
-  const [size, setSize] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch(url, { method: 'HEAD' })
-      .then((r) => {
-        const len = r.headers.get('content-length');
-        if (!cancelled && len) setSize(formatBytes(Number(len)));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [url]);
-  return size;
-}
+import { ABOUT_TABS, RECORD_FIELDS, SECTION_TAB, useFileSize, type AboutTab } from '../components/about/shared';
+import { OverviewTab, type PipelineFacts } from '../components/about/OverviewTab';
+import { AccuracyTab } from '../components/about/AccuracyTab';
+import { MethodTab } from '../components/about/MethodTab';
+import { RangesTab } from '../components/about/RangesTab';
+import { SnapshotsTab } from '../components/about/SnapshotsTab';
+import { RenamesTab } from '../components/about/RenamesTab';
 
 /** A floating "back to top" button that slides into view once the reader scrolls past one viewport. */
 function BackToTop() {
@@ -130,142 +41,69 @@ function BackToTop() {
   );
 }
 
-type SortKey = 'date' | 'rows';
+/** "Nov 2021 (Pre-TTC)" → "Nov 2021": a span names months, not which side of the relabel. */
+const monthOf = (label: string | undefined) => label?.replace(/\s*\(.*\)$/, '') ?? '';
 
-/** Height of the fixed chrome this page stacks (app header + sticky jump nav), read from the single
- *  `--data-chrome-top` token in app.css so JS and CSS cannot drift apart. */
-function chromeTop(): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--data-chrome-top');
-  return parseInt(raw, 10) || 108;
-}
-
-/** Sticky "Jump to" nav with a scrollspy highlight — an IntersectionObserver lights up the chip whose
- *  section is currently in view. */
-function JumpNav({ items }: { items: [string, string][] }) {
-  const [active, setActive] = useState(items[0]?.[0] ?? '');
-  // The chrome's height is the nav's own, measured: eleven chips wrap to two lines on a laptop, and a
-  // fixed 108px then landed each section's heading under the second line. Sticky or not, the token the
-  // sections' `scroll-margin-top` and the scrollspy below read follows it.
-  const navRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = navRef.current;
-    if (!el) return undefined;
-    const root = document.documentElement.style;
-    const set = () => {
-      const cs = getComputedStyle(el);
-      // Beside the sections (a column, from 75em) the nav covers none of them: the chrome is the app bar alone.
-      if (cs.position === 'sticky' && cs.flexDirection === 'column') root.setProperty('--data-chrome-top', `${Math.max(0, (parseFloat(cs.top) || 0) - 16)}px`);
-      else if (cs.position === 'sticky') root.setProperty('--data-chrome-top', `${Math.ceil((parseFloat(cs.top) || 0) + el.offsetHeight)}px`);
-      else root.removeProperty('--data-chrome-top');
-    };
-    set();
-    const ro = new ResizeObserver(set);
-    ro.observe(el);
-    window.addEventListener('resize', set);
-    return () => { ro.disconnect(); window.removeEventListener('resize', set); root.removeProperty('--data-chrome-top'); };
-  }, []);
-  useEffect(() => {
-    const ids = items.map(([h]) => h.slice(1));
-    const els = ids.map((id) => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
-    if (!els.length) return;
-    const seen = new Map<string, boolean>();
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) seen.set(e.target.id, e.isIntersecting);
-        const current = ids.find((id) => seen.get(id));
-        if (current) setActive(`#${current}`);
-      },
-      // Same source of truth as `.data-jumpnav`'s `top` and the sections' `scroll-margin-top`.
-      { rootMargin: `-${chromeTop() + 4}px 0px -75% 0px`, threshold: 0 }
-    );
-    els.forEach((el) => obs.observe(el));
-    return () => obs.disconnect();
-  }, [items]);
-  return (
-    <Group gap="sm" wrap="wrap" className="data-jumpnav" ref={navRef}>
-      <Eyebrow>Jump to</Eyebrow>
-      {items.map(([href, label]) => (
-        <Anchor key={href} href={href} size="xs" underline="never" className={`data-jump-chip${active === href ? ' active' : ''}`}>
-          {label}
-        </Anchor>
-      ))}
-    </Group>
-  );
-}
-
+/**
+ * About the data: where the records come from, how they were processed, and what they can and can't tell you.
+ * The person page's shape — a header with its actions, a strip of facts, tabs of cards — where it was one 11,000px
+ * scroll with two menus over it. Overview sums up everything; each other tab holds one subject in full.
+ *
+ * The tab is in the address (`?tab=`), and a link to a section (`#salary-ranges`, the old page's anchors among them)
+ * opens the tab that holds it (`SECTION_TAB`) and lands on it. A section's hash outranks `?tab=`: it is how a
+ * reader, or a link on another page, asked for that section.
+ */
 export default function DataHealth() {
   useDocTitle('About the data');
   const { data: manifest, isLoading, error, refetch } = useManifest();
   const { data: summary } = useSummary();
   const snapId = useActiveSnapshotId();
-  // `null` until the reader touches the switch, so the measured default below can win before then and
-  // an explicit choice wins forever after — in both directions.
-  const [userCompact, setUserCompact] = useState<boolean | null>(null);
-  // 'date' ascending reproduces the chronological default the table always had.
-  const [sort, setSort] = useState<SortState<SortKey>>({ key: 'date', dir: 'asc' });
-  const [year, setYear] = useState('all');
   const parquetUrl = `${import.meta.env.BASE_URL}data/salaries.parquet`;
   const manifestUrl = `${import.meta.env.BASE_URL}data/manifest.json`;
   const parquetSize = useFileSize(parquetUrl);
   const manifestSize = useFileSize(manifestUrl);
-  // A link from another page to a section here (the landing page's "What's new", a pay band's "salary
-  // structure") lands on it: the router does not scroll to a hash, and the sections only exist once the
-  // manifest is in.
+
   const { hash } = useLocation();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const sectionId = decodeURIComponent(hash.slice(1));
+  const asked = params.get('tab');
+  const tab: AboutTab = SECTION_TAB[sectionId] ?? (ABOUT_TABS.some((t) => t.value === asked) ? (asked as AboutTab) : 'overview');
+  const setTab = (v: string | null) => {
+    const n = new URLSearchParams(params);
+    if (!v || v === 'overview') n.delete('tab');
+    else n.set('tab', v);
+    const q = n.toString();
+    navigate({ search: q ? `?${q}` : '', hash: '' }, { replace: true });
+  };
+  const tabLabel = ABOUT_TABS.find((t) => t.value === tab)?.label ?? '';
+  useCrumbs(tab === 'overview'
+    ? [{ label: 'Home', to: '/' }, { label: 'About the data' }]
+    : [{ label: 'Home', to: '/' }, { label: 'About the data', to: '/data' }, { label: tabLabel }]);
+
+  // Land on the section the address names, once it is drawn: some come only with their data (the release, the
+  // renames, a snapshot's note), so look each frame for a few seconds rather than once.
   useEffect(() => {
-    if (isLoading || !hash) return undefined;
-    const raf = requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }));
+    if (isLoading || !sectionId) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const seek = () => {
+      const el = document.getElementById(sectionId);
+      if (el) el.scrollIntoView({ block: 'start' });
+      else if (frames++ < 240) raf = requestAnimationFrame(seek);
+    };
+    raf = requestAnimationFrame(seek);
     return () => cancelAnimationFrame(raf);
-  }, [isLoading, hash]);
-
-  // The ingestion table's own box, measured rather than inferred. Held as state, not a ref, so the
-  // effect re-runs when the viewport actually mounts — it does not exist during the loading skeleton.
-  const [snapViewport, setSnapViewport] = useState<HTMLDivElement | null>(null);
-  const [snapOverflowing, setSnapOverflowing] = useState(false);
-  const [snapAvailable, setSnapAvailable] = useState(0);
-  // `useLayoutEffect`, like the app's other measured components, so the narrow default is applied
-  // before paint instead of flashing the full table for a frame on a phone.
-  useLayoutEffect(() => {
-    if (!snapViewport) return undefined;
-    const measure = () => {
-      setSnapOverflowing(snapViewport.scrollWidth > snapViewport.clientWidth + 1);
-      setSnapAvailable(snapViewport.clientWidth);
-    };
-    measure();
-    // Both boxes matter: the viewport changes with the window and the sidebar, the table changes when
-    // a column is added or dropped. Watching only one leaves the reading stale after the other moves.
-    // The window listener is here for the same reason it is on the peer charts — some engines do not
-    // surface viewport resizes through ResizeObserver — and fonts settle after first paint, which
-    // moves every column width in a table sized by its text.
-    const ro = new ResizeObserver(measure);
-    ro.observe(snapViewport);
-    const table = snapViewport.querySelector('table');
-    if (table) ro.observe(table);
-    document.fonts?.ready.then(measure).catch(() => {});
-    window.addEventListener('resize', measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [snapViewport]);
-
-  /** What the full ten-column table needs; below this the reader gets the compact one by default. */
-  const FULL_TABLE_MIN_WIDTH = 920;
-  // Measured, not a media query: the sidebar collapses from 330px to 64px, which moves the viewport
-  // width this threshold corresponds to by 266px. A `(min-width: …)` query would hide columns from a
-  // table that had room for them.
-  const compactByWidth = snapAvailable > 0 && snapAvailable < FULL_TABLE_MIN_WIDTH;
-  const compact = userCompact ?? compactByWidth;
-
+  }, [isLoading, sectionId, tab]);
 
   // Shimmer skeleton while the static manifest payload is fetched, so the page never flashes empty.
   if (isLoading)
     return (
-      <Stack gap="lg" className="data-about">
+      <Stack gap="lg" className="about-page">
         <Skeleton height={56} width="45%" radius="md" />
-        <Skeleton height={120} radius="lg" />
-        <Skeleton height={220} radius="lg" />
-        <Skeleton height={260} radius="lg" className="data-wide" />
+        <Skeleton height={64} radius="lg" />
+        <Skeleton height={44} radius="md" />
+        <Skeleton height={320} radius="lg" />
       </Stack>
     );
   if (error)
@@ -273,8 +111,8 @@ export default function DataHealth() {
       <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={ICON.nav} />} title="Couldn't load the data manifest">
         <Stack gap="sm" align="flex-start">
           <Text size="sm">
-            The ingestion manifest failed to load ({(error as Error).message}). This is usually a temporary
-            network hiccup fetching the static data file.
+            The ingestion manifest failed to load ({(error as Error).message}). This is usually a temporary network hiccup
+            fetching the static data file.
           </Text>
           <Button size="xs" variant="default" leftSection={<IconReload size={ICON.compact} />} onClick={() => refetch()}>Retry</Button>
         </Stack>
@@ -282,427 +120,82 @@ export default function DataHealth() {
     );
 
   const snaps = (manifest?.snapshots ?? []).filter((s) => s.row_count) as SnapshotInfo[];
-  const dict = (manifest?.snapshots ?? []).find((s) => 'data_dictionary_url' in (s as object)) as
+  // Chronological, with Pre-TTC before Post-TTC on their shared Nov 2021 date.
+  const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : 1);
+  const ordered = [...snaps].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id));
+  const latestSnap = ordered.at(-1);
+  // From any entry of the manifest: the documents that carry it count no rows.
+  const dict = (manifest?.snapshots ?? []).find((s) => (s as { data_dictionary_url?: string }).data_dictionary_url) as
     | (SnapshotInfo & { data_dictionary_url?: string })
     | undefined;
-  const latestSnap = snaps.length
-    ? [...snaps].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date)).at(-1)
-    : undefined;
-  // Chronological order, with Pre-TTC before Post-TTC for the shared Nov-2021 date.
-  const ttcRank = (id: string) => (id.endsWith('-pre') ? 0 : 1);
-  const orderedSnaps = [...snaps].sort(
-    (a, b) => a.snapshot_date.localeCompare(b.snapshot_date) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)
-  );
-  const maxRows = Math.max(1, ...orderedSnaps.map((s) => s.row_count || 0));
-  const dpct = (cur?: number | null, prev?: number | null) =>
-    cur != null && prev != null && prev !== 0 ? (cur - prev) / prev : null;
-
-  // Snapshot-over-snapshot deltas are always measured against the *chronological* predecessor, so they stay
-  // correct no matter how the reader sorts or filters the rows below.
-  const prevMap = new Map<string, SnapshotInfo>();
-  orderedSnaps.forEach((s, i) => { if (i > 0) prevMap.set(s.snapshot_id, orderedSnaps[i - 1]); });
-
-  const years = [...new Set(snaps.map((s) => s.snapshot_year))].sort((a, b) => b - a);
-  const yearOptions = [{ value: 'all', label: 'All years' }, ...years.map((y) => ({ value: String(y), label: String(y) }))];
-
-  let displaySnaps = orderedSnaps;
-  if (year !== 'all') displaySnaps = displaySnaps.filter((s) => String(s.snapshot_year) === year);
-  {
-    const mul = sort.dir === 'asc' ? 1 : -1;
-    const cmp =
-      sort.key === 'rows'
-        ? (a: SnapshotInfo, b: SnapshotInfo) => ((a.row_count || 0) - (b.row_count || 0)) * mul
-        : (a: SnapshotInfo, b: SnapshotInfo) =>
-            (a.snapshot_date.localeCompare(b.snapshot_date) || ttcRank(a.snapshot_id) - ttcRank(b.snapshot_id)) * mul;
-    displaySnaps = [...displaySnaps].sort(cmp);
-  }
-
-  const toc: [string, string][] = [
-    ['#whats-new', "What's new"],
-    ['#source', 'Source'],
-    ['#disclaimer', 'Accuracy'],
-    ['#privacy', 'Privacy'],
-    ['#how-it-works', 'Figures'],
-    ['#salary-ranges', 'Ranges'],
-    ['#pipeline', 'Pipeline'],
-    ['#methodology', 'Method'],
-    ['#snapshots', 'Snapshots'],
-    ['#departments', 'Departments'],
-    ['#duplicates', 'Duplicates'],
-  ];
+  const pipeline: PipelineFacts = {
+    snapshots: snaps.length,
+    columnsMapped: latestSnap ? Object.keys(latestSnap.detected_mapping).length || null : null,
+    peopleLatest: latestSnap?.distinct_people ?? null,
+    totalRows: manifest?.total_rows,
+    parquetUrl,
+    parquetSize,
+    manifestUrl,
+    manifestSize,
+    dictUrl: dict?.data_dictionary_url ?? null,
+  };
 
   return (
     <>
-    <Stack gap="lg" className="tab-rise data-about">
-      <Group gap={8} wrap="nowrap">
-        <span className="live-dot" aria-hidden />
-        <Text size="xs" c="dimmed">
-          <b>Live</b> · data current as of {latestSnap?.snapshot_label ?? '—'}
-          {manifest?.generated_at ? ` · site last built ${manifest.generated_at.slice(0, 10)}` : ''}
-        </Text>
-      </Group>
-      <PageHeader
-        title="About the data"
-        description="Where these salary records come from, how they were processed, and what they can and can't tell you."
+    <Stack gap="lg" className="tab-rise about-page">
+      <Stack gap={8}>
+        <PageHeader
+          title="About the data"
+          description="Where these salary records come from, how they were processed, and what they can and can't tell you."
+          right={
+            <Group gap="sm" wrap="wrap" className="about-actions">
+              <Button component="a" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default"
+                leftSection={<IconBrandGithub size={ICON.control} aria-hidden />}>
+                Source on GitHub
+              </Button>
+              <Button component="a" href={parquetUrl} download color="accent" className="about-download"
+                leftSection={<IconDownload size={ICON.control} aria-hidden />}>
+                Download dataset{parquetSize ? <Text span inherit fw={400} ml={6}>· Parquet, {parquetSize}</Text> : null}
+              </Button>
+            </Group>
+          }
+        />
+        <Group gap={8} wrap="nowrap" className="about-status">
+          <span className="live-dot" aria-hidden />
+          <Text size="sm" c="dimmed">
+            <Text span fw={600} c="var(--mantine-color-text)" inherit>Live</Text> · data current as of {latestSnap?.snapshot_label ?? '—'}
+            {manifest?.generated_at ? ` · site last built ${manifest.generated_at.slice(0, 10)}` : ''}
+          </Text>
+        </Group>
+      </Stack>
+
+      <FactStrip
+        label="The data in brief"
+        facts={[
+          { label: 'Snapshots', value: num(snaps.length) },
+          { label: 'Span', value: ordered.length ? `${monthOf(ordered[0].snapshot_label)} – ${monthOf(latestSnap?.snapshot_label)}` : null },
+          { label: 'Records', value: manifest?.total_rows != null ? `${num(manifest.total_rows)} rows` : null },
+          { label: 'People now', value: summary?.latest ? num(summary.latest.headcount) : null },
+          { label: 'Fields', value: `${RECORD_FIELDS.length} per row` },
+          { label: 'Source', value: 'UFAS records requests' },
+          { label: 'Runs on', value: 'Your browser only' },
+        ]}
       />
 
-      {/* The index beside the sections from 75em, a bar over them below (AD1, AD2: app.css, .data-layout). */}
-      <div className="data-layout">
-      <JumpNav items={toc} />
-      <Stack gap="lg" className="data-main">
-
-      <Zone title="What's new" blurb="The newest release, and what came with it.">
-        <WhatsNew />
-      </Zone>
-
-      <Zone
-        title="What this data is"
-        blurb="Who released these records, how far you can trust a number, and what the three pay views actually measure."
-      >
-      <Card id="source">
-        <CardTitle order={3} anchorId="source">Data source &amp; acknowledgment</CardTitle>
-        <Stack gap="sm">
-          <Text size="sm">
-            The UW–Madison salary report files presented here are <b>public records</b>, obtained through
-            Wisconsin open-records requests (Wisconsin Public Records Law, Wis. Stat. §§ 19.31–19.39) filed by{' '}
-            <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" fw={600}>United Faculty &amp; Academic Staff (UFAS)</Anchor>
-            {' '}— AFT Local 223, AFL-CIO, the union representing UW–Madison faculty and academic staff.
-            Their open-records work is what makes this transparency possible, and the credit for these
-            records belongs to them.
-          </Text>
-          <Text size="sm">
-            This site is an independent project built by Aaron Smetana to make those public records easier to
-            explore. It is <b>not affiliated with, operated by, or endorsed by UFAS or UW–Madison</b> — any
-            errors or interpretations here are the project's alone, not theirs.</Text>
-          <Group gap="lg">
-            <Anchor href="https://ufas223.org/" target="_blank" rel="noopener noreferrer" size="sm" fw={600}>
-              Visit UFAS Local 223 →
-            </Anchor>
-            <Anchor href="https://docs.legis.wisconsin.gov/statutes/statutes/19/ii" target="_blank" rel="noopener noreferrer" size="sm">
-              Wisconsin Public Records Law →
-            </Anchor>
-            <Anchor href="https://www.doj.state.wi.us/office-open-government/office-open-government" target="_blank" rel="noopener noreferrer" size="sm">
-              File your own records request →
-            </Anchor>
-          </Group>
-        </Stack>
-      </Card>
-
-      <Alert
-        color="gray"
-        variant="light"
-        radius="lg"
-        className="alert-warn"
-        icon={<IconAlertTriangle size={ICON.feature} />}
-        title="Accuracy & disclaimer — these numbers may not reflect reality"
-        id="disclaimer"
-        styles={{ title: { fontSize: 'var(--mantine-h4-font-size)', fontWeight: 700 } }}
-      >
-        <details className="disc-details" open>
-          <summary>
-            <Text span size="sm" fw={600}>
-              Every figure here is a point-in-time, gross, best-effort transcription of a public spreadsheet —
-              treat all of it as approximate, not as a person's verified pay.
-            </Text>
-          </summary>
-          <Stack gap="sm" mt="sm">
-          <Text size="sm">A number can be wrong or misleading for many reasons. For example:</Text>
-          <Box className="disc-grid">
-            <DItem lead="Part-time staff">the "Full-time rate" view is the annual rate, which is <i>more</i> than a half-time person actually earned.</DItem>
-            <DItem lead="Multiple appointments">a person is named by their main appointment and paid the sum of their salaried ones; an hourly job held beside them is listed, not added, because its hours aren't reported.</DItem>
-            <DItem lead="Bonuses & deferred pay">coaches, executives, and others may receive supplemental, overload, deferred, or one-time compensation that isn't in these reports.</DItem>
-            <DItem lead="Changes between snapshots">raises, promotions, leaves, or appointment changes that happen between two reports aren't captured, so true earnings can be higher or lower than any single number shown.</DItem>
-            <DItem lead="Gross, not take-home">amounts are gross annualized figures and exclude benefits, taxes, and retirement.</DItem>
-            <DItem lead="Nominal dollars">figures are as-reported (not inflation-adjusted) by default. A few charts (Person's Salary trend, Divisions › Trends, Compare) offer a "{REAL_BASE_YEAR} $" toggle that approximates real purchasing power using published CPI-U annual averages — treat it as a rough guide, not an official inflation calculation, since the most recent year or two are estimated from partial-year data.</DItem>
-            <DItem id="ttc" lead="Nov 2021 (TTC)">nearly every title, job code, and grade changed at once in a structural reclassification; those are relabels, not promotions or raises.</DItem>
-            <DItem lead="Oct 2023 scope change">some reports excluded students/trainees, so headcount and joiner/leaver counts across that point partly reflect coverage, not real hiring or attrition.</DItem>
-            <DItem lead="Column mapping">columns are auto-detected from each spreadsheet; a mis-mapped column can attach the wrong value to a field.</DItem>
-            <DItem id="identity" lead="Identity matching">people are matched by name + hire date, with no employee ID in the source. Where the hire date changes — corrected by the source, or a rehire — one record ends and another with the same name begins in the next snapshot; when no one else has that name in either snapshot, and the two are in the same division with the same title or department, they are joined back into one person{summary?.joined_people ? ` (${summary.joined_people.toLocaleString('en-US')} people)` : ''}, whose latest hire date is shown. Two different people can still be merged into one, or one person split into two — meaning a salary can be attributed to the <b>wrong named person</b>.</DItem>
-            <DItem lead="Name formatting & transcription">ALL-CAPS source names are auto-cased and can be mangled; values are read from published spreadsheets and may carry source or ingestion errors.</DItem>
-          </Box>
-          <Text size="sm" mt={4}>
-            The information is provided "as is," may be inaccurate or incomplete, and carries{' '}
-            <b>no warranty and no liability</b> — verify against official UW–Madison or State of Wisconsin
-            sources before relying on it for any decision.
-          </Text>
-          </Stack>
-        </details>
-      </Alert>
-
-      <Card id="privacy">
-        <CardTitle order={3} anchorId="privacy">Privacy &amp; responsible use</CardTitle>
-        <Stack gap="sm">
-          <Text size="sm">
-            These records name <b>real people</b>. The salaries of public-university employees are a Wisconsin
-            public record, but "public" is not a license to harass, dox, shame, or target anyone. Please use this
-            site to understand pay structures, ranges and how pay compares — not to make judgments about individuals.
-          </Text>
-          <Text size="sm">
-            Only the fields released in the public salary reports are shown — name, title, department, school,
-            pay, FTE, and hire date. <b>No</b> home addresses, contact details, ID numbers, demographic data, or
-            anything beyond the released report is collected or displayed.
-          </Text>
-          <Text size="sm">
-            A salary here is pay for a role at a point in time — <b>not</b> a person's total compensation or
-            their worth. And the most consequential error this data can make is naming the{' '}
-            <Anchor href="#identity" underline="always">wrong person</Anchor>.
-          </Text>
-        </Stack>
-      </Card>
-
-      <Card id="how-it-works">
-        <CardTitle order={3} anchorId="how-it-works">How these figures are calculated</CardTitle>
-        <Stack gap="sm">
-          <Text size="sm">
-            Each source row is one <b>appointment</b>, carrying a full-time annual rate and an FTE — the
-            appointment percentage, where 0.5 is half-time. Hourly appointments report no FTE at all; they are
-            counted at their full listed rate rather than as zero. The 2021 and 2022 reports list some hourly
-            pay as the hourly rate itself; those rates are annualized at 2,080 hours, the way every later
-            report states them. The "Pay" control switches between two views:
-          </Text>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-            <DefCard icon={<IconCash size={ICON.control} />} title="Actual pay">Rate × FTE (or the full rate, for hourly staff with no FTE on file) — closest to what the person was actually paid.</DefCard>
-            <DefCard icon={<IconClock size={ICON.control} />} title="Full-time rate">The listed annual rate. For part-time staff this is <i>more</i> than they actually earned.</DefCard>
-          </SimpleGrid>
-          <Text size="sm">
-            A person holding <b>more than one paid appointment</b> is named, placed and compared by their
-            <b> main appointment</b>: the one with the highest FTE (an hourly job, with no FTE, comes after any
-            salaried one). Their pay is the sum of their salaried appointments' actual (rate × FTE) earnings, so
-            split roles aren't double-counted. An hourly job held beside a salaried one is left out of it: its
-            figure is a rate over a full-time year, and the hours worked aren't reported. Someone holding only
-            hourly jobs is counted at the best-paid one's rate. Unpaid $0 affiliate appointments are excluded
-            from headcount, medians, and totals.
-          </Text>
-          <Text size="sm">
-            On a person's page, everyone with the same title is compared at their <b>full-time rate</b> in it, so
-            a part-time appointment isn't read as underpaid; their actual pay is given beside it.
-          </Text>
-        </Stack>
-      </Card>
-
-      <SalaryRanges />
-
-      </Zone>
-
-      <Zone
-        title="How it was built"
-        blurb="The pipeline from a published spreadsheet to the numbers on this site — auditable, and downloadable in full."
-      >
-      <Card id="pipeline">
-        <CardTitle order={3} anchorId="pipeline" sub="Each step is in the open-source ingestion linked below, and every figure here was read from the manifest rather than typed in.">
-          From records request to this page
-        </CardTitle>
-        <DataPipeline
-          snapshots={snaps.length}
-          columnsMapped={latestSnap ? Object.keys(latestSnap.detected_mapping).length || null : null}
-          peopleLatest={latestSnap?.distinct_people ?? null}
-          latestLabel={latestSnap?.snapshot_label ?? null}
-          totalRows={manifest?.total_rows}
-          fileSize={parquetSize}
-        />
-      </Card>
-
-      <Card id="methodology">
-        <CardTitle order={3} anchorId="methodology">Methodology, reproducibility &amp; downloads</CardTitle>
-        <Stack gap="sm">
-          <Text size="sm">
-            This project is open source. The ingestion code, column-detection logic, and applied corrections are
-            all public, so you can audit exactly how each published spreadsheet becomes the data shown here — or
-            reproduce it from the raw records yourself.
-          </Text>
-          <Group gap="sm" wrap="wrap">
-            <Button component="a" className="data-dl-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" variant="default" size="xs" leftSection={<IconBrandGithub size={ICON.compact} />}>Source code &amp; ingestion</Button>
-            <Button component="a" className="data-dl-btn" href={parquetUrl} download variant="default" size="xs" leftSection={<IconDownload size={ICON.compact} />}>Dataset (Parquet){parquetSize ? ` · ${parquetSize}` : ''}</Button>
-            <Button component="a" className="data-dl-btn" href={manifestUrl} target="_blank" rel="noopener noreferrer" variant="default" size="xs" leftSection={<IconBraces size={ICON.compact} />}>Manifest (JSON){manifestSize ? ` · ${manifestSize}` : ''}</Button>
-            {dict?.data_dictionary_url && (
-              <Button component="a" className="data-dl-btn" href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" variant="default" size="xs" leftSection={<IconBook2 size={ICON.compact} />}>Data dictionary</Button>
-            )}
-          </Group>
-
-          {/* `order` wraps each Accordion.Control's <button> in an <h3>, which is the ARIA pattern for
-              an accordion. These two labels read as card headings but cannot BE `CardTitle`: a heading
-              nested inside a button is invalid, and Accordion.Control renders a button. */}
-          <Accordion variant="contained" mt="xs" multiple order={3}>
-            <Accordion.Item value="record">
-              <Accordion.Control>
-                <Text size="sm" fw={600}>What's in a record — {RECORD_FIELDS.length} fields</Text>
-              </Accordion.Control>
-              <Accordion.Panel>
-                <Text size="xs" c="dimmed" mb="sm">
-                  Each appointment row carries these, tagged with the snapshot it came from. The three "Pay"
-                  views are derived from them; nothing else about a person is stored.
-                </Text>
-                <Group gap={6} wrap="wrap">
-                  {RECORD_FIELDS.map((f) => (
-                    <Code key={f} className="kbd-chip">{f}</Code>
-                  ))}
-                </Group>
-              </Accordion.Panel>
-            </Accordion.Item>
-
-            {latestSnap && Object.keys(latestSnap.detected_mapping).length > 0 && (
-              <Accordion.Item value="mapping">
-                <Accordion.Control>
-                  <Text size="sm" fw={600}>Detected column mappings — {latestSnap.snapshot_label}</Text>
-                </Accordion.Control>
-                <Accordion.Panel>
-                  <Text size="xs" c="dimmed" mb="sm">
-                    How each column in the source spreadsheet was auto-mapped to a field in this app (detection
-                    runs per snapshot; this is the latest). A mis-detection here is one way a value can be mislabeled.
-                  </Text>
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6} verticalSpacing={6}>
-                    {Object.entries(latestSnap.detected_mapping).map(([field, col]) => (
-                      <Group key={field} gap={6} wrap="nowrap">
-                        <Code className="kbd-chip">{field}</Code>
-                        <Text span size="xs" c="dimmed">→</Text>
-                        <Text span size="sm" lineClamp={1} title={col}>{col}</Text>
-                      </Group>
-                    ))}
-                  </SimpleGrid>
-                  {latestSnap.unmapped_headers.length > 0 && (
-                    <Text size="xs" c="dimmed" mt="sm">
-                      Unmapped (ignored) source columns: {latestSnap.unmapped_headers.join(', ')}.
-                    </Text>
-                  )}
-                </Accordion.Panel>
-              </Accordion.Item>
-            )}
-          </Accordion>
-        </Stack>
-      </Card>
-
-      <Card id="snapshots" className="data-wide">
-        <Group justify="space-between" align="center" mb="xs" wrap="wrap" gap="sm">
-          <CardTitle order={3} anchorId="snapshots">Per-snapshot ingestion</CardTitle>
-          <Group gap="sm" wrap="wrap">
-            <Select
-              {...dropdownProps('sm')}
-              size="xs" w={120} aria-label="Filter snapshots by year" data={yearOptions}
-              value={year} onChange={(v) => setYear(v ?? 'all')} allowDeselect={false}
-            />
-            <Switch size="xs" label="Hide technical details" checked={compact} onChange={(e) => setUserCompact(e.currentTarget.checked)} />
-          </Group>
-        </Group>
-        <Text size="xs" c="dimmed" mb="md">
-          <b>{num(manifest?.total_rows)}</b> records · <b>{num(snaps.length)}</b> snapshots ·
-          schema v{manifest?.schema_version} · last built {manifest?.generated_at?.slice(0, 16).replace('T', ' ')}
-          {dict?.data_dictionary_url && (
-            <> · <Anchor href={dict.data_dictionary_url} target="_blank" rel="noopener noreferrer" inherit>data dictionary →</Anchor></>
-          )}
-        </Text>
-        {/* No bounded height (G11): the page has one vertical scroll, and the box only ever scrolls sideways.
-
-            The keyboard region goes on the viewport rather than on a Box around it. Arrow keys scroll
-            the nearest scrollable *ancestor* of the focused element, never a scroller nested inside it,
-            so announcing a region on a wrapper gave the reader a focus stop that scrolled the page
-            instead of the table. */}
-        <ScrollArea.Autosize
-          type="auto"
-          offsetScrollbars="present"
-          className="data-snap-scroll"
-          viewportRef={setSnapViewport}
-          viewportProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Per-snapshot ingestion table' }}
-          data-overflowing={snapOverflowing || undefined}
-        >
-      {/* `striped={false}` against the theme default (theme.ts:90), because on this table the stripe and
-          the meaning collide: `--table-striped-color` is #f8f9fa, and `--mantine-color-default-hover` —
-          the shade a row with a note carries — is the same #f8f9fa. The caption below tells the reader
-          "a shaded row carries a note worth reading", and with striping on six of the ten rows read as
-          shaded while only three had notes, so the mark it points at was not one you could act on.
-
-          Note that the stylesheet is what actually suppresses the stripe: `.data-snap-table tbody tr`
-          sets an opaque background for the pinned first column to inherit, and being unlayered it beats
-          Mantine's `@layer mantine` stripe rule whatever this prop says. So this is not the mechanism —
-          it is here so the call site asks for what the stylesheet delivers instead of requesting a
-          stripe that is then silently discarded. `highlightOnHover` stays and still paints: its rule
-          outranks that background, and a transient highlight cannot be mistaken for a permanent mark. */}
-      <Table striped={false} miw={compact ? 680 : 920} className="data-snap-table">
-        <Table.Thead>
-          <Table.Tr>
-            <SortableTh sortKey="date" label="Snapshot" sort={sort} onSort={setSort} />
-            {!compact && <Th>Source (file · sheet)</Th>}
-            <SortableTh sortKey="rows" label="Rows" sort={sort} onSort={setSort} align="right" tip="Rows in the source spreadsheet — one per appointment (a person can hold several)." />
-            <Th ta="right" tip="Distinct identities in the dump (name + hire date).">People</Th>
-            <Th ta="right" tip="People with at least one paid appointment — the headcount used across the site.">Paid</Th>
-            <Th ta="right" tip="Change in paid headcount vs the previous snapshot.">Δ paid</Th>
-            <Th ta="right" tip="Appointments with no salary (affiliates given campus access), excluded from headcount and salary stats.">Unpaid $0</Th>
-            {/* Per row, on purpose: this table reports on the source's rows. Every other median on the
-                site counts people (a person with two appointments counts once, at their combined pay). */}
-            <Th ta="right" tip="Median actual pay per appointment row, as the source lists them — a person with two appointments counts twice here. Every other median on the site counts each person once.">Median per row</Th>
-            <Th ta="right" tip="Change in median vs the previous snapshot.">Δ median</Th>
-            <Th>Status</Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {displaySnaps.map((s) => {
-            const prev = prevMap.get(s.snapshot_id);
-            return (
-            <Table.Tr key={s.snapshot_id} style={{ background: s.note ? 'var(--mantine-color-default-hover)' : undefined }}>
-              <Table.Td>
-                <Text size="sm" fw={500}>{s.snapshot_label}{s.snapshot_id === latestSnap?.snapshot_id && <NewBadge ml={6} />}</Text>
-                {!compact && <Code className="kbd-chip">{s.snapshot_id}</Code>}
-              </Table.Td>
-              {!compact && (
-                <Table.Td>
-                  {/* Verbatim strings out of the source workbook, so they take the mono register
-                      (app.css) rather than being retyped as prose. */}
-                  <Text size="xs" className="mono">{s.source_file}</Text>
-                  <Text size="xs" c="dimmed" className="mono">{s.source_sheet}</Text>
-                </Table.Td>
-              )}
-              <Table.Td ta="right">
-                {num(s.row_count)}
-                <MiniBar frac={(s.row_count || 0) / maxRows} />
-              </Table.Td>
-              <Table.Td ta="right">{num(s.distinct_people)}</Table.Td>
-              <Table.Td ta="right">{s.distinct_people_paid != null ? num(s.distinct_people_paid) : '—'}</Table.Td>
-              <Table.Td ta="right">{prev ? <Delta frac={dpct(s.distinct_people_paid, prev?.distinct_people_paid)} tone="neutral" /> : '—'}</Table.Td>
-              <Table.Td ta="right">{num(s.zero_or_null_salary)}</Table.Td>
-              <Table.Td ta="right">{usd(s.salary_median)}</Table.Td>
-              <Table.Td ta="right">{prev ? <Delta frac={dpct(s.salary_median, prev?.salary_median)} /> : '—'}</Table.Td>
-              <Table.Td>
-                <Badge
-                  color={STATUS_COLOR[s.status] ?? 'gray'}
-                  variant={s.status === 'ok' || s.status === 'info' ? 'light' : 'filled'}
-                  radius="sm"
-                >
-                  <VisuallyHidden>System status: </VisuallyHidden>{s.status.toUpperCase()}
-                </Badge>
-                {!compact && s.messages.length > 0 && (
-                  <Text size="xs" c="dimmed" mt={2}>{s.messages.join('; ')}</Text>
-                )}
-                {!compact && s.unmapped_headers.length > 0 && (
-                  <Text size="xs" c="dimmed" mt={2}>unmapped: {s.unmapped_headers.join(', ')}</Text>
-                )}
-                {s.note && (
-                  <Text size="xs" fs="italic" c="dimmed" mt={2}>{s.note}</Text>
-                )}
-              </Table.Td>
-            </Table.Tr>
-            );
-          })}
-          {displaySnaps.length === 0 && (
-            <Table.Tr>
-              <Table.Td colSpan={compact ? 9 : 10}>
-                <Text size="sm" c="dimmed" ta="center" py="md">No snapshots match this filter.</Text>
-              </Table.Td>
-            </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
-        </ScrollArea.Autosize>
-        <Text size="xs" c="dimmed" mt="sm">
-          Hover any column heading for its definition. A <b>shaded row</b> carries a note worth reading — the
-          Nov-2021 TTC relabel, the Oct-2023 scope change, or what the newest release changed.
-        </Text>
-      </Card>
-
-      <DepartmentRenames />
-
-      <DuplicateIdentities snap={snapId} />
-      </Zone>
-      </Stack>
-      </div>
+      {/* Only the tab in view is drawn (`keepMounted={false}`): the others ask the data for things nobody is reading. */}
+      <Tabs value={tab} onChange={(v) => { markTabSwitch(); setTab(v); }} keepMounted={false}>
+        <OverflowTabsList>
+          {ABOUT_TABS.map((t) => <Tabs.Tab key={t.value} value={t.value}>{t.label}</Tabs.Tab>)}
+        </OverflowTabsList>
+        <Tabs.Panel value="overview" pt="lg"><OverviewTab pipeline={pipeline} /></Tabs.Panel>
+        <Tabs.Panel value="accuracy" pt="lg"><AccuracyTab snapshots={snaps.length} /></Tabs.Panel>
+        <Tabs.Panel value="method" pt="lg"><MethodTab pipeline={pipeline} latestLabel={latestSnap?.snapshot_label ?? null} /></Tabs.Panel>
+        <Tabs.Panel value="ranges" pt="lg"><RangesTab /></Tabs.Panel>
+        <Tabs.Panel value="snapshots" pt="lg">
+          {manifest && <SnapshotsTab manifest={manifest} ordered={ordered} latestId={latestSnap?.snapshot_id ?? null} />}
+        </Tabs.Panel>
+        <Tabs.Panel value="renames" pt="lg"><RenamesTab snap={snapId} /></Tabs.Panel>
+      </Tabs>
     </Stack>
     <BackToTop />
     </>

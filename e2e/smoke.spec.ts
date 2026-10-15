@@ -43,7 +43,8 @@ test('explore renders a trend chart and the real-dollar toggle', async ({ page }
 });
 
 test('data health page renders the source/manifest table', async ({ page }) => {
-  await page.goto('./data');
+  // The ingestion table is the Snapshots tab's.
+  await page.goto('./data?tab=snapshots');
   await expect(page.locator('table').first()).toBeVisible({ timeout: 60_000 });
 });
 

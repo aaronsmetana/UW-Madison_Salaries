@@ -11,62 +11,36 @@ const TABLE = '.data-snap-table';
 
 test.describe('data · about', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('./data');
+    // The ingestion table is the Snapshots tab's.
+    await page.goto('./data?tab=snapshots');
     // The ingestion table is manifest-driven, so wait for real rows rather than a fixed pause.
     await expect(page.locator(`${TABLE} tbody tr`).first()).toBeVisible({ timeout: 60_000 });
   });
 
   /**
-   * The page is a reading column with one data breakout, and both halves of that are asserted.
-   *
-   * The prose sections share an edge because the cap used to be applied per child as `maw={PROSE}` at
-   * eight call sites, and being per-child is what made it forgettable: `#snapshots` and `#duplicates`
-   * (the latter in DuplicateIdentities.tsx, a different file) both missed it, so six cards ended at
-   * 880px and two ran to the full 1063 — a 183px step the reader hit mid-scroll with nothing to
-   * explain it.
-   *
-   * `#snapshots` is now deliberately wider, because 880px is right for prose and wrong for a
-   * 10-column table: capped, it scrolled 94px at every width. So the assertion is not "all the same"
-   * but "one prose edge, and the table filling the region" — and every section still shares a LEFT
-   * edge, which is what makes the breakout read as deliberate rather than as the ragged widths this
-   * page started with.
-   *
-   * Desktop-only on purpose: the 880px cap only binds above a ~1257px viewport, so asserting it at
-   * 375 would pass no matter what the cap said.
+   * Each tab is a column of cards on the page's own edges, as the person page's are: no reading column narrower
+   * than the tables under it (the old page's 880px prose cap, which the 10-column table broke out of), and no
+   * card running ragged against the next. Snapshots' three cards, and Overview's full-width ones, share both edges.
    */
-  test('the prose sections share one edge and the table section fills the region', async ({ page }) => {
+  test("a tab's cards share the page's edges", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const ids = ['source', 'disclaimer', 'privacy', 'how-it-works', 'pipeline', 'methodology', 'snapshots', 'duplicates'];
-
-    const m = await page.evaluate((sectionIds) => {
-      // The sections' column: beside the page's index from 75em (AD1), the page's own width below.
-      const column = (document.querySelector('.data-main') ?? document.querySelector('.data-about'))!.getBoundingClientRect();
-      return {
-        columnRight: Math.round(column.right),
-        edges: sectionIds.map((id) => {
-          const el = document.getElementById(id);
-          if (!el) return { id, left: null, right: null };
-          const r = el.getBoundingClientRect();
-          return { id, left: Math.round(r.left), right: Math.round(r.right) };
-        }),
-      };
-    }, ids);
-
-    const { edges } = m;
-    const missing = edges.filter((e) => e.right === null).map((e) => e.id);
-    expect(missing, 'a section id vanished — update this list or restore the section').toEqual([]);
-
-    const seen = JSON.stringify(m);
-    const prose = edges.filter((e) => e.id !== 'snapshots');
-    const wide = edges.find((e) => e.id === 'snapshots')!;
-
-    // Compare on the set, not pairwise, so the failure message names every edge that disagreed.
-    expect(new Set(prose.map((e) => e.right)), `prose sections disagree on a right edge: ${seen}`).toHaveProperty('size', 1);
-    expect(new Set(edges.map((e) => e.left)), `sections disagree on a left edge: ${seen}`).toHaveProperty('size', 1);
-
-    // The breakout is the point, so assert it rather than letting a lost `.data-wide` pass quietly.
-    expect(wide.right, `the ingestion table stopped filling the region: ${seen}`).toBe(m.columnRight);
-    expect(wide.right, `the ingestion table is no wider than the prose column: ${seen}`).toBeGreaterThan(prose[0]!.right!);
+    const edges = (ids: string[]) => page.evaluate((list) => list.map((id) => {
+      const r = document.getElementById(id)?.getBoundingClientRect();
+      return r ? { id, left: Math.round(r.left), right: Math.round(r.right) } : { id, left: null, right: null };
+    }), ids);
+    for (const [tab, ids] of [['snapshots', ['snapshot-glance', 'snapshots', 'mapping']], ['overview', ['whats-new', 'rely', 'pay-views', 'pipeline-summary']]] as const) {
+      if (tab === 'overview') {
+        await page.goto('./data');
+        await expect(page.locator('.whats-new-change').first()).toBeVisible({ timeout: 60_000 });
+      }
+      const m = await edges([...ids]);
+      const seen = JSON.stringify(m);
+      expect(m.filter((e) => e.left === null).map((e) => e.id), `a section id vanished on ${tab} — ${seen}`).toEqual([]);
+      expect(new Set(m.map((e) => e.left)).size, `${tab}: cards disagree on a left edge — ${seen}`).toBe(1);
+      expect(new Set(m.map((e) => e.right)).size, `${tab}: cards disagree on a right edge — ${seen}`).toBe(1);
+      const tabs = (await page.getByRole('tablist').boundingBox())!;
+      expect(Math.abs(m[0].right! - Math.round(tabs.x + tabs.width)), `${tab}: the cards stop short of the tab bar's edge — ${seen}`).toBeLessThanOrEqual(1);
+    }
   });
 
   /**
@@ -97,7 +71,7 @@ test.describe('data · about', () => {
       };
     });
 
-    // Wide: the breakout gives the table room, so it should not need to scroll at all.
+    // Wide: the card is the page's width, so the table should not need to scroll at all.
     await page.setViewportSize({ width: 1440, height: 900 });
     const wide = await measure();
     const wideSeen = JSON.stringify(wide);
@@ -109,7 +83,7 @@ test.describe('data · about', () => {
     expect(wide.scrollerWithinCard, `the table scroller escaped its card at 1440 — ${wideSeen}`).toBe(true);
     expect(
       wide.viewportScrollsBy,
-      `the table should FIT at 1440 now that it fills the region — if this is non-zero the breakout is gone: ${wideSeen}`,
+      `the table should FIT at 1440 in a card the page's width: ${wideSeen}`,
     ).toBe(0);
 
     // Narrow: it must still clip and scroll inside the card rather than taking the page with it.
@@ -183,7 +157,7 @@ test.describe('data · about', () => {
     const m = await page.evaluate(() => {
       const vp = document.querySelector<HTMLElement>('.data-snap-scroll .mantine-ScrollArea-viewport')!;
       const rows = [...vp.querySelectorAll<HTMLElement>('tbody tr')];
-      const isShaded = (r: HTMLElement) => (r.getAttribute('style') ?? '').includes('background');
+      const isShaded = (r: HTMLElement) => r.classList.contains('snap-note-row');
       const plain = rows.find((r) => !isShaded(r));
       const shaded = rows.find(isShaded);
       const cell = plain?.querySelector<HTMLElement>('td');
@@ -208,80 +182,55 @@ test.describe('data · about', () => {
     expect(Math.abs((m.after ?? 0) - m.vpLeft), `the pinned column is not at the scroller's edge — ${seen}`).toBeLessThanOrEqual(2);
     // A transparent pinned cell is the failure mode that still *looks* pinned until rows slide under it.
     expect(m.plainBg, `the pinned column is transparent — ${seen}`).not.toBe('rgba(0, 0, 0, 0)');
-    expect(m.shadedBg, `a noted row lost its shading in the pinned column — ${seen}`).not.toBe(m.plainBg);
+    expect(m.shadedBg, `a note row lost its shading — ${seen}`).not.toBe(m.plainBg);
   });
 
   /**
-   * "A shaded row carries a note worth reading" — the caption under this table says so, and it was not
-   * true. The theme sets `striped: true` for every Table (theme.ts:90), and `--table-striped-color` is
-   * #f8f9fa, the *same* colour as `--mantine-color-default-hover`, which is the shade a noted row
-   * carries. Six of the ten rows therefore read as shaded while only three had notes, so the mark the
-   * caption points at was not one a reader could act on. Striping is off for this table now.
-   *
-   * The assertion compares the two sets rather than counting, so the failure names the rows that
-   * disagreed — and it would fail equally if a real note ever stopped being marked.
+   * A note is a row of its own, under the snapshot it is about, shaded and numbered as that snapshot is — in the
+   * table and under the charts' labels. It was a narrow column that made a noted row about 150px tall, and before
+   * that a shade on the row itself that the theme's striping made indistinguishable from no note. No other row is
+   * shaded, so a shade still means a note.
    */
-  test('a shaded row is exactly a row carrying a note', async ({ page }) => {
-    // Keep the pointer off the table: `highlightOnHover` is deliberately still on, and a hovered row
-    // is legitimately shaded without carrying a note.
+  test('each note sits under its snapshot, numbered as the charts number it', async ({ page }) => {
     await page.mouse.move(0, 0);
-
-    const rows = await page.evaluate(() => {
-      const base = getComputedStyle(document.documentElement).getPropertyValue('--mantine-color-body').trim();
-      const probe = document.createElement('div');
-      probe.style.backgroundColor = base;
-      document.body.appendChild(probe);
-      const unshaded = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-
-      return [...document.querySelectorAll<HTMLElement>('.data-snap-table tbody tr')].map((r) => ({
-        label: (r.querySelector('td')?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 20),
-        shaded: getComputedStyle(r).backgroundColor !== unshaded,
-        // The note is what drives the inline background in DataHealth.tsx, and it is also the only
-        // thing rendered into the STATUS cell in italics, so either would do as the source of truth.
-        carriesNote: (r.getAttribute('style') ?? '').includes('background'),
-      }));
-    });
-
+    const rows = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.data-snap-table tbody tr')].map((r) => ({
+      note: r.classList.contains('snap-note-row'),
+      for: r.getAttribute('data-note-for'),
+      snapshot: r.getAttribute('data-snapshot'),
+      flag: r.querySelector('.note-flag')?.textContent ?? null,
+      bg: getComputedStyle(r.querySelector('td')!).backgroundColor,
+    })));
     const seen = JSON.stringify(rows);
-    expect(rows.length, `no ingestion rows rendered — ${seen}`).toBeGreaterThan(3);
-    const shaded = rows.filter((r) => r.shaded).map((r) => r.label).sort();
-    const noted = rows.filter((r) => r.carriesNote).map((r) => r.label).sort();
-    expect(noted.length, `no row carries a note, so the caption marks nothing — ${seen}`).toBeGreaterThan(0);
-    expect(shaded, `shaded rows and noted rows are not the same set — ${seen}`).toEqual(noted);
+    const notes = rows.filter((r) => r.note);
+    expect(notes.length, `no note rows — ${seen}`).toBeGreaterThan(0);
+    rows.forEach((r, i) => {
+      if (!r.note) return;
+      expect(rows[i - 1]?.snapshot, `note ${r.flag} is not under its snapshot — ${seen}`).toBe(r.for);
+      expect(rows[i - 1]?.flag, `note ${r.flag}'s snapshot carries another number — ${seen}`).toBe(r.flag);
+    });
+    // Shaded: the notes, and only they.
+    const plain = new Set(rows.filter((r) => !r.note).map((r) => r.bg));
+    expect(plain.size, `snapshot rows disagree on their ground — ${seen}`).toBe(1);
+    expect(notes.every((r) => !plain.has(r.bg)), `a note row is not shaded — ${seen}`).toBe(true);
+    // The charts' badges: the same numbers, in the same order.
+    const badges = await page.locator('#snapshot-glance figure').first().locator('.recharts-xAxis text').evaluateAll((ts) =>
+      ts.map((t) => t.textContent ?? '').filter((t) => /^\d+$/.test(t)));
+    expect(badges).toEqual(notes.map((n) => n.flag));
   });
 
   /**
-   * A narrow table starts compact, and the switch still wins. The threshold is measured off the
-   * scroller rather than a media query on purpose: the page's own width is not the window's (its gutters
-   * change at `md`, and a sidebar once took 64px or 330px of it), so a `(min-width: …)` query would hide
-   * columns from a table that had room for them.
+   * The Source (file · sheet) and Status columns are gone: every row was OK, so the card says that once, and the
+   * file names are a button away (Source files). A row that is not OK says so where its name is.
    */
-  test('a table with no room starts compact, and the reader can still override it', async ({ page }) => {
-    const columns = () => page.locator('.data-snap-table thead th').count();
-    const toggle = page.getByRole('switch', { name: /hide technical details/i });
-
-    await page.setViewportSize({ width: 1024, height: 900 });
-    await expect(async () => {
-      expect(await columns(), 'a table with no room did not drop to the compact column set').toBe(9);
-    }).toPass({ timeout: 5_000 });
-    await expect(toggle, 'the switch does not reflect the compact table the reader is looking at').toBeChecked();
-
-    // The measured default must never trap the reader in it. Mantine keeps the Switch's native input
-    // visually hidden under a styled track, so Playwright's actionability check on the input never
-    // passes — click the label text, exactly as a real reader would (same as reports.spec.ts).
-    await page.getByText('Hide technical details').click();
-    await expect(async () => {
-      expect(await columns(), 'turning technical details back on did not restore the full table').toBe(10);
-    }).toPass({ timeout: 5_000 });
-
-    // And a table with room shows everything without being asked.
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.reload();
-    await expect(page.locator('.data-snap-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
-    await expect(async () => {
-      expect(await columns(), 'a table with room still hid a column').toBe(10);
-    }).toPass({ timeout: 5_000 });
+  test('the table has no Source or Status column, and says once that every report came in whole', async ({ page }) => {
+    const heads = await page.locator('.data-snap-table thead th').allInnerTexts();
+    expect(heads.map((h) => h.trim().toUpperCase())).toEqual(['SNAPSHOT', 'ROWS', 'PEOPLE', 'PAID', 'Δ PAID', 'UNPAID $0', 'MEDIAN / ROW', 'Δ MEDIAN']);
+    const manifest = await (await page.request.get('./data/manifest.json')).json();
+    const ingested = manifest.snapshots.filter((s: { row_count: number }) => s.row_count);
+    const ok = ingested.filter((s: { status: string }) => s.status === 'ok').length;
+    await expect(page.locator('.ingest-status')).toContainText(ok === ingested.length ? `All ${ingested.length} ingested without errors` : `${ok} of ${ingested.length} ingested without errors`);
+    await page.getByRole('button', { name: 'Source files' }).click();
+    await expect(page.locator('.source-files')).toContainText(ingested[0].source_file);
   });
 
   /**
@@ -341,32 +290,24 @@ test.describe('data · about', () => {
   });
 
   /**
-   * The page stacks a 64px app header over a sticky jump nav. Without `scroll-margin-top`, a fragment
-   * jump scrolls the section to y=0 — behind that chrome. On production the Methodology heading landed
-   * 449px above the fold, i.e. entirely out of sight.
+   * Every anchor the old page had — its eleven "Jump to" targets — and the two other pages link to (a person's "TTC",
+   * the matching rule) opens the tab that holds it and lands the section in view, under the app bar.
    */
-  test('every jump-nav link lands its section in view', async ({ page }) => {
-    const chips = page.locator('.data-jump-chip');
-    const count = await chips.count();
-    expect(count).toBeGreaterThan(3);
-
-    for (let i = 0; i < count; i++) {
-      const id = (await chips.nth(i).getAttribute('href'))!.replace('#', '');
-      await chips.nth(i).click();
-      // Fragment navigation is synchronous, but the sticky nav re-lays out; give it a frame.
-      await page.waitForTimeout(400);
-
-      const hidden = await page.evaluate((sectionId) => {
-        const sec = document.getElementById(sectionId)!.getBoundingClientRect();
-        const nav = document.querySelector('.data-jumpnav')!.getBoundingClientRect();
-        // How far the section's top sits above the bottom edge of the sticky chrome: the index's, when it is a bar
-        // over the sections; the app bar's, when it is a column beside them (AD1).
-        const beside = nav.left >= sec.right - 1;
-        const chrome = beside ? document.querySelector('header')!.getBoundingClientRect().bottom : nav.bottom;
-        return Math.round(chrome - sec.top);
-      }, id);
-
-      expect(hidden, `#${id} lands behind the sticky nav`).toBeLessThanOrEqual(0);
+  test('every old anchor lands on its tab and section', async ({ page }) => {
+    const anchors: [string, string][] = [
+      ['whats-new', 'Overview'], ['source', 'Overview'], ['disclaimer', 'Accuracy & privacy'], ['privacy', 'Accuracy & privacy'],
+      ['how-it-works', 'How it’s built'], ['salary-ranges', 'Salary ranges'], ['pipeline', 'How it’s built'], ['methodology', 'How it’s built'],
+      ['snapshots', 'Snapshots'], ['departments', 'Renames & duplicates'], ['duplicates', 'Renames & duplicates'],
+      ['ttc', 'Snapshots'], ['identity', 'Accuracy & privacy'],
+    ];
+    for (const [id, tab] of anchors) {
+      await page.goto(`./data#${id}`);
+      await expect(page.getByRole('tab', { name: tab }), `#${id}`).toHaveAttribute('aria-selected', 'true', { timeout: 60_000 });
+      const section = page.locator(`[id="${id}"]`);
+      await expect(section, `#${id}`).toBeInViewport({ timeout: 30_000 });
+      const under = await page.evaluate((sid) =>
+        document.getElementById(sid)!.getBoundingClientRect().top - document.querySelector('header')!.getBoundingClientRect().bottom, id);
+      expect(under, `#${id} lands behind the app bar`).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -385,8 +326,9 @@ test.describe('data · about', () => {
     const ingested = manifest.snapshots.filter((s: { row_count: number }) => s.row_count);
     const n = (x: number) => x.toLocaleString('en-US');
 
+    await page.goto('./data?tab=method');
     const pipeline = page.locator('#pipeline');
-    await expect(pipeline).toContainText(`${n(manifest.total_rows)} rows`);
+    await expect(pipeline).toContainText(`${n(manifest.total_rows)} rows`, { timeout: 60_000 });
     await expect(pipeline).toContainText(
       `${n(ingested.length)} workbook${ingested.length === 1 ? '' : 's'}`
     );

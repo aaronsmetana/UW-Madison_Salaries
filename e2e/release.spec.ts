@@ -21,6 +21,8 @@ const month = (date: string) => `${MONTHS[Number(date.slice(5, 7)) - 1]} ${date.
 const dayAfter = (published: string, days: number) => new Date(Date.parse(`${published}T12:00:00`) + days * 86_400_000);
 const AARON = 'aaronsmetana|2014-10-15';
 const change = (x: number) => (Math.abs(x) < 0.0005 ? '0%' : `${x > 0 ? '+' : '−'}${(Math.abs(x) * 100).toFixed(1)}%`);
+/** A change as the KPI rows write it (components/Delta): "▲ 2.0%", "▼ 0.2%". */
+const delta = (x: number) => `${x >= 0 ? '▲' : '▼'} ${(Math.abs(x) * 100).toFixed(1)}%`;
 
 /** People whose full-time rate on their graded appointment is below its minimum, to HR's rounding: the
  *  hourly minimum as published, to the cent, annualized; an annual one to the dollar. */
@@ -70,14 +72,9 @@ test.describe('the newest release, said', () => {
     await expect(page.locator('.home-news')).toHaveCount(0);
     await tag.click();
     await expect(page.locator('#whats-new')).toBeInViewport({ timeout: 60_000 });
-    const head = await page.evaluate(() => {
-      const nav = document.querySelector('.data-jumpnav')!.getBoundingClientRect();
-      const sec = document.getElementById('whats-new')!.getBoundingClientRect();
-      // Under the chrome: the index when it is a bar over the sections, the app bar when it is a column beside them (AD1).
-      const chrome = nav.left >= sec.right - 1 ? document.querySelector('header')!.getBoundingClientRect().bottom : nav.bottom;
-      return sec.top - chrome;
-    });
-    expect(head, 'the section landed under the jump nav').toBeGreaterThanOrEqual(0);
+    const head = await page.evaluate(() =>
+      document.getElementById('whats-new')!.getBoundingClientRect().top - document.querySelector('header')!.getBoundingClientRect().bottom);
+    expect(head, 'the section landed under the app bar').toBeGreaterThanOrEqual(0);
 
     await page.clock.setFixedTime(dayAfter(latest.published!, 31));
     for (const route of routes) {
@@ -145,10 +142,10 @@ test.describe('the newest release, said', () => {
     await page.goto('./data');
     const card = page.locator('#whats-new');
     await expect(card).toBeVisible({ timeout: 60_000 });
-    await expect(card).toContainText(`The ${month(latest.date)} release`);
-    await expect(card).toContainText(`Against ${prev.label}, the release before it.`);
+    await expect(card).toContainText(`What's new in the ${month(latest.date)} release`);
+    await expect(card).toContainText(`Compared with ${prev.label}, the release before it.`);
     await expect(card.locator('[data-figure="people"]')).toContainText(people.n.toLocaleString('en-US'));
-    await expect(card.locator('[data-figure="people"]')).toContainText(`${change(people.n / prev.headcount - 1)} vs ${prev.label}`);
+    await expect(card.locator('[data-figure="people"]')).toContainText(`${delta(people.n / prev.headcount - 1)} vs ${prev.label}`);
     await expect(card.locator('[data-figure="median"]')).toContainText(usd(people.med));
 
     const st = steps.metrics.fte.at(-1)!;
@@ -209,19 +206,19 @@ test.describe('the newest release, said', () => {
     expect(seen).toBe(want.n);
   });
 
-  test('the salary ranges table is grades.json, and HR’s published figures', async ({ page }) => {
+  test('the salary ranges are grades.json, and HR’s published figures', async ({ page }) => {
     const grades = read<Grade[]>('grades.json').filter((g) => g.basis === 'annual_12mo');
     await page.goto('./data#salary-ranges');
-    const card = page.locator('#salary-ranges');
-    await expect(card).toBeInViewport({ timeout: 60_000 });
-    const ranges = card.locator('table[data-kind="range"] tbody tr');
-    const minimums = card.locator('table[data-kind="minimum"] tbody tr');
+    await expect(page.locator('#salary-ranges')).toBeInViewport({ timeout: 60_000 });
+    // Every range a row of the chart's table, every minimum a tile (the Salary ranges tab).
+    const ranges = page.locator('.range-table tbody tr[data-grade]');
+    const minimums = page.locator('.floor-tile');
     await expect(ranges).toHaveCount(grades.filter((g) => g.max != null).length);
     await expect(minimums).toHaveCount(grades.filter((g) => g.max == null).length);
     // Two grades spot-checked against hr.wisc.edu/pay/salary-structure/ as read on Sep 26, 2026.
-    await expect(ranges.filter({ has: page.locator('td:first-child', { hasText: /^15$/ }) })).toHaveText(/^15\$36,421\$52,082\$67,743$/);
-    await expect(ranges.filter({ has: page.locator('td:first-child', { hasText: /^35$/ }) })).toHaveText(/^35\$301,921\$431,747\$561,572$/);
-    await expect(minimums.filter({ has: page.locator('td:first-child', { hasText: /^61$/ }) })).toHaveText(/^61\$45,250$/);
+    await expect(page.locator('.range-table tr[data-grade="15"]')).toHaveText(/^15\$36,421\$52,082\$67,743$/);
+    await expect(page.locator('.range-table tr[data-grade="35"]')).toHaveText(/^35\$301,921\$431,747\$561,572$/);
+    await expect(page.locator('.floor-tile[data-grade="61"]')).toHaveText(/^Grade 61\$45,250$/);
   });
 
   // Every "New" is the header's: the newest snapshot, and only it, in the picker, a person's history and
