@@ -908,6 +908,9 @@ path.recharts-tooltip-cursor {
 }
 .mantine-SegmentedControl-label { line-height: 20px; }
 .mantine-Tabs-tab { height: 36px; padding-block: 0; }
+/* A finger's tab bar: 44px where the pointer is coarse, every tab bar alike (the About page's redesign asked it of its
+   own; the bar is the person page's, so it is one rule). A mouse keeps the 36px row. */
+@media (pointer: coarse) { .mantine-Tabs-tab { height: 44px; } }
 /* A radio's or a checkbox's label at the one body line height (P4): Mantine sets it to the control's size,
    20px on 15px text, which crowds a label long enough to wrap. The control sits centred on its first line. */
 .mantine-Radio-root, .mantine-Checkbox-root { --label-lh-sm: calc(var(--mantine-font-size-sm) * var(--mantine-line-height)); }
@@ -3421,10 +3424,12 @@ tr[data-unpaid] > td { color: var(--mantine-color-dimmed); }
 .pipeline-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: var(--mantine-radius-md); }
 .pipeline-tile .pipeline-dot { position: static; }
 /* 44px to a finger (the page's spec); a mouse keeps the app's 28 / 36 control heights. */
+/* On a touch screen the About page's controls are 44px each way (its redesign's rule): every button, icon button
+   and field, the snapshot table's CSV and Source files and the mapping's select among them. */
 @media (pointer: coarse) {
-  .data-downloads .data-dl-btn,
-  .about-actions .mantine-Button-root,
-  .rename-filter input { min-height: 44px; }
+  .about-page .mantine-Button-root,
+  .about-page input.mantine-Input-input { min-height: 44px; }
+  .about-page .mantine-ActionIcon-root { min-width: 44px; min-height: 44px; }
 }
 /* Salary ranges: coverage in one bar, three keys under it. */
 .coverage-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--hover-bg); }

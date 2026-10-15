@@ -211,6 +211,34 @@ test.describe('on a phone', () => {
     expect(fits, 'six tabs fit 390px, so the scroll is untested').toBe(false);
   });
 
+  // The redesign's touch rule: on a touch screen every tab, button, icon button and field is 44px each way it must be.
+  test('on a touch screen every tab, button and field is 44px', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage();
+    for (const [tab, ready] of [['', '.whats-new-change'], ['accuracy', '#identity'], ['method', '.pipeline-step'], ['ranges', '.range-table tbody tr'],
+      ['snapshots', '.snap-note-row'], ['renames', '.dup-row']] as const) {
+      await open(page, tab, ready);
+      const small = await page.evaluate(() => {
+        const out: string[] = [];
+        const check = (sel: string, w: number) => {
+          for (const e of document.querySelectorAll<HTMLElement>(sel)) {
+            const b = e.getBoundingClientRect();
+            if (!b.width || !e.checkVisibility()) continue;
+            if (b.height < 43.5 || b.width < w) out.push(`${sel} "${(e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24)}" ${Math.round(b.width)}x${Math.round(b.height)}`);
+          }
+        };
+        check('.about-page .mantine-Tabs-tab', 44);
+        check('.about-page .mantine-Button-root', 44);
+        check('.about-page .mantine-ActionIcon-root', 43.5);
+        check('.about-page input.mantine-Input-input', 44);
+        check('.about-page .jump-chip, .about-page .rename-release, .about-page .rename-ended-toggle, .about-page .dup-toggle', 24);
+        return out;
+      });
+      expect(small, `${tab || 'overview'}: a control under 44px on a touch screen`).toEqual([]);
+    }
+    await ctx.close();
+  });
+
   // Stacked as a column the releases ran 830px over the detail they choose, and a tap changed something off the screen.
   test('the releases are one row that scrolls on its own, with the renames they choose right under it', async ({ page }) => {
     await open(page, 'renames', '.rename-release');
