@@ -1,5 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
+import { createHash } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { configDefaults } from 'vitest/config';
@@ -34,11 +36,32 @@ function cspPlugin(): Plugin {
   };
 }
 
+/**
+ * The parquet under a name made from its content, in a build (Q10): `data/salaries.<hash>.parquet`, beside the plain
+ * one (/data's download link and the specs read that). GitHub Pages serves every file for ten minutes; a name that
+ * changes when the data does lets the service worker keep it until the next release instead.
+ */
+function hashedParquet(): Plugin {
+  const src = 'public/data/salaries.parquet';
+  const bytes = existsSync(src) ? readFileSync(src) : null;
+  const file = bytes ? `data/salaries.${createHash('sha256').update(bytes).digest('hex').slice(0, 12)}.parquet` : null;
+  return {
+    name: 'hashed-parquet',
+    config: (_, env) => ({
+      define: { 'import.meta.env.VITE_PARQUET_FILE': JSON.stringify(env.command === 'build' && file ? file : 'data/salaries.parquet') },
+    }),
+    generateBundle() {
+      if (bytes && file) this.emitFile({ type: 'asset', fileName: file, source: bytes });
+    },
+  };
+}
+
 export default defineConfig({
   base: '/UW-Madison_Salaries/',
   plugins: [
     react(),
     cspPlugin(),
+    hashedParquet(),
     VitePWA({
       // We call registerSW() ourselves (src/main.tsx) via the virtual module, so skip the
       // plugin's own injected bootstrap script.
@@ -72,6 +95,13 @@ export default defineConfig({
             urlPattern: ({ url }) => url.pathname.endsWith('.wasm'),
             handler: 'CacheFirst',
             options: { cacheName: 'wasm-cache', expiration: { maxEntries: 4 } },
+          },
+          {
+            // The parquet by its content's name (Q10): a new release is a new name, so what the cache holds under this
+            // one is this one's data, kept until the next release, not ten minutes.
+            urlPattern: ({ url }) => /\/data\/salaries\.[0-9a-f]{12}\.parquet$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: { cacheName: 'parquet-cache', expiration: { maxEntries: 2 } },
           },
           {
             // The parquet and every JSON beside it: the network first, the cache only when it fails or

@@ -28,7 +28,7 @@ test('every page but Home has a search in its header that opens the search; on a
 
 test('a person page shows its shape and how far the data has got while it loads', async ({ page }) => {
   // Held back a moment, so the page is caught waiting for it.
-  await page.route('**/data/salaries.parquet', async (route) => { await new Promise((r) => setTimeout(r, 2500)); await route.continue(); });
+  await page.route('**/data/salaries*.parquet', async (route) => { await new Promise((r) => setTimeout(r, 2500)); await route.continue(); });
   await page.goto(`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`);
   const skeleton = page.getByRole('status', { name: 'Loading this person' });
   await expect(skeleton).toBeVisible({ timeout: 30_000 });
@@ -78,7 +78,7 @@ test('an unknown person, division, title or page says so, offers what it is like
 
 test('offline before the data was ever saved, a person page says so rather than loading for good', async ({ page, context }) => {
   // The salary file never arrives; the person page's code does, on a first visit while online.
-  await page.route('**/data/salaries.parquet', (r) => r.abort());
+  await page.route('**/data/salaries*.parquet', (r) => r.abort());
   await page.goto(`./person/${encodeURIComponent('aaronsmetana|2014-10-15')}`);
   await expect(page.getByText(/^Failed to load person/)).toBeVisible({ timeout: 60_000 });
   await context.setOffline(true);

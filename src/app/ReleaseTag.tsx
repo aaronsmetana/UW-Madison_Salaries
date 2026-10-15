@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Anchor, CloseButton, Group } from '@mantine/core';
+import { Anchor, Badge, CloseButton, Group, Text, UnstyledButton } from '@mantine/core';
 import { Link, useLocation } from 'react-router-dom';
-import { useRelease } from '../lib/hooks';
+import { useRelease, useSummary } from '../lib/hooks';
+import { useControls } from '../state/controls';
 import { NewBadge } from '../components/NewBadge';
 
 /**
@@ -30,6 +31,23 @@ export function ReleaseTag() {
   const [dismissed, setDismissed] = useState<string | null>(() => {
     try { return localStorage.getItem('release-tag-dismissed'); } catch { return null; }
   });
+  const { activeSnapshot, setActiveSnapshot } = useControls();
+  const { data: summary } = useSummary();
+  const snaps = summary?.snapshots ?? [];
+  // A past snapshot in view (E15): said here, over every number it changed, with the way back. The tag went on
+  // saying "Salary data as of September 2026" over a page of September 2024's figures.
+  const past = activeSnapshot && activeSnapshot !== snaps[snaps.length - 1]?.id ? snaps.find((s) => s.id === activeSnapshot) : null;
+  if (past) {
+    return (
+      <Group gap={8} wrap="nowrap" className="release-tag-wrap viewing-past" role="status">
+        <Badge size="xs" radius="xs" variant="light" color="orange">Past</Badge>
+        <Text size="xs" fw={600}>Viewing {past.label}</Text>
+        <UnstyledButton className="viewing-past-back" onClick={() => setActiveSnapshot(null)}>
+          <Text span size="xs" c="var(--text-accent)" td="underline">Back to latest</Text>
+        </UnstyledButton>
+      </Group>
+    );
+  }
   if (!release?.month || pathname.endsWith('/data')) return null;
   const { month, isNew, rangesUpdated } = release;
   if (dismissed === seenKey(month)) return null;

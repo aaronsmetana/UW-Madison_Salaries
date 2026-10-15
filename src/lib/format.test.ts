@@ -1,6 +1,6 @@
 import { fmtK, fmtCount } from './chartStyle';
 import { describe, it, expect } from 'vitest';
-import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly, usdShort, legacyTitle } from './format';
+import { usd, num, pct, plural, formatName, fullName, fmtDate, fmtToday, fmtBasis, fmtYears, fmtChange, fmtGrade, vsCampus, hourly, usdShort, legacyTitle, twelveOfNine } from './format';
 
 describe('format', () => {
   it('usd formats whole dollars and handles null/NaN', () => {
@@ -66,9 +66,12 @@ describe('format', () => {
     expect(fmtDate(undefined)).toBe('—');
     expect(fmtDate('not-a-date')).toBe('—');
   });
-  it('fmtBasis unifies the pre/post-relabel synonyms (Annual/12 Month, Academic/9 Month)', () => {
+  it('fmtBasis unifies Annual and 12 Month, and says a 9 Month figure is a 12-month equivalent (E9)', () => {
     expect(fmtBasis('Annual')).toBe(fmtBasis('12 Month'));
-    expect(fmtBasis('Academic')).toBe(fmtBasis('9 Month'));
+    expect(fmtBasis('Academic')).toBe('9-month (academic year)');
+    expect(fmtBasis('9 Month')).toBe('9-month (12-month equivalent)');
+    expect(twelveOfNine('9 Month')).toBe(true);
+    expect(twelveOfNine('Academic')).toBe(false);
   });
   it('fmtBasis passes unrelated values through unchanged', () => {
     expect(fmtBasis('Hourly')).toBe('Hourly');

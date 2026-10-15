@@ -3455,3 +3455,6 @@ html[data-tray] .back-to-top { bottom: calc(var(--tray-room, 88px) + 8px); }
 .people-card-wrap { position: relative; }
 .people-card-wrap > .people-card { height: 100%; padding-right: 52px; }
 .people-card-tray { position: absolute; top: 8px; right: 8px; }
+
+/* An unpaid appointment in History (E3): an affiliate's, said and quieted, not a new title at $0. */
+tr[data-unpaid] > td { color: var(--mantine-color-dimmed); }

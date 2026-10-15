@@ -67,7 +67,9 @@ export default function Reports() {
   const { items } = useTray();
   const snapLabel = summary?.snapshots.find((x) => x.id === snap)?.label ?? snap ?? '—';
   const generated = fmtToday();
-  const isDesktop = useMediaQuery('(min-width: 75em)') ?? true;
+  // The setup beside the brief down to 720px (Q7): from 1200px only, a 768px window had a Setup / Preview switch and
+  // never the two together.
+  const sideBySide = useMediaQuery('(min-width: 45em)') ?? true;
   // Phone-width layout for the header controls: the mode switcher's full labels measure 633px, which
   // pushed the whole page 274px wider than a 375px viewport and scrolled the app sideways.
   const isNarrow = useMediaQuery('(max-width: 48em)') ?? false;
@@ -1058,7 +1060,7 @@ export default function Reports() {
         cohortP75={stats.p75}
         recommended={recommended}
         // On a phone the ledger pinned above the tabs already shows it; the setup's own readout said it twice.
-        readout={isDesktop}
+        readout={sideBySide}
         onReset={() => {
           if (subjectKey) clearPref(`report.cfg.${subjectKey}`);
           setConfig(defaultConfig());
@@ -1158,7 +1160,7 @@ export default function Reports() {
             <Text c="dimmed" size="sm" mb="md">Add the subject, then the peers to compare them with.</Text>
             <SearchBox kinds={['people']} placeholder="Search yourself by name to begin…" onPick={(h) => chooseSubject(h.person_key)} />
           </Card>
-        ) : isDesktop ? (
+        ) : sideBySide ? (
           <div style={{ display: 'flex', gap: 'var(--mantine-spacing-lg)', alignItems: 'flex-start' }}>
             {/* The one list with a scroll of its own (G11): the setup stays beside the brief as it scrolls, so a
                 setup taller than the window scrolls inside itself. */}

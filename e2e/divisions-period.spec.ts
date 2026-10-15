@@ -27,7 +27,7 @@ test('one period: the bar’s From and snapshot, read by the figures, the growth
   await expect(from).toHaveValue(before.lbl, { timeout: 60_000 });
   // No period of their own in the tiles.
   await expect(page.locator('.growth-pickers')).toHaveCount(0);
-  await expect(tile(page, 'Median pay growth').locator('.growth-period')).toHaveText(`${before.lbl} → ${latest.lbl}`);
+  await expect(tile(page, 'Median pay growth').locator('.growth-period')).toHaveText(new RegExp(`^${before.lbl.replace(/[()]/g, '\\$&')} → ${latest.lbl.replace(/[()]/g, '\\$&')}( · |$)`));
   await expect(tile(page, 'Headcount')).toContainText(`${before.lbl} → ${latest.lbl}`);
   // The growth is the period's: the median of everyone's actual pay at its two ends (no reporting change between).
   const [m] = await oracle<{ a: number; b: number }>(
@@ -39,9 +39,11 @@ test('one period: the bar’s From and snapshot, read by the figures, the growth
   // Choose another start: every reader follows, and the address keeps it.
   const start = all.find((s) => s.id.endsWith('-post'))!;
   await from.click();
-  await page.getByRole('option', { name: start.lbl.replace(/\s*\((Pre|Post)-TTC\)/i, (_m, v: string) => ` · ${v.toLowerCase()}`), exact: true }).click();
+  // Each snapshot by its one name (E17).
+  await page.getByRole('option', { name: start.lbl, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`from=${start.id}`));
-  await expect(tile(page, 'Median pay growth').locator('.growth-period')).toHaveText(`${start.lbl} → ${latest.lbl}`);
+  // Across years, its reading after inflation beside it (E14).
+  await expect(tile(page, 'Median pay growth').locator('.growth-period')).toHaveText(new RegExp(`^${start.lbl.replace(/[()]/g, '\\$&')} → ${latest.lbl.replace(/[()]/g, '\\$&')} · [+−-][\\d.]+% after inflation$`));
   await expect(tile(page, 'Headcount')).toContainText(`${start.lbl} → ${latest.lbl}`);
   await page.getByRole('tab', { name: 'Changes' }).click();
   await expect(page.locator('.changes-lead')).toContainText(`Between ${start.lbl} and ${latest.lbl}`, { timeout: 60_000 });

@@ -113,15 +113,20 @@ export function fmtToday(now: Date = new Date()): string {
 /**
  * Normalizes `comp_basis` display values. The source data relabeled this column mid-series — 'Annual'
  * (used through the Apr 2024 snapshot) and '12 Month' (used from Sep 2025 on) never co-occur in the
- * same snapshot and mean the same thing; likewise 'Academic' → '9 Month'. Everything else passes
- * through unchanged; blank/missing renders as an em dash like the app's other formatters.
+ * same snapshot and mean the same thing. 'Academic' → '9 Month' is not a rename alone: from Sep 2025 a
+ * 9-month appointment's pay is reported as its 12-month equivalent (×11/9, queries REPORTING_CHANGES),
+ * and the label says so (E9) — it called a 12-month figure 9-month. Everything else passes through
+ * unchanged; blank/missing renders as an em dash like the app's other formatters.
  */
 const BASIS_ALIASES: Record<string, string> = {
   annual: '12-month',
   '12 month': '12-month',
   academic: '9-month (academic year)',
-  '9 month': '9-month (academic year)',
+  '9 month': '9-month (12-month equivalent)',
 };
+
+/** Whether a `comp_basis` reports a 9-month appointment's pay as its 12-month equivalent (Sep 2025 on). */
+export const twelveOfNine = (s: string | null | undefined) => s?.trim().toLowerCase() === '9 month';
 export function fmtBasis(s: string | null | undefined): string {
   if (!s || !s.trim()) return '—';
   return BASIS_ALIASES[s.trim().toLowerCase()] ?? s;

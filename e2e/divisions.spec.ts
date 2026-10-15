@@ -16,9 +16,10 @@ async function tab(page: Page, name: string, query = '') {
 }
 
 /**
- * The period's From picker shows its whole label. At 118px, "Nov 2021 (Post-TTC)" read "Nov 2021 (Po:"; the
- * picker says "Nov 2021 · post" and is sized to it. It was the growth card's, with a To beside it; the page's
- * period is the control bar's now (D1). Every option is measured in the field's own font against its room.
+ * The period's From picker shows its whole label. At 118px, "Nov 2021 (Post-TTC)" read "Nov 2021 (Po:"; it said
+ * "Nov 2021 · post" for a while, a second name for one snapshot (E17), and is sized to the one name now. It was the
+ * growth card's, with a To beside it; the page's period is the control bar's now (D1). Every option is measured in
+ * the field's own font against its room.
  */
 test("the period's From picker shows every label whole", async ({ page }) => {
   await tab(page, 'schools');
@@ -29,7 +30,7 @@ test("the period's From picker shows every label whole", async ({ page }) => {
     const options = await page.getByRole('option').locator('visible=true').allTextContents();
     await page.keyboard.press('Escape');
     expect(options.length, `${name}: too few options to be checking anything`).toBeGreaterThanOrEqual(5);
-    expect(options.filter((o) => /[()]/.test(o)), `${name}: the long "(Post-TTC)" form is back`).toEqual([]);
+    expect(options.filter((o) => / · (pre|post)$/.test(o)), `${name}: a second name for a snapshot`).toEqual([]);
     const fit = await field.evaluate((input, labels) => {
       const cs = getComputedStyle(input);
       const ctx = document.createElement('canvas').getContext('2d')!;

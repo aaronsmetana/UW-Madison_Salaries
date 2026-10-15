@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMatch, useSearchParams } from 'react-router-dom';
+import { useDollarMode } from '../lib/dollars';
 import { Group, Select, Text, Badge, Button, Paper, Combobox, useCombobox, InputBase, Drawer, Stack } from '@mantine/core';
 import { IconBuildingBank, IconCalendar, IconSearch, IconRefresh, IconAdjustmentsHorizontal } from '@tabler/icons-react';
 import { useControls, METRIC_LABEL, scopeLabel, FILTER_PARAMS, type Scope } from '../state/controls';
@@ -16,11 +17,7 @@ import { CopyLinkButton } from '../components/CopyLinkButton';
 import { PayMeasure } from '../components/PayMeasure';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { usePeriod } from '../lib/period';
-import { usePref } from '../lib/prefs';
 import { REAL_BASE_YEAR } from '../lib/cpi';
-
-/** "Nov 2021 · post", not "Nov 2021 (Post-TTC)": a picker sized to its longest label cut the long form short. */
-const pickLabel = (label: string) => label.replace(/\s*\((Pre|Post)-TTC\)/i, (_m, v: string) => ` · ${v.toLowerCase()}`);
 
 /**
  * Scope / division picker. A Combobox (not a plain Select) so the floating menu can open wider than the
@@ -135,7 +132,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
   const { scope, setScope, metric, activeSnapshot, setActiveSnapshot, filters } = useControls();
   const [params, setParams] = useSearchParams();
   const { from, to, earlier, setPeriod } = usePeriod();
-  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [dollarMode, setDollarMode] = useDollarMode();
   const [sheet, setSheet] = useState(false);
   const { data: summary } = useSummary();
   const snapshots = summary?.snapshots ?? [];
@@ -183,8 +180,9 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
     { value: 'latest', label: latest ? `Latest (${latest.label})` : 'Latest' },
     ...[...snapshots].reverse().map((s) => ({ value: s.id, label: s.label })),
   ];
-  // Per-snapshot row counts for the picker; the synthetic "latest" borrows the real latest's count.
-  const snapRows = new Map<string, number>(snapshots.map((s) => [s.id, s.rows]));
+  // People in each snapshot, for the picker (E17): it counted the source's rows, which the page counts nowhere. The
+  // synthetic "latest" borrows the real latest's count.
+  const snapRows = new Map<string, number>(snapshots.flatMap((s) => (s.headcount != null ? [[s.id, s.headcount] as [string, number]] : [])));
   if (latest) snapRows.set('latest', snapRows.get(latest.id) ?? 0);
   const snapLabel = activeSnapshot
     ? snapshots.find((s) => s.id === activeSnapshot)?.label ?? activeSnapshot
@@ -194,7 +192,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
   // something is set (D5): a disabled Reset sat on screen on every visit. One change to the address, not four: each
   // setter rewrote it from the same starting point, so only the last one stuck.
   const filterCount = Object.values(filters).reduce((a, v) => a + v.length, 0);
-  const changed = [!locked && scope.kind !== 'all', activeSnapshot != null, period && params.has('from'), params.has('metric'), filterCount > 0]
+  const changed = [!locked && scope.kind !== 'all', activeSnapshot != null, params.has('dollars'), period && params.has('from'), params.has('metric'), filterCount > 0]
     .filter(Boolean).length;
   const atDefaults = changed === 0;
   const resetView = atDefaults ? null : (
@@ -205,7 +203,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
       leftSection={<IconRefresh size={ICON.compact} />}
       onClick={() => setParams((prev) => {
         const n = new URLSearchParams(prev);
-        for (const k of ['school', 'dept', 'snap', 'from', 'metric', ...FILTER_PARAMS]) n.delete(k);
+        for (const k of ['school', 'dept', 'snap', 'from', 'metric', 'dollars', ...FILTER_PARAMS]) n.delete(k);
         return n;
       }, { replace: true })}
     >
@@ -233,14 +231,14 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
           <>
             <Select
               {...dropdownProps('sm')}
-              w={146}
+              w={186}
               maw="100%"
               aria-label="From snapshot"
-              data={[...earlier].reverse().map((s) => ({ value: s.id, label: pickLabel(s.label) }))}
+              data={[...earlier].reverse().map((s) => ({ value: s.id, label: s.label }))}
               value={from.id}
               onChange={(v) => setPeriod(v)}
               allowDeselect={false}
-              comboboxProps={{ width: 210, position: 'bottom-start' }}
+              comboboxProps={{ width: 240, position: 'bottom-start' }}
             />
             <Text size="xs" c="dimmed" aria-hidden>→</Text>
           </>
@@ -253,6 +251,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
           leftSection={<IconCalendar size={ICON.compact} />}
           leftSectionWidth={30}
           data={snapOptions}
+          comboboxProps={{ width: 300 }}
           value={snapValue}
           onChange={(v) => setActiveSnapshot(v === 'latest' ? null : v)}
           allowDeselect={false}
@@ -265,7 +264,7 @@ export function ControlBar({ inline = false, period = false, dollars = false }: 
                   {/* The newest release is "New" for its first 30 days (NewBadge); "Latest (…)" above already names it latest. */}
                   {option.value === latest?.id && <NewBadge />}
                 </Group>
-                {rows != null && <Text span size="xs" c="dimmed" style={{ flexShrink: 0 }}>{num(rows)} rows</Text>}
+                {rows != null && <Text span size="xs" c="dimmed" style={{ flexShrink: 0 }}>{num(rows)} people</Text>}
               </Group>
             );
           }}

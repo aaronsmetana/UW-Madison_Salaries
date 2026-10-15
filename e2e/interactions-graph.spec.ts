@@ -69,6 +69,8 @@ test('full page is in the address with its title and school: a link reopens it, 
   // The chip on a line of its own, whole: nothing cut short.
   const cut = await page.locator('.hero-dist-full .strata-chip > span').evaluate((s) => s.scrollWidth > s.clientWidth + 1);
   expect(cut, 'the filter’s chip is cut short').toBe(false);
+  // Measured at rest: the chip rises into its line as it comes.
+  await page.waitForFunction(() => !document.getAnimations().some((a) => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity));
   const [bar, chipBox] = [(await page.locator('.hero-dist-full .hero-dist-search').boundingBox())!, (await chip.boundingBox())!];
   expect(chipBox.y, 'the chip is on the box’s line').toBeGreaterThanOrEqual(bar.y + bar.height - 1);
   // Off and back: out of full page, nothing of it in the address.

@@ -23,7 +23,8 @@ import { ChartData } from '../components/ChartData';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
 import { EndLabels } from '../components/chart/EndLabels';
 import { useDocTitle } from '../lib/useDocTitle';
-import { usePref } from '../lib/prefs';
+import { useDollarMode } from '../lib/dollars';
+import { RealBadge } from '../components/RealBadge';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
@@ -93,7 +94,7 @@ export default function Compare() {
   /** Each figure here, named for the measure in force (G2). */
   const measure = METRIC_LABEL[metric];
   const [xMode, setXMode] = useState<'date' | 'tenure'>('date');
-  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [dollarMode, setDollarMode] = useDollarMode();
   // Legend mute/solo: a click dims one series (state only — the tray itself is untouched); shift-click
   // solos it (mutes everyone else), or un-solos back to "all visible" if it's already the lone survivor.
   const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
@@ -465,7 +466,7 @@ export default function Compare() {
               </Group>
             }
           >
-            {measure} over time
+            {measure} over time{dollarMode === 'real' && <> <RealBadge /></>}
           </CardTitle>
           {/* Loading, a block the height of the chart, its note and its footer: a spinner, the card was a third
               of its height and the cards under it dropped 333px when the lines came (layout shift 0.06). */}

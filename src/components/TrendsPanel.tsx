@@ -22,6 +22,8 @@ import { CardTitle } from './CardTitle';
 import { YoyChips } from './chart/pills';
 import { EndLabels } from './chart/EndLabels';
 import { usePref } from '../lib/prefs';
+import { useDollarMode } from '../lib/dollars';
+import { RealBadge } from '../components/RealBadge';
 import { usePeriod } from '../lib/period';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 
@@ -82,7 +84,7 @@ export function TrendsPanel() {
   const med = `Median ${METRIC_LABEL[metric].toLowerCase()}`;
   const entrance = useEntrance();
   // The dollars are the page's (the control bar's Nominal / 2026 $, D2): this tab had a toggle of its own too.
-  const [dollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [dollarMode] = useDollarMode();
   const { from: periodFrom, to: periodTo } = usePeriod();
   // Dollars, or each line as an index of its own first snapshot (D17, D18): from a $0 baseline a +25% median read
   // flat, and the Log scale offered for one line added nothing. The axis stays at $0 in dollars, as every pay
@@ -203,7 +205,7 @@ export function TrendsPanel() {
         </Group>
         }
       >
-        {med} and headcount over time
+        {med} and headcount over time{dollarMode === 'real' && <> <RealBadge /></>}
       </CardTitle>
       {/* Two stacked single-axis panels sharing an x-axis (syncId) instead of one dual-axis chart —
           a shared plot with two different y-scales makes the point where the lines cross meaningless.

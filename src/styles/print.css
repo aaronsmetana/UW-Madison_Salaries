@@ -88,18 +88,31 @@
      back when it was the only thing that could print; every page needs them now.
      --------------------------------------------------------------------------------------------- */
 
-  /* Keep evidence cards, tables, and charts from splitting across a page boundary, and never orphan
-     a section heading at the bottom of a page. */
+  /* A card runs on over a page break (Q11): kept whole, one taller than what was left of a page went to the
+     next and left a third of the last one blank. What must not split stays whole — a chart, a row of figures,
+     an evidence card, a table's row, a note — and no heading or card title is left at the foot of a page. */
   .mantine-AppShell-main .mantine-Card-root,
   .mantine-AppShell-main .mantine-Paper-root,
-  .mantine-AppShell-main table,
-  .mantine-AppShell-main .recharts-wrapper {
+  .mantine-AppShell-main table {
+    break-inside: auto;
+  }
+  .mantine-AppShell-main .recharts-wrapper,
+  .mantine-AppShell-main .stat-row,
+  .mantine-AppShell-main .evidence-card,
+  .mantine-AppShell-main .mantine-Alert-root,
+  .mantine-AppShell-main tr {
     break-inside: avoid;
   }
   .mantine-AppShell-main h1,
   .mantine-AppShell-main h2,
-  .mantine-AppShell-main h3 {
+  .mantine-AppShell-main h3,
+  .mantine-AppShell-main h4,
+  .mantine-AppShell-main .card-title {
     break-after: avoid;
+  }
+  .mantine-AppShell-main p {
+    orphans: 3;
+    widows: 3;
   }
 
   /* Preserve the accent tints, salary bars, and badges — browsers strip element backgrounds in print

@@ -345,6 +345,9 @@ export function HistoryTable({ rows, comparisons, csvName }: {
             const priorSnap = priorId ? snapHistory.bySnap.get(priorId) : null;
             const inPrior = !!r.job_code && !!priorSnap && priorSnap.jobs.has(r.job_code);
             const isNew = !!priorSnap && !!r.job_code && !inPrior;
+            // An appointment with no pay — an affiliate's, $0 in the records (E3): not a new title, and no pay to
+            // compare. It read "New title · $0 · $0".
+            const unpaid = !((r.salary ?? 0) > 0);
             const ttcReclass = isNew && String(priorSnap!.date) === String(r.snapshot_date);
             const actual = actualPay(r);
             const raise: Raise = matching.raises.get(r) ?? { kind: 'none' };
@@ -423,6 +426,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                 // row is the last of its own group and the strengthened boundary rule would land
                 // on the 93.2% of tables this is not about.
                 data-group-last={gutter.slots > 0 ? (lastOfGroup ? 'yes' : 'no') : undefined}
+                data-unpaid={unpaid || undefined}
               >
                 {gutter.slots > 0 && (
                   <Table.Td className="appt-gutter-td">
@@ -443,7 +447,8 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                     <div className="fold-under"><Badge variant="light" size="sm" mb={4}>{r.snapshot_label}</Badge>{r.snapshot_id === newestId && <NewBadge ml={4} />}</div>
                   )}
                   {r.title ?? '—'}
-                  {isNew && (
+                  {unpaid && <Badge ml="xs" size="xs" variant="light" color="gray" className="unpaid-tag">Unpaid affiliate</Badge>}
+                  {isNew && !unpaid && (
                     // The change column's own word (P28): "Promotion" only where the grade rose, else "Title change";
                     // a new appointment with nothing before it is a "New title". The tag said "New title" beside a
                     // change the column called a promotion.
@@ -475,9 +480,9 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                     <Text size="xs" c="dimmed">{r.department ?? ''}</Text>
                   </Group>
                 </Table.Td>
-                {!onePay && <Table.Td ta="right" data-fold data-print-fold>{usd(r.salary)}</Table.Td>}
+                {!onePay && <Table.Td ta="right" data-fold data-print-fold>{unpaid ? '—' : usd(r.salary)}</Table.Td>}
                 <Table.Td ta="right">
-                  {usd(actual)}
+                  {unpaid ? <Text span size="xs" c="dimmed">unpaid</Text> : usd(actual)}
                   {!onePay && Math.round(r.salary ?? 0) !== Math.round(actual) && <Text className="print-under" size="xs" c="dimmed">rate {usd(r.salary)}</Text>}
                   {(r.salary ?? 0) > 0 && !counted.has(r) && <Text className="print-under not-in-pay" size="xs" c="dimmed">not in actual pay</Text>}
                 </Table.Td>
@@ -485,7 +490,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
                   <RaiseCell raise={raise} note={rateNote} reporting={reporting} compare={compare}>
                     {/* A new title the matcher could not pair — the person held more than one
                         appointment on a side. It is new; whether it was a promotion is unknowable. */}
-                    {isNew && !ttcReclass && pos > 0 ? (
+                    {isNew && !ttcReclass && !unpaid && pos > 0 ? (
                       <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>new title</Text>
                     ) : (
                       <Text size="sm" c="dimmed">—</Text>

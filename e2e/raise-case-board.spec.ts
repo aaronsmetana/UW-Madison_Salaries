@@ -79,7 +79,8 @@ test('the brief’s pay chart names every year it covers', async ({ page }) => {
 });
 
 test.describe('on a narrow window', () => {
-  test.use({ viewport: { width: 768, height: 1000 } });
+  // Under 720px: wider, the setup is beside the brief (Q7).
+  test.use({ viewport: { width: 700, height: 1000 } });
   test('with Setup chosen, the brief is what prints', async ({ page }) => {
     await page.goto(CASE);
     // Narrow, one pane at a time: the brief is drawn, only not shown.
@@ -102,7 +103,7 @@ test.describe('on a narrow window', () => {
 });
 
 test('Export, while it waits, says what for', async ({ page }) => {
-  await page.route('**/data/salaries.parquet', async (route) => { await new Promise((r) => setTimeout(r, 6000)); await route.continue(); });
+  await page.route('**/data/salaries*.parquet', async (route) => { await new Promise((r) => setTimeout(r, 6000)); await route.continue(); });
   await page.goto(CASE);
   const button = page.getByRole('button', { name: 'Export', exact: true });
   await expect(button).toBeVisible({ timeout: 30_000 });

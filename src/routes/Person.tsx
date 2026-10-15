@@ -2,7 +2,7 @@ import { PersonSkeleton } from '../components/PersonSkeleton';
 import { PersonNotFound } from '../components/PersonNotFound';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate, useSearchParams, Link, Navigate } from 'react-router-dom';
-import { Stack, Title, Text, Group, Button, Card, Table, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input, Chip } from '@mantine/core';
+import { Stack, Title, Text, Group, Button, Card, Table, Alert, Anchor, NumberInput, TextInput, Tabs, Popover, Skeleton, VisuallyHidden, Slider, Input, Chip, Badge } from '@mantine/core';
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   ReferenceDot, ReferenceLine, ReferenceArea, Customized,
@@ -33,12 +33,16 @@ import { useSql, useGrades, useSummary, usePersonAlias } from '../lib/hooks';
 import { latestHire, latestMain, latestRows, otherAppts, apptTerms } from '../lib/personQuery';
 import { sqlStr } from '../lib/duckdb';
 import { personRowsSql } from '../lib/personQuery';
-import { personPay, TITLE_RATE, countedAppts, personActualPay, personRate, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange } from '../lib/queries';
+import { personPay, TITLE_RATE, countedAppts, personActualPay, personRate, gradedAppt, mainRow, mainOf, standingSql, poolPercentile, continuingRaisesSql, reportingAcross, reportingChange, REPORTING_CHANGES } from '../lib/queries';
+
+/** The one reporting change of a quantity: 9-month pay as its 12-month equivalent, from Sep 2025 (E9). */
+const NINE_MONTH = REPORTING_CHANGES[0];
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { useTray } from '../state/tray';
 import { ToolLinks } from '../components/ToolLinks';
-import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears, hourly, legacyTitle } from '../lib/format';
-import { usePref } from '../lib/prefs';
+import { usd, num, fullName, fmtBasis, spanLabel, fmtGrade, fmtGradeBasis, fmtChange, fmtYears, hourly, legacyTitle, twelveOfNine } from '../lib/format';
+import { useDollarMode } from '../lib/dollars';
+import { RealBadge } from '../components/RealBadge';
 import { percentile, MIN_GROUP } from '../lib/stats';
 import { payWindow, sideOf } from '../lib/payWindow';
 import { useMounted, prefersReducedMotion, chartAnim, useEntrance, markTabSwitch } from '../lib/motion';
@@ -348,7 +352,7 @@ export default function Person() {
   const departed = !!(latest && campusLatest && String(latest.snapshot_date) < String(campusLatest.date));
 
   // Nominal (as-reported) vs real (inflation-adjusted to REAL_BASE_YEAR dollars) for the trend chart.
-  const [dollarMode, setDollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [dollarMode, setDollarMode] = useDollarMode();
 
   // Salary trend: one point per snapshot. `salary` (the plotted line) is ACTUAL pay — the reported
   // FTE-adjusted figure (salary_fte_adjusted, falling back to rate × FTE), summed across the appointments
@@ -908,7 +912,11 @@ export default function Person() {
           desktop row unchanged and only drops the actions below once they can no longer both fit. */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div className="person-head" style={{ flex: '1 1 320px', minWidth: 0 }}>
-          <Title order={1} data-reveal-target tabIndex={-1}>{name}</Title>
+          <Group gap="xs" align="center" wrap="wrap" className="person-name-row">
+            <Title order={1} data-reveal-target tabIndex={-1}>{name}</Title>
+            {/* Gone from the latest snapshot (E6): said by the name, as search says it. */}
+            {departed && <Badge size="lg" radius="xs" variant="light" color="gray" className="former-badge">Former</Badge>}
+          </Group>
           <Text c="dimmed">
             {latest?.job_code ? (
               <Anchor component={Link} to={`/titles?code=${encodeURIComponent(latest.job_code)}`} fw={600}>{latest?.title}</Anchor>
@@ -967,7 +975,8 @@ export default function Person() {
             or open its menu to compare them with someone named. They were "Compare with…" and "+ Add to compare"
             side by side with nothing to tell them apart, and the raise case a link under the title. */}
         <Group gap="sm" wrap="wrap" style={{ flexShrink: 0, maxWidth: '100%' }}>
-          <ToolLinks asButtons links={[{ label: 'Build raise case', to: `/raise-case?type=comparison&subject=${encodeURIComponent(key)}` }]} />
+          {/* No raise case for someone no longer paid here (E6); Compare draws them to the snapshot they left after. */}
+          {!departed && <ToolLinks asButtons links={[{ label: 'Build raise case', to: `/raise-case?type=comparison&subject=${encodeURIComponent(key)}` }]} />}
           <Button.Group>
           <CompareSetButton item={{ type: 'person', id: key, label: name }} />
           <Popover width={320} position="bottom-end" shadow="md" withArrow trapFocus>
@@ -1045,7 +1054,14 @@ export default function Person() {
               >
                 {latest?.title && (
                   <Text size="sm" c="dimmed" mt={4}>
-                    {latest.title}{latest.comp_basis ? ` · ${fmtBasis(latest.comp_basis)} basis` : ''}
+                    {latest.title}{latest.comp_basis
+                      ? ` · ${twelveOfNine(latest.comp_basis) ? '12-month equivalent of a 9-month appointment' : `${fmtBasis(latest.comp_basis)} basis`}`
+                      : ''}
+                  </Text>
+                )}
+                {twelveOfNine(latest?.comp_basis) && lastSalary != null && lastSalary > 0 && (
+                  <Text size="xs" c="dimmed" mt={2} className="academic-year-pay">
+                    academic-year pay {usd(lastSalary / NINE_MONTH.factor)}
                   </Text>
                 )}
                 {partTime && <Text size="xs" c="dimmed" mt={2}>full-time rate {usd(lastRate)}</Text>}
@@ -1637,7 +1653,7 @@ export default function Person() {
           </Group>
           }
         >
-          {trendMeasure} over time
+          {trendMeasure} over time{dollarMode === 'real' && <> <RealBadge /></>}
         </CardTitle>
         {/* Hero salary chart: a ComposedChart with a gradient area + soft-glow line, faint title-era bands,
             grade-band reference lines, and per-step change chips, on a date axis. The FTE sub-chart below

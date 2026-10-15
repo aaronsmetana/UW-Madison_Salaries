@@ -224,7 +224,7 @@ test('a route that does query still loads the dataset', async ({ page }) => {
 test('the data error banner still fires when the dataset really fails', async ({ page }) => {
   // The banner now observes rather than initiates, so the thing worth proving is that observing is
   // enough: a route that queries must still surface the failure.
-  await page.route('**/salaries.parquet', (r) => r.abort());
+  await page.route('**/salaries*.parquet', (r) => r.abort());
   await page.goto('./divisions');
   await expect(page.getByText(/Couldn't load the salary data/i)).toBeVisible({ timeout: 60_000 });
 });

@@ -26,7 +26,8 @@ async function initDB(): Promise<AsyncDuckDB> {
   const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
-  const url = `${import.meta.env.BASE_URL}data/salaries.parquet`;
+  // Named for its content in a build (vite.config, Q10), so a deploy's parquet is never another's under one name.
+  const url = `${import.meta.env.BASE_URL}${import.meta.env.VITE_PARQUET_FILE ?? 'data/salaries.parquet'}`;
   // 60s timeout: on a stalled connection the fetch would otherwise hang forever with no feedback.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);

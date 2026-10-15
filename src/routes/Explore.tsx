@@ -20,7 +20,8 @@ import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
 import { DeltaChip } from '../components/Delta';
 import { useDocTitle } from '../lib/useDocTitle';
-import { usePref } from '../lib/prefs';
+import { useDollarMode } from '../lib/dollars';
+import { RealBadge } from '../components/RealBadge';
 
 import { OverflowTabsList } from '../components/OverflowTabsList';
 import { usePeriod, type PeriodSnap } from '../lib/period';
@@ -82,7 +83,7 @@ function MedianGrowthCard({ series, from, to, p90, loading }: {
   p90: number | null;
   loading: boolean;
 }) {
-  const [dollarMode] = usePref<'nominal' | 'real'>('dollarMode', 'nominal');
+  const [dollarMode] = useDollarMode();
   const lflId = useId();
 
   if (loading || series.length < 2 || !from || !to) {
@@ -122,6 +123,17 @@ function MedianGrowthCard({ series, from, to, p90, loading }: {
     ? growthBetween({ date: a.date, value: a.med }, { date: b.date, value: b.med, prior: b.prior })
     : { growth: null, changes: [] as ReturnType<typeof growthBetween>['changes'] };
   const slice = displaySeries.slice(fIdx, tIdx + 1).map((s) => s.med);
+  // The other reading of the same growth (E14): after inflation beside a nominal figure, before it beside a real one.
+  // A median up 25% nominally was up 1% in real terms, and only a toggle said so.
+  // The CPI is a year's, so a period within one year has one reading: the second said "+2.0% after inflation"
+  // beside +2.0%.
+  const other = ((): number | null => {
+    if (fIdx >= tIdx) return null;
+    const [x, y] = [series[fIdx], series[tIdx]];
+    if (x.id.slice(0, 4) === y.id.slice(0, 4)) return null;
+    const conv = (v: number, id: string) => (dollarMode === 'real' ? v : toReal(v, Number(id.slice(0, 4)) || REAL_BASE_YEAR));
+    return growthBetween({ date: x.date, value: conv(x.med, x.id) }, { date: y.date, value: conv(y.med, y.id), prior: y.prior != null ? conv(y.prior, y.id) : null }).growth;
+  })();
   const up = (growth ?? 0) >= 0;
 
   return (
@@ -131,6 +143,7 @@ function MedianGrowthCard({ series, from, to, p90, loading }: {
           {growth == null ? '—' : fmtChange(growth)}
         </Text>
         <Text size="sm" c="dimmed">{usd(a.med)} → {usd(b.med)}</Text>
+        {dollarMode === 'real' && <RealBadge />}
         {/* On the figure's own line, not a line of its own under it: the tile is drawn at its loaded height while
             it loads, and a note arriving after it moved the tabs down the page. */}
         {changes.length > 0 && (() => {
@@ -151,6 +164,7 @@ function MedianGrowthCard({ series, from, to, p90, loading }: {
       </Group>
       <Text size="xs" c="dimmed" mt={4} className="growth-period">
         {from.label} → {to.label}{dollarMode === 'real' ? ` · in ${REAL_BASE_YEAR} dollars` : ''}
+        {other != null && <span className="growth-other"> · {fmtChange(other)} {dollarMode === 'real' ? 'before' : 'after'} inflation</span>}
       </Text>
       {slice.length > 1 && <div style={{ marginTop: 6 }}><MiniSparkline values={slice} width={150} /></div>}
       {p90 != null && <Text size="xs" c="dimmed" mt={6}>top 10% ≥ {usd(p90)}{dollarMode === 'real' ? ' (nominal)' : ''}</Text>}
@@ -280,7 +294,8 @@ export default function Explore() {
       ) : (
         <div>
           {/* On a phone, a row to scroll sideways rather than three screens of tiles (D6). */}
-          <StatRow cols={{ base: 1, sm: 3 }} className="kpi-scroll">
+          {/* Two a row at a tablet's width, three from 992px (Q8): three at 768px stacked each tile's lines. */}
+          <StatRow cols={{ base: 1, sm: 2, md: 3 }} className="kpi-scroll">
             <Kpi
               label="Headcount"
               value={k?.headcount ?? null}
