@@ -351,7 +351,8 @@ test('a link to a search opens the page holding it — its marks on the graph, n
   await page.getByRole('button', { name: 'Full page' }).click();
   await expect(page.getByRole('dialog', { name: 'Pay distribution, full page' })).toBeVisible();
   await expect(page.locator('.hero-dist-full').getByRole('combobox')).toHaveValue('smith');
-  await expect(page).toHaveURL(/\?q=smith$/);
+  // The query, and full page itself (I9).
+  await expect.poll(() => { const u = new URL(page.url()); return [u.searchParams.get('q'), u.searchParams.get('view')]; }).toEqual(['smith', 'full']);
 });
 
 test('on a phone the suggestions keep to the top half of the graph, as its results do', async ({ browser }) => {

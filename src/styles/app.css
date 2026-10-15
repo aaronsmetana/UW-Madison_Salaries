@@ -2212,6 +2212,17 @@ button:active,
 /* Command-palette destination rows. Hover only — the list is Tab-navigable, and `:focus-visible`
    already draws Mantine's focus ring, so a second highlight on focus would double it. */
 .palette-row:hover { background: var(--mantine-color-default-hover); }
+/* The palette while something is typed (I8): room for the results under the box, which stop at the keys' line. */
+.palette-results-room { height: clamp(200px, calc(88vh - 210px), 560px); }
+/* The keys, in words, at the palette's foot. */
+.palette-keys {
+  display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: var(--mantine-spacing-sm); padding-top: var(--mantine-spacing-xs);
+  border-top: 1px solid var(--hairline-soft); font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed);
+}
+.palette-keys kbd {
+  display: inline-block; min-width: 1.6em; padding: 0 5px; border-radius: 4px; text-align: center; font: inherit; font-weight: 600;
+  color: var(--mantine-color-text); background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--hairline);
+}
 
 /* ── /reports: the what-you-give → what-it-checks → what-you-get strip (ReportFlow.tsx) ──────────
    Three equal columns with the connectors between them, so the arrows take only the width they need
@@ -2907,6 +2918,17 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   gap: 8px;
 }
 .hero-dist-full .hero-dist-controls > :not(.hero-dist-search) { flex: none; }
+/* Wider than a phone, two lines (I9): the search, its starters and the buttons; then what the graph shows — the
+   count, or a filter's chip with its people and median — across the panel's width. On the box's line the chip was
+   cut to "School of Medicine and Public … · 5,856 people · m…" and the starters to "Profess…". The second line is
+   always there, so a filter going on still never moves the plot. */
+@media screen and (min-width: 30.001em) {
+  .hero-dist-full .hero-dist-controls { height: auto; flex-wrap: wrap; row-gap: 6px; }
+  /* The box takes what the buttons leave, never more: from its content's width, a filter's tokens pushed the way
+     out onto a line of its own and the plot down with it. */
+  .hero-dist-full .hero-dist-search { flex: 1 1 0; }
+  .strata.hero-dist-full .hero-dist-controls > .strata-toolbar-left { order: 3; flex: 1 1 100%; max-width: none; }
+}
 .hero-dist-search {
   --full-search-h: 36px;
   --full-strip-h: 32px;

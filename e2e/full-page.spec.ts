@@ -55,7 +55,8 @@ test('opens the graph full page over everything, as tall as the window, and puts
   // pixels off the window. The plot gets what the window leaves after the panel's own furniture — the
   // controls, the axis, the legend, the caption — so a bare figure moves whenever that furniture changes
   // and says nothing either way about the plot growing.
-  expect(h, 'the plot did not grow to the window').toBeGreaterThan(1.5 * onPage);
+  // (Under 1.5×: the bar has a second line for the count or a filter's chip, I9.)
+  expect(h, 'the plot did not grow to the window').toBeGreaterThan(1.45 * onPage);
   expect(h / box.height, 'the panel is mostly furniture').toBeGreaterThan(0.7);
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true');
   const fit = await page.evaluate(() => {

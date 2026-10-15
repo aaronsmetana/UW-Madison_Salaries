@@ -180,7 +180,7 @@ function strataFromBins(bins: readonly { bucket: number; n: number }[], overflow
 export function StrataGraph({
   bins, payCounts, p25: p25Base, median: medianBase, p75: p75Base, cap, overflow, headcount: headcountBase, snapshotLabel: labelBase,
   found: foundBase = NO_FOUND, activeKey = null, openRef, search, onFullChange, group = null, previewing = false, onClearGroup, onPeel,
-  openFullRef, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null, columnPeak = null, prevMedian: prevMedianBase = null,
+  openFullRef, startFull = false, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null, columnPeak = null, prevMedian: prevMedianBase = null,
   prevLabel: prevLabelBase = null,
 }: {
   bins: readonly { bucket: number; n: number }[];
@@ -210,6 +210,8 @@ export function StrataGraph({
   /** Asked first when Escape would close full page: true if it took a filter off instead. */
   onPeel?: () => boolean;
   openFullRef?: MutableRefObject<(() => void) | null>;
+  /** Open full page as soon as the panel is drawn: the address asked for it (`?view=full`, I9). */
+  startFull?: boolean;
   /** Whose a square is: 'loading' until the page has looked them up, which it does when first asked. */
   whoIs?: WhoIs | 'loading' | null;
   onWantWho?: () => void;
@@ -924,18 +926,20 @@ export function StrataGraph({
     }
     // Named in full where there is room: "P25" is a statistician's shorthand on a page written for everyone
     // else. A phone keeps it — three crowd at 375px, and a wrapped label is worse than a terse one.
-    if (p25 != null) list.push({ key: 'p25', v: p25, text: `${phone ? 'P25' : '25th percentile'} ${fmtK(p25)}` });
-    if (p75 != null) list.push({ key: 'p75', v: p75, text: `${phone ? 'P75' : '75th percentile'} ${fmtK(p75)}` });
+    // A group's median next (I10): it is what the reader asked to see, so it is placed before the quartiles, and
+    // where the three rows run out it is a quartile's label that goes, never one over another.
     if (filterStats?.median != null && filterStats.count > 0 && (cap == null || filterStats.median < cap)) {
       list.push({ key: 'filter', v: filterStats.median, text: `${filterStats.name} median ${fmtK(filterStats.median)}`, filter: true, ink: filterStats.ink });
     }
+    if (p25 != null) list.push({ key: 'p25', v: p25, text: `${phone ? 'P25' : '25th percentile'} ${fmtK(p25)}` });
+    if (p75 != null) list.push({ key: 'p75', v: p75, text: `${phone ? 'P75' : '75th percentile'} ${fmtK(p75)}` });
     const boxes = list.map((p) => ({ x: payX(layout, p.v), w: Math.ceil(measureText(p.text, PIN_FONT) * (p.strong ? 1.1 : 1.06) + (p.change ? measureText(` ${p.change.text}`, 12) * 1.06 : 0)) }));
     const rows = placePins(boxes, layout.mainW, PIN_ROWS);
     return list.map((p, i) => {
       const x = boxes[i].x;
-      const top = rows[i].row * PIN_ROW + 2;
+      const top = Math.max(0, rows[i].row) * PIN_ROW + 2;
       const colTop = colTopY(strata, layout, Math.floor(p.v / COL_DOLLARS));
-      return { ...p, x, left: rows[i].left, top, w: boxes[i].w, y1: top + PIN_ROW - 2, y2: Math.max(top + PIN_ROW, colTop - 4) };
+      return { ...p, x, left: rows[i].left, top, w: boxes[i].w, unlabelled: rows[i].row < 0, y1: top + PIN_ROW - 2, y2: Math.max(top + PIN_ROW, colTop - 4) };
     });
   }, [strata, layout, median, prevMedian, prevLabel, p25, p75, filterStats, cap, phone]);
 
@@ -1434,6 +1438,13 @@ export function StrataGraph({
     fitTries.current = 0;
     setFull(true);
   };
+  // Asked for by the address: full page once the panel is there to grow from.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (!startFull || startedRef.current || !strata || !panelRef.current) return;
+    startedRef.current = true;
+    openFull();
+  });
   useEffect(() => {
     if (!openFullRef) return;
     openFullRef.current = () => openFull();
@@ -1775,7 +1786,7 @@ export function StrataGraph({
             {tail && (
               <div className="strata-tail-edge-label" style={{ left: tail.capX + 6, top: Math.max(PIN_BAND, layout.peakY - 6) }}>{fmtK(cap ?? 250_000)}{phone ? '' : ", the graph's edge"}</div>
             )}
-            {pins.map((p) => (
+            {pins.filter((p) => !p.unlabelled).map((p) => (
               <div key={p.key} className={`strata-pin strata-pin-label-${p.key} strata-hist-only`} data-strong={p.strong || undefined} data-filter={p.filter || undefined}
                 style={{ left: p.left, top: p.top, width: p.w, ...(p.ink ? { color: p.ink } : {}) }}>
                 {p.text}{p.change && <span className="strata-pin-change" data-up={p.change.up || undefined} data-down={!p.change.up || undefined}> {p.change.text}</span>}

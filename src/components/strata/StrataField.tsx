@@ -254,6 +254,21 @@ export const markAt = (v: number, dpr: number) => {
   return (Math.round(v * dpr - o) + o) / dpr;
 };
 
+/** A kind's ink at FADED_ALPHA over the card (I10): drawn opaque, as the field's squares are, so mixed here rather
+ *  than given an alpha. */
+const FADED_ALPHA = 0.4;
+const fadedCache = new Map<string, string>();
+function faded(ink: string, card: string): string {
+  const key = `${ink}|${card}`;
+  let v = fadedCache.get(key);
+  if (v == null) {
+    const a = parseRgb(ink), b = parseRgb(card);
+    v = a && b ? `rgb(${a.map((x, i) => Math.round(x * FADED_ALPHA + b[i] * (1 - FADED_ALPHA))).join(', ')})` : ink;
+    fadedCache.set(key, v);
+  }
+  return v;
+}
+
 /** A colour the canvas can take, from a CSS colour the page resolved (`color(srgb …)` included). */
 function canvasColor(css: string): string {
   const rgb = parseRgb(css);
@@ -471,27 +486,29 @@ export const StrataField = forwardRef<StrataFieldHandle, {
   const litBuf = useRef(new Uint32Array(0));
   const oneBuf = useRef(new Uint32Array(1));
 
-  // Each square's ink: its kind's, the search's, or the faded one. Painted in that order, so a filter's
-  // people lie over the faded ones they have left.
-  // Ink C is the faded, C + 1 the search's.
+  // Each square's ink: its kind's, the search's, or its kind's faded. Painted faded first, so a filter's people lie
+  // over the faded ones they have left. Inks 0..C-1 are the kinds, C the old grey (no longer given), C + 1 the
+  // search's, and C + 2 + k kind k's faded: everyone outside a group keeps their own colour at 40% (I10), where they
+  // all went one pale grey, near white, and the field lost its shape.
   const tint = useMemo(() => {
     const C = kindInks.length;
     const of = (kinds: Uint8Array, mask: Uint8Array | null) => {
       const out = new Uint8Array(kinds.length);
-      for (let i = 0; i < kinds.length; i++) out[i] = mask ? (mask[i] ? C : matchSearch ? C + 1 : kinds[i]) : kinds[i];
+      for (let i = 0; i < kinds.length; i++) out[i] = mask ? (mask[i] ? C + 2 + kinds[i] : matchSearch ? C + 1 : kinds[i]) : kinds[i];
       return out;
     };
     const main = of(strata.kind, dim?.main ?? null), pile = of(strata.pileKind, dim?.pile ?? null);
     // Each ink's squares, listed once, so a frame paints ink by ink without looking at everyone each time.
     const lists = (t: Uint8Array) => {
-      const n = new Int32Array(C + 2);
+      const n = new Int32Array(2 * C + 2);
       for (let i = 0; i < t.length; i++) n[t[i]]++;
       const out = Array.from(n, (k) => new Int32Array(k));
       n.fill(0);
       for (let i = 0; i < t.length; i++) out[t[i]][n[t[i]]++] = i;
       return out;
     };
-    return { main, pile, C, mainBy: lists(main), pileBy: lists(pile), order: [C, ...Array.from({ length: C }, (_, k) => k), C + 1] };
+    const kindsAt = Array.from({ length: C }, (_, k) => k);
+    return { main, pile, C, mainBy: lists(main), pileBy: lists(pile), order: [...kindsAt.map((k) => C + 2 + k), C, ...kindsAt, C + 1] };
   }, [strata, dim, matchSearch, kindInks.length]);
 
   // The page's tokens, again whenever the scheme changes.
@@ -510,14 +527,16 @@ export const StrataField = forwardRef<StrataFieldHandle, {
 
   const ink = (k: number) => {
     const t = inks.current!;
-    return k < tint.C ? t.kinds[k] : k === tint.C ? t.dim : t.match;
+    return k < tint.C ? t.kinds[k] : k === tint.C ? t.dim : k === tint.C + 1 ? t.match : faded(t.kinds[k - tint.C - 2], t.card);
   };
+  /** Whether ink `k` is one a filter fades (a kind's faded, or the old grey). */
+  const isFaded = (k: number) => k === tint.C || k >= tint.C + 2;
   // The drawing's pieces (3a §13: nothing made new in a frame): made once a render, reading the frame's canvas
   // and buffer from `dc`.
   const dc = useRef<{ buf: Uint32Array; cw: number; ch: number }>({ buf: new Uint32Array(0), cw: 0, ch: 0 });
   // `least`: under a filter its people stand where they are, scattered through the faded; on a 1x screen a square of
   // one pixel is a speck, so each is drawn at least LIT_MIN pixels each way, round its own place.
-  const leastOf = (k: number) => (dim && k !== tint.C ? LIT_MIN : 1);
+  const leastOf = (k: number) => (dim && !isFaded(k) ? LIT_MIN : 1);
   // One square, its place `XS[i], YS[i]`, colour `C[ci]` and scale `S[si]` (or 1) read here: a call passes arrays and
   // small whole numbers only, which an engine never boxes — a place's fractions and a packed colour (past the small
   // integers) passed as numbers, twenty thousand times a frame, each made a heap number.
@@ -683,7 +702,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     const st = c === COLS ? L.pile : L.main, k = c === COLS ? 0 : c;
     if (slot >= st.start[k + 1] - st.start[k]) return false;
     const index = st.order[st.start[k] + slot], pile = c === COLS;
-    if (dim && (pile ? tint.pile : tint.main)[index] === tint.C) return false;
+    if (dim && isFaded((pile ? tint.pile : tint.main)[index])) return false;
     lensHit.current.field = pile ? 'pile' : 'main';
     lensHit.current.index = index;
     return true;
@@ -699,7 +718,7 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     B.y[S.count] = y;
     S.count++;
     if (follow && (follow.field === 'pile') === pile && follow.index === i) { S.fx = x + S.w / 2; S.fy = y + S.h / 2; }
-    if (S.ptr && (pile ? S.namePile : S.nameMain) && !(dim && k === tint.C)) {
+    if (S.ptr && (pile ? S.namePile : S.nameMain) && !(dim && isFaded(k))) {
       S.nameableHere++;
       const d = Math.hypot(X[i] + S.hw - S.qx, Y[i] + S.hh - S.qy);
       if (d < S.nearD) { S.nearD = d; S.nearPile = pile; S.nearIndex = i; S.nearX = x + S.w / 2; S.nearY = y + S.h / 2; }

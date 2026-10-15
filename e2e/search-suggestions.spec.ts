@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { oracle, PERSON_PAY } from './oracle';
-import { HOME_STATS, places, spots } from './homeDots';
+import { HOME_STATS, places, spots, people } from './homeDots';
 
 /**
  * The landing search's suggestions — with the box empty, the most common titles and largest divisions —
@@ -162,10 +162,15 @@ test.describe('at 2x', () => {
     await row.hover();
     await expect(dots(page)).toHaveAttribute('data-lit', await mainPrint(who), { timeout: 60_000 });
     await page.waitForTimeout(300);
-    const match = await colour('--strata-match'), dim = await colour('--strata-dim');
+    const match = await colour('--strata-match'), surf = await colour('--surface');
     const mineNow = await paint(mine), restNow = await paint(rest);
     expect(mineNow.filter((p) => !near(p, match)), 'a square of the group is not in the search’s ink').toEqual([]);
-    expect(restNow.filter((p) => !near(p, dim)), 'a square of everyone else is not faded').toEqual([]);
+    // Everyone else in their own type's ink at 40% over the card (I10), not one grey.
+    const TOKEN: Record<string, string> = { 'Academic Staff': '--cat-academic', 'University Staff': '--cat-university', Faculty: '--cat-faculty', 'Employees in Training': '--cat-training', Limited: '--cat-limited' };
+    const byIndex = new Map<number, string>();
+    for (const p of await people()) { const s = at.get(p.person_key); if (s?.field === 'main') byIndex.set(s.index, p.cat); }
+    const wants = await Promise.all(rest.map(async (i) => { const ink = await colour(TOKEN[byIndex.get(i) ?? ''] ?? '--cat-limited'); return ink.map((v, k) => v * 0.4 + surf[k] * 0.6); }));
+    expect(restNow.filter((p, k) => !near(p, wants[k])), 'a square of everyone else is not its own ink, faded').toEqual([]);
     expect(await places(page, field), 'a preview moved the squares').toEqual(before);
   });
 });

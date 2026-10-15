@@ -319,23 +319,35 @@ export function shareAt(colCount: ArrayLike<number>, c: number, total: number): 
 /**
  * Rows for the percentile pins' labels (3a §4). In priority order each takes the first of: row 0 right of
  * its line, row 0 left of it, row 1 right, row 1 left, … that keeps `pad` clear of every label already in
- * that row and stays inside `[0, width]`. One that fits nowhere goes in the last row, clamped inside.
+ * that row and stays inside `[0, width]`; failing all of those, the nearest room along a row within `reach` of
+ * its line. One that fits nowhere has no row (`row: -1`): its line stands unlabelled rather than its words over
+ * another's (I10: a group's median read through "25th percentile").
  */
-export function placePins(pins: readonly { x: number; w: number }[], width: number, rows = 3, pad = 12, gap = 5): { row: number; left: number }[] {
+export function placePins(pins: readonly { x: number; w: number }[], width: number, rows = 3, pad = 12, gap = 5, reach = 120): { row: number; left: number }[] {
   const taken: { left: number; right: number }[][] = Array.from({ length: rows }, () => []);
+  const free = (row: number, left: number, w: number) =>
+    left >= 0 && left + w <= width && !taken[row].some((t) => left < t.right + pad && t.left < left + w + pad);
   return pins.map((p) => {
     for (let row = 0; row < rows; row++) {
       for (const left of [p.x + gap, p.x - gap - p.w]) {
-        const right = left + p.w;
-        if (left < 0 || right > width) continue;
-        if (taken[row].some((t) => left < t.right + pad && t.left < right + pad)) continue;
-        taken[row].push({ left, right });
+        if (!free(row, left, p.w)) continue;
+        taken[row].push({ left, right: left + p.w });
         return { row, left };
       }
     }
-    const left = Math.max(0, Math.min(width - p.w, p.x + gap));
-    taken[rows - 1].push({ left, right: left + p.w });
-    return { row: rows - 1, left };
+    // Beside its line nowhere: slid along a row to the nearest room, within `reach` of the line (a phone's three
+    // crowd its narrow plot).
+    let best: { row: number; left: number; d: number } | null = null;
+    for (let row = 0; row < rows; row++) {
+      const lefts = [0, width - p.w, ...taken[row].flatMap((t) => [t.right + pad, t.left - pad - p.w])];
+      for (const left of lefts) {
+        if (!free(row, left, p.w)) continue;
+        const d = left > p.x ? left - p.x : p.x > left + p.w ? p.x - (left + p.w) : 0;
+        if (d <= reach && (!best || d < best.d)) best = { row, left, d };
+      }
+    }
+    if (best) { taken[best.row].push({ left: best.left, right: best.left + p.w }); return { row: best.row, left: best.left }; }
+    return { row: -1, left: Math.max(0, Math.min(width - p.w, p.x + gap)) };
   });
 }
 

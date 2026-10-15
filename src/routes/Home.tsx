@@ -143,6 +143,10 @@ export default function Home() {
     setQuery(urlQuery);
   }, [urlQuery]);
   const [graphFull, setGraphFull] = useState(false);
+  // Full page in the address (I9): `?view=full`, with its title and school (`gt`, `gs`), so it can be kept or sent
+  // and Back comes back to it. Read once, as the page opens.
+  const startFull = useRef(params.get('view') === 'full');
+  const askedFilters = useRef({ title: params.get('gt'), school: params.get('gs') });
   // What the full page's bar is filtering the graph to: at most one title and one school, in the order they
   // were put on (Escape and Backspace take the last one off first). Full page only — the landing graph has
   // no bar to show them in, and they go when full page does.
@@ -273,7 +277,35 @@ export default function Home() {
   );
   // A title's name alone can be two titles — "Research Associate" is PD012 and PD012N — so where the index
   // has another under the same name, the filter names its code too; picked, it must still say which it was.
-  const { data: searchIndex } = useSearchIndex(graphFull || !!title || listRow != null);
+  const { data: searchIndex } = useSearchIndex(graphFull || !!title || listRow != null || startFull.current);
+  // The address's title and school, put on once full page is open and the index can name them.
+  useEffect(() => {
+    const asked = askedFilters.current;
+    if (!graphFull || !searchIndex || (!asked.title && !asked.school)) return;
+    const t = asked.title ? searchIndex.titles.find((r) => r[0] === asked.title) : null;
+    const d = asked.school ? searchIndex.divisions.find((r) => r[0] === asked.school) : null;
+    if (t) putFilter({ kind: 'title', hit: { code: t[0], title: t[1] ?? t[0], n: t[2], med: t[3], cat: t[4] } });
+    if (d) putFilter({ kind: 'division', hit: { school: d[0], n: d[1], med: d[2] } });
+    askedFilters.current = { title: null, school: null };
+  }, [graphFull, searchIndex, putFilter]);
+  // And written back as full page and its filters change; nothing of it once it closes. Held while the address's own
+  // are still to be put on, or the first write would take them off it.
+  useEffect(() => {
+    if (graphFull) startFull.current = false;
+    if (startFull.current) return;
+    const pending = !!(askedFilters.current.title || askedFilters.current.school);
+    const t = filters.find((f): f is { kind: 'title'; hit: TitleHit } => f.kind === 'title')?.hit.code ?? null;
+    const d = filters.find((f): f is { kind: 'division'; hit: DivisionHit } => f.kind === 'division')?.hit.school ?? null;
+    setParamsRef.current((p) => {
+      const n = new URLSearchParams(p);
+      if (graphFull) n.set('view', 'full'); else n.delete('view');
+      if (!pending) {
+        if (graphFull && t) n.set('gt', t); else n.delete('gt');
+        if (graphFull && d) n.set('gs', d); else n.delete('gs');
+      }
+      return n.toString() === p.toString() ? p : n;
+    }, { replace: true });
+  }, [graphFull, filters]);
   const nameOfTitle = useCallback((code: string, name: string | null) => {
     const t = name ?? (searchIndex?.titles ?? []).find(([c]) => c === code)?.[1] ?? code;
     const shared = (searchIndex?.titles ?? []).filter(([, n]) => n === t).length > 1;
@@ -585,6 +617,7 @@ export default function Home() {
                 />
               )}
               openFullRef={openFullRef}
+              startFull={startFull.current}
               whoIs={whoIs}
               onWantWho={() => setWantWho(true)}
               searchOpenRef={searchOpenRef}

@@ -177,6 +177,7 @@ export function SearchBox({
   listLimit,
   whileFocused = false,
   listMinWidth,
+  fill = false,
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -243,6 +244,9 @@ export function SearchBox({
   /** The list at least this wide (list only), where the box is narrower than its two columns want — the landing
    *  box beside the title. It then hangs from the box's right edge as a card of its own, a little below the box. */
   listMinWidth?: number;
+  /** The box as wide as what holds it, past the 720px a box otherwise stops at: the ⌘K palette, whose results want
+   *  their two columns. */
+  fill?: boolean;
 }) {
   const t = DROPDOWN_TIERS[size];
   // On a phone the full grouped placeholder was cut off at "Search people, titles or divis".
@@ -1094,7 +1098,7 @@ export function SearchBox({
       }}
     >
       <Popover.Target>
-        <div ref={targetRef} style={{ width: '100%', maxWidth: large ? '100%' : 720, margin: large ? '0 auto' : undefined }}>
+        <div ref={targetRef} style={{ width: '100%', maxWidth: large || fill ? '100%' : 720, margin: large ? '0 auto' : undefined }}>
           <TextInput
             size={t.mantineSize}
             radius={t.radius}

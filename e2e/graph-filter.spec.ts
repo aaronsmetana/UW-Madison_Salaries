@@ -339,7 +339,8 @@ test('the search’s names stay on their squares when a filter comes off, under 
 });
 
 /** What a filter is not about is drawn faded, not hidden: past the group's top pay, where none of them is, every
- *  square stays where it was, in the faded ink. `data-lit` only says which squares the mask lights; this is the paint. */
+ *  square stays where it was, in its own type's ink at 40% over the card (I10) — so the band's mean is its mean
+ *  before, 40% of the way from the card. `data-lit` only says which squares the mask lights; this is the paint. */
 test('what a filter is not about is drawn faint, not hidden', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
@@ -364,9 +365,10 @@ test('what a filter is not about is drawn faint, not hidden', async ({ page }) =
   const after = await paint();
   expect(before.n, 'no squares to compare').toBeGreaterThan(100);
   expect(after.n, 'the squares past the group were hidden or moved').toBe(before.n);
-  const dim = await page.locator(FIELD).evaluate((el) => { const s = document.createElement('span'); el.appendChild(s); s.style.color = 'var(--strata-dim)'; const c = getComputedStyle(s).color; s.remove(); return c; });
-  const [dr, dg, db] = dim.match(/[\d.]+/g)!.map(Number);
-  expect(Math.hypot(after.rgb[0] - dr, after.rgb[1] - dg, after.rgb[2] - db), `past the group the squares are not in the faded ink ${dim}`).toBeLessThan(3);
+  const card = await page.locator(FIELD).evaluate((el) => { const s = document.createElement('span'); el.appendChild(s); s.style.color = 'var(--surface)'; const c = getComputedStyle(s).color; s.remove(); return c; });
+  const surf = card.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+  const want = before.rgb.map((v, i) => v * 0.4 + surf[i] * 0.6);
+  expect(Math.hypot(...after.rgb.map((v, i) => v - want[i])), `past the group the squares are not their own inks at 40%: ${after.rgb.map(Math.round)} for ${want.map(Math.round)}`).toBeLessThan(3);
 });
 
 test('the readout counts the filter’s people within its window', async ({ page }) => {

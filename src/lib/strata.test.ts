@@ -346,5 +346,20 @@ describe('placePins', () => {
     // The last turns left at the plot's edge.
     expect(out[3].left).toBe(990 - 5 - 120);
   });
+  it('slides a label along a row to the nearest room within reach of its line, before leaving it off', () => {
+    // A 300px plot: the median's long label right of its line, then a quartile beside it with no room either side.
+    const out = placePins([{ x: 120, w: 170 }, { x: 100, w: 60 }, { x: 100, w: 60 }, { x: 100, w: 60 }, { x: 100, w: 60 }], 300);
+    for (const o of out) expect(o.row).toBeGreaterThanOrEqual(0);
+    const boxes = out.map((o, i) => ({ row: o.row, l: o.left, r: o.left + [170, 60, 60, 60, 60][i] }));
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const [a, b] = [boxes[i], boxes[j]];
+      if (a.row === b.row) expect(a.r + 12 <= b.l || b.r + 12 <= a.l).toBe(true);
+    }
+  });
+  it('leaves a label that fits nowhere off, never over another', () => {
+    // Four labels each nearly half the plot, round one line, three rows: one a row, and the fourth room nowhere.
+    const out = placePins([{ x: 500, w: 494 }, { x: 500, w: 494 }, { x: 500, w: 494 }, { x: 500, w: 494 }], 1000);
+    expect(out.map((o) => o.row)).toEqual([0, 1, 2, -1]);
+  });
 });
 
