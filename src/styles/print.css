@@ -202,3 +202,10 @@
     visibility: visible !important;
   }
 }
+
+/* A raise case on a narrow screen holds Setup and the brief in one place, one shown at a time (routes/Reports):
+   on paper it is always the brief (RC7), whichever was chosen — with Setup chosen it printed blank pages. */
+@media print {
+  .report-pane-brief { display: block !important; }
+  .report-pane-setup { display: none !important; }
+}

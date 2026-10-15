@@ -84,7 +84,8 @@ export function filterSql(f: RaiseFilters, table = ''): string {
 function oneSql(snapshot: string): string {
   return `SELECT person_key, any_value(first_name) fn, any_value(last_name) ln, any_value(title) title, any_value(job_code) job_code,
       any_value(school) school, any_value(department) department, ${categorySql('any_value(employee_category)')} cat,
-      any_value(salary) rate, any_value(grade_number) grade, any_value(grade_basis) grade_basis, any_value(comp_basis) comp
+      any_value(salary) rate, any_value(grade_number) grade, any_value(grade_basis) grade_basis, any_value(comp_basis) comp,
+      coalesce(any_value(fte), 0) = 0 hourly
     FROM salaries WHERE snapshot_id = ${sqlStr(snapshot)} AND salary > 0 GROUP BY person_key HAVING count(*) = 1`;
 }
 
@@ -171,6 +172,8 @@ export interface ReviewRow {
   school: string | null;
   department: string | null;
   cat: string;
+  /** Paid by the hour (FTE 0), whose pay is a rate annualized: a title of them said so (R7). */
+  hourly: boolean;
   pay_from: number;
   pay_to: number;
   r: number;
@@ -212,7 +215,7 @@ export function reviewSql(o: Pair & { usual: Usuals; filters: RaiseFilters; rang
     t AS (${oneSql(o.to)}),
     f AS (SELECT person_key, any_value(salary) rate_from, any_value(comp_basis) comp_from FROM salaries
           WHERE snapshot_id = ${sqlStr(o.from)} AND salary > 0 GROUP BY person_key HAVING count(*) = 1),
-    xa AS (SELECT cr.person_key, cr.job_code, cr.pay_from, cr.pay_to, cr.r, t.fn, t.ln, t.title, t.school, t.department, t.cat,
+    xa AS (SELECT cr.person_key, cr.job_code, cr.pay_from, cr.pay_to, cr.r, t.fn, t.ln, t.title, t.school, t.department, t.cat, t.hourly,
                   t.rate, t.grade, t.grade_basis, t.comp, f.rate_from, f.comp_from, ${usualCaseSql(o.usual, 't.cat')} usual,
                   round(cr.r, 3) > ${usualCaseSql(o.usual, 't.cat')} above
            FROM cr JOIN t ON t.person_key = cr.person_key JOIN f ON f.person_key = cr.person_key),
@@ -223,7 +226,7 @@ export function reviewSql(o: Pair & { usual: Usuals; filters: RaiseFilters; rang
            ${o.ranges ? 'LEFT JOIN grades g ON g."grade" = xa.grade AND g."basis" = xa.grade_basis' : ''}),
     uu AS (SELECT school, department, count(*) un, count(*) FILTER (WHERE above) ub FROM xe
            WHERE NOT (above AND (by_range OR by_title)) GROUP BY school, department)
-    SELECT xe.person_key, xe.fn, xe.ln, xe.title, xe.job_code, xe.school, xe.department, xe.cat, xe.pay_from, xe.pay_to, xe.r, xe.usual,
+    SELECT xe.person_key, xe.fn, xe.ln, xe.title, xe.job_code, xe.school, xe.department, xe.cat, xe.hourly, xe.pay_from, xe.pay_to, xe.r, xe.usual,
            xe.tn, xe.tb, xe.tmed, coalesce(uu.un, 0) un, coalesce(uu.ub, 0) ub,
            CASE WHEN xe.by_range THEN 'range'
                 WHEN xe.by_title THEN 'title'

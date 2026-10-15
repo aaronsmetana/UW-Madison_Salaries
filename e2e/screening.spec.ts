@@ -2,13 +2,14 @@ import { test, expect } from '@playwright/test';
 
 test('screening a school renders ranked rows and drafts a report', async ({ page }) => {
   await page.goto('./screening');
-  await expect(page.getByRole('button', { name: 'Screen' })).toBeVisible({ timeout: 60_000 });
+  // The button says what it needs, then how many it screens (S3).
+  await expect(page.getByRole('button', { name: 'Choose a school to screen' })).toBeDisabled({ timeout: 60_000 });
 
   const schoolSelect = page.getByRole('textbox', { name: 'School / division' });
   await schoolSelect.click();
   await page.getByRole('option').first().click();
 
-  await page.getByRole('button', { name: 'Screen' }).click();
+  await page.getByRole('button', { name: /^Screen [\d,]+ people$/ }).click({ timeout: 60_000 });
 
   const rows = page.locator('table tbody tr');
   await expect(rows.first()).toBeVisible({ timeout: 60_000 });
@@ -33,12 +34,12 @@ test('screening a school renders ranked rows and drafts a report', async ({ page
 // Every other view in the app keeps its controls in the URL; this asserts Screening now does too.
 test('a screen survives a reload and can be shared as a link', async ({ page }) => {
   await page.goto('./screening');
-  await expect(page.getByRole('button', { name: /^Screen/ })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Choose a school to screen' })).toBeVisible({ timeout: 60_000 });
 
   await page.getByRole('textbox', { name: 'School / division' }).click();
   const chosen = (await page.getByRole('option').first().innerText()).trim();
   await page.getByRole('option').first().click();
-  await page.getByRole('button', { name: /^Screen/ }).click();
+  await page.getByRole('button', { name: /^Screen [\d,]+ people$/ }).click({ timeout: 60_000 });
 
   await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 60_000 });
   const before = await page.locator('table tbody tr').count();

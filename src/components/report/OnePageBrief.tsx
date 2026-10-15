@@ -46,7 +46,7 @@ export function OnePageBrief({ model }: { model: BriefModel }) {
           {proofs.length > 0 && (
             <>
               <Eyebrow mb={6}>The strongest grounds</Eyebrow>
-              <SimpleGrid cols={{ base: 1, xs: Math.min(3, proofs.length) }} mb="md" className="one-page-grounds">
+              <SimpleGrid cols={{ base: 1, xs: Math.min(2, proofs.length) }} mb="md" className="one-page-grounds">
                 {proofs.slice(0, 3).map((p) => (
                   <Paper key={p.kind} withBorder p="sm">
                     <Text fw={700}>{p.value}</Text>
@@ -60,7 +60,9 @@ export function OnePageBrief({ model }: { model: BriefModel }) {
           {standing && standing.values.length >= 4 && standing.min != null && standing.p25 != null && standing.med != null && standing.p75 != null && standing.max != null && (
             <>
               <Eyebrow mb={4}>Where the pay stands</Eyebrow>
-              <Text size="xs" c="dimmed" mb="xs">{subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).</Text>
+              <Text size="xs" c="dimmed" mb="xs" className="standing-caption">
+                {subjectFirst}'s pay against {standing.cohortLabel}: the {standing.values.length} others, {subjectFirst} left out, their median {usd(standing.med)}.
+              </Text>
               <PeerRangeBar min={standing.min} p25={standing.p25} median={standing.med} p75={standing.p75} max={standing.max} value={subjectPay} values={standing.values} />
             </>
           )}

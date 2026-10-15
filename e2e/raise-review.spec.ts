@@ -220,6 +220,8 @@ test('a usual raise of your own counts the raises above it, and the link carries
   const p = { from: ids.at(-2)!, to: ids.at(-1)! };
   await page.goto('./raises');
   await loaded(page);
+  // Under "More filters" (R2), which a link holding one opens.
+  await page.locator('.raise-more-filters').click();
   const box = page.getByRole('textbox', { name: 'Count raises above' });
   await box.fill('5');
   await expect(page).toHaveURL(/base=5/);
@@ -381,6 +383,7 @@ test('the pickers’ run is a link: reloaded, it is the same run', async ({ page
   await page.getByRole('textbox', { name: 'From', exact: true }).click();
   await page.getByRole('option', { name: await label(from), exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`from=${from}`));
+  await page.locator('.raise-more-filters').click();
   await page.getByRole('textbox', { name: 'Title category' }).click();
   await page.getByRole('option', { name: 'Research (RE)', exact: true }).click();
   await expect(page).toHaveURL(/family=RE/);

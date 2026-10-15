@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input, VisuallyHidden } from '@mantine/core';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Alert, ScrollArea, Box, Input, VisuallyHidden, Anchor, Tooltip } from '@mantine/core';
 import { IconListSearch, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
 import { ShowAll, LIST_PAGE, pageOf } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
@@ -15,13 +15,14 @@ import { ICON } from '../lib/ui';
 import { dropdownProps } from '../lib/selectProps';
 import { usd, num, fmtYears, fullName } from '../lib/format';
 import { toReal } from '../lib/cpi';
-import { useSql, useActiveSnapshotId, useGrades, useSummary } from '../lib/hooks';
+import { useSql, useActiveSnapshotId, useGrades } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, GRADED_APPT, gradedCols } from '../lib/queries';
 import { belowMinimumSql, bandScaleSql } from '../lib/bands';
 import { computeScreeningResults, type ScreeningResult } from '../lib/screening';
 import { downloadCSV } from '../lib/csv';
 import { useDocTitle } from '../lib/useDocTitle';
+import { usePref } from '../lib/prefs';
 
 const TENURE_EXPR = `date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25`;
 
@@ -44,8 +45,6 @@ export default function Screening() {
   const nav = useNavigate();
   const snap = useActiveSnapshotId();
   const { data: grades } = useGrades();
-  const { data: summary } = useSummary();
-  const campusHeadcount = summary?.latest?.headcount ?? null;
 
   // The run lives in the URL, like every other view in this app ("Controls live in the URL -> every
   // view is shareable/bookmarkable", state/controls.tsx). A screen is the most link-worthy thing here
@@ -66,8 +65,10 @@ export default function Screening() {
 
   // Form state is seeded from the URL but edits freely until Screen is pressed, so typing in the
   // pickers doesn't re-run the query on every keystroke.
-  const [school, setSchool] = useState<string>(() => params.get('sch') ?? '');
-  const [department, setDepartment] = useState<string>(() => (params.get('sch') ? params.get('dept') ?? '' : ''));
+  // The scope a screen needs (S4): from the address, else the last one screened in this browser.
+  const [lastScope, setLastScope] = usePref<{ sch: string; dept: string } | null>('screenScope', null);
+  const [school, setSchool] = useState<string>(() => params.get('sch') ?? (params.get('run') ? '' : lastScope?.sch ?? ''));
+  const [department, setDepartment] = useState<string>(() => (params.get('sch') ? params.get('dept') ?? '' : params.get('run') ? '' : lastScope?.dept ?? ''));
   const [minN, setMinN] = useState<number>(() => {
     const n = Number(params.get('minN'));
     return Number.isFinite(n) && n >= 2 ? n : DEFAULT_MIN_N;
@@ -75,8 +76,18 @@ export default function Screening() {
   const [showAll, setShowAll] = useState(false);
 
   const unscoped = !school && !department;
+  // How many the scope chosen holds, said on the button (S4): "Screen 193 people".
+  const formWhere = school ? `school = ${sqlStr(school)}${department ? ` AND department = ${sqlStr(department)}` : ''}` : null;
+  const { data: scopeCount } = useSql<{ n: number }>(
+    ['screen-count', snap ?? '', school, department],
+    `SELECT count(DISTINCT person_key) FILTER (WHERE salary > 0) n FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND ${formWhere ?? 'FALSE'}`,
+    !!snap && !!formWhere
+  );
+  const inScope = scopeCount?.[0]?.n ?? null;
 
   const run = () => {
+    if (unscoped) return;
+    setLastScope({ sch: school, dept: department });
     setParams(
       (prev) => {
         const n = new URLSearchParams(prev);
@@ -168,6 +179,7 @@ export default function Screening() {
   );
 
   const loading = loadingSubjects || loadingCohort || loadingHist;
+  const oneSchool = !!runParams?.school;
 
   // Each person at their full-time rate, as every same-title comparison is made: on actual pay a small
   // appointment read as low pay ($3,850 for a Researcher II beside "Moderate · 65"). Their FTE is said beside it.
@@ -190,23 +202,26 @@ export default function Screening() {
 
   // Sortable like every other table in the app; score-descending stays the default because that is
   // the ranking the page exists to produce.
-  type ScreenSortKey = 'name' | 'title' | 'school' | 'tenure' | 'pay' | 'score';
+  type ScreenSortKey = 'name' | 'title' | 'school' | 'tenure' | 'pay' | 'below' | 'score';
   const [sort, setSort] = useState<SortState<ScreenSortKey>>({ key: 'score', dir: 'desc' });
   const sorted = useMemo(() => {
     const { key, dir } = sort;
     const val = (r: ScreeningResult) =>
       key === 'name' ? r.name
       : key === 'title' ? (r.title ?? '')
-      : key === 'school' ? (r.school ?? '')
+      : key === 'school' ? ((oneSchool ? r.department : r.school) ?? '')
       : key === 'tenure' ? (r.tenure ?? -1)
       : key === 'pay' ? r.pay
+      : key === 'below' ? (r.belowMedian ?? -Infinity)
       : r.score;
+    // Ties on the score broken by how far below the median (S1): the score caps, the gap does not.
+    const below = (r: ScreeningResult) => r.belowMedian ?? -Infinity;
     return [...results].sort((a, b) => {
       const x = val(a), y = val(b);
       const cmp = typeof x === 'string' ? x.localeCompare(y as string) : (x as number) - (y as number);
-      return dir === 'asc' ? cmp : -cmp;
+      return (dir === 'asc' ? cmp : -cmp) || (key === 'score' ? below(b) - below(a) : 0);
     });
-  }, [results, sort]);
+  }, [results, sort, oneSchool]);
 
   // The first rows, then all of them a hundred a page (I6), back to the first page with every new screen.
   const [listPage, setListPage] = useState(1);
@@ -229,7 +244,9 @@ export default function Screening() {
         cohort_n: r.cohortN,
         percentile: r.percentile ?? '',
         gap_to_median: r.gapToMed != null ? Math.round(r.gapToMed) : '',
+        below_median_pct: r.belowMedian != null ? (r.belowMedian * 100).toFixed(1) : '',
         tenure_inversions: r.tenureInvCount,
+        less_tenured_peers: r.lessTenuredN,
         compression: r.compressionCount,
         full_time_rate: r.bandRate != null ? Math.round(r.bandRate) : '',
         compa_ratio: r.marketCompa != null ? r.marketCompa.toFixed(2) : '',
@@ -301,22 +318,14 @@ export default function Screening() {
               <Button
                 leftSection={<IconListSearch size={ICON.control} />}
                 onClick={run}
+                disabled={unscoped}
+                className="screen-run"
               >
-                {unscoped && campusHeadcount != null ? `Screen all ${num(campusHeadcount)}` : 'Screen'}
+                {unscoped ? 'Choose a school to screen' : inScope != null ? `Screen ${num(inScope)} ${inScope === 1 ? 'person' : 'people'}` : 'Screen'}
               </Button>
             </Box>
           </Input.Wrapper>
         </Group>
-        {/* An unscoped run pulls every employee and their full pay history into the browser and scores
-            each against their whole title cohort — tens of millions of operations on the main thread,
-            behind a single "Screening…" label. It is a legitimate thing to want; it just shouldn't be
-            the thing you fall into because the empty state suggested it. Say what it costs. */}
-        {unscoped && (
-          <Text size="xs" c="dimmed" mt="sm">
-            No scope selected — this screens every employee at once and can take a while to compute.
-            Picking a school or department is much faster.
-          </Text>
-        )}
       </Card>
 
       <Alert icon={<IconInfoCircle size={ICON.control} />} color="accent" variant="light">
@@ -360,9 +369,11 @@ export default function Screening() {
                 <Table.Tr>
                   <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
                   <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} />
-                  <SortableTh sortKey="school" label="School" sort={sort} onSort={setSort} />
+                  {/* One school screened: its departments, not the school on every row (S6). */}
+                  <SortableTh sortKey="school" label={oneSchool ? 'Department' : 'School'} sort={sort} onSort={setSort} />
                   <SortableTh sortKey="tenure" label="Tenure" sort={sort} onSort={setSort} align="right" />
                   <SortableTh sortKey="pay" label="Full-time rate" sort={sort} onSort={setSort} align="right" />
+                  <SortableTh sortKey="below" label="Below median" sort={sort} onSort={setSort} align="right" />
                   <Table.Th>Flags</Table.Th>
                   <SortableTh sortKey="score" label="Case strength" sort={sort} onSort={setSort} align="right" />
                   <Table.Th w={140}><VisuallyHidden>Report</VisuallyHidden></Table.Th>
@@ -371,9 +382,10 @@ export default function Screening() {
               <Table.Tbody>
                 {visible.map((r) => (
                   <Table.Tr key={r.key}>
-                    <Table.Td>{r.name}</Table.Td>
+                    {/* The person's page, a press away (S5). */}
+                    <Table.Td><Anchor component={Link} to={`/person/${encodeURIComponent(r.key)}`} className="screen-name">{r.name}</Anchor></Table.Td>
                     <Table.Td>{r.title ?? '—'}</Table.Td>
-                    <Table.Td>{r.school ?? '—'}</Table.Td>
+                    <Table.Td>{(oneSchool ? r.department : r.school) ?? '—'}</Table.Td>
                     <Table.Td ta="right">{r.tenure != null ? fmtYears(r.tenure) : '—'}</Table.Td>
                     <Table.Td ta="right">
                       {usd(r.pay)}
@@ -382,10 +394,22 @@ export default function Screening() {
                         return f != null && Math.abs(f - 1) > 0.005 ? <Text size="xs" c="orange" className="screen-fte">FTE {f.toFixed(2)}</Text> : null;
                       })()}
                     </Table.Td>
+                    {/* How far below the title's median full-time rate: the tie-break under the capped score (S1). */}
+                    <Table.Td ta="right" className="screen-below">
+                      {r.belowMedian == null ? '—' : Math.abs(r.belowMedian) < 0.0005 ? 'at median' : `${(Math.abs(r.belowMedian) * 100).toFixed(1)}% ${r.belowMedian > 0 ? 'below' : 'above'}`}
+                    </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="wrap">
                         {r.tooFewPeers && <Badge size="sm" variant="light" color="gray">Too few peers</Badge>}
-                        {r.tenureInvCount > 0 && <Badge size="sm" variant="light" color="red">Inversion ×{r.tenureInvCount}</Badge>}
+                        {/* A share of the peers it could be, not a bare count (S3): "×531" against everyone with the
+                            title on campus could not be read. */}
+                        {r.tenureInvCount > 0 && r.lessTenuredN > 0 && (
+                          <Tooltip withArrow label={`${num(r.tenureInvCount)} of ${num(r.lessTenuredN)} same-title peers with less tenure are paid more`}>
+                            <Badge size="sm" variant="light" color="red" className="screen-inversion" style={{ textTransform: 'none' }}>
+                              Paid less than {Math.max(1, Math.round((r.tenureInvCount / r.lessTenuredN) * 100))}% of less-tenured peers
+                            </Badge>
+                          </Tooltip>
+                        )}
                         {r.compressionCount > 0 && <Badge size="sm" variant="light" color={r.compressionInvertedCount > 0 ? 'red' : 'orange'}>Compression ×{r.compressionCount}</Badge>}
                         {r.belowMin && <Badge size="sm" variant="light" color="red">Below grade minimum</Badge>}
                         {r.belowMarket && <Badge size="sm" variant="light" color="orange">Below market floor</Badge>}

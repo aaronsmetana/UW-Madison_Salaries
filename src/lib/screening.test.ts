@@ -36,6 +36,25 @@ describe('computeScreeningResults', () => {
     expect(r.score).toBeGreaterThan(0);
   });
 
+  it('says how far below the median as a share of it (the tie-break), and the pool of inversions (S1, S3)', () => {
+    const cohortRows: CohortMember[] = [
+      { person_key: 'p1', job_code: 'J1', comp_basis: '12 Month', pay: 78_000, tenure: 1 },
+      { person_key: 'p2', job_code: 'J1', comp_basis: '12 Month', pay: 80_000, tenure: 2 },
+      { person_key: 'p3', job_code: 'J1', comp_basis: '12 Month', pay: 50_000, tenure: 3 },
+      { person_key: 'p4', job_code: 'J1', comp_basis: '12 Month', pay: 90_000, tenure: 12 },
+      { person_key: 'p5', job_code: 'J1', comp_basis: '12 Month', pay: 95_000, tenure: 15 },
+    ];
+    const [r] = computeScreeningResults({ subjects: [subject()], cohortRows, payHistory: [], grades: [], minCohortN: 4, toReal: noReal });
+    // The median of the five is 80,000: 60,000 is 25% below it.
+    expect(r.belowMedian).toBeCloseTo(0.25, 6);
+    // Three peers have less tenure than eight years; two of them are paid more.
+    expect(r.lessTenuredN).toBe(3);
+    expect(r.tenureInvCount).toBe(2);
+    // Above the median, negative.
+    const [above] = computeScreeningResults({ subjects: [subject({ pay: 100_000 })], cohortRows, payHistory: [], grades: [], minCohortN: 4, toReal: noReal });
+    expect(above.belowMedian).toBeCloseTo(-0.25, 6);
+  });
+
   it('excludes the subject itself and mismatched pay-basis peers from its own cohort', () => {
     const cohortRows: CohortMember[] = [
       { person_key: 'subj', job_code: 'J1', comp_basis: '12 Month', pay: 60_000, tenure: 8 }, // self

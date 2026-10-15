@@ -243,7 +243,8 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
           {sectionShow.highlights && (
             <>
               <SectionHeading id="highlights" num={sectionNum.highlights} annotation="objective evidence">Grounds for a parity / compression adjustment</SectionHeading>
-              <SimpleGrid cols={{ base: 1, sm: 2, lg: Math.min(3, proofs.length) }} mb="lg">
+              {/* Two a row at most (RC4): three in the document's column wrapped "compa-ratio" a word a line. */}
+              <SimpleGrid cols={{ base: 1, sm: Math.min(2, proofs.length) }} mb="lg" className="brief-grounds">
                 {/* The hairline and nothing else — elevation here was decoration (see theme.ts) — with the
                     icon beside the figure it classifies rather than stacked above it. */}
                 {proofs.map((p) => (
@@ -304,7 +305,10 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
               </SectionHeading>
               <Card mb="lg">
                 <Text size="xs" c="dimmed" mb="md">
-                  {subjectFirst}'s pay against {standing.cohortLabel} (n = {standing.values.length}).
+                  {/* The others, the subject left out, and said so (RC2): the person page's median counts them in, and the
+                      two read as one pool's two medians. */}
+                  {subjectFirst}'s pay against {standing.cohortLabel}: the {standing.values.length} others, {subjectFirst} left out
+                  {standing.med != null ? `, their median ${usd(standing.med)}` : ''}.
                 </Text>
                 {/* A quartile distribution needs enough people to be meaningful — p25/p75 of two or three
                     peers is noise. Below n=4, show the pool table only (a plain comparison, not a fake box). */}
@@ -322,7 +326,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                       <Table.Tr>
                         <Table.Th>Comparison pool</Table.Th>
                         <Table.Th ta="right">Others</Table.Th>
-                        <Table.Th ta="right">Median</Table.Th>
+                        <Table.Th ta="right">Median of the others</Table.Th>
                         <Table.Th ta="right"><GlossaryTerm term="percentile">Percentile</GlossaryTerm><Sup n={fn('percentile')} /></Table.Th>
                         <Table.Th ta="right">vs. median</Table.Th>
                       </Table.Tr>
@@ -533,7 +537,7 @@ export function ReportBrief({ model, hovered, onHover, onPoolCsv }: {
                 {/* Top margin: room above a line that ends at the top of the plot for its name (EndLabels). */}
                 <ComposedChart {...chartKeys('Pay vs. title median over time')} data={historyRows} margin={{ left: 8, right: 16, top: 18, bottom: 0 }}>
                   <CartesianGrid {...GRID} />
-                  <XAxis {...snapAxisProps(historyRows)} tick={AXIS_TICK} tickMargin={8} />
+                  <XAxis {...snapAxisProps(historyRows, 'x', { years: true })} tick={AXIS_TICK} tickMargin={8} />
                   <YAxis tickFormatter={fmtUsd} width={72} tick={AXIS_TICK} />
                   <Tooltip content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;

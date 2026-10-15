@@ -15,7 +15,8 @@ for (const [name, path, opens] of [
   ['Raises', './raises', 'Actual pay'],
   ['a person’s report', `./person/${encodeURIComponent('aaronsmetana|2014-10-15')}?tab=report`, 'Actual pay'],
   ['Reports, a raise case', './raise-case?type=comparison', 'Actual pay'],
-  ['Compare', './compare', 'Actual pay'],
+  // With something in it: empty, Compare has no figures and no bar (C1).
+  ['Compare', './compare?sel=t%3AFA020', 'Actual pay'],
   ['a division', `./school/${encodeURIComponent('School of Education')}`, 'Actual pay'],
 ] as const) {
   test(`${name} shows the pay measure its figures use`, async ({ page }) => {

@@ -33,6 +33,18 @@ describe('snapTicks', () => {
   });
 });
 
+describe('snapAxisProps, a year at a time', () => {
+  it('ticks each year at its first snapshot, named by the year, and shows every one', () => {
+    const rows = [
+      { date: '2021-11-01', label: 'Nov 2021 (Pre-TTC)' }, { date: '2022-03-01', label: 'Mar 2022' }, { date: '2022-08-01', label: 'Aug 2022' },
+      { date: '2024-09-01', label: 'Sep 2024' }, { date: '2025-04-01', label: 'Apr 2025' }, { date: '2025-09-01', label: 'Sep 2025' },
+    ];
+    const ax = snapAxisProps(rows, 'x', { years: true });
+    expect(ax.ticks.map((x) => ax.tickFormatter(x))).toEqual(['2021', '2022', '2024', '2025']);
+    expect(ax.interval).toBe(0);
+  });
+});
+
 describe('snapAxisProps', () => {
   it('is a numeric time axis spanning the snapshots, labelled at each date', () => {
     const rows = [

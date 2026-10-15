@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { Group, Button, Text, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden } from '@mantine/core';
+import { Group, Button, Text, Transition, Tooltip, ActionIcon, Anchor, VisuallyHidden, Menu } from '@mantine/core';
 import { useMediaQuery, useReducedMotion } from '@mantine/hooks';
 import {
   IconArrowsLeftRight, IconUser, IconBriefcase, IconBuildingBank, IconX, IconReportAnalytics,
-  IconChevronDown, IconChevronUp,
+  IconChevronDown, IconChevronUp, IconDots, IconTrash, IconList,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { useTray, type TrayItem } from '../state/tray';
 import { ICON } from '../lib/ui';
-import { encodeSel } from '../lib/share';
+import { selQuery } from '../lib/share';
 import { Z } from '../lib/layers';
 
 const TYPE_META: Record<TrayItem['type'], { icon: typeof IconUser; one: string; many: string; href: (id: string) => string }> = {
   person: { icon: IconUser, one: 'person', many: 'people', href: (id) => `/person/${encodeURIComponent(id)}` },
   title: { icon: IconBriefcase, one: 'title', many: 'titles', href: (id) => `/titles?code=${encodeURIComponent(id)}` },
-  school: { icon: IconBuildingBank, one: 'school', many: 'schools', href: (id) => `/school/${encodeURIComponent(id)}` },
+  school: { icon: IconBuildingBank, one: 'division', many: 'divisions', href: (id) => `/school/${encodeURIComponent(id)}` },
 };
 const TYPE_ORDER: TrayItem['type'][] = ['person', 'title', 'school'];
+/** How many chips the set shows before "+N more" (C9): past it they scrolled out of a strip, one unseen. */
+const CHIPS_SHOWN = 3;
 
 /** Smart count: "1 person · 2 titles" (falls back to "N selected"). */
 function summarize(items: TrayItem[]): string {
@@ -35,9 +37,9 @@ function summarize(items: TrayItem[]): string {
 function Chip({ item, onRemove }: { item: TrayItem; onRemove: () => void }) {
   const { icon: Icon, href } = TYPE_META[item.type];
   return (
-    <Group className="tray-chip compare-chip" gap={6} wrap="nowrap" pl={item.type === 'person' ? 10 : 8} pr={4} py={3} style={{ flexShrink: 0, maxWidth: 240 }}>
+    <Group className="tray-chip compare-chip" gap={6} wrap="nowrap" pl={item.type === 'person' ? 10 : 8} pr={4} py={3} style={{ flex: '0 1 auto', minWidth: 0, maxWidth: 240 }}>
       {item.type !== 'person' && <Icon size={ICON.compact} style={{ flexShrink: 0 }} className="compare-chip-icon" />}
-      <Anchor component={Link} to={href(item.id)} c="inherit" underline="hover" fz="sm" lineClamp={1} title={item.label}>
+      <Anchor component={Link} to={href(item.id)} c="inherit" underline="hover" fz="sm" lineClamp={1} title={item.label} style={{ minWidth: 0 }}>
         {item.label}
       </Anchor>
       <ActionIcon size={20} radius="xs" variant="subtle" color="gray" className="compare-chip-x" aria-label={`Remove ${item.label}`} onClick={onRemove} style={{ flexShrink: 0 }}>
@@ -111,7 +113,9 @@ export function SelectionTray() {
   }, [mounted, phone]);
   const hasPerson = items.some((i) => i.type === 'person');
   const canCompare = items.length >= 2;
-  const collapsed = phone ? !expanded : items.length > 5 && !expanded;
+  const ordered = TYPE_ORDER.flatMap((t) => items.filter((i) => i.type === t));
+  const hidden = expanded ? 0 : Math.max(0, ordered.length - CHIPS_SHOWN);
+  const caseTo = `/raise-case?type=comparison&${selQuery(items.filter((i) => i.type === 'person'))}`;
 
   const body = (styles: React.CSSProperties) => {
     // Cleared → brief Undo affordance.
@@ -125,39 +129,68 @@ export function SelectionTray() {
         </div>
       );
     }
-    return (
-      <div className="no-print compare-bar" data-phone={phone || undefined} style={styles} role="region" aria-label="Compare set">
-        <Group gap="sm" wrap={phone ? 'wrap' : 'nowrap'} className="tray-row">
-          <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap', flex: phone ? '1 1 0' : '0 0 auto', minWidth: 0 }} truncate={phone ? 'end' : undefined}>
-            {/* On a phone the count alone: the region is already named "Compare set". */}
-            {phone ? summarize(items) : <>Compare set <Text span fw={500} className="compare-count">{summarize(items)}</Text></>}
-          </Text>
-          {!phone && <span className="compare-divider" aria-hidden />}
-
-          {!collapsed && (
-            <Group gap={6} wrap={phone ? 'wrap' : 'nowrap'} style={phone ? { order: 3, flexBasis: '100%' } : { overflowX: 'auto', maxWidth: 'min(46vw, 520px)' }}>
-              {TYPE_ORDER.flatMap((t) => items.filter((i) => i.type === t)).map((i) => (
-                <Chip key={`${i.type}:${i.id}`} item={i} onRemove={() => remove(i.id)} />
-              ))}
+    // On a narrow screen one pill (C9): the count, Compare, and the rest under "⋯"; the items a row of their own
+    // when asked for. It took two rows and covered what was under it.
+    if (phone) {
+      return (
+        <div className="no-print compare-bar" data-phone style={styles} role="region" aria-label="Compare set">
+          <Group gap="xs" wrap="nowrap" className="tray-row">
+            <Text size="sm" fw={600} truncate="end" style={{ flex: '1 1 0', minWidth: 0 }}>{summarize(items)}</Text>
+            <Button size="compact-sm" component={Link} to="/compare" className="compare-bar-compare"
+              data-disabled={!canCompare || undefined} aria-disabled={!canCompare || undefined}
+              onClick={(e) => { if (!canCompare) e.preventDefault(); }} leftSection={<IconArrowsLeftRight size={ICON.compact} />} style={{ flexShrink: 0 }}>
+              Compare
+            </Button>
+            <Menu position="top-end" withinPortal shadow="md">
+              <Menu.Target>
+                <ActionIcon size={28} variant="subtle" color="gray" className="compare-text-button tray-more" aria-label="More for the compare set"><IconDots size={ICON.control} /></ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconList size={ICON.control} />} onClick={() => setExpanded((v) => !v)}>{expanded ? 'Hide the items' : 'Show the items'}</Menu.Item>
+                <Menu.Item leftSection={<IconReportAnalytics size={ICON.control} />} component={Link} to={caseTo} disabled={!hasPerson}>Raise case</Menu.Item>
+                <Menu.Item leftSection={<IconTrash size={ICON.control} />} onClick={onClear}>Clear</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
+          {expanded && (
+            <Group gap={6} wrap="wrap" mt={6} className="tray-chips">
+              {ordered.map((i) => <Chip key={`${i.type}:${i.id}`} item={i} onRemove={() => remove(i.id)} />)}
             </Group>
           )}
-          {(items.length > 5 || phone) && (
-            <Button
-              size="compact-sm"
-              variant="subtle"
-              color="gray"
-              className="compare-text-button"
-              onClick={() => setExpanded((v) => !v)}
-              rightSection={expanded ? <IconChevronDown size={ICON.compact} /> : <IconChevronUp size={ICON.compact} />}
-              style={{ flexShrink: 0 }}
-            >
-              {expanded ? 'Hide' : 'Show all'}
-            </Button>
-          )}
+        </div>
+      );
+    }
+    return (
+      <div className="no-print compare-bar" style={styles} role="region" aria-label="Compare set">
+        <Group gap="sm" wrap="nowrap" className="tray-row">
+          <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap', flex: '0 0 auto', minWidth: 0 }}>
+            Compare set <Text span fw={500} className="compare-count">{summarize(items)}</Text>
+          </Text>
+          <span className="compare-divider" aria-hidden />
+
+          {/* The first few, then how many more (C9), every one of them one press away. The chips give way to the count:
+              three full names ran past the row's width, and "+2 more" went under Clear. */}
+          <Group gap={6} wrap={expanded ? 'wrap' : 'nowrap'} className="tray-chips" style={{ maxWidth: 'min(52vw, 640px)', minWidth: 0, flex: '0 1 auto' }}>
+            {ordered.slice(0, ordered.length - hidden).map((i) => (
+              <Chip key={`${i.type}:${i.id}`} item={i} onRemove={() => remove(i.id)} />
+            ))}
+            {hidden > 0 && (
+              <Button size="compact-sm" variant="subtle" color="gray" className="compare-text-button tray-more-chips" onClick={() => setExpanded(true)}
+                rightSection={<IconChevronUp size={ICON.compact} />} style={{ flexShrink: 0 }}>
+                +{hidden} more
+              </Button>
+            )}
+            {expanded && ordered.length > CHIPS_SHOWN && (
+              <Button size="compact-sm" variant="subtle" color="gray" className="compare-text-button" onClick={() => setExpanded(false)}
+                rightSection={<IconChevronDown size={ICON.compact} />} style={{ flexShrink: 0 }}>
+                Fewer
+              </Button>
+            )}
+          </Group>
 
           <Button size="compact-sm" variant="subtle" color="gray" className="compare-text-button" onClick={onClear} style={{ flexShrink: 0 }}>Clear</Button>
 
-          <Group gap="xs" wrap="nowrap" className="tray-actions" style={phone ? { order: 4, flexBasis: '100%' } : undefined}>
+          <Group gap="xs" wrap="nowrap" className="tray-actions">
           <Tooltip label="Add one more to compare" disabled={canCompare} withArrow>
             <Button
               size="xs"
@@ -168,7 +201,7 @@ export function SelectionTray() {
               aria-disabled={!canCompare || undefined}
               onClick={(e) => { if (!canCompare) e.preventDefault(); }}
               leftSection={<IconArrowsLeftRight size={ICON.control} />}
-              style={{ flexShrink: 0, flex: phone ? 1 : undefined }}
+              style={{ flexShrink: 0 }}
             >
               Compare
             </Button>
@@ -178,13 +211,13 @@ export function SelectionTray() {
             <Button
               size="xs"
               component={Link}
-              to={`/raise-case?type=comparison&sel=${encodeURIComponent(encodeSel(items.filter((i) => i.type === 'person')))}`}
+              to={caseTo}
               className="compare-bar-case"
               data-disabled={!hasPerson || undefined}
               aria-disabled={!hasPerson || undefined}
               onClick={(e) => { if (!hasPerson) e.preventDefault(); }}
               leftSection={<IconReportAnalytics size={ICON.control} />}
-              style={{ flexShrink: 0, flex: phone ? 1 : undefined }}
+              style={{ flexShrink: 0 }}
             >
               Raise case
             </Button>

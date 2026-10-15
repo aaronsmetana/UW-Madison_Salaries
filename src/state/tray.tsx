@@ -18,6 +18,8 @@ interface TrayState {
   remove: (id: string) => void;
   clear: () => void;
   has: (id: string) => boolean;
+  /** Name an item a link carried by its id alone (C7), once its name is looked up. */
+  relabel: (type: TrayItem['type'], id: string, label: string) => void;
 }
 
 const Ctx = createContext<TrayState | null>(null);
@@ -83,6 +85,8 @@ export function TrayProvider({ children }: { children: ReactNode }) {
       remove: (id) => setItems((p) => p.filter((x) => x.id !== id)),
       clear: () => setItems([]),
       has: (id) => items.some((x) => x.id === id),
+      relabel: (type, id, label) => setItems((p) => (p.some((x) => x.type === type && x.id === id && x.label !== label)
+        ? p.map((x) => (x.type === type && x.id === id ? { ...x, label } : x)) : p)),
     }),
     [items]
   );

@@ -3396,3 +3396,30 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .changes-section { scroll-margin-top: calc(var(--app-shell-header-offset, 0px) + 56px); }
 .compact-notice { padding: 6px 0; }
+
+/* The raise case's setup steps (RC5): each one's number in a ring, filled with a tick once the step is done. */
+.setup-step-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--mantine-color-default-border);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.setup-step[data-done] .setup-step-mark {
+  border-color: var(--mantine-color-accent-filled);
+  background: var(--mantine-color-accent-filled);
+  color: var(--mantine-color-white);
+}
+
+/* Raises' name column (R6): the name one line to itself, the title under it, wide enough for both. Not on a phone,
+   where the list folds to the screen's width and a held name ran it 27px past the edge. */
+@media (min-width: 48em) {
+  .raise-name-cell { min-width: 15em; }
+  .raise-name-cell > a { white-space: nowrap; }
+}

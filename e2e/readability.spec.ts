@@ -280,6 +280,8 @@ test("a field's help text is under the field, and a row of fields shares its top
     ['./raises', 'main'],
   ] as const) {
     await page.goto(route);
+    // Raises' field with help text is under "More filters" (R2).
+    if (route === './raises') await page.locator('.raise-more-filters').click({ timeout: 60_000 });
     const help = page.locator(`${row} .mantine-InputWrapper-description`).locator('visible=true');
     await expect(help.first(), `${route}: no field with help text`).toBeVisible({ timeout: 60_000 });
     const placed = await help.evaluateAll((els) => els.map((d) => {
@@ -293,7 +295,7 @@ test("a field's help text is under the field, and a row of fields shares its top
   // Screening's scope row, as one line: every label at one top, every field and the button at another.
   await page.goto('./screening');
   const scope = page.locator('.screen-scope');
-  await expect(scope.getByRole('button', { name: /^Screen/ })).toBeVisible({ timeout: 60_000 });
+  await expect(scope.getByRole('button', { name: /^Screen|to screen$/ })).toBeVisible({ timeout: 60_000 });
   const r = await scope.evaluate((g) => {
     const top = (e: Element) => Math.round(e.getBoundingClientRect().top);
     const labels = [...g.querySelectorAll('.mantine-InputWrapper-label')].filter((l) => l.textContent?.trim() && getComputedStyle(l.firstElementChild ?? l).visibility !== 'hidden');

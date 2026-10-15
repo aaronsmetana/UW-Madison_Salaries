@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Anchor, Box, List, ScrollArea, SimpleGrid, UnstyledButton } from '@mantine/core';
+import { Stack, Card, Group, Select, NumberInput, Button, Table, Badge, Text, Anchor, Box, List, ScrollArea, SimpleGrid, UnstyledButton, Collapse } from '@mantine/core';
 import { useDebouncedCallback } from '@mantine/hooks';
-import { IconCheck, IconTrendingUp } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconTrendingUp } from '@tabler/icons-react';
 import { ShowAll, LIST_PAGE, pageOf } from '../components/ShowAll';
 import { CsvButton } from '../components/CsvButton';
 import { PageHeader } from '../components/PageHeader';
@@ -13,6 +13,7 @@ import { SortableTh, type SortState } from '../components/SortableTh';
 import { LoadingState } from '../components/Loading';
 import { CardTitle } from '../components/CardTitle';
 import { Eyebrow } from '../components/Eyebrow';
+import { SegmentedToggle } from '../components/SegmentedToggle';
 import { RaiseDistribution } from '../components/RaiseDistribution';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useSummary, useReferenceStatus } from '../lib/hooks';
@@ -24,6 +25,7 @@ import { ICON } from '../lib/ui';
 import { familyLabel, familySql } from '../lib/jobFamilies';
 import { REPORTING_CHANGES } from '../lib/queries';
 import { useDocTitle } from '../lib/useDocTitle';
+import { prefersReducedMotion } from '../lib/motion';
 import {
   usualModesSql, usualRaises, usualCaseSql, reviewSql, titleChangesSql, accountSql, distributionSql, fmtBeyond,
   USUAL_SHARE, USUAL_MIN_N, PATTERN_MIN_N, NEAR_TITLE, AT_MINIMUM,
@@ -61,7 +63,7 @@ function titleMove(r: TitleChangeRow): string {
 }
 
 /** A title-wide adjustment or a department-wide pattern, as one line of the Patterns card. */
-interface Pattern { key: string; label: string; detail: string; n: number; go: Record<string, string | null> }
+interface Pattern { key: string; label: string; detail: string; n: number; go: Record<string, string | null>; hourlyN: number }
 const PATTERN_ROWS = 6;
 const WHYS: readonly Why[] = ['title', 'unit', 'range', 'individual'];
 
@@ -189,15 +191,17 @@ export default function Raises() {
     const unit = new Map<string, Pattern>();
     for (const r of rows ?? []) {
       if (r.why === 'title') {
-        const p = title.get(r.job_code) ?? { key: r.job_code, label: r.title ?? r.job_code, n: 0, go: { title: r.job_code },
+        const p = title.get(r.job_code) ?? { key: r.job_code, label: r.title ?? r.job_code, n: 0, go: { title: r.job_code }, hourlyN: 0,
           detail: `${num(r.tb)} of ${num(r.tn)} raises across campus above the usual, median ${fmtChange(r.tmed)}` };
         p.n++;
+        if (r.hourly) p.hourlyN++;
         title.set(r.job_code, p);
       } else if (r.why === 'unit') {
         const k = `${r.school ?? ''}|${r.department ?? ''}`;
-        const p = unit.get(k) ?? { key: k, label: r.department ?? '—', n: 0, go: { sch: r.school, dept: r.department, title: null, family: null },
+        const p = unit.get(k) ?? { key: k, label: r.department ?? '—', n: 0, go: { sch: r.school, dept: r.department, title: null, family: null }, hourlyN: 0,
           detail: `${r.school && r.school !== r.department ? `${r.school} · ` : ''}${num(r.ub)} of ${num(r.un)} raises above the usual, title-wide adjustments aside` };
         p.n++;
+        if (r.hourly) p.hourlyN++;
         unit.set(k, p);
       }
     }
@@ -205,6 +209,22 @@ export default function Raises() {
     return { title: order(title), unit: order(unit) };
   }, [rows]);
   const [allPatterns, setAllPatterns] = useState(false);
+  // Hourly adjustments apart from salaried ones (R7): a title of hourly Crowd Control Officers led the list
+  // with nothing to say its pay is a rate. A pattern is hourly when most of its listed people are.
+  const [patternPay, setPatternPay] = useState<'all' | 'salaried' | 'hourly'>('all');
+  const isHourly = (p: Pattern) => 2 * p.hourlyN > p.n;
+  const anyHourly = patterns.title.some(isHourly) || patterns.unit.some(isHourly);
+  const byPay = (list: readonly Pattern[]) => (patternPay === 'all' ? list : list.filter((p) => isHourly(p) === (patternPay === 'hourly')));
+  // An explanation picked: the list it narrows, brought into view (R3) — it is a screen and a half below.
+  const toList = () => requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>('.raise-above');
+    if (!el) return;
+    const head = parseFloat(getComputedStyle(el).getPropertyValue('--app-shell-header-offset')) || 0;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - head - 12, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  });
+  // The filters past the period and scope (R2), open where one is set.
+  const moreCount = [filters.jobCode, filters.family, baseParam].filter((v) => v != null && v !== '').length;
+  const [moreOpen, setMoreOpen] = useState(moreCount > 0);
   const [showAll, setShowAll] = useState(false);
 
   const [changeSort, setChangeSort] = useState<SortState<ChangeSort>>({ key: 'change', dir: 'desc' });
@@ -262,6 +282,8 @@ export default function Raises() {
       <PageHeader title="Raises" description="Who got more than the usual raise between two snapshots, and what may explain it." right={<CopyLinkButton size="sm" />} />
 
       <Card withBorder padding="lg" className="raise-controls">
+        {/* The period and the scope on one line; the title, its category and the threshold one press away (R2):
+            the eight controls wrapped into three uneven rows. */}
         <Group align="flex-end" gap="md" wrap="wrap">
           <Select {...dropdownProps('sm')} w={150} label="From" data={opts.slice(0, -1)} value={from} allowDeselect={false}
             onChange={(v) => { const i = at(v); update({ from: v, to: i >= toIdx ? snaps[i + 1]?.id ?? null : to }); setShowAll(false); }} />
@@ -273,17 +295,28 @@ export default function Raises() {
           <Select {...dropdownProps('sm')} w={230} label="Department" placeholder={school ? 'All departments' : 'Choose a school first'}
             disabled={!school} searchable clearable data={(deptOpts ?? []).map((d) => d.department)} value={filters.department ?? null}
             onChange={(v) => { update({ dept: v }); setShowAll(false); }} />
+          <PayMeasure />
+          <Button variant={moreOpen || moreCount ? 'light' : 'default'} color={moreCount ? 'accent' : 'gray'} size="sm"
+            className="raise-more-filters" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}
+            rightSection={<IconChevronDown size={ICON.compact} style={{ transform: moreOpen ? 'rotate(180deg)' : undefined }} />}>
+            More filters{moreCount ? ` (${moreCount})` : ''}
+          </Button>
+        </Group>
+
+        <Collapse in={moreOpen}>
+        <Group align="flex-end" gap="md" wrap="wrap" mt="md" className="raise-more">
           <Select {...dropdownProps('sm')} w={230} label="Title" placeholder="All titles" searchable clearable limit={60}
             data={(titleOpts ?? []).map((t) => ({ value: t.code, label: `${t.title} · ${t.code}` }))} value={filters.jobCode ?? null}
             onChange={(v) => { update({ title: v }); setShowAll(false); }} />
           <Select {...dropdownProps('sm')} w={230} label="Title category" placeholder="All categories" searchable clearable
             data={(familyOpts ?? []).map((f) => ({ value: f.code, label: familyLabel(f.code, f.top) }))} value={filters.family ?? null}
             onChange={(v) => { update({ family: v }); setShowAll(false); }} />
-          <PayMeasure />
         </Group>
+        </Collapse>
 
         <Box mt="md" className="raise-usual" data-usual-campus={usual?.campus.usual ?? ''} data-usual-how={usual?.campus.how ?? ''}>
-          <Group align="flex-end" gap="sm" wrap="wrap">
+          <Collapse in={moreOpen}>
+          <Group align="flex-end" gap="sm" wrap="wrap" mb="md">
             <NumberInput
               size="xs" label="Count raises above" description="Blank: each category’s usual raise, found below" w={220}
               suffix="%" decimalScale={1} step={0.5} min={-50} max={100} placeholder="the usual raise"
@@ -294,15 +327,23 @@ export default function Raises() {
               <Button variant="subtle" size="xs" onClick={() => { setBaseDraft(''); update({ base: null }); }}>Use the usual raise found in the data</Button>
             )}
           </Group>
+          </Collapse>
+          {/* Each category's usual raise as a small table (R2): it was one sentence of five. */}
           {usual && (
-            <Text size="sm" mt="sm" className="raise-usual-line">
-              <b>Usual raise, {fromLabel} → {toLabel}:</b>{' '}
-              {usual.cats.map((c, i) => (
-                <span key={c.cat} className="raise-usual-cat" data-cat={c.cat ?? ''} data-usual={c.usual} data-how={c.how}>
-                  {i > 0 ? ' · ' : ''}{c.cat} <b>{fmtChange(c.usual)}</b> <Text span size="sm" c="dimmed">({howText(c)})</Text>
-                </span>
-              ))}
-            </Text>
+            <Box className="raise-usual-line">
+              <Text size="sm" fw={600} mb={4}>Usual raise, {fromLabel} → {toLabel}</Text>
+              <Table withRowBorders={false} verticalSpacing={2} horizontalSpacing="sm" maw={560} className="raise-usual-table">
+                <Table.Tbody>
+                  {usual.cats.map((c) => (
+                    <Table.Tr key={c.cat} className="raise-usual-cat" data-cat={c.cat ?? ''} data-usual={c.usual} data-how={c.how}>
+                      <Table.Td><Text size="sm">{c.cat}</Text></Table.Td>
+                      <Table.Td ta="right"><Text size="sm" fw={700}>{fmtChange(c.usual)}</Text></Table.Td>
+                      <Table.Td><Text size="xs" c="dimmed">{howText(c)}</Text></Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Box>
           )}
         </Box>
       </Card>
@@ -339,7 +380,7 @@ export default function Raises() {
                   <Badge key={w} component="button" type="button" variant="light" color={WHY[w].color} data-why={w}
                     className="raise-why-filter" style={{ cursor: 'pointer' }}
                     aria-pressed={whyOnly === w} leftSection={whyOnly === w ? <IconCheck size={ICON.compact} /> : undefined}
-                    onClick={() => { update({ why: whyOnly === w ? null : w }); setShowAll(false); }}>
+                    onClick={() => { update({ why: whyOnly === w ? null : w }); setShowAll(false); toList(); }}>
                     {WHY[w].label} · {num(counts[w])}
                   </Badge>
                 ))}
@@ -351,18 +392,24 @@ export default function Raises() {
           {(patterns.title.length > 0 || patterns.unit.length > 0) && (
             <Card withBorder padding="lg" className="raise-patterns">
               <CardTitle mb={4}>Patterns</CardTitle>
-              <Text size="sm" c="dimmed" mb="sm">
-                Raises above the usual that most of a title, or of a department, got. Pick one to see its people.
-              </Text>
+              <Group justify="space-between" align="flex-start" gap="sm" mb="sm" wrap="wrap">
+                <Text size="sm" c="dimmed">
+                  Raises above the usual that most of a title, or of a department, got. Pick one to see its people.
+                </Text>
+                {anyHourly && (
+                  <SegmentedToggle ariaLabel="Pay basis" className="raise-pattern-pay" value={patternPay} onChange={(v) => setPatternPay(v as 'all' | 'salaried' | 'hourly')}
+                    options={[{ id: 'all', label: 'All' }, { id: 'salaried', label: 'Salaried' }, { id: 'hourly', label: 'Hourly' }]} />
+                )}
+              </Group>
               <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
-                {([['title', 'Title-wide adjustments', patterns.title], ['unit', 'Department-wide', patterns.unit]] as const).filter(([, , list]) => list.length > 0).map(([kind, head, list]) => (
+                {([['title', 'Title-wide adjustments', byPay(patterns.title)], ['unit', 'Department-wide', byPay(patterns.unit)]] as const).filter(([, , list]) => list.length > 0).map(([kind, head, list]) => (
                   <Box key={kind} className={`raise-patterns-${kind}`}>
                     <Eyebrow mb={4}>{head}</Eyebrow>
                     <Stack gap={6}>
                       {(allPatterns ? list : list.slice(0, PATTERN_ROWS)).map((p) => (
                         <UnstyledButton key={p.key} className="raise-pattern" data-key={p.key} data-n={p.n}
                           onClick={() => { update({ ...p.go, why: null }); setShowAll(false); }}>
-                          <Text size="sm"><Text span fw={600} c="var(--text-accent)" td="underline">{p.label}</Text>{filters.jobCode || filters.department ? '' : ` · ${num(p.n)} listed`}</Text>
+                          <Text size="sm"><Text span fw={600} c="var(--text-accent)" td="underline">{p.label}</Text>{isHourly(p) && <span className="cat-tag hourly-tag raise-hourly">Hourly</span>}{filters.jobCode || filters.department ? '' : ` · ${num(p.n)} listed`}</Text>
                           <Text size="xs" c="dimmed">{p.detail}</Text>
                         </UnstyledButton>
                       ))}
@@ -397,8 +444,7 @@ export default function Raises() {
                 <Table striped miw={960} className="fold-table raise-above-table">
                   <Table.Thead>
                     <Table.Tr>
-                      <SortableTh sortKey="name" label="Name" sort={sort} onSort={setSort} />
-                      <SortableTh sortKey="title" label="Title" sort={sort} onSort={setSort} fold />
+                      <SortableTh sortKey="name" label="Name · title" sort={sort} onSort={setSort} />
                       <SortableTh sortKey="school" label="School · department" sort={sort} onSort={setSort} fold />
                       <SortableTh sortKey="pay" label={METRIC_LABEL[metric]} sort={sort} onSort={setSort} align="right" fold />
                       <SortableTh sortKey="raise" label="Raise" sort={sort} onSort={setSort} align="right" />
@@ -409,15 +455,15 @@ export default function Raises() {
                   <Table.Tbody>
                     {abovePage.shown.map((r) => (
                       <Table.Tr key={r.person_key} data-person={r.person_key} data-why={r.why}>
-                        <Table.Td>
+                        {/* The name a line to itself, the title under it (R6): beside a column of titles, names wrapped. */}
+                        <Table.Td className="raise-name-cell">
                           <Anchor component={Link} to={`/person/${encodeURIComponent(r.person_key)}`}>{fullName(r.fn, r.ln)}</Anchor>
-                          <Text className="fold-under" size="xs" c="dimmed" lineClamp={3}>
-                            {r.title} · {usd(r.pay_from)} → {usd(r.pay_to)} · {WHY[r.why].label}
+                          <Text size="xs" c="dimmed" className="raise-name-title">
+                            {r.title ?? '—'} · {r.cat}{r.hourly && <span className="cat-tag hourly-tag raise-hourly">Hourly</span>}
                           </Text>
-                        </Table.Td>
-                        <Table.Td data-fold>
-                          <Text size="sm" lineClamp={2}>{r.title ?? '—'}</Text>
-                          <Text size="xs" c="dimmed">{r.cat}</Text>
+                          <Text className="fold-under" size="xs" c="dimmed">
+                            {usd(r.pay_from)} → {usd(r.pay_to)} · {WHY[r.why].label}
+                          </Text>
                         </Table.Td>
                         <Table.Td data-fold><Text size="sm" lineClamp={2}>{unitName(r.school, r.department)}</Text></Table.Td>
                         <Table.Td ta="right" data-fold style={{ whiteSpace: 'nowrap' }}>{usd(r.pay_from)} → {usd(r.pay_to)}</Table.Td>
@@ -428,7 +474,7 @@ export default function Raises() {
                         </Table.Td>
                         <Table.Td data-fold>
                           <Badge size="sm" variant="light" color={WHY[r.why].color}>{WHY[r.why].label}</Badge>
-                          {r.why !== 'individual' && <Text size="xs" c="dimmed" mt={2} lineClamp={2} className="raise-why-detail">{whyDetail(r)}</Text>}
+                          {r.why !== 'individual' && <Text size="xs" c="dimmed" mt={2} className="raise-why-detail">{whyDetail(r)}</Text>}
                         </Table.Td>
                       </Table.Tr>
                     ))}
@@ -458,7 +504,7 @@ export default function Raises() {
                       <SortableTh sortKey="name" label="Name" sort={changeSort} onSort={setChangeSort} />
                       <SortableTh sortKey="title" label="Title, from → to" sort={changeSort} onSort={setChangeSort} fold />
                       <SortableTh sortKey="pay" label={METRIC_LABEL[metric]} sort={changeSort} onSort={setChangeSort} align="right" fold />
-                      <SortableTh sortKey="change" label="Rate change" tip="The change in the full-time rate, so a change of FTE with the new title doesn’t read as a raise or a cut." sort={changeSort} onSort={setChangeSort} align="right" />
+                      <SortableTh sortKey="change" label="Full-time rate" tip="The change in the full-time rate, so a change of FTE with the new title doesn’t read as a raise or a cut." sort={changeSort} onSort={setChangeSort} align="right" />
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -475,7 +521,11 @@ export default function Raises() {
                             <Text size="xs" c="dimmed">{unitName(r.school, r.department)}{fte}</Text>
                           </Table.Td>
                           <Table.Td ta="right" data-fold style={{ whiteSpace: 'nowrap' }}>{usd(r.pay_from)} → {usd(r.pay_to)}</Table.Td>
-                          <Table.Td ta="right">{fmtChange(r.rate_to / r.rate_from - 1)}</Table.Td>
+                          {/* The change beside the rates it is of (R5): pay falling under a "+55.6%" was a change of FTE. */}
+                          <Table.Td ta="right" className="raise-rate-cell">
+                            <Text size="sm" fw={600}>{fmtChange(r.rate_to / r.rate_from - 1)}</Text>
+                            <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{usd(r.rate_from)} → {usd(r.rate_to)}</Text>
+                          </Table.Td>
                         </Table.Tr>
                       );
                     })}

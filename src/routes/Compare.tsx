@@ -4,7 +4,7 @@ import { Stack, Title, Text, Card, Table, Loader, Group, Pill, Button, ThemeIcon
 import { IconArrowsDiff } from '@tabler/icons-react';
 import {
   ResponsiveContainer, LineChart, ComposedChart, Line, Area, XAxis, YAxis, Tooltip, CartesianGrid,
-  ScatterChart, Scatter,
+  ScatterChart, Scatter, Customized,
 } from 'recharts';
 import { AXIS_TICK, GRID, Y_PAD, TIP_STYLE, fmtUsd, fmtK, niceCurrencyTicks, CHART_SERIES, chartKeys } from '../lib/chartStyle';
 import { withSnapX, snapAxisProps, snapX, reportingBreaks } from '../lib/snapTime';
@@ -12,22 +12,22 @@ import { PageHeader } from '../components/PageHeader';
 import { CardTitle } from '../components/CardTitle';
 import { SegmentedToggle } from '../components/SegmentedToggle';
 import { Eyebrow } from '../components/Eyebrow';
-import { useTray, type TrayItem } from '../state/tray';
+import { useTray, type TrayItem, type TrayItemInput } from '../state/tray';
 import { useControls, METRIC_LABEL } from '../state/controls';
 import { useSql, useActiveSnapshotId, useSummary } from '../lib/hooks';
 import { makeSnapshotComparator } from '../lib/snapshotOrder';
 import { sqlStr } from '../lib/duckdb';
 import { salaryExpr, personEarnings, personPay, peopleSql, continuingRaisesSql } from '../lib/queries';
-import { usd, num, pct, spanLabel, fmtYears } from '../lib/format';
+import { usd, num, pct, spanLabel, fmtYears, fullName } from '../lib/format';
 import { ChartData } from '../components/ChartData';
 import { ChartTooltip } from '../components/chart/ChartTooltip';
-import { SvgPill } from '../components/chart/pills';
+import { EndLabels } from '../components/chart/EndLabels';
 import { useDocTitle } from '../lib/useDocTitle';
 import { usePref } from '../lib/prefs';
 import { SearchBox } from '../components/SearchBox';
 import { ControlBar } from '../app/ControlBar';
 import { toReal, REAL_BASE_YEAR } from '../lib/cpi';
-import { encodeSel, decodeSel } from '../lib/share';
+import { readSel, writeSel } from '../lib/share';
 import { chartAnim, useEntrance } from '../lib/motion';
 import { Sparkline } from '../components/chart/Sparkline';
 import { cadenceOf, type CadencePoint } from '../lib/cadence';
@@ -38,7 +38,10 @@ import { ICON } from '../lib/ui';
 interface PRow { person_key: string; label: string; date: string; pay: number; tenure: number | null }
 interface SRow { school: string; headcount: number; payroll: number | null; med: number | null; p90: number | null }
 interface TStatRow { job_code: string; headcount: number; med: number | null; p25: number | null; p75: number | null; p90: number | null }
-interface TTrendRow { job_code: string; label: string; date: string; med: number }
+interface RefRow { kind: 'title' | 'school'; rid: string; label: string; date: string; med: number; p25: number; p75: number }
+/** A row of the pay-over-time chart: its snapshot, each person's pay, each title's and division's median by its
+ *  key and that one's middle half (`<key>b`, a [25th, 75th] pair, which an Area draws as a band). */
+type PayRow = Record<string, string | number | [number, number]>;
 interface CadRow { person_key: string; id: string; date: string; pay: number | null; appts: number; job_code: string | null; grade: number | null; grade_basis: string | null; basis: string | null }
 
 interface TooltipPayloadItem {
@@ -69,24 +72,21 @@ function rowLabel(payload: readonly { payload?: unknown }[] | undefined): string
   return row?.label != null ? String(row.label) : undefined;
 }
 
-/** Direct end-of-line label on a person's final point — only the last point renders (recharts calls
- *  this once per data point via the Line's `label` prop). With this, identity on the trajectory chart
- *  is never color-alone: the legend chips below already name each color, and now so does the chart. */
-function TrajectoryEndLabel({ x, y, index, count, name, color }: {
-  x?: number; y?: number; index?: number; count: number; name: string; color: string;
-}) {
-  if (x == null || y == null || index !== count - 1) return null;
-  return <SvgPill x={x + 8 + name.length * 3 + 4} y={y} text={name} color={color} fontWeight={600} />;
-}
-
 /** The trajectories chart (300px), its note and its footer, while their people load. */
 const TRAJECTORY_LOADING_H = 369;
+
+/** Comparisons to start from (C1): the faculty ranks, two of them, and the two largest divisions. */
+const STARTERS: { label: string; items: TrayItemInput[] }[] = [
+  { label: 'Professor vs Associate Professor', items: [{ type: 'title', id: 'FA020', label: 'Professor' }, { type: 'title', id: 'FA030', label: 'Associate Professor' }] },
+  { label: 'The three faculty ranks', items: [{ type: 'title', id: 'FA040', label: 'Assistant Professor' }, { type: 'title', id: 'FA030', label: 'Associate Professor' }, { type: 'title', id: 'FA020', label: 'Professor' }] },
+  { label: 'The two largest divisions', items: [{ type: 'school', id: 'School of Medicine and Public Health', label: 'School of Medicine and Public Health' }, { type: 'school', id: 'College of Letters & Science', label: 'College of Letters & Science' }] },
+];
 
 export default function Compare() {
   const entrance = useEntrance();
   useDocTitle('Compare');
   const nav = useNavigate();
-  const { items, add, remove, clear } = useTray();
+  const { items, add, remove, clear, relabel } = useTray();
   const { metric } = useControls();
   const snap = useActiveSnapshotId();
   const expr = salaryExpr(metric);
@@ -129,7 +129,7 @@ export default function Compare() {
   useEffect(() => {
     if (hydratedFromUrl.current) return;
     hydratedFromUrl.current = true;
-    const decoded = decodeSel(searchParams.get('sel'));
+    const decoded = readSel(searchParams);
     if (!decoded?.length) return;
     clear();
     decoded.forEach((i) => add(i));
@@ -139,8 +139,7 @@ export default function Compare() {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (items.length) next.set('sel', encodeSel(items));
-        else next.delete('sel');
+        writeSel(next, items);
         return next;
       },
       { replace: true }
@@ -148,6 +147,26 @@ export default function Compare() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
+  // A link carries ids alone (C7): each person's and title's name looked up as it opens, the id standing in till then.
+  const unnamed = items.filter((i) => i.type !== 'school' && i.label === i.id);
+  const unnamedP = unnamed.filter((i) => i.type === 'person').map((i) => sqlStr(i.id)).join(',') || 'NULL';
+  const unnamedT = unnamed.filter((i) => i.type === 'title').map((i) => sqlStr(i.id)).join(',') || 'NULL';
+  const { data: names } = useSql<{ t: string; id: string; fn: string | null; ln: string | null; title: string | null }>(
+    ['cmp-names', unnamedP, unnamedT],
+    `SELECT 'person' t, person_key id, arg_max(first_name, snapshot_date) fn, arg_max(last_name, snapshot_date) ln, NULL title
+       FROM salaries WHERE person_key IN (${unnamedP}) GROUP BY person_key
+     UNION ALL
+     SELECT 'title' t, job_code id, NULL fn, NULL ln, arg_max(title, snapshot_date) title
+       FROM salaries WHERE job_code IN (${unnamedT}) AND title IS NOT NULL GROUP BY job_code`,
+    unnamed.length > 0
+  );
+  useEffect(() => {
+    for (const r of names ?? []) {
+      const label = r.t === 'person' ? fullName(r.fn, r.ln) : r.title;
+      if (label) relabel(r.t as TrayItem['type'], r.id, label);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [names]);
   const persons = items.filter((i) => i.type === 'person');
   const schools = items.filter((i) => i.type === 'school');
   const titles = items.filter((i) => i.type === 'title');
@@ -185,16 +204,20 @@ export default function Compare() {
     titles.length > 0 && !!snap
   );
 
-  // Titles — median salary over time.
-  const { data: ttrend } = useSql<TTrendRow>(
-    ['cmp-title-trend', titleCodes, metric],
-    `WITH pp AS (SELECT snapshot_id, job_code, person_key,
-          any_value(snapshot_label) AS lbl, any_value(snapshot_date) AS dt, ${personPay(metric)} pay
-        FROM salaries WHERE job_code IN (${titleCodes}) AND ${expr} > 0
-        GROUP BY snapshot_id, job_code, person_key)
-     SELECT job_code, any_value(lbl) AS "label", any_value(dt) date, median(pay) med
-     FROM pp GROUP BY snapshot_id, job_code ORDER BY date`,
-    titles.length > 0
+  // Titles and divisions over time (C3), drawn on the people's chart: each one's median and middle half, snapshot by
+  // snapshot, over the same pools as their tables below — a person's pay in that title, or in that division.
+  const refFrom = (col: string, list: string) =>
+    peopleSql({ metric, where: `${col} IN (${list || 'NULL'})`, by: ['snapshot_id', col], extra: 'any_value(snapshot_label) lbl, any_value(snapshot_date) dt' });
+  const { data: rtrend, isFetching: rLoading } = useSql<RefRow>(
+    ['cmp-ref-trend', titleCodes, schoolNames, metric],
+    `WITH refs AS (
+        SELECT 'title' kind, job_code rid, snapshot_id, lbl, dt, pay FROM (${refFrom('job_code', titleCodes)})
+        UNION ALL
+        SELECT 'school' kind, school rid, snapshot_id, lbl, dt, pay FROM (${refFrom('school', schoolNames)}))
+     SELECT kind, rid, any_value(lbl) AS "label", any_value(dt) date, median(pay) med,
+        quantile_cont(pay, 0.25) p25, quantile_cont(pay, 0.75) p75
+     FROM refs WHERE pay > 0 GROUP BY kind, rid, snapshot_id ORDER BY date`,
+    titles.length + schools.length > 0
   );
 
   const { data: standingData } = useSql<{ person_key: string; label: string; date: string; pctile: number }>(
@@ -225,7 +248,13 @@ export default function Compare() {
     persons.length > 0
   );
 
-  const labelMap = useMemo(() => new Map(persons.map((p) => [p.id, p.label])), [persons]);
+  // The titles and divisions drawn as references, each keyed by its colour (unique in the tray, so a key stays with its
+  // item as others come and go).
+  const refs = useMemo(() => items.filter((i) => i.type !== 'person').map((i) => ({ ...i, key: `r${i.colorIdx}` })), [items]);
+  const labelMap = useMemo(() => new Map([
+    ...persons.map((p) => [p.id, p.label] as const),
+    ...refs.map((r) => [r.key, `${r.label} median`] as const),
+  ]), [persons, refs]);
   const titleLabelMap = useMemo(() => new Map(titles.map((t) => [t.id, t.label])), [titles]);
 
   const standingSeries = useMemo(() => {
@@ -250,17 +279,28 @@ export default function Compare() {
   }, [pdata, cmpSnap]);
 
   const { series, latest } = useMemo(() => {
-    const byLabel = new Map<string, Record<string, string | number>>();
+    const byLabel = new Map<string, PayRow>();
+    const at = (label: string, date: string) => {
+      const row = byLabel.get(label) ?? { label, date };
+      byLabel.set(label, row);
+      return row;
+    };
     const latestByPerson = new Map<string, number>();
     for (const r of pdata ?? []) {
-      const row = byLabel.get(r.label) ?? { label: r.label, date: r.date };
-      row[r.person_key] = r.pay;
-      byLabel.set(r.label, row);
+      at(r.label, r.date)[r.person_key] = r.pay;
       latestByPerson.set(r.person_key, r.pay);
+    }
+    const keyOf = new Map(refs.map((x) => [`${x.type}|${x.id}`, x.key]));
+    for (const r of rtrend ?? []) {
+      const k = keyOf.get(`${r.kind}|${r.rid}`);
+      if (!k) continue;
+      const row = at(r.label, r.date);
+      row[k] = r.med;
+      row[`${k}b`] = [r.p25, r.p75];
     }
     const series = withSnapX([...byLabel.values()].sort(cmpSnap));
     return { series, latest: latestByPerson };
-  }, [pdata, cmpSnap]);
+  }, [pdata, rtrend, refs, cmpSnap]);
 
   // Real-dollar view of the trajectory chart only (gap/standing/cadence stay nominal — those are
   // separate cards without their own toggle). Each point converts using its own snapshot year.
@@ -268,14 +308,16 @@ export default function Compare() {
     if (dollarMode !== 'real') return series;
     return series.map((row) => {
       const year = Number(String(row.date).slice(0, 4)) || REAL_BASE_YEAR;
-      const out: Record<string, string | number> = { label: row.label, date: row.date, x: row.x };
-      for (const p of persons) {
-        const v = row[p.id];
-        if (typeof v === 'number') out[p.id] = toReal(v, year);
+      const out: PayRow = { label: row.label, date: row.date, x: row.x };
+      for (const k of [...persons.map((p) => p.id), ...refs.map((r) => r.key)]) {
+        const v = row[k];
+        if (typeof v === 'number') out[k] = toReal(v, year);
+        const b = row[`${k}b`];
+        if (Array.isArray(b)) out[`${k}b`] = [toReal(b[0], year), toReal(b[1], year)];
       }
       return out;
     });
-  }, [series, dollarMode, persons]);
+  }, [series, dollarMode, persons, refs]);
   const perPersonDisplay = useMemo(() => {
     if (dollarMode !== 'real') return perPerson;
     const m = new Map<string, { label: string; date: string; pay: number; tenure: number | null }[]>();
@@ -285,29 +327,22 @@ export default function Compare() {
     return m;
   }, [perPerson, dollarMode]);
 
-  // Title median-over-time pivot: { label, date, [job_code]: med }.
-  const titleSeries = useMemo(() => {
-    const byLabel = new Map<string, Record<string, string | number>>();
-    for (const r of ttrend ?? []) {
-      const row = byLabel.get(r.label) ?? { label: r.label, date: r.date };
-      row[r.job_code] = r.med;
-      byLabel.set(r.label, row);
-    }
-    return withSnapX([...byLabel.values()].sort(cmpSnap));
-  }, [ttrend, cmpSnap]);
-
-  // gap to the top earner in the group, per snapshot
+  // The gap to the group's top earner, at each snapshot where everyone compared was paid (C4): where one was not, the
+  // "top earner" was only whoever was there, and the line said someone led who had merely stayed.
   const gapSeries = useMemo(
     () =>
       series.map((row) => {
-        const o: Record<string, string | number> = { label: row.label as string, date: row.date, x: row.x };
-        const vals = persons.map((p) => row[p.id]).filter((v): v is number => typeof v === 'number');
-        const max = vals.length ? Math.max(...vals) : null;
-        if (max != null) persons.forEach((p) => { const v = row[p.id]; if (typeof v === 'number') o[p.id] = v - max; });
+        const o: Record<string, string | number> = { label: row.label as string, date: row.date as string, x: row.x };
+        const vals = persons.map((p) => row[p.id]);
+        if (vals.every((v): v is number => typeof v === 'number' && v > 0)) {
+          const max = Math.max(...vals);
+          persons.forEach((p, i) => { o[p.id] = vals[i] - max; });
+        }
         return o;
       }),
     [series, persons]
   );
+  const gapShared = gapSeries.filter((row) => persons.length > 0 && typeof row[persons[0].id] === 'number').length;
   // Gap values are all ≤0 (distance behind the top earner); Recharts' auto ticks over an all-negative
   // range pick ugly steps (-$9,500/-$19,000/-$28,500) — snap to round numbers instead.
   const gapTicks = useMemo(() => {
@@ -337,16 +372,27 @@ export default function Compare() {
     [cadRows, contRows, persons]
   );
   const visiblePersons = persons.filter((p) => !mutedIds.has(p.id));
+  // Who is not on the payroll in the latest snapshot, by the last one they were in.
+  const latestLabel = summary?.snapshots?.[summary.snapshots.length - 1]?.label ?? null;
+  const departed = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [id, arr] of perPerson) {
+      const last = [...arr].reverse().find((x) => x.pay > 0);
+      if (last && latestLabel && last.label !== latestLabel) m.set(id, last.label);
+    }
+    return m;
+  }, [perPerson, latestLabel]);
   // Shade one person's gap only when they are the lone series on show; with several, the fills tangle.
   const soloPerson = persons.length > 1 && visiblePersons.length === 1 ? visiblePersons[0] : null;
   return (
     <Stack gap="lg">
       <PageHeader
         title="Compare"
-        description="Add any people, titles, or schools and see their salaries side by side. Your selection follows you around the site, so you can keep building it as you browse."
+        description="Add any people, titles, or divisions and see their salaries side by side. Your selection follows you around the site, so you can keep building it as you browse."
       />
 
-      <ControlBar inline />
+      {/* The view's controls once there is something to view (C1): over an empty card they set nothing. */}
+      {items.length > 0 && <ControlBar inline />}
 
       {/* ── Build your comparison: one add box ──
            The site's search, with all three groups: a person, a title or a division goes to the tray
@@ -367,8 +413,8 @@ export default function Compare() {
           <>
             <SelectedRow label="People" items={persons} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} onHover={setHoverId} />
             <SelectedRow label="Titles" items={titles} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} onHover={setHoverId} />
-            <SelectedRow label="Schools" items={schools} onRemove={remove} />
-            {(persons.length > 0 || titles.length > 0) && (
+            <SelectedRow label="Divisions" items={schools} onRemove={remove} colored mutedIds={mutedIds} onToggleMute={toggleMute} onHover={setHoverId} />
+            {items.length > 0 && (
               <Text size="xs" c="dimmed" mt={6}>The colored dots are the key for the charts below — point at one to pick out its line, click to hide it, shift-click to show only it.</Text>
             )}
             <Group justify="flex-end" mt="sm">
@@ -387,14 +433,20 @@ export default function Compare() {
             {/* h2: the page's main content under PageHeader's h1 (see EmptyState's note). */}
             <Title order={2} fz="h3" ta="center">Build a side-by-side comparison</Title>
             <Text c="dimmed" ta="center" maw="var(--measure-narrow)">
-              Add people, titles, or schools above — or use the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
+              Add people, titles, or divisions above — or use the ＋ Compare buttons around the app — and they’ll line up here with charts and tables.
             </Text>
+            {/* Somewhere to start (C1), each a press that fills the comparison. */}
+            <Group gap="sm" justify="center" wrap="wrap" mt={4} className="compare-starters">
+              {STARTERS.map((st) => (
+                <Button key={st.label} variant="light" size="sm" onClick={() => st.items.forEach((i) => add(i))}>{st.label}</Button>
+              ))}
+            </Group>
           </Stack>
         </Card>
       )}
 
-      {persons.length > 0 && (
-        <Card withBorder padding="lg">
+      {(persons.length > 0 || refs.length > 0) && (
+        <Card withBorder padding="lg" className="cmp-pay-card">
           <CardTitle
             right={
               <Group gap="sm" wrap="wrap">
@@ -403,42 +455,66 @@ export default function Compare() {
                   onChange={(v) => setDollarMode(v as 'nominal' | 'real')}
                   options={[{ id: 'nominal', label: 'Nominal' }, { id: 'real', label: `${REAL_BASE_YEAR} $` }]}
                 />
-                <SegmentedToggle
-                  value={xMode}
-                  onChange={(v) => setXMode(v as 'date' | 'tenure')}
-                  options={[{ id: 'date', label: 'By date' }, { id: 'tenure', label: 'By tenure' }]}
-                />
+                {persons.length > 0 && (
+                  <SegmentedToggle
+                    value={xMode}
+                    onChange={(v) => setXMode(v as 'date' | 'tenure')}
+                    options={[{ id: 'date', label: 'By date' }, { id: 'tenure', label: 'By tenure' }]}
+                  />
+                )}
               </Group>
             }
           >
-            {measure} trajectories
+            {measure} over time
           </CardTitle>
           {/* Loading, a block the height of the chart, its note and its footer: a spinner, the card was a third
               of its height and the cards under it dropped 333px when the lines came (layout shift 0.06). */}
-          {pLoading ? (
+          {pLoading || rLoading ? (
             <ChartSkeleton height={TRAJECTORY_LOADING_H} />
           ) : (
             <>
               <ResponsiveContainer width="100%" height={300}>
-                {xMode === 'date' ? (
-                  <LineChart {...chartKeys(`${measure} by snapshot`)} data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: persons.length > 0 && persons.length <= 4 ? 90 : 12 }}>
+                {xMode === 'date' || persons.length === 0 ? (
+                  <ComposedChart {...chartKeys(`${measure} by snapshot`)} data={trajectorySeries} syncId="compare-people" margin={{ left: 12, right: 16, top: 18 }}>
                     <CartesianGrid {...GRID} />
                     <XAxis {...snapAxisProps(trajectorySeries)} tick={AXIS_TICK} />
                     <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-                    <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, labelMap, usd)} /> : null} />
+                    <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows((payload ?? []).filter((x) => x.type !== 'none'), labelMap, usd)} /> : null} />
+                    {/* Titles and divisions, under the people (C3): each one's middle half a band, its median a dashed
+                        line, in the colour its chip has. */}
+                    {refs.map((r) => (
+                      <Area key={`${r.key}b`} className={`cmp-ref-band cmp-ref-${r.type}`} type="linear" dataKey={`${r.key}b`}
+                        stroke="none" fill={CHART_SERIES[r.colorIdx % CHART_SERIES.length]} fillOpacity={mutedIds.has(r.id) ? 0 : 0.1}
+                        tooltipType="none" legendType="none" isAnimationActive={false} connectNulls />
+                    ))}
+                    {refs.map((r) => (
+                      <Line key={r.key} className={`cmp-ref cmp-ref-${r.type}`} type="linear" dataKey={r.key} name={`${r.label} median`}
+                        stroke={CHART_SERIES[r.colorIdx % CHART_SERIES.length]} strokeDasharray="6 4" strokeWidth={lineWidth(r.id) - 0.5}
+                        strokeOpacity={mutedIds.has(r.id) ? 0.15 : 1} dot={false} activeDot={false} connectNulls {...chartAnim(!entrance)} />
+                    ))}
                     {persons.map((p) => {
                       const color = CHART_SERIES[p.colorIdx % CHART_SERIES.length];
                       const muted = mutedIds.has(p.id);
                       return (
                         <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={color} strokeWidth={lineWidth(p.id)} strokeOpacity={muted ? 0.15 : 1} dot={muted ? { opacity: 0.15 } : true} connectNulls
                           {...chartAnim(!entrance)}
-                          label={persons.length <= 4 && !muted ? <TrajectoryEndLabel count={trajectorySeries.length} name={p.label} color={color} /> : undefined}
                           onClick={() => nav(`/person/${encodeURIComponent(p.id)}`)}
                           style={{ cursor: 'pointer' }}
                         />
                       );
                     })}
-                  </LineChart>
+                    {/* Every line named where it ends (C5) — at its own last point, so one who left is named where they
+                        stopped, and says so ("left after Mar 2026"). Only the line reaching the last snapshot was. */}
+                    <Customized component={<EndLabels endSeries={[
+                      ...persons.filter((p) => !mutedIds.has(p.id)).map((p) => ({
+                        key: p.id, text: departed.get(p.id) ? `${p.label} · left after ${departed.get(p.id)}` : p.label,
+                        color: CHART_SERIES[p.colorIdx % CHART_SERIES.length],
+                      })),
+                      ...refs.filter((r) => !mutedIds.has(r.id)).map((r) => ({
+                        key: r.key, text: `${r.label} median`, color: CHART_SERIES[r.colorIdx % CHART_SERIES.length],
+                      })),
+                    ]} />} />
+                  </ComposedChart>
                 ) : (
                   <ScatterChart margin={{ left: 12, right: 12 }}>
                     <CartesianGrid {...GRID} />
@@ -464,13 +540,19 @@ export default function Compare() {
                 )}
               </ResponsiveContainer>
               <Text size="xs" c="dimmed" mt={4}>
-                {xMode === 'tenure' ? 'Aligned by years since hire — compares people at the same career stage.' : 'By calendar snapshot.'}
+                {xMode === 'tenure' && persons.length > 0
+                  ? `Aligned by years since hire — compares people at the same career stage.${refs.length ? ' Titles and divisions are drawn by date only.' : ''}`
+                  : `By calendar snapshot.${refs.length ? ' A dashed line is a title’s or a division’s median, its band the middle half of its people.' : ''}`}
                 {dollarMode === 'real' ? ` Shown in ${REAL_BASE_YEAR} dollars (inflation-adjusted, approx.).` : ''}
               </Text>
               <ChartData
                 caption={dollarMode === 'real' ? `${measure} by snapshot (in ${REAL_BASE_YEAR} dollars)` : `${measure} by snapshot`}
-                columns={['Snapshot', ...persons.map((p) => p.label)]}
-                rows={trajectorySeries.map((row) => [row.label as string, ...persons.map((p) => row[p.id] ?? null)])}
+                columns={['Snapshot', ...persons.map((p) => p.label), ...refs.flatMap((r) => [`${r.label} median`, `${r.label} 25th`, `${r.label} 75th`])]}
+                rows={trajectorySeries.map((row) => {
+                  const band = (k: string) => (Array.isArray(row[`${k}b`]) ? row[`${k}b`] as [number, number] : null);
+                  return [row.label as string, ...persons.map((p) => (row[p.id] as number | undefined) ?? null),
+                    ...refs.flatMap((r) => [(row[r.key] as number | undefined) ?? null, band(r.key)?.[0] ?? null, band(r.key)?.[1] ?? null])];
+                })}
                 unit="snapshots"
                 period={spanLabel(trajectorySeries.map((row) => row.label as string))}
               />
@@ -482,8 +564,13 @@ export default function Compare() {
       {persons.length > 1 && (
         <Card withBorder padding="lg">
           <CardTitle>Pay gap to the top earner in this group</CardTitle>
+          {gapShared === 0 ? (
+            <Text size="sm" c="dimmed" className="gap-none">
+              These people were never all paid in the same snapshot, so none of them was ever the top earner of the group.
+            </Text>
+          ) : (
           <ResponsiveContainer width="100%" height={240}>
-            <ComposedChart {...chartKeys('Pay gap to the top earner')} data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 12 }} className="gap-chart">
+            <ComposedChart {...chartKeys('Pay gap to the top earner')} data={gapSeries} syncId="compare-people" margin={{ left: 12, right: 16, top: 18 }} className="gap-chart">
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(gapSeries)} tick={AXIS_TICK} />
               {/* Distance behind, said as distance: "$10k behind", and the top line named for who is on it. */}
@@ -507,14 +594,16 @@ export default function Compare() {
                   legendType="none"
                   tooltipType="none"
                   isAnimationActive={false}
-                  connectNulls
                 />
               )}
+              {/* No joining across a snapshot where someone was not paid: there is no gap there to draw. */}
               {persons.map((p) => (
-                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(!entrance)} />
+                <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} {...chartAnim(!entrance)} />
               ))}
+              <Customized component={<EndLabels endSeries={persons.filter((p) => !mutedIds.has(p.id)).map((p) => ({ key: p.id, text: p.label, color: CHART_SERIES[p.colorIdx % CHART_SERIES.length] }))} />} />
             </ComposedChart>
           </ResponsiveContainer>
+          )}
           <ChartData
             caption="Pay gap to the top earner by snapshot"
             columns={['Snapshot', ...persons.map((p) => p.label)]}
@@ -522,8 +611,9 @@ export default function Compare() {
             unit="snapshots"
             period={spanLabel(gapSeries.map((row) => row.label as string))}
             about={<>
-              How far each person was behind the group's top earner at each snapshot. Show only one person
-              (shift-click their dot) to shade their gap.
+              How far each person was behind the group's top earner at each snapshot where all of them were paid — at
+              one where someone was not, the top earner would only be whoever was there, so there is no point drawn.
+              Show only one person (shift-click their dot) to shade their gap.
             </>}
           />
         </Card>
@@ -533,7 +623,7 @@ export default function Compare() {
         <Card withBorder padding="lg">
           <CardTitle sub="The share of their school's staff each person is paid more than, snapshot by snapshot.">Standing within the school</CardTitle>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart {...chartKeys('Standing within the school over time')} data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 12 }}>
+            <LineChart {...chartKeys('Standing within the school over time')} data={standingSeries} syncId="compare-people" margin={{ left: 12, right: 16, top: 18 }}>
               <CartesianGrid {...GRID} />
               <XAxis {...snapAxisProps(standingSeries)} tick={AXIS_TICK} />
               <YAxis domain={[0, 100]} width={48} tick={AXIS_TICK} unit="%" padding={Y_PAD} />
@@ -541,6 +631,8 @@ export default function Compare() {
               {persons.map((p) => (
                 <Line key={p.id} className={`cmp-line cmp-p${p.colorIdx}`} type="linear" dataKey={p.id} name={p.label} stroke={CHART_SERIES[p.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(p.id)} strokeOpacity={mutedIds.has(p.id) ? 0.15 : 1} dot={mutedIds.has(p.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(!entrance)} />
               ))}
+              {/* Each line named on its own chart (C6): the chips that key them are a page above by here. */}
+              <Customized component={<EndLabels endSeries={persons.filter((p) => !mutedIds.has(p.id)).map((p) => ({ key: p.id, text: p.label, color: CHART_SERIES[p.colorIdx % CHART_SERIES.length] }))} />} />
             </LineChart>
           </ResponsiveContainer>
           <ChartData
@@ -660,33 +752,9 @@ export default function Compare() {
         </Card>
       )}
 
-      {titles.length > 0 && titleSeries.length > 0 && (
-        <Card withBorder padding="lg">
-          <CardTitle>Title medians over time</CardTitle>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart {...chartKeys(`Median ${measure.toLowerCase()} per title over time`)} data={titleSeries} margin={{ left: 12, right: 12 }}>
-              <CartesianGrid {...GRID} />
-              <XAxis {...snapAxisProps(titleSeries)} tick={AXIS_TICK} />
-              <YAxis tickFormatter={fmtUsd} width={80} tick={AXIS_TICK} padding={Y_PAD} />
-              <Tooltip content={({ active, payload }) => active ? <ChartTooltip label={rowLabel(payload)} rows={seriesRows(payload, titleLabelMap, usd)} /> : null} />
-              {titles.map((t) => (
-                <Line key={t.id} className={`cmp-line cmp-t${t.colorIdx}`} type="linear" dataKey={t.id} name={t.label} stroke={CHART_SERIES[t.colorIdx % CHART_SERIES.length]} strokeWidth={lineWidth(t.id)} strokeOpacity={mutedIds.has(t.id) ? 0.15 : 1} dot={mutedIds.has(t.id) ? { opacity: 0.15 } : true} connectNulls {...chartAnim(!entrance)} />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-          <ChartData
-            caption={`Median ${measure.toLowerCase()} per title over time`}
-            columns={['Snapshot', ...titles.map((t) => t.label)]}
-            rows={titleSeries.map((row) => [row.label as string, ...titles.map((t) => row[t.id] ?? null)])}
-            unit="snapshots"
-            period={spanLabel(titleSeries.map((row) => row.label as string))}
-          />
-        </Card>
-      )}
-
       {schools.length > 0 && (
         <Card withBorder padding="lg">
-          <CardTitle sub="The latest snapshot.">Schools side by side</CardTitle>
+          <CardTitle sub="The latest snapshot.">Divisions side by side</CardTitle>
           {sLoading ? (
             <Loader />
           ) : (
@@ -694,7 +762,7 @@ export default function Compare() {
             <Table className="fold-table">
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>School</Table.Th>
+                  <Table.Th>Division</Table.Th>
                   <Table.Th ta="right" data-fold>Headcount</Table.Th>
                   <Table.Th ta="right">Median</Table.Th>
                   <Table.Th ta="right" data-fold>90th pctile</Table.Th>

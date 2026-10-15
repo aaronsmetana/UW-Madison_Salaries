@@ -104,11 +104,13 @@ export function fmtSnapTick(label: string): string {
  * deliberately excluded. Never cycle past this list — color follows the entity, not its position (see
  * useTray's colorIdx) — a 9th+ item reuses the last slot with a dashed line instead of a repeated hue.
  */
+// The second an orange, not a blue (C5): two people in teal and blue read as one colour twice. Each next one a
+// hue well away from the last, and lighter or darker than it.
 export const CHART_SERIES = [
   'var(--series-accent)',
-  'var(--mantine-color-blue-7)',
-  'var(--mantine-color-grape-6)',
   'var(--mantine-color-orange-8)',
+  'var(--mantine-color-grape-6)',
+  'var(--mantine-color-blue-7)',
   'var(--mantine-color-violet-6)',
   'var(--mantine-color-lime-9)',
   'var(--mantine-color-pink-8)',

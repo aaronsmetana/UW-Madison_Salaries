@@ -52,7 +52,7 @@ test('one add box puts a person, a title and a division in the tray as what they
 
   await expect(page.locator('[data-row="People"]')).toContainText('Aaron Smetana');
   await expect(page.locator('[data-row="Titles"]')).toContainText('System Engineer IV');
-  await expect(page.locator('[data-row="Schools"]')).toContainText('School of Medicine and Public Health');
+  await expect(page.locator('[data-row="Divisions"]')).toContainText('School of Medicine and Public Health');
   await expect(page.locator('[data-row="People"] .mantine-Pill-root')).toHaveCount(1);
 });
 

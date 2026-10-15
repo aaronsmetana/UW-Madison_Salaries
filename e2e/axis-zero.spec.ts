@@ -12,7 +12,8 @@ const CHARTS: [string, string, string[]][] = [
   ['a person’s report', `./person/${encodeURIComponent(AARON)}?tab=report`, ['Actual pay over time']],
   ['Divisions', './divisions?tab=trends', ['Median actual pay over time']],
   ['a division', `./school/${encodeURIComponent('School of Education')}?tab=dist`, ['Median actual pay over time']],
-  ['Compare', './compare', ['Actual pay by snapshot', 'Median actual pay per title over time']],
+  // A title is drawn on the people's chart (C3), no longer on a chart of its own.
+  ['Compare', './compare', ['Actual pay by snapshot']],
   ['a raise case', `./raise-case?type=comparison&subject=${encodeURIComponent(AARON)}`, ['Pay vs. title median over time']],
 ];
 

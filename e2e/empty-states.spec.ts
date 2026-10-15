@@ -15,6 +15,7 @@ for (const [page_, path, heading] of [
     const card = page.locator('.mantine-Card-root', { has: page.getByRole('heading', { name: heading }) });
     await expect(card).toBeVisible({ timeout: 30_000 });
     await expect(card).toContainText('above');
-    await expect(card.getByRole('button')).toHaveCount(0);
+    // Compare's comparisons to start from (C1) are each a whole comparison, not the add box again.
+    await expect(card.getByRole('button')).toHaveCount(await card.locator('.compare-starters button').count());
   });
 }

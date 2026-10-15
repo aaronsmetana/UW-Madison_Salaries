@@ -54,7 +54,13 @@ export interface ScreeningResult {
   cohortN: number;
   percentile: number | null;
   gapToMed: number | null; // dollars below (positive) the title-cohort median
+  /** How far below the title-cohort median, as a share of it (positive below, negative above): the ranking's
+   *  tie-break (S1), where the score caps — screening reads two of the brief's four signals, both of which
+   *  saturate, so the top of a school's list all read "Moderate · 65". */
+  belowMedian: number | null;
   tenureInvCount: number; // less-tenured same-title peers paid more
+  /** Same-title peers with less tenure, the inversions' pool: "paid less than 38% of less-tenured peers" (S3). */
+  lessTenuredN: number;
   compressionCount: number; // distinctly-junior peers within the guideline's compression floor
   compressionInvertedCount: number;
   belowMarket: boolean;
@@ -187,7 +193,9 @@ export function computeScreeningResults(opts: {
       cohortN: cohort.length,
       percentile: stats?.percentile ?? null,
       gapToMed: stats?.gapToMed ?? null,
+      belowMedian: stats && stats.med ? (stats.med - s.pay) / stats.med : null,
       tenureInvCount: stats?.invCount ?? 0,
+      lessTenuredN: stats && s.tenure != null ? cohort.filter((r) => r.tenure != null && r.tenure < s.tenure!).length : 0,
       compressionCount: gc?.count ?? 0,
       compressionInvertedCount: gc?.invertedCount ?? 0,
       belowMarket,

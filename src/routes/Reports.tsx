@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton, Menu } from '@mantine/core';
+import { Stack, Text, Group, Button, SegmentedControl, Card, Box, Paper, Skeleton, Menu, Tooltip, Loader } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconPrinter, IconFileTypeDoc, IconCopy, IconCheck, IconDownload, IconChevronDown } from '@tabler/icons-react';
 import { briefToWordHtml, downloadDoc, copyBriefRichText } from '../lib/wordExport';
@@ -12,7 +12,7 @@ import { raiseBucket, raiseBuckets } from '../lib/raiseBuckets';
 import { sqlStr } from '../lib/duckdb';
 import { personPay, basisEquivWhere, continuingRaisesSql, GRADED_APPT, gradedCols, mainOf } from '../lib/queries';
 import { useTray } from '../state/tray';
-import { decodeSel, encodeSel } from '../lib/share';
+import { readSel, writeSel } from '../lib/share';
 import { CopyLinkButton } from '../components/CopyLinkButton';
 import { PayMeasure } from '../components/PayMeasure';
 import { usd, pct, fullName, plural, fmtToday, fmtGrade } from '../lib/format';
@@ -90,13 +90,16 @@ export default function Reports() {
   // A copied raise case reopens from its link: its subject, its people (`?sel=`, as Compare's) and its settings
   // (`?case=`, model `encodeCase`). Read once, as the page opens; the reader's own compare set is left alone.
   const shared = useRef((() => {
-    const sel = decodeSel(params.get('sel'))?.filter((i) => i.type === 'person') ?? null;
+    const sel = readSel(params)?.filter((i) => i.type === 'person') ?? null;
     return { sel, caseParam: params.get('case'), subject: params.get('subject') ?? sel?.[0]?.id ?? null, read: false };
   })());
   // With no subject named, a case starts on the compare set's first person.
   const [subjectKey, setSubjectKey] = useState<string | null>(() => shared.current.subject ?? persons[0]?.id ?? null);
+  // Where the subject came from, said where it is picked (RC3): taken from the compare set, it was chosen for the
+  // reader without a word.
+  const [fromCompareSet, setFromCompareSet] = useState(() => !shared.current.subject && !!persons[0]);
   useEffect(() => {
-    if (!subjectKey && persons.length) setSubjectKey(persons[0].id);
+    if (!subjectKey && persons.length) { setSubjectKey(persons[0].id); setFromCompareSet(true); }
   }, [subjectKey, persons]);
   // The people a new case starts from when another subject is chosen: the case it was switched from.
   const seed = useRef<CasePerson[] | null>(null);
@@ -127,6 +130,7 @@ export default function Reports() {
   const fromSet = persons.filter((p) => !caseIds.includes(p.id)).map((p) => ({ key: p.id, name: p.label }));
   const setPeers = (next: CasePerson[]) => setConfig((c) => ({ ...c, peers: casePeople(subjectKey ?? '', next, []) }));
   const chooseSubject = (key: string | null) => {
+    setFromCompareSet(false);
     if (subjectKey && key !== subjectKey) seed.current = [{ key: subjectKey, name: subjectName }, ...peers];
     setSubjectKey(key);
   };
@@ -147,8 +151,7 @@ export default function Reports() {
         const people = subjectKey
           ? [{ type: 'person' as const, id: subjectKey, label: subjectName }, ...peers.map((p) => ({ type: 'person' as const, id: p.key, label: p.name }))]
           : [];
-        if (people.length) n.set('sel', encodeSel(people));
-        else n.delete('sel');
+        writeSel(n, people);
         const cs = encodeCase(config);
         if (cs) n.set('case', cs);
         else n.delete('case');
@@ -250,7 +253,7 @@ export default function Reports() {
     return idx > 0 ? list[idx - 1] : null;
   }, [summary, snap]);
 
-  const { data: peerListRows } = useSql<PeerRow>(
+  const { data: peerListRows, isFetching: peersLoading } = useSql<PeerRow>(
     ['rpt-peerlist', jobCode ?? '', snap ?? '', metric, compBasisWhere],
     `WITH pp AS (SELECT person_key, ${personPay(metric)} pay, any_value(school) school,
         any_value(date_diff('day', CAST(date_of_hire AS DATE), CAST(snapshot_date AS DATE)) / 365.25) tenure
@@ -258,6 +261,9 @@ export default function Reports() {
      SELECT person_key, pay, tenure, school FROM pp WHERE pay > 0`,
     cmpReady && !!jobCode
   );
+  // What Export waits on (RC8): the subject, then the people of their title. Neither on the way, it says why it
+  // has nothing to export instead.
+  const exportWaiting = !!subjectKey && (subjRows === undefined || (!!jobCode && (peerListRows === undefined || peersLoading)));
 
   const { data: gradeListRows } = useSql<{ person_key: string; pay: number; tenure: number | null }>(
     ['rpt-gradelist', grade ?? -1, snap ?? '', metric, compBasisWhere],
@@ -1033,6 +1039,7 @@ export default function Reports() {
         comparators={comparatorOptions}
         subjectKey={subjectKey}
         onSubject={chooseSubject}
+        subjectNote={fromCompareSet && subjectName ? `${subjectName}, the first person in your compare set. Pick anyone else here.` : null}
         matchName={matching && targetPerson ? fullName(targetPerson.fn, targetPerson.ln) : null}
         fromSet={fromSet}
         basePay={subjectPay}
@@ -1093,13 +1100,17 @@ export default function Reports() {
                 <CopyLinkButton />
                 {/* One Export control: printing, the .doc and the email copy were three buttons side by side, and
                     the last two did nothing on a one-person report but sit there disabled. */}
+                {/* Disabled until the comparison data is in, and saying so (RC8): it sat greyed out without a word. */}
+                <Tooltip label={exportWaiting ? 'Waiting for comparison data' : subjectKey ? 'No one to compare with yet' : 'Choose a subject first'} disabled={!!peerListRows?.length && !exportWaiting} withArrow>
+                <span className="export-wrap" style={{ display: 'inline-flex' }}>
                 <Menu position="bottom-end" shadow="md" withinPortal>
                   <Menu.Target>
                     <Button
                       variant="default"
-                      leftSection={<IconDownload size={ICON.control} />}
+                      leftSection={exportWaiting ? <Loader size={ICON.compact} /> : <IconDownload size={ICON.control} />}
                       rightSection={<IconChevronDown size={ICON.compact} />}
-                      disabled={!peerListRows?.length}
+                      disabled={!peerListRows?.length || exportWaiting}
+                      aria-busy={exportWaiting || undefined}
                     >
                       Export
                     </Button>
@@ -1132,6 +1143,8 @@ export default function Reports() {
                         </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
+                </span>
+                </Tooltip>
               </ExportBar>
             </Group>
           }
@@ -1172,8 +1185,10 @@ export default function Reports() {
               onChange={(v) => setMobileTab(v as 'setup' | 'preview')}
               data={[{ value: 'setup', label: 'Setup' }, { value: 'preview', label: 'Preview' }]}
             />
-            <div style={{ display: mobileTab === 'setup' ? undefined : 'none' }}>{setupPane}</div>
-            <div style={{ display: mobileTab === 'preview' ? undefined : 'none' }}>{briefPane}</div>
+            {/* Whichever is shown, the brief is what prints (RC7, print.css): with Setup chosen it was not drawn, and
+                Chrome printed five blank pages. */}
+            <div className="report-pane-setup" style={{ display: mobileTab === 'setup' ? undefined : 'none' }}>{setupPane}</div>
+            <div className="report-pane-brief" style={{ display: mobileTab === 'preview' ? undefined : 'none' }}>{briefPane}</div>
           </>
         )}
     </Stack>

@@ -58,13 +58,26 @@ export function snapTicks(rows: readonly SnapRow[]): SnapTick[] {
   return [...byDate.entries()].sort((a, b) => a[0] - b[0]).map(([x, label]) => ({ x, label }));
 }
 
+/** One tick a year, at its first snapshot, named by the year ("2022"). */
+export function yearTicks(rows: readonly SnapRow[]): SnapTick[] {
+  const byYear = new Map<string, number>();
+  for (const r of rows) {
+    const y = String(r.date).slice(0, 4), x = dayOf(String(r.date));
+    if (!byYear.has(y) || x < byYear.get(y)!) byYear.set(y, x);
+  }
+  return [...byYear.entries()].sort((a, b) => a[1] - b[1]).map(([y, x]) => ({ x, label: y }));
+}
+
 /**
  * Props for a Recharts `<XAxis>` on the date axis. Rows must carry `x` from `snapX` under `dataKey`.
  * `interval="preserveStartEnd"` with `minTickGap` lets Recharts drop the ticks whose measured labels
  * would collide at the chart's real width, keeping the first and last.
  */
-export function snapAxisProps(rows: readonly SnapRow[], dataKey = 'x') {
-  const ticks = snapTicks(rows);
+export function snapAxisProps(rows: readonly SnapRow[], dataKey = 'x', opts: { years?: boolean } = {}) {
+  // A narrow chart (the raise case's, in its document's column, RC6): a tick at each year's first snapshot,
+  // named by its year, every one of them shown — at a snapshot a tick, Recharts dropped whichever collided, and
+  // Sep '24 and Sep '25 went unnamed between their neighbours.
+  const ticks = opts.years ? yearTicks(rows) : snapTicks(rows);
   const xs = rows.map((r) => snapX(String(r.date), String(r.label)));
   const lo = xs.length ? Math.min(...xs) : 0;
   const hi = xs.length ? Math.max(...xs) : 1;
@@ -76,7 +89,7 @@ export function snapAxisProps(rows: readonly SnapRow[], dataKey = 'x') {
     domain: [lo, hi] as [number, number],
     ticks: ticks.map((t) => t.x),
     tickFormatter: labelAt,
-    interval: 'preserveStartEnd' as const,
+    interval: opts.years ? 0 : ('preserveStartEnd' as const),
     minTickGap: 14,
     padding: { left: 16, right: 16 },
   };

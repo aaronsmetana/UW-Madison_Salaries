@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import {
   Stack, Card, Text, Select, Group, Badge, Button, TextInput, Textarea, NumberInput, Switch, Radio,
-  SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu, List,
+  SegmentedControl, Checkbox, Progress, ActionIcon, Tooltip, Box, Menu, List, Accordion, VisuallyHidden,
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
 import { IconX, IconPlus, IconCopy, IconCheck, IconRefresh, IconAlertTriangle, IconInfoCircle, IconChevronRight } from '@tabler/icons-react';
@@ -23,7 +23,7 @@ export interface SuggestPerson { key: string; name: string; school: string | nul
 const SectionLabel = ({ children }: { children: ReactNode }) => <Eyebrow>{children}</Eyebrow>;
 
 export function ReportSetup({
-  config, onChange, comparators, subjectKey, onSubject, matchName, fromSet, basePay, matches, onAddPeople, onRemovePerson,
+  config, onChange, comparators, subjectKey, onSubject, subjectNote, matchName, fromSet, basePay, matches, onAddPeople, onRemovePerson,
   asks, askValue, ladder, questions, caseStrength, strengthHints, talkingPoints, overAsk, overAskAnchor, cohortP75, recommended, readout, onReset, onHover,
   supervisoryCase, onAddSupervisee, onRemoveSupervisee, evidenceChecklist, performanceGuide,
 }: {
@@ -32,6 +32,8 @@ export function ReportSetup({
   comparators: SetupComparator[];
   subjectKey: string | null;
   onSubject: (key: string | null) => void;
+  /** Where the subject came from, when the page chose it (RC3). */
+  subjectNote?: string | null;
   /** Whom the case asks to match, when it asks to match someone: what they share is asked of each factor. */
   matchName: string | null;
   /** The compare set's people this case does not have: a subject to choose, or people to take in. */
@@ -88,6 +90,15 @@ export function ReportSetup({
   const peers = comparators.filter((c) => !c.isSubject);
 
   const pill = (amt: number) => Math.round(amt);
+  // A step's head: its number, or a check once what it needs is in (the progress, RC5), and its name.
+  const step = (n: number, label: string, done: boolean) => (
+    <Group gap="sm" wrap="nowrap" className="setup-step" data-done={done || undefined}>
+      {/* The step's number in its mark, a tick once it is done: the steps' progress at a glance (RC5). */}
+      <span className="setup-step-mark" aria-hidden>{done ? <IconCheck size={ICON.compact} /> : n}</span>
+      <Text size="sm" fw={700}><VisuallyHidden>Step {n}: </VisuallyHidden>{label}</Text>
+      <VisuallyHidden>{done ? ', done' : ', to do'}</VisuallyHidden>
+    </Group>
+  );
   // A factor the person matched has too: already in their pay, so not added to the ask.
   const sharedBox = (id: string) => (
     <Checkbox
@@ -99,6 +110,9 @@ export function ReportSetup({
 
   return (
     <Stack gap="lg">
+      {/* Four steps (RC5), each its own fold, open to start: the pane was one long column of everything. */}
+      <Accordion multiple defaultValue={['subject', 'ask', 'evidence', 'format']} variant="default" chevronPosition="right" className="setup-steps">
+      <Accordion.Item value="subject"><Accordion.Control>{step(1, 'Subject', !!subjectKey)}</Accordion.Control><Accordion.Panel>
       {/* Subject */}
       <Card withBorder padding="md">
         <SectionLabel>Subject</SectionLabel>
@@ -114,7 +128,10 @@ export function ReportSetup({
           onChange={onSubject}
           allowDeselect={false}
         />
+        {subjectNote && <Text size="xs" c="dimmed" mt={6} className="subject-note">{subjectNote}</Text>}
       </Card>
+      </Accordion.Panel></Accordion.Item>
+      <Accordion.Item value="ask"><Accordion.Control>{step(2, 'Ask', askValue != null)}</Accordion.Control><Accordion.Panel>
 
       {/* What to ask for: one choice, second, as a case is argued: whose pay, then what to ask, then with whom and
           why it is more (`askOptions` in the model). */}
@@ -191,6 +208,8 @@ export function ReportSetup({
           onChange={(e) => set({ headline: e.currentTarget.value })}
         />
       </Card>
+      </Accordion.Panel></Accordion.Item>
+      <Accordion.Item value="evidence"><Accordion.Control>{step(3, 'Evidence', peers.length > 0)}</Accordion.Control><Accordion.Panel>
 
       {/* Comparators — the subject is the anchor above; this list holds only the other side of the scale. */}
       <Card withBorder padding="md">
@@ -615,6 +634,8 @@ export function ReportSetup({
           onChange={(e) => set({ anonymize: e.currentTarget.checked })}
         />
       </Card>
+      </Accordion.Panel></Accordion.Item>
+      <Accordion.Item value="format"><Accordion.Control>{step(4, 'Format', config.sections.length > 0)}</Accordion.Control><Accordion.Panel>
 
       {/* Sections + reset */}
       <Card withBorder padding="md">
@@ -632,6 +653,8 @@ export function ReportSetup({
           </Tooltip>
         </Group>
       </Card>
+      </Accordion.Panel></Accordion.Item>
+      </Accordion>
 
       {/* Sticky recommendation readout — the long setup pane means a factor toggle near the top moves the
           number well off-screen; this pins the current figure so every edit shows its effect at a glance. */}
