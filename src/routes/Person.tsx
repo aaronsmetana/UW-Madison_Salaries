@@ -1256,7 +1256,9 @@ export default function Person() {
               </Card>
             )}
 
-            {scatterPoints.length >= 4 && (
+            {/* This card and the table wait for the title's figures as well as its people: the card above them is the
+                figures', and drawn before it, they were pushed off the screen when it came (a layout shift of 0.08). */}
+            {peer && scatterPoints.length >= 4 && (
               <Card withBorder padding="lg">
                 {/* No second cohort toggle here. The card above owns it, both were bound to the same
                     state, and two controls for one value sitting a few hundred pixels apart read as
@@ -1274,7 +1276,7 @@ export default function Person() {
               </Card>
             )}
 
-            {peers && peers.length > 1 && (
+            {peer && peers && peers.length > 1 && (
               <Card withBorder padding="lg" ref={peerCardRef} className="peer-table-card">
                 <CardTitle
                   sub={<>
@@ -1877,7 +1879,7 @@ export default function Person() {
         </Tabs.Panel>
 
         <Tabs.Panel value="history" pt="md">
-      <HistoryTable rows={rows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} csvName={name} />
+      <HistoryTable rows={rows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} loading={raiseCtx.loading} csvName={name} />
         </Tabs.Panel>
 
         {/* Everything above on one page, to print or save: what the Reports page's one-person report was. Its

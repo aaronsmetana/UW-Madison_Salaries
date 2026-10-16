@@ -303,7 +303,9 @@ export default function Explore() {
               loading={enabled && !k}
               sub={<Delta frac={frac(k?.headcount, kp?.headcount)} prevLabel={prevLabel} curLabel={curSnapMeta?.label ?? null} />}
             />
-            <MedianGrowthCard series={series} from={periodFrom} to={periodTo} p90={k?.p90 ?? null} loading={series.length < 2} />
+            {/* Its top-10% line is the figures' query, not the sparkline's: drawn when the sparkline came, the card grew a
+                line when the figures landed, and moved every tab under it (0.45 of layout shift, with the figures late). */}
+            <MedianGrowthCard series={series} from={periodFrom} to={periodTo} p90={k?.p90 ?? null} loading={series.length < 2 || (enabled && !k)} />
             <Kpi
               label="Total payroll"
               value={k?.total_payroll ?? null}

@@ -79,6 +79,8 @@ export interface RaiseContext {
    *  (1 + raises) × (1 + titles) is the whole. `titleSteps` names the snapshots a title changed at. */
   growthSplit: { raises: number; titles: number; titleSteps: string[] } | null;
   ready: boolean;
+  /** Still waiting on a query it is made of: the campus steps, the person's own, or their titles'. */
+  loading: boolean;
 }
 
 /**
@@ -88,8 +90,8 @@ export interface RaiseContext {
  * change's factor where their own pay crosses one, so the ×11/9 cancels instead of reading as a gap.
  */
 export function useRaiseContext(personKey: string, trend: readonly TrendPointLike[], metric: Metric): RaiseContext {
-  const { data: steps } = useRaiseSteps();
-  const { data: own } = useSql<{ to_id: string; r: number; job_code: string }>(
+  const { data: steps, isLoading: stepsLoading } = useRaiseSteps();
+  const { data: own, isLoading: ownLoading } = useSql<{ to_id: string; r: number; job_code: string }>(
     ['own-continuing', personKey, metric],
     `SELECT to_id, r, job_code FROM (${continuingRaisesSql({ metric, where: `person_key = ${sqlStr(personKey)}` })})`,
     !!personKey
@@ -97,7 +99,7 @@ export function useRaiseContext(personKey: string, trend: readonly TrendPointLik
   // The same steps within this person's own titles. Filtered to those job codes before the self-join,
   // so it reads a few hundred rows rather than every raise on campus.
   const jobs = useMemo(() => [...new Set((own ?? []).map((o) => o.job_code))].sort(), [own]);
-  const { data: titleSteps } = useSql<{ to_id: string; job_code: string; n: number; med: number }>(
+  const { data: titleSteps, isLoading: titlesLoading } = useSql<{ to_id: string; job_code: string; n: number; med: number }>(
     ['title-continuing', metric, jobs.join(',')],
     `SELECT to_id, job_code, count(*) n, median(r) med FROM (${continuingRaisesSql({ metric, where: `job_code IN (${jobs.map(sqlStr).join(', ')})` })}) GROUP BY ALL`,
     jobs.length > 0
@@ -154,6 +156,6 @@ export function useRaiseContext(personKey: string, trend: readonly TrendPointLik
       shares: b.shares.map((s) => ({ ...s, label: (s.kind === 'reporting' ? labels.get(`reporting:${s.toId}`) : labels.get(s.toId)) ?? s.toId })),
     };
     const growthSplit = path.length ? { raises: raised - 1, titles: retitled - 1, titleSteps: retitledAt } : null;
-    return { comparisons, typical, breakdown, growthSplit, ready: !!steps && !!own };
-  }, [steps, own, titleSteps, trend, metric]);
+    return { comparisons, typical, breakdown, growthSplit, ready: !!steps && !!own, loading: stepsLoading || ownLoading || titlesLoading };
+  }, [steps, own, titleSteps, trend, metric, stepsLoading, ownLoading, titlesLoading]);
 }

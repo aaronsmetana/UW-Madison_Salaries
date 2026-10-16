@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Table, Badge, Text, Group, Anchor, Tooltip as MantineTooltip } from '@mantine/core';
+import { Card, Table, Badge, Text, Group, Anchor, Skeleton, Tooltip as MantineTooltip } from '@mantine/core';
 import { CardTitle } from './CardTitle';
 import { GlossaryTerm } from './GlossaryTerm';
 import { LaneGutter, LaneStationSample } from './LaneGutter';
@@ -141,11 +141,14 @@ function RaiseCell({ raise, note, reporting, compare, children }: {
 /** No snapshot holds two lines: the history is one continuous line, and the lanes (laneGutter) are not drawn. */
 const gutterFree = (rows: readonly HistoryRow[]) => new Set(rows.map((r) => r.snapshot_id)).size === rows.length;
 
-export function HistoryTable({ rows, comparisons, csvName }: {
+export function HistoryTable({ rows, comparisons, loading, csvName }: {
   rows: readonly HistoryRow[];
   /** Each continuing raise's comparison with that step's raises campus-wide (lib/raiseContext),
    *  keyed by the snapshot it ends at. Absent until loaded. */
   comparisons?: ReadonlyMap<string, { text: string }>;
+  /** The comparisons are still on their way: the rows wait for them, drawn whole. Drawn first, a raise's row grew
+   *  a line when its comparison came, and every row under it moved (0.07 of layout shift, with them late). */
+  loading?: boolean;
   /** The person's name, for the CSV's file name. */
   csvName: string;
 }) {
@@ -303,7 +306,10 @@ export function HistoryTable({ rows, comparisons, csvName }: {
       >
         Title &amp; salary history
       </CardTitle>
-      {/* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */}
+      {/* At the table's own height, near enough (a row with its change and comparison is about 78px), so the
+          method note under it does not move when the rows come. */}
+      {loading ? <Skeleton height={44 + historyRows.length * 78} radius="md" /> : (
+      /* The gutter is a fixed 22px per slot plus the cell padding (app.css), so the floor grows with it. */
       <Table.ScrollContainer className="fold-scroll" minWidth={(gutter.slots ? 900 + gutter.slots * 22 : 880) - (onePay ? 90 : 0)}>
       {/* Striping is off because it is done per snapshot group in app.css instead — see .appt-history. */}
       <Table
@@ -517,6 +523,7 @@ export function HistoryTable({ rows, comparisons, csvName }: {
         </Table.Tbody>
       </Table>
       </Table.ScrollContainer>
+      )}
       {/* The table's method, folded (G22): it closed on a 60-word footnote. */}
       <MethodNote className="history-method">
         <Text inherit>

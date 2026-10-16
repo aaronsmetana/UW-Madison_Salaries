@@ -386,7 +386,7 @@ export function PersonDashboard({ personKey, metric }: { personKey: string; metr
       )}
 
       {/* Title & salary history: the person page's own table, so the printed report cannot disagree with it. */}
-      <HistoryTable rows={historyRows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} csvName={name} />
+      <HistoryTable rows={historyRows} comparisons={raiseCtx.ready ? raiseCtx.comparisons : undefined} loading={raiseCtx.loading} csvName={name} />
 
       {/* Same-title comparison (compact) */}
       {peer && peer.n === 1 && jobCode && (
