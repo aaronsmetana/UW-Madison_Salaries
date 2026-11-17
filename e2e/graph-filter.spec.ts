@@ -94,7 +94,6 @@ function prints(who: { person_key: string }[], at: Map<string, { field: 'main' |
 
 /** The landing graph gone full page, its dots at rest and the panel done growing. */
 async function fullPage(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.locator('.hero-dist-full-toggle').click();
@@ -153,7 +152,6 @@ test('a name typed lights exactly the people it names, within the filters full p
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   const at = await spots();
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   const pageBox = page.getByRole('combobox', { name: 'Search a person, title or division' });
@@ -612,7 +610,6 @@ test('with nothing typed the strip offers groups to filter by, and what it offer
 test('"Show on full page graph" in the page’s search opens the graph full page with that group on', async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   const code = await codeOf('Research Associate');
@@ -654,7 +651,6 @@ test('"Show on full page graph" in the page’s search opens the graph full page
 
 test('the page’s search list, with "Show on full page graph" on its rows, passes a strict accessibility scan', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   await page.getByRole('combobox', { name: /Search a person/ }).fill('medicine');

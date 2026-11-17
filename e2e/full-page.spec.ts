@@ -9,7 +9,6 @@ import AxeBuilder from '@axe-core/playwright';
  */
 
 async function settledHome(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
   // And the page above it laid out for good: the webfont in, and the panel where it will stay. On CI the

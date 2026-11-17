@@ -22,7 +22,6 @@ const hook = (page: Page, name: 'squarePlaces' | 'squareSlots' | 'squareNow', f:
   field(page).evaluate((el, a) => (el as unknown as Record<string, (f: string) => number[]>)[a.name](a.f), { name, f });
 
 async function home(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }

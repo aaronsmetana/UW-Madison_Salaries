@@ -46,18 +46,6 @@ const LOUPE_LABEL = { hist: `${LOUPE_ZOOM.hist}×`, floors: `${LOUPE_ZOOM.floors
 /** Unrolled, how far inside the right edge the top salary stands, CSS px. */
 const TOP_INSET = 8;
 
-/** Played once per session: after that the squares are simply there. */
-const SEEN_KEY = 'strata-entrance';
-const readSession = () => { try { return sessionStorage.getItem(SEEN_KEY) === '1'; } catch { return true; } };
-const writeSession = () => { try { sessionStorage.setItem(SEEN_KEY, '1'); } catch { /* private mode */ } };
-/** Whether the page plays the intro as it opens (3a §12): once a session, never under reduced motion or in a hidden
- *  tab. */
-export function useIntroOnce(): boolean {
-  const [play] = useState(() => !readSession() && !prefersReducedMotion() && !(typeof document !== 'undefined' && document.hidden));
-  useEffect(() => { if (play) writeSession(); }, [play]);
-  return play;
-}
-
 /** Who is dim under a filter: 1 for a square that fades, 0 for one of the group; one per square. */
 export interface Dim { main: Uint8Array; pile: Uint8Array }
 export type Field = 'main' | 'pile';
@@ -1152,12 +1140,16 @@ export const StrataField = forwardRef<StrataFieldHandle, {
     }
     const now = performance.now();
     if (stepped && step?.fade && baseRef.current && fadeRef.current) {
-      // Back to an earlier snapshot (3a): the picture as it was fades out over the new one, no one moving.
+      // Back to an earlier snapshot (3a), or skipped on to the latest: the picture as it was fades out over the new
+      // one, no one moving.
       const was = fadeRef.current, base = baseRef.current, fctx = was.getContext('2d');
       fctx?.setTransform(1, 0, 0, 1, 0, 0);
       fctx?.clearRect(0, 0, was.width, was.height);
       fctx?.drawImage(base, 0, 0);
       cur.current = { mx: layout.mx.slice(), my: layout.my.slice(), px: layout.px.slice(), py: layout.py.slice() };
+      // A step cut short by it is over: its phase was left standing, and once the fade was done the chip went on
+      // saying "Moving people" over a graph at rest — every time Skip was pressed while Play ran.
+      if (move.current?.stage?.phase) props.current.onPhase?.(null);
       move.current = null;
       drawBase();
       setMoving(true);

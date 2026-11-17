@@ -21,7 +21,6 @@ const chip = (page: Page) => page.locator('.strata-follow-chip');
 const searchBox = (page: Page) => page.getByRole('combobox', { name: /Search a person/ });
 
 async function home(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });

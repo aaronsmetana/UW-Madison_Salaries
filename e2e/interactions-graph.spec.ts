@@ -53,7 +53,6 @@ test('the palette: no band over its box, its keys said, the people looked at las
 });
 
 test('full page is in the address with its title and school: a link reopens it, Back comes back to it, and closing takes it off', async ({ page }) => {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(page.locator('.hero-dots')).toHaveAttribute('data-settled', 'true', { timeout: 60_000 });
   await page.locator('.hero-dist-full-toggle').click();
@@ -80,7 +79,6 @@ test('full page is in the address with its title and school: a link reopens it, 
 });
 
 test('a group shown is lit where it stands, the rest in their own colours at 40%, and no pin label over another', async ({ page }) => {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./?view=full&gs=School%20of%20Medicine%20and%20Public%20Health');
   await expect(page.locator('.hero-dist')).toHaveAttribute('data-full', 'on', { timeout: 60_000 });
   const plot = page.locator('.hero-dist-full .hero-dist-main');

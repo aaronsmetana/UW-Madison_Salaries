@@ -13,7 +13,7 @@ export function TimelineChip({ input, compact = false }: { input: Omit<ChipInput
   // Ticks only to be drawn again: what it says is worked out from the clock as it is drawn, never from the last
   // tick, which could be a quarter second old as a phase begins (a 3 s countdown read "4").
   const [, setNow] = useState(() => performance.now());
-  const live = input.playing || input.phase != null || input.rest != null || input.fade != null || input.switching || input.intro;
+  const live = input.playing || input.phase != null || input.rest != null || input.fade != null || input.switching;
   useEffect(() => {
     setNow(performance.now());
     if (!live) return;

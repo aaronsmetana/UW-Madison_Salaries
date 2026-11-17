@@ -220,7 +220,8 @@ describe('pacePlan', () => {
   });
   it('moves straight between sorted places by employment type, and at Fast in either mode without a pause', () => {
     expect(pacePlan('slow', 'type')).toEqual({ mv: 2600, cd: 0, so: 0, re: 1600, staged: false });
-    expect(pacePlan('medium', 'type')).toEqual({ mv: 1700, cd: 0, so: 0, re: 900, staged: false });
+    // Medium by type is Play's first run: a second a snapshot, the move and its rest together.
+    expect(pacePlan('medium', 'type')).toEqual({ mv: 700, cd: 0, so: 0, re: 300, staged: false });
     for (const md of ['change', 'type'] as const) expect(pacePlan('fast', md)).toEqual({ mv: FAST_MS, cd: 0, so: 0, re: 0, staged: false });
     expect(FAST_MS).toBe(250);
   });

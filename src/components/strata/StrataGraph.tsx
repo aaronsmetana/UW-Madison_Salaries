@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Loader, Popover, Slider, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
-import { IconAdjustmentsHorizontal, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipForwardFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, seatedSlots, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
-import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, useIntroOnce, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
+import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { snapStats, stepKinds, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
 import { measureText, placeNearLabels } from '../../lib/labelLayout';
@@ -99,8 +99,10 @@ function CardSpark({ series, now, first, last }: { series: readonly (number | nu
 
 /** The loupe's rim stays this far inside the plot, CSS px (its shadow may reach past). */
 const LENS_MARGIN = 4;
-/** The intro's title, magnified at the median, this long before it zooms out to everyone (3a §12). */
-const INTRO_TITLE_MS = 2800;
+/** Play pointed at with a mouse this long, and the timeline starts loading ahead of the click. */
+const PLAY_POINT_MS = 150;
+/** The least plot, CSS px, that has room in its corner for the snapshot's name, large. */
+const WHEN_MIN_W = 640;
 /** Play, starting over from the first snapshot, rests at least this long there before going on. */
 const PLAY_RESTART_MS = 700;
 /** Play's speeds (3a): Fast, a snapshot every quarter second; Medium and Slow stage each step. */
@@ -217,13 +219,6 @@ export function StrataGraph({
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
-  // The intro (3a §12), once a session as the page opens: magnified at the median with "Each square is one person",
-  // out to everyone, then the timeline played once to the latest. Any interaction skips it; Reduce Motion never
-  // plays it.
-  const introOnce = useIntroOnce();
-  const [intro, setIntro] = useState<'title' | 'zoom' | 'play' | null>(() => (introOnce ? 'title' : null));
-  const introRef = useRef(intro);
-  introRef.current = intro;
   const reveal = useReveal();
   const [dpr] = useState(() => Math.min(2, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1));
   const summaryId = useId();
@@ -250,8 +245,10 @@ export function StrataGraph({
   // Fast goes straight through, a snapshot every quarter second. Read by a step as it is made (refs), so a change
   // of speed never restarts the one in flight. Medium to start (I11): Fast ran the whole timeline in about 2.5 s.
   const [pace, setPace] = useState<Pace>('medium');
-  // How a step shows (3a): raises and cuts, or employment type.
-  const [mode, setMode] = useState<StepMode>('change');
+  // How a step shows (3a): raises and cuts, or employment type. By type to start: Play's first run then keeps the
+  // colours and the legend the page opened with, a second a snapshot (lib/strata `PACES`). Raises and cuts recolours
+  // everyone and stages each step over four seconds — the closer look, for whoever asks for it.
+  const [mode, setMode] = useState<StepMode>('type');
   // The settings (3a's tweaks): each column by type then salary, or by salary alone; and Slow's countdown, seconds.
   // By type to start (H5): by salary alone the five types' colours were threaded through every column, and how
   // many of each a column holds could not be read at a glance; by type, each column stands in bands of colour.
@@ -404,8 +401,11 @@ export function StrataGraph({
   useEffect(() => { if (!canUnroll) setUnrolled(false); }, [canUnroll]);
   // The histogram; the floors (3a), everyone in $10k bands stacked from the bottom up; or the histogram magnified,
   // a $30k window of it (`magLeft`, in dollars) six columns to the plot.
-  const [view, setView] = useState<StrataView>(() => (introOnce ? 'magnify' : 'hist'));
-  const [magLeft, setMagLeft] = useState(() => (introOnce && medianBase != null ? magLeftFor(medianBase) : 0));
+  // Everyone, at the latest, as the page opens — and still. It used to open magnified at the median under a title,
+  // zoom out, then play the timeline through unasked: 47 seconds before the page was at rest, most of them showing
+  // 2021's people under a heading that counts today's, and the 15 MB the timeline needs loaded on every first visit.
+  const [view, setView] = useState<StrataView>('hist');
+  const [magLeft, setMagLeft] = useState(0);
   const layoutOf = useCallback(
     (s: Strata) => layoutStrata(s, { W: plotW, H, top: view === 'magnify' ? STRIP_BAND : PIN_BAND + 4, dpr, phone, peak: scalePeak, view, magLeft, byType }, unrolled && canUnroll && view === 'hist'),
     [plotW, H, dpr, phone, unrolled, canUnroll, scalePeak, view, magLeft, byType],
@@ -447,6 +447,10 @@ export function StrataGraph({
   const [queue, setQueue] = useState<number | null>(null);
   const queueRef = useRef<number | null>(null);
   queueRef.current = queue;
+  // Skipped on to the latest (Skip, beside Pause): a cross-fade straight there, as back to an earlier snapshot is.
+  const [jump, setJump] = useState(false);
+  const jumpRef = useRef(jump);
+  jumpRef.current = jump;
   // A step from `was` (the snapshot shown before, as laid out) onto snapshot `at` (`B`, laid out `L1`), from snapshot
   // `stepFrom`; `replaying`, the last one again in another mode.
   const makeStep = useCallback((was: { strata: Strata; layout: StrataLayout } | null, B: TimelineStrata | null, L1: StrataLayout | null,
@@ -478,8 +482,8 @@ export function StrataGraph({
     let g = 0;
     for (let i = 0; i < A.mainId.length; i++) if (!stays[A.mainId[i]]) { gx[g] = L0.mx[i]; gy[g] = L0.my[i]; gk[g++] = A.kind[i]; }
     for (let j = 0; j < A.pileId.length; j++) if (!stays[A.pileId[j]]) { gx[g] = L0.px[j]; gy[g] = L0.py[j]; gk[g++] = A.pileKind[j]; }
-    // Back to an earlier snapshot, a cross-fade (3a).
-    const fade = !replaying && stepFrom != null && at != null && at < stepFrom;
+    // Back to an earlier snapshot, a cross-fade (3a); and on to the latest, when skipped there.
+    const fade = !replaying && stepFrom != null && at != null && (at < stepFrom || jumpRef.current);
     const md = modeRef.current, full = pacePlan(paceRef.current, md, countdownRef.current);
     // A catch-up step (a jump of several on): quickly, straight there.
     const quick = queueRef.current != null;
@@ -529,7 +533,7 @@ export function StrataGraph({
       to: L1, fade, from: { mx: fm.fx, my: fm.fy, px: fp.fx, py: fp.fy }, mid, kind: { main: k.main, pile: k.pile }, rank,
       ghosts: { x: gx, y: gy, kind: gk }, plan, mode: md, counts: k.counts, flow, quick,
     };
-    // The pace, mode, catch-up and play are read as the step is made: none a dependency.
+    // The pace, mode, catch-up, skip and play are read as the step is made: none a dependency.
   }, [tl, strataAt, layoutFor, lastSnap]);
   // Fast's next step, built ahead while this one plays (3a §10): on landing, the next is taken in the same frame.
   const nextRef = useRef<{ at: number; layout: StrataLayout; step: Step } | null>(null);
@@ -614,11 +618,12 @@ export function StrataGraph({
     return m ? (prev === bare && own ? own.replace(/^(Pre|Post)-/, '') : `${m[1]} ${m[2].slice(2)}`) : bare;
   }), [snaps]);
   // Asked to play and not yet playing — the timeline loading, then the field drawn from the latest's people before
-  // the first step: said as playing (Pause), with a spinner in Play's icon while it loads. It read "Play 2021 →
-  // 2026" again for a moment between the two, and went blank while it loaded.
+  // the first step. Loading says so, with a spinner in Play's icon: it read "Pause" all the while, over a graph
+  // standing still, for as long as 15 MB took. The moment after, the field drawn and the first step not yet taken,
+  // is said as playing (Pause): it read "Play 2021 → 2026" again between the two, and went blank while it loaded.
   const waiting = !!goal?.play;
   const loadingTl = waiting && !tl && timeline?.data === 'loading';
-  const playLabel = playing || waiting ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : snaps.length > 1 ? `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}` : 'Play';
+  const playLabel = loadingTl ? 'Loading timeline…' : playing || waiting ? 'Pause' : at != null && at < lastSnap ? (paused ? 'Resume' : 'Play from here') : snaps.length > 1 ? `Play ${bareLabel(snaps[0].label).slice(-4)} → ${bareLabel(snaps[lastSnap].label).slice(-4)}` : 'Play';
   const onPlay = () => {
     if (waiting) { setGoal(null); return; }
     if (playing) { setPlaying(false); setPaused(true); return; }
@@ -645,8 +650,7 @@ export function StrataGraph({
   const onMoving = useCallback((m: boolean) => setMoving(m), []);
   const onLanded = useCallback((moved: boolean) => {
     setSwitching(false);
-    // The intro out to everyone: now the timeline, from the first snapshot to the latest, once.
-    if (moved && introRef.current === 'zoom') introPlayRef.current();
+    setJump(false);
     const a = atRef.current;
     setLanded((l) => (!moved && l?.at === a ? l : { at: a, t: performance.now(), re: pacePlan(paceRef.current, modeRef.current, countdownRef.current).re }));
     if (moved) advanceRef.current();
@@ -717,18 +721,18 @@ export function StrataGraph({
   // The status chip (3a §11): what the graph is doing, from the step, its phase, Play's rest and the pace.
   const fadeStart = useMemo(() => (step?.fade ? performance.now() : 0), [step]);
   const fadeInfo = useMemo(
-    () => (step?.fade && moving && at != null && snaps[at] ? { to: bareLabel(snaps[at].label), start: fadeStart, end: fadeStart + FADE_MS } : null),
-    [step, moving, at, snaps, fadeStart],
+    () => (step?.fade && moving && at != null && snaps[at] ? { to: bareLabel(snaps[at].label), start: fadeStart, end: fadeStart + FADE_MS, ahead: stepFrom != null && at > stepFrom } : null),
+    [step, moving, at, snaps, fadeStart, stepFrom],
   );
   const chipInput: Omit<ChipInput, 'now'> | null = snaps.length > 1 ? {
     playing, paused, fast: pace === 'fast', fastMs: FAST_MS, phase,
     step: step && stepFrom != null && at != null && snaps[stepFrom] && snaps[at] ? { from: bareLabel(snaps[stepFrom].label), to: bareLabel(snaps[at].label), quick: !!step.quick } : null,
-    fade: fadeInfo, switching, rest, sortBy: sortWords, intro: intro === 'title' || intro === 'zoom',
+    fade: fadeInfo, switching, rest, sortBy: sortWords,
     plan: pacePlan(pace, mode, countdown), stepsLeft: lastSnap - (at ?? lastSnap), last: bareLabel(snaps[lastSnap].label),
     progress: { from: Math.max(0, (at ?? lastSnap) - 1) / lastSnap, to: (at ?? lastSnap) / lastSnap },
   } : null;
   // On a phone the chip takes Play's row while something is under way, Play down to its icon; at rest, Play's words.
-  const chipActive = !!chipInput && (playing || phase != null || rest != null || fadeInfo != null || switching || intro != null);
+  const chipActive = !!chipInput && (playing || phase != null || rest != null || fadeInfo != null || switching);
   // What a raises-and-cuts step's colours mean, in the legend: while it moves and holds, and all through Fast's play.
   const changeShown = mode === 'change' && !!step?.counts && !step.fade && (phase?.phase === 'move' || phase?.phase === 'hold' || (pace === 'fast' && playing));
   const changePace = (p: Pace) => { setPace(p); setSkipHold((k) => k + 1); };
@@ -961,15 +965,13 @@ export function StrataGraph({
   const topShare = (n: number) => { const p = (n / Math.max(1, total)) * 100; return p >= 0.1 ? `${p.toFixed(1)}%` : 'under 0.1%'; };
   const pileWord = `${num(over)} at ${fmtK(cap ?? 250_000)} or more · the top ${topShare(over)} · ${canHover ? 'click' : 'tap'} to see each at their own pay`;
   // A line under the graph (3a): what it shows and how to use it, by view — said for a mouse or a finger.
-  const hint = intro === 'title' || intro === 'zoom'
-    ? 'Each square is one person, colored by employment type.'
-    : tail
-      ? `${num(over)} people at ${fmtK(cap ?? 250_000)} or more, each at their own pay. ${canHover ? 'Click the graph or press Esc' : 'Tap the graph'} to fold them back.`
-      : (layout?.view ?? view) === 'magnify'
-        ? `A $30k window, magnified. Drag to pan; ${canHover ? 'point at' : 'tap'} anyone to see who they are.`
-        : (layout?.view ?? view) === 'floors'
-          ? `Each floor is a $10k band, sorted by ${sortWords} from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
-          : `Sorted by ${sortWords} within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
+  const hint = tail
+    ? `${num(over)} people at ${fmtK(cap ?? 250_000)} or more, each at their own pay. ${canHover ? 'Click the graph or press Esc' : 'Tap the graph'} to fold them back.`
+    : (layout?.view ?? view) === 'magnify'
+      ? `A $30k window, magnified. Drag to pan; ${canHover ? 'point at' : 'tap'} anyone to see who they are.`
+      : (layout?.view ?? view) === 'floors'
+        ? `Each floor is a $10k band, sorted by ${sortWords} from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
+        : `Sorted by ${sortWords} within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
   const readout = useMemo(() => {
     // Magnified there is no glass to read: the columns are labelled under the plot, and counted over each.
     if (!strata || !layout || !lensAt || layout.view === 'magnify') return null;
@@ -1087,54 +1089,43 @@ export function StrataGraph({
   const magnifyAt = (pay: number) => { setMagLeft(magLeftFor(pay)); switchView('magnify'); };
   const panTo = (left: number) => setMagLeft(Math.max(0, Math.min(MAG_LEFT_MAX, left)));
 
-  // ── The intro (3a §12) ──
-  // The timeline's people load as it opens, to be ready by the time it plays — once the page knows its snapshots
-  // (the summary, a moment after the graph is drawn).
-  const wantRef = useRef(timeline?.onWant);
-  wantRef.current = timeline?.onWant;
-  const hasTimeline = timeline != null;
-  useEffect(() => { if (introRef.current && hasTimeline) wantRef.current?.(); }, [hasTimeline]);
-  // Centred on the median once it is known.
-  useEffect(() => { if (introRef.current === 'title' && medianBase != null) setMagLeft(magLeftFor(medianBase)); }, [medianBase]);
-  const switchViewRef = useRef(switchView);
-  switchViewRef.current = switchView;
-  // The title for INTRO_TITLE_MS, then out to everyone (and, landed there, `onLanded` plays the timeline).
-  useEffect(() => {
-    if (intro !== 'title') return;
-    const t = window.setTimeout(() => { setIntro('zoom'); switchViewRef.current('hist'); }, INTRO_TITLE_MS);
-    return () => window.clearTimeout(t);
-  }, [intro]);
-  const introPlayRef = useRef(() => {});
-  introPlayRef.current = () => { setIntro('play'); restartRef.current = true; goTo(0, true); };
-  // Played through (Play stops at the latest): done.
-  const introPlayed = useRef(false);
-  useEffect(() => {
-    if (intro !== 'play') return;
-    if (playing) introPlayed.current = true;
-    else if (introPlayed.current && goal == null) setIntro(null);
-  }, [intro, playing, goal]);
-  // Any interaction skips it: to everyone, at the latest, still.
-  const skipIntroRef = useRef(() => {});
-  skipIntroRef.current = () => {
-    const was = introRef.current;
-    if (!was) return;
-    setIntro(null);
-    if (was === 'title') switchView('hist');
-    if (was === 'play') {
-      setPlaying(false);
-      if (goal) setGoal(null);
-      else if (at != null && at !== lastSnap) goTo(lastSnap);
-    }
+  // ── Play, asked for ──
+  // The timeline's people are 15 MB the landing page is built not to need (the database and the data): they load
+  // when Play is pressed, or a moment ahead of that, Play pointed at with a mouse and held there — as they do the
+  // first time the loupe is up, for the card's history (above). Not as the page opens, and not on focus, which Tab
+  // passes through on its way elsewhere; a finger's touch is already the press.
+  const pointTimer = useRef(0);
+  const asked = !!tl || timeline?.data != null;
+  const onPlayPoint = (e: ReactPointerEvent) => {
+    if (e.pointerType !== 'mouse' || asked) return;
+    window.clearTimeout(pointTimer.current);
+    pointTimer.current = window.setTimeout(() => wantTimeline?.(), PLAY_POINT_MS);
   };
-  const introOn = intro != null;
-  useEffect(() => {
-    if (!introOn) return;
-    const skip = () => skipIntroRef.current();
-    // A key, a press, a wheel, a touch — or text put in a field another way (pasted, filled).
-    const kinds = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'] as const;
-    for (const k of kinds) window.addEventListener(k, skip, { capture: true, passive: true });
-    return () => { for (const k of kinds) window.removeEventListener(k, skip, { capture: true }); };
-  }, [introOn]);
+  const offPlayPoint = () => window.clearTimeout(pointTimer.current);
+  useEffect(() => () => window.clearTimeout(pointTimer.current), []);
+  // Skip: straight on to the latest, by the cross-fade that goes back to an earlier snapshot — not the quick steps a
+  // jump along the track takes, which from the first snapshot are ten of them.
+  const latestLabel = snaps.length ? bareLabel(snaps[lastSnap].label) : '';
+  const canSkip = at != null && at < lastSnap;
+  const onSkip = (e: ReactMouseEvent<HTMLElement>) => {
+    if (!canSkip) return;
+    setPlaying(false);
+    setPaused(false);
+    setQueue(null);
+    setJump(true);
+    setStepFrom(at);
+    setAt(lastSnap);
+    // Skip is disabled from here (the latest is where it goes), and a disabled button drops the focus it held to
+    // the top of the page: to Play beside it instead.
+    if (document.activeElement === e.currentTarget) e.currentTarget.parentElement?.querySelector<HTMLElement>('.strata-play')?.focus({ preventScroll: true });
+  };
+  // Not the latest, and said so: the page's heading and every figure under the graph are the latest's, and a graph
+  // left at Nov 2021 read as today's. In the toolbar, where the hint is, in every view; and over the histogram — while
+  // it shows an earlier snapshot or the timeline plays — the snapshot's own name, large. Only there: the floors
+  // reach the plot's every corner, and magnified its top is the strip's. And only where the plot is wide enough to
+  // leave its corner free: on a phone the median's label runs to the right edge, under it.
+  const earlier = at != null && at < lastSnap;
+  const whenShown = at != null && !!snaps[at] && (earlier || playing) && (layout?.view ?? view) === 'hist' && plotW >= WHEN_MIN_W;
   const foldRef = useRef(fold);
   foldRef.current = fold;
   // Escape folds it back — before anything else Escape does (full page's own, say).
@@ -1622,7 +1613,9 @@ export function StrataGraph({
           {chip}{followChip}
           {/* How to read and use what is shown (3a's hint), by view, for a mouse or a finger: in the room the toolbar
               leaves, so it costs the page no height. */}
-          <Text size="xs" className="strata-hint" data-view={layout?.view ?? view}>{hint}</Text>
+          {earlier
+            ? <Text size="xs" className="strata-hint strata-earlier">Earlier snapshot · latest is {latestLabel}</Text>
+            : <Text size="xs" className="strata-hint" data-view={layout?.view ?? view}>{hint}</Text>}
         </div>
         <div className="strata-toolbar-right">
           {/* What a step's colours show while the timeline plays, over the key to them (H4): in this row, whose hint
@@ -1738,10 +1731,8 @@ export function StrataGraph({
               lensAt={lensAt} lensFrom={lensFrom} pointer={pointer} lensR={R} onPick={setPick} onMoving={onMoving} onLanded={onLanded} onPhase={setPhase}
               step={step} skipHold={skipHold} hold={!onScreen} follow={followProp}
             />
-            {/* The intro's title (3a §12): on while it holds, fading as it zooms out to everyone. */}
-            {(intro === 'title' || intro === 'zoom') && (
-              <div className="strata-intro-title" data-on={intro === 'title' || undefined} aria-hidden style={{ top: STRIP_BAND + 16 }}>Each square is one person</div>
-            )}
+            {/* Said to a screen reader by the timeline's own line, as each step lands. */}
+            {whenShown && <div className="strata-when" aria-hidden data-tail={tail ? 'on' : undefined}>{snaps[at].label}</div>}
             <svg className="strata-guides" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
               {pins.map((p) => (
                 <line key={p.key} className={`strata-pin-line strata-pin-${p.key} strata-hist-only`} x1={p.x} x2={p.x} y1={p.y1} y2={p.y2}
@@ -1951,21 +1942,27 @@ export function StrataGraph({
           data-step={step?.counts ? `${step.counts.up}:${step.counts.down}:${step.counts.joined}:${step.counts.left}` : undefined}
           data-pace={pace} data-mode={mode} data-phase={phase?.phase} data-phase-at={phase ? Math.round(phase.start) : undefined}>
           <div className="strata-tl-controls">
-          {/* Play and its speed, one control (H4). Play keeps its words while the timeline loads (I11): a spinner in
-              its icon's place, never a blank button. */}
+          {/* Play and its speed, one control (H4). Play keeps words while the timeline loads (I11) — that it is loading,
+              a spinner in its icon's place — never a blank button. */}
           <div className="strata-play-group" role="group" aria-label="Play the timeline">
           {phone && chipActive ? (
             <ActionIcon size={28} radius="xl" color="accent" variant="filled" className="strata-play" onClick={onPlay} aria-label={playLabel}
-              aria-busy={loadingTl || undefined}>
+              aria-busy={loadingTl || undefined} onPointerEnter={onPlayPoint} onPointerLeave={offPlayPoint}>
               {loadingTl ? <Loader size={ICON.compact} color="white" /> : playing || waiting ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
             </ActionIcon>
           ) : (
             <Button size="compact-sm" radius="xl" color="accent" className="strata-play" aria-busy={loadingTl || undefined}
               leftSection={loadingTl ? <Loader size={ICON.compact} color="white" /> : playing || waiting ? <IconPlayerPauseFilled size={ICON.compact} /> : <IconPlayerPlayFilled size={ICON.compact} />}
-              onClick={onPlay}>
+              onClick={onPlay} onPointerEnter={onPlayPoint} onPointerLeave={offPlayPoint}>
               {playLabel}
             </Button>
           )}
+          {/* Skip, beside Pause: always there, and disabled at the latest, so the row never shifts as a snapshot is
+              left and come back to. */}
+          <ActionIcon size={28} radius="xl" variant="subtle" color="gray" className="strata-skip" onClick={onSkip} disabled={!canSkip}
+            aria-label={`Skip to ${latestLabel}`} title={`Skip to ${latestLabel}`}>
+            <IconPlayerSkipForwardFilled size={ICON.compact} />
+          </ActionIcon>
           {/* On a phone, in the settings, so the row stays two lines over the plot. */}
           {!phone && <SegmentedToggle ariaLabel="Speed" className="strata-speed" value={pace} onChange={(v) => changePace(v as Pace)} options={PACES} />}
           </div>

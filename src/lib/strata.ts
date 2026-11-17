@@ -383,8 +383,11 @@ export type StepMode = 'change' | 'type';
 /** A step's phases, ms: the move, the countdown that holds it, the re-sort, and the pause before the next; staged
  *  (raises and cuts at Slow or Medium) or straight from one sorted place to the next. */
 export interface PacePlan { mv: number; cd: number; so: number; re: number; staged: boolean }
+// By employment type, Medium is a second a snapshot (0.7 s moving, 0.3 s resting): it is how Play first runs, and
+// the whole timeline is through in about twelve seconds. At 1.7 s and 0.9 s it took half a minute, and raises and
+// cuts at Medium three quarters of one — as a first run, long enough that it was left before it ended.
 const PACES = {
-  medium: { mv: 1500, cd: 1000, so: 900, re: 700, tmv: 1700, tre: 900 },
+  medium: { mv: 1500, cd: 1000, so: 900, re: 700, tmv: 700, tre: 300 },
   slow: { mv: 2600, so: 1700, re: 1600, tmv: 2600, tre: 1600 },
 } as const;
 /** Fast: a snapshot every quarter second, straight between sorted places, no pauses. */

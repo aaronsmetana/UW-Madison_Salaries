@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chipState, type ChipInput } from './timelineChip';
 
 const base: ChipInput = {
-  now: 10_000, playing: false, paused: false, fast: false, fastMs: 250, phase: null, step: null, fade: null, switching: false, intro: false, rest: null,
+  now: 10_000, playing: false, paused: false, fast: false, fastMs: 250, phase: null, step: null, fade: null, switching: false, rest: null,
   sortBy: 'salary', plan: { mv: 1500, cd: 1000, so: 900, re: 700 }, stepsLeft: 0, last: 'Sep 2026', progress: { from: 0.8, to: 0.9 },
 };
 const at = (o: Partial<ChipInput>) => chipState({ ...base, ...o });
@@ -20,6 +20,8 @@ describe('chipState (3a §11)', () => {
   it('says a catch-up step skips ahead, a step back rewinds, and a change of view switches', () => {
     expect(at({ phase: { phase: 'move', start: 9_900, end: 10_500 }, step: { ...step, quick: true } }).label).toBe('Skipping ahead · Mar 2026 → Sep 2026');
     expect(at({ fade: { to: 'Apr 2024', start: 9_700, end: 10_500 } }).label).toBe('Rewinding to Apr 2024');
+    // Skip: the same cross-fade, on to the latest.
+    expect(at({ fade: { to: 'Sep 2026', start: 9_700, end: 10_500, ahead: true } }).label).toBe('Skipping to Sep 2026');
     expect(at({ switching: true }).label).toBe('Switching view');
   });
   it('playing Fast, says how many snapshots a second, its ring the way through the timeline', () => {
@@ -31,9 +33,6 @@ describe('chipState (3a §11)', () => {
     const s = at({ playing: true, rest: { start: 9_800, end: 10_500, next: 'Apr 2025' }, stepsLeft: 3 });
     expect([s.label, s.count]).toEqual(['Next: Apr 2025 in', '1']);
     expect(s.ring).toMatchObject({ from: 1, to: 0, start: 9_800, end: 10_500 });
-  });
-  it('through the intro’s title and its way out, says what a square is', () => {
-    expect(at({ intro: true, switching: true }).label).toBe('Each square is one person');
   });
   it('at rest says how the columns are sorted, and that it is paused once Pause is pressed', () => {
     expect(at({}).label).toBe('Sorted by salary');

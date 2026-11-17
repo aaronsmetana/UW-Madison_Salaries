@@ -24,7 +24,6 @@ const placesOf = (page: Page, f: 'main' | 'pile') =>
   field(page).evaluate((el, f) => (el as HTMLElement & { squarePlaces: (f: string) => number[] }).squarePlaces(f), f);
 
 async function home(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }

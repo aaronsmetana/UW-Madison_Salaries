@@ -19,7 +19,6 @@ const places = (page: Page, f: 'main' | 'pile' = 'main') =>
 const attr = async (page: Page, name: string) => Number(await field(page).getAttribute(name));
 
 async function home(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
 }

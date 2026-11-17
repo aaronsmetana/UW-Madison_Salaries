@@ -27,7 +27,6 @@ const field = (page: Page) => page.locator('.strata-field').first();
 const bar = (page: Page) => page.locator('.strata-timeline');
 
 async function home(page: Page, width = 1280, height = 800) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.setViewportSize({ width, height });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
@@ -133,9 +132,13 @@ test.describe('the timeline’s controls', () => {
     await expect(group.locator('.strata-play')).toBeVisible();
     const speed = group.getByRole('radiogroup', { name: 'Speed' });
     await expect(speed.getByRole('radio', { name: 'Medium' })).toBeChecked();
+    // Skip, beside Play: nowhere to go from the latest.
+    await expect(group.getByRole('button', { name: /^Skip to / })).toBeDisabled();
     // What a step's colours show: over the legend's right end, in the toolbar, not the timeline's row.
     const modeToggle = page.locator('.strata-toolbar').getByRole('radiogroup', { name: 'Show each step by' });
     await expect(modeToggle).toBeVisible();
+    // By employment type to start: Play's first run keeps the colours the page opened with.
+    await expect(modeToggle.getByRole('radio', { name: 'Type' })).toBeChecked();
     await expect(bar(page).getByRole('radiogroup', { name: 'Show each step by' })).toHaveCount(0);
     const [m, l] = [(await modeToggle.boundingBox())!, await box(page, '.strata-legend')];
     expect(Math.abs(m.x + m.width - (l.x + l.width)), 'not over the legend’s right end').toBeLessThanOrEqual(200);
@@ -149,7 +152,7 @@ test.describe('the timeline’s controls', () => {
     await expect(panel.getByRole('radiogroup', { name: 'Speed' })).toHaveCount(0);
   });
 
-  test('Play holds its width and its words: "Pause" while the timeline loads, never a blank button', async ({ page }) => {
+  test('Play holds its width and its words: that it is loading while the timeline loads, then "Pause" — never a blank button', async ({ page }) => {
     await home(page);
     const play = page.locator('.strata-play');
     const w0 = (await play.boundingBox())!.width;
@@ -162,14 +165,14 @@ test.describe('the timeline’s controls', () => {
     });
     await play.click();
     await expect(bar(page)).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
-    await page.waitForFunction(() => (window as unknown as { texts: string[] }).texts.length >= 120);
+    await page.waitForFunction(() => (window as unknown as { texts: string[] }).texts.length >= 60);
     const { texts, widths } = await page.evaluate(() => { const w = window as unknown as { texts: string[]; widths: number[] }; return { texts: w.texts, widths: w.widths }; });
     expect(texts.filter((t) => !t.trim()), 'a blank Play button').toEqual([]);
-    // Its words, then "Pause" from the press on: while the timeline loaded too.
-    const from = texts.indexOf('Pause');
-    expect(from).toBeGreaterThan(0);
-    expect(new Set(texts.slice(0, from))).toEqual(new Set([texts[0]]));
-    expect(new Set(texts.slice(from))).toEqual(new Set(['Pause']));
+    // Its words; from the press, that the timeline is loading; then "Pause" (the frames are read until the play has
+    // begun, and a little on: not as far as its end, where Play's own words come back).
+    const runs = texts.filter((t, k) => k === 0 || t !== texts[k - 1]);
+    expect(runs.slice(0, 3)).toEqual([texts[0], 'Loading timeline…', 'Pause']);
+    expect(texts[0]).toMatch(/^Play \d{4} → \d{4}$/);
     expect(Math.max(...widths) - Math.min(...widths), 'Play changed width').toBeLessThanOrEqual(1);
     expect(Math.abs(widths[0] - w0)).toBeLessThanOrEqual(1);
   });
@@ -190,6 +193,8 @@ test.describe('the timeline’s controls', () => {
 
   test('a step’s legend sets each swatch against its own words, the count before it', async ({ page }) => {
     await home(page);
+    // Raises and cuts, asked for: by employment type, as it starts, a step counts no changes.
+    await page.locator('.strata-toolbar').getByRole('radiogroup', { name: 'Show each step by' }).getByText('Raises & cuts', { exact: true }).click();
     await page.locator('.strata-track-dot').nth(SNAPS.length - 2).click();
     await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[SNAPS.length - 2].id, { timeout: 60_000 });
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 15_000 });

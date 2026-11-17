@@ -12,9 +12,10 @@ import { parseColor } from './color';
  * snapshot is drawn from its own people, as the landing counts a person — total pay over paid appointments, in the
  * category of their main one — with its own headcount, median, quartiles, pile and types; a step from one
  * to the next carries each person from where they were, fades in who joined and fades out who left, each in their
- * own place. Raising and cutting, it counts who moved up a $5k column, down one, joined and left, and at Slow and
- * Medium stages it: the move, a countdown that holds it, the re-sort. Every figure here is restated from the data
- * in SQL, not taken from the page's code.
+ * own place. By employment type, as it starts, a step goes straight from one snapshot's sorted places to the next's,
+ * a second a snapshot at Medium. Raising and cutting, it counts who moved up a $5k column, down one, joined and left,
+ * and at Slow and Medium stages it: the move, a countdown that holds it, the re-sort. Nothing of it loads or plays
+ * until it is asked for. Every figure here is restated from the data in SQL, not taken from the page's code.
  */
 
 const SUMMARY = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/summary.json', import.meta.url)), 'utf8')) as { snapshots: { id: string; label: string }[] };
@@ -34,7 +35,6 @@ const bar = (page: Page) => page.locator('.strata-timeline');
 const dot = (page: Page, i: number) => page.locator('.strata-track-dot').nth(i);
 
 async function home(page: Page) {
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('./');
   await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
@@ -145,6 +145,8 @@ test('each snapshot shows its own people: headcount, median and quartiles, the p
 test('raising and cutting, a step counts who moved up a $5k column, down one, joined and left — in the legend and drawn in their inks while it holds — then back to the types', async ({ page }) => {
   test.setTimeout(120_000);
   await home(page);
+  // Raises and cuts, asked for: by employment type is how it starts.
+  await mode(page, 'Raises & cuts');
   const [a, b] = [7, 8];
   // Each person's group: their $5k column, the pile past the cap after the last.
   const group = (pay: number) => (pay >= CAP ? CAP / 5000 : Math.min(CAP / 5000 - 1, Math.floor(pay / 5000)));
@@ -202,10 +204,10 @@ test('a step fades out who left where they stood and fades in who joined where t
     return y;
   };
   const before = await top();
-  // By employment type (raises and cuts leave fading trails behind the movers, on purpose), at Medium.
-  await mode(page, 'Type');
-  await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-  await pace(page, 'Medium');
+  // By employment type, as it starts (raises and cuts leave fading trails behind the movers, on purpose), at Slow:
+  // Medium's step by type is 0.7 s, too short to tell its first part from its last frame by frame.
+  await expect(bar(page)).toHaveAttribute('data-mode', 'type');
+  await pace(page, 'Slow');
   // Every frame of a step on to the next snapshot: how high any part-way faded ink reaches (the big movers arc high
   // on purpose, drawn whole), and how many pixels are part-way faded, by how far into the step. (Back is a
   // cross-fade, with nothing in flight: the jumps' own test.)
@@ -239,9 +241,9 @@ test('a step fades out who left where they stood and fades in who joined where t
   const highest = Math.floor(Math.min(before, await top()) * k) - 1;
   expect(frames.length, 'no frames of the step seen').toBeGreaterThan(10);
   expect(frames.filter((f) => f.top < highest).map((f) => `${Math.round(f.t)} ms: faded ink at ${f.top}px`).slice(0, 3), `a square fading above the tallest column (${highest}px), on its way in or out`).toEqual([]);
-  // Who left fade in the first part of the step's 1.7 s, before any joiner has begun; who joined in the last, after.
-  expect(frames.some((f) => f.t < 300 && f.part > 0), 'who left did not fade out').toBe(true);
-  expect(frames.some((f) => f.t > 900 && f.part > 0), 'who joined did not fade in').toBe(true);
+  // Who left fade in the first part of the step's 2.6 s, before any joiner has begun; who joined in the last, after.
+  expect(frames.some((f) => f.t < 400 && f.part > 0), 'who left did not fade out').toBe(true);
+  expect(frames.some((f) => f.t > 1400 && f.part > 0), 'who joined did not fade in').toBe(true);
   expect(frames[frames.length - 1].part, 'part-faded squares left once the step was over').toBe(0);
 });
 
@@ -292,6 +294,8 @@ test('a step moves in frames inside the frame budget, at CI’s pace', async ({ 
   test.setTimeout(90_000);
   await atCiPace(page);
   await home(page);
+  // Raises and cuts, asked for: by employment type is how it starts.
+  await mode(page, 'Raises & cuts');
   await goTo(page, 7);
   // Staged (Medium): the move, with its arcs and trails, and the re-sort.
   await pace(page, 'Medium');
@@ -438,7 +442,6 @@ test.describe('the track’s labels', () => {
   };
 
   test('wide, every tick its snapshot; the one shown in the ink', async ({ page }) => {
-    await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
     await page.setViewportSize({ width: 1920, height: 1000 });
     await page.goto('./');
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
@@ -467,8 +470,8 @@ test.describe('the track’s labels', () => {
 });
 
 /**
- * The hint under the graph (3a): what it shows and how to use it — by view, while the pile is unrolled and through
- * the intro's title — said for a mouse or a finger; one line on a wide screen.
+ * The hint under the graph (3a): what it shows and how to use it — by view, and while the pile is unrolled — said
+ * for a mouse or a finger; one line on a wide screen. The page opens on it: there is no title before it.
  */
 test('the hint under the graph says what each view shows and how to use it, for a mouse or a finger', async ({ browser }) => {
   test.setTimeout(120_000);
@@ -489,12 +492,11 @@ test('the hint under the graph says what each view shows and how to use it, for 
   await page.locator('.strata-pile-toggle').click();
   await expect(hint).toHaveText(/ people at \$250k or more, each at their own pay\. Click the graph or press Esc to fold them back\.$/);
   await page.close();
-  // A finger, and the intro's title.
+  // A finger.
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const phone = await ctx.newPage();
   await phone.goto('./');
-  await expect(phone.locator('.strata-hint')).toHaveText('Each square is one person, colored by employment type.');
-  await expect(phone.locator('.strata-hint')).toHaveText('Sorted by type, then salary within each $5k column. Hold a finger still to look closer; tap to magnify.', { timeout: 60_000 });
+  await expect(phone.locator('.strata-hint')).toHaveText('Sorted by type, then salary within each $5k column. Hold a finger still to look closer; tap to magnify.');
   await ctx.close();
 });
 
@@ -553,9 +555,10 @@ test.describe('one scale for every snapshot, and the pace', () => {
 });
 
 /**
- * The speed, the mode and the settings (3a): Fast, the default, a snapshot every quarter second straight through;
- * Medium and Slow stage each raises-and-cuts step — move, countdown, re-sort — and rest before the next, as
- * lib/strata `pacePlan` times them; by employment type no countdown or re-sort; a change of speed while held goes on
+ * The speed, the mode and the settings (3a): Medium and by employment type to start, a second a snapshot with no
+ * countdown or re-sort; Fast a snapshot every quarter second straight through; raising and cutting, Medium and Slow
+ * stage each step — move, countdown, re-sort — and rest before the next, as lib/strata `pacePlan` times them; a
+ * change of speed while held goes on
  * to the re-sort; a change of mode plays the last step again; the settings sort each column by type then salary,
  * and set Slow's countdown.
  */
@@ -563,6 +566,8 @@ test.describe('speed, mode and settings', () => {
   test('the speed is a radio group of Slow, Medium and Fast, Medium to start; Fast goes a snapshot every quarter second, never held', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     const speed = page.getByRole('radiogroup', { name: 'Speed' });
     await expect(speed.getByRole('radio')).toHaveCount(3);
     // Medium to start (I11): at Fast the whole timeline ran in about two and a half seconds.
@@ -590,6 +595,8 @@ test.describe('speed, mode and settings', () => {
   test('Fast plays as one flow: each step’s clock runs on from the last one’s end, the track fills at one steady pace, and the counts hold still', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     await pace(page, 'Fast');
     await goTo(page, 0);
     await page.evaluate(() => {
@@ -637,10 +644,15 @@ test.describe('speed, mode and settings', () => {
     const page = await ctx.newPage();
     await home(page);
     await page.setViewportSize({ width: 390, height: 844 });
+    // Raises and cuts, asked for (by employment type is how it starts): on a phone, in the timeline's settings.
+    await page.getByRole('button', { name: 'Timeline settings' }).click();
+    await page.locator('.strata-settings-panel').getByRole('radiogroup', { name: 'Show each step by' }).getByText('Raises & cuts', { exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(bar(page)).toHaveAttribute('data-mode', 'change');
     await goTo(page, 7);
     const plotTop = () => plot(page).evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
     const [h0, top0] = [(await page.locator('.strata-legend').boundingBox())!.height, await plotTop()];
-    // The changes shown (Fast's play): caught the frame they show.
+    // The changes shown, as it plays: caught the frame they show.
     await page.locator('.strata-play').click();
     const during = await page.waitForFunction(() => {
       if (!document.querySelector('.strata-change-legend[data-on]')) return null;
@@ -655,6 +667,8 @@ test.describe('speed, mode and settings', () => {
   test('Fast’s movers go straight, in the up and down inks raising and cutting, in their types’ by employment type', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     await pace(page, 'Fast');
     await goTo(page, 7);
     const ink = (v: string) => page.evaluate((v) => { const s = document.createElement('span'); document.body.appendChild(s); s.style.color = `var(${v})`; const c = getComputedStyle(s).color; s.remove(); return c; }, v);
@@ -711,6 +725,8 @@ test.describe('speed, mode and settings', () => {
   test('Medium stages a raises-and-cuts step — 1.5 s moving, a 1 s countdown, 0.9 s re-sorting — and Play rests 0.7 s before the next', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     await goTo(page, 3);
     await pace(page, 'Medium');
     await logSteps(page);
@@ -731,30 +747,59 @@ test.describe('speed, mode and settings', () => {
     expect(next - end).toBeLessThan(1100);
   });
 
-  test('by employment type a step moves straight to its sorted places — no countdown, no re-sort — and a change of mode plays the last step again', async ({ page }) => {
+  test('by employment type, as it starts, a step moves straight to its sorted places in 0.7 s — no countdown, no re-sort — and a change of mode plays the last step again', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
-    await goTo(page, 6);
-    await pace(page, 'Medium');
-    await logSteps(page);
-    await mode(page, 'Type');
     await expect(bar(page)).toHaveAttribute('data-mode', 'type');
-    // The step into this snapshot again, now by type: the squares move, the snapshot stays.
-    await expect(field(page)).toHaveAttribute('data-settled', 'false', { timeout: 2_000 });
-    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-    let log = await readLog(page);
-    expect(log.filter(([e]) => e.startsWith('snap ')), 'the snapshot changed').toEqual([]);
-    expect(phases(log).map(([p, ms]) => `${p} ${ms > 1550 && ms < 1950 ? '1.7 s' : `${ms} ms`}`)).toEqual(['move 1.7 s']);
-    await expect(page.locator('.strata-change-legend'), 'by type, the legend counts no changes').toBeHidden();
+    await expect(page.getByRole('radiogroup', { name: 'Show each step by' }).getByRole('radio', { name: 'Type' })).toBeChecked();
+    await goTo(page, 6);
     await logSteps(page);
     await goTo(page, 7);
+    let log = await readLog(page);
+    expect(phases(log).map(([p, ms]) => `${p} ${ms > 600 && ms < 950 ? '0.7 s' : `${ms} ms`}`)).toEqual(['move 0.7 s']);
+    await expect(page.locator('.strata-change-legend'), 'by type, the legend counts no changes').toBeHidden();
+    // The step into this snapshot again, now raising and cutting: the squares move and are held, the snapshot stays.
+    await logSteps(page);
+    await mode(page, 'Raises & cuts');
+    await expect(bar(page)).toHaveAttribute('data-mode', 'change');
+    await expect(field(page)).toHaveAttribute('data-settled', 'false', { timeout: 2_000 });
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 15_000 });
     log = await readLog(page);
-    expect(phases(log).map(([p]) => p)).toEqual(['move']);
+    expect(log.filter(([e]) => e.startsWith('snap ')), 'the snapshot changed').toEqual([]);
+    expect(phases(log).map(([p]) => p)).toEqual(['move', 'hold', 'sort']);
+  });
+
+  test('Play’s first run, as the page opens: by employment type at Medium, a second a snapshot, through in about twelve', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    await expect(bar(page)).toHaveAttribute('data-pace', 'medium');
+    await expect(bar(page)).toHaveAttribute('data-mode', 'type');
+    await logSteps(page);
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).toHaveAttribute('data-playing', 'true', { timeout: 60_000 });
+    // The types' colours and their legend all the way: no one recoloured, no changes counted.
+    await expect(page.locator('.strata-legend-types')).toBeVisible();
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./, { timeout: 60_000 });
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    const log = await readLog(page);
+    expect(log.filter(([e]) => e === 'phase hold' || e === 'phase sort'), 'a step was held or re-sorted').toEqual([]);
+    // From the first snapshot on, each step a second after the last — the first after its longer rest there.
+    const at = log.filter(([e]) => e.startsWith('snap ')), from = at.findIndex(([e]) => e === `snap ${SNAPS[0].id}`);
+    const steps = at.slice(from).map(([, t]) => t);
+    expect(steps.length).toBe(SNAPS.length);
+    const gaps = steps.slice(2).map((t, k) => t - steps[k + 1]).sort((x, y) => x - y);
+    expect(gaps[gaps.length >> 1], `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeGreaterThan(900);
+    expect(gaps[gaps.length >> 1], `steps ${gaps.map(Math.round).join(', ')} ms apart`).toBeLessThan(1_300);
+    const whole = log[log.length - 1][1] - steps[0];
+    expect(whole, 'the whole timeline took').toBeGreaterThan(10_000);
+    expect(whole).toBeLessThan(16_000);
   });
 
   test('a change of speed while a step is held goes straight on to the re-sort', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     await goTo(page, 5);
     await pace(page, 'Slow');
     await logSteps(page);
@@ -769,6 +814,8 @@ test.describe('speed, mode and settings', () => {
   test('the settings: Slow’s countdown, 1 to 8 seconds; each column by type, then salary, to start, or by salary alone', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     const settings = page.getByRole('button', { name: 'Timeline settings' });
     await settings.click();
     const cd = page.getByRole('slider', { name: 'Slow’s countdown, seconds' });
@@ -856,6 +903,8 @@ test.describe('the status chip', () => {
   test('names each phase of a staged step, and counts the countdown down in whole seconds as its ring unwinds', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     await goTo(page, 7);
     await pace(page, 'Slow');
     await expect(label(page)).toHaveText('Sorted by type, then salary');
@@ -880,6 +929,8 @@ test.describe('the status chip', () => {
   test('while it plays, counts the rest to the next snapshot and says when the timeline ends; at Fast, how many a second', async ({ page }) => {
     test.setTimeout(120_000);
     await home(page);
+    // Raises and cuts, asked for: by employment type is how it starts.
+    await mode(page, 'Raises & cuts');
     await goTo(page, 6);
     await pace(page, 'Medium');
     await chipLog(page);
@@ -1037,5 +1088,158 @@ test.describe('jumps along the track', () => {
     await expect(bar(page)).toHaveAttribute('data-playing', 'true');
     await plot(page).scrollIntoViewIfNeeded();
     await expect(bar(page)).not.toHaveAttribute('data-snap', held!, { timeout: 5_000 });
+  });
+});
+
+/**
+ * Play, asked for. The timeline's people are the database and the data — 15 MB the landing page is built not to
+ * need — so they load when Play is pressed, or a moment ahead of it, Play pointed at and held there; while they
+ * load, Play says so. Skip, beside it, goes straight on to the latest. And a snapshot that is not the latest is said
+ * not to be: the page's heading and every figure under the graph are the latest's.
+ */
+test.describe('Play, asked for', () => {
+  const LATEST = SNAPS[LAST].label.replace(/ \(.*\)$/, '');
+  const skip = (page: Page) => page.getByRole('button', { name: `Skip to ${LATEST}` });
+
+  test('Play says the timeline is loading while it loads, not "Pause" over a graph standing still; pressed again, it is called off', async ({ page }) => {
+    test.setTimeout(120_000);
+    // The data held back, as a slow line holds it.
+    await page.route(/\.parquet(\?|$)/, async (route) => { await new Promise((r) => setTimeout(r, 2_500)); await route.continue(); });
+    await home(page);
+    const play = page.locator('.strata-play');
+    const [words, w0] = [(await play.textContent())!, (await play.boundingBox())!.width];
+    await play.click();
+    await expect(play).toHaveText('Loading timeline…');
+    await expect(play).toHaveAttribute('aria-busy', 'true');
+    expect(Math.abs((await play.boundingBox())!.width - w0), 'Play changed width').toBeLessThanOrEqual(1);
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./);
+    // Called off: Play's own words again, and nothing plays once the timeline is in.
+    await play.click();
+    await expect(play).toHaveText(words);
+    await expect(bar(page)).toHaveAttribute('data-timeline', 'ready', { timeout: 60_000 });
+    await page.waitForTimeout(1_500);
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./);
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    // Loaded, Play plays at once.
+    await play.click();
+    await expect(bar(page)).toHaveAttribute('data-playing', 'true', { timeout: 5_000 });
+    await expect(play).toHaveText('Pause');
+  });
+
+  test('the timeline starts loading when Play is pointed at and held a moment — not as the mouse passes over it, and not on focus', async ({ page }) => {
+    test.setTimeout(120_000);
+    const heavy: string[] = [];
+    page.on('request', (r) => { if (/\.(wasm|parquet)(\?|$)/.test(r.url())) heavy.push(r.url()); });
+    await home(page);
+    const play = page.locator('.strata-play'), box = (await play.boundingBox())!;
+    // Passed over on the way elsewhere — off the graph, where the loupe would ask for the timeline itself, for the
+    // card's history — then reached with Tab.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(5, 5);
+    await play.focus();
+    await page.waitForTimeout(800);
+    await expect(bar(page)).toHaveAttribute('data-timeline', 'off');
+    expect(heavy, 'the database loaded with Play only passed over, or focused').toEqual([]);
+    // Held there: loading, with nothing pressed — Play keeps its words, and nothing plays.
+    await play.hover();
+    await expect(bar(page)).toHaveAttribute('data-timeline', /loading|ready/, { timeout: 2_000 });
+    await expect(play).toHaveText(/^Play \d{4} → \d{4}$/);
+    await expect(bar(page)).toHaveAttribute('data-timeline', 'ready', { timeout: 60_000 });
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./);
+    expect(heavy.some((u) => /\.parquet/.test(u))).toBe(true);
+  });
+
+  test('Skip goes straight on to the latest — a cross-fade there, no snapshot shown between — and stops Play', async ({ page }) => {
+    test.setTimeout(120_000);
+    await home(page);
+    // At the latest there is nowhere to skip to: there, and disabled, so the row never shifts.
+    await expect(skip(page)).toBeDisabled();
+    const before = (await page.locator('.strata-tl-controls').boundingBox())!.width;
+    await goTo(page, 2);
+    await expect(skip(page)).toBeEnabled();
+    expect((await page.locator('.strata-tl-controls').boundingBox())!.width, 'Play’s row changed width').toBeCloseTo(before, 0);
+    await logSteps(page);
+    const said = page.waitForFunction((l) => document.querySelector('.strata-status-label')?.textContent === l, `Skipping to ${LATEST}`, { timeout: 10_000 });
+    // By the keyboard: the focus Skip held goes to Play, not to the top of the page, as Skip is disabled under it.
+    await skip(page).focus();
+    await page.keyboard.press('Enter');
+    await said;
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    const log = await readLog(page);
+    expect(log.filter(([e]) => e.startsWith('snap ')).map(([e]) => e.slice(5)), 'snapshots between were shown').toEqual([SNAPS[LAST].id]);
+    const took = log.filter(([e]) => e === 'settled true').pop()![1] - log.find(([e]) => e === 'settled false')![1];
+    expect(took, 'the cross-fade took').toBeGreaterThan(600);
+    expect(took).toBeLessThan(1_500);
+    await expect(page.locator('.strata-status-label')).toHaveText('Sorted by type, then salary');
+    await expect(skip(page)).toBeDisabled();
+    await expect(page.locator('.strata-play')).toBeFocused();
+    // While it plays: Play stops, and what the chip says of the step cut short goes with it.
+    await page.locator('.strata-play').click();
+    await expect(bar(page)).toHaveAttribute('data-playing', 'true', { timeout: 10_000 });
+    await reached(page, 1);
+    await expect(bar(page)).toHaveAttribute('data-phase', 'move', { timeout: 5_000 });
+    await skip(page).click();
+    await expect(bar(page)).not.toHaveAttribute('data-playing', /./);
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    await expect(page.locator('.strata-status-label')).toHaveText('Sorted by type, then salary');
+    await expect(page.locator('.strata-play')).toHaveText(/^Play \d{4} → \d{4}$/);
+    await page.waitForTimeout(1_500);
+    await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
+  });
+
+  test('a snapshot that is not the latest is said not to be: in the toolbar in every view, and its name large over the histogram, clear of the pins', async ({ browser }) => {
+    test.setTimeout(120_000);
+    const page = await browser.newPage();
+    await home(page);
+    const note = page.locator('.strata-earlier'), when = page.locator('.strata-when');
+    await expect(note).toHaveCount(0);
+    await expect(when).toHaveCount(0);
+    await goTo(page, 3);
+    await expect(note).toHaveText(`Earlier snapshot · latest is ${LATEST}`);
+    await expect(when).toHaveText(SNAPS[3].label);
+    // Large, in the plot, and over none of the median's and quartiles' labels.
+    expect(parseFloat(await when.evaluate((e) => getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(24);
+    const [w, p, pins] = [(await when.boundingBox())!, (await plot(page).boundingBox())!, await page.locator('.strata-pin').evaluateAll((els) => els.filter((e) => getComputedStyle(e).visibility !== 'hidden').map((e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }))];
+    expect(w.x >= p.x && w.x + w.width <= p.x + p.width + 1 && w.y >= p.y - 1, 'outside the plot').toBe(true);
+    expect(pins.length, 'no pins to be clear of').toBeGreaterThan(0);
+    for (const b of pins) expect(w.x < b.x + b.width && b.x < w.x + w.width && w.y < b.y + b.height && b.y < w.y + w.height, 'over a pin’s label').toBe(false);
+    // The pile unrolled, its note has that corner: the name is in the other.
+    await page.locator('.strata-pile-toggle').click();
+    await expect(page.locator('.strata-tail-note')).toBeVisible({ timeout: 10_000 });
+    const [t, n] = [(await when.boundingBox())!, (await page.locator('.strata-tail-note').boundingBox())!];
+    expect(t.x + t.width, 'under the unrolled pile’s note').toBeLessThan(n.x);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.strata-tail-note')).toHaveCount(0, { timeout: 10_000 });
+    // The floors reach the plot's every corner, and magnified its top is the strip's: there the toolbar alone says it.
+    await page.getByRole('radiogroup', { name: 'View' }).getByText('Floors').click();
+    await expect(plot(page)).toHaveAttribute('data-view', 'floors');
+    await expect(when).toHaveCount(0);
+    await expect(note).toBeVisible();
+    await page.getByRole('radiogroup', { name: 'View' }).getByText('Histogram').click();
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    await page.locator('.strata-magnify').click();
+    await expect(plot(page)).toHaveAttribute('data-view', 'magnify');
+    await expect(when).toHaveCount(0);
+    await expect(note).toBeVisible();
+    await page.locator('.strata-magnify').click();
+    await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
+    // At the latest again: neither, and the hint back.
+    await goTo(page, LAST);
+    await expect(note).toHaveCount(0);
+    await expect(when).toHaveCount(0);
+    await expect(page.locator('.strata-hint')).toHaveText(/^Sorted by type, then salary within each \$5k column\./);
+    await page.close();
+    // On a phone the median's label runs to the plot's right edge: the toolbar says it, under the count.
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    const phone = await ctx.newPage();
+    await home(phone);
+    await phone.setViewportSize({ width: 390, height: 844 });
+    await goTo(phone, 3);
+    await expect(phone.locator('.strata-earlier')).toBeVisible();
+    await expect(phone.locator('.strata-earlier')).toHaveText(`Earlier snapshot · latest is ${LATEST}`);
+    await expect(phone.locator('.strata-when')).toHaveCount(0);
+    await ctx.close();
   });
 });

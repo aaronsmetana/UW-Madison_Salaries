@@ -29,7 +29,6 @@ const heapPerFrame = (page: Page) => page.evaluate(() => new Promise<number>((do
 
 test('a moving frame makes next to nothing new: the heap hardly grows from one frame to the next', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.addInitScript(() => { try { sessionStorage.setItem('strata-entrance', '1'); } catch { /* private mode */ } });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('./');
   const field = page.locator('.strata-field').first();
