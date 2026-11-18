@@ -270,12 +270,12 @@ test.describe('the landing distribution', () => {
       await page.mouse.move(box.x + box.width * frac, box.y + box.height * 0.8);
       await expect(pill).toBeVisible();
       const text = (await pill.textContent()) ?? '';
-      // "$75k–$80k · 3,621 people within ±$5k · 48% paid less" — a $5k column, a headcount, the width it was
-      // counted over, and where that pay falls in the payroll.
+      // "$75k–$80k · 1,388 people · 48% paid less" — a $5k column, its headcount, and where that pay falls in the
+      // payroll.
       expect(text, 'the readout stopped naming a salary and a headcount').toMatch(
-        /^\$[\d,]+k–\$[\d,]+k · [\d,]+ people within ±\$\d+k · \d+% paid less$/
+        /^\$[\d,]+k–\$[\d,]+k · [\d,]+ (person|people) · \d+% paid less$/
       );
-      return Number(text.replace(/^.*· ([\d,]+) people.*$/, '$1').replace(/,/g, ''));
+      return Number(text.replace(/^.*· ([\d,]+) (?:person|people).*$/, '$1').replace(/,/g, ''));
     };
 
     // The readout has to follow the data: the peak of a right-skewed pay distribution holds many
@@ -287,15 +287,15 @@ test.describe('the landing distribution', () => {
 
     // And it has to be a HEADCOUNT, not the curve's y-value. The curve is a smoothed density —
     // people per $1k bucket — and reporting it as "N people" would be a plain lie about the data.
-    // Scale is what separates them: summing ±$5k around the mode gathers ~13% of everyone, where a
-    // single bucket's density is ~1%. The ratio test above does NOT catch this (verified: it passes
+    // Scale is what separates them: a $5k column by the mode holds ~6% of everyone, where a single
+    // $1k bucket's density is ~1%. The ratio test above does NOT catch this (verified: it passes
     // with the density substituted), which is why the population is read out of the caption and
     // compared against.
     const caption = (await panel.locator('.strata-count').textContent()) ?? '';
     const population = Number(caption.replace(/^([\d,]+) people.*$/s, '$1').replace(/,/g, ''));
     expect(population, 'could not read the population off the toolbar').toBeGreaterThan(1000);
     expect(atPeak, 'the readout is reporting the density, not a count of people')
-      .toBeGreaterThan(population * 0.05);
+      .toBeGreaterThan(population * 0.04);
 
     // Leaving the plot clears it, rather than stranding a readout over a curve nobody is pointing at.
     await page.mouse.move(box.x + box.width / 2, box.y - 90);

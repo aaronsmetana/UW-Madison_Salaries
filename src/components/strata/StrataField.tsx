@@ -802,11 +802,14 @@ export const StrataField = forwardRef<StrataFieldHandle, {
       hit.s = Math.max(h, PICK_MIN);
     }
     const order = tint.order;
+    // A solid run (a 1x screen, a phone) has no gap to magnify: its people were one flat band under the glass, and
+    // the one it named could not be told from the next. Each is drawn a hairline short all round there.
+    const cut = grid.gap === 0 && w >= 3 && h >= 3 ? 0.5 : 0;
     for (let o = 0; o < order.length; o++) {
       const k = order[o];
       ctx.fillStyle = ink(k);
       ctx.beginPath();
-      for (let d = 0; d < S.count; d++) if (B.k[d] === k) ctx.rect(B.x[d], B.y[d], w, h);
+      for (let d = 0; d < S.count; d++) if (B.k[d] === k) ctx.rect(B.x[d] + cut, B.y[d] + cut, w - 2 * cut, h - 2 * cut);
       ctx.fill();
     }
     ctx.restore();

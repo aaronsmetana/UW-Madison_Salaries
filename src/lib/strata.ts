@@ -15,8 +15,6 @@ export const COLS = 50;
 export const COL_DOLLARS = 5000;
 /** The legend's order (3a's: the largest first), and the tie-break between equal pays. */
 export const TYPE_ORDER = ['Academic Staff', 'University Staff', 'Faculty', 'Employees in Training', 'Limited'] as const;
-/** The readout counts the columns this far either side of the one under the lens: ±$5k. */
-export const READ_RADIUS = 1;
 /** The largest a square's pitch grows, device px (full page on a big screen). */
 export const MAX_PITCH_D = 12;
 /** The gutter between two columns' squares, CSS px, and at most this share of a column (a phone's narrow ones). */
@@ -285,13 +283,6 @@ export function tailColumns(pays: ArrayLike<number>, scale: number, pitch: numbe
 export function snapReach(n: number, R: number, least: number): number {
   if (n <= 0) return 0;
   return Math.min(R, Math.max(least, 2.5 * R * Math.sqrt(Math.PI / n)));
-}
-
-/** People within ±`radius` columns of `c`. */
-export function within(colCount: ArrayLike<number>, c: number, radius = READ_RADIUS): number {
-  let t = 0;
-  for (let k = Math.max(0, c - radius); k <= Math.min(colCount.length - 1, c + radius); k++) t += colCount[k];
-  return t;
 }
 
 /**

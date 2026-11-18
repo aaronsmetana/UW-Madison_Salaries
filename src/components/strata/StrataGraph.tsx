@@ -3,7 +3,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { ActionIcon, Button, CloseButton, FocusTrap, Loader, Popover, Slider, Stack, Text } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { IconAdjustmentsHorizontal, IconArrowsMaximize, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipForwardFilled, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
-import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, READ_RADIUS, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, seatedSlots, shareAt, stagedSlots, standingIn, strataFromCounts, within, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
+import { CATCH_UP, COLS, COL_DOLLARS, COUNTDOWN_S, FADE_MS, FAST_MS, FLOORS, MAG_COLS, MAG_LEFT_MAX, colHeight, floorLabel, floorOf, floorPay, magLeftFor, pacePlan, placePins, seatedSlots, shareAt, stagedSlots, standingIn, strataFromCounts, type Pace, type StepMode, type Strata, type StrataCounts } from '../../lib/strata';
 import { StrataField, LENS_R, LOUPE_ZOOM, colTopY, layoutStrata, payX, slotPlace, type Dim, type Follow, type LensHit, type Places, type Spot, type Step, type StepPhase, type StrataFieldHandle, type StrataLayout, type StrataView } from './StrataField';
 import { snapStats, stepKinds, strataFromPeople, type Timeline, type TimelineStrata } from '../../lib/timeline';
 import { medianOf } from '../../lib/homePeople';
@@ -103,6 +103,9 @@ const LENS_MARGIN = 4;
 const PLAY_POINT_MS = 150;
 /** The least plot, CSS px, that has room in its corner for the snapshot's name, large. */
 const WHEN_MIN_W = 640;
+/** The count scale's lines: at the smallest of these steps, in people, that keeps them this far apart, CSS px. */
+const SCALE_STEPS = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10_000];
+const SCALE_MIN_GAP = 64;
 /** Play, starting over from the first snapshot, rests at least this long there before going on. */
 const PLAY_RESTART_MS = 700;
 /** Play's speeds (3a): Fast, a snapshot every quarter second; Medium and Slow stage each step. */
@@ -173,7 +176,7 @@ export function StrataGraph({
   bins, payCounts, p25: p25Base, median: medianBase, p75: p75Base, cap, overflow, headcount: headcountBase, snapshotLabel: labelBase,
   found: foundBase = NO_FOUND, activeKey = null, openRef, search, onFullChange, group = null, previewing = false, onClearGroup, onPeel,
   openFullRef, startFull = false, whoIs: whoIsBase = null, onWantWho, searchOpenRef, timeline = null, columnPeak = null, prevMedian: prevMedianBase = null,
-  prevLabel: prevLabelBase = null,
+  prevLabel: prevLabelBase = null, since = null,
 }: {
   bins: readonly { bucket: number; n: number }[];
   payCounts?: StrataCounts | null;
@@ -216,6 +219,9 @@ export function StrataGraph({
   /** The snapshot before the latest: its median and name, for the median's change. */
   prevMedian?: number | null;
   prevLabel?: string | null;
+  /** How far the median has come since the first snapshot, for the line beside Play: the rise, whole percent; the
+   *  first snapshot's year; and whether it is measured like for like (lib `median_prior`). */
+  since?: { up: number; year: string; likeForLike: boolean } | null;
 }) {
   const phone = useMediaQuery('(max-width: 30em)', false, { getInitialValueInEffect: false }) ?? false;
   const canHover = useMediaQuery('(hover: hover)', true, { getInitialValueInEffect: false }) ?? true;
@@ -733,11 +739,13 @@ export function StrataGraph({
   } : null;
   // On a phone the chip takes Play's row while something is under way, Play down to its icon; at rest, Play's words.
   const chipActive = !!chipInput && (playing || phase != null || rest != null || fadeInfo != null || switching);
+  // On a wide screen the chip has a place of its own at the track's end, shown while something is under way or held
+  // at Pause. At rest it said "Sorted by type, then salary", which the hint says over the plot; in its place now, the
+  // reason to press Play.
+  const chipShown = chipActive || (!!chipInput && paused);
   // What a raises-and-cuts step's colours mean, in the legend: while it moves and holds, and all through Fast's play.
   const changeShown = mode === 'change' && !!step?.counts && !step.fade && (phase?.phase === 'move' || phase?.phase === 'hold' || (pace === 'fast' && playing));
   const changePace = (p: Pace) => { setPace(p); setSkipHold((k) => k + 1); };
-  // The step colours' toggle in the toolbar, over the legend; on a phone and full page, in the settings.
-  const modeInBar = !phone && !full && !!timeline && snaps.length > 1;
   // A change of mode plays the last step again in it (3a).
   const changeMode = (md: StepMode) => {
     setMode(md);
@@ -940,6 +948,17 @@ export function StrataGraph({
   // The pile's label at the axis's right end, which is also the way to unroll it and fold it back.
   const over = strata?.pileKind.length ?? 0;
   const pileLabel = tail ? `${fmtTail(tail.top)} · fold back` : `${num(over)} at ${fmtK(cap ?? 250_000)}+`;
+  // The count scale (the histogram's): a few faint lines behind the columns, each at a round number of people. The
+  // columns had none — how many people one holds could be read only by pointing at it — and the scale is the same
+  // in every snapshot (`peak`), so the lines stand still as the timeline plays.
+  const scaleLines = useMemo(() => {
+    if (!layout || layout.view !== 'hist') return [];
+    const each = layout.grid.rowPitch / layout.grid.per;
+    const step = SCALE_STEPS.find((st) => st * each >= SCALE_MIN_GAP) ?? SCALE_STEPS[SCALE_STEPS.length - 1];
+    const lines: { n: number; y: number }[] = [];
+    for (let k = step; k <= layout.peak; k += step) lines.push({ n: k, y: Math.round(layout.base - colHeight(k, layout.grid)) + 0.5 });
+    return lines;
+  }, [layout]);
   // A pay's place on the axis: on the plot, or unrolled, on the axis run out to the top salary.
   const xOf = useCallback((v: number) => (layout?.tail ? v * layout.tail.scale : layout ? payX(layout, v) : 0), [layout]);
   // The salary axis: round pays every $25k (coarser where they would crowd), short of the pile; unrolled, round
@@ -965,13 +984,24 @@ export function StrataGraph({
   const topShare = (n: number) => { const p = (n / Math.max(1, total)) * 100; return p >= 0.1 ? `${p.toFixed(1)}%` : 'under 0.1%'; };
   const pileWord = `${num(over)} at ${fmtK(cap ?? 250_000)} or more · the top ${topShare(over)} · ${canHover ? 'click' : 'tap'} to see each at their own pay`;
   // A line under the graph (3a): what it shows and how to use it, by view — said for a mouse or a finger.
-  const hint = tail
-    ? `${num(over)} people at ${fmtK(cap ?? 250_000)} or more, each at their own pay. ${canHover ? 'Click the graph or press Esc' : 'Tap the graph'} to fold them back.`
-    : (layout?.view ?? view) === 'magnify'
-      ? `A $30k window, magnified. Drag to pan; ${canHover ? 'point at' : 'tap'} anyone to see who they are.`
-      : (layout?.view ?? view) === 'floors'
-        ? `Each floor is a $10k band, sorted by ${sortWords} from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
-        : `Sorted by ${sortWords} within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
+  // On a phone, one line of it: what a finger does. It ran to two or three there, over a plot that began two thirds
+  // of the way down the first screen.
+  // Where the histogram draws squares (a gap between them: a 2x screen with the room), it says what one is, which
+  // the page's lead no longer does: on a phone and a 1x screen a person is under a pixel wide, in solid bars.
+  const squares = !!layout && layout.view === 'hist' && layout.grid.gap > 0;
+  const hintView = layout?.view ?? view;
+  const hint = phone
+    ? tail ? 'Tap the graph to fold them back.'
+      : hintView === 'magnify' ? 'Drag to pan; tap anyone to see who they are.'
+        : hintView === 'floors' ? 'Each floor is a $10k band. Tap to look closer.'
+          : 'Tap to magnify; hold to look closer.'
+    : tail
+      ? `${num(over)} people at ${fmtK(cap ?? 250_000)} or more, each at their own pay. ${canHover ? 'Click the graph or press Esc' : 'Tap the graph'} to fold them back.`
+      : hintView === 'magnify'
+        ? `A $30k window, magnified. Drag to pan; ${canHover ? 'point at' : 'tap'} anyone to see who they are.`
+        : hintView === 'floors'
+          ? `Each floor is a $10k band, sorted by ${sortWords} from the bottom row up. ${canHover ? 'Point' : 'Tap'} to look closer.`
+          : `${squares ? 'Each square is one person. ' : ''}Sorted by ${sortWords} within each $5k column. ${canHover ? 'Point to look closer; click to magnify.' : 'Hold a finger still to look closer; tap to magnify.'}`;
   const readout = useMemo(() => {
     // Magnified there is no glass to read: the columns are labelled under the plot, and counted over each.
     if (!strata || !layout || !lensAt || layout.view === 'magnify') return null;
@@ -994,12 +1024,14 @@ export function StrataGraph({
       const pct = Math.min(99, Math.max(1, Math.round(((below + fl[f].n / 2) / Math.max(1, total)) * 100)));
       return `${floorLabel(f)} · ${num(fl[f].n)} ${fl[f].n === 1 ? 'person' : 'people'} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
     }
-    const c = lensCol ?? 0;
-    const near = within(strata.colCount, c, READ_RADIUS);
+    // The column under it, its own people, and where it stands — as a floor's reads. It named one $5k column and
+    // counted three (its neighbours either side with it): "$75k–$80k · 3,617 people within ±$5k", over a column of
+    // 1,388.
+    const c = lensCol ?? 0, own = strata.colCount[c] ?? 0;
     let lit = 0;
-    if (dim) for (let i = 0; i < strata.col.length; i++) if (!dim.main[i] && Math.abs(strata.col[i] - c) <= READ_RADIUS) lit++;
+    if (dim) for (let i = 0; i < strata.col.length; i++) if (!dim.main[i] && strata.col[i] === c) lit++;
     const pct = Math.min(99, Math.max(1, Math.round(shareAt(strata.colCount, c, total) * 100)));
-    return `${fmtK(c * COL_DOLLARS)}–${fmtK((c + 1) * COL_DOLLARS)} · ${num(near)} people within ±${fmtK(READ_RADIUS * COL_DOLLARS)} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
+    return `${fmtK(c * COL_DOLLARS)}–${fmtK((c + 1) * COL_DOLLARS)} · ${num(own)} ${own === 1 ? 'person' : 'people'} · ${pct}% paid less${dim ? ` · ${num(lit)} in the filter` : ''}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strata, layout, lensAt, lensFrom, lensCol, lensFloor, dim, total]);
 
@@ -1496,9 +1528,11 @@ export function StrataGraph({
   // page's links and notes 590px down under the reader as it arrived.
   if (!strata) return <div className="hero-dist-holder" aria-hidden />;
 
-  const fullToggle = phone ? (
+  // The way to full page is an icon, named on its title: the labelled ways to look closer were two, side by side
+  // ("Magnify", "Full page graph"), and Magnify is the one that shows people. Open, the way out keeps its words.
+  const fullToggle = phone || !full ? (
     <ActionIcon ref={toggleRef} variant={full ? 'filled' : 'light'} color="accent" size="md"
-      className={`hero-dist-full-toggle${full ? '' : ' accent-adaptive-text'}`}
+      className={`hero-dist-full-toggle${full ? '' : ' accent-adaptive-text'}`} title={full ? undefined : 'Full page graph'}
       aria-label={full ? 'Exit full page' : 'Full page graph'} onClick={full ? closeFull : openFull} data-autofocus={full || undefined}>
       {full ? <IconX size={ICON.control} /> : <IconArrowsMaximize size={ICON.control} />}
     </ActionIcon>
@@ -1618,15 +1652,6 @@ export function StrataGraph({
             : <Text size="xs" className="strata-hint" data-view={layout?.view ?? view}>{hint}</Text>}
         </div>
         <div className="strata-toolbar-right">
-          {/* What a step's colours show while the timeline plays, over the key to them (H4): in this row, whose hint
-              gives way, so the legend's row never wraps (a wider snapshot's types would move the plot as it played).
-              On a phone and full page, in the timeline's settings. */}
-          {modeInBar && (
-            <div className="strata-mode-wrap" title="What each step of Play colours people by: raises and cuts, or their type">
-              <Text span size="xs" c="dimmed" className="strata-mode-lead">Play shows</Text>
-              <SegmentedToggle ariaLabel="Show each step by" className="strata-mode" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} />
-            </div>
-          )}
           {fullToggle}
         </div>
       </div>
@@ -1678,6 +1703,7 @@ export function StrataGraph({
                 </Text>
                 {cats?.map((c) => (
                   <button key={c.name} type="button" className="hero-dist-legend-item strata-legend-item" data-category={c.name} data-n={c.n}
+                    title={`${c.name}: ${num(c.n)} ${c.n === 1 ? 'person' : 'people'}${c.median != null ? `, median ${usd(c.median)}` : ''}. ${canHover ? 'Click' : 'Tap'} to show them alone`}
                     aria-pressed={solo === c.kind} onClick={() => setSolo((s) => (s === c.kind ? null : c.kind))}>
                     <span className="hero-dist-swatch" aria-hidden style={{ backgroundColor: kindInks[c.kind] }} />
                     <Text span size="xs" fw={600}>{c.name}</Text>
@@ -1725,6 +1751,16 @@ export function StrataGraph({
       >
         {layout && (
           <>
+            {/* The count scale: before the field, so behind its squares; each line's number over its left end, in
+                the room the lowest-paid columns leave. */}
+            <svg className="strata-scale strata-hist-only" width={plotW} height={H} aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
+              {scaleLines.map((l) => <line key={l.n} x1={0} x2={plotW} y1={l.y} y2={l.y} />)}
+            </svg>
+            {scaleLines.map((l, k) => (
+              <span key={l.n} className="strata-scale-label strata-hist-only" aria-hidden style={{ top: l.y }}>
+                {num(l.n)}{k === scaleLines.length - 1 && !phone ? ' people' : ''}
+              </span>
+            ))}
             <StrataField
               ref={fieldRef} className="hero-dots strata-field" strata={strata} layout={layout} kindInks={kindInks}
               dim={dim} matchSearch={!!lit} marks={marks} big={big}
@@ -1739,6 +1775,11 @@ export function StrataGraph({
                   style={p.ink ? ({ stroke: p.ink } as CSSProperties) : undefined} />
               ))}
               <line className="strata-baseline strata-hist-only" x1={0} x2={plotW} y1={layout.base + 0.5} y2={layout.base + 0.5} />
+              {/* Before the pile, a break: it is everyone past the axis's end in one column, not a spike at $250k. */}
+              {layout.view === 'hist' && layout.pileW > 0 && (
+                <line className="strata-pile-break strata-hist-only" x1={Math.round((layout.mainW + layout.pileLeft) / 2) + 0.5} x2={Math.round((layout.mainW + layout.pileLeft) / 2) + 0.5}
+                  y1={PIN_BAND} y2={layout.base + 6} />
+              )}
               {/* The floors (3a): a hairline under each, and the median's floor marked at its left. */}
               {floorsRef.current?.floorX && (
                 <g className="strata-floors-only">
@@ -1977,7 +2018,10 @@ export function StrataGraph({
             <Popover.Dropdown className="strata-settings-panel">
               <Stack gap="md">
                 {phone && <SegmentedToggle label="Speed" ariaLabel="Speed" value={pace} onChange={(v) => changePace(v as Pace)} options={PACES} fullWidth />}
-                {!modeInBar && <SegmentedToggle label="Show each step by" ariaLabel="Show each step by" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} fullWidth />}
+                {/* What a step's colours show, with Play's other settings at every width. It was over the legend, a
+                    labelled toggle at the far end of the panel from Play; by employment type is how Play starts, and
+                    raises and cuts the closer look, asked for here. */}
+                <SegmentedToggle label="Show each step by" ariaLabel="Show each step by" value={mode} onChange={(v) => changeMode(v as StepMode)} options={MODES} fullWidth />
                 <SegmentedToggle label="Sort each column by" ariaLabel="Sort each column by" value={byType ? 'type' : 'salary'} onChange={(v) => setByType(v === 'type')} fullWidth
                   options={[{ id: 'type', label: 'Type, then salary' }, { id: 'salary', label: 'Salary' }]} />
                 <div>
@@ -2017,7 +2061,16 @@ export function StrataGraph({
               <div ref={fillRef} className="strata-track-fill" aria-hidden />
             </div>
           </div>
-          {!phone && chipInput && <TimelineChip input={chipInput} />}
+          {!phone && chipInput && (chipShown ? <TimelineChip input={chipInput} /> : (
+            <div className="strata-hook">
+              {since && since.up > 0 && (
+                <>
+                  <span className="strata-hook-figure">Median pay up ~{since.up}% since {since.year}</span>
+                  <span className="strata-hook-note">{since.likeForLike ? 'Like for like · ' : ''}press Play to watch it move</span>
+                </>
+              )}
+            </div>
+          ))}
           </div>
           {/* The snapshot, its people and median are the toolbar's count and the median's pin; said here only to a
               screen reader, as the step lands (not at every step of Play). */}

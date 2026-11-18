@@ -2474,7 +2474,8 @@ g.hist-pick:focus-visible path { stroke: var(--mantine-color-accent-7); stroke-w
   margin-top: 6px;
 }
 .hero-dist-legend-item { display: inline-flex; align-items: center; gap: 5px; }
-/* Each category is a button (show it alone): a plain row until pointed at or pressed. */
+/* Each category is a button (show it alone), and looks like one: a hairline round it at rest. A plain row until
+   pointed at, it read as a key and nothing more — that a type could be shown alone was found by accident. */
 button.hero-dist-legend-item {
   font: inherit;
   color: inherit;
@@ -2482,6 +2483,7 @@ button.hero-dist-legend-item {
   border: 0;
   padding: 2px 6px;
   border-radius: var(--mantine-radius-xs);
+  box-shadow: inset 0 0 0 1px var(--hairline-soft);
   cursor: pointer;
 }
 button.hero-dist-legend-item:hover { background: var(--mantine-color-default-hover); }
@@ -2652,8 +2654,6 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-play-group .mantine-SegmentedControl-root { background: none; }
 .strata-play-group .mantine-SegmentedControl-indicator { border-radius: 999px; }
 .strata-play-group .mantine-Button-root.strata-play { min-width: 11.5em; }
-/* Over the legend's right end (H4): what Play's steps colour people by, before the way to full page. */
-.strata-mode-wrap { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-right: 8px; }
 .strata-tl-progress { display: flex; align-items: center; gap: 14px; flex: 1 1 600px; min-width: 0; container-type: inline-size; }
 .strata-play, .strata-speed, .strata-mode, .strata-settings { flex: none; }
 /* The status chip (3a §11): a ring with the seconds left inside, what is happening, and when the timeline ends. */
@@ -2675,6 +2675,12 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-status-label, .strata-status-eta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strata-status-label { font-size: var(--mantine-font-size-xs); font-weight: 600; line-height: 1.3; }
 .strata-status-eta { font-size: var(--mantine-font-size-xs); line-height: 1.3; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+/* At rest, in the chip's place and of its size (so the track beside it never moves as the chip comes and goes):
+   what the timeline has to show, as words on the strip — no box, since nothing is happening. */
+.strata-hook { flex: none; width: 280px; height: 44px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 0 0 7px; min-width: 0; }
+.strata-hook-figure, .strata-hook-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--mantine-font-size-xs); line-height: 1.3; }
+.strata-hook-figure { font-weight: 600; }
+.strata-hook-note { color: var(--text-faint); }
 /* On a phone, in Play's row while something is under way: no box of its own, all the room Play leaves. */
 .strata-status[data-compact] { flex: 1 1 auto; width: auto; height: 28px; min-width: 0; gap: 8px; padding: 0; border: 0; background: none; }
 .strata-status[data-compact] .strata-status-ring { width: 24px; height: 24px; }
@@ -2695,11 +2701,15 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
   .strata-track-dot[data-state='now'] + .strata-track-dot .strata-tick-label { visibility: hidden; }
 }
 /* The hint (3a): after the count in the toolbar, one line, cut short with an ellipsis where the room runs out. On a
-   phone, under the count, two lines at most; left out of full page, whose plot has the room. */
+   phone, under the count, one line of its own words for a finger (it was two, and three in places, over a plot that
+   began two thirds of the way down the first screen); left out of full page, whose plot has the room. */
 .strata-hint { flex: 1 1 0; min-width: 0; margin: 0 0 0 14px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The room the toolbar leaves, not a reading measure: a paragraph's (`p.mantine-Text-root`) cut it at 524px with
+   the rest of the row empty. */
+.strata-toolbar p.strata-hint { max-width: none; }
 @media screen and (max-width: 30em) {
   .strata .strata-toolbar-left { flex-wrap: wrap; height: auto; row-gap: 2px; }
-  .strata-hint { flex-basis: 100%; margin: 0; white-space: normal; min-height: calc(2 * 1.55em); }
+  .strata-hint { flex-basis: 100%; margin: 0; min-height: 1.55em; }
   .strata.hero-dist-full .strata-hint { display: none; }
 }
 .strata-track-dots {
@@ -2778,7 +2788,42 @@ button.hero-dist-legend-item:focus-visible { outline: 2px solid var(--mantine-co
 .strata-legend-body { display: grid; min-width: 0; }
 .strata-legend-body > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 14px; }
 .strata-legend-body > :not([data-on]) { visibility: hidden; }
-@media screen and (max-width: 30em) { .strata-legend-body > * { justify-content: flex-start; } }
+/* On a phone the types are one line that scrolls, its end fading where more is to come: wrapped, they were three
+   lines between the views and the plot. */
+@media screen and (max-width: 30em) {
+  .strata-legend-body { flex: 1 1 100%; mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+  .strata-legend-body > * { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-right: 28px; }
+  .strata-legend-body > *::-webkit-scrollbar { display: none; }
+  .strata-legend-body .hero-dist-legend-item, .strata-legend-body .strata-change-item { flex: none; }
+}
+/* A finger on a phone: every control of the graph is 44px to the touch. Play, the one most pressed, is that tall;
+   the rest keep their size and are given the height of their row, which is 44px — the views and Magnify, the
+   types, Skip and the settings, each snapshot's dot. (They were 24 to 28px: enough for WCAG 2.5.8, and under what a
+   thumb is given by either phone's own guidelines.) */
+@media screen and (max-width: 30em) and (pointer: coarse) {
+  .strata-view-controls, .strata-legend-body > * { min-height: 44px; }
+  .strata .strata-play { min-height: 44px; }
+  .strata .mantine-ActionIcon-root.strata-play { min-width: 44px; }
+  .strata-view .mantine-SegmentedControl-label, .strata-magnify, .strata .hero-dist-full-toggle, .strata-skip, .strata-settings { position: relative; }
+  .strata-view .mantine-SegmentedControl-label::after, .strata-magnify::after, .strata .hero-dist-full-toggle::after, .strata-skip::after, .strata-settings::after,
+  .strata-legend-body .hero-dist-legend-item::after {
+    content: ''; position: absolute; left: 50%; top: 50%; width: 100%; height: 44px; transform: translate(-50%, -50%);
+  }
+  .strata-magnify::after, .strata .hero-dist-full-toggle::after, .strata-settings::after { width: max(100%, 44px); }
+  /* The track: each dot as tall as a thumb, its mark and its label where they were. */
+  .strata-track-dots { height: 44px; margin-bottom: 4px; }
+  .strata-track-dot { height: 44px; }
+  .strata-tick-label { top: calc(50% + 12px); }
+}
+/* The count scale: hairlines behind the columns, fainter than the baseline, and each one's number just over its
+   left end in the axis's own small type. */
+.strata-scale line { stroke: var(--hairline-soft); stroke-width: 1; }
+.strata-scale-label {
+  position: absolute; left: 0; transform: translateY(-100%); padding-bottom: 1px; pointer-events: none; white-space: nowrap;
+  font-size: var(--mantine-font-size-xxs); line-height: 1.2; color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+/* The break before the pile: the pins' own dashes, fainter. */
+.strata-pile-break { stroke: var(--hairline-strong); stroke-width: 1; stroke-dasharray: 2 3; }
 /* The snapshot shown, large in the histogram's top right corner while it is not the latest or the timeline plays:
    over the long tail's low columns, clear of the median's and the quartiles' labels. The pile unrolled, that corner
    is its note's, and the squeezed columns leave the left one free. */
@@ -3237,18 +3282,10 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
   .home-head { grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); column-gap: 40px; align-items: end; }
 }
 .home-head-search { min-width: 0; }
-/* The facts at the page's foot (H6): all at once, a phrase each by a quiet dot, two columns where they fit. Run
-   together on one wrapping line, a wrapped fact began with the dot that parted it from the last. */
-.home-facts {
-  margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 4px 28px;
-  font-size: var(--mantine-font-size-xs); line-height: 1.55; color: var(--mantine-color-dimmed);
-}
-.home-facts li { position: relative; padding-left: 12px; }
-.home-facts li::before {
-  content: ''; position: absolute; left: 1px; top: calc(0.775em - 2px); width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint);
-}
-/* The figures under the search, read as phrases: "22,009 employees", hairlines between them, and the way
-   to every school and title at the line's end. */
+/* On a phone the lead is its first sentence: the search is the next thing down. */
+@media screen and (max-width: 30em) { .home-lead-more { display: none; } }
+/* The figures under the graph, read as phrases: "$2.10B payroll", hairlines between them, and the way to every
+   school and title at the line's end. */
 .home-stats {
   display: flex;
   flex-wrap: wrap;
@@ -3268,9 +3305,13 @@ html.hero-full-open, html.hero-full-open body { overflow: hidden; }
 }
 .home-stat-label { font-size: var(--mantine-font-size-sm); color: var(--mantine-color-dimmed); }
 .home-stats-browse { font-size: var(--mantine-font-size-xs); font-weight: 600; }
-/* A phone: two figures a line, no hairline at a line's start. */
+/* The median's rise is beside Play on a wide screen (the graph's `.strata-hook`): here only on a phone, which has
+   no room for it there. */
+@media screen and (min-width: 30.01em) { .home-stat[data-only='phone'] { display: none; } }
+/* A phone: two figures a line, no hairline at a line's start; a longer one's words go under its number's line. */
 @media (max-width: 36em) {
   .home-stat-row { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; width: 100%; }
+  .home-stat { flex-wrap: wrap; white-space: normal; }
   .home-stat + .home-stat { border-left: 0; margin-left: 0; padding-left: 0; }
 }
 /* The rest of the site, at the page's foot: plain links under a hairline, no cards. */

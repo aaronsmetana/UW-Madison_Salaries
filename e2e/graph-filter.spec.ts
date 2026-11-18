@@ -369,7 +369,7 @@ test('what a filter is not about is drawn faint, not hidden', async ({ page }) =
   expect(Math.hypot(...after.rgb.map((v, i) => v - want[i])), `past the group the squares are not their own inks at 40%: ${after.rgb.map(Math.round)} for ${want.map(Math.round)}`).toBeLessThan(3);
 });
 
-test('the readout counts the filter’s people within its window', async ({ page }) => {
+test('the readout counts the filter’s people in its column', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fullPage(page);
   const code = await codeOf('Research Associate');
@@ -381,10 +381,10 @@ test('the readout counts the filter’s people within its window', async ({ page
   const pill = page.locator('.strata-readout');
   await expect(pill).toContainText('in the filter');
   const text = (await pill.textContent())!;
-  // The window is the readout's: the $5k column under the pointer and its neighbours either side (±$5k).
+  // The column is the readout's: the $5k one under the pointer, as its headcount is.
   const bucket = Number(/^\$(\d+)k–/.exec(text)![1]) * 1000;
-  const want = who.filter((p) => p.pay < HOME_STATS.bin_cap && Math.abs(Math.floor(p.pay / 5000) * 5000 - bucket) <= 5000).length;
-  expect(want, 'nobody of the group near the pointer, so nothing here is tested').toBeGreaterThan(5);
+  const want = who.filter((p) => p.pay < HOME_STATS.bin_cap && Math.floor(p.pay / 5000) * 5000 === bucket).length;
+  expect(want, 'nobody of the group under the pointer, so nothing here is tested').toBeGreaterThan(2);
   expect(text).toContain(` · ${num(want)} in the filter`);
 });
 

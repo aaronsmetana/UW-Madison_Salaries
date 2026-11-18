@@ -153,10 +153,15 @@ test.describe('the opening', () => {
       await page.goto('./');
       await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
       await expect(page.locator('.strata-play')).toHaveText(/^Play \d{4} → \d{4}$/);
-      await expect(page.locator('.strata-status-label')).toHaveText('Sorted by type, then salary');
+      // No chip at rest: in its place, what the timeline has to show.
+      await expect(page.locator('.strata-status')).toHaveCount(0);
+      await expect(page.locator('.strata-hook-figure')).toHaveText(/^Median pay up ~\d+% since \d{4}$/);
       await expect(page.locator('.strata-hint')).toHaveText(/^Sorted by type, then salary within each \$5k column\./);
-      // What a square is, said once — the lead's sentence — not again on the graph, in its hint and in its chip.
-      await expect(page.getByText(/(Each|Every) square (below )?is one person/)).toHaveCount(1);
+      // What a square is, said where the graph draws them (the hint's, at 2x: strata-timeline.spec) and nowhere here,
+      // at 1x, where a person is a pixel wide in a solid bar: the lead says how to read the columns.
+      expect(Number(await field(page).getAttribute('data-gap'))).toBe(0);
+      await expect(page.getByText(/(Each|Every) square (below )?is one person/)).toHaveCount(0);
+      await expect(page.locator('.home-lead')).toHaveText(/^Everyone on the payroll by pay, in \$5k columns\./);
       // Long enough for all of the old intro's title and zoom, and the first steps of its play.
       await page.waitForTimeout(6_000);
       expect(await page.evaluate(() => (window as unknown as { seen: string[] }).seen)).toEqual([`hist ${LATEST} still`]);
@@ -375,18 +380,19 @@ test('the lens redraws inside the frame budget', async ({ page }) => {
   expect(frames[Math.floor(frames.length / 2)]).toBeLessThan(FRAME_MS);
 });
 
-test('the readout names the $5k column under the lens, counts everyone within ±$5k of it and says where that pay stands', async ({ page }) => {
+test('the readout names the $5k column under the lens, counts that column’s own people and says where that pay stands', async ({ page }) => {
   await home(page);
   await pointAt(page, 0.3, 0.9);
   const c = Number(await plot(page).getAttribute('aria-valuenow')) / COL;
   const rows = await people();
   const under = rows.filter((p) => p.pay < CAP);
-  const near = under.filter((p) => Math.abs(Math.floor(p.pay / COL) - c) <= 1).length;
   const below = under.filter((p) => Math.floor(p.pay / COL) < c).length;
   const own = under.filter((p) => Math.floor(p.pay / COL) === c).length;
   const headcount = rows.length;
   const pct = Math.min(99, Math.max(1, Math.round(((below + own / 2) / headcount) * 100)));
-  await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * COL)}–${fmtK((c + 1) * COL)} · ${num(near)} people within ±$5k · ${pct}% paid less`);
+  // Its own people: it named one $5k column and counted three, "$75k–$80k · 3,617 people within ±$5k" over 1,388.
+  expect(own, 'an empty column proves nothing').toBeGreaterThan(100);
+  await expect(page.locator('.strata-readout')).toHaveText(`${fmtK(c * COL)}–${fmtK((c + 1) * COL)} · ${num(own)} people · ${pct}% paid less`);
 });
 
 test('the legend sits over the plot (3a): each type in order, with its people in the snapshot shown', async ({ page }) => {
@@ -541,7 +547,7 @@ test('the keyboard walks the lens a column at a time, and Escape puts it away', 
   await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at + 5 * COL));
   await page.keyboard.press('ArrowLeft');
   await expect(plot(page)).toHaveAttribute('aria-valuenow', String(at + 4 * COL));
-  await expect(plot(page)).toHaveAttribute('aria-valuetext', new RegExp(`^${fmtK(at + 4 * COL).replace('$', '\\$')}–${fmtK(at + 5 * COL).replace('$', '\\$')} · [\\d,]+ people within ±\\$5k`));
+  await expect(plot(page)).toHaveAttribute('aria-valuetext', new RegExp(`^${fmtK(at + 4 * COL).replace('$', '\\$')}–${fmtK(at + 5 * COL).replace('$', '\\$')} · [\\d,]+ (person|people) · \\d+% paid less`));
   await page.keyboard.press('Escape');
   await expect(plot(page)).toHaveAttribute('data-lens', 'off');
 });

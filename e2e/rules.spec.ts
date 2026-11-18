@@ -53,9 +53,9 @@ test.describe('R8 — pay figures describe people', () => {
       `SELECT median(pay) med FROM (SELECT person_key, ${PERSON_PAY} pay FROM $SAL WHERE snapshot_id = '${snap}' GROUP BY person_key) WHERE pay > 0`
     );
     await page.goto('./');
-    // In the figures under the search: the heading says what the page shows now, not the median.
-    const stat = page.locator('.home-stat').filter({ has: page.locator('.home-stat-label', { hasText: /^median$/ }) });
-    await expect(stat.locator('.home-stat-value')).toHaveText(usd(o.med), { timeout: 60_000 });
+    // On the graph's own pin, to the dollar: the figures under it no longer say it a second time.
+    await expect(page.locator('.strata-pin-label-median')).toContainText(`Median ${usd(o.med)}`, { timeout: 60_000 });
+    await expect(page.locator('.home-stat-label', { hasText: /^median$/ })).toHaveCount(0);
   });
 
   test("a division's median counts each person once, at their pay in that division", async ({ page }) => {

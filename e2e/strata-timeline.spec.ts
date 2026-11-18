@@ -52,8 +52,13 @@ async function pace(page: Page, p: 'Slow' | 'Medium' | 'Fast') {
   await expect(page.getByRole('radiogroup', { name: 'Speed' }).getByRole('radio', { name: p })).toBeChecked();
 }
 async function mode(page: Page, m: 'Raises & cuts' | 'Type') {
-  await page.getByRole('radiogroup', { name: 'Show each step by' }).getByText(m, { exact: true }).click();
-  await expect(page.getByRole('radiogroup', { name: 'Show each step by' }).getByRole('radio', { name: m })).toBeChecked();
+  // With Play's other settings, in their popover: put away again once chosen.
+  await page.getByRole('button', { name: 'Timeline settings' }).click();
+  const group = page.locator('.strata-settings-panel').getByRole('radiogroup', { name: 'Show each step by' });
+  await group.getByText(m, { exact: true }).click();
+  await expect(group.getByRole('radio', { name: m })).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.strata-settings-panel')).toHaveCount(0);
 }
 /** From now on, each change of the bar's snapshot and phase and of the field's rest, with when. */
 const logSteps = (page: Page) => page.evaluate(() => {
@@ -492,11 +497,24 @@ test('the hint under the graph says what each view shows and how to use it, for 
   await page.locator('.strata-pile-toggle').click();
   await expect(hint).toHaveText(/ people at \$250k or more, each at their own pay\. Click the graph or press Esc to fold them back\.$/);
   await page.close();
-  // A finger.
+  // Where the histogram draws squares (a 2x screen with the room), it says what one is: the page's lead does not.
+  const dense = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  const sharp = await dense.newPage();
+  await sharp.goto('./');
+  await expect(field(sharp)).toHaveAttribute('data-settled', 'true', { timeout: 30_000 });
+  expect(Number(await field(sharp).getAttribute('data-gap')), 'no squares drawn at 2x, so this proves nothing').toBeGreaterThan(0);
+  await expect(sharp.locator('.strata-hint')).toHaveText('Each square is one person. Sorted by type, then salary within each $5k column. Point to look closer; click to magnify.');
+  await dense.close();
+  // A finger on a phone: one line of it, by view.
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const phone = await ctx.newPage();
   await phone.goto('./');
-  await expect(phone.locator('.strata-hint')).toHaveText('Sorted by type, then salary within each $5k column. Hold a finger still to look closer; tap to magnify.');
+  const tip = phone.locator('.strata-hint');
+  await expect(tip).toHaveText('Tap to magnify; hold to look closer.');
+  const tipLine = parseFloat(await tip.evaluate((e) => getComputedStyle(e).lineHeight));
+  expect((await tip.boundingBox())!.height, 'more than one line on a phone').toBeLessThan(tipLine * 1.5);
+  await phone.getByRole('radiogroup', { name: 'View' }).getByText('Floors').tap();
+  await expect(tip).toHaveText('Each floor is a $10k band. Tap to look closer.');
   await ctx.close();
 });
 
@@ -751,7 +769,6 @@ test.describe('speed, mode and settings', () => {
     test.setTimeout(120_000);
     await home(page);
     await expect(bar(page)).toHaveAttribute('data-mode', 'type');
-    await expect(page.getByRole('radiogroup', { name: 'Show each step by' }).getByRole('radio', { name: 'Type' })).toBeChecked();
     await goTo(page, 6);
     await logSteps(page);
     await goTo(page, 7);
@@ -907,7 +924,8 @@ test.describe('the status chip', () => {
     await mode(page, 'Raises & cuts');
     await goTo(page, 7);
     await pace(page, 'Slow');
-    await expect(label(page)).toHaveText('Sorted by type, then salary');
+    // At rest there is no chip: what the timeline has to show is in its place.
+    await expect(page.locator('.strata-status')).toHaveCount(0);
     await chipLog(page);
     await dot(page, 8).click();
     await expect(bar(page)).toHaveAttribute('data-phase', 'hold', { timeout: 10_000 });
@@ -919,10 +937,7 @@ test.describe('the status chip', () => {
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 15_000 });
     const seen = await chipSeen(page);
     const labels = runs(seen);
-    expect(labels).toEqual([
-      'Sorted by type, then salary', `Moving people · ${SNAPS[7].label} → ${SNAPS[8].label}`, 'Sorting by type, then salary in', 'Sorting by type, then salary…',
-      'Sorted by type, then salary',
-    ]);
+    expect(labels).toEqual(['', `Moving people · ${SNAPS[7].label} → ${SNAPS[8].label}`, 'Sorting by type, then salary in', 'Sorting by type, then salary…', '']);
     expect(seen.filter(([l]) => l === 'Sorting by type, then salary in').map(([, c]) => c), 'the countdown’s seconds').toEqual(['3', '2', '1']);
   });
 
@@ -972,7 +987,7 @@ test.describe('the status chip', () => {
     expect(labels).toContain(`Rewinding to ${SNAPS[2].label.replace(/ \(.*\)$/, '')}`);
     expect(labels).toContain(`Skipping ahead · ${SNAPS[2].label.replace(/ \(.*\)$/, '')} → ${SNAPS[3].label}`);
     expect(labels).toContain('Switching view');
-    expect(labels[labels.length - 1]).toBe('Sorted by type, then salary');
+    expect(labels[labels.length - 1], 'the chip stayed once all was at rest').toBe('');
   });
 
   test('on a phone, takes Play’s row while it plays — Play down to its icon — and the row never changes height', async ({ browser }) => {
@@ -1171,7 +1186,7 @@ test.describe('Play, asked for', () => {
     const took = log.filter(([e]) => e === 'settled true').pop()![1] - log.find(([e]) => e === 'settled false')![1];
     expect(took, 'the cross-fade took').toBeGreaterThan(600);
     expect(took).toBeLessThan(1_500);
-    await expect(page.locator('.strata-status-label')).toHaveText('Sorted by type, then salary');
+    await expect(page.locator('.strata-status')).toHaveCount(0);
     await expect(skip(page)).toBeDisabled();
     await expect(page.locator('.strata-play')).toBeFocused();
     // While it plays: Play stops, and what the chip says of the step cut short goes with it.
@@ -1183,7 +1198,7 @@ test.describe('Play, asked for', () => {
     await expect(bar(page)).not.toHaveAttribute('data-playing', /./);
     await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);
     await expect(field(page)).toHaveAttribute('data-settled', 'true', { timeout: 10_000 });
-    await expect(page.locator('.strata-status-label')).toHaveText('Sorted by type, then salary');
+    await expect(page.locator('.strata-status'), 'the chip went on saying a step was moving').toHaveCount(0);
     await expect(page.locator('.strata-play')).toHaveText(/^Play \d{4} → \d{4}$/);
     await page.waitForTimeout(1_500);
     await expect(bar(page)).toHaveAttribute('data-snap', SNAPS[LAST].id);

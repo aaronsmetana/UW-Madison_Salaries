@@ -5,7 +5,7 @@ import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
 import { IconBuildingBank, IconBriefcase, IconReportAnalytics, IconListSearch } from '@tabler/icons-react';
 import { useSummary, useSql, useActiveSnapshotId, useHomeStats, useSearchIndex, useTimeline } from '../lib/hooks';
 import { sqlStr } from '../lib/duckdb';
-import { personPay, personEarnings, mainOf } from '../lib/queries';
+import { personPay, personEarnings } from '../lib/queries';
 import { usd, usdShort, num, fullName } from '../lib/format';
 import { SearchBox, type FilterToken, type SearchPick, type ShownPerson } from '../components/SearchBox';
 import { dotSpots, emphasis, filterPeopleSql, homeNamesSql, homePeopleSql, spotPeople, topSchoolsForSql, topTitlesInSql, type HomeName, type HomePerson } from '../lib/homePeople';
@@ -18,7 +18,7 @@ import type { SearchIndex } from '../lib/manifest';
 import { standingIn } from '../lib/strata';
 import { ICON } from '../lib/ui';
 
-interface StatData { label: string; value: number | null; format: (n: number) => string; hint?: string }
+interface StatData { label: string; value: number | null; format: (n: number) => string; hint?: string; only?: 'phone' }
 
 /**
  * One system-wide figure on the line under the search: the number, then what it counts, read as a phrase.
@@ -28,10 +28,10 @@ interface StatData { label: string; value: number | null; format: (n: number) =>
  * screen. They are the graph's supporting detail, so they are set as text, smaller than the search's own,
  * and hold still: a count-up is motion, and motion on the page's quietest line drew the eye to it first.
  */
-function StatItem({ label, value, format, hint }: StatData) {
+function StatItem({ label, value, format, hint, only }: StatData) {
   const figure = <span className="home-stat-value">{value == null ? '—' : format(value)}</span>;
   return (
-    <span className="home-stat">
+    <span className="home-stat" data-only={only}>
       {hint ? <Tooltip label={hint} withArrow>{figure}</Tooltip> : figure}
       <span className="home-stat-label">{label}</span>
     </span>
@@ -70,19 +70,6 @@ function ShowcaseLink({ icon, title, blurb, to }: {
         <span className="showcase-blurb">{blurb}</span>
       </span>
     </Anchor>
-  );
-}
-
-/**
- * A few figures worked out from the data, at the page's foot, all at once. They used to take turns on one line,
- * a new one every six seconds, so the one being read could go mid-sentence. The list's line is held from the
- * first paint, so the links above it never move as it fills in.
- */
-function HomeFacts({ facts }: { facts: string[] }) {
-  return (
-    <ul className="home-facts">
-      {facts.length ? facts.map((f) => <li key={f}>{f}</li>) : <li>{'\u00a0'}</li>}
-    </ul>
   );
 }
 
@@ -438,18 +425,6 @@ export default function Home() {
   );
   const bins = artifactUsable ? homeStats.bins : (binRows ?? []);
 
-  const { data: titleTopRows } = useSql<{ title: string; n: number }>(
-    ['home-toptitle', snap ?? ''],
-    `SELECT title, count(*) n FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND title IS NOT NULL GROUP BY title ORDER BY n DESC LIMIT 1`,
-    needsSql
-  );
-  const topTitle = artifactUsable ? homeStats.top_title : (titleTopRows?.[0] ?? null);
-  const { data: divTopRows } = useSql<{ school: string; n: number }>(
-    ['home-topdiv', snap ?? ''],
-    `SELECT school, count(*) n FROM salaries WHERE snapshot_id = ${sqlStr(snap ?? '')} AND school IS NOT NULL GROUP BY school ORDER BY n DESC LIMIT 1`,
-    needsSql
-  );
-  const topDivision = artifactUsable ? homeStats.top_division : (divTopRows?.[0] ?? null);
   // p90 (top-10% line) + median tenure, deduped per person.
   const { data: factStats } = useSql<{ p90: number | null; tenure: number | null }>(
     ['home-facts', snap ?? ''],
@@ -464,52 +439,31 @@ export default function Home() {
   );
   const p90 = artifactUsable ? homeStats.p90 : (factStats?.[0]?.p90 ?? null);
   const tenure = artifactUsable ? homeStats.median_tenure_years : (factStats?.[0]?.tenure ?? null);
-  const { data: byCat } = useSql<{ cat: string; med: number }>(
-    ['home-bycat', snap ?? ''],
-    // Each person once, at their total pay, in the category of their main appointment — the rule
-    // home-stats.json uses (scripts/lib/home-stats.mjs), so the fact reads the same either way.
-    `WITH p AS (SELECT person_key, ${personPay('fte')} pay, ${mainOf('employee_category')} cat FROM salaries
-                WHERE snapshot_id = ${sqlStr(snap ?? '')} AND salary > 0 GROUP BY person_key)
-     SELECT cat, median(pay) FILTER (WHERE pay > 0) med, count(*) FILTER (WHERE pay > 0) n
-     FROM p WHERE cat IS NOT NULL GROUP BY cat ORDER BY n DESC, cat LIMIT 3`,
-    needsSql
-  );
-  const categoryMedians = artifactUsable
-    ? homeStats.category_medians
-    : (byCat ?? []).map((c) => ({ category: c.cat, median: c.med }));
-
-  // All facts are computed at runtime from summary.json + home-stats.json (or live SQL), so they
-  // auto-update on data import — no hardcoded values to maintain when the salary data refreshes.
-  const facts = useMemo(() => {
-    const f: string[] = [];
+  // How far the median has come since the first snapshot: beside Play, as the reason to press it, and on the
+  // figures' line. Like for like: the latest restated to the first's footing (the Sep 2025 change in how 9-month
+  // pay is reported raised the median without raising anyone's pay).
+  const since = useMemo(() => {
     const first = summary?.snapshots?.[0];
-    const med0 = first?.median ?? null;
-    const medNow = summary?.latest?.median ?? null;
-    if (med0 != null && medNow != null && med0 > 0) {
-      // Like for like: the latest restated to the first's footing (the Sep 2025 change in how 9-month pay is
-      // reported raised the median without raising anyone's pay).
-      const lfl = summary?.latest?.median_prior ?? medNow;
-      const up = Math.round(((lfl - med0) / med0) * 100);
-      const yr = first?.date?.slice(0, 4);
-      f.push(`Median pay rose from ${usd(med0)}${yr ? ` (${yr})` : ''} to ${usd(medNow)} — up ~${up}%${lfl !== medNow ? ' like for like' : ''}`);
-    }
-    if (topTitle?.title) f.push(`Most common title: ${topTitle.title} (${num(topTitle.n)} people)`);
-    if (topDivision?.school) f.push(`Largest division: ${topDivision.school} (${num(topDivision.n)} people)`);
-    if (p90 != null) f.push(`The top 10% earn more than ${usd(p90)}`);
-    if (dims?.lo != null && dims?.hi != null) f.push(`Pay ranges from ${usd(dims.lo)} to ${usd(dims.hi)}`);
-    if (tenure != null) f.push(`Median tenure is ${tenure.toFixed(1)} years`);
-    if (categoryMedians.length) f.push(`Median pay by group: ${categoryMedians.map((c) => `${c.category} ${usd(c.median)}`).join(', ')}`);
-    return f;
-  }, [summary, topTitle, topDivision, p90, dims, tenure, categoryMedians]);
+    const med0 = first?.median ?? null, medNow = summary?.latest?.median ?? null, year = first?.date?.slice(0, 4);
+    if (med0 == null || medNow == null || !(med0 > 0) || !year) return null;
+    const lfl = summary?.latest?.median_prior ?? medNow;
+    return { up: Math.round(((lfl - med0) / med0) * 100), year, likeForLike: lfl !== medNow, from: med0, to: medNow };
+  }, [summary]);
 
-
-  // The figures on the line under the search, each a number and what it counts. The exact median is here
-  // since the heading became what the page shows: the graph labels it in thousands. The exact payroll is on
-  // hover.
+  // The figures on the line under the graph, each a number and what it counts: what the page does not already
+  // say. The headcount was here a third time (the heading's, the graph's) and the median a second (its pin on the
+  // graph, to the dollar); the three in their place were bullets at the page's foot. The exact payroll, and what
+  // the median rose from and to, are on hover.
   const stats: StatData[] = [
-    { label: 'employees', value: summary?.latest?.headcount ?? null, format: num },
-    { label: 'median', value: summary?.latest?.median ?? null, format: usd },
     { label: 'payroll', value: payroll, format: usdShort, hint: payroll != null ? usd(payroll) : undefined },
+    {
+      label: since ? `median since ${since.year}` : 'median since the first snapshot', value: since?.up ?? null, format: (n) => `${n >= 0 ? '+' : '−'}${Math.abs(n)}%`,
+      hint: since ? `From ${usd(since.from)} to ${usd(since.to)}${since.likeForLike ? ', like for like' : ''}` : undefined,
+      // On a wide screen it is beside Play, as the reason to press it: once is enough.
+      only: 'phone',
+    },
+    { label: 'starts the top 10%', value: p90, format: usd },
+    { label: 'median tenure', value: tenure, format: (n) => `${n.toFixed(1)} years` },
     { label: 'divisions', value: dims?.schools ?? null, format: num },
     { label: 'titles', value: dims?.titles ?? null, format: num },
   ];
@@ -566,10 +520,13 @@ export default function Home() {
                 )}
                 <Text span inherit c="bright">{summary?.latest?.headcount != null ? 'at' : 'people at'} <span style={{ whiteSpace: 'nowrap' }}>UW–Madison</span> are paid</Text>
               </Title>
-              {/* The median is the graph's own label; the lead says how to read the page and what to do. */}
+              {/* The median is the graph's own label; the lead says how to read the page and what to do. What a
+                  square is, is the graph's hint to say, where it draws them: on a phone and a 1x screen a person is
+                  under a pixel wide, and "every square below is one person" pointed at solid bars. On a phone the
+                  lead stops at how to read it: the search is the next thing down, and says what it takes. */}
               <Text size="sm" c="dimmed" className="home-lead">
-                Every square below is one person. Search anyone by name to see their pay and how it compares with
-                their title.
+                Everyone on the payroll by pay, in $5k columns.
+                <span className="home-lead-more">{' '}Search anyone by name to see their pay and how it compares with their title.</span>
               </Text>
             </div>
             {/* Held while the graph is full page, which carries the same search itself: the hero keeps its height. */}
@@ -587,6 +544,7 @@ export default function Home() {
               columnPeak={artifactUsable ? homeStats.column_peak ?? null : null}
               prevMedian={summary?.snapshots?.[summary.snapshots.length - 2]?.median ?? null}
               prevLabel={summary?.snapshots?.[summary.snapshots.length - 2]?.label ?? null}
+              since={since}
               overflow={artifactUsable ? homeStats.bins_overflow : null}
               headcount={summary?.latest?.headcount ?? null}
               snapshotLabel={summary?.latest?.label ?? null}
@@ -637,7 +595,7 @@ export default function Home() {
               {stats.map((s) => <StatItem key={s.label} {...s} />)}
             </div>
             <Anchor component={Link} to="/divisions" underline="never" className="home-stats-browse accent7-text" c="accent.7">
-              Browse every school and title under Divisions <span className="browse-arrow" aria-hidden>→</span>
+              Browse every school and title <span className="browse-arrow" aria-hidden>→</span>
             </Anchor>
           </div>
         </Stack>
@@ -647,7 +605,7 @@ export default function Home() {
         <nav className="home-more" aria-labelledby="home-more-title">
           {/* A heading, at eyebrow size: the page had an h1 and nothing under it, so a screen reader's list of
               headings was empty. */}
-          <h2 id="home-more-title" className="home-more-title"><Eyebrow span>Also in here</Eyebrow></h2>
+          <h2 id="home-more-title" className="home-more-title"><Eyebrow span>More tools</Eyebrow></h2>
           <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="lg" verticalSpacing="md">
             <ShowcaseLink
               to="/titles"
@@ -676,10 +634,8 @@ export default function Home() {
           </SimpleGrid>
         </nav>
 
-        {/* Footnotes: the least urgent thing on the page, at its end. */}
+        {/* The footnote: the least urgent thing on the page, at its end. */}
         <Stack gap="xs" maw="var(--content-prose)" mx="auto" w="100%">
-          <HomeFacts facts={facts} />
-
           <Text size="xs" c="dimmed" ta="center" fs="italic" maw="var(--measure)" mx="auto">
             Figures are point-in-time snapshots; an employee's FTE (appointment %) and pay rate can change between
             snapshots, so actual pay earned may be higher or lower than the amounts shown.{' '}

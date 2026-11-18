@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BAR_MIN, MAG_COLS, MAG_LEFT_MAX, magLeftFor, FLOORS, FLOOR_GAP, FLOOR_PITCH, floorLabel, floorOf, floorPay, floorsGrid, COLS, COL_DOLLARS, GUTTER, GUTTER_SHARE, colHeight, colLeft, colX, placePins, shareAt, snapReach, squareAt, standingIn, squarePixels, DOWN, FAST_MS, LEFT, NEW, STAY, UP, moveTiming, pacePlan, sortTiming, stagedSlots, seatedSlots, hermite, monoTangent, stackColumns, strataFromCounts, strataGrid,
-  tailColumns, typeRanks, within,
+  tailColumns, typeRanks,
 } from './strata';
 
 const PC = {
@@ -329,7 +329,6 @@ describe('standingIn', () => {
 describe('readout', () => {
   const cc = new Uint32Array(COLS);
   cc[10] = 4; cc[12] = 6; cc[20] = 10;
-  it('counts ±$5k', () => expect(within(cc, 11)).toBe(10));
   it('takes lower columns and half its own', () => expect(shareAt(cc, 12, 20)).toBeCloseTo((4 + 3) / 20));
 });
 
